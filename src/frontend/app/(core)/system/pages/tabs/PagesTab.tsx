@@ -24,13 +24,6 @@ interface IPagesListResponse {
 }
 
 /**
- * Props for PagesTab component.
- */
-interface PagesTabProps {
-    token: string;
-}
-
-/**
  * Pages tab - List and edit pages.
  *
  * Provides comprehensive page management including:
@@ -39,7 +32,7 @@ interface PagesTabProps {
  * - Create, update, and delete operations
  * - Publish/unpublish toggle
  */
-export function PagesTab({ token }: PagesTabProps) {
+export function PagesTab() {
     const [pages, setPages] = useState<IPage[]>([]);
     const [stats, setStats] = useState({ total: 0, published: 0, drafts: 0 });
     const [loading, setLoading] = useState(true);
@@ -63,10 +56,7 @@ export function PagesTab({ token }: PagesTabProps) {
             if (publishedFilter === 'drafts') params.append('published', 'false');
 
             const response = await fetch(`/api/admin/pages?${params}`, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-admin-token': token
-                }
+                headers: { 'Content-Type': 'application/json' }
             });
 
             if (!response.ok) {
@@ -82,7 +72,7 @@ export function PagesTab({ token }: PagesTabProps) {
         } finally {
             setLoading(false);
         }
-    }, [token, searchQuery, publishedFilter]);
+    }, [searchQuery, publishedFilter]);
 
     /**
      * Delete a page by ID.
@@ -99,10 +89,7 @@ export function PagesTab({ token }: PagesTabProps) {
 
         try {
             const response = await fetch(`/api/admin/pages/${id}`, {
-                method: 'DELETE',
-                headers: {
-                    'x-admin-token': token
-                }
+                method: 'DELETE'
             });
 
             if (!response.ok) {
@@ -146,7 +133,6 @@ export function PagesTab({ token }: PagesTabProps) {
     if (isCreating || editingPage) {
         return (
             <PageEditor
-                token={token}
                 page={editingPage}
                 onSave={handlePageSaved}
                 onCancel={handleEditorCancel}

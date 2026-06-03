@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, Download, Trash2, Settings, AlertCircle } from 'lucide-react';
 import { config as runtimeConfig } from '../../../../lib/config';
-import { useSystemAuth } from '../../../../features/system';
 import { Page, Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { Button } from '../../../../components/ui/Button';
@@ -211,7 +210,6 @@ function PluginRow({ pluginInfo, onInstall, onUninstall, onToggleEnabled, isLoad
  * Requires admin authentication via shared SystemAuth context.
  */
 export default function PluginsManagementPage() {
-    const { token } = useSystemAuth();
     const [plugins, setPlugins] = useState<IPluginInfo[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [loadingPluginId, setLoadingPluginId] = useState<string | null>(null);
@@ -226,11 +224,7 @@ export default function PluginsManagementPage() {
         try {
             setIsLoading(true);
             setError(null);
-            const response = await fetch(`${runtimeConfig.apiBaseUrl}/plugin-management/all`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
+            const response = await fetch(`${runtimeConfig.apiBaseUrl}/plugin-management/all`);
 
             if (!response.ok) {
                 throw new Error('Failed to fetch plugins');
@@ -253,10 +247,7 @@ export default function PluginsManagementPage() {
 
             const response = await fetch(`${runtimeConfig.apiBaseUrl}/plugin-management/${pluginId}/${action}`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
+                headers: { 'Content-Type': 'application/json' }
             });
 
             const data = await response.json();

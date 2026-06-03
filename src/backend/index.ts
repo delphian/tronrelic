@@ -274,15 +274,20 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         coreDatabase.setClickHouseService(clickhouse);
     }
 
-    // Mount API routes now that coreDatabase exists
-    // Routers receive the shared database instance via dependency injection
-    app.use('/api', createApiRouter(coreDatabase));
-
-    await initializeCoreServices(coreDatabase);
-
     // Service registry must exist before the menu module so MenuService can
     // publish itself as `'menu'` for late-binding consumers during run().
+    // Constructed before the API router so request-time consumers (e.g. the
+    // notifications route resolving `'wallets'` to verify wallet ownership)
+    // hold the registry reference; the services they look up are registered
+    // later in init() and resolved lazily per request.
     const serviceRegistry = new ServiceRegistry(logger);
+
+    // Mount API routes now that coreDatabase and the service registry exist.
+    // Routers receive the shared database instance via dependency injection;
+    // those needing late-bound services also receive the registry.
+    app.use('/api', createApiRouter(coreDatabase, serviceRegistry));
+
+    await initializeCoreServices(coreDatabase);
 
     // Hook registry is the inverse of the service registry: plugins register
     // handlers against core-declared seams, where the service registry lets

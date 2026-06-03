@@ -9,10 +9,6 @@ import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { StatStrip } from './StatStrip';
 import styles from './WebSocketsSection.module.scss';
 
-interface Props {
-    token: string;
-}
-
 /**
  * WebSocket monitoring body.
  *
@@ -20,7 +16,7 @@ interface Props {
  * StatStrip; per-plugin breakdowns expand inline as a flat list of mini
  * strips so an admin can scan all sockets without nested cards.
  */
-export function WebSocketsSection({ token }: Props) {
+export function WebSocketsSection() {
     const [aggregate, setAggregate] = useState<IAggregatePluginWebSocketStats | null>(null);
     const [pluginStats, setPluginStats] = useState<IPluginWebSocketStats[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -29,12 +25,8 @@ export function WebSocketsSection({ token }: Props) {
     const fetchStats = useCallback(async () => {
         try {
             const [aggregateRes, statsRes] = await Promise.all([
-                fetch(`${runtimeConfig.apiUrl}/admin/system/websockets/aggregate`, {
-                    headers: { 'X-Admin-Token': token }
-                }),
-                fetch(`${runtimeConfig.apiUrl}/admin/system/websockets/stats`, {
-                    headers: { 'X-Admin-Token': token }
-                })
+                fetch(`${runtimeConfig.apiUrl}/admin/system/websockets/aggregate`),
+                fetch(`${runtimeConfig.apiUrl}/admin/system/websockets/stats`)
             ]);
 
             if (!aggregateRes.ok || !statsRes.ok) {
@@ -50,7 +42,7 @@ export function WebSocketsSection({ token }: Props) {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Unknown error');
         }
-    }, [token, runtimeConfig.apiUrl]);
+    }, [runtimeConfig.apiUrl]);
 
     useEffect(() => {
         void fetchStats();

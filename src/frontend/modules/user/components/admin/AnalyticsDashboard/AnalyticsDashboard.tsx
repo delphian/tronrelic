@@ -109,21 +109,6 @@ function getCategoryClass(category: string): string {
     }
 }
 
-interface Props {
-    /** Admin authentication token for API requests. */
-    token: string;
-}
-
-/**
- * Aggregate analytics dashboard for admin traffic insights.
- *
- * Fetches data from multiple analytics endpoints and renders engagement
- * metrics, conversion funnel, traffic sources, landing pages, geography,
- * devices, campaigns, and retention data with period filtering.
- *
- * @param props - Component props
- * @param props.token - Admin API token from localStorage
- */
 /**
  * Format a Date as a YYYY-MM-DD string for native date inputs.
  *
@@ -137,7 +122,14 @@ function toDateInputValue(date: Date): string {
     return `${y}-${m}-${d}`;
 }
 
-export function AnalyticsDashboard({ token }: Props) {
+/**
+ * Aggregate analytics dashboard for admin traffic insights.
+ *
+ * Fetches data from multiple analytics endpoints and renders engagement
+ * metrics, conversion funnel, traffic sources, landing pages, geography,
+ * devices, campaigns, and retention data with period filtering.
+ */
+export function AnalyticsDashboard() {
     const [period, setPeriod] = useState<AnalyticsPeriod>('24h');
     const [loading, setLoading] = useState(true);
 
@@ -197,7 +189,7 @@ export function AnalyticsDashboard({ token }: Props) {
         if (!sourceDetails[source]) {
             setSourceDetailsLoading(source);
             try {
-                const details = await adminGetTrafficSourceDetails(token, source, period, customRange);
+                const details = await adminGetTrafficSourceDetails(source, period, customRange);
                 setSourceDetails(prev => ({ ...prev, [source]: details }));
             } catch (error) {
                 console.error('Failed to fetch source details:', error);
@@ -206,7 +198,7 @@ export function AnalyticsDashboard({ token }: Props) {
                 setSourceDetailsLoading(prev => prev === source ? null : prev);
             }
         }
-    }, [expandedSource, sourceDetails, token, period, customRange]);
+    }, [expandedSource, sourceDetails, period, customRange]);
 
     /**
      * Fetch all analytics data for the selected period.
@@ -228,15 +220,15 @@ export function AnalyticsDashboard({ token }: Props) {
                 retentionRes,
                 overviewRes,
             ] = await Promise.all([
-                adminGetEngagement(token, period, customRange),
-                adminGetConversionFunnel(token, period, customRange),
-                adminGetTrafficSources(token, period, customRange),
-                adminGetTopLandingPages(token, { period, limit: 15, customRange }),
-                adminGetGeoDistribution(token, { period, limit: 20, customRange }),
-                adminGetDeviceBreakdown(token, period, customRange),
-                adminGetCampaignPerformance(token, { period, limit: 15, customRange }),
-                adminGetRetention(token, period, customRange),
-                adminGetAnalyticsOverview(token),
+                adminGetEngagement(period, customRange),
+                adminGetConversionFunnel(period, customRange),
+                adminGetTrafficSources(period, customRange),
+                adminGetTopLandingPages({ period, limit: 15, customRange }),
+                adminGetGeoDistribution({ period, limit: 20, customRange }),
+                adminGetDeviceBreakdown(period, customRange),
+                adminGetCampaignPerformance({ period, limit: 15, customRange }),
+                adminGetRetention(period, customRange),
+                adminGetAnalyticsOverview(),
             ]);
 
             setEngagement(engagementRes);
@@ -254,7 +246,7 @@ export function AnalyticsDashboard({ token }: Props) {
         } finally {
             setLoading(false);
         }
-    }, [token, period, customRange]);
+    }, [period, customRange]);
 
     useEffect(() => {
         fetchAll();

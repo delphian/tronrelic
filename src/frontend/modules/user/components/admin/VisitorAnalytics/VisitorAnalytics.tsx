@@ -69,21 +69,14 @@ const PERIOD_LABELS: Record<VisitorPeriod, string> = {
     '90d': '90 Days'
 };
 
-interface Props {
-    token: string;
-}
-
 /**
  * VisitorAnalytics displays aggregate visitor analytics for the admin dashboard.
  *
  * Includes a daily visitor trend chart (30d/90d) and an anonymous first-touches
  * table showing first-touch acquisition data (original referrer, landing page,
  * country, device, UTM) for SEO and marketing analysis.
- *
- * @param props - Component props
- * @param props.token - Admin authentication token for API requests
  */
-export function VisitorAnalytics({ token }: Props) {
+export function VisitorAnalytics() {
     const [chartRange, setChartRange] = useState<ChartRange>('30d');
     const [chartData, setChartData] = useState<IDailyVisitorData[]>([]);
     const [chartLoading, setChartLoading] = useState(true);
@@ -102,7 +95,7 @@ export function VisitorAnalytics({ token }: Props) {
         setChartLoading(true);
         try {
             const days = chartRange === '30d' ? 30 : 90;
-            const data = await adminGetDailyVisitors(token, days);
+            const data = await adminGetDailyVisitors(days);
             setChartData(data);
         } catch (error) {
             console.error('Failed to fetch daily visitors:', error);
@@ -110,7 +103,7 @@ export function VisitorAnalytics({ token }: Props) {
         } finally {
             setChartLoading(false);
         }
-    }, [token, chartRange]);
+    }, [chartRange]);
 
     useEffect(() => { fetchChartData(); }, [fetchChartData]);
 
@@ -123,7 +116,7 @@ export function VisitorAnalytics({ token }: Props) {
         const fetchFirstTouches = async (): Promise<void> => {
             setFirstTouchesLoading(true);
             try {
-                const result = await adminGetAnonymousFirstTouches(token, {
+                const result = await adminGetAnonymousFirstTouches({
                     period: firstTouchesPeriod,
                     limit: firstTouchesLimit,
                     skip: (firstTouchesPage - 1) * firstTouchesLimit
@@ -146,7 +139,7 @@ export function VisitorAnalytics({ token }: Props) {
         };
         fetchFirstTouches();
         return () => { active = false; };
-    }, [token, firstTouchesPeriod, firstTouchesPage]);
+    }, [firstTouchesPeriod, firstTouchesPage]);
 
     /**
      * Build chart series from daily visitor data.

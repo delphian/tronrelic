@@ -24,24 +24,14 @@ import type { IGscStatus } from '../../../api/client';
 import styles from './GscSettings.module.scss';
 
 /**
- * Props for the GscSettings component.
- */
-interface Props {
-    /** Admin API token for authenticated requests */
-    token: string;
-}
-
-/**
  * Admin panel for configuring Google Search Console integration.
  *
  * Displays connection status, provides a form for entering service
  * account credentials, and allows triggering manual data refreshes.
  * This component is an admin-only settings panel — no SSR data
  * fetching needed since admin pages fetch client-side after auth.
- *
- * @param props - Component props with admin token
  */
-export function GscSettings({ token }: Props) {
+export function GscSettings() {
     const [status, setStatus] = useState<IGscStatus | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -59,14 +49,14 @@ export function GscSettings({ token }: Props) {
         setError(null);
         setSuccess(null);
         try {
-            const result = await adminGetGscStatus(token);
+            const result = await adminGetGscStatus();
             setStatus(result);
         } catch {
             setError('Failed to load GSC status');
         } finally {
             setLoading(false);
         }
-    }, [token]);
+    }, []);
 
     useEffect(() => {
         void fetchStatus();
@@ -86,7 +76,7 @@ export function GscSettings({ token }: Props) {
         setSaving(true);
 
         try {
-            const result = await adminSaveGscCredentials(token, serviceAccountJson.trim(), siteUrl.trim());
+            const result = await adminSaveGscCredentials(serviceAccountJson.trim(), siteUrl.trim());
             setStatus(result);
             setServiceAccountJson('');
             setSiteUrl('');
@@ -102,7 +92,7 @@ export function GscSettings({ token }: Props) {
         } finally {
             setSaving(false);
         }
-    }, [token, serviceAccountJson, siteUrl]);
+    }, [serviceAccountJson, siteUrl]);
 
     const [confirmingRemove, setConfirmingRemove] = useState(false);
 
@@ -120,13 +110,13 @@ export function GscSettings({ token }: Props) {
         setConfirmingRemove(false);
 
         try {
-            await adminRemoveGscCredentials(token);
+            await adminRemoveGscCredentials();
             setStatus({ configured: false });
             setSuccess('Credentials removed');
         } catch {
             setError('Failed to remove credentials');
         }
-    }, [token, confirmingRemove]);
+    }, [confirmingRemove]);
 
     /**
      * Trigger an on-demand GSC data fetch.
@@ -137,7 +127,7 @@ export function GscSettings({ token }: Props) {
         setRefreshing(true);
 
         try {
-            const result = await adminRefreshGscData(token);
+            const result = await adminRefreshGscData();
             setSuccess(`Fetched ${result.rowsFetched.toLocaleString()} rows from Search Console`);
             void fetchStatus();
         } catch {
@@ -145,7 +135,7 @@ export function GscSettings({ token }: Props) {
         } finally {
             setRefreshing(false);
         }
-    }, [token, fetchStatus]);
+    }, [fetchStatus]);
 
     if (loading) {
         return (

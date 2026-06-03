@@ -11,10 +11,6 @@ import { getSystemLogs, getLogStats, deleteAllLogs } from '../../api';
 import type { SystemLog, LogStats } from '../../types';
 import styles from './SystemLogsMonitor.module.scss';
 
-interface Props {
-    token: string;
-}
-
 /**
  * SystemLogsMonitor Component
  *
@@ -34,12 +30,10 @@ interface Props {
  * - `/admin/system/logs/stats` - Log statistics and service list
  *
  * **Security:**
- * Requires admin token authentication via X-Admin-Token header.
- *
- * @param {Props} props - Component props
- * @param {string} props.token - Admin authentication token for API requests
+ * Authorization rides the same-origin Better Auth session cookie;
+ * the backend `requireAdmin` middleware resolves it per request.
  */
-export function SystemLogsMonitor({ token }: Props) {
+export function SystemLogsMonitor() {
     const [logs, setLogs] = useState<SystemLog[]>([]);
     const [stats, setStats] = useState<LogStats | null>(null);
     const [loading, setLoading] = useState(true);
@@ -91,7 +85,7 @@ export function SystemLogsMonitor({ token }: Props) {
      */
     const fetchLogs = useCallback(async () => {
         try {
-            const data = await getSystemLogs(token, {
+            const data = await getSystemLogs({
                 levels: selectedLevels.length > 0 ? selectedLevels : undefined,
                 service: serviceFilter.trim() || undefined,
                 page,
@@ -139,7 +133,7 @@ export function SystemLogsMonitor({ token }: Props) {
         } finally {
             setLoading(false);
         }
-    }, [limit, page, selectedLevels, serviceFilter, setInitialLoadState, token]);
+    }, [limit, page, selectedLevels, serviceFilter, setInitialLoadState]);
 
     /**
      * Fetches log statistics from the admin API.
@@ -149,7 +143,7 @@ export function SystemLogsMonitor({ token }: Props) {
      */
     const fetchStats = useCallback(async () => {
         try {
-            const logStats = await getLogStats(token);
+            const logStats = await getLogStats();
             setStats(logStats);
 
             // Reset service filter if the selected service no longer exists in stats
@@ -162,7 +156,7 @@ export function SystemLogsMonitor({ token }: Props) {
         } catch (error) {
             console.error('Failed to fetch log stats:', error);
         }
-    }, [token]);
+    }, []);
 
     /**
      * Executes the clear-all-logs API call and refreshes state.
@@ -172,7 +166,7 @@ export function SystemLogsMonitor({ token }: Props) {
      */
     const executeClearLogs = useCallback(async () => {
         try {
-            const deletedCount = await deleteAllLogs(token);
+            const deletedCount = await deleteAllLogs();
             push({ tone: 'success', title: `Deleted ${deletedCount.toLocaleString()} log entries` });
             setPage(1);
             await fetchLogs();
@@ -180,7 +174,7 @@ export function SystemLogsMonitor({ token }: Props) {
         } catch {
             push({ tone: 'danger', title: 'Failed to clear logs', description: 'Please try again.' });
         }
-    }, [token, push, fetchLogs, fetchStats]);
+    }, [push, fetchLogs, fetchStats]);
 
     /**
      * Opens a confirmation modal before clearing all logs.

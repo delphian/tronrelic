@@ -2,7 +2,6 @@
 
 import { Page, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
-import { useSystemAuth } from '../../../../features/system';
 import { ConsoleRow } from './components/ConsoleRow';
 import { OverviewBar } from './components/OverviewBar';
 import { SystemConfigSection } from './components/SystemConfigSection';
@@ -23,30 +22,28 @@ import { ClickHouseSection } from './components/ClickHouseSection';
  * "no API storm on page load" guarantee from the previous design.
  */
 export default function SystemAdminPage() {
-    const { token } = useSystemAuth();
-
     return (
         <Page>
             <Stack gap="sm">
-                <OverviewBar token={token} />
+                <OverviewBar />
                 <Card padding="sm" noBackgroundImage>
                     <ConsoleRow id="config" title="Configuration" status="idle">
-                        <SystemConfigSection token={token} />
+                        <SystemConfigSection />
                     </ConsoleRow>
                     <ConsoleRow id="server" title="Server" status="idle">
-                        <ServerSection token={token} />
+                        <ServerSection />
                     </ConsoleRow>
                     <ConsoleRow id="blockchain" title="Blockchain" status="idle">
-                        <BlockchainSection token={token} />
+                        <BlockchainSection />
                     </ConsoleRow>
                     <ConsoleRow id="websockets" title="WebSockets" status="idle">
-                        <WebSocketsSection token={token} />
+                        <WebSocketsSection />
                     </ConsoleRow>
                     <ConsoleRow id="mongo" title="MongoDB" status="idle">
-                        <MongoSection token={token} />
+                        <MongoSection />
                     </ConsoleRow>
                     <ConsoleRow id="clickhouse" title="ClickHouse" status="idle">
-                        <ClickHouseSection token={token} />
+                        <ClickHouseSection />
                     </ConsoleRow>
                 </Card>
             </Stack>

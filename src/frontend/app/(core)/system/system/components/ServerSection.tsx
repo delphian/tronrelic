@@ -7,10 +7,6 @@ import { formatBytes } from '../../../../../lib/format';
 import { StatStrip } from './StatStrip';
 import styles from './ServerSection.module.scss';
 
-interface Props {
-    token: string;
-}
-
 interface RedisStatus {
     connected: boolean;
     responseTime: number | null;
@@ -41,7 +37,7 @@ interface ServerMetrics {
  * StatStrip rows so the section keeps to roughly two screen lines on
  * a desktop console instead of two stacked tile grids.
  */
-export function ServerSection({ token }: Props) {
+export function ServerSection() {
     const [redis, setRedis] = useState<RedisStatus | null>(null);
     const [server, setServer] = useState<ServerMetrics | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -50,12 +46,8 @@ export function ServerSection({ token }: Props) {
     const fetchData = useCallback(async () => {
         try {
             const [redisRes, serverRes] = await Promise.all([
-                fetch(`${runtimeConfig.apiUrl}/admin/system/health/redis`, {
-                    headers: { 'X-Admin-Token': token }
-                }),
-                fetch(`${runtimeConfig.apiUrl}/admin/system/health/server`, {
-                    headers: { 'X-Admin-Token': token }
-                })
+                fetch(`${runtimeConfig.apiUrl}/admin/system/health/redis`),
+                fetch(`${runtimeConfig.apiUrl}/admin/system/health/server`)
             ]);
 
             if (redisRes.ok) {
@@ -80,7 +72,7 @@ export function ServerSection({ token }: Props) {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch server health');
         }
-    }, [token, runtimeConfig.apiUrl]);
+    }, [runtimeConfig.apiUrl]);
 
     useEffect(() => {
         void fetchData();

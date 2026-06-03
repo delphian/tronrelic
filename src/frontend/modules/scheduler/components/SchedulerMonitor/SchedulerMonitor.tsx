@@ -25,7 +25,6 @@ import type { SchedulerJob, SchedulerHealth } from '../../types';
 import styles from './SchedulerMonitor.module.scss';
 
 interface Props {
-    token: string;
     /** Optional filter to show only specific jobs. Can be job names or a filter function. */
     jobFilter?: string[] | ((job: SchedulerJob) => boolean);
     /** Optional title override for the stats bar */
@@ -218,12 +217,11 @@ function JobRow({ job, onToggleEnabled, onScheduleChange, isLoading, loadingJobN
  * - Auto-refresh every 10 seconds for near-real-time monitoring
  *
  * @param props - Component props
- * @param props.token - Admin authentication token for API requests
  * @param props.jobFilter - Optional filter to show only specific jobs
  * @param props.title - Optional title for the stats bar
  * @param props.hideStats - Hide the stats bar when embedding
  */
-export function SchedulerMonitor({ token, jobFilter, title = 'Scheduled Jobs', hideStats = false }: Props) {
+export function SchedulerMonitor({ jobFilter, title = 'Scheduled Jobs', hideStats = false }: Props) {
     const [jobs, setJobs] = useState<SchedulerJob[]>([]);
     const [health, setHealth] = useState<SchedulerHealth | null>(null);
     const [loading, setLoading] = useState(true);
@@ -237,8 +235,8 @@ export function SchedulerMonitor({ token, jobFilter, title = 'Scheduled Jobs', h
     const fetchData = async () => {
         try {
             const [jobsData, healthData] = await Promise.all([
-                getSchedulerStatus(token),
-                getSchedulerHealth(token)
+                getSchedulerStatus(),
+                getSchedulerHealth()
             ]);
             setJobs(jobsData);
             setHealth(healthData);
@@ -255,7 +253,7 @@ export function SchedulerMonitor({ token, jobFilter, title = 'Scheduled Jobs', h
         const interval = setInterval(fetchData, 10000);
         return () => clearInterval(interval);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token]);
+    }, []);
 
     /**
      * Validates a cron expression format.
@@ -274,7 +272,7 @@ export function SchedulerMonitor({ token, jobFilter, title = 'Scheduled Jobs', h
         setFeedback(null);
 
         try {
-            await updateSchedulerJob(token, jobName, updates);
+            await updateSchedulerJob(jobName, updates);
 
             setFeedback({
                 jobName,

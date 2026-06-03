@@ -28,12 +28,14 @@ export interface LogsQuery {
 /**
  * Fetches paginated system logs with optional filtering.
  *
- * @param token - Admin authentication token
+ * Authorization rides the same-origin Better Auth session cookie;
+ * the backend `requireAdmin` middleware resolves it per request.
+ *
  * @param query - Filter and pagination parameters
  * @returns Paginated logs response with metadata
  * @throws Error if the API request fails
  */
-export async function getSystemLogs(token: string, query: LogsQuery = {}): Promise<LogsResponse> {
+export async function getSystemLogs(query: LogsQuery = {}): Promise<LogsResponse> {
     const params = new URLSearchParams();
 
     if (query.levels && query.levels.length > 0) {
@@ -53,10 +55,7 @@ export async function getSystemLogs(token: string, query: LogsQuery = {}): Promi
     }
 
     const response = await fetch(
-        `${getRuntimeConfig().apiUrl}/admin/system/logs?${params.toString()}`,
-        {
-            headers: { 'X-Admin-Token': token }
-        }
+        `${getRuntimeConfig().apiUrl}/admin/system/logs?${params.toString()}`
     );
 
     if (!response.ok) {
@@ -72,16 +71,12 @@ export async function getSystemLogs(token: string, query: LogsQuery = {}): Promi
  * Returns counts by severity level, service, and resolution status.
  * Used by the dashboard metrics and service filter dropdown.
  *
- * @param token - Admin authentication token
  * @returns Log statistics object
  * @throws Error if the API request fails
  */
-export async function getLogStats(token: string): Promise<LogStats> {
+export async function getLogStats(): Promise<LogStats> {
     const response = await fetch(
-        `${getRuntimeConfig().apiUrl}/admin/system/logs/stats`,
-        {
-            headers: { 'X-Admin-Token': token }
-        }
+        `${getRuntimeConfig().apiUrl}/admin/system/logs/stats`
     );
 
     if (!response.ok) {
@@ -102,16 +97,14 @@ export async function getLogStats(token: string): Promise<LogStats> {
  *
  * Destructive operation that removes all logs from the database.
  *
- * @param token - Admin authentication token
  * @returns Number of deleted log entries
  * @throws Error if the API request fails
  */
-export async function deleteAllLogs(token: string): Promise<number> {
+export async function deleteAllLogs(): Promise<number> {
     const response = await fetch(
         `${getRuntimeConfig().apiUrl}/admin/system/logs`,
         {
-            method: 'DELETE',
-            headers: { 'X-Admin-Token': token }
+            method: 'DELETE'
         }
     );
 

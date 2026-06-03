@@ -44,11 +44,7 @@ interface IPaginatedRows {
     hasPrevPage: boolean;
 }
 
-interface ClickHouseTableBrowserProps {
-    token: string;
-}
-
-export function ClickHouseTableBrowser({ token }: ClickHouseTableBrowserProps) {
+export function ClickHouseTableBrowser() {
     const [stats, setStats] = useState<IClickHouseStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -62,10 +58,7 @@ export function ClickHouseTableBrowser({ token }: ClickHouseTableBrowserProps) {
         try {
             setLoading(true);
             const response = await fetch(`${runtimeConfig.apiUrl}/admin/clickhouse/stats`, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': token
-                }
+                headers: { 'Content-Type': 'application/json' }
             });
 
             if (!response.ok) {
@@ -80,7 +73,7 @@ export function ClickHouseTableBrowser({ token }: ClickHouseTableBrowserProps) {
         } finally {
             setLoading(false);
         }
-    }, [token, runtimeConfig.apiUrl]);
+    }, [runtimeConfig.apiUrl]);
 
     const fetchRows = useCallback(async (tableName: string, page: number = 1) => {
         try {
@@ -88,10 +81,7 @@ export function ClickHouseTableBrowser({ token }: ClickHouseTableBrowserProps) {
             const response = await fetch(
                 `${runtimeConfig.apiUrl}/admin/clickhouse/tables/${encodeURIComponent(tableName)}/rows?page=${page}&limit=10`,
                 {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Admin-Token': token
-                    }
+                    headers: { 'Content-Type': 'application/json' }
                 }
             );
 
@@ -106,7 +96,7 @@ export function ClickHouseTableBrowser({ token }: ClickHouseTableBrowserProps) {
         } finally {
             setLoadingRows(false);
         }
-    }, [token, runtimeConfig.apiUrl]);
+    }, [runtimeConfig.apiUrl]);
 
     useEffect(() => {
         void fetchStats();

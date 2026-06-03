@@ -22,7 +22,6 @@ import { useModal } from '../../../../components/ui/ModalProvider';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { ConfirmDialog } from '../../../../components/ui/ConfirmDialog';
 import { LazyIconPickerModal } from '../../../../components/ui/IconPickerModal';
-import { useSystemAuth } from '../../../../features/system';
 import { cn } from '../../../../lib/cn';
 
 import styles from './menu.module.scss';
@@ -117,12 +116,12 @@ function flattenTree(nodes: IMenuNodeAdminView[]): FlatNode[] {
  * create/edit happens in modals, deletes confirm via modal, success/error
  * surface via toasts.
  *
- * Lives behind /system, which is admin-token-gated by SystemAuthGate. Token
- * only exists in localStorage on the client, so the page fetches after mount
- * (same convention as /system/plugins, /system/theme, /system/users).
+ * Lives behind /system, which is admin-gated by SystemAuthGate via the
+ * Better Auth session. Same-origin fetches carry the session cookie, so
+ * the page fetches after mount with no explicit auth header (same
+ * convention as /system/plugins, /system/theme, /system/users).
  */
 export default function MenuAdminPage() {
-    const { token } = useSystemAuth();
     const { open: openModal, close: closeModal } = useModal();
     const { push: pushToast } = useToast();
 
@@ -139,11 +138,6 @@ export default function MenuAdminPage() {
     // once on mount; group definition changes are infrequent enough that we
     // don't subscribe to live updates here.
     const [availableGroups, setAvailableGroups] = useState<IUserGroup[]>([]);
-
-    const authHeaders = useMemo<HeadersInit>(
-        () => ({ 'X-Admin-Token': token || '' }),
-        [token]
-    );
 
     const notifyError = useCallback(
         (title: string, err: unknown) => {
@@ -163,9 +157,7 @@ export default function MenuAdminPage() {
 
     const fetchTree = useCallback(
         async (namespace: string) => {
-            const res = await fetch(`/api/menu/manage?namespace=${encodeURIComponent(namespace)}`, {
-                headers: authHeaders
-            });
+            const res = await fetch(`/api/menu/manage?namespace=${encodeURIComponent(namespace)}`);
             if (!res.ok) throw new Error('Failed to load menu tree');
             const data = await res.json();
             // `/api/menu/manage` returns the origin-tagged projection.
@@ -173,20 +165,19 @@ export default function MenuAdminPage() {
             // valid for callers reaching this code path.
             return data.tree as IMenuTreeAdminView;
         },
-        [authHeaders]
+        []
     );
 
     const fetchConfig = useCallback(
         async (namespace: string) => {
             const res = await fetch(
-                `/api/menu/namespace/${encodeURIComponent(namespace)}/config`,
-                { headers: authHeaders }
+                `/api/menu/namespace/${encodeURIComponent(namespace)}/config`
             );
             if (!res.ok) throw new Error('Failed to load namespace configuration');
             const data = await res.json();
             return data.config as IMenuNamespaceConfig;
         },
-        [authHeaders]
+        []
     );
 
     /* Initial namespace list. */
@@ -194,7 +185,7 @@ export default function MenuAdminPage() {
         let cancelled = false;
         (async () => {
             try {
-                const res = await fetch('/api/menu/namespaces', { headers: authHeaders });
+                const res = await fetch('/api/menu/namespaces');
                 if (!res.ok) throw new Error('Failed to load namespaces');
                 const data = await res.json();
                 const list: string[] = data.namespaces ?? [];
@@ -210,7 +201,7 @@ export default function MenuAdminPage() {
         return () => {
             cancelled = true;
         };
-    }, [authHeaders, notifyError]); // intentionally omits activeNamespace
+    }, [notifyError]); // intentionally omits activeNamespace
 
     /* Available groups for the gating multi-select. Fetched once; group
      * definition changes are operator-driven and infrequent. Errors are
@@ -220,7 +211,7 @@ export default function MenuAdminPage() {
         let cancelled = false;
         (async () => {
             try {
-                const res = await fetch('/api/admin/users/groups', { headers: authHeaders });
+                const res = await fetch('/api/admin/users/groups');
                 if (!res.ok) throw new Error('Failed to load user groups');
                 const data = await res.json();
                 if (cancelled) return;
@@ -232,7 +223,7 @@ export default function MenuAdminPage() {
         return () => {
             cancelled = true;
         };
-    }, [authHeaders, notifyError]);
+    }, [notifyError]);
 
     /* Tree + config for the active namespace. */
     useEffect(() => {
@@ -272,7 +263,7 @@ export default function MenuAdminPage() {
         async (data: Partial<IMenuNode>) => {
             const res = await fetch('/api/menu', {
                 method: 'POST',
-                headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ...data, namespace: activeNamespace })
             });
             if (!res.ok) {
@@ -280,14 +271,14 @@ export default function MenuAdminPage() {
                 throw new Error(body.error || 'Failed to create menu item');
             }
         },
-        [activeNamespace, authHeaders]
+        [activeNamespace]
     );
 
     const handleUpdate = useCallback(
         async (id: string, updates: Partial<IMenuNode>) => {
             const res = await fetch(`/api/menu/${id}`, {
                 method: 'PATCH',
-                headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(updates)
             });
             if (!res.ok) {
@@ -295,21 +286,20 @@ export default function MenuAdminPage() {
                 throw new Error(body.error || 'Failed to update menu item');
             }
         },
-        [authHeaders]
+        []
     );
 
     const handleDelete = useCallback(
         async (id: string) => {
             const res = await fetch(`/api/menu/${id}`, {
-                method: 'DELETE',
-                headers: authHeaders
+                method: 'DELETE'
             });
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
                 throw new Error(body.error || 'Failed to delete menu item');
             }
         },
-        [authHeaders]
+        []
     );
 
     const toggleEnabled = useCallback(
@@ -441,7 +431,7 @@ export default function MenuAdminPage() {
                 `/api/menu/namespace/${encodeURIComponent(activeNamespace)}/config`,
                 {
                     method: 'PUT',
-                    headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         overflow: config.overflow,
                         icons: config.icons,
@@ -462,7 +452,7 @@ export default function MenuAdminPage() {
         } finally {
             setSavingConfig(false);
         }
-    }, [activeNamespace, authHeaders, config, notifyError, notifySuccess]);
+    }, [activeNamespace, config, notifyError, notifySuccess]);
 
     const handleResetConfig = useCallback(() => {
         const id = openModal({
@@ -478,7 +468,7 @@ export default function MenuAdminPage() {
                         try {
                             const res = await fetch(
                                 `/api/menu/namespace/${encodeURIComponent(activeNamespace)}/config`,
-                                { method: 'DELETE', headers: authHeaders }
+                                { method: 'DELETE' }
                             );
                             if (!res.ok) {
                                 const body = await res.json().catch(() => ({}));
@@ -495,7 +485,7 @@ export default function MenuAdminPage() {
                 />
             )
         });
-    }, [activeNamespace, authHeaders, closeModal, fetchConfig, notifyError, notifySuccess, openModal]);
+    }, [activeNamespace, closeModal, fetchConfig, notifyError, notifySuccess, openModal]);
 
     const flatNodes = useMemo(
         () => (menuTree ? flattenTree(menuTree.all) : []),

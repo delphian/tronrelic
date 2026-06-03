@@ -8,10 +8,6 @@ import { useToast } from '../../../../../components/ui/ToastProvider/ToastProvid
 import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import styles from './SystemConfigSection.module.scss';
 
-interface Props {
-    token: string;
-}
-
 interface SystemConfigPayload {
     siteUrl?: string;
 }
@@ -25,7 +21,7 @@ interface SystemConfigPayload {
  * fields stored on the same document (log retention, log level, etc.,
  * now edited from the logs page).
  */
-export function SystemConfigSection({ token }: Props) {
+export function SystemConfigSection() {
     const [siteUrl, setSiteUrl] = useState('');
     const [originalSiteUrl, setOriginalSiteUrl] = useState('');
     const [loading, setLoading] = useState(true);
@@ -35,14 +31,11 @@ export function SystemConfigSection({ token }: Props) {
     const runtimeConfig = getRuntimeConfig();
 
     const fetchConfig = useCallback(async () => {
-        // SystemAuthGate guarantees a non-empty token at this depth, so we
-        // do not gate on token here — gating without resetting `loading`
-        // would strand the form in a permanent disabled state.
+        // SystemAuthGate guarantees an admin session at this depth; the
+        // same-origin Better Auth cookie authorizes the request.
         try {
             setError(null);
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
-                headers: { 'X-Admin-Token': token }
-            });
+            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`);
             if (!response.ok) throw new Error(`Request failed: ${response.statusText}`);
             const data = await response.json();
             const value = data.config?.siteUrl ?? '';
@@ -59,7 +52,7 @@ export function SystemConfigSection({ token }: Props) {
         } finally {
             setLoading(false);
         }
-    }, [token, pushToast, runtimeConfig.apiUrl]);
+    }, [pushToast, runtimeConfig.apiUrl]);
 
     useEffect(() => {
         void fetchConfig();
@@ -72,10 +65,7 @@ export function SystemConfigSection({ token }: Props) {
             const payload: SystemConfigPayload = { siteUrl };
             const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
                 method: 'PATCH',
-                headers: {
-                    'X-Admin-Token': token,
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
             const data = await response.json();

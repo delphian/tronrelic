@@ -19,10 +19,6 @@ interface SystemConfig {
     updatedBy?: string;
 }
 
-interface Props {
-    token: string;
-}
-
 /**
  * LogSettings Component
  *
@@ -49,12 +45,10 @@ interface Props {
  * 5. Component shows success/error feedback
  *
  * **Security:**
- * Requires admin token authentication via X-Admin-Token header.
- *
- * @param {Props} props - Component props
- * @param {string} props.token - Admin authentication token for API requests
+ * Authorization rides the same-origin Better Auth session cookie;
+ * the backend `requireAdmin` middleware resolves it per request.
  */
-export function LogSettings({ token }: Props) {
+export function LogSettings() {
     const [config, setConfig] = useState<SystemConfig | null>(null);
     const [selectedLevel, setSelectedLevel] = useState<LogLevelName>('info');
     const [loading, setLoading] = useState(true);
@@ -78,10 +72,7 @@ export function LogSettings({ token }: Props) {
         try {
             const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
                 method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': token
-                }
+                headers: { 'Content-Type': 'application/json' }
             });
 
             if (!response.ok) {
@@ -120,10 +111,7 @@ export function LogSettings({ token }: Props) {
         try {
             const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
                 method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': token
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ logLevel: selectedLevel })
             });
 
@@ -153,7 +141,8 @@ export function LogSettings({ token }: Props) {
     // Fetch config on mount
     useEffect(() => {
         void fetchConfig();
-    }, [token]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Check if current selection differs from saved config
     const hasChanges = config && selectedLevel !== config.logLevel;

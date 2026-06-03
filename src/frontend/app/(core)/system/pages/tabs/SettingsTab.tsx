@@ -7,16 +7,12 @@ import { Save } from 'lucide-react';
 import type { IPageSettings } from '@/types';
 import styles from './SettingsTab.module.css';
 
-interface SettingsTabProps {
-    token: string;
-}
-
 /**
  * Pages settings — pages-only concerns. Currently the only page-level
  * setting is the route blacklist that prevents custom slugs from shadowing
  * core URLs. File-upload policy lives at /system/files.
  */
-export function SettingsTab({ token }: SettingsTabProps) {
+export function SettingsTab() {
     const [settings, setSettings] = useState<IPageSettings | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -28,10 +24,7 @@ export function SettingsTab({ token }: SettingsTabProps) {
     const fetchSettings = useCallback(async () => {
         try {
             const response = await fetch('/api/admin/pages/settings', {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-admin-token': token
-                }
+                headers: { 'Content-Type': 'application/json' }
             });
 
             if (!response.ok) {
@@ -47,7 +40,7 @@ export function SettingsTab({ token }: SettingsTabProps) {
         } finally {
             setLoading(false);
         }
-    }, [token]);
+    }, []);
 
     const saveSettings = async () => {
         setSaving(true);
@@ -66,10 +59,7 @@ export function SettingsTab({ token }: SettingsTabProps) {
 
             const response = await fetch('/api/admin/pages/settings', {
                 method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-admin-token': token
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(updates)
             });
 

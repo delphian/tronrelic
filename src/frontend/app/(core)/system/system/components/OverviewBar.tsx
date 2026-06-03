@@ -6,10 +6,6 @@ import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { cn } from '../../../../../lib/cn';
 import styles from './OverviewBar.module.scss';
 
-interface Props {
-    token: string;
-}
-
 type Status = 'ok' | 'warn' | 'down' | 'idle' | 'loading';
 
 interface SystemTile {
@@ -68,24 +64,23 @@ interface AggregateWebSocketStats {
  * live even with every section collapsed, which is the entire reason
  * for its existence.
  */
-export function OverviewBar({ token }: Props) {
+export function OverviewBar() {
     const runtimeConfig = getRuntimeConfig();
     const [tiles, setTiles] = useState<SystemTile[]>(initialTiles());
     const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
     const fetchAll = useCallback(async () => {
         const apiUrl = runtimeConfig.apiUrl;
-        const headers = { 'X-Admin-Token': token };
 
         const [redisRes, serverRes, chainStatusRes, chainMetricsRes, mongoRes, clickhouseRes, websocketsRes] =
             await Promise.allSettled([
-                fetch(`${apiUrl}/admin/system/health/redis`, { headers }).then((r) => r.json()),
-                fetch(`${apiUrl}/admin/system/health/server`, { headers }).then((r) => r.json()),
-                fetch(`${apiUrl}/admin/system/blockchain/status`, { headers }).then((r) => r.json()),
-                fetch(`${apiUrl}/admin/system/blockchain/metrics`, { headers }).then((r) => r.json()),
-                fetch(`${apiUrl}/admin/system/health/database`, { headers }).then((r) => r.json()),
-                fetch(`${apiUrl}/admin/system/health/clickhouse`, { headers }).then((r) => r.json()),
-                fetch(`${apiUrl}/admin/system/websockets/aggregate`, { headers }).then((r) => r.json())
+                fetch(`${apiUrl}/admin/system/health/redis`).then((r) => r.json()),
+                fetch(`${apiUrl}/admin/system/health/server`).then((r) => r.json()),
+                fetch(`${apiUrl}/admin/system/blockchain/status`).then((r) => r.json()),
+                fetch(`${apiUrl}/admin/system/blockchain/metrics`).then((r) => r.json()),
+                fetch(`${apiUrl}/admin/system/health/database`).then((r) => r.json()),
+                fetch(`${apiUrl}/admin/system/health/clickhouse`).then((r) => r.json()),
+                fetch(`${apiUrl}/admin/system/websockets/aggregate`).then((r) => r.json())
             ]);
 
         const redis = redisRes.status === 'fulfilled' ? (redisRes.value.status as RedisStatus | null) : null;
@@ -105,7 +100,7 @@ export function OverviewBar({ token }: Props) {
             buildClickHouseTile(clickhouse)
         ]);
         setLastUpdated(new Date().toISOString());
-    }, [token, runtimeConfig.apiUrl]);
+    }, [runtimeConfig.apiUrl]);
 
     useEffect(() => {
         void fetchAll();

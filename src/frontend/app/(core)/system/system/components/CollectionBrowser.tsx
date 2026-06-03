@@ -49,11 +49,7 @@ interface IPaginatedDocuments {
     hasPrevPage: boolean;
 }
 
-interface CollectionBrowserProps {
-    token: string;
-}
-
-export function CollectionBrowser({ token }: CollectionBrowserProps) {
+export function CollectionBrowser() {
     const [stats, setStats] = useState<IDatabaseStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -65,18 +61,14 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
     const { push: pushToast } = useToast();
     const runtimeConfig = getRuntimeConfig();
 
-    // SystemAuthGate guarantees a non-empty token at this depth, so the
-    // fetch helpers do not gate on token. Gating without resetting the
-    // loading flags would strand the panel in a permanent loading state.
+    // SystemAuthGate guarantees an admin session at this depth; the
+    // same-origin Better Auth cookie authorizes every request.
 
     const fetchStats = useCallback(async () => {
         try {
             setLoading(true);
             const response = await fetch(`${runtimeConfig.apiUrl}/admin/database/stats`, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': token
-                }
+                headers: { 'Content-Type': 'application/json' }
             });
 
             if (!response.ok) {
@@ -91,7 +83,7 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
         } finally {
             setLoading(false);
         }
-    }, [token, runtimeConfig.apiUrl]);
+    }, [runtimeConfig.apiUrl]);
 
     const fetchDocuments = useCallback(async (collectionName: string, page: number = 1) => {
         try {
@@ -99,10 +91,7 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
             const response = await fetch(
                 `${runtimeConfig.apiUrl}/admin/database/collections/${collectionName}/documents?page=${page}&limit=10&sort=-_id`,
                 {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Admin-Token': token
-                    }
+                    headers: { 'Content-Type': 'application/json' }
                 }
             );
 
@@ -117,7 +106,7 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
         } finally {
             setLoadingDocuments(false);
         }
-    }, [token, runtimeConfig.apiUrl]);
+    }, [runtimeConfig.apiUrl]);
 
     useEffect(() => {
         void fetchStats();
@@ -152,10 +141,7 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
                 `${runtimeConfig.apiUrl}/admin/database/collections/${collectionName}/documents/${encodeURIComponent(documentId)}`,
                 {
                     method: 'DELETE',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Admin-Token': token
-                    }
+                    headers: { 'Content-Type': 'application/json' }
                 }
             );
 
@@ -187,7 +173,7 @@ export function CollectionBrowser({ token }: CollectionBrowserProps) {
         } finally {
             setDeletingDocumentId(null);
         }
-    }, [token, pushToast, expandedDocumentId, documents?.page, fetchDocuments, fetchStats, runtimeConfig.apiUrl]);
+    }, [pushToast, expandedDocumentId, documents?.page, fetchDocuments, fetchStats, runtimeConfig.apiUrl]);
 
     const sortedCollections = useMemo(
         () => [...(stats?.collections ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
