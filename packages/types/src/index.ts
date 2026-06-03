@@ -5,6 +5,10 @@ export { definePlugin } from './plugin/index.js';
 export type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags } from './transaction/index.js';
 export { ProcessedTransaction } from './transaction/index.js';
 export type { IHttpRequest, IHttpResponse, IHttpNext } from './http/index.js';
+// DRAFT (tronrelic#289) — proposed core-owned HTTP client contract; additive and
+// unwired. Will replace the leaked axios AxiosInstance on IPluginContext.http
+// after the consumer review tracked in the issue.
+export type { IHttpClient, IHttpRequestConfig, IHttpResponseEnvelope, HttpResponseType } from './http/index.js';
 export type { IAuthSession, IAuthSessionUser, IHasAuthSession } from './auth/index.js';
 export { ADMIN_GROUP_ID, isLoggedIn, isAnonymous, isInGroup, isAdmin, hasPrimaryWallet } from './auth/index.js';
 // ILogger removed - use ISystemLogService instead (exported from './system-log/index.js')
