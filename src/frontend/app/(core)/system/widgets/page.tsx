@@ -935,10 +935,13 @@ function findConfigSchema(snapshot: IWidgetTypeSnapshot | null, typeId: string):
 
 /**
  * Flatten a widget type's `configSchema` into the ordered list of
- * editable fields the form renders. Only top-level object properties
- * with object sub-schemas are surfaced; boolean sub-schemas (JSON
- * Schema's `true`/`false` shorthand) carry no field metadata and are
- * skipped. Property insertion order is preserved.
+ * editable fields the form renders. Only top-level properties the form
+ * can represent as a scalar control — boolean, enum, number, or string —
+ * are surfaced. Boolean sub-schemas (JSON Schema's `true`/`false`
+ * shorthand) carry no metadata, and `object`/`array` properties cannot
+ * round-trip through a scalar input, so both are skipped and remain
+ * editable only through the raw-JSON editor. Property insertion order is
+ * preserved.
  *
  * @param schema - The widget type's instanceConfig schema, if any
  * @returns Ordered field descriptors (empty when no schema fields apply)
@@ -951,6 +954,10 @@ function extractConfigFields(schema: JSONSchema7 | undefined): ConfigFieldDescri
     const fields: ConfigFieldDescriptor[] = [];
     for (const [key, definition] of Object.entries(schema.properties as Record<string, JSONSchema7Definition>)) {
         if (typeof definition === 'boolean') {
+            continue;
+        }
+        const propertyType = primaryType(definition);
+        if (propertyType === 'object' || propertyType === 'array') {
             continue;
         }
         fields.push({
@@ -998,10 +1005,13 @@ function coerceInitialConfig(
 
 /**
  * Serialize the form's working values into the instanceConfig object to
- * persist, applying the same constraints the server's AJV validation
- * enforces so failures surface inline before the request. Booleans are
- * always emitted; optional empty strings/numbers are omitted; required
- * empties, non-numbers, non-integers, and out-of-range values error.
+ * persist, applying a subset of the server's AJV constraints — required
+ * presence, number/integer typing, and min/max range — so the common
+ * failures surface inline before the request. The server's AJV remains
+ * authoritative for everything else (string `minLength`/`pattern`, enum
+ * membership, and so on). Booleans are always emitted; optional empty
+ * strings/numbers are omitted; required empties, non-numbers,
+ * non-integers, and out-of-range values error.
  *
  * @param fields - Field descriptors for the active schema
  * @param value - Current working values
@@ -1092,20 +1102,31 @@ function InstanceConfigField({
     }
 
     if (control === 'enum') {
-        const options = (field.schema.enum ?? []).filter((option): option is string => typeof option === 'string');
+        // Render every enum member, not just string ones: a numeric or
+        // boolean enum is displayed by its String() form but mapped back
+        // to its original typed value on change, so the persisted config
+        // carries the type the server's AJV schema expects.
+        const rawEnum = field.schema.enum ?? [];
         return (
             <div className={styles.field}>
                 <label htmlFor={fieldId}>{field.label}{marker}</label>
                 <select
                     id={fieldId}
                     className={styles.select}
-                    value={typeof value === 'string' ? value : ''}
-                    onChange={(e) => onChange(e.target.value)}
+                    value={value !== undefined && value !== null ? String(value) : ''}
+                    onChange={(e) => {
+                        const selected = e.target.value;
+                        const match = rawEnum.find(option => String(option) === selected);
+                        onChange(match !== undefined ? match : selected);
+                    }}
                     disabled={disabled}
                     aria-describedby={hintId}
                 >
                     {!field.required && <option value="">(default)</option>}
-                    {options.map(option => <option key={option} value={option}>{option}</option>)}
+                    {rawEnum.map(option => {
+                        const optionValue = String(option);
+                        return <option key={optionValue} value={optionValue}>{optionValue}</option>;
+                    })}
                 </select>
                 {field.description && <span id={hintId} className={styles.field_hint}>{field.description}</span>}
             </div>
@@ -1125,7 +1146,20 @@ function InstanceConfigField({
                     max={max}
                     step={primaryType(field.schema) === 'integer' ? 1 : undefined}
                     value={value === undefined || value === null || value === '' ? '' : String(value)}
-                    onChange={(e) => onChange(e.target.value === '' ? '' : Number(e.target.value))}
+                    onChange={(e) => {
+                        // Keep a clean parse as a number so save/validation
+                        // and the raw-JSON view see the right type, but hold
+                        // transient unparseable input (`-`, `1e`) as raw text
+                        // rather than storing NaN, which would render as the
+                        // literal "NaN" and trap the field.
+                        const text = e.target.value;
+                        if (text === '') {
+                            onChange('');
+                            return;
+                        }
+                        const num = Number(text);
+                        onChange(Number.isNaN(num) ? text : num);
+                    }}
                     disabled={disabled}
                     aria-describedby={hintId}
                 />
@@ -1211,8 +1245,20 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
      * so the operator can hand-fix whatever is set).
      */
     const enterRawMode = useCallback(() => {
-        const built = buildStructuredConfig(configFields, configValue);
-        setRawText(JSON.stringify(built.value ?? {}, null, 2));
+        // Best-effort serialize the working values straight to JSON,
+        // bypassing buildStructuredConfig's validation: a half-filled or
+        // out-of-range form must survive the switch so the operator can
+        // hand-fix it, rather than collapsing to `{}` on the error path.
+        const draft: Record<string, unknown> = {};
+        for (const field of configFields) {
+            const raw = configValue[field.key];
+            if (fieldControlType(field.schema) === 'boolean') {
+                draft[field.key] = Boolean(raw);
+            } else if (raw !== undefined && raw !== null && raw !== '') {
+                draft[field.key] = raw;
+            }
+        }
+        setRawText(JSON.stringify(draft, null, 2));
         setInstanceConfigError(null);
         setRawMode(true);
     }, [configFields, configValue]);
