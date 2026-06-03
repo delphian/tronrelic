@@ -11,45 +11,16 @@
  * DO NOT rely on this shape yet. Per tronrelic#289, an extensive review of
  * every `context.http` consumer must finalize the request-config/response
  * surface before `IPluginContext.http` is switched to `IHttpClient`. The
- * fields below are a provisional union drawn from current consumers
- * (trp-ai-assistant streaming + abort + family, trp-telegram-bot multipart +
- * body-size caps, trp-resource-markets generics) and are expected to change.
+ * supporting types (IHttpRequestConfig, IHttpResponseEnvelope, HttpResponseType)
+ * are a provisional union drawn from current consumers (trp-ai-assistant
+ * streaming + abort + family, trp-telegram-bot multipart + body-size caps,
+ * trp-resource-markets generics) and are expected to change.
  *
  * Interim convention until the switch lands: type injected http as
  * `IPluginContext['http']`, not `import type { AxiosInstance } from 'axios'`.
  */
-
-/** Response body interpretation requested from the transport. */
-export type HttpResponseType = 'json' | 'text' | 'stream' | 'arraybuffer';
-
-/**
- * Per-request options. Provisional — the union of what current consumers pass
- * to axios. Kept loose pending the tronrelic#289 review.
- */
-export interface IHttpRequestConfig {
-    /** Request headers. */
-    headers?: Record<string, string>;
-    /** Query string parameters. */
-    params?: Record<string, string | number | boolean>;
-    /** Per-request timeout in milliseconds. */
-    timeout?: number;
-    /** How to interpret/return the response body. */
-    responseType?: HttpResponseType;
-    /** Cancellation signal; aborting cancels the in-flight request. */
-    signal?: AbortSignal;
-    /** Cap on accepted response size, in bytes. */
-    maxContentLength?: number;
-    /** Cap on sent request body size, in bytes. */
-    maxBodyLength?: number;
-    /** IP family hint (e.g. 4 to force IPv4). */
-    family?: number;
-}
-
-/** Minimal response envelope — only `data` is contractually guaranteed. */
-export interface IHttpResponseEnvelope<T = unknown> {
-    /** Parsed (or stream/text/buffer) response body, per `responseType`. */
-    data: T;
-}
+import type { IHttpRequestConfig } from './IHttpRequestConfig.js';
+import type { IHttpResponseEnvelope } from './IHttpResponseEnvelope.js';
 
 /**
  * The outbound HTTP surface plugins and modules consume via `context.http`.
