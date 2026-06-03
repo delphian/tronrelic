@@ -194,7 +194,7 @@ function toDate(value: string) {
  */
 function defaultTooltipDateFormatter(value: Date) {
     const date = value.toLocaleDateString();
-    const time = value.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    const time = value.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
     return `${date} ${time}`;
 }
 
@@ -544,8 +544,13 @@ export function BarChart({
     // When the chart is too narrow to fit the box plus both gutters, fall back to
     // centering (the box itself caps at the chart width via `max-width: 100%`).
     let tooltipLeftPx = 0;
+    let tooltipTopPx = 0;
     if (tooltip) {
+        // The SVG scales uniformly to its container, so both axes share the
+        // factor chartWidthPx / width. tooltip.x and tooltip.y are viewBox units;
+        // multiply both by chartWidthPx / width to land in on-screen CSS pixels.
         const centerPx = (tooltip.x / width) * tooltip.chartWidthPx;
+        tooltipTopPx = (tooltip.y / width) * tooltip.chartWidthPx;
         const halfWidth = tooltipWidth / 2;
         const minLeft = TOOLTIP_EDGE_GUTTER + halfWidth;
         const maxLeft = tooltip.chartWidthPx - TOOLTIP_EDGE_GUTTER - halfWidth;
@@ -629,7 +634,10 @@ export function BarChart({
                 <div
                     ref={setTooltipNode}
                     className={styles.tooltip}
-                    style={{ left: `${tooltipLeftPx}px`, top: tooltip.y }}
+                    // Hide the single pre-measurement frame: until the effect reads
+                    // the box width, the clamp ignores its half-width and an
+                    // edge-hovered tooltip would briefly overflow before correcting.
+                    style={{ left: `${tooltipLeftPx}px`, top: `${tooltipTopPx}px`, opacity: tooltipWidth === 0 ? 0 : 1 }}
                     role="presentation"
                 >
                     <span className={styles.tooltip__label}>{tooltipDateFormatter(tooltip.date)}</span>
