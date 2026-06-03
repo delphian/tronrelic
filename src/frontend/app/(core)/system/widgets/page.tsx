@@ -51,6 +51,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { IZoneSnapshot, IWidgetTypeSnapshot } from '@/types';
+import type { JSONSchema7, JSONSchema7Definition } from 'json-schema';
 
 import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
@@ -838,6 +839,351 @@ function PlacementBubble({
 }
 
 /* ------------------------------------------------------------------ */
+/* Instance-config schema-driven form                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A single operator-editable instanceConfig field, derived from one
+ * property of a widget type's `configSchema`.
+ */
+interface ConfigFieldDescriptor {
+    /** Property name in the schema (and key in the emitted config). */
+    key: string;
+    /** The property's own JSON Schema sub-document. */
+    schema: JSONSchema7;
+    /** True when the schema lists this key under `required`. */
+    required: boolean;
+    /** Human label — the schema `title` or a humanized key. */
+    label: string;
+    /** Optional help text from the schema `description`. */
+    description?: string;
+}
+
+/**
+ * Convert a property key into a readable label when the schema gives no
+ * explicit `title` — splits camelCase and snake/kebab runs, then
+ * sentence-cases the result (`showUndelegated` → "Show undelegated").
+ *
+ * @param key - Raw schema property name
+ * @returns Sentence-cased label
+ */
+function humanizeKey(key: string): string {
+    const spaced = key
+        .replace(/[_-]+/g, ' ')
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .trim()
+        .toLowerCase();
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/**
+ * Resolve a schema property's primary scalar type, ignoring a nullable
+ * `['string', 'null']` union by taking the first non-null member.
+ *
+ * @param schema - Property schema
+ * @returns The primary type name, or undefined when untyped
+ */
+function primaryType(schema: JSONSchema7): string | undefined {
+    const type = schema.type;
+    return Array.isArray(type) ? type.find(member => member !== 'null') : type;
+}
+
+/**
+ * Map a property schema to the editor control it renders as. Enums take
+ * precedence over the raw string type so a constrained string becomes a
+ * select rather than a free-text input.
+ *
+ * @param schema - Property schema
+ * @returns The control kind to render
+ */
+function fieldControlType(schema: JSONSchema7): 'boolean' | 'enum' | 'number' | 'text' {
+    const type = primaryType(schema);
+    if (type === 'boolean') {
+        return 'boolean';
+    }
+    if (Array.isArray(schema.enum) && schema.enum.length > 0) {
+        return 'enum';
+    }
+    if (type === 'integer' || type === 'number') {
+        return 'number';
+    }
+    return 'text';
+}
+
+/**
+ * Locate the `configSchema` declared by a widget type within the
+ * type-snapshot, by id. Returns undefined when the type declares none
+ * (the editor then falls back to a free-form JSON object).
+ *
+ * @param snapshot - Widget-type snapshot from the admin API
+ * @param typeId - Selected widget type id
+ * @returns The type's JSON Schema, or undefined
+ */
+function findConfigSchema(snapshot: IWidgetTypeSnapshot | null, typeId: string): JSONSchema7 | undefined {
+    if (!snapshot || !typeId) {
+        return undefined;
+    }
+    for (const group of snapshot.groups) {
+        for (const type of group.types) {
+            if (type.id === typeId) {
+                return type.configSchema;
+            }
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Flatten a widget type's `configSchema` into the ordered list of
+ * editable fields the form renders. Only top-level properties the form
+ * can represent as a scalar control — boolean, enum, number, or string —
+ * are surfaced. Boolean sub-schemas (JSON Schema's `true`/`false`
+ * shorthand) carry no metadata, and `object`/`array` properties cannot
+ * round-trip through a scalar input, so both are skipped and remain
+ * editable only through the raw-JSON editor. Property insertion order is
+ * preserved.
+ *
+ * @param schema - The widget type's instanceConfig schema, if any
+ * @returns Ordered field descriptors (empty when no schema fields apply)
+ */
+function extractConfigFields(schema: JSONSchema7 | undefined): ConfigFieldDescriptor[] {
+    if (!schema || primaryType(schema) !== 'object' || !schema.properties) {
+        return [];
+    }
+    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+    const fields: ConfigFieldDescriptor[] = [];
+    for (const [key, definition] of Object.entries(schema.properties as Record<string, JSONSchema7Definition>)) {
+        if (typeof definition === 'boolean') {
+            continue;
+        }
+        const propertyType = primaryType(definition);
+        if (propertyType === 'object' || propertyType === 'array') {
+            continue;
+        }
+        fields.push({
+            key,
+            schema: definition,
+            required: required.has(key),
+            label: typeof definition.title === 'string' ? definition.title : humanizeKey(key),
+            description: typeof definition.description === 'string' ? definition.description : undefined
+        });
+    }
+    return fields;
+}
+
+/**
+ * Build the form's working values from any existing instanceConfig,
+ * falling back to each field's schema `default`. Numbers with no value
+ * become an empty string so the numeric input renders blank rather than
+ * `NaN`; strings/enums default to an empty string; booleans to false.
+ *
+ * @param fields - Field descriptors for the active schema
+ * @param existing - Saved instanceConfig (edit mode) or undefined
+ * @returns Keyed working values for the controlled form
+ */
+function coerceInitialConfig(
+    fields: ConfigFieldDescriptor[],
+    existing: Record<string, unknown> | undefined
+): Record<string, unknown> {
+    const value: Record<string, unknown> = {};
+    for (const field of fields) {
+        const provided = existing ? existing[field.key] : undefined;
+        const fallback = field.schema.default;
+        const control = fieldControlType(field.schema);
+        if (control === 'boolean') {
+            value[field.key] = Boolean(provided ?? fallback ?? false);
+        } else if (control === 'number') {
+            const candidate = provided ?? fallback;
+            value[field.key] = typeof candidate === 'number' ? candidate : '';
+        } else {
+            const candidate = provided ?? fallback;
+            value[field.key] = typeof candidate === 'string' ? candidate : '';
+        }
+    }
+    return value;
+}
+
+/**
+ * Serialize the form's working values into the instanceConfig object to
+ * persist, applying a subset of the server's AJV constraints — required
+ * presence, number/integer typing, and min/max range — so the common
+ * failures surface inline before the request. The server's AJV remains
+ * authoritative for everything else (string `minLength`/`pattern`, enum
+ * membership, and so on). Booleans are always emitted; optional empty
+ * strings/numbers are omitted; required empties, non-numbers,
+ * non-integers, and out-of-range values error.
+ *
+ * @param fields - Field descriptors for the active schema
+ * @param value - Current working values
+ * @returns The config object, or an error message to display
+ */
+function buildStructuredConfig(
+    fields: ConfigFieldDescriptor[],
+    value: Record<string, unknown>
+): { value?: Record<string, unknown>; error?: string } {
+    const result: Record<string, unknown> = {};
+    for (const field of fields) {
+        const control = fieldControlType(field.schema);
+        const raw = value[field.key];
+        if (control === 'boolean') {
+            result[field.key] = Boolean(raw);
+            continue;
+        }
+        const isEmpty = raw === undefined || raw === null || raw === '';
+        if (isEmpty) {
+            if (field.required) {
+                return { error: `${field.label} is required.` };
+            }
+            continue;
+        }
+        if (control === 'number') {
+            const num = Number(raw);
+            if (Number.isNaN(num)) {
+                return { error: `${field.label} must be a number.` };
+            }
+            if (primaryType(field.schema) === 'integer' && !Number.isInteger(num)) {
+                return { error: `${field.label} must be a whole number.` };
+            }
+            if (typeof field.schema.minimum === 'number' && num < field.schema.minimum) {
+                return { error: `${field.label} must be at least ${field.schema.minimum}.` };
+            }
+            if (typeof field.schema.maximum === 'number' && num > field.schema.maximum) {
+                return { error: `${field.label} must be at most ${field.schema.maximum}.` };
+            }
+            result[field.key] = num;
+        } else {
+            result[field.key] = raw;
+        }
+    }
+    return { value: result };
+}
+
+/**
+ * Renders one schema-derived instanceConfig field with the control its
+ * type implies: a Switch for booleans, a select for enums, a numeric
+ * Input for integer/number (with min/max/step), and a text Input
+ * otherwise. The label carries the schema title and a required marker;
+ * the description becomes help text.
+ *
+ * @param props - The field descriptor, its current value, change handler, and disabled flag
+ */
+function InstanceConfigField({
+    field,
+    value,
+    disabled,
+    onChange
+}: {
+    field: ConfigFieldDescriptor;
+    value: unknown;
+    disabled: boolean;
+    onChange: (next: unknown) => void;
+}) {
+    const control = fieldControlType(field.schema);
+    const fieldId = `wp-cfg-${field.key}`;
+    const hintId = field.description ? `${fieldId}-hint` : undefined;
+    const marker = field.required ? <span className={styles.config_required} aria-hidden> *</span> : null;
+
+    if (control === 'boolean') {
+        return (
+            <div className={styles.field}>
+                <label className={styles.inline_toggle}>
+                    <Switch
+                        size="sm"
+                        on={Boolean(value)}
+                        onChange={onChange}
+                        disabled={disabled}
+                        aria-label={field.label}
+                    />
+                    <span>{field.label}{marker}</span>
+                </label>
+                {field.description && <span className={styles.field_hint}>{field.description}</span>}
+            </div>
+        );
+    }
+
+    if (control === 'enum') {
+        // Render every enum member, not just string ones: a numeric or
+        // boolean enum is displayed by its String() form but mapped back
+        // to its original typed value on change, so the persisted config
+        // carries the type the server's AJV schema expects.
+        const rawEnum = field.schema.enum ?? [];
+        return (
+            <div className={styles.field}>
+                <label htmlFor={fieldId}>{field.label}{marker}</label>
+                <select
+                    id={fieldId}
+                    className={styles.select}
+                    value={value !== undefined && value !== null ? String(value) : ''}
+                    onChange={(e) => {
+                        const selected = e.target.value;
+                        const match = rawEnum.find(option => String(option) === selected);
+                        onChange(match !== undefined ? match : selected);
+                    }}
+                    disabled={disabled}
+                    aria-describedby={hintId}
+                >
+                    {!field.required && <option value="">(default)</option>}
+                    {rawEnum.map(option => {
+                        const optionValue = String(option);
+                        return <option key={optionValue} value={optionValue}>{optionValue}</option>;
+                    })}
+                </select>
+                {field.description && <span id={hintId} className={styles.field_hint}>{field.description}</span>}
+            </div>
+        );
+    }
+
+    if (control === 'number') {
+        const min = typeof field.schema.minimum === 'number' ? field.schema.minimum : undefined;
+        const max = typeof field.schema.maximum === 'number' ? field.schema.maximum : undefined;
+        return (
+            <div className={styles.field}>
+                <label htmlFor={fieldId}>{field.label}{marker}</label>
+                <Input
+                    id={fieldId}
+                    type="number"
+                    min={min}
+                    max={max}
+                    step={primaryType(field.schema) === 'integer' ? 1 : undefined}
+                    value={value === undefined || value === null || value === '' ? '' : String(value)}
+                    onChange={(e) => {
+                        // Keep a clean parse as a number so save/validation
+                        // and the raw-JSON view see the right type, but hold
+                        // transient unparseable input (`-`, `1e`) as raw text
+                        // rather than storing NaN, which would render as the
+                        // literal "NaN" and trap the field.
+                        const text = e.target.value;
+                        if (text === '') {
+                            onChange('');
+                            return;
+                        }
+                        const num = Number(text);
+                        onChange(Number.isNaN(num) ? text : num);
+                    }}
+                    disabled={disabled}
+                    aria-describedby={hintId}
+                />
+                {field.description && <span id={hintId} className={styles.field_hint}>{field.description}</span>}
+            </div>
+        );
+    }
+
+    return (
+        <div className={styles.field}>
+            <label htmlFor={fieldId}>{field.label}{marker}</label>
+            <Input
+                id={fieldId}
+                value={typeof value === 'string' ? value : ''}
+                onChange={(e) => onChange(e.target.value)}
+                disabled={disabled}
+                aria-describedby={hintId}
+            />
+            {field.description && <span id={hintId} className={styles.field_hint}>{field.description}</span>}
+        </div>
+    );
+}
+
+/* ------------------------------------------------------------------ */
 /* Placement form (create + edit)                                      */
 /* ------------------------------------------------------------------ */
 
@@ -860,16 +1206,89 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
     const [enabled, setEnabled] = useState<boolean>(initial?.enabled ?? true);
     const [saving, setSaving] = useState<boolean>(false);
     const [routeError, setRouteError] = useState<string | null>(null);
-    // Per-placement instanceConfig surface. Pre-populate edit-mode rows
-    // with the existing config (pretty-printed); leave create-mode blank
-    // so an operator who doesn't need overrides just submits empty —
-    // the parser treats blank as "no instanceConfig in payload".
-    const [instanceConfigText, setInstanceConfigText] = useState<string>(
-        initial?.instanceConfig
-            ? JSON.stringify(initial.instanceConfig, null, 2)
-            : ''
+
+    // Per-placement instanceConfig surface, driven by the selected
+    // widget type's declared JSON Schema (carried in the type snapshot).
+    // Operators edit typed fields by default; an "Edit as JSON" escape
+    // hatch exposes the raw object for keys the form cannot represent.
+    // Types with no schema fall straight through to the raw editor.
+    const selectedSchema = useMemo(() => findConfigSchema(types, typeId), [types, typeId]);
+    const configFields = useMemo(() => extractConfigFields(selectedSchema), [selectedSchema]);
+    const hasSchemaFields = configFields.length > 0;
+
+    const [configValue, setConfigValue] = useState<Record<string, unknown>>(
+        () => coerceInitialConfig(configFields, initial?.instanceConfig as Record<string, unknown> | undefined)
+    );
+    const [rawMode, setRawMode] = useState<boolean>(() => !hasSchemaFields);
+    const [rawText, setRawText] = useState<string>(
+        () => (initial?.instanceConfig ? JSON.stringify(initial.instanceConfig, null, 2) : '')
     );
     const [instanceConfigError, setInstanceConfigError] = useState<string | null>(null);
+
+    // Create mode lets the operator switch widget types, which swaps the
+    // active schema — reset the config surface to the new schema's
+    // defaults and prefer its form. Edit mode pins the type, so the
+    // mount-time initial values stand and this never fires.
+    useEffect(() => {
+        if (mode !== 'create') {
+            return;
+        }
+        setConfigValue(coerceInitialConfig(configFields, undefined));
+        setRawMode(configFields.length === 0);
+        setRawText('');
+        setInstanceConfigError(null);
+    }, [mode, configFields]);
+
+    /**
+     * Switch the config editor into raw-JSON mode, seeding the textarea
+     * with the current structured values (best-effort; ignores validation
+     * so the operator can hand-fix whatever is set).
+     */
+    const enterRawMode = useCallback(() => {
+        // Best-effort serialize the working values straight to JSON,
+        // bypassing buildStructuredConfig's validation: a half-filled or
+        // out-of-range form must survive the switch so the operator can
+        // hand-fix it, rather than collapsing to `{}` on the error path.
+        const draft: Record<string, unknown> = {};
+        for (const field of configFields) {
+            const raw = configValue[field.key];
+            if (fieldControlType(field.schema) === 'boolean') {
+                draft[field.key] = Boolean(raw);
+            } else if (raw !== undefined && raw !== null && raw !== '') {
+                draft[field.key] = raw;
+            }
+        }
+        setRawText(JSON.stringify(draft, null, 2));
+        setInstanceConfigError(null);
+        setRawMode(true);
+    }, [configFields, configValue]);
+
+    /**
+     * Switch back to the structured form, parsing the raw JSON into the
+     * working values. Rejects malformed JSON and non-object payloads,
+     * keeping the operator in raw mode with an inline error.
+     */
+    const exitRawMode = useCallback(() => {
+        const trimmed = rawText.trim();
+        if (trimmed.length > 0) {
+            let parsed: unknown;
+            try {
+                parsed = JSON.parse(trimmed);
+            } catch (err) {
+                setInstanceConfigError(err instanceof Error ? `Invalid JSON: ${err.message}` : 'Invalid JSON');
+                return;
+            }
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                setInstanceConfigError('Instance config must be a JSON object');
+                return;
+            }
+            setConfigValue(coerceInitialConfig(configFields, parsed as Record<string, unknown>));
+        } else {
+            setConfigValue(coerceInitialConfig(configFields, undefined));
+        }
+        setInstanceConfigError(null);
+        setRawMode(false);
+    }, [configFields, rawText]);
 
     const handleAddRoute = useCallback(() => {
         const trimmed = routeDraft.trim();
@@ -909,37 +1328,53 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
         async (e: FormEvent) => {
             e.preventDefault();
 
-            // Parse instanceConfig out of the textarea. Any non-empty
-            // input must parse to a plain JSON object — array and
-            // primitive parses are rejected client-side rather than
-            // relying on the server's shape-only guard so the operator
-            // sees the failure inline.
+            // Resolve instanceConfig from whichever editor is active.
             //
-            // Empty textarea has different semantics by mode:
+            // Raw mode: any non-empty input must parse to a plain JSON
+            // object — array and primitive parses are rejected
+            // client-side rather than relying on the server's shape-only
+            // guard so the operator sees the failure inline.
+            //
+            // Form mode: build the object from the typed fields, applying
+            // the schema's required/range constraints inline.
+            //
+            // An empty result has different semantics by mode:
             //   - create → omit (no overrides; defaults apply)
-            //   - edit   → send `{}` to explicitly clear overrides on
-            //              the existing row. Omitting the field on
-            //              patch would leave the prior value intact,
-            //              contradicting the "Leave empty for no
-            //              overrides" hint shown beneath the field.
-            const rawConfig = instanceConfigText.trim();
+            //   - edit   → send `{}` to explicitly clear overrides on the
+            //              existing row. Omitting the field on patch would
+            //              leave the prior value intact.
             let parsedInstanceConfig: Record<string, unknown> | undefined;
-            if (rawConfig.length > 0) {
-                try {
-                    const candidate = JSON.parse(rawConfig);
-                    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
-                        setInstanceConfigError('Instance config must be a JSON object');
+            if (rawMode) {
+                const rawConfig = rawText.trim();
+                if (rawConfig.length > 0) {
+                    try {
+                        const candidate = JSON.parse(rawConfig);
+                        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+                            setInstanceConfigError('Instance config must be a JSON object');
+                            return;
+                        }
+                        parsedInstanceConfig = candidate as Record<string, unknown>;
+                    } catch (err) {
+                        setInstanceConfigError(
+                            err instanceof Error ? `Invalid JSON: ${err.message}` : 'Invalid JSON'
+                        );
                         return;
                     }
-                    parsedInstanceConfig = candidate as Record<string, unknown>;
-                } catch (err) {
-                    setInstanceConfigError(
-                        err instanceof Error ? `Invalid JSON: ${err.message}` : 'Invalid JSON'
-                    );
+                } else if (mode === 'edit') {
+                    parsedInstanceConfig = {};
+                }
+            } else {
+                const built = buildStructuredConfig(configFields, configValue);
+                if (built.error) {
+                    setInstanceConfigError(built.error);
                     return;
                 }
-            } else if (mode === 'edit') {
-                parsedInstanceConfig = {};
+                const obj = built.value ?? {};
+                if (Object.keys(obj).length === 0) {
+                    parsedInstanceConfig = mode === 'edit' ? {} : undefined;
+                } else {
+                    parsedInstanceConfig = obj;
+                }
             }
             setInstanceConfigError(null);
 
@@ -985,7 +1420,7 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
                 setSaving(false);
             }
         },
-        [enabled, initial?.title, instanceConfigText, mode, onSubmit, order, routes, title, typeId, zoneId]
+        [configFields, configValue, enabled, initial?.title, mode, onSubmit, order, rawMode, rawText, routes, title, typeId, zoneId]
     );
 
     const canSubmit = typeId.length > 0 && zoneId.length > 0;
@@ -1113,23 +1548,55 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
             </div>
 
             <div className={styles.field}>
-                <label htmlFor="wp-instance-config">Instance config</label>
-                <textarea
-                    id="wp-instance-config"
-                    className={styles.textarea}
-                    rows={6}
-                    value={instanceConfigText}
-                    onChange={(e) => { setInstanceConfigText(e.target.value); setInstanceConfigError(null); }}
-                    placeholder='{"maxPosts": 5}'
-                    disabled={saving}
-                    spellCheck={false}
-                    aria-describedby="wp-instance-config-hint"
-                />
+                <div className={styles.config_header}>
+                    <span className={styles.field_label}>Instance config</span>
+                    {hasSchemaFields && (
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            onClick={rawMode ? exitRawMode : enterRawMode}
+                            disabled={saving}
+                        >
+                            {rawMode ? 'Edit with form' : 'Edit as JSON'}
+                        </Button>
+                    )}
+                </div>
+
+                {rawMode ? (
+                    <>
+                        <textarea
+                            id="wp-instance-config"
+                            className={styles.textarea}
+                            rows={6}
+                            value={rawText}
+                            onChange={(e) => { setRawText(e.target.value); setInstanceConfigError(null); }}
+                            placeholder="{}"
+                            disabled={saving}
+                            spellCheck={false}
+                            aria-describedby="wp-instance-config-hint"
+                        />
+                        <span id="wp-instance-config-hint" className={styles.field_hint}>
+                            {hasSchemaFields
+                                ? 'Raw JSON validated against the widget type’s schema on save. Switch back to the form to edit fields individually.'
+                                : 'Optional per-placement JSON object validated against the widget type’s schema on save. Leave empty for no overrides.'}
+                        </span>
+                    </>
+                ) : (
+                    <div className={styles.config_fields}>
+                        {configFields.map(field => (
+                            <InstanceConfigField
+                                key={field.key}
+                                field={field}
+                                value={configValue[field.key]}
+                                disabled={saving}
+                                onChange={(next) => setConfigValue(prev => ({ ...prev, [field.key]: next }))}
+                            />
+                        ))}
+                    </div>
+                )}
+
                 {instanceConfigError && <span className={styles.field_error}>{instanceConfigError}</span>}
-                <span id="wp-instance-config-hint" className={styles.field_hint}>
-                    Optional per-placement JSON object validated against the widget type&apos;s schema
-                    on save. Leave empty for no overrides.
-                </span>
             </div>
 
             <label className={styles.inline_toggle}>

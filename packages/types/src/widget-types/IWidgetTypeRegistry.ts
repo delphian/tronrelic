@@ -15,6 +15,7 @@
  * @module types/widget-types/IWidgetTypeRegistry
  */
 
+import type { JSONSchema7 } from 'json-schema';
 import type { IWidgetType, WidgetTypeRegisterDisposer } from './IWidgetType.js';
 
 /**
@@ -38,6 +39,14 @@ export interface IWidgetTypeSnapshotRecord {
      * be `null` when the runtime cannot resolve a callsite.
      */
     readonly source: string | null;
+    /**
+     * The type's declared JSON Schema Draft 7 for `instanceConfig`,
+     * forwarded verbatim from the descriptor so the placement editor
+     * can render schema-aware form fields and validate operator input
+     * before save. Absent when the type declares no schema (the editor
+     * then falls back to a free-form JSON object).
+     */
+    readonly configSchema?: JSONSchema7;
 }
 
 /**

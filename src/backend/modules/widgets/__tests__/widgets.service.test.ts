@@ -121,6 +121,44 @@ describe('WidgetsService.registerType', () => {
         expect(allTypeIds).toContain('my-plugin:feed');
     });
 
+    it('carries the declared configSchema into the snapshot for the placement editor', () => {
+        const { widgets } = buildWidgetsService();
+        const configSchema = {
+            type: 'object' as const,
+            additionalProperties: false,
+            properties: {
+                maxPosts: { type: 'integer' as const, minimum: 1, maximum: 20, default: 5 }
+            }
+        };
+        widgets.registerType({
+            id: 'my-plugin:configured',
+            label: 'Configured',
+            description: 'Has a config schema',
+            defaultDataFetcher: async () => ({}),
+            configSchema
+        }, 'my-plugin');
+
+        const record = widgets.listTypes().groups
+            .flatMap(g => g.types)
+            .find(t => t.id === 'my-plugin:configured');
+        expect(record?.configSchema).toEqual(configSchema);
+    });
+
+    it('omits configSchema from the snapshot when the type declares none', () => {
+        const { widgets } = buildWidgetsService();
+        widgets.registerType({
+            id: 'my-plugin:plain',
+            label: 'Plain',
+            description: 'No config schema',
+            defaultDataFetcher: async () => ({})
+        }, 'my-plugin');
+
+        const record = widgets.listTypes().groups
+            .flatMap(g => g.types)
+            .find(t => t.id === 'my-plugin:plain');
+        expect(record?.configSchema).toBeUndefined();
+    });
+
     it('same-owner re-registration is a no-op (existing descriptor preserved)', () => {
         const { widgets, logger } = buildWidgetsService();
         widgets.registerType({
