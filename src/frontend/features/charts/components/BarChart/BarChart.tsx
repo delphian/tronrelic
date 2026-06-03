@@ -54,8 +54,15 @@ interface BarChartProps {
     height?: number;
     /** Custom formatter for Y-axis labels and tooltip values */
     yAxisFormatter?: (value: number) => string;
-    /** Custom formatter for X-axis labels and tooltip dates */
+    /** Custom formatter for X-axis tick labels (kept compact — date only by default) */
     xAxisFormatter?: (value: Date) => string;
+    /**
+     * Custom formatter for the tooltip's date heading. Defaults to date plus
+     * hour and minute, so the hovered bucket's time is visible even when the
+     * compact x-axis only shows the day. Tooltip-only (hover, post-hydration),
+     * so locale-dependent time output is hydration-safe here.
+     */
+    tooltipDateFormatter?: (value: Date) => string;
     /** Additional CSS class names */
     className?: string;
     /** Message to show when no data is available */
@@ -144,7 +151,20 @@ interface TooltipState {
     y: number;
     date: Date;
     items: TooltipDatum[];
+    /**
+     * Displayed (CSS pixel) width of the chart at hover time. Captured from the
+     * SVG's bounding box so the tooltip can be clamped into the chart's on-screen
+     * bounds regardless of how the viewBox is scaled to its container.
+     */
+    chartWidthPx: number;
 }
+
+/**
+ * Gutter, in CSS pixels, kept between the tooltip box and either edge of the
+ * chart when its center is clamped. A small layout constant in the spirit of the
+ * other geometry literals in CHROME — not a themable value.
+ */
+const TOOLTIP_EDGE_GUTTER = 8;
 
 /**
  * Converts a date string to a Date object, handling ISO 8601 timestamps.
@@ -162,6 +182,20 @@ function toDate(value: string) {
         return new Date(value);
     }
     return new Date(time);
+}
+
+/**
+ * Default formatter for the tooltip's date heading: short date plus 24-hour
+ * time. Gives the hovered bucket an hour/minute even when the x-axis label is
+ * date-only, without the caller having to wire a formatter through.
+ *
+ * @param value - The hovered category's Date
+ * @returns A localized "date HH:MM" string
+ */
+function defaultTooltipDateFormatter(value: Date) {
+    const date = value.toLocaleDateString();
+    const time = value.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+    return `${date} ${time}`;
 }
 
 /**
@@ -204,6 +238,7 @@ export function BarChart({
     height: propHeight,
     yAxisFormatter = value => value.toLocaleString(),
     xAxisFormatter = value => value.toLocaleDateString(),
+    tooltipDateFormatter = defaultTooltipDateFormatter,
     className,
     emptyLabel = 'Not enough data to render a chart.',
     yAxisMin: fixedYMin,
@@ -216,7 +251,21 @@ export function BarChart({
     const [container, setContainer] = useState<HTMLElement | null>(null);
     const [containerWidth, setContainerWidth] = useState(chrome.minWidth);
     const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+    const [tooltipNode, setTooltipNode] = useState<HTMLDivElement | null>(null);
+    const [tooltipWidth, setTooltipWidth] = useState(0);
     const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+
+    /**
+     * Measures the rendered tooltip's width so its center can be clamped to keep
+     * the whole box inside the chart. The tooltip mounts only on hover (never
+     * during SSR), so reading its box in an effect is hydration-safe; the width
+     * is stable across hovers, so a single measurement per mount suffices.
+     */
+    useEffect(() => {
+        if (tooltipNode) {
+            setTooltipWidth(tooltipNode.getBoundingClientRect().width);
+        }
+    }, [tooltipNode]);
 
     /**
      * Observes container width changes and updates the chart responsively.
@@ -477,7 +526,7 @@ export function BarChart({
             return;
         }
 
-        setTooltip({ x: nearest.centerX, y: chrome.margin.top, date: nearest.date, items });
+        setTooltip({ x: nearest.centerX, y: chrome.margin.top, date: nearest.date, items, chartWidthPx: bounds.width });
     };
 
     /**
@@ -488,6 +537,27 @@ export function BarChart({
     };
 
     const ariaLabel = `Bar chart: ${series.map(item => item.label).join(', ')}`;
+
+    // Clamp the tooltip's center so the whole box stays within the chart's
+    // on-screen bounds — at the edges it would otherwise overflow by half its
+    // width (~160px), spilling past the chart and, on a wide chart, the screen.
+    // When the chart is too narrow to fit the box plus both gutters, fall back to
+    // centering (the box itself caps at the chart width via `max-width: 100%`).
+    let tooltipLeftPx = 0;
+    let tooltipTopPx = 0;
+    if (tooltip) {
+        // The SVG scales uniformly to its container, so both axes share the
+        // factor chartWidthPx / width. tooltip.x and tooltip.y are viewBox units;
+        // multiply both by chartWidthPx / width to land in on-screen CSS pixels.
+        const centerPx = (tooltip.x / width) * tooltip.chartWidthPx;
+        tooltipTopPx = (tooltip.y / width) * tooltip.chartWidthPx;
+        const halfWidth = tooltipWidth / 2;
+        const minLeft = TOOLTIP_EDGE_GUTTER + halfWidth;
+        const maxLeft = tooltip.chartWidthPx - TOOLTIP_EDGE_GUTTER - halfWidth;
+        tooltipLeftPx = minLeft <= maxLeft
+            ? Math.min(Math.max(centerPx, minLeft), maxLeft)
+            : tooltip.chartWidthPx / 2;
+    }
 
     return (
         <figure ref={setContainer} className={cn(styles.chart, isWidget && styles['chart--widget'], className)}>
@@ -562,11 +632,15 @@ export function BarChart({
 
             {tooltip && (
                 <div
+                    ref={setTooltipNode}
                     className={styles.tooltip}
-                    style={{ left: `${(tooltip.x / width) * 100}%`, top: tooltip.y }}
+                    // Hide the single pre-measurement frame: until the effect reads
+                    // the box width, the clamp ignores its half-width and an
+                    // edge-hovered tooltip would briefly overflow before correcting.
+                    style={{ left: `${tooltipLeftPx}px`, top: `${tooltipTopPx}px`, opacity: tooltipWidth === 0 ? 0 : 1 }}
                     role="presentation"
                 >
-                    <span className={styles.tooltip__label}>{xAxisFormatter(tooltip.date)}</span>
+                    <span className={styles.tooltip__label}>{tooltipDateFormatter(tooltip.date)}</span>
                     {tooltip.items.map(item => (
                         <div key={item.id} className={styles.tooltip__row}>
                             <span className={styles.tooltip__series}>

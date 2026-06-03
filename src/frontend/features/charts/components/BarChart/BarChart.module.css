@@ -21,6 +21,10 @@
     width: 100%;
     height: auto;
     display: block;
+    /* Browsers clip the root <svg> to its viewBox by default; axis labels are
+       anchored at the margins and would lose their outermost glyphs. Let them
+       paint past the viewBox edge. The figure's margins reserve the room. */
+    overflow: visible;
 }
 
 /* Widget mode renders edge-to-edge with no surrounding chrome. */
@@ -63,8 +67,10 @@
     display: inline-flex;
     flex-direction: column;
     gap: var(--gap-2xs);
-    min-width: var(--max-width-xs);
-    max-width: var(--max-width-xs);
+    width: var(--max-width-xs);
+    /* Never wider than the chart it overlays — on containers narrower than the
+       nominal width the box shrinks so it can be clamped fully into view. */
+    max-width: 100%;
     padding: var(--padding-sm) var(--padding-md);
     border-radius: var(--radius-md);
     background: var(--color-surface-accent);
