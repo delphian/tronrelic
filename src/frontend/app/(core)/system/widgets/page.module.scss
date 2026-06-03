@@ -354,6 +354,27 @@
     font-size: var(--font-size-body-sm);
 }
 
+.config_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
+.config_fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    padding: var(--card-padding-sm);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.config_required {
+    color: var(--color-danger-text);
+}
+
 .form_footer {
     display: flex;
     justify-content: flex-end;
