@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { config } from '../../../lib/config';
+import { getRuntimeConfig } from '../../../lib/runtimeConfig';
 
 /**
  * Individual data point in the transaction timeseries.
@@ -85,7 +85,11 @@ export function useTransactionTimeseries(days: number): UseTransactionTimeseries
             setError(null);
 
             try {
-                const url = `${config.apiBaseUrl}/blockchain/transactions/timeseries?days=${days}`;
+                // Resolve the API URL at fetch time (inside the effect, client-only)
+                // rather than module scope — see the universal-image rule in
+                // `docs/frontend/frontend-architecture-runtime-config.md`.
+                const { apiUrl } = getRuntimeConfig();
+                const url = `${apiUrl}/blockchain/transactions/timeseries?days=${days}`;
 
                 const response = await fetch(url);
 

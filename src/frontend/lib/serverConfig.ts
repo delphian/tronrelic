@@ -33,7 +33,7 @@
  * IMPORTANT:
  * - ONLY call this from server-side code (server components, SSR functions)
  * - DO NOT call from client components (use getRuntimeConfig() instead)
- * - DO NOT import lib/config.ts in new code (deprecated, uses build-time values)
+ * - The legacy lib/config.ts module was removed; this and lib/runtimeConfig.ts are the only config sources
  */
 
 /**
