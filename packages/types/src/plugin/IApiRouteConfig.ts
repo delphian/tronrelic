@@ -140,8 +140,11 @@ export interface IApiRouteConfig {
     /**
      * Requires user authentication to access this route.
      *
-     * When true, the route checks for a valid authentication token before
-     * calling the handler. Unauthenticated requests receive a 401 error.
+     * When true, the platform's `requireLogin` middleware runs before the
+     * handler: any caller with a live Better Auth session passes, anonymous
+     * requests receive a 401 error. Login is the bar — routes that operate
+     * on a wallet must additionally gate with `hasPrimaryWallet` inside the
+     * handler.
      *
      * Default: false (public access)
      */

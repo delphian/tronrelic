@@ -36,6 +36,8 @@
  * - The legacy lib/config.ts module was removed; this and lib/runtimeConfig.ts are the only config sources
  */
 
+import { getServerSideApiUrl } from './api-url';
+
 /**
  * TRON blockchain chain parameters for frontend calculations.
  * Subset of IChainParameters containing only the parameters object.
@@ -87,22 +89,6 @@ export interface RuntimeConfig {
 let cachedConfig: RuntimeConfig | null = null;
 
 /**
- * Resolves the backend URL for SSR-to-backend communication.
- *
- * Requires SITE_BACKEND environment variable:
- * - Docker: http://backend:4000 (container-to-container communication)
- * - Local npm: http://localhost:4000 (direct localhost connection)
- *
- * @returns Backend URL for SSR fetch calls (e.g., "http://backend:4000")
- */
-function getBackendUrl(): string {
-    if (!process.env.SITE_BACKEND) {
-        throw new Error('SITE_BACKEND environment variable is required for server-side rendering');
-    }
-    return process.env.SITE_BACKEND.replace(/\/$/, '');
-}
-
-/**
  * Fetches runtime configuration from backend and caches it.
  *
  * Flow:
@@ -116,9 +102,10 @@ function getBackendUrl(): string {
  * - Zero overhead after initial fetch
  *
  * Error handling:
- * If backend is unavailable or returns an error, falls back to environment variables.
- * This ensures local development works even if backend isn't running yet,
- * and provides graceful degradation in production if the backend config endpoint fails.
+ * A missing SITE_BACKEND is a deployment error and throws — it is not
+ * caught by the fallback below. If the backend is unreachable or returns
+ * an error, falls back to a degraded config (isUsingFallback: true) so
+ * SSR keeps rendering while the backend recovers.
  *
  * @returns Runtime configuration with siteUrl, apiUrl, and socketUrl
  */
@@ -128,8 +115,11 @@ export async function getServerConfig(): Promise<RuntimeConfig> {
         return cachedConfig;
     }
 
+    // Resolved outside the try: a missing SITE_BACKEND must surface as a
+    // deployment error, not degrade into the unreachable-backend fallback.
+    const backendUrl = getServerSideApiUrl().replace(/\/$/, '');
+
     try {
-        const backendUrl = getBackendUrl();
         const response = await fetch(`${backendUrl}/api/config/public`, {
             cache: 'no-store', // Don't let Next.js cache this (we cache manually)
             signal: AbortSignal.timeout(5000) // 5 second timeout
@@ -151,11 +141,9 @@ export async function getServerConfig(): Promise<RuntimeConfig> {
 
         return data.config;
     } catch (error) {
-        // Fallback to localhost defaults (local dev safety)
-        console.warn('[ServerConfig] Failed to fetch runtime config, using localhost fallback:', error);
+        // Backend unreachable — degrade so SSR keeps rendering.
+        console.warn('[ServerConfig] Failed to fetch runtime config, using fallback:', error);
 
-        // Use SITE_BACKEND if available, otherwise default to localhost
-        const backendUrl = process.env.SITE_BACKEND || 'http://localhost:4000';
         const siteUrl = process.env.SITE_URL || 'http://localhost:3000';
 
         const fallbackConfig: RuntimeConfig = {
