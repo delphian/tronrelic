@@ -9,7 +9,6 @@ export type { IPluginManifest } from './IPluginManifest.js';
 export type { IAdminUIConfig } from './IAdminUIConfig.js';
 export type { IMenuItemConfig } from './IMenuItemConfig.js';
 export type { IPageConfig, IServerDataContext } from './IPageConfig.js';
-export type { IPluginDatabase } from './IPluginDatabase.js';
 export type { IApiRouteConfig, HttpMethod, ApiRouteHandler, ApiMiddleware } from './IApiRouteConfig.js';
 export type {
     IPluginMetadata,

@@ -9,7 +9,7 @@ import { ObjectId } from 'mongodb';
  * independence.
  *
  * This interface is used with the native MongoDB driver (not Mongoose) to provide
- * direct collection access through the IPluginDatabase dependency injection pattern.
+ * direct collection access through the IDatabaseService dependency injection pattern.
  *
  * Each namespace can have at most one configuration document. The namespace field
  * should have a unique index to enforce this constraint.

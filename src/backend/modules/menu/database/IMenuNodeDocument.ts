@@ -8,7 +8,7 @@ import { ObjectId } from 'mongodb';
  * in the IMenuNode interface for framework independence.
  *
  * This interface is used with the native MongoDB driver (not Mongoose) to provide
- * direct collection access through the IPluginDatabase dependency injection pattern.
+ * direct collection access through the IDatabaseService dependency injection pattern.
  *
  * @example
  * ```typescript
