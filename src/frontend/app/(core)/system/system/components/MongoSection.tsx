@@ -12,15 +12,10 @@ import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { formatBytes } from '../../../../../lib/format';
 import { StatStrip } from './StatStrip';
 import { CollectionBrowser } from './CollectionBrowser';
 import styles from './MongoSection.module.scss';
-
-interface Props {
-    token: string;
-}
 
 interface DatabaseStatus {
     connected: boolean;
@@ -74,26 +69,23 @@ interface IMigrationHistory {
  * and when belongs to Mongo. ClickHouse health and the table browser
  * are a separate console row (see ClickHouseSection).
  */
-export function MongoSection({ token }: Props) {
+export function MongoSection() {
     return (
         <div className={styles.subsection}>
-            <MongoHealth token={token} />
-            <Migrations token={token} />
-            <Browser token={token} />
+            <MongoHealth />
+            <Migrations />
+            <Browser />
         </div>
     );
 }
 
-function MongoHealth({ token }: { token: string }) {
+function MongoHealth() {
     const [database, setDatabase] = useState<DatabaseStatus | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const runtimeConfig = getRuntimeConfig();
 
     const fetchData = useCallback(async () => {
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/health/database`, {
-                headers: { 'X-Admin-Token': token }
-            });
+            const response = await fetch(`/api/admin/system/health/database`);
 
             if (response.ok) {
                 const data = await response.json();
@@ -106,7 +98,7 @@ function MongoHealth({ token }: { token: string }) {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch MongoDB health');
         }
-    }, [token, runtimeConfig.apiUrl]);
+    }, []);
 
     useEffect(() => {
         void fetchData();
@@ -147,7 +139,7 @@ function MongoHealth({ token }: { token: string }) {
     );
 }
 
-function Migrations({ token }: { token: string }) {
+function Migrations() {
     const [status, setStatus] = useState<IMigrationStatus | null>(null);
     const [history, setHistory] = useState<IMigrationHistory | null>(null);
     const [executing, setExecuting] = useState(false);
@@ -156,15 +148,11 @@ function Migrations({ token }: { token: string }) {
     const [sourceFilter, setSourceFilter] = useState<string>('all');
     const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
     const [error, setError] = useState<string | null>(null);
-    const runtimeConfig = getRuntimeConfig();
 
     const fetchStatus = useCallback(async () => {
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/migrations/status`, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': token
-                }
+            const response = await fetch(`/api/admin/migrations/status`, {
+                headers: { 'Content-Type': 'application/json' }
             });
             if (!response.ok) throw new Error(`Failed to fetch status: ${response.statusText}`);
             const data: IMigrationStatus = await response.json();
@@ -173,16 +161,13 @@ function Migrations({ token }: { token: string }) {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch migration status');
         }
-    }, [token, runtimeConfig.apiUrl]);
+    }, []);
 
     const fetchHistory = useCallback(async () => {
         try {
             const params = new URLSearchParams({ limit: '100', status: statusFilter });
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/migrations/history?${params}`, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': token
-                }
+            const response = await fetch(`/api/admin/migrations/history?${params}`, {
+                headers: { 'Content-Type': 'application/json' }
             });
             if (!response.ok) throw new Error(`Failed to fetch history: ${response.statusText}`);
             const data: IMigrationHistory = await response.json();
@@ -191,19 +176,16 @@ function Migrations({ token }: { token: string }) {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch migration history');
         }
-    }, [token, statusFilter, runtimeConfig.apiUrl]);
+    }, [statusFilter]);
 
     const executeMigration = async (migrationId?: string) => {
         if (executing) return;
         setExecuting(true);
         setError(null);
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/migrations/execute`, {
+            const response = await fetch(`/api/admin/migrations/execute`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': token
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(migrationId ? { migrationId } : {})
             });
             let data: any = null;
@@ -503,11 +485,11 @@ function Migrations({ token }: { token: string }) {
     );
 }
 
-function Browser({ token }: { token: string }) {
+function Browser() {
     return (
         <div className={styles.block}>
             <h4 className={styles.block_title}>Collection Browser</h4>
-            <CollectionBrowser token={token} />
+            <CollectionBrowser />
         </div>
     );
 }

@@ -22,24 +22,15 @@
  *
  * The trust boundary is the backend `requireAdmin` middleware, which reads
  * the Better Auth session cookie. Same-origin fetches carry it
- * automatically, so there is no JS-readable admin secret on the client; the
- * `token` field below stays an empty string for transitional callers that
- * still build an `x-admin-token` header.
+ * automatically, so there is no JS-readable admin secret on the client.
  */
 
-import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 // Direct import (not the modules/user barrel) keeps component CSS out of the
 // system bundle.
 import { useAuthSession } from '../../../modules/user/components/SessionProvider';
 
 interface ISystemAuthContext {
-    /**
-     * Empty string. Retained for transitional API compatibility with fetch
-     * sites that still build an `x-admin-token` header — those sites
-     * authenticate via the Better Auth session cookie now; the empty string
-     * is treated as "no token" by the backend middleware.
-     */
-    token: string;
     /** True when the session belongs to a member of the `admin` group. */
     isAuthenticated: boolean;
     /** True once the session has resolved; lets gates render a loading
@@ -49,10 +40,6 @@ interface ISystemAuthContext {
     needsLogin: boolean;
     /** True when logged in but not in the `admin` group. */
     needsAdminGroupMembership: boolean;
-    /** Best-effort logout hook for the in-tab admin gate. The session
-     *  cookie is HttpOnly and signs out via `/api/auth/sign-out` (driven
-     *  by the header ProfileMenu); there is nothing tab-local to clear. */
-    logout: () => void;
 }
 
 const SystemAuthContext = createContext<ISystemAuthContext | undefined>(undefined);
@@ -63,19 +50,12 @@ export function SystemAuthProvider({ children }: { children: ReactNode }) {
     const isAdmin = session?.user?.groups?.includes('admin') ?? false;
     const isHydrated = !isPending;
 
-    const logout = useCallback(() => {
-        // The Better Auth session cookie is HttpOnly; sign-out is the header
-        // ProfileMenu's `/api/auth/sign-out` call. Nothing tab-local to clear.
-    }, []);
-
     const value = useMemo<ISystemAuthContext>(() => ({
-        token: '',
         isAuthenticated: isLoggedIn && isAdmin,
         isHydrated,
         needsLogin: isHydrated && !isLoggedIn,
-        needsAdminGroupMembership: isHydrated && isLoggedIn && !isAdmin,
-        logout
-    }), [isLoggedIn, isAdmin, isHydrated, logout]);
+        needsAdminGroupMembership: isHydrated && isLoggedIn && !isAdmin
+    }), [isLoggedIn, isAdmin, isHydrated]);
 
     return (
         <SystemAuthContext.Provider value={value}>

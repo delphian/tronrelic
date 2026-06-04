@@ -1,6 +1,5 @@
 'use client';
 
-import { useSystemAuth } from '../../../../features/system';
 import { SchedulerMonitor } from '../../../../modules/scheduler';
 
 /**
@@ -12,7 +11,5 @@ import { SchedulerMonitor } from '../../../../modules/scheduler';
  * without backend restarts. Requires admin authentication.
  */
 export default function SchedulerMonitorPage() {
-    const { token } = useSystemAuth();
-
-    return <SchedulerMonitor token={token} />;
+    return <SchedulerMonitor />;
 }

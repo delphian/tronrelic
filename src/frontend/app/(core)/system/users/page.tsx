@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useSystemAuth } from '../../../../features/system';
 import { UsersMonitor, AnalyticsDashboard, GscSettings, GroupsManager, TrafficDashboard, VisitorAnalytics, PageActivity } from '../../../../modules/user';
 import styles from './page.module.scss';
 
@@ -24,7 +23,6 @@ type UsersTab = 'users' | 'analytics' | 'traffic' | 'groups' | 'settings';
  * tablist/tab/tabpanel roles to avoid incomplete implementation).
  */
 export default function SystemUsersPage() {
-    const { token } = useSystemAuth();
     const [activeTab, setActiveTab] = useState<UsersTab>('users');
 
     return (
@@ -68,17 +66,17 @@ export default function SystemUsersPage() {
             </div>
 
             <div className={styles.content}>
-                {activeTab === 'users' && <UsersMonitor token={token} />}
-                {activeTab === 'analytics' && <AnalyticsDashboard token={token} />}
+                {activeTab === 'users' && <UsersMonitor />}
+                {activeTab === 'analytics' && <AnalyticsDashboard />}
                 {activeTab === 'traffic' && (
                     <div className={styles.traffic_stack}>
-                        <VisitorAnalytics token={token} />
-                        <PageActivity token={token} />
-                        <TrafficDashboard token={token} />
+                        <VisitorAnalytics />
+                        <PageActivity />
+                        <TrafficDashboard />
                     </div>
                 )}
-                {activeTab === 'groups' && <GroupsManager token={token} />}
-                {activeTab === 'settings' && <GscSettings token={token} />}
+                {activeTab === 'groups' && <GroupsManager />}
+                {activeTab === 'settings' && <GscSettings />}
             </div>
         </div>
     );

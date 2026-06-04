@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useSystemAuth } from '../../../../features/system';
 import styles from './page.module.css';
 import { PagesTab } from './tabs/PagesTab';
 import { SettingsTab } from './tabs/SettingsTab';
@@ -14,7 +13,6 @@ import { SettingsTab } from './tabs/SettingsTab';
  * File browsing and upload-policy settings live at /system/files.
  */
 export default function PagesAdminPage() {
-    const { token } = useSystemAuth();
     const [activeTab, setActiveTab] = useState<'pages' | 'settings'>('pages');
 
     return (
@@ -35,8 +33,8 @@ export default function PagesAdminPage() {
             </div>
 
             <div className={styles.content}>
-                {activeTab === 'pages' && <PagesTab token={token} />}
-                {activeTab === 'settings' && <SettingsTab token={token} />}
+                {activeTab === 'pages' && <PagesTab />}
+                {activeTab === 'settings' && <SettingsTab />}
             </div>
         </div>
     );

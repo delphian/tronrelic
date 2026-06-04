@@ -171,8 +171,7 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
      * - Seeding the System container with the sentinel id from
      *   `MAIN_SYSTEM_CONTAINER_ID` so admin items have a stable parent
      *   to register against
-     * - Registering the Menu management entry and the Logout link under
-     *   the System container
+     * - Registering the Menu management entry under the System container
      * - Creating and mounting the admin router
      *
      * By this point, all dependencies are guaranteed to be ready.
@@ -189,8 +188,8 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
         this.logger.info('MenuService registered as "menu" on service registry');
 
         // Seed the System container at the top of `main`. Every admin
-        // surface — module entries, the dynamic Plugins dropdown, the
-        // Logout link — parents into this node. The fixed sentinel `_id`
+        // surface — module entries, the dynamic Plugins dropdown —
+        // parents into this node. The fixed sentinel `_id`
         // (a 24-hex ObjectId) lets callers reference the container via
         // `MAIN_SYSTEM_CONTAINER_ID` without a lookup while still
         // satisfying the controller's `OBJECT_ID_REGEX` validation and
@@ -235,26 +234,6 @@ export class MenuModule implements IModule<IMenuModuleDependencies> {
         } catch (error) {
             this.logger.error({ error }, 'Failed to register menu management item');
             throw new Error(`Failed to register menu management item: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-
-        // Register the Logout link as the last child of System. The route
-        // at `/system/logout` performs the auth-context logout and
-        // redirects home, replacing the previous trailing-nav-item pattern
-        // that lived inside `/system/layout.tsx`.
-        try {
-            await this.menuService.create({
-                namespace: 'main',
-                label: 'Logout',
-                url: '/system/logout',
-                icon: 'LogOut',
-                order: 9999,
-                parent: MAIN_SYSTEM_CONTAINER_ID,
-                enabled: true
-            });
-            this.logger.info('Logout item registered under the System container');
-        } catch (error) {
-            this.logger.error({ error }, 'Failed to register logout item');
-            throw new Error(`Failed to register logout item: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
 
         // Create and mount admin router (IoC - module attaches itself to app)

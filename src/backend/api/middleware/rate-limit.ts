@@ -1,15 +1,39 @@
 import type { Request, Response, NextFunction } from 'express';
 import { getRedisClient } from '../../loaders/redis.js';
 import { RateLimitService } from '../../services/rate-limit.service.js';
+import { RateLimitError } from '../../lib/errors.js';
 
 const redis = () => getRedisClient();
 
+/**
+ * Build a per-IP rate-limiting middleware.
+ *
+ * The middleware is async, so a rejected `consume()` must be handled here:
+ * Express 4 does not forward rejected promises from middleware to the error
+ * handler, so an unhandled `RateLimitError` would surface as an unhandled
+ * rejection (and never produce a 429) rather than a clean response. We catch
+ * the limit case and answer 429 directly, and forward any other error through
+ * `next` so the error handler can map it.
+ *
+ * @param windowSeconds - Sliding window length in seconds.
+ * @param maxRequests - Allowed requests per window per IP.
+ * @param keyPrefix - Per-endpoint bucket prefix so endpoints don't share a limit.
+ * @returns Express middleware consuming one slot per request.
+ */
 export function createRateLimiter({ windowSeconds, maxRequests, keyPrefix }: { windowSeconds: number; maxRequests: number; keyPrefix: string; }) {
-  return async (req: Request, _res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     const limiter = new RateLimitService(redis(), windowSeconds, maxRequests);
     const key = `${keyPrefix}:${req.ip}`;
-    await limiter.consume(key);
-    next();
+    try {
+      await limiter.consume(key);
+      next();
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        res.status(429).json({ success: false, error: 'Too many requests' });
+        return;
+      }
+      next(error);
+    }
   };
 }
 

@@ -19,7 +19,7 @@
  * - **Top countries** — geo distribution.
  *
  * Mirrors the established admin-tab pattern (UsersMonitor, GroupsManager):
- * client-only, `X-Admin-Token` header, fetch-on-mount, local state per
+ * client-only, session-cookie auth, fetch-on-mount, local state per
  * panel. SSR + Live Updates does NOT apply because the route is
  * admin-gated; the `/system/users` page hosting this tab is already a
  * client component for the same reason.
@@ -30,7 +30,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Bot, Globe, MapPin, RefreshCw } from 'lucide-react';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
 import styles from './TrafficDashboard.module.scss';
@@ -51,10 +50,6 @@ interface AggregateResponse {
     sinceHours: number;
     limit: number;
     buckets: AggregateBucket[];
-}
-
-interface Props {
-    token: string;
 }
 
 /** Lookback windows the dashboard offers. Wider windows hit the 30-day cap. */
@@ -86,7 +81,7 @@ function useNumberFormatter(): (n: number) => string {
     }, []);
 }
 
-export function TrafficDashboard({ token }: Props) {
+export function TrafficDashboard() {
     const [sinceHours, setSinceHours] = useState<number>(24);
     // Bumped by the Refresh button to re-trigger the fetch effect under
     // the same cleanup-flag guard used for window changes. Avoids a
@@ -112,11 +107,10 @@ export function TrafficDashboard({ token }: Props) {
     const [topCountriesError, setTopCountriesError] = useState<string | null>(null);
     const [topCountriesLoading, setTopCountriesLoading] = useState(true);
 
-    // Read from window.__RUNTIME_CONFIG__ so the same Docker image works
-    // on any domain. Calling once per mount is enough — the runtime
-    // config is set during SSR injection and never changes client-side.
+    // Same-origin relative path so the browser attaches the Better Auth
+    // session cookie; the Next.js rewrite proxies `/api/*` to the backend.
     const baseUrl = useMemo(
-        () => `${getRuntimeConfig().apiUrl}/admin/users/traffic`,
+        () => `/api/admin/users/traffic`,
         []
     );
 
@@ -130,7 +124,6 @@ export function TrafficDashboard({ token }: Props) {
         // refreshNonce because the effect re-runs through the same
         // cleanup path.
         let active = true;
-        const headers = { 'X-Admin-Token': token };
         const params = `?sinceHours=${sinceHours}`;
 
         // Reset loading and error state up-front so a previously-failed
@@ -148,7 +141,7 @@ export function TrafficDashboard({ token }: Props) {
 
         // Fire all four reads in parallel — they're independent endpoints
         // and the loading-per-panel UX hides any tail latency.
-        const summaryPromise = fetch(`${baseUrl}/summary${params}`, { headers })
+        const summaryPromise = fetch(`${baseUrl}/summary${params}`)
             .then(async r => {
                 if (!r.ok) throw new Error(`Failed to load summary (${r.status})`);
                 return r.json() as Promise<SummaryResponse>;
@@ -157,7 +150,7 @@ export function TrafficDashboard({ token }: Props) {
             .catch(err => { if (active) setSummaryError(err instanceof Error ? err.message : 'Failed to load'); })
             .finally(() => { if (active) setSummaryLoading(false); });
 
-        const botOtherPromise = fetch(`${baseUrl}/bot-other-samples${params}&limit=15`, { headers })
+        const botOtherPromise = fetch(`${baseUrl}/bot-other-samples${params}&limit=15`)
             .then(async r => {
                 if (!r.ok) throw new Error(`Failed to load bot_other (${r.status})`);
                 return r.json() as Promise<AggregateResponse>;
@@ -166,7 +159,7 @@ export function TrafficDashboard({ token }: Props) {
             .catch(err => { if (active) setBotOtherError(err instanceof Error ? err.message : 'Failed to load'); })
             .finally(() => { if (active) setBotOtherLoading(false); });
 
-        const topPathsPromise = fetch(`${baseUrl}/top-paths${params}&limit=15`, { headers })
+        const topPathsPromise = fetch(`${baseUrl}/top-paths${params}&limit=15`)
             .then(async r => {
                 if (!r.ok) throw new Error(`Failed to load paths (${r.status})`);
                 return r.json() as Promise<AggregateResponse>;
@@ -175,7 +168,7 @@ export function TrafficDashboard({ token }: Props) {
             .catch(err => { if (active) setTopPathsError(err instanceof Error ? err.message : 'Failed to load'); })
             .finally(() => { if (active) setTopPathsLoading(false); });
 
-        const topCountriesPromise = fetch(`${baseUrl}/top-countries${params}&limit=15`, { headers })
+        const topCountriesPromise = fetch(`${baseUrl}/top-countries${params}&limit=15`)
             .then(async r => {
                 if (!r.ok) throw new Error(`Failed to load countries (${r.status})`);
                 return r.json() as Promise<AggregateResponse>;
@@ -190,7 +183,7 @@ export function TrafficDashboard({ token }: Props) {
         void Promise.all([summaryPromise, botOtherPromise, topPathsPromise, topCountriesPromise]);
 
         return () => { active = false; };
-    }, [baseUrl, token, sinceHours, refreshNonce]);
+    }, [baseUrl, sinceHours, refreshNonce]);
 
     const clickhouseDisabledNotice = summary && !summary.clickhouseEnabled;
 

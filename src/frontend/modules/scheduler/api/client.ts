@@ -7,22 +7,20 @@
  * @module modules/scheduler/api/client
  */
 
-import { config as runtimeConfig } from '../../../lib/config';
 import type { SchedulerJob, SchedulerHealth, SchedulerJobUpdate } from '../types';
 
 /**
  * Fetches the status of all scheduled jobs.
  *
- * @param token - Admin authentication token
+ * Authorization rides the same-origin Better Auth session cookie;
+ * the backend `requireAdmin` middleware resolves it per request.
+ *
  * @returns Array of scheduler job status objects
  * @throws Error if the API request fails
  */
-export async function getSchedulerStatus(token: string): Promise<SchedulerJob[]> {
+export async function getSchedulerStatus(): Promise<SchedulerJob[]> {
     const response = await fetch(
-        `${runtimeConfig.apiBaseUrl}/admin/system/scheduler/status`,
-        {
-            headers: { 'X-Admin-Token': token }
-        }
+        `/api/admin/system/scheduler/status`
     );
 
     if (!response.ok) {
@@ -36,16 +34,12 @@ export async function getSchedulerStatus(token: string): Promise<SchedulerJob[]>
 /**
  * Fetches scheduler health metrics.
  *
- * @param token - Admin authentication token
  * @returns Scheduler health metrics object
  * @throws Error if the API request fails
  */
-export async function getSchedulerHealth(token: string): Promise<SchedulerHealth> {
+export async function getSchedulerHealth(): Promise<SchedulerHealth> {
     const response = await fetch(
-        `${runtimeConfig.apiBaseUrl}/admin/system/scheduler/health`,
-        {
-            headers: { 'X-Admin-Token': token }
-        }
+        `/api/admin/system/scheduler/health`
     );
 
     if (!response.ok) {
@@ -59,24 +53,19 @@ export async function getSchedulerHealth(token: string): Promise<SchedulerHealth
 /**
  * Updates a scheduler job's configuration.
  *
- * @param token - Admin authentication token
  * @param jobName - Name of the job to update
  * @param updates - Configuration updates to apply
  * @throws Error if the API request fails or validation fails
  */
 export async function updateSchedulerJob(
-    token: string,
     jobName: string,
     updates: SchedulerJobUpdate
 ): Promise<void> {
     const response = await fetch(
-        `${runtimeConfig.apiBaseUrl}/admin/system/scheduler/job/${jobName}`,
+        `/api/admin/system/scheduler/job/${jobName}`,
         {
             method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Admin-Token': token
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(updates)
         }
     );

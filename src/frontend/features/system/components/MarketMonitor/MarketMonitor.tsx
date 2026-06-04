@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { config as runtimeConfig } from '../../../../lib/config';
 import styles from './MarketMonitor.module.css';
 
 interface MarketPlatform {
@@ -20,10 +19,6 @@ interface MarketFreshness {
     stalePlatformCount: number;
     averageDataAge: number;
     platformsWithOldData: string[];
-}
-
-interface Props {
-    token: string;
 }
 
 /**
@@ -46,17 +41,15 @@ interface Props {
  * - `/admin/system/markets/refresh` - Manual refresh trigger (POST)
  *
  * **Security:**
- * Requires admin token authentication via X-Admin-Token header.
- *
- * @param {Props} props - Component props
- * @param {string} props.token - Admin authentication token for API requests
+ * Authorization rides the same-origin Better Auth session cookie;
+ * the backend `requireAdmin` middleware resolves it per request.
  *
  * @example
  * ```tsx
- * <MarketMonitor token={adminToken} />
+ * <MarketMonitor />
  * ```
  */
-export function MarketMonitor({ token }: Props) {
+export function MarketMonitor() {
     const [platforms, setPlatforms] = useState<MarketPlatform[]>([]);
     const [freshness, setFreshness] = useState<MarketFreshness | null>(null);
     const [loading, setLoading] = useState(true);
@@ -71,12 +64,8 @@ export function MarketMonitor({ token }: Props) {
     const fetchData = async () => {
         try {
             const [platformsRes, freshnessRes] = await Promise.all([
-                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/markets/platforms`, {
-                    headers: { 'X-Admin-Token': token }
-                }),
-                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/markets/freshness`, {
-                    headers: { 'X-Admin-Token': token }
-                })
+                fetch(`/api/admin/system/markets/platforms`),
+                fetch(`/api/admin/system/markets/freshness`)
             ]);
 
             const [platformsData, freshnessData] = await Promise.all([platformsRes.json(), freshnessRes.json()]);
@@ -101,12 +90,9 @@ export function MarketMonitor({ token }: Props) {
     const triggerRefresh = async (force = false) => {
         setRefreshing(true);
         try {
-            await fetch(`${runtimeConfig.apiBaseUrl}/admin/system/markets/refresh`, {
+            await fetch(`/api/admin/system/markets/refresh`, {
                 method: 'POST',
-                headers: {
-                    'X-Admin-Token': token,
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ force })
             });
             setTimeout(fetchData, 2000);
@@ -122,7 +108,7 @@ export function MarketMonitor({ token }: Props) {
         const interval = setInterval(fetchData, 10000);
         return () => clearInterval(interval);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token]);
+    }, []);
 
     /**
      * Returns the appropriate CSS class variant based on platform status.

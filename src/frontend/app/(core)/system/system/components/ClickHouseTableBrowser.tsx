@@ -16,7 +16,6 @@ import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { CopyButton } from '../../../../../components/ui/CopyButton';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { formatBytes } from '../../../../../lib/format';
 import { ChevronDown, ChevronRight, FileText, AlertCircle } from 'lucide-react';
 import styles from './ClickHouseTableBrowser.module.scss';
@@ -44,11 +43,7 @@ interface IPaginatedRows {
     hasPrevPage: boolean;
 }
 
-interface ClickHouseTableBrowserProps {
-    token: string;
-}
-
-export function ClickHouseTableBrowser({ token }: ClickHouseTableBrowserProps) {
+export function ClickHouseTableBrowser() {
     const [stats, setStats] = useState<IClickHouseStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -56,16 +51,12 @@ export function ClickHouseTableBrowser({ token }: ClickHouseTableBrowserProps) {
     const [rows, setRows] = useState<IPaginatedRows | null>(null);
     const [loadingRows, setLoadingRows] = useState(false);
     const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
-    const runtimeConfig = getRuntimeConfig();
 
     const fetchStats = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/clickhouse/stats`, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': token
-                }
+            const response = await fetch(`/api/admin/clickhouse/stats`, {
+                headers: { 'Content-Type': 'application/json' }
             });
 
             if (!response.ok) {
@@ -80,18 +71,15 @@ export function ClickHouseTableBrowser({ token }: ClickHouseTableBrowserProps) {
         } finally {
             setLoading(false);
         }
-    }, [token, runtimeConfig.apiUrl]);
+    }, []);
 
     const fetchRows = useCallback(async (tableName: string, page: number = 1) => {
         try {
             setLoadingRows(true);
             const response = await fetch(
-                `${runtimeConfig.apiUrl}/admin/clickhouse/tables/${encodeURIComponent(tableName)}/rows?page=${page}&limit=10`,
+                `/api/admin/clickhouse/tables/${encodeURIComponent(tableName)}/rows?page=${page}&limit=10`,
                 {
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Admin-Token': token
-                    }
+                    headers: { 'Content-Type': 'application/json' }
                 }
             );
 
@@ -106,7 +94,7 @@ export function ClickHouseTableBrowser({ token }: ClickHouseTableBrowserProps) {
         } finally {
             setLoadingRows(false);
         }
-    }, [token, runtimeConfig.apiUrl]);
+    }, []);
 
     useEffect(() => {
         void fetchStats();

@@ -44,7 +44,6 @@ const example = "code block";
  * Props for PageEditor component.
  */
 interface PageEditorProps {
-    token: string;
     page: IPage | null;
     onSave: () => void;
     onCancel: () => void;
@@ -60,7 +59,7 @@ interface PageEditorProps {
  * - Create and update operations
  * - Validation and error handling
  */
-export function PageEditor({ token, page, onSave, onCancel }: PageEditorProps) {
+export function PageEditor({ page, onSave, onCancel }: PageEditorProps) {
     const [content, setContent] = useState(page?.content || DEFAULT_FRONTMATTER);
     const [preview, setPreview] = useState('');
     const [showPreview, setShowPreview] = useState(false);
@@ -91,10 +90,7 @@ export function PageEditor({ token, page, onSave, onCancel }: PageEditorProps) {
 
             const response = await fetch(url, {
                 method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-admin-token': token
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ content })
             });
 
@@ -121,10 +117,7 @@ export function PageEditor({ token, page, onSave, onCancel }: PageEditorProps) {
             try {
                 const response = await fetch('/api/admin/pages/preview', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-admin-token': token
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ content })
                 });
 
@@ -144,7 +137,7 @@ export function PageEditor({ token, page, onSave, onCancel }: PageEditorProps) {
         }, 500); // Wait 500ms after user stops typing
 
         return () => clearTimeout(timeoutId);
-    }, [showPreview, content, token]);
+    }, [showPreview, content]);
 
     return (
         <div className={styles.editor}>

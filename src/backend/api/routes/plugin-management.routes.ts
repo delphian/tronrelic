@@ -2,9 +2,21 @@ import { Router, type Request, type Response } from 'express';
 import type { IPluginInfo } from '@/types';
 import { PluginMetadataService } from '../../services/plugin-metadata.service.js';
 import { PluginManagerService } from '../../services/plugin-manager.service.js';
+import { requireAdmin } from '../middleware/admin-auth.js';
+import { createAdminRateLimiter } from '../middleware/rate-limit.js';
 import { logger } from '../../lib/logger.js';
 
 const router = Router();
+
+// Plugin lifecycle control (install/uninstall/enable/disable) is a destructive
+// admin capability — uninstall runs a plugin's `uninstall()` hook and drops its
+// persistent state. Gate the entire router behind the admin auth path, with the
+// per-IP rate limiter chained ahead of `requireAdmin` so brute-force cost
+// against the auth gate is bounded (see createAdminRateLimiter). The `/all`
+// read is included because it discloses the full plugin inventory and last
+// errors.
+router.use(createAdminRateLimiter('plugin-management'));
+router.use(requireAdmin);
 
 /**
  * GET /api/plugin-management/all
@@ -12,7 +24,7 @@ const router = Router();
  * Get all discovered plugins with their metadata status.
  * Returns both installed/enabled and disabled plugins for admin UI.
  *
- * Requires admin authentication (to be implemented).
+ * Admin-only: gated by the router-level `requireAdmin` middleware.
  */
 router.get('/all', async (req: Request, res: Response) => {
     try {

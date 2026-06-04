@@ -9,7 +9,7 @@
  * able to mutate the platform-owned namespace.
  *
  * Mirrors the established admin-tab pattern (UsersMonitor): client-only,
- * `X-Admin-Token` header, fetch-on-mount, local state. SSR + Live
+ * session-cookie auth, fetch-on-mount, local state. SSR + Live
  * Updates does not apply because the route is admin-gated and not
  * public-facing. Modal lifecycle goes through the shared `useModal`
  * provider rather than a hand-rolled portal.
@@ -17,7 +17,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Lock, Users as UsersIcon } from 'lucide-react';
-import { config as runtimeConfig } from '../../../../../lib/config';
 import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
@@ -40,11 +39,7 @@ interface ListResponse {
     groups: UserGroup[];
 }
 
-interface Props {
-    token: string;
-}
-
-export function GroupsManager({ token }: Props) {
+export function GroupsManager() {
     const [groups, setGroups] = useState<UserGroup[]>([]);
     const [loading, setLoading] = useState(true);
     const [fetchError, setFetchError] = useState<string | null>(null);
@@ -53,7 +48,7 @@ export function GroupsManager({ token }: Props) {
     const { push: pushToast } = useToast();
 
     const baseUrl = useMemo(
-        () => `${runtimeConfig.apiBaseUrl}/admin/users/groups`,
+        () => `/api/admin/users/groups`,
         []
     );
 
@@ -61,9 +56,7 @@ export function GroupsManager({ token }: Props) {
         setLoading(true);
         setFetchError(null);
         try {
-            const response = await fetch(baseUrl, {
-                headers: { 'X-Admin-Token': token }
-            });
+            const response = await fetch(baseUrl);
             if (!response.ok) {
                 throw new Error(`Failed to load groups (${response.status})`);
             }
@@ -74,7 +67,7 @@ export function GroupsManager({ token }: Props) {
         } finally {
             setLoading(false);
         }
-    }, [baseUrl, token]);
+    }, [baseUrl]);
 
     useEffect(() => {
         void fetchGroups();
@@ -83,32 +76,26 @@ export function GroupsManager({ token }: Props) {
     const submitCreate = useCallback(async (values: GroupFormValues) => {
         const response = await fetch(baseUrl, {
             method: 'POST',
-            headers: {
-                'X-Admin-Token': token,
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(values)
         });
         if (!response.ok) {
             const payload = await response.json().catch(() => null);
             throw new Error(payload?.message ?? `Request failed (${response.status})`);
         }
-    }, [baseUrl, token]);
+    }, [baseUrl]);
 
     const submitUpdate = useCallback(async (id: string, values: Pick<GroupFormValues, 'name' | 'description'>) => {
         const response = await fetch(`${baseUrl}/${encodeURIComponent(id)}`, {
             method: 'PATCH',
-            headers: {
-                'X-Admin-Token': token,
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(values)
         });
         if (!response.ok) {
             const payload = await response.json().catch(() => null);
             throw new Error(payload?.message ?? `Request failed (${response.status})`);
         }
-    }, [baseUrl, token]);
+    }, [baseUrl]);
 
     const openCreateModal = useCallback(() => {
         const id = openModal({
@@ -142,14 +129,13 @@ export function GroupsManager({ token }: Props) {
             size: 'sm',
             content: (
                 <GroupMembersList
-                    token={token}
                     groupId={group.id}
                     groupName={group.name}
                     onClose={() => closeModal(id)}
                 />
             )
         });
-    }, [openModal, closeModal, token]);
+    }, [openModal, closeModal]);
 
     const openEditModal = useCallback((group: UserGroup) => {
         const id = openModal({
@@ -190,10 +176,7 @@ export function GroupsManager({ token }: Props) {
         try {
             const response = await fetch(
                 `${baseUrl}/${encodeURIComponent(group.id)}`,
-                {
-                    method: 'DELETE',
-                    headers: { 'X-Admin-Token': token }
-                }
+                { method: 'DELETE' }
             );
             if (!response.ok) {
                 const payload = await response.json().catch(() => null);
@@ -207,7 +190,7 @@ export function GroupsManager({ token }: Props) {
                 title: error instanceof Error ? error.message : 'Delete failed'
             });
         }
-    }, [baseUrl, token, pushToast, fetchGroups]);
+    }, [baseUrl, pushToast, fetchGroups]);
 
     return (
         <div className={styles.container}>

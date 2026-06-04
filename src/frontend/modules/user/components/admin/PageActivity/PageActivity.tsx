@@ -14,10 +14,10 @@
  * cookieless first-touch (`bootstrap`) stream, which includes bots, lives in the
  * VisitorAnalytics "Anonymous First Touches" table.
  *
- * Client-only admin tool: `/system/users` is admin-gated and the token comes
- * from `SystemAuthContext` at runtime, so the SSR + Live Updates pattern does
- * not apply — the loading states here are the user-triggered fetch/pagination
- * case the pattern explicitly permits. Mirrors UsersMonitor / TrafficDashboard.
+ * Client-only admin tool: `/system/users` is admin-gated via the Better Auth
+ * session cookie, so the SSR + Live Updates pattern does not apply — the
+ * loading states here are the user-triggered fetch/pagination case the
+ * pattern explicitly permits. Mirrors UsersMonitor / TrafficDashboard.
  */
 
 'use client';
@@ -45,7 +45,6 @@ const PAGE_LIMIT = 25;
 const HITS_LIMIT = 200;
 
 interface IPageHitsRowProps {
-    token: string;
     subject: PageActivitySubject;
     id: string;
     period: VisitorPeriod;
@@ -60,7 +59,7 @@ interface IPageHitsRowProps {
  * @param props - The subject to fetch hits for and the active window.
  * @returns A table row spanning the parent's columns with the page-hit list.
  */
-function PageHitsRow({ token, subject, id, period }: IPageHitsRowProps) {
+function PageHitsRow({ subject, id, period }: IPageHitsRowProps) {
     const [hits, setHits] = useState<IPageHit[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -73,7 +72,7 @@ function PageHitsRow({ token, subject, id, period }: IPageHitsRowProps) {
         const fetchHits = async (): Promise<void> => {
             setLoading(true);
             try {
-                const result = await adminGetPageHits(token, subject, id, { period, limit: HITS_LIMIT });
+                const result = await adminGetPageHits(subject, id, { period, limit: HITS_LIMIT });
                 if (active) {
                     setHits(result);
                 }
@@ -90,7 +89,7 @@ function PageHitsRow({ token, subject, id, period }: IPageHitsRowProps) {
         };
         fetchHits();
         return () => { active = false; };
-    }, [token, subject, id, period]);
+    }, [subject, id, period]);
 
     return (
         <tr className={styles.detail_row}>
@@ -129,7 +128,6 @@ function PageHitsRow({ token, subject, id, period }: IPageHitsRowProps) {
 }
 
 interface IPageActivityTableProps {
-    token: string;
     subject: PageActivitySubject;
     title: string;
     description: string;
@@ -143,7 +141,7 @@ interface IPageActivityTableProps {
  * @param props - Table configuration.
  * @returns The rendered activity section.
  */
-function PageActivityTable({ token, subject, title, description, subjectHeading }: IPageActivityTableProps) {
+function PageActivityTable({ subject, title, description, subjectHeading }: IPageActivityTableProps) {
     const [period, setPeriod] = useState<VisitorPeriod>('24h');
     const [rows, setRows] = useState<IPageActivityRow[]>([]);
     const [total, setTotal] = useState(0);
@@ -161,7 +159,7 @@ function PageActivityTable({ token, subject, title, description, subjectHeading 
         const fetchRows = async (): Promise<void> => {
             setLoading(true);
             try {
-                const result = await adminGetPageActivity(token, subject, {
+                const result = await adminGetPageActivity(subject, {
                     period,
                     limit: PAGE_LIMIT,
                     skip: (page - 1) * PAGE_LIMIT
@@ -184,7 +182,7 @@ function PageActivityTable({ token, subject, title, description, subjectHeading 
         };
         fetchRows();
         return () => { active = false; };
-    }, [token, subject, period, page]);
+    }, [subject, period, page]);
 
     const totalPages = total > 0 ? Math.ceil(total / PAGE_LIMIT) : 1;
 
@@ -275,7 +273,7 @@ function PageActivityTable({ token, subject, title, description, subjectHeading 
                                             </td>
                                         </tr>
                                         {expandedId === row.id && (
-                                            <PageHitsRow token={token} subject={subject} id={row.id} period={period} />
+                                            <PageHitsRow subject={subject} id={row.id} period={period} />
                                         )}
                                     </React.Fragment>
                                 ))}
@@ -310,29 +308,21 @@ function PageActivityTable({ token, subject, title, description, subjectHeading 
     );
 }
 
-interface IPageActivityProps {
-    token: string;
-}
-
 /**
  * PageActivity renders the anonymous-tid and registered-user clickstream tables.
  *
- * @param props - Component props.
- * @param props.token - Admin authentication token for API requests.
  * @returns The rendered page-activity sections.
  */
-export function PageActivity({ token }: IPageActivityProps) {
+export function PageActivity() {
     return (
         <div className={styles.container}>
             <PageActivityTable
-                token={token}
                 subject="tid"
                 title="Anonymous Visitor Activity"
                 subjectHeading="Traffic ID"
                 description="Per-page navigation for cookied anonymous visitors, keyed on the traffic id. Expand a row to see every page they hit."
             />
             <PageActivityTable
-                token={token}
                 subject="user"
                 title="Registered User Activity"
                 subjectHeading="Account"

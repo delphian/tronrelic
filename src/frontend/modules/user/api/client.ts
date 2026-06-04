@@ -8,12 +8,13 @@
  * `traffic_events` store via the traffic module's admin routes. The legacy
  * UUID user CRUD, wallet, session, profile, and referral calls were removed
  * in the Better Auth cutover along with the routes that backed them.
+ *
+ * Authorization rides the same-origin Better Auth session cookie; the
+ * backend `requireAdmin` middleware resolves it per request, so no call
+ * here carries an explicit admin token.
  */
 
 import { apiClient } from '../../../lib/api';
-
-/** Admin token header consumed by every endpoint here. */
-const adminHeaderKey = 'x-admin-token';
 
 // ============================================================================
 // Visitor Analytics Types
@@ -67,20 +68,15 @@ export interface IVisitorOrigin {
 
 /**
  * Get daily unique visitor counts for charting (admin endpoint).
- *
- * @param token - Admin API token
  * @param days - Number of days to look back (default: 90)
  * @returns Array of daily visitor count data points
  */
-export async function adminGetDailyVisitors(
-    token: string,
-    days: number = 90
+export async function adminGetDailyVisitors(days: number = 90
 ): Promise<IDailyVisitorData[]> {
     // The ClickHouse-backed endpoint takes a date window, not a `days` count;
     // convert. Backend returns { data: [{ day, visitors }] }.
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const response = await apiClient.get('/admin/users/analytics/daily-visitors', {
-        headers: { [adminHeaderKey]: token },
         params: { startDate: since.toISOString(), endDate: new Date().toISOString() }
     });
     const rows = (response.data as { data?: Array<{ day: string; visitors: number }> }).data ?? [];
@@ -95,17 +91,12 @@ export async function adminGetDailyVisitors(
  * server-recorded by the Next.js middleware, so this surface intentionally
  * includes bots, crawlers, and unfurlers as well as humans. Filtered by global
  * first-seen (new arrivals in the window) and sorted most recent first.
- *
- * @param token - Admin API token
  * @param options - Period, pagination options
  * @returns Paginated list of first-touch origins
  */
-export async function adminGetAnonymousFirstTouches(
-    token: string,
-    options?: { period?: VisitorPeriod; limit?: number; skip?: number }
+export async function adminGetAnonymousFirstTouches(options?: { period?: VisitorPeriod; limit?: number; skip?: number }
 ): Promise<{ visitors: IVisitorOrigin[]; total: number }> {
     const response = await apiClient.get('/admin/users/analytics/new-users', {
-        headers: { [adminHeaderKey]: token },
         params: options
     });
     return response.data as { visitors: IVisitorOrigin[]; total: number };
@@ -147,22 +138,17 @@ export interface IPageHit {
  *
  * `'tid'` returns anonymous visitors keyed on the cookieless traffic id;
  * `'user'` returns registered accounts keyed on the Better Auth user id.
- *
- * @param token - Admin API token
  * @param subject - `'tid'` (anonymous) or `'user'` (registered)
  * @param options - Period, pagination options
  * @returns Paginated activity rows plus the unpaginated subject total
  */
-export async function adminGetPageActivity(
-    token: string,
-    subject: PageActivitySubject,
+export async function adminGetPageActivity(subject: PageActivitySubject,
     options?: { period?: VisitorPeriod; limit?: number; skip?: number }
 ): Promise<{ rows: IPageActivityRow[]; total: number }> {
     const endpoint = subject === 'tid'
         ? '/admin/users/analytics/tid-activity'
         : '/admin/users/analytics/user-activity';
     const response = await apiClient.get(endpoint, {
-        headers: { [adminHeaderKey]: token },
         params: options
     });
     return response.data as { rows: IPageActivityRow[]; total: number };
@@ -171,21 +157,16 @@ export async function adminGetPageActivity(
 /**
  * Get the ordered page-hit clickstream for one subject (admin endpoint) —
  * every page the tid or account hit in the window, newest first.
- *
- * @param token - Admin API token
  * @param subject - `'tid'` (anonymous) or `'user'` (registered)
  * @param id - The subject key (a UUID for `'tid'`, the user id for `'user'`)
  * @param options - Period, limit options
  * @returns The subject's page hits
  */
-export async function adminGetPageHits(
-    token: string,
-    subject: PageActivitySubject,
+export async function adminGetPageHits(subject: PageActivitySubject,
     id: string,
     options?: { period?: VisitorPeriod; limit?: number }
 ): Promise<IPageHit[]> {
     const response = await apiClient.get('/admin/users/analytics/page-hits', {
-        headers: { [adminHeaderKey]: token },
         params: { subject, id, ...options }
     });
     return (response.data as { data?: IPageHit[] }).data ?? [];
@@ -328,19 +309,14 @@ function categorizeTrafficSource(source: string): string {
 
 /**
  * Get aggregate traffic source breakdown (admin endpoint).
- *
- * @param token - Admin API token
  * @param period - Lookback period (default: '30d')
  * @returns Traffic sources with counts and percentages
  */
-export async function adminGetTrafficSources(
-    token: string,
-    period: AnalyticsPeriod = '30d',
+export async function adminGetTrafficSources(period: AnalyticsPeriod = '30d',
     customRange?: ICustomDateRange
 ): Promise<{ sources: ITrafficSource[]; total: number }> {
     const params = customRange ? customRange : { period };
     const response = await apiClient.get('/admin/users/analytics/traffic-sources', {
-        headers: { [adminHeaderKey]: token },
         params
     });
     // Backend (TrafficService) returns { data: [{ source, count }] }. Derive
@@ -361,21 +337,16 @@ export async function adminGetTrafficSources(
  *
  * Returns landing pages, countries, devices, UTM campaigns, search keywords,
  * engagement metrics, and conversion rates for visitors from the given source.
- *
- * @param token - Admin API token
  * @param source - Referrer domain (e.g. 'duckduckgo.com') or 'direct'
  * @param period - Lookback period (default: '30d')
  * @returns Detailed source breakdown
  */
-export async function adminGetTrafficSourceDetails(
-    token: string,
-    source: string,
+export async function adminGetTrafficSourceDetails(source: string,
     period: AnalyticsPeriod = '30d',
     customRange?: ICustomDateRange
 ): Promise<ITrafficSourceDetails> {
     const params = customRange ? { source, ...customRange } : { source, period };
     const response = await apiClient.get('/admin/users/analytics/traffic-source-details', {
-        headers: { [adminHeaderKey]: token },
         params
     });
     return response.data as ITrafficSourceDetails;
@@ -383,19 +354,14 @@ export async function adminGetTrafficSourceDetails(
 
 /**
  * Get top landing pages by visitor count (admin endpoint).
- *
- * @param token - Admin API token
  * @param options - Period and limit options
  * @returns Landing pages with engagement metrics
  */
-export async function adminGetTopLandingPages(
-    token: string,
-    options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
+export async function adminGetTopLandingPages(options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
 ): Promise<{ pages: ILandingPage[]; totalPages: number; totalVisitors: number }> {
     const { customRange, ...rest } = options ?? {};
     const params = customRange ? { ...customRange, limit: rest.limit } : rest;
     const response = await apiClient.get('/admin/users/analytics/top-landing-pages', {
-        headers: { [adminHeaderKey]: token },
         params
     });
     // Backend returns { data: [{ path, count }] }. Per-page session/view
@@ -408,19 +374,14 @@ export async function adminGetTopLandingPages(
 
 /**
  * Get geographic distribution of visitors (admin endpoint).
- *
- * @param token - Admin API token
  * @param options - Period and limit options
  * @returns Country distribution with counts
  */
-export async function adminGetGeoDistribution(
-    token: string,
-    options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
+export async function adminGetGeoDistribution(options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
 ): Promise<{ countries: IGeoEntry[]; total: number }> {
     const { customRange, ...rest } = options ?? {};
     const params = customRange ? { ...customRange, limit: rest.limit } : rest;
     const response = await apiClient.get('/admin/users/analytics/geo-distribution', {
-        headers: { [adminHeaderKey]: token },
         params
     });
     // Backend returns { data: [{ country, count }] }; derive percentage.
@@ -436,19 +397,14 @@ export async function adminGetGeoDistribution(
 
 /**
  * Get device and screen size breakdown (admin endpoint).
- *
- * @param token - Admin API token
  * @param period - Lookback period (default: '30d')
  * @returns Device and screen size distributions
  */
-export async function adminGetDeviceBreakdown(
-    token: string,
-    period: AnalyticsPeriod = '30d',
+export async function adminGetDeviceBreakdown(period: AnalyticsPeriod = '30d',
     customRange?: ICustomDateRange
 ): Promise<{ devices: IDeviceEntry[]; screenSizes: IScreenSizeEntry[]; total: number }> {
     const params = customRange ? customRange : { period };
     const response = await apiClient.get('/admin/users/analytics/device-breakdown', {
-        headers: { [adminHeaderKey]: token },
         params
     });
     // Backend returns { data: [{ device, count }] }; screen-size dimension was
@@ -465,19 +421,14 @@ export async function adminGetDeviceBreakdown(
 
 /**
  * Get UTM campaign performance (admin endpoint).
- *
- * @param token - Admin API token
  * @param options - Period and limit options
  * @returns Campaign entries with conversion rates
  */
-export async function adminGetCampaignPerformance(
-    token: string,
-    options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
+export async function adminGetCampaignPerformance(options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
 ): Promise<{ campaigns: ICampaignEntry[]; total: number }> {
     const { customRange, ...rest } = options ?? {};
     const params = customRange ? { ...customRange, limit: rest.limit } : rest;
     const response = await apiClient.get('/admin/users/analytics/campaign-performance', {
-        headers: { [adminHeaderKey]: token },
         params
     });
     // Backend returns { data: [{ campaign, source, medium, visitors,
@@ -500,19 +451,14 @@ export async function adminGetCampaignPerformance(
 
 /**
  * Get engagement metrics (admin endpoint).
- *
- * @param token - Admin API token
  * @param period - Lookback period (default: '30d')
  * @returns Engagement summary (avg duration, pages/session, bounce rate)
  */
-export async function adminGetEngagement(
-    token: string,
-    period: AnalyticsPeriod = '30d',
+export async function adminGetEngagement(period: AnalyticsPeriod = '30d',
     customRange?: ICustomDateRange
 ): Promise<IEngagementMetrics> {
     const params = customRange ? customRange : { period };
     const response = await apiClient.get('/admin/users/analytics/engagement', {
-        headers: { [adminHeaderKey]: token },
         params
     });
     // Backend returns { sessions, avgDurationMs, pagesPerSession, bounceRate
@@ -530,19 +476,14 @@ export async function adminGetEngagement(
 
 /**
  * Get conversion funnel (admin endpoint).
- *
- * @param token - Admin API token
  * @param period - Lookback period (default: '30d')
  * @returns Funnel stages with drop-off percentages
  */
-export async function adminGetConversionFunnel(
-    token: string,
-    period: AnalyticsPeriod = '30d',
+export async function adminGetConversionFunnel(period: AnalyticsPeriod = '30d',
     customRange?: ICustomDateRange
 ): Promise<{ stages: IFunnelStage[] }> {
     const params = customRange ? customRange : { period };
     const response = await apiClient.get('/admin/users/analytics/conversion-funnel', {
-        headers: { [adminHeaderKey]: token },
         params
     });
     // Backend returns the binary funnel { distinctVisitors, converted,
@@ -562,19 +503,14 @@ export async function adminGetConversionFunnel(
 
 /**
  * Get new vs returning visitor retention data (admin endpoint).
- *
- * @param token - Admin API token
  * @param period - Lookback period (default: '30d')
  * @returns Daily new vs returning visitor counts
  */
-export async function adminGetRetention(
-    token: string,
-    period: AnalyticsPeriod = '30d',
+export async function adminGetRetention(period: AnalyticsPeriod = '30d',
     customRange?: ICustomDateRange
 ): Promise<{ data: IRetentionEntry[] }> {
     const params = customRange ? customRange : { period };
     const response = await apiClient.get('/admin/users/analytics/retention', {
-        headers: { [adminHeaderKey]: token },
         params
     });
     // Backend returns { data: [{ day, newVisitors, returningVisitors }] };
@@ -596,14 +532,10 @@ export interface IAnalyticsOverview {
 /**
  * Get the Better Auth account overview (admin endpoint): total accounts and
  * the wallet-adoption rate. Not time-windowed.
- *
- * @param token - Admin API token.
  * @returns Account count and wallet-adoption metrics.
  */
-export async function adminGetAnalyticsOverview(token: string): Promise<IAnalyticsOverview> {
-    const response = await apiClient.get('/admin/users/analytics/overview', {
-        headers: { [adminHeaderKey]: token }
-    });
+export async function adminGetAnalyticsOverview(): Promise<IAnalyticsOverview> {
+    const response = await apiClient.get('/admin/users/analytics/overview');
     const d = response.data as Partial<IAnalyticsOverview>;
     return {
         totalAccounts: d.totalAccounts ?? 0,
@@ -628,14 +560,10 @@ export interface IGscStatus {
 
 /**
  * Get GSC configuration status (admin endpoint).
- *
- * @param token - Admin API token
  * @returns GSC configuration status
  */
-export async function adminGetGscStatus(token: string): Promise<IGscStatus> {
-    const response = await apiClient.get('/admin/users/analytics/gsc/status', {
-        headers: { [adminHeaderKey]: token }
-    });
+export async function adminGetGscStatus(): Promise<IGscStatus> {
+    const response = await apiClient.get('/admin/users/analytics/gsc/status');
     return response.data as IGscStatus;
 }
 
@@ -643,47 +571,35 @@ export async function adminGetGscStatus(token: string): Promise<IGscStatus> {
  * Save GSC service account credentials (admin endpoint).
  *
  * Validates the JSON key and tests API access before saving.
- *
- * @param token - Admin API token
  * @param serviceAccountJson - JSON string of Google service account key
  * @param siteUrl - GSC property URL (e.g., "https://tronrelic.com")
  * @returns Updated GSC status
  */
-export async function adminSaveGscCredentials(
-    token: string,
-    serviceAccountJson: string,
+export async function adminSaveGscCredentials(serviceAccountJson: string,
     siteUrl: string
 ): Promise<IGscStatus> {
     const response = await apiClient.post(
         '/admin/users/analytics/gsc/credentials',
-        { serviceAccountJson, siteUrl },
-        { headers: { [adminHeaderKey]: token } }
+        { serviceAccountJson, siteUrl }
     );
     return response.data as IGscStatus;
 }
 
 /**
  * Remove stored GSC credentials (admin endpoint).
- *
- * @param token - Admin API token
- */
-export async function adminRemoveGscCredentials(token: string): Promise<void> {
-    await apiClient.delete('/admin/users/analytics/gsc/credentials', {
-        headers: { [adminHeaderKey]: token }
-    });
+ * */
+export async function adminRemoveGscCredentials(): Promise<void> {
+    await apiClient.delete('/admin/users/analytics/gsc/credentials');
 }
 
 /**
  * Trigger on-demand GSC data fetch (admin endpoint).
- *
- * @param token - Admin API token
  * @returns Number of rows fetched from GSC API
  */
-export async function adminRefreshGscData(token: string): Promise<{ rowsFetched: number }> {
+export async function adminRefreshGscData(): Promise<{ rowsFetched: number }> {
     const response = await apiClient.post(
         '/admin/users/analytics/gsc/refresh',
-        {},
-        { headers: { [adminHeaderKey]: token } }
+        {}
     );
     return response.data as { rowsFetched: number };
 }

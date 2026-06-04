@@ -12,7 +12,6 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { Button } from '../../../../../components/ui/Button';
 import styles from './GroupMembersList.module.scss';
 
@@ -22,7 +21,6 @@ interface MembersResponse {
 }
 
 interface Props {
-    token: string;
     groupId: string;
     groupName: string;
     onClose: () => void;
@@ -30,7 +28,7 @@ interface Props {
 
 const PAGE_SIZE = 100;
 
-export function GroupMembersList({ token, groupId, groupName, onClose }: Props) {
+export function GroupMembersList({ groupId, groupName, onClose }: Props) {
     const [members, setMembers] = useState<string[]>([]);
     const [total, setTotal] = useState(0);
     const [skip, setSkip] = useState(0);
@@ -39,7 +37,7 @@ export function GroupMembersList({ token, groupId, groupName, onClose }: Props) 
 
     const baseUrl = useMemo(
         () =>
-            `${getRuntimeConfig().apiUrl}/admin/users/groups/${encodeURIComponent(groupId)}/members`,
+            `/api/admin/users/groups/${encodeURIComponent(groupId)}/members`,
         [groupId]
     );
 
@@ -50,8 +48,7 @@ export function GroupMembersList({ token, groupId, groupName, onClose }: Props) 
             setError(null);
             try {
                 const response = await fetch(
-                    `${baseUrl}?limit=${PAGE_SIZE}&skip=${skip}`,
-                    { headers: { 'X-Admin-Token': token } }
+                    `${baseUrl}?limit=${PAGE_SIZE}&skip=${skip}`
                 );
                 if (!response.ok) {
                     throw new Error(`Failed to load members (${response.status})`);
@@ -69,7 +66,7 @@ export function GroupMembersList({ token, groupId, groupName, onClose }: Props) 
         }
         void load();
         return () => { cancelled = true; };
-    }, [baseUrl, token, skip]);
+    }, [baseUrl, skip]);
 
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
     const currentPage = Math.floor(skip / PAGE_SIZE) + 1;

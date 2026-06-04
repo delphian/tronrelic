@@ -2,15 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { formatBytes } from '../../../../../lib/format';
 import { StatStrip } from './StatStrip';
 import { ClickHouseTableBrowser } from './ClickHouseTableBrowser';
 import styles from './ClickHouseSection.module.scss';
-
-interface Props {
-    token: string;
-}
 
 interface ClickHouseStatus {
     connected: boolean;
@@ -32,16 +27,13 @@ interface ClickHouseStatus {
  * health endpoint reports `connected: false` — the browser surfaces an
  * empty state instead of erroring.
  */
-export function ClickHouseSection({ token }: Props) {
+export function ClickHouseSection() {
     const [clickhouse, setClickhouse] = useState<ClickHouseStatus | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const runtimeConfig = getRuntimeConfig();
 
     const fetchData = useCallback(async () => {
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/health/clickhouse`, {
-                headers: { 'X-Admin-Token': token }
-            });
+            const response = await fetch(`/api/admin/system/health/clickhouse`);
 
             if (response.ok) {
                 const data = await response.json();
@@ -54,7 +46,7 @@ export function ClickHouseSection({ token }: Props) {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch ClickHouse health');
         }
-    }, [token, runtimeConfig.apiUrl]);
+    }, []);
 
     useEffect(() => {
         void fetchData();
@@ -100,7 +92,7 @@ export function ClickHouseSection({ token }: Props) {
             {clickhouse?.connected && (
                 <div className={styles.block}>
                     <h4 className={styles.block_title}>Table Browser</h4>
-                    <ClickHouseTableBrowser token={token} />
+                    <ClickHouseTableBrowser />
                 </div>
             )}
         </div>

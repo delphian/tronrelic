@@ -16,7 +16,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Lock } from 'lucide-react';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { Button } from '../../../../../components/ui/Button';
 import styles from './UserGroupsForm.module.scss';
 
@@ -32,14 +31,13 @@ interface ListResponse {
 }
 
 interface Props {
-    token: string;
     userId: string;
     initialGroups: string[];
     onCancel: () => void;
     onSubmit: (selectedGroupIds: string[]) => void | Promise<void>;
 }
 
-export function UserGroupsForm({ token, userId, initialGroups, onCancel, onSubmit }: Props) {
+export function UserGroupsForm({ userId, initialGroups, onCancel, onSubmit }: Props) {
     const [groups, setGroups] = useState<UserGroup[]>([]);
     const [selected, setSelected] = useState<Set<string>>(() => new Set(initialGroups));
     const [loading, setLoading] = useState(true);
@@ -47,7 +45,7 @@ export function UserGroupsForm({ token, userId, initialGroups, onCancel, onSubmi
     const [submitting, setSubmitting] = useState(false);
 
     const baseUrl = useMemo(
-        () => `${getRuntimeConfig().apiUrl}/admin/users/groups`,
+        () => `/api/admin/users/groups`,
         []
     );
 
@@ -57,9 +55,7 @@ export function UserGroupsForm({ token, userId, initialGroups, onCancel, onSubmi
             setLoading(true);
             setError(null);
             try {
-                const response = await fetch(baseUrl, {
-                    headers: { 'X-Admin-Token': token }
-                });
+                const response = await fetch(baseUrl);
                 if (!response.ok) {
                     throw new Error(`Failed to load groups (${response.status})`);
                 }
@@ -86,7 +82,7 @@ export function UserGroupsForm({ token, userId, initialGroups, onCancel, onSubmi
         }
         void load();
         return () => { cancelled = true; };
-    }, [baseUrl, token]);
+    }, [baseUrl]);
 
     const toggle = useCallback((groupId: string) => {
         setSelected(prev => {

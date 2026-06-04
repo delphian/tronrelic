@@ -16,8 +16,7 @@
  * because the page needs hooks (`useModal`, `useToast`, WebSocket
  * subscription, redux). Admin auth runs on the cookie path —
  * same-origin fetches carry the Better Auth session cookie, which
- * `requireAdmin` consults; `useSystemAuth().token` stays as an empty
- * string for transitional API compatibility. WebSocket subscription
+ * `requireAdmin` consults. WebSocket subscription
  * to `widgets:placements-update` triggers a list refetch so admin
  * changes propagate live to every open admin tab.
  *
@@ -62,7 +61,6 @@ import { Switch } from '../../../../components/ui/Switch';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { ConfirmDialog } from '../../../../components/ui/ConfirmDialog';
-import { useSystemAuth } from '../../../../features/system';
 import { cn } from '../../../../lib/cn';
 import { getSocket } from '../../../../lib/socketClient';
 
@@ -113,15 +111,6 @@ interface IPlacementCreate {
     title?: string;
     instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
-}
-
-/**
- * Build the standard `X-Admin-Token` header. Centralised so the
- * empty-token edge case (token cleared mid-session) yields a clean
- * 401 from the backend rather than a bare `undefined` cast.
- */
-function authHeader(token: string | null): HeadersInit {
-    return { 'X-Admin-Token': token ?? '' };
 }
 
 /**
@@ -184,7 +173,6 @@ function lookupZone(snapshot: IZoneSnapshot | null, zoneId: string): { label: st
  * Top-level admin page rendering the placement editor.
  */
 export default function WidgetsAdminPage() {
-    const { token } = useSystemAuth();
     const { open: openModal, close: closeModal } = useModal();
     const { push: pushToast } = useToast();
 
@@ -194,8 +182,6 @@ export default function WidgetsAdminPage() {
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
     const [busyId, setBusyId] = useState<string | null>(null);
-
-    const headers = useMemo<HeadersInit>(() => authHeader(token), [token]);
 
     const notifyError = useCallback(
         (title: string, err: unknown) => {
@@ -224,9 +210,9 @@ export default function WidgetsAdminPage() {
             setError(null);
             try {
                 const [zonesRes, typesRes, placementsRes] = await Promise.all([
-                    fetch('/api/admin/system/zones', { headers }),
-                    fetch('/api/admin/system/widget-types', { headers }),
-                    fetch('/api/admin/system/widgets/placements', { headers })
+                    fetch('/api/admin/system/zones'),
+                    fetch('/api/admin/system/widget-types'),
+                    fetch('/api/admin/system/widgets/placements')
                 ]);
                 if (!zonesRes.ok) throw new Error(`Failed to load zones (${zonesRes.status})`);
                 if (!typesRes.ok) throw new Error(`Failed to load widget types (${typesRes.status})`);
@@ -245,7 +231,7 @@ export default function WidgetsAdminPage() {
                 if (firstLoad) setLoading(false);
             }
         },
-        [headers]
+        []
     );
 
     /* Initial load. */
@@ -275,7 +261,7 @@ export default function WidgetsAdminPage() {
         async (id: string, patch: IPlacementPatch): Promise<void> => {
             const res = await fetch(`/api/admin/system/widgets/placements/${id}`, {
                 method: 'PATCH',
-                headers: { ...headers, 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(patch)
             });
             if (!res.ok) {
@@ -283,7 +269,7 @@ export default function WidgetsAdminPage() {
                 throw new Error(formatApiError(body, res.status, 'Update'));
             }
         },
-        [headers]
+        []
     );
 
     /**
@@ -314,7 +300,7 @@ export default function WidgetsAdminPage() {
         async (input: IPlacementCreate): Promise<void> => {
             const res = await fetch('/api/admin/system/widgets/placements', {
                 method: 'POST',
-                headers: { ...headers, 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(input)
             });
             if (!res.ok) {
@@ -322,7 +308,7 @@ export default function WidgetsAdminPage() {
                 throw new Error(formatApiError(body, res.status, 'Create'));
             }
         },
-        [headers]
+        []
     );
 
     /**
@@ -331,15 +317,14 @@ export default function WidgetsAdminPage() {
     const deletePlacement = useCallback(
         async (id: string): Promise<void> => {
             const res = await fetch(`/api/admin/system/widgets/placements/${id}`, {
-                method: 'DELETE',
-                headers
+                method: 'DELETE'
             });
             if (!res.ok && res.status !== 204) {
                 const body = await res.json().catch(() => ({}));
                 throw new Error(body.error || `Delete failed (${res.status})`);
             }
         },
-        [headers]
+        []
     );
 
     /**
@@ -350,8 +335,7 @@ export default function WidgetsAdminPage() {
             setBusyId(id);
             try {
                 const res = await fetch(`/api/admin/system/widgets/placements/${id}/restore-defaults`, {
-                    method: 'POST',
-                    headers
+                    method: 'POST'
                 });
                 if (!res.ok) {
                     const body = await res.json().catch(() => ({}));
@@ -364,7 +348,7 @@ export default function WidgetsAdminPage() {
                 setBusyId(null);
             }
         },
-        [headers, notifyError, notifySuccess]
+        [notifyError, notifySuccess]
     );
 
     const sensors = useSensors(

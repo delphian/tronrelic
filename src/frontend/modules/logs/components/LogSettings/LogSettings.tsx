@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import type { LogLevelName } from '@/types';
-import { getRuntimeConfig } from '../../../../lib/runtimeConfig';
 import { Button } from '../../../../components/ui/Button';
 import styles from './LogSettings.module.scss';
 
@@ -17,10 +16,6 @@ interface SystemConfig {
     logLevel: LogLevelName;
     updatedAt: string;
     updatedBy?: string;
-}
-
-interface Props {
-    token: string;
 }
 
 /**
@@ -49,21 +44,16 @@ interface Props {
  * 5. Component shows success/error feedback
  *
  * **Security:**
- * Requires admin token authentication via X-Admin-Token header.
- *
- * @param {Props} props - Component props
- * @param {string} props.token - Admin authentication token for API requests
+ * Authorization rides the same-origin Better Auth session cookie;
+ * the backend `requireAdmin` middleware resolves it per request.
  */
-export function LogSettings({ token }: Props) {
+export function LogSettings() {
     const [config, setConfig] = useState<SystemConfig | null>(null);
     const [selectedLevel, setSelectedLevel] = useState<LogLevelName>('info');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
-    // Get runtime config for API URL
-    const runtimeConfig = getRuntimeConfig();
 
     /**
      * Fetches current system configuration from the backend.
@@ -76,12 +66,9 @@ export function LogSettings({ token }: Props) {
         setError(null);
 
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
+            const response = await fetch(`/api/admin/system/config/system`, {
                 method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': token
-                }
+                headers: { 'Content-Type': 'application/json' }
             });
 
             if (!response.ok) {
@@ -118,12 +105,9 @@ export function LogSettings({ token }: Props) {
         setSuccessMessage(null);
 
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
+            const response = await fetch(`/api/admin/system/config/system`, {
                 method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': token
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ logLevel: selectedLevel })
             });
 
@@ -153,7 +137,8 @@ export function LogSettings({ token }: Props) {
     // Fetch config on mount
     useEffect(() => {
         void fetchConfig();
-    }, [token]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Check if current selection differs from saved config
     const hasChanges = config && selectedLevel !== config.logLevel;

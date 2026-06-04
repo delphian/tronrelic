@@ -5,13 +5,13 @@
  * Enables administrators to create, edit, delete, and search labels
  * that identify addresses throughout the platform.
  *
- * Admin pages are client components that fetch data with the admin token.
+ * Admin pages are client components; the same-origin Better Auth session
+ * cookie authorizes their admin API requests.
  */
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Download, Upload, Tags } from 'lucide-react';
-import { useSystemAuth } from '../../../../features/system';
 import { Card } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
 import {
@@ -54,8 +54,6 @@ const INITIAL_CREATE_FORM: CreateLabelFormState = {
  * - Import/export functionality
  */
 export default function AddressLabelsPage() {
-    const { token } = useSystemAuth();
-
     // List state
     const [labels, setLabels] = useState<AddressLabel[]>([]);
     const [stats, setStats] = useState<LabelStatsType | null>(null);
@@ -92,8 +90,6 @@ export default function AddressLabelsPage() {
      * Fetch labels from the admin API.
      */
     const fetchLabels = useCallback(async () => {
-        if (!token) return;
-
         setLoading(true);
         setError(null);
 
@@ -107,9 +103,7 @@ export default function AddressLabelsPage() {
             if (sourceTypeFilter) params.append('sourceType', sourceTypeFilter);
             if (searchQuery) params.append('search', searchQuery);
 
-            const response = await fetch(`/api/admin/address-labels?${params}`, {
-                headers: { 'X-Admin-Token': token }
-            });
+            const response = await fetch(`/api/admin/address-labels?${params}`);
 
             if (!response.ok) {
                 throw new Error(`Failed to fetch labels: ${response.statusText}`);
@@ -123,18 +117,14 @@ export default function AddressLabelsPage() {
         } finally {
             setLoading(false);
         }
-    }, [token, page, limit, categoryFilter, sourceTypeFilter, searchQuery]);
+    }, [page, limit, categoryFilter, sourceTypeFilter, searchQuery]);
 
     /**
      * Fetch statistics from the admin API.
      */
     const fetchStats = useCallback(async () => {
-        if (!token) return;
-
         try {
-            const response = await fetch('/api/admin/address-labels/stats', {
-                headers: { 'X-Admin-Token': token }
-            });
+            const response = await fetch('/api/admin/address-labels/stats');
 
             if (response.ok) {
                 const data = await response.json();
@@ -143,23 +133,20 @@ export default function AddressLabelsPage() {
         } catch {
             // Stats are non-critical, don't show error
         }
-    }, [token]);
+    }, []);
 
     /**
      * Create a new label.
      */
     const handleCreate = async () => {
-        if (!token || !createForm.address || !createForm.label) return;
+        if (!createForm.address || !createForm.label) return;
 
         setCreateLoading(true);
 
         try {
             const response = await fetch('/api/admin/address-labels', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': token
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     ...createForm,
                     tags: createForm.tags.split(',').map(t => t.trim()).filter(Boolean)
@@ -185,15 +172,10 @@ export default function AddressLabelsPage() {
      * Update an existing label.
      */
     const handleUpdate = async (address: string, source: string) => {
-        if (!token) return;
-
         try {
             const response = await fetch(`/api/admin/address-labels/${encodeURIComponent(address)}`, {
                 method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': token
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ source, ...editForm })
             });
 
@@ -213,15 +195,12 @@ export default function AddressLabelsPage() {
      * Delete a label.
      */
     const handleDelete = async (address: string, source: string) => {
-        if (!token || !confirm('Are you sure you want to delete this label?')) return;
+        if (!confirm('Are you sure you want to delete this label?')) return;
 
         try {
             const response = await fetch(
                 `/api/admin/address-labels/${encodeURIComponent(address)}?source=${encodeURIComponent(source)}`,
-                {
-                    method: 'DELETE',
-                    headers: { 'X-Admin-Token': token }
-                }
+                { method: 'DELETE' }
             );
 
             if (!response.ok) {
@@ -247,16 +226,12 @@ export default function AddressLabelsPage() {
      * Export labels as JSON file download.
      */
     const handleExport = async () => {
-        if (!token) return;
-
         try {
             const params = new URLSearchParams();
             if (categoryFilter) params.append('category', categoryFilter);
             if (sourceTypeFilter) params.append('sourceType', sourceTypeFilter);
 
-            const response = await fetch(`/api/admin/address-labels/export?${params}`, {
-                headers: { 'X-Admin-Token': token }
-            });
+            const response = await fetch(`/api/admin/address-labels/export?${params}`);
 
             if (!response.ok) {
                 throw new Error(`Export failed: ${response.statusText}`);
@@ -287,7 +262,7 @@ export default function AddressLabelsPage() {
      * Import labels from uploaded JSON file.
      */
     const handleImport = async () => {
-        if (!token || !importFile) return;
+        if (!importFile) return;
 
         setImportLoading(true);
         setImportResult(null);
@@ -307,10 +282,7 @@ export default function AddressLabelsPage() {
 
             const response = await fetch('/api/admin/address-labels/import', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Admin-Token': token
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ labels })
             });
 

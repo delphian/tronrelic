@@ -1,6 +1,5 @@
 'use client';
 
-import { useSystemAuth } from '../../../../features/system';
 import { Page, Stack } from '../../../../components/layout';
 import { SystemLogsMonitor, LogSettings } from '../../../../modules/logs';
 
@@ -13,13 +12,11 @@ import { SystemLogsMonitor, LogSettings } from '../../../../modules/logs';
  * log management. Requires admin authentication.
  */
 export default function SystemLogsPage() {
-    const { token } = useSystemAuth();
-
     return (
         <Page>
             <Stack gap="lg">
-                <SystemLogsMonitor token={token} />
-                <LogSettings token={token} />
+                <SystemLogsMonitor />
+                <LogSettings />
             </Stack>
         </Page>
     );

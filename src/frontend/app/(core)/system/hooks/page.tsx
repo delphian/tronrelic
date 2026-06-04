@@ -18,7 +18,6 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { useSystemAuth } from '../../../../features/system';
 import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { ClientTime } from '../../../../components/ui/ClientTime';
@@ -80,7 +79,6 @@ function toneForKind(kind: IHookRecord['kind']): 'neutral' | 'info' | 'success' 
  * Admin page rendering the hook-system bird's-eye view.
  */
 export default function HooksAdminPage() {
-    const { token } = useSystemAuth();
     const [tracks, setTracks] = useState<ReadonlyArray<ITrackRecord>>([]);
     const [activeTrack, setActiveTrack] = useState<string | null>(null);
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -96,7 +94,6 @@ export default function HooksAdminPage() {
             setError(null);
             try {
                 const res = await fetch('/api/admin/system/hooks', {
-                    headers: { 'x-admin-token': token },
                     signal: ctrl.signal
                 });
                 if (!res.ok) {
@@ -121,7 +118,7 @@ export default function HooksAdminPage() {
             aborted = true;
             ctrl.abort();
         };
-    }, [token]);
+    }, []);
 
     const selectedTrack = useMemo(() => {
         return tracks.find(t => t.id === activeTrack) ?? null;

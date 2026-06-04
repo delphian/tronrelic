@@ -2,7 +2,6 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Users as UsersIcon } from 'lucide-react';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
@@ -37,10 +36,6 @@ interface AccountsResponse {
     total: number;
 }
 
-interface Props {
-    token: string;
-}
-
 /**
  * UsersMonitor
  *
@@ -53,16 +48,13 @@ interface Props {
  * the Traffic tab (`VisitorAnalytics` / `PageActivity`). This view focuses on
  * the account list.
  *
- * Client-only admin tool: `/system/users` is admin-gated and the token comes
- * from `SystemAuthContext` at runtime, so the SSR + Live Updates pattern does
- * not apply — the loading state on the table is the user-triggered
- * search/pagination case the pattern explicitly permits. Mirrors the
- * established approach in `UserGroupsForm` / `GroupForm`.
- *
- * @param props - Component props.
- * @param props.token - Admin authentication token sent as `X-Admin-Token`.
+ * Client-only admin tool: `/system/users` is admin-gated via the Better Auth
+ * session cookie, so the SSR + Live Updates pattern does not apply — the
+ * loading state on the table is the user-triggered search/pagination case
+ * the pattern explicitly permits. Mirrors the established approach in
+ * `UserGroupsForm` / `GroupForm`.
  */
-export function UsersMonitor({ token }: Props) {
+export function UsersMonitor() {
     const [accounts, setAccounts] = useState<AccountRow[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -84,12 +76,7 @@ export function UsersMonitor({ token }: Props) {
             }
 
             const response = await fetch(
-                `${getRuntimeConfig().apiUrl}/admin/users?${params.toString()}`,
-                {
-                    headers: {
-                        'X-Admin-Token': token
-                    }
-                }
+                `/api/admin/users?${params.toString()}`
             );
 
             if (!response.ok) {
@@ -104,7 +91,7 @@ export function UsersMonitor({ token }: Props) {
         } finally {
             setLoading(false);
         }
-    }, [token, page, search]);
+    }, [page, search]);
 
     useEffect(() => {
         fetchAccounts();
@@ -121,20 +108,16 @@ export function UsersMonitor({ token }: Props) {
             size: 'sm',
             content: (
                 <UserGroupsForm
-                    token={token}
                     userId={account.id}
                     initialGroups={account.groups ?? []}
                     onCancel={() => closeModal(modalId)}
                     onSubmit={async (selectedIds) => {
                         try {
                             const response = await fetch(
-                                `${getRuntimeConfig().apiUrl}/admin/users/${encodeURIComponent(account.id)}/groups`,
+                                `/api/admin/users/${encodeURIComponent(account.id)}/groups`,
                                 {
                                     method: 'PUT',
-                                    headers: {
-                                        'X-Admin-Token': token,
-                                        'Content-Type': 'application/json'
-                                    },
+                                    headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ groups: selectedIds })
                                 }
                             );
@@ -155,7 +138,7 @@ export function UsersMonitor({ token }: Props) {
                 />
             )
         });
-    }, [openModal, closeModal, pushToast, fetchAccounts, token]);
+    }, [openModal, closeModal, pushToast, fetchAccounts]);
 
     const handleSearch = () => {
         setPage(1);

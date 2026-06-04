@@ -304,9 +304,17 @@
 }
 
 .categoryDropdownItem > a {
-    display: block;
+    // Flex row so the icon and label separate by an explicit gap. The base
+    // `.tab--withIcon` rule sets `display: inline-flex; gap` but this
+    // selector outscores it (class + child + type beats a lone class), so
+    // without restating the flex layout here the anchor falls back to
+    // `display: block` and the icon and label collapse together. Padding
+    // matches the top-level `.tab` so dropdown rows breathe the same.
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
     width: 100%;
-    padding: var(--padding-xs) var(--padding-sm);
+    padding: var(--padding-sm) var(--padding-md);
     border-radius: var(--radius-sm);
     color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);

@@ -7,13 +7,8 @@ import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { StatStrip } from './StatStrip';
 import styles from './BlockchainSection.module.scss';
-
-interface Props {
-    token: string;
-}
 
 interface BlockchainError {
     at: string;
@@ -77,30 +72,21 @@ interface ObserverStats {
  * compact table because six numeric columns line up better than they
  * would as stat tiles.
  */
-export function BlockchainSection({ token }: Props) {
+export function BlockchainSection() {
     const [status, setStatus] = useState<BlockchainStatus | null>(null);
     const [metrics, setMetrics] = useState<BlockProcessingMetrics | null>(null);
     const [observers, setObservers] = useState<ObserverStats[]>([]);
     const [schedulerEnabled, setSchedulerEnabled] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [syncing, setSyncing] = useState(false);
-    const runtimeConfig = getRuntimeConfig();
 
     const fetchData = useCallback(async () => {
         try {
             const [statusRes, metricsRes, observersRes, schedulerRes] = await Promise.all([
-                fetch(`${runtimeConfig.apiUrl}/admin/system/blockchain/status`, {
-                    headers: { 'X-Admin-Token': token }
-                }),
-                fetch(`${runtimeConfig.apiUrl}/admin/system/blockchain/metrics`, {
-                    headers: { 'X-Admin-Token': token }
-                }),
-                fetch(`${runtimeConfig.apiUrl}/admin/system/blockchain/observers`, {
-                    headers: { 'X-Admin-Token': token }
-                }),
-                fetch(`${runtimeConfig.apiUrl}/admin/system/scheduler/health`, {
-                    headers: { 'X-Admin-Token': token }
-                })
+                fetch(`/api/admin/system/blockchain/status`),
+                fetch(`/api/admin/system/blockchain/metrics`),
+                fetch(`/api/admin/system/blockchain/observers`),
+                fetch(`/api/admin/system/scheduler/health`)
             ]);
 
             setStatus(statusRes.ok ? (await statusRes.json()).status ?? null : null);
@@ -119,7 +105,7 @@ export function BlockchainSection({ token }: Props) {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch blockchain data');
         }
-    }, [token, runtimeConfig.apiUrl]);
+    }, []);
 
     useEffect(() => {
         void fetchData();
@@ -132,9 +118,8 @@ export function BlockchainSection({ token }: Props) {
         setSyncing(true);
         setError(null);
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/blockchain/sync`, {
-                method: 'POST',
-                headers: { 'X-Admin-Token': token }
+            const response = await fetch(`/api/admin/system/blockchain/sync`, {
+                method: 'POST'
             });
             let data: any = null;
             try {
