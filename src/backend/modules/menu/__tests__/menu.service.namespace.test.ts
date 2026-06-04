@@ -195,7 +195,7 @@ describe('MenuService - Namespace Support', () => {
 
         // Reset singleton and inject mock database
         (MenuService as any).instance = undefined;
-        MenuService.setDatabase(mockDatabase);
+        MenuService.setDependencies(mockDatabase);
         menuService = MenuService.getInstance();
     });
 

@@ -120,14 +120,6 @@ export class MenuService implements IMenuService {
     }
 
     /**
-     * @deprecated Use {@link setDependencies} instead. Retained as a thin alias
-     * for tests and callers that haven't migrated.
-     */
-    public static setDatabase(database: IDatabaseService): void {
-        MenuService.setDependencies(database);
-    }
-
-    /**
      * Get the singleton instance of MenuService.
      *
      * Creates the instance on first call and returns the same instance on
