@@ -14,11 +14,6 @@ export type { IAuthModalProps } from './AuthModal';
 export { ProfileMenu } from './ProfileMenu';
 export type { IProfileMenuProps } from './ProfileMenu';
 
-// Admin components
+// Admin components — identity only; traffic panels live in modules/traffic
 export { UsersMonitor } from './admin';
-export { VisitorAnalytics } from './admin';
-export { PageActivity } from './admin';
-export { AnalyticsDashboard } from './admin';
-export { GscSettings } from './admin';
 export { GroupsManager } from './admin';
-export { TrafficDashboard } from './admin';

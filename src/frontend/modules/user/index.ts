@@ -2,17 +2,17 @@
  * User Module
  *
  * Better Auth login + profile affordances, wallet display, and the
- * `/system/users` admin dashboards (account directory, traffic analytics,
- * Google Search Console). Better Auth is the sole identity layer — the
- * legacy UUID identity slice, cookie utilities, TronLink wallet hook, and
- * public profile subtree were removed in the Phase 6 cutover.
+ * `/system/users` identity dashboards (account directory, groups). Better
+ * Auth is the sole identity layer — the legacy UUID identity slice, cookie
+ * utilities, TronLink wallet hook, and public profile subtree were removed
+ * in the Phase 6 cutover. Traffic analytics and the GSC integration moved
+ * to `modules/traffic` to mirror the backend identity/traffic split.
  *
  * ## Directory Structure
  *
  * ```
  * modules/user/
  * ├── index.ts          # Barrel exports (this file)
- * ├── api/              # Admin analytics + GSC client
  * ├── components/       # AuthModal, WalletButton, ProfileMenu, SessionProvider, admin/*
  * └── lib/              # Better Auth client + SSR session resolver
  * ```
@@ -31,16 +31,11 @@ export { ProfileMenu } from './components';
 export type { IProfileMenuProps } from './components';
 
 // =============================================================================
-// Components — `/system/users` admin dashboards
+// Components — `/system/users` identity dashboards
 // =============================================================================
 
 export { UsersMonitor } from './components';
-export { VisitorAnalytics } from './components';
-export { PageActivity } from './components';
-export { AnalyticsDashboard } from './components';
-export { GscSettings } from './components';
 export { GroupsManager } from './components';
-export { TrafficDashboard } from './components';
 
 // =============================================================================
 // Better Auth client

@@ -186,6 +186,19 @@ export interface IDailyVisitorPoint {
     visitors: number;
 }
 
+/**
+ * One day's per-bot-class row counts. `counts` is keyed by the `BotClass`
+ * value (`human`, `search_engine`, `ai_crawler`, ...), with rows whose
+ * `bot_class` is NULL folded into an `'unclassified'` bucket so pre-classifier
+ * data stays visible on the trend chart.
+ */
+export interface IBotClassDailyPoint {
+    /** Calendar day in `YYYY-MM-DD`. */
+    day: string;
+    /** Row count per bot class for the day. */
+    counts: Record<string, number>;
+}
+
 /** First-touch attribution for one analytics visitor (tid). */
 export interface ITrafficVisitorOrigin {
     candidateUid: string;
@@ -263,7 +276,7 @@ export interface IEngagementMetrics {
  * One row of the analytics new-arrivals table: a tid whose global first-seen
  * (across the full table) falls inside the window, with its first-touch
  * attribution and lifetime activity counts. Shaped to the frontend
- * `IVisitorOrigin` the `/system/users` panel renders directly. `searchKeyword`
+ * `IVisitorOrigin` the `/system/traffic` panel renders directly. `searchKeyword`
  * is always null — `traffic_events` carries no keyword column.
  */
 export interface INewVisitorOrigin {
@@ -593,6 +606,109 @@ export class TrafficService {
             return rows.map(r => ({ key: r.key, count: Number(r.count) }));
         } catch (error) {
             this.logger.warn({ error, sinceHours, limit }, 'Failed to read bot_other UA aggregate');
+            return [];
+        }
+    }
+
+    /**
+     * Daily row counts per `bot_class` over the lookback window. Powers the
+     * crawler-trend chart: one point per day, each carrying a per-class count
+     * map. NULL classes are folded into `'unclassified'` (matching the
+     * breakdown panel's NULL bucket) so classifier coverage gaps stay visible.
+     *
+     * The pivot from `(day, klass, count)` rows into per-day maps happens in
+     * JS — keeping the SQL a plain two-dimension GROUP BY mirrors the other
+     * aggregate reads and avoids ClickHouse map functions.
+     *
+     * Returns `[]` when ClickHouse is unavailable or the query fails.
+     *
+     * @param options - Lookback window (`sinceHours`).
+     * @returns One point per day with per-bot-class counts, oldest first.
+     */
+    async getBotClassTimeSeries(options: ITrafficAggregateOptions = {}): Promise<IBotClassDailyPoint[]> {
+        if (!this.clickhouse) {
+            return [];
+        }
+
+        const sinceHours = options.sinceHours ?? DEFAULT_AGGREGATE_HOURS;
+
+        const sql = `
+            SELECT
+                toDate(timestamp) AS day,
+                coalesce(bot_class, 'unclassified') AS klass,
+                count() AS count
+            FROM ${TABLE_NAME}
+            WHERE timestamp > now() - INTERVAL {sinceHours:UInt32} HOUR
+            GROUP BY day, klass
+            ORDER BY day ASC
+        `;
+
+        try {
+            const rows = await this.clickhouse.query<{ day: string; klass: string; count: string | number }>(
+                sql,
+                { sinceHours }
+            );
+
+            const byDay = new Map<string, Record<string, number>>();
+            for (const row of rows) {
+                const day = String(row.day);
+                const counts = byDay.get(day) ?? {};
+                counts[row.klass] = Number(row.count);
+                byDay.set(day, counts);
+            }
+            return Array.from(byDay.entries()).map(([day, counts]) => ({ day, counts }));
+        } catch (error) {
+            this.logger.warn({ error, sinceHours }, 'Failed to read bot_class time series');
+            return [];
+        }
+    }
+
+    /**
+     * Top paths hit by one specific `bot_class` over the lookback window.
+     * Powers the "which pages do AI crawlers actually fetch" panel.
+     *
+     * `botClass` is bound as a query parameter — it originates from the
+     * request and must never be interpolated. The controller additionally
+     * validates it against the known `BotClass` set before calling.
+     *
+     * Returns `[]` when ClickHouse is unavailable or the query fails.
+     *
+     * @param botClass - Bot class to filter on (e.g. `'ai_crawler'`).
+     * @param options - Lookback window and row limit.
+     * @returns Path buckets ordered by hit count, highest first.
+     */
+    async getPathsByBotClass(
+        botClass: string,
+        options: ITrafficAggregateOptions = {}
+    ): Promise<ITrafficAggregateBucket[]> {
+        if (!this.clickhouse) {
+            return [];
+        }
+
+        const sinceHours = options.sinceHours ?? DEFAULT_AGGREGATE_HOURS;
+        const limit = options.limit ?? DEFAULT_AGGREGATE_LIMIT;
+
+        const sql = `
+            SELECT
+                path AS key,
+                count() AS count
+            FROM ${TABLE_NAME}
+            WHERE timestamp > now() - INTERVAL {sinceHours:UInt32} HOUR
+              AND bot_class = {botClass:String}
+              AND path != ''
+            GROUP BY key
+            ORDER BY count DESC
+            LIMIT {limit:UInt32}
+        `;
+
+        try {
+            const rows = await this.clickhouse.query<{ key: string | null; count: string | number }>(
+                sql,
+                { sinceHours, limit, botClass }
+            );
+            return rows.map(r => ({ key: r.key, count: Number(r.count) }));
+        } catch (error) {
+            this.logger.warn({ error, botClass, sinceHours, limit }, 'Failed to read per-bot-class paths');
             return [];
         }
     }

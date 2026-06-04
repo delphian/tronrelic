@@ -18,8 +18,9 @@
  */
 
 import type { Express, Router } from 'express';
-import type { ICacheService, IClickHouseService, IDatabaseService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry } from '@/types';
+import type { ICacheService, IClickHouseService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry } from '@/types';
 import { logger } from '../../lib/logger.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { GscService } from './services/gsc.service.js';
 import { TrafficService } from './services/traffic.service.js';
 import { initGeoIP } from './services/geo.service.js';
@@ -48,6 +49,9 @@ export interface ITrafficModuleDependencies {
     /** Express app — the module mounts its own admin router (IoC). */
     app: Express;
 
+    /** Menu service for registering the /system/traffic admin menu item. */
+    menuService: IMenuService;
+
     /** Scheduler for the daily GSC fetch job. Null when disabled. */
     scheduler: ISchedulerService | null;
 
@@ -72,6 +76,7 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
     };
 
     private app!: Express;
+    private menuService!: IMenuService;
     private scheduler!: ISchedulerService | null;
 
     private gscService!: GscService;
@@ -91,6 +96,7 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         this.logger.info('Initializing traffic module...');
 
         this.app = dependencies.app;
+        this.menuService = dependencies.menuService;
         this.scheduler = dependencies.scheduler;
 
         // Initialize GeoIP lookup for country detection (non-blocking).
@@ -133,6 +139,23 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
      */
     async run(): Promise<void> {
         this.logger.info('Running traffic module...');
+
+        try {
+            await this.menuService.create({
+                namespace: 'main',
+                label: 'Traffic',
+                url: '/system/traffic',
+                icon: 'Activity',
+                order: 26,
+                parent: MAIN_SYSTEM_CONTAINER_ID,
+                enabled: true
+            });
+
+            this.logger.info('Traffic menu item registered under the System container');
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to register traffic menu item');
+            throw new Error(`Failed to register traffic menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
 
         const adminTrafficRouter: Router = createAdminTrafficRouter(this.trafficController);
         this.app.use('/api/admin/users/traffic', requireAdmin, adminTrafficRouter);

@@ -60,7 +60,7 @@ The identity module owns Better Auth and everything keyed by the Better Auth use
 
 ### Traffic
 
-The traffic module owns cookieless behavioral analytics: the ClickHouse `traffic_events` store, the `tronrelic_tid`/`tronrelic_ref` cookies, bot classification, and geo/device derivation. It backs the `/system/users` analytics dashboards. See [Traffic Module README](../../src/backend/modules/traffic/README.md).
+The traffic module owns cookieless behavioral analytics: the ClickHouse `traffic_events` store, the `tronrelic_tid`/`tronrelic_ref` cookies, bot classification, and geo/device derivation. It backs the `/system/traffic` analytics, crawler, and SEO dashboards. See [Traffic Module README](../../src/backend/modules/traffic/README.md).
 
 ### Hooks
 

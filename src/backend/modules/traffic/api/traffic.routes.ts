@@ -21,6 +21,8 @@ export function createAdminTrafficRouter(controller: TrafficController): Router 
     router.get('/top-paths', controller.getTopPaths.bind(controller));
     router.get('/top-countries', controller.getTopCountries.bind(controller));
     router.get('/bot-other-samples', controller.getBotOtherSamples.bind(controller));
+    router.get('/bot-trend', controller.getBotTrend.bind(controller));
+    router.get('/bot-paths', controller.getBotPaths.bind(controller));
 
     return router;
 }
@@ -30,7 +32,7 @@ export function createAdminTrafficRouter(controller: TrafficController): Router 
  *
  * Mounted at `/api/admin/users/analytics` with `requireAdmin` at the parent,
  * ahead of the legacy `/api/admin/users` router so its paths win. Backs the
- * `/system/users` dashboard panels re-platformed onto `traffic_events`, the
+ * `/system/traffic` dashboard panels re-platformed onto `traffic_events`, the
  * BA-derived account/wallet overview, and the GSC integration.
  *
  * @param controller - The traffic controller.
@@ -60,6 +62,8 @@ export function createAdminAnalyticsRouter(controller: TrafficController): Route
     router.post('/gsc/credentials', controller.saveGscCredentials.bind(controller));
     router.delete('/gsc/credentials', controller.removeGscCredentials.bind(controller));
     router.post('/gsc/refresh', controller.refreshGscData.bind(controller));
+    router.get('/gsc/keywords', controller.getGscKeywords.bind(controller));
+    router.get('/gsc/keywords-by-day', controller.getGscKeywordsByDay.bind(controller));
 
     return router;
 }

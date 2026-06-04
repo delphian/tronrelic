@@ -8,6 +8,7 @@ Owns cookieless behavioral analytics: the ClickHouse `traffic_events` pipeline, 
 |---------|-------|
 | Module id | `traffic` |
 | Module class | `src/backend/modules/traffic/TrafficModule.ts` |
+| Admin page | `/system/traffic` (menu item `Traffic`, order 26, registered in `run()`) |
 | Mounted routes | `/api/admin/users/traffic/*`, `/api/admin/users/analytics/*`, `/api/user/bootstrap`, `/api/user/track` |
 | Scheduled job | `gsc:fetch` (daily, `0 3 * * *`) |
 | ClickHouse table | `traffic_events` (migrations 010, 012, 013) |
@@ -47,8 +48,10 @@ The `/api/admin/users/traffic/*` reads below are under `requireAdmin` and accept
 | GET | `/api/admin/users/traffic/top-paths` | Most-hit landing paths |
 | GET | `/api/admin/users/traffic/top-countries` | Most-active ISO-3166 alpha-2 countries |
 | GET | `/api/admin/users/traffic/bot-other-samples` | Frequent UAs classified `bot_other` (classifier-gap feedback) |
+| GET | `/api/admin/users/traffic/bot-trend` | Daily counts per `bot_class` (default `sinceHours=168`); NULL folded to `unclassified` |
+| GET | `/api/admin/users/traffic/bot-paths` | Top paths for one `botClass` (validated against the `BotClass` allow-list, 400 on miss) |
 
-The `/api/admin/users/analytics/*` router (also `requireAdmin`) serves the `/system/users` dashboard aggregates — daily visitors, anonymous first touches (`new-users`), traffic sources, geo/device breakdowns, engagement, the binary conversion funnel, retention, and the GSC endpoints — all backed by `traffic_events`. The frontend consumes them through `src/frontend/modules/user/api/client.ts`.
+The `/api/admin/users/analytics/*` router (also `requireAdmin`) serves the `/system/traffic` dashboard aggregates — daily visitors, anonymous first touches (`new-users`), traffic sources, geo/device breakdowns, engagement, the binary conversion funnel, retention, and the GSC endpoints — all backed by `traffic_events`. GSC reads expose the keyword cache: `gsc/keywords` (aggregated clicks/impressions/CTR/position for a `periodHours` window) and `gsc/keywords-by-day` (daily buckets for trend charts); both are Mongo-backed and return empty until the `gsc:fetch` job has stored data. The frontend consumes everything through `src/frontend/modules/traffic/api/client.ts`.
 
 Per-page clickstream reads live on the same router: `tid-activity` and `user-activity` summarize `page` events by anonymous tid (`user_id IS NULL`) and registered account (`user_id IS NOT NULL`) respectively, and `page-hits?subject=tid|user&id=` returns one subject's ordered page hits — "every page they hit".
 
@@ -61,7 +64,7 @@ When ClickHouse is unavailable every read returns empty with `clickhouseEnabled:
 
 ## Lifecycle
 
-**`init()`** runs `initGeoIP()`, then constructs `GscService` (creates indexes) and `TrafficService` (no-ops without ClickHouse), then builds the traffic + bootstrap controllers. **`run()`** mounts the traffic, analytics, and bootstrap routers — the `/api/admin/users/*` routers ahead of the identity module's accounts `/api/admin/users` catch-all — and registers the daily `gsc:fetch` job.
+**`init()`** runs `initGeoIP()`, then constructs `GscService` (creates indexes) and `TrafficService` (no-ops without ClickHouse), then builds the traffic + bootstrap controllers. **`run()`** registers the `Traffic` menu item under the System container, mounts the traffic, analytics, and bootstrap routers — the `/api/admin/users/*` routers ahead of the identity module's accounts `/api/admin/users` catch-all — and registers the daily `gsc:fetch` job.
 
 ## Related
 

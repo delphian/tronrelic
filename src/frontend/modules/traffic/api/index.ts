@@ -1,9 +1,9 @@
 /**
- * User module API barrel export.
+ * Traffic module API barrel export.
  *
- * Surfaces the admin analytics + Google Search Console client used by the
- * `/system/users` dashboards. The legacy UUID user/wallet/session/profile/
- * referral calls were removed in the Better Auth cutover.
+ * Surfaces the admin analytics, crawler, and Google Search Console client
+ * used by the `/system/traffic` dashboards. The legacy UUID user/wallet/
+ * session/profile/referral calls were removed in the Better Auth cutover.
  */
 
 export {
@@ -27,7 +27,12 @@ export {
     adminGetGscStatus,
     adminSaveGscCredentials,
     adminRemoveGscCredentials,
-    adminRefreshGscData
+    adminRefreshGscData,
+    adminGetGscKeywords,
+    adminGetGscKeywordsByDay,
+    // Crawler analytics functions
+    adminGetBotTrend,
+    adminGetBotPaths
 } from './client';
 
 export type {
@@ -52,5 +57,9 @@ export type {
     IFunnelStage,
     IRetentionEntry,
     IAnalyticsOverview,
-    IGscStatus
+    IGscStatus,
+    IGscKeyword,
+    IGscDailyKeywords,
+    ITrafficBucket,
+    IBotClassDailyPoint
 } from './client';

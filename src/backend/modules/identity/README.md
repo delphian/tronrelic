@@ -8,6 +8,7 @@ Owns Better Auth and everything keyed by the Better Auth user id: the auth insta
 |---------|-------|
 | Module id | `identity` |
 | Module class | `src/backend/modules/identity/IdentityModule.ts` |
+| Admin page | `/system/users` (menu item `Users`, order 25, registered in `run()`) |
 | Service registry names | `'user-groups'`, `'wallets'`, `'accounts'` |
 | Mounted routes | `/api/auth/*`, `/api/user/wallets/*`, `/api/admin/users/groups/*`, `/api/admin/users` (accounts) |
 | Types package | `@delphian/tronrelic-types` → `IWalletService`, `IAccountDirectoryService`, `IUserGroupService` |
@@ -90,7 +91,7 @@ Group definitions and membership. See `@/types` `IUserGroupService` for the full
 
 ## Lifecycle
 
-**`init()`** constructs (in order) `GroupService`, `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, and the Better Auth instance, then wires the auth facade and builds the wallet + group controllers. **`run()`** mounts `/api/auth/*`, the wallet router, the admin group router, and the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), then registers `'user-groups'`, `'wallets'`, `'accounts'`.
+**`init()`** constructs (in order) `GroupService`, `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, and the Better Auth instance, then wires the auth facade and builds the wallet + group controllers. **`run()`** registers the `Users` menu item under the System container, mounts `/api/auth/*`, the wallet router, the admin group router, and the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), then registers `'user-groups'`, `'wallets'`, `'accounts'`.
 
 ## Related
 

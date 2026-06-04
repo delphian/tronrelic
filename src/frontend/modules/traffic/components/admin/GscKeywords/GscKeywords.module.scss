@@ -1,0 +1,167 @@
+/**
+ * GscKeywords styles.
+ *
+ * GSC keyword dashboard — clicks/impressions trend pair plus the
+ * top-keywords table. Container query collapses the chart pair to a
+ * single column at narrow widths.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.container {
+    container-type: inline-size;
+    container-name: gsc-keywords;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+}
+
+.header {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    flex-wrap: wrap;
+}
+
+.title {
+    font-size: var(--font-size-heading-md);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    margin: 0;
+}
+
+.subtitle {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    margin: var(--gap-2xs) 0 0 0;
+    max-width: var(--max-width-prose);
+}
+
+.window_picker {
+    display: inline-flex;
+    background: var(--color-surface-muted);
+    border-radius: var(--radius-full);
+    padding: var(--padding-2xs);
+    border: var(--border-width-thin) solid var(--color-border);
+}
+
+.window_button,
+.window_active {
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    padding: var(--padding-2xs) var(--padding-sm);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+.window_button:hover {
+    color: var(--color-text);
+}
+
+.window_active {
+    background: var(--gradient-primary);
+    color: var(--color-text);
+}
+
+.grid_two {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--grid-gap-md);
+}
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.panel_header {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    color: var(--color-text);
+}
+
+.panel_title {
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin: 0;
+}
+
+.panel_loading,
+.panel_empty {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    margin: 0;
+}
+
+.panel_error {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-danger);
+    margin: 0;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-body-sm);
+
+    th,
+    td {
+        text-align: left;
+        padding: var(--padding-sm) var(--padding-md);
+        border-bottom: var(--border-width-thin) solid var(--color-border);
+        vertical-align: middle;
+    }
+
+    th {
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-text-muted);
+        background: var(--color-surface-muted);
+    }
+
+    tbody tr:last-child td {
+        border-bottom: none;
+    }
+}
+
+.numeric_col {
+    width: 1%;
+    white-space: nowrap;
+    text-align: right;
+}
+
+.numeric {
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text);
+}
+
+.keyword_cell {
+    word-break: break-word;
+    color: var(--color-text);
+}
+
+@container gsc-keywords (max-width: #{$breakpoint-mobile-lg}) {
+    .header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .grid_two {
+        grid-template-columns: 1fr;
+    }
+
+    .table th,
+    .table td {
+        padding: var(--padding-xs) var(--padding-sm);
+    }
+}
