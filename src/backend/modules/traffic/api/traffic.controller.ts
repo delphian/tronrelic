@@ -1,6 +1,6 @@
 /**
  * Admin controller for ClickHouse `traffic_events` reads and the analytics
- * dashboard at `/system/users`.
+ * dashboard at `/system/traffic`.
  *
  * Backs two route groups, both mounted behind `requireAdmin`:
  * - `/api/admin/users/traffic/*` — raw traffic aggregates (bot class, paths,
@@ -27,6 +27,24 @@ import { parsePositiveInt, parseNonNegativeInt } from '../../../api/query-params
 const MAX_SINCE_HOURS = 720; // 30 days
 const MAX_LIMIT = 200;
 const MAX_HISTORY_LIMIT = 200;
+const MAX_GSC_DAYS = 90;
+
+/**
+ * Allow-list for the `botClass` query param on per-bot-class reads. Mirrors
+ * the `BotClass` union in `services/bot-classifier.ts` plus the synthetic
+ * `'unclassified'` bucket the time-series read folds NULL rows into. The
+ * service binds the value as a query parameter, but rejecting unknown values
+ * here keeps the API surface self-documenting and 400s typos early.
+ */
+const KNOWN_BOT_CLASSES = new Set([
+    'human',
+    'search_engine',
+    'ai_crawler',
+    'social_unfurler',
+    'uptime_probe',
+    'bot_other',
+    'unclassified'
+]);
 
 /**
  * Controller for the traffic-events and analytics admin surfaces.
@@ -104,6 +122,47 @@ export class TrafficController {
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch bot_other UA samples');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch UA samples' });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/traffic/bot-trend?sinceHours=168
+     * Daily row counts per `bot_class` — the crawler-trend chart. Defaults to
+     * a 7-day window because a single day rarely shows a trend.
+     */
+    async getBotTrend(req: Request, res: Response): Promise<void> {
+        const sinceHours = parsePositiveInt(req.query.sinceHours, 168, MAX_SINCE_HOURS);
+        try {
+            const points = await this.trafficService.getBotClassTimeSeries({ sinceHours });
+            res.json({ sinceHours, points, clickhouseEnabled: this.trafficService.isEnabled() });
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to fetch bot trend');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch bot trend' });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/traffic/bot-paths?botClass=ai_crawler&sinceHours=168&limit=20
+     * Top paths hit by one bot class — "which pages do AI crawlers fetch".
+     */
+    async getBotPaths(req: Request, res: Response): Promise<void> {
+        const botClass = typeof req.query.botClass === 'string' ? req.query.botClass : '';
+        if (!KNOWN_BOT_CLASSES.has(botClass)) {
+            res.status(400).json({
+                error: 'ValidationError',
+                message: `botClass must be one of: ${Array.from(KNOWN_BOT_CLASSES).join(', ')}`
+            });
+            return;
+        }
+
+        const sinceHours = parsePositiveInt(req.query.sinceHours, 168, MAX_SINCE_HOURS);
+        const limit = parsePositiveInt(req.query.limit, 20, MAX_LIMIT);
+        try {
+            const buckets = await this.trafficService.getPathsByBotClass(botClass, { sinceHours, limit });
+            res.json({ botClass, sinceHours, limit, buckets, clickhouseEnabled: this.trafficService.isEnabled() });
+        } catch (error) {
+            this.logger.error({ err: error, botClass }, 'Failed to fetch per-bot-class paths');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch per-bot-class paths' });
         }
     }
 
@@ -455,6 +514,40 @@ export class TrafficController {
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to refresh GSC data');
             res.status(500).json({ error: 'InternalError', message: 'Failed to refresh GSC data' });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/gsc/keywords?periodHours=168&limit=25
+     * Aggregated GSC keywords (clicks/impressions/CTR/position) for the
+     * window. Pass-through to the daily-fetched keyword cache; returns an
+     * empty array until the `gsc:fetch` job has stored data.
+     */
+    async getGscKeywords(req: Request, res: Response): Promise<void> {
+        const periodHours = parsePositiveInt(req.query.periodHours, 168, MAX_SINCE_HOURS);
+        const limit = parsePositiveInt(req.query.limit, 25, MAX_LIMIT);
+        try {
+            const keywords = await this.gscService.getKeywordsForPeriod(periodHours, limit);
+            res.json({ periodHours, limit, keywords });
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to fetch GSC keywords');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch GSC keywords' });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/gsc/keywords-by-day?days=14&topN=15
+     * Daily GSC keyword buckets (clicks/impressions trend with per-day top
+     * keywords). Already offset by the GSC ingestion delay in the service.
+     */
+    async getGscKeywordsByDay(req: Request, res: Response): Promise<void> {
+        const days = parsePositiveInt(req.query.days, 14, MAX_GSC_DAYS);
+        const topN = parsePositiveInt(req.query.topN, 15, MAX_LIMIT);
+        try {
+            res.json(await this.gscService.getKeywordsByDay(days, topN));
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to fetch GSC keywords by day');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch GSC keywords by day' });
         }
     }
 }

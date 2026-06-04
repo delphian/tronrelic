@@ -1,0 +1,29 @@
+# TronRelic
+
+> TronRelic is an open-source TRON blockchain analytics platform: live energy
+> rental pricing compared across marketplaces, real-time whale and transaction
+> monitoring, USDT transfer-cost context, and community tools. Pricing data is
+> normalized against live chain parameters (energy-per-TRX, regeneration), so
+> cross-market comparisons stay accurate as network conditions change.
+
+Key facts: TRON transactions consume energy instead of gas fees. Energy can be
+staked or rented from markets for 1 hour to 30 days; rented energy regenerates
+every 24 hours, so multi-day rentals deliver their quota each day. TronRelic
+tracks these markets and the chain parameters that price them.
+
+## Core Pages
+
+- [Home](https://tronrelic.com/): Live transaction feed and platform overview
+- [Resource Markets](https://tronrelic.com/resource-markets): Live TRON energy rental pricing compared across marketplaces
+- [Articles](https://tronrelic.com/articles): Guides and analysis on TRON energy, fees, and markets
+- [Tools](https://tronrelic.com/tools): Calculators and utilities for TRON energy and fees
+- [Forum](https://tronrelic.com/forum): Community discussion
+- [About](https://tronrelic.com/about): What TronRelic is and how pricing normalization works
+
+## Index
+
+- [Sitemap](https://tronrelic.com/sitemap.xml): Full public URL index, refreshed continuously
+
+## Policy
+
+AI crawlers are welcome on all public content. Do not crawl /system or /api.

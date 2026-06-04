@@ -1,8 +1,9 @@
 /**
- * System Users Page Styles
+ * System Traffic Page Styles
  *
- * Tabbed layout for the Users and Groups identity admin sections.
- * Follows the same tab pattern established by the Pages admin page.
+ * Tabbed layout for the traffic analytics, crawler, and SEO admin
+ * sections. Follows the same tab pattern established by the Pages and
+ * Users admin pages.
  */
 
 .container {
@@ -10,13 +11,14 @@
     flex-direction: column;
     gap: var(--gap-lg);
     container-type: inline-size;
-    container-name: users-admin;
+    container-name: traffic-admin;
 }
 
 .tabs {
     display: flex;
     gap: var(--gap-sm);
     border-bottom: var(--border-width-thin) solid var(--color-border);
+    flex-wrap: wrap;
 }
 
 .tab,
@@ -49,4 +51,11 @@
 
 .content {
     flex: 1;
+}
+
+/* Crawlers tab stacks the crawler trend above the raw traffic breakdowns. */
+.crawler_stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
 }

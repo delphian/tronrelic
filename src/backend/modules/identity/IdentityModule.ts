@@ -19,8 +19,9 @@
 import type { Express, Router } from 'express';
 import mongoose from 'mongoose';
 import { toNodeHandler } from 'better-auth/node';
-import type { ICacheService, IDatabaseService, IModule, IModuleMetadata, IServiceRegistry } from '@/types';
+import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata, IServiceRegistry } from '@/types';
 import { logger } from '../../lib/logger.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { GroupService } from './services/group.service.js';
 import { WalletService } from './services/wallet.service.js';
@@ -49,6 +50,9 @@ export interface IIdentityModuleDependencies {
     /** Express app — the module mounts its own routers (IoC). */
     app: Express;
 
+    /** Menu service for registering the /system/users admin menu item. */
+    menuService: IMenuService;
+
     /**
      * Service registry. The module publishes `'user-groups'`, `'wallets'`,
      * and `'accounts'` for plugins and other modules to discover.
@@ -70,6 +74,7 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
 
     private database!: IDatabaseService;
     private app!: Express;
+    private menuService!: IMenuService;
     private serviceRegistry!: IServiceRegistry;
 
     private groupService!: GroupService;
@@ -96,6 +101,7 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
 
         this.database = dependencies.database;
         this.app = dependencies.app;
+        this.menuService = dependencies.menuService;
         this.serviceRegistry = dependencies.serviceRegistry;
 
         // Independent TronWeb instance for wallet signature verification.
@@ -167,6 +173,23 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
      */
     async run(): Promise<void> {
         this.logger.info('Running identity module...');
+
+        try {
+            await this.menuService.create({
+                namespace: 'main',
+                label: 'Users',
+                url: '/system/users',
+                icon: 'Users',
+                order: 25,
+                parent: MAIN_SYSTEM_CONTAINER_ID,
+                enabled: true
+            });
+
+            this.logger.info('Users menu item registered under the System container');
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to register users menu item');
+            throw new Error(`Failed to register users menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
 
         // Better Auth HTTP handler. `toNodeHandler` adapts BA's fetch-style
         // handler to the Express (req, res) signature.

@@ -43,7 +43,8 @@ Other admin features live on dedicated pages — each owned by its module and do
 | `/system/plugins` | Plugin loader | [../plugins/plugins.md](../plugins/plugins.md) |
 | `/system/pages` | Pages module | [Pages Module README](../../src/backend/modules/pages/README.md) |
 | `/system/menu` | Menu module | [Menu Module README](../../src/backend/modules/menu/README.md) |
-| `/system/users` | Identity + Traffic modules | [Identity Module README](../../src/backend/modules/identity/README.md) |
+| `/system/users` | Identity module | [Identity Module README](../../src/backend/modules/identity/README.md) |
+| `/system/traffic` | Traffic module | [Traffic Module README](../../src/backend/modules/traffic/README.md) |
 | `/system/theme` | Theme system | [ui-theme.md](../frontend/ui/ui-theme.md) |
 | `/system/address-labels` | Address Labels module | `src/backend/modules/address-labels/` (no README yet) |
 | `/system/logout` | — | Clears cookie and redirects |

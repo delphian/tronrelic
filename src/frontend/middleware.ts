@@ -383,5 +383,5 @@ export async function middleware(request: NextRequest) {
  * Excludes API routes, static files, and Next.js internals.
  */
 export const config = {
-    matcher: ['/((?!api|_next/static|_next/image|uploads|favicon.ico|robots.txt|sitemap.xml).*)']
+    matcher: ['/((?!api|_next/static|_next/image|uploads|favicon.ico|robots.txt|sitemap.xml|llms.txt).*)']
 };

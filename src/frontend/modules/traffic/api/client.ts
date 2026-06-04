@@ -1,7 +1,7 @@
 /**
- * User module analytics + Google Search Console API client.
+ * Traffic module analytics + Google Search Console API client.
  *
- * Typed admin API calls backing the `/system/users` analytics dashboards.
+ * Typed admin API calls backing the `/system/traffic` analytics dashboards.
  * Visitor counts, traffic-source breakdowns, geo/device distributions,
  * engagement, the binary conversion funnel, the Better Auth account
  * overview, and GSC configuration — all served from the ClickHouse-backed
@@ -602,4 +602,93 @@ export async function adminRefreshGscData(): Promise<{ rowsFetched: number }> {
         {}
     );
     return response.data as { rowsFetched: number };
+}
+
+/** One day's per-keyword GSC bucket (clicks/impressions trend + top keywords). */
+export interface IGscDailyKeywords {
+    /** Calendar day in `YYYY-MM-DD` (already offset by the GSC ingestion delay). */
+    date: string;
+    totalClicks: number;
+    totalImpressions: number;
+    keywords: IGscKeyword[];
+}
+
+/**
+ * Get aggregated GSC keywords for a lookback window (admin endpoint).
+ * @param options - Window in hours (default 168 = 7d) and row limit
+ * @returns Keywords sorted by clicks descending
+ */
+export async function adminGetGscKeywords(options?: { periodHours?: number; limit?: number }
+): Promise<IGscKeyword[]> {
+    const response = await apiClient.get('/admin/users/analytics/gsc/keywords', {
+        params: options
+    });
+    return (response.data as { keywords: IGscKeyword[] }).keywords ?? [];
+}
+
+/**
+ * Get daily GSC keyword buckets for trend charting (admin endpoint).
+ * @param days - Number of daily buckets (default 14)
+ * @param topN - Max keywords per bucket (default 15)
+ * @returns Daily buckets oldest first
+ */
+export async function adminGetGscKeywordsByDay(days: number = 14,
+    topN: number = 15
+): Promise<IGscDailyKeywords[]> {
+    const response = await apiClient.get('/admin/users/analytics/gsc/keywords-by-day', {
+        params: { days, topN }
+    });
+    return (response.data as { buckets: IGscDailyKeywords[] }).buckets ?? [];
+}
+
+// ============================================================================
+// Crawler Analytics API Functions
+// ============================================================================
+
+/** One bucket of a raw traffic aggregate (path/UA/country + row count). */
+export interface ITrafficBucket {
+    key: string | null;
+    count: number;
+}
+
+/**
+ * One day's per-bot-class row counts. `counts` is keyed by `bot_class`
+ * (`human`, `search_engine`, `ai_crawler`, ...) with NULL rows folded into
+ * `'unclassified'`.
+ */
+export interface IBotClassDailyPoint {
+    /** Calendar day in `YYYY-MM-DD`. */
+    day: string;
+    /** Row count per bot class for the day. */
+    counts: Record<string, number>;
+}
+
+/**
+ * Get daily per-bot-class event counts for the crawler trend chart (admin
+ * endpoint).
+ * @param sinceHours - Lookback window in hours (default 168 = 7d)
+ * @returns Daily points oldest first plus the ClickHouse availability flag
+ */
+export async function adminGetBotTrend(sinceHours: number = 168
+): Promise<{ points: IBotClassDailyPoint[]; clickhouseEnabled: boolean }> {
+    const response = await apiClient.get('/admin/users/traffic/bot-trend', {
+        params: { sinceHours }
+    });
+    return response.data as { points: IBotClassDailyPoint[]; clickhouseEnabled: boolean };
+}
+
+/**
+ * Get the top paths hit by one bot class (admin endpoint) — "which pages do
+ * AI crawlers actually fetch".
+ * @param botClass - Bot class to filter on (e.g. `'ai_crawler'`)
+ * @param options - Lookback window and row limit
+ * @returns Path buckets ordered by hit count
+ */
+export async function adminGetBotPaths(botClass: string,
+    options?: { sinceHours?: number; limit?: number }
+): Promise<{ buckets: ITrafficBucket[]; clickhouseEnabled: boolean }> {
+    const response = await apiClient.get('/admin/users/traffic/bot-paths', {
+        params: { botClass, ...options }
+    });
+    return response.data as { buckets: ITrafficBucket[]; clickhouseEnabled: boolean };
 }

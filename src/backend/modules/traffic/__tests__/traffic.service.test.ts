@@ -288,6 +288,102 @@ describe('TrafficService', () => {
         });
     });
 
+    describe('getBotClassTimeSeries()', () => {
+        it('returns [] when ClickHouse is unavailable', async () => {
+            TrafficService.setDependencies(undefined, createMockLogger());
+            const out = await TrafficService.getInstance().getBotClassTimeSeries();
+            expect(out).toEqual([]);
+        });
+
+        it('pivots (day, klass, count) rows into per-day count maps', async () => {
+            // Coercion guards against ClickHouse returning string counts
+            // under JSONEachRow; the per-day pivot is the method's whole job.
+            const ch = createMockClickHouse();
+            ch.queue.push(
+                { day: '2026-06-01', klass: 'human', count: '120' },
+                { day: '2026-06-01', klass: 'ai_crawler', count: 8 },
+                { day: '2026-06-02', klass: 'human', count: '95' },
+                { day: '2026-06-02', klass: 'unclassified', count: '3' }
+            );
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            const out = await TrafficService.getInstance().getBotClassTimeSeries({ sinceHours: 168 });
+
+            expect(out).toEqual([
+                { day: '2026-06-01', counts: { human: 120, ai_crawler: 8 } },
+                { day: '2026-06-02', counts: { human: 95, unclassified: 3 } }
+            ]);
+        });
+
+        it('folds NULL bot_class into unclassified in the generated SQL', async () => {
+            const ch = createMockClickHouse();
+            const captured: { sql?: string; params?: unknown } = {};
+            ch.query = async <T>(sql: string, params?: unknown): Promise<T[]> => {
+                captured.sql = sql;
+                captured.params = params;
+                return [] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            await TrafficService.getInstance().getBotClassTimeSeries({ sinceHours: 48 });
+
+            expect(captured.sql).toContain("coalesce(bot_class, 'unclassified')");
+            expect(captured.params).toEqual({ sinceHours: 48 });
+        });
+
+        it('returns [] and logs on query failure', async () => {
+            const ch = createMockClickHouse();
+            ch.error = new Error('CH down');
+            const logger = createMockLogger();
+            TrafficService.setDependencies(ch, logger);
+
+            const out = await TrafficService.getInstance().getBotClassTimeSeries();
+
+            expect(out).toEqual([]);
+            expect(logger.warn).toHaveBeenCalled();
+        });
+    });
+
+    describe('getPathsByBotClass()', () => {
+        it('returns [] when ClickHouse is unavailable', async () => {
+            TrafficService.setDependencies(undefined, createMockLogger());
+            const out = await TrafficService.getInstance().getPathsByBotClass('ai_crawler');
+            expect(out).toEqual([]);
+        });
+
+        it('binds botClass as a parameter and maps buckets', async () => {
+            // The bound param is load-bearing: botClass originates from the
+            // request and must never be interpolated into the SQL.
+            const ch = createMockClickHouse();
+            const captured: { sql?: string; params?: unknown } = {};
+            ch.query = async <T>(sql: string, params?: unknown): Promise<T[]> => {
+                captured.sql = sql;
+                captured.params = params;
+                return [{ key: '/markets', count: '14' }] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            const out = await TrafficService.getInstance().getPathsByBotClass('ai_crawler', { sinceHours: 168, limit: 10 });
+
+            expect(captured.sql).toContain('bot_class = {botClass:String}');
+            expect(captured.sql).not.toContain("'ai_crawler'");
+            expect(captured.params).toEqual({ sinceHours: 168, limit: 10, botClass: 'ai_crawler' });
+            expect(out).toEqual([{ key: '/markets', count: 14 }]);
+        });
+
+        it('returns [] and logs on query failure', async () => {
+            const ch = createMockClickHouse();
+            ch.error = new Error('CH down');
+            const logger = createMockLogger();
+            TrafficService.setDependencies(ch, logger);
+
+            const out = await TrafficService.getInstance().getPathsByBotClass('ai_crawler');
+
+            expect(out).toEqual([]);
+            expect(logger.warn).toHaveBeenCalled();
+        });
+    });
+
     describe('getPageActivity()', () => {
         const range = { since: new Date('2026-04-01T00:00:00.000Z') };
 

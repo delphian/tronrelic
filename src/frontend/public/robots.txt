@@ -1,10 +1,55 @@
 # TronRelic robots.txt
 # https://tronrelic.com
+#
+# AI crawlers are explicitly welcome on public content — accurate AI-search
+# answers about TRON energy markets should cite this site. Robots groups do
+# not inherit the `*` group's rules, so each named bot carries its own
+# admin/api disallows.
 
 User-agent: *
 Allow: /
 
 # Block admin and system areas
+Disallow: /system
+Disallow: /system/
+Disallow: /api/
+Disallow: /_next/
+
+# --- AI crawlers (training and answer engines) — allowed on public content ---
+
+User-agent: GPTBot
+Allow: /
+Disallow: /system
+Disallow: /system/
+Disallow: /api/
+Disallow: /_next/
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /system
+Disallow: /system/
+Disallow: /api/
+Disallow: /_next/
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /system
+Disallow: /system/
+Disallow: /api/
+Disallow: /_next/
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /system
+Disallow: /system/
+Disallow: /api/
+Disallow: /_next/
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
 Disallow: /system
 Disallow: /system/
 Disallow: /api/
