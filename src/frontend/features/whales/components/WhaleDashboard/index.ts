@@ -1,1 +1,0 @@
-export { WhaleDashboard } from './WhaleDashboard';

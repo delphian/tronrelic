@@ -16,7 +16,6 @@ const envSchema = z.object({
   TRONGRID_API_KEY_2: z.string().optional(),
   TRONGRID_API_KEY_3: z.string().optional(),
   TELEGRAM_IP_ALLOWLIST: z.string().optional(),
-  ALERT_WHALE_MIN_TRX: z.union([z.string(), z.coerce.number()]).optional(),
   ADMIN_API_TOKEN: z.string().optional(),
   METRICS_TOKEN: z.string().optional(),
   /**
