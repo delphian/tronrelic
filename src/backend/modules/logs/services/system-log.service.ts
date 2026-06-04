@@ -1067,45 +1067,4 @@ export class SystemLogService implements ISystemLogService {
         this.invalidateStatisticsCache();
         return result.deletedCount || 0;
     }
-
-    /**
-     * Get statistics about system logs (legacy method).
-     *
-     * @deprecated Use getStatistics() instead
-     */
-    public async getStats(): Promise<{
-        total: number;
-        byLevel: Record<LogLevel, number>;
-        resolved: number;
-        unresolved: number;
-    }> {
-        const [total, byLevel, resolved, unresolved] = await Promise.all([
-            SystemLog.countDocuments().exec(),
-            SystemLog.aggregate([
-                { $group: { _id: '$level', count: { $sum: 1 } } }
-            ]).exec(),
-            SystemLog.countDocuments({ resolved: true }).exec(),
-            SystemLog.countDocuments({ resolved: false }).exec()
-        ]);
-
-        const levelCounts: Record<LogLevel, number> = {
-            trace: 0,
-            debug: 0,
-            info: 0,
-            warn: 0,
-            error: 0,
-            fatal: 0
-        };
-
-        for (const item of byLevel) {
-            levelCounts[item._id as LogLevel] = item.count;
-        }
-
-        return {
-            total,
-            byLevel: levelCounts,
-            resolved,
-            unresolved
-        };
-    }
 }

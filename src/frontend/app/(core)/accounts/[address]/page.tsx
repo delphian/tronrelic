@@ -3,7 +3,7 @@ import type { TronTransactionDocument } from '@/shared';
 import { Page, PageHeader, Stack, Grid } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
-import { getApiUrl } from '../../../../lib/config';
+import { getServerSideApiUrl } from '../../../../lib/api-url';
 
 interface AccountSnapshotSummary {
   totalSent: number;
@@ -28,7 +28,7 @@ interface AccountPageProps {
 }
 
 async function fetchAccount(address: string): Promise<AccountSnapshotResponse> {
-  const response = await fetch(getApiUrl(`/accounts/snapshot?address=${address}`), { cache: 'no-store' });
+  const response = await fetch(`${getServerSideApiUrl()}/api/accounts/snapshot?address=${address}`, { cache: 'no-store' });
   if (!response.ok) {
     throw new Error('Failed to load account');
   }

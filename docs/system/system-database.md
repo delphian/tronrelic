@@ -106,7 +106,7 @@ export const whaleAlertsPlugin = definePlugin({
 });
 ```
 
-`IPluginDatabase` is a deprecated type alias for `IDatabaseService` — use `IDatabaseService` directly in new code.
+Plugins type their database as `IDatabaseService` — the same interface core uses; the prefix scoping lives in the implementation, not the type.
 
 | Hook | When it runs | Database tasks |
 |---|---|---|

@@ -46,7 +46,7 @@ The user id is `req.authSession.user.id`; the canonical wallet is `req.authSessi
 ## Minimal Example
 
 ```typescript
-import { definePlugin, isLoggedIn, type IHttpRequest, type IHttpResponse, type IHttpNext, type IPluginDatabase } from '@delphian/tronrelic-types';
+import { definePlugin, isLoggedIn, type IHttpRequest, type IHttpResponse, type IHttpNext, type IDatabaseService } from '@delphian/tronrelic-types';
 import { whaleAlertsManifest } from '../manifest.js';
 
 // Mounts at /api/plugins/trp-whale-alerts/subscriptions
@@ -71,7 +71,7 @@ export const whaleAlertsBackendPlugin = definePlugin({
 
 let handlers: ReturnType<typeof createSubscriptionHandlers>;
 
-function createSubscriptionHandlers(database: IPluginDatabase) {
+function createSubscriptionHandlers(database: IDatabaseService) {
     return {
         list: async (req: IHttpRequest, res: IHttpResponse, next: IHttpNext) => {
             try {

@@ -145,7 +145,7 @@ describe('MenuService origin resolution', () => {
 
     const newService = async () => {
         (MenuService as any).instance = undefined;
-        MenuService.setDatabase(mockDatabase);
+        MenuService.setDependencies(mockDatabase);
         const svc = MenuService.getInstance();
         await svc.initialize();
         return svc;

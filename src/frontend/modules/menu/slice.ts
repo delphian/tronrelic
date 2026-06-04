@@ -13,7 +13,6 @@
 
 import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit';
 import type { MenuNodeSerialized } from '@/shared';
-import { getApiUrl } from '../../lib/config';
 import { getRuntimeConfig } from '../../lib/runtimeConfig';
 import type { IMenuNamespaceConfig } from './types';
 
@@ -68,7 +67,11 @@ export const refetchMenuTree = createAsyncThunk<
     { rejectValue: string }
 >('menu/refetchTree', async ({ namespace, timestamp }, { rejectWithValue }) => {
     try {
-        const url = getApiUrl(`/menu?namespace=${encodeURIComponent(namespace)}`);
+        // Use the runtime config helper (not the deprecated build-time
+        // `getApiUrl`) so the same Docker image works across domains —
+        // see `docs/frontend/frontend.md` for the universal-image rule.
+        const { apiUrl } = getRuntimeConfig();
+        const url = `${apiUrl}/menu?namespace=${encodeURIComponent(namespace)}`;
         const response = await fetch(url, { credentials: 'include' });
         if (!response.ok) {
             return rejectWithValue(`menu refetch failed: ${response.status}`);

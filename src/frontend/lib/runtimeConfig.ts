@@ -31,7 +31,7 @@
  * IMPORTANT:
  * - ONLY call this from client-side code (client components, hooks, event handlers)
  * - DO NOT call from server components (use getServerConfig() instead)
- * - DO NOT import lib/config.ts in new code (deprecated, uses build-time values)
+ * - The legacy lib/config.ts module was removed; this and lib/serverConfig.ts are the only config sources
  * - This function is SYNCHRONOUS (no await needed)
  */
 

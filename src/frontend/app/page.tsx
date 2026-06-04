@@ -4,7 +4,7 @@ import { Page } from '../components/layout';
 import { WidgetZone, fetchWidgetsForRoute } from '../components/widgets';
 import { buildMetadata } from '../lib/seo';
 import { getServerConfig } from '../lib/serverConfig';
-import { getApiUrl } from '../lib/config';
+import { getServerSideApiUrl } from '../lib/api-url';
 import styles from './page.module.css';
 
 export const dynamic = 'force-dynamic';
@@ -31,7 +31,7 @@ export default async function HomePage(): Promise<JSX.Element> {
   // Fetch initial block data for SSR - component renders fully without loading flash
   let initialBlock = null;
   try {
-    const response = await fetch(getApiUrl('/blockchain/latest'), { cache: 'no-store' });
+    const response = await fetch(`${getServerSideApiUrl()}/api/blockchain/latest`, { cache: 'no-store' });
     if (response.ok) {
       const data = await response.json();
       initialBlock = data.block;

@@ -359,17 +359,4 @@ export interface ISystemLogService {
      * @returns Number of deleted logs
      */
     deleteAllLogs(): Promise<number>;
-
-    /**
-     * Get log statistics (legacy method).
-     *
-     * @deprecated Use getStatistics() instead
-     * @returns Statistics with counts by level and resolved status
-     */
-    getStats(): Promise<{
-        total: number;
-        byLevel: Record<LogLevel, number>;
-        resolved: number;
-        unresolved: number;
-    }>;
 }

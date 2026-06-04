@@ -1,4 +1,4 @@
-import { config } from './config';
+import { getRuntimeConfig } from './runtimeConfig';
 
 const recordedImpressions = new Set<string>();
 
@@ -11,7 +11,9 @@ async function postAffiliateEvent(path: string, payload: Record<string, unknown>
     return;
   }
 
-  const url = `${config.apiBaseUrl}${path}`;
+  // shouldTrack() guarantees a browser context here, so the runtime config
+  // (injected by SSR as window.__RUNTIME_CONFIG__) is safe to read.
+  const url = `${getRuntimeConfig().apiUrl}${path}`;
   const body = JSON.stringify(payload);
 
   try {
@@ -50,7 +52,7 @@ export function recordAffiliateClick(guid: string, trackingCode: string) {
     return;
   }
 
-  const url = `${config.apiBaseUrl}/markets/${guid}/affiliate/click`;
+  const url = `${getRuntimeConfig().apiUrl}/markets/${guid}/affiliate/click`;
   const payload = JSON.stringify({ trackingCode });
 
   if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {

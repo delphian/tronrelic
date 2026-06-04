@@ -1,9 +1,12 @@
 import axios from 'axios';
 import type { NotificationChannel } from '@/shared';
-import { config } from './config';
+import { getServerSideApiUrl } from './api-url';
 
 export const apiClient = axios.create({
-  baseURL: typeof window === 'undefined' ? config.apiBaseUrl : '/api',
+  // SSR needs the internal backend URL (SITE_BACKEND); the browser uses a
+  // relative path handled by Next.js rewrites — see
+  // docs/frontend/frontend-architecture-runtime-config.md.
+  baseURL: typeof window === 'undefined' ? `${getServerSideApiUrl()}/api` : '/api',
   timeout: 5000
 });
 
