@@ -16,7 +16,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Lock } from 'lucide-react';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { Button } from '../../../../../components/ui/Button';
 import styles from './UserGroupsForm.module.scss';
 
@@ -46,7 +45,7 @@ export function UserGroupsForm({ userId, initialGroups, onCancel, onSubmit }: Pr
     const [submitting, setSubmitting] = useState(false);
 
     const baseUrl = useMemo(
-        () => `${getRuntimeConfig().apiUrl}/admin/users/groups`,
+        () => `/api/admin/users/groups`,
         []
     );
 

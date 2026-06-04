@@ -68,10 +68,10 @@ export interface IVisitorOrigin {
 
 /**
  * Get daily unique visitor counts for charting (admin endpoint).
- * * @param days - Number of days to look back (default: 90)
+ * @param days - Number of days to look back (default: 90)
  * @returns Array of daily visitor count data points
  */
-export async function adminGetDailyVisitors(    days: number = 90
+export async function adminGetDailyVisitors(days: number = 90
 ): Promise<IDailyVisitorData[]> {
     // The ClickHouse-backed endpoint takes a date window, not a `days` count;
     // convert. Backend returns { data: [{ day, visitors }] }.
@@ -91,10 +91,10 @@ export async function adminGetDailyVisitors(    days: number = 90
  * server-recorded by the Next.js middleware, so this surface intentionally
  * includes bots, crawlers, and unfurlers as well as humans. Filtered by global
  * first-seen (new arrivals in the window) and sorted most recent first.
- * * @param options - Period, pagination options
+ * @param options - Period, pagination options
  * @returns Paginated list of first-touch origins
  */
-export async function adminGetAnonymousFirstTouches(    options?: { period?: VisitorPeriod; limit?: number; skip?: number }
+export async function adminGetAnonymousFirstTouches(options?: { period?: VisitorPeriod; limit?: number; skip?: number }
 ): Promise<{ visitors: IVisitorOrigin[]; total: number }> {
     const response = await apiClient.get('/admin/users/analytics/new-users', {
         params: options
@@ -138,11 +138,11 @@ export interface IPageHit {
  *
  * `'tid'` returns anonymous visitors keyed on the cookieless traffic id;
  * `'user'` returns registered accounts keyed on the Better Auth user id.
- * * @param subject - `'tid'` (anonymous) or `'user'` (registered)
+ * @param subject - `'tid'` (anonymous) or `'user'` (registered)
  * @param options - Period, pagination options
  * @returns Paginated activity rows plus the unpaginated subject total
  */
-export async function adminGetPageActivity(    subject: PageActivitySubject,
+export async function adminGetPageActivity(subject: PageActivitySubject,
     options?: { period?: VisitorPeriod; limit?: number; skip?: number }
 ): Promise<{ rows: IPageActivityRow[]; total: number }> {
     const endpoint = subject === 'tid'
@@ -157,12 +157,12 @@ export async function adminGetPageActivity(    subject: PageActivitySubject,
 /**
  * Get the ordered page-hit clickstream for one subject (admin endpoint) —
  * every page the tid or account hit in the window, newest first.
- * * @param subject - `'tid'` (anonymous) or `'user'` (registered)
+ * @param subject - `'tid'` (anonymous) or `'user'` (registered)
  * @param id - The subject key (a UUID for `'tid'`, the user id for `'user'`)
  * @param options - Period, limit options
  * @returns The subject's page hits
  */
-export async function adminGetPageHits(    subject: PageActivitySubject,
+export async function adminGetPageHits(subject: PageActivitySubject,
     id: string,
     options?: { period?: VisitorPeriod; limit?: number }
 ): Promise<IPageHit[]> {
@@ -309,10 +309,10 @@ function categorizeTrafficSource(source: string): string {
 
 /**
  * Get aggregate traffic source breakdown (admin endpoint).
- * * @param period - Lookback period (default: '30d')
+ * @param period - Lookback period (default: '30d')
  * @returns Traffic sources with counts and percentages
  */
-export async function adminGetTrafficSources(    period: AnalyticsPeriod = '30d',
+export async function adminGetTrafficSources(period: AnalyticsPeriod = '30d',
     customRange?: ICustomDateRange
 ): Promise<{ sources: ITrafficSource[]; total: number }> {
     const params = customRange ? customRange : { period };
@@ -337,11 +337,11 @@ export async function adminGetTrafficSources(    period: AnalyticsPeriod = '30d'
  *
  * Returns landing pages, countries, devices, UTM campaigns, search keywords,
  * engagement metrics, and conversion rates for visitors from the given source.
- * * @param source - Referrer domain (e.g. 'duckduckgo.com') or 'direct'
+ * @param source - Referrer domain (e.g. 'duckduckgo.com') or 'direct'
  * @param period - Lookback period (default: '30d')
  * @returns Detailed source breakdown
  */
-export async function adminGetTrafficSourceDetails(    source: string,
+export async function adminGetTrafficSourceDetails(source: string,
     period: AnalyticsPeriod = '30d',
     customRange?: ICustomDateRange
 ): Promise<ITrafficSourceDetails> {
@@ -354,10 +354,10 @@ export async function adminGetTrafficSourceDetails(    source: string,
 
 /**
  * Get top landing pages by visitor count (admin endpoint).
- * * @param options - Period and limit options
+ * @param options - Period and limit options
  * @returns Landing pages with engagement metrics
  */
-export async function adminGetTopLandingPages(    options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
+export async function adminGetTopLandingPages(options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
 ): Promise<{ pages: ILandingPage[]; totalPages: number; totalVisitors: number }> {
     const { customRange, ...rest } = options ?? {};
     const params = customRange ? { ...customRange, limit: rest.limit } : rest;
@@ -374,10 +374,10 @@ export async function adminGetTopLandingPages(    options?: { period?: Analytics
 
 /**
  * Get geographic distribution of visitors (admin endpoint).
- * * @param options - Period and limit options
+ * @param options - Period and limit options
  * @returns Country distribution with counts
  */
-export async function adminGetGeoDistribution(    options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
+export async function adminGetGeoDistribution(options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
 ): Promise<{ countries: IGeoEntry[]; total: number }> {
     const { customRange, ...rest } = options ?? {};
     const params = customRange ? { ...customRange, limit: rest.limit } : rest;
@@ -397,10 +397,10 @@ export async function adminGetGeoDistribution(    options?: { period?: Analytics
 
 /**
  * Get device and screen size breakdown (admin endpoint).
- * * @param period - Lookback period (default: '30d')
+ * @param period - Lookback period (default: '30d')
  * @returns Device and screen size distributions
  */
-export async function adminGetDeviceBreakdown(    period: AnalyticsPeriod = '30d',
+export async function adminGetDeviceBreakdown(period: AnalyticsPeriod = '30d',
     customRange?: ICustomDateRange
 ): Promise<{ devices: IDeviceEntry[]; screenSizes: IScreenSizeEntry[]; total: number }> {
     const params = customRange ? customRange : { period };
@@ -421,10 +421,10 @@ export async function adminGetDeviceBreakdown(    period: AnalyticsPeriod = '30d
 
 /**
  * Get UTM campaign performance (admin endpoint).
- * * @param options - Period and limit options
+ * @param options - Period and limit options
  * @returns Campaign entries with conversion rates
  */
-export async function adminGetCampaignPerformance(    options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
+export async function adminGetCampaignPerformance(options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
 ): Promise<{ campaigns: ICampaignEntry[]; total: number }> {
     const { customRange, ...rest } = options ?? {};
     const params = customRange ? { ...customRange, limit: rest.limit } : rest;
@@ -451,10 +451,10 @@ export async function adminGetCampaignPerformance(    options?: { period?: Analy
 
 /**
  * Get engagement metrics (admin endpoint).
- * * @param period - Lookback period (default: '30d')
+ * @param period - Lookback period (default: '30d')
  * @returns Engagement summary (avg duration, pages/session, bounce rate)
  */
-export async function adminGetEngagement(    period: AnalyticsPeriod = '30d',
+export async function adminGetEngagement(period: AnalyticsPeriod = '30d',
     customRange?: ICustomDateRange
 ): Promise<IEngagementMetrics> {
     const params = customRange ? customRange : { period };
@@ -476,10 +476,10 @@ export async function adminGetEngagement(    period: AnalyticsPeriod = '30d',
 
 /**
  * Get conversion funnel (admin endpoint).
- * * @param period - Lookback period (default: '30d')
+ * @param period - Lookback period (default: '30d')
  * @returns Funnel stages with drop-off percentages
  */
-export async function adminGetConversionFunnel(    period: AnalyticsPeriod = '30d',
+export async function adminGetConversionFunnel(period: AnalyticsPeriod = '30d',
     customRange?: ICustomDateRange
 ): Promise<{ stages: IFunnelStage[] }> {
     const params = customRange ? customRange : { period };
@@ -503,10 +503,10 @@ export async function adminGetConversionFunnel(    period: AnalyticsPeriod = '30
 
 /**
  * Get new vs returning visitor retention data (admin endpoint).
- * * @param period - Lookback period (default: '30d')
+ * @param period - Lookback period (default: '30d')
  * @returns Daily new vs returning visitor counts
  */
-export async function adminGetRetention(    period: AnalyticsPeriod = '30d',
+export async function adminGetRetention(period: AnalyticsPeriod = '30d',
     customRange?: ICustomDateRange
 ): Promise<{ data: IRetentionEntry[] }> {
     const params = customRange ? customRange : { period };
@@ -532,7 +532,7 @@ export interface IAnalyticsOverview {
 /**
  * Get the Better Auth account overview (admin endpoint): total accounts and
  * the wallet-adoption rate. Not time-windowed.
- * * @returns Account count and wallet-adoption metrics.
+ * @returns Account count and wallet-adoption metrics.
  */
 export async function adminGetAnalyticsOverview(): Promise<IAnalyticsOverview> {
     const response = await apiClient.get('/admin/users/analytics/overview');
@@ -560,7 +560,7 @@ export interface IGscStatus {
 
 /**
  * Get GSC configuration status (admin endpoint).
- * * @returns GSC configuration status
+ * @returns GSC configuration status
  */
 export async function adminGetGscStatus(): Promise<IGscStatus> {
     const response = await apiClient.get('/admin/users/analytics/gsc/status');
@@ -571,11 +571,11 @@ export async function adminGetGscStatus(): Promise<IGscStatus> {
  * Save GSC service account credentials (admin endpoint).
  *
  * Validates the JSON key and tests API access before saving.
- * * @param serviceAccountJson - JSON string of Google service account key
+ * @param serviceAccountJson - JSON string of Google service account key
  * @param siteUrl - GSC property URL (e.g., "https://tronrelic.com")
  * @returns Updated GSC status
  */
-export async function adminSaveGscCredentials(    serviceAccountJson: string,
+export async function adminSaveGscCredentials(serviceAccountJson: string,
     siteUrl: string
 ): Promise<IGscStatus> {
     const response = await apiClient.post(
@@ -594,7 +594,7 @@ export async function adminRemoveGscCredentials(): Promise<void> {
 
 /**
  * Trigger on-demand GSC data fetch (admin endpoint).
- * * @returns Number of rows fetched from GSC API
+ * @returns Number of rows fetched from GSC API
  */
 export async function adminRefreshGscData(): Promise<{ rowsFetched: number }> {
     const response = await apiClient.post(

@@ -2,7 +2,6 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Users as UsersIcon } from 'lucide-react';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
@@ -77,7 +76,7 @@ export function UsersMonitor() {
             }
 
             const response = await fetch(
-                `${getRuntimeConfig().apiUrl}/admin/users?${params.toString()}`
+                `/api/admin/users?${params.toString()}`
             );
 
             if (!response.ok) {
@@ -115,7 +114,7 @@ export function UsersMonitor() {
                     onSubmit={async (selectedIds) => {
                         try {
                             const response = await fetch(
-                                `${getRuntimeConfig().apiUrl}/admin/users/${encodeURIComponent(account.id)}/groups`,
+                                `/api/admin/users/${encodeURIComponent(account.id)}/groups`,
                                 {
                                     method: 'PUT',
                                     headers: { 'Content-Type': 'application/json' },

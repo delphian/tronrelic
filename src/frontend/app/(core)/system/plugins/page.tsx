@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, Download, Trash2, Settings, AlertCircle } from 'lucide-react';
-import { config as runtimeConfig } from '../../../../lib/config';
 import { Page, Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { Button } from '../../../../components/ui/Button';
@@ -224,7 +223,7 @@ export default function PluginsManagementPage() {
         try {
             setIsLoading(true);
             setError(null);
-            const response = await fetch(`${runtimeConfig.apiBaseUrl}/plugin-management/all`);
+            const response = await fetch(`/api/plugin-management/all`);
 
             if (!response.ok) {
                 throw new Error('Failed to fetch plugins');
@@ -245,7 +244,7 @@ export default function PluginsManagementPage() {
             setError(null);
             setSuccessMessage(null);
 
-            const response = await fetch(`${runtimeConfig.apiBaseUrl}/plugin-management/${pluginId}/${action}`, {
+            const response = await fetch(`/api/plugin-management/${pluginId}/${action}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });

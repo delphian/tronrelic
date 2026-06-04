@@ -5,7 +5,6 @@ import { Save, AlertCircle } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
 import { Stack } from '../../../../../components/layout';
 import { useToast } from '../../../../../components/ui/ToastProvider/ToastProvider';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import styles from './SystemConfigSection.module.scss';
 
 interface SystemConfigPayload {
@@ -28,14 +27,13 @@ export function SystemConfigSection() {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const { push: pushToast } = useToast();
-    const runtimeConfig = getRuntimeConfig();
 
     const fetchConfig = useCallback(async () => {
         // SystemAuthGate guarantees an admin session at this depth; the
         // same-origin Better Auth cookie authorizes the request.
         try {
             setError(null);
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`);
+            const response = await fetch(`/api/admin/system/config/system`);
             if (!response.ok) throw new Error(`Request failed: ${response.statusText}`);
             const data = await response.json();
             const value = data.config?.siteUrl ?? '';
@@ -52,7 +50,7 @@ export function SystemConfigSection() {
         } finally {
             setLoading(false);
         }
-    }, [pushToast, runtimeConfig.apiUrl]);
+    }, [pushToast]);
 
     useEffect(() => {
         void fetchConfig();
@@ -63,7 +61,7 @@ export function SystemConfigSection() {
         setSaving(true);
         try {
             const payload: SystemConfigPayload = { siteUrl };
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
+            const response = await fetch(`/api/admin/system/config/system`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)

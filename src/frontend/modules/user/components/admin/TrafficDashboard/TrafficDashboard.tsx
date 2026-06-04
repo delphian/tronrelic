@@ -30,7 +30,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Bot, Globe, MapPin, RefreshCw } from 'lucide-react';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
 import styles from './TrafficDashboard.module.scss';
@@ -108,11 +107,10 @@ export function TrafficDashboard() {
     const [topCountriesError, setTopCountriesError] = useState<string | null>(null);
     const [topCountriesLoading, setTopCountriesLoading] = useState(true);
 
-    // Read from window.__RUNTIME_CONFIG__ so the same Docker image works
-    // on any domain. Calling once per mount is enough — the runtime
-    // config is set during SSR injection and never changes client-side.
+    // Same-origin relative path so the browser attaches the Better Auth
+    // session cookie; the Next.js rewrite proxies `/api/*` to the backend.
     const baseUrl = useMemo(
-        () => `${getRuntimeConfig().apiUrl}/admin/users/traffic`,
+        () => `/api/admin/users/traffic`,
         []
     );
 

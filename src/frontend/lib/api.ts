@@ -3,7 +3,7 @@ import type { NotificationChannel } from '@/shared';
 import { config } from './config';
 
 export const apiClient = axios.create({
-  baseURL: config.apiBaseUrl,
+  baseURL: typeof window === 'undefined' ? config.apiBaseUrl : '/api',
   timeout: 5000
 });
 

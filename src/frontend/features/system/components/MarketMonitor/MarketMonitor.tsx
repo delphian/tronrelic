@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { config as runtimeConfig } from '../../../../lib/config';
 import styles from './MarketMonitor.module.css';
 
 interface MarketPlatform {
@@ -65,8 +64,8 @@ export function MarketMonitor() {
     const fetchData = async () => {
         try {
             const [platformsRes, freshnessRes] = await Promise.all([
-                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/markets/platforms`),
-                fetch(`${runtimeConfig.apiBaseUrl}/admin/system/markets/freshness`)
+                fetch(`/api/admin/system/markets/platforms`),
+                fetch(`/api/admin/system/markets/freshness`)
             ]);
 
             const [platformsData, freshnessData] = await Promise.all([platformsRes.json(), freshnessRes.json()]);
@@ -91,7 +90,7 @@ export function MarketMonitor() {
     const triggerRefresh = async (force = false) => {
         setRefreshing(true);
         try {
-            await fetch(`${runtimeConfig.apiBaseUrl}/admin/system/markets/refresh`, {
+            await fetch(`/api/admin/system/markets/refresh`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ force })

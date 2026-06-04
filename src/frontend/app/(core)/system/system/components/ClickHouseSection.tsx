@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { formatBytes } from '../../../../../lib/format';
 import { StatStrip } from './StatStrip';
 import { ClickHouseTableBrowser } from './ClickHouseTableBrowser';
@@ -31,11 +30,10 @@ interface ClickHouseStatus {
 export function ClickHouseSection() {
     const [clickhouse, setClickhouse] = useState<ClickHouseStatus | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const runtimeConfig = getRuntimeConfig();
 
     const fetchData = useCallback(async () => {
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/health/clickhouse`);
+            const response = await fetch(`/api/admin/system/health/clickhouse`);
 
             if (response.ok) {
                 const data = await response.json();
@@ -48,7 +46,7 @@ export function ClickHouseSection() {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch ClickHouse health');
         }
-    }, [runtimeConfig.apiUrl]);
+    }, []);
 
     useEffect(() => {
         void fetchData();

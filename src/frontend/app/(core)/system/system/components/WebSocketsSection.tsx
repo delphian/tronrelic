@@ -5,7 +5,6 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { IPluginWebSocketStats, IAggregatePluginWebSocketStats } from '@/types';
 import { Badge } from '../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { StatStrip } from './StatStrip';
 import styles from './WebSocketsSection.module.scss';
 
@@ -20,13 +19,12 @@ export function WebSocketsSection() {
     const [aggregate, setAggregate] = useState<IAggregatePluginWebSocketStats | null>(null);
     const [pluginStats, setPluginStats] = useState<IPluginWebSocketStats[]>([]);
     const [error, setError] = useState<string | null>(null);
-    const runtimeConfig = getRuntimeConfig();
 
     const fetchStats = useCallback(async () => {
         try {
             const [aggregateRes, statsRes] = await Promise.all([
-                fetch(`${runtimeConfig.apiUrl}/admin/system/websockets/aggregate`),
-                fetch(`${runtimeConfig.apiUrl}/admin/system/websockets/stats`)
+                fetch(`/api/admin/system/websockets/aggregate`),
+                fetch(`/api/admin/system/websockets/stats`)
             ]);
 
             if (!aggregateRes.ok || !statsRes.ok) {
@@ -42,7 +40,7 @@ export function WebSocketsSection() {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Unknown error');
         }
-    }, [runtimeConfig.apiUrl]);
+    }, []);
 
     useEffect(() => {
         void fetchStats();

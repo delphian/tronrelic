@@ -20,7 +20,6 @@ import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Ta
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { CopyButton } from '../../../../../components/ui/CopyButton';
 import { useToast } from '../../../../../components/ui/ToastProvider/ToastProvider';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { formatBytes } from '../../../../../lib/format';
 import { Database, ChevronDown, ChevronRight, FileText, Trash2 } from 'lucide-react';
 import styles from './CollectionBrowser.module.scss';
@@ -59,7 +58,6 @@ export function CollectionBrowser() {
     const [expandedDocumentId, setExpandedDocumentId] = useState<string | null>(null);
     const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
     const { push: pushToast } = useToast();
-    const runtimeConfig = getRuntimeConfig();
 
     // SystemAuthGate guarantees an admin session at this depth; the
     // same-origin Better Auth cookie authorizes every request.
@@ -67,7 +65,7 @@ export function CollectionBrowser() {
     const fetchStats = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/database/stats`, {
+            const response = await fetch(`/api/admin/database/stats`, {
                 headers: { 'Content-Type': 'application/json' }
             });
 
@@ -83,13 +81,13 @@ export function CollectionBrowser() {
         } finally {
             setLoading(false);
         }
-    }, [runtimeConfig.apiUrl]);
+    }, []);
 
     const fetchDocuments = useCallback(async (collectionName: string, page: number = 1) => {
         try {
             setLoadingDocuments(true);
             const response = await fetch(
-                `${runtimeConfig.apiUrl}/admin/database/collections/${collectionName}/documents?page=${page}&limit=10&sort=-_id`,
+                `/api/admin/database/collections/${collectionName}/documents?page=${page}&limit=10&sort=-_id`,
                 {
                     headers: { 'Content-Type': 'application/json' }
                 }
@@ -106,7 +104,7 @@ export function CollectionBrowser() {
         } finally {
             setLoadingDocuments(false);
         }
-    }, [runtimeConfig.apiUrl]);
+    }, []);
 
     useEffect(() => {
         void fetchStats();
@@ -138,7 +136,7 @@ export function CollectionBrowser() {
         setDeletingDocumentId(documentId);
         try {
             const response = await fetch(
-                `${runtimeConfig.apiUrl}/admin/database/collections/${collectionName}/documents/${encodeURIComponent(documentId)}`,
+                `/api/admin/database/collections/${collectionName}/documents/${encodeURIComponent(documentId)}`,
                 {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' }
@@ -173,7 +171,7 @@ export function CollectionBrowser() {
         } finally {
             setDeletingDocumentId(null);
         }
-    }, [pushToast, expandedDocumentId, documents?.page, fetchDocuments, fetchStats, runtimeConfig.apiUrl]);
+    }, [pushToast, expandedDocumentId, documents?.page, fetchDocuments, fetchStats]);
 
     const sortedCollections = useMemo(
         () => [...(stats?.collections ?? [])].sort((a, b) => a.name.localeCompare(b.name)),

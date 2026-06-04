@@ -17,7 +17,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Lock, Users as UsersIcon } from 'lucide-react';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
@@ -49,7 +48,7 @@ export function GroupsManager() {
     const { push: pushToast } = useToast();
 
     const baseUrl = useMemo(
-        () => `${getRuntimeConfig().apiUrl}/admin/users/groups`,
+        () => `/api/admin/users/groups`,
         []
     );
 

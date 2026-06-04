@@ -7,7 +7,6 @@ import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { StatStrip } from './StatStrip';
 import styles from './BlockchainSection.module.scss';
 
@@ -80,15 +79,14 @@ export function BlockchainSection() {
     const [schedulerEnabled, setSchedulerEnabled] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [syncing, setSyncing] = useState(false);
-    const runtimeConfig = getRuntimeConfig();
 
     const fetchData = useCallback(async () => {
         try {
             const [statusRes, metricsRes, observersRes, schedulerRes] = await Promise.all([
-                fetch(`${runtimeConfig.apiUrl}/admin/system/blockchain/status`),
-                fetch(`${runtimeConfig.apiUrl}/admin/system/blockchain/metrics`),
-                fetch(`${runtimeConfig.apiUrl}/admin/system/blockchain/observers`),
-                fetch(`${runtimeConfig.apiUrl}/admin/system/scheduler/health`)
+                fetch(`/api/admin/system/blockchain/status`),
+                fetch(`/api/admin/system/blockchain/metrics`),
+                fetch(`/api/admin/system/blockchain/observers`),
+                fetch(`/api/admin/system/scheduler/health`)
             ]);
 
             setStatus(statusRes.ok ? (await statusRes.json()).status ?? null : null);
@@ -107,7 +105,7 @@ export function BlockchainSection() {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch blockchain data');
         }
-    }, [runtimeConfig.apiUrl]);
+    }, []);
 
     useEffect(() => {
         void fetchData();
@@ -120,7 +118,7 @@ export function BlockchainSection() {
         setSyncing(true);
         setError(null);
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/blockchain/sync`, {
+            const response = await fetch(`/api/admin/system/blockchain/sync`, {
                 method: 'POST'
             });
             let data: any = null;

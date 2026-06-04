@@ -7,7 +7,6 @@
  * @module modules/logs/api/client
  */
 
-import { getRuntimeConfig } from '../../../lib/runtimeConfig';
 import type { LogLevel } from '@/types';
 import type { LogsResponse, LogStats } from '../types';
 
@@ -55,7 +54,7 @@ export async function getSystemLogs(query: LogsQuery = {}): Promise<LogsResponse
     }
 
     const response = await fetch(
-        `${getRuntimeConfig().apiUrl}/admin/system/logs?${params.toString()}`
+        `/api/admin/system/logs?${params.toString()}`
     );
 
     if (!response.ok) {
@@ -76,7 +75,7 @@ export async function getSystemLogs(query: LogsQuery = {}): Promise<LogsResponse
  */
 export async function getLogStats(): Promise<LogStats> {
     const response = await fetch(
-        `${getRuntimeConfig().apiUrl}/admin/system/logs/stats`
+        `/api/admin/system/logs/stats`
     );
 
     if (!response.ok) {
@@ -102,7 +101,7 @@ export async function getLogStats(): Promise<LogStats> {
  */
 export async function deleteAllLogs(): Promise<number> {
     const response = await fetch(
-        `${getRuntimeConfig().apiUrl}/admin/system/logs`,
+        `/api/admin/system/logs`,
         {
             method: 'DELETE'
         }

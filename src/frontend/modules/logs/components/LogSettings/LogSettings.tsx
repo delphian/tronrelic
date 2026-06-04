@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import type { LogLevelName } from '@/types';
-import { getRuntimeConfig } from '../../../../lib/runtimeConfig';
 import { Button } from '../../../../components/ui/Button';
 import styles from './LogSettings.module.scss';
 
@@ -56,9 +55,6 @@ export function LogSettings() {
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-    // Get runtime config for API URL
-    const runtimeConfig = getRuntimeConfig();
-
     /**
      * Fetches current system configuration from the backend.
      *
@@ -70,7 +66,7 @@ export function LogSettings() {
         setError(null);
 
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
+            const response = await fetch(`/api/admin/system/config/system`, {
                 method: 'GET',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -109,7 +105,7 @@ export function LogSettings() {
         setSuccessMessage(null);
 
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/config/system`, {
+            const response = await fetch(`/api/admin/system/config/system`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ logLevel: selectedLevel })

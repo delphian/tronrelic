@@ -12,7 +12,6 @@ import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { getRuntimeConfig } from '../../../../../lib/runtimeConfig';
 import { formatBytes } from '../../../../../lib/format';
 import { StatStrip } from './StatStrip';
 import { CollectionBrowser } from './CollectionBrowser';
@@ -83,11 +82,10 @@ export function MongoSection() {
 function MongoHealth() {
     const [database, setDatabase] = useState<DatabaseStatus | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const runtimeConfig = getRuntimeConfig();
 
     const fetchData = useCallback(async () => {
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/system/health/database`);
+            const response = await fetch(`/api/admin/system/health/database`);
 
             if (response.ok) {
                 const data = await response.json();
@@ -100,7 +98,7 @@ function MongoHealth() {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch MongoDB health');
         }
-    }, [runtimeConfig.apiUrl]);
+    }, []);
 
     useEffect(() => {
         void fetchData();
@@ -150,11 +148,10 @@ function Migrations() {
     const [sourceFilter, setSourceFilter] = useState<string>('all');
     const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
     const [error, setError] = useState<string | null>(null);
-    const runtimeConfig = getRuntimeConfig();
 
     const fetchStatus = useCallback(async () => {
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/migrations/status`, {
+            const response = await fetch(`/api/admin/migrations/status`, {
                 headers: { 'Content-Type': 'application/json' }
             });
             if (!response.ok) throw new Error(`Failed to fetch status: ${response.statusText}`);
@@ -164,12 +161,12 @@ function Migrations() {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch migration status');
         }
-    }, [runtimeConfig.apiUrl]);
+    }, []);
 
     const fetchHistory = useCallback(async () => {
         try {
             const params = new URLSearchParams({ limit: '100', status: statusFilter });
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/migrations/history?${params}`, {
+            const response = await fetch(`/api/admin/migrations/history?${params}`, {
                 headers: { 'Content-Type': 'application/json' }
             });
             if (!response.ok) throw new Error(`Failed to fetch history: ${response.statusText}`);
@@ -179,14 +176,14 @@ function Migrations() {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch migration history');
         }
-    }, [statusFilter, runtimeConfig.apiUrl]);
+    }, [statusFilter]);
 
     const executeMigration = async (migrationId?: string) => {
         if (executing) return;
         setExecuting(true);
         setError(null);
         try {
-            const response = await fetch(`${runtimeConfig.apiUrl}/admin/migrations/execute`, {
+            const response = await fetch(`/api/admin/migrations/execute`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(migrationId ? { migrationId } : {})

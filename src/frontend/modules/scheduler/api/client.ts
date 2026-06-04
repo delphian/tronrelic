@@ -7,7 +7,6 @@
  * @module modules/scheduler/api/client
  */
 
-import { getRuntimeConfig } from '../../../lib/runtimeConfig';
 import type { SchedulerJob, SchedulerHealth, SchedulerJobUpdate } from '../types';
 
 /**
@@ -21,7 +20,7 @@ import type { SchedulerJob, SchedulerHealth, SchedulerJobUpdate } from '../types
  */
 export async function getSchedulerStatus(): Promise<SchedulerJob[]> {
     const response = await fetch(
-        `${getRuntimeConfig().apiUrl}/admin/system/scheduler/status`
+        `/api/admin/system/scheduler/status`
     );
 
     if (!response.ok) {
@@ -40,7 +39,7 @@ export async function getSchedulerStatus(): Promise<SchedulerJob[]> {
  */
 export async function getSchedulerHealth(): Promise<SchedulerHealth> {
     const response = await fetch(
-        `${getRuntimeConfig().apiUrl}/admin/system/scheduler/health`
+        `/api/admin/system/scheduler/health`
     );
 
     if (!response.ok) {
@@ -63,7 +62,7 @@ export async function updateSchedulerJob(
     updates: SchedulerJobUpdate
 ): Promise<void> {
     const response = await fetch(
-        `${getRuntimeConfig().apiUrl}/admin/system/scheduler/job/${jobName}`,
+        `/api/admin/system/scheduler/job/${jobName}`,
         {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
