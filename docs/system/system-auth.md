@@ -65,7 +65,7 @@ handler: async (req, res) => {
 }
 ```
 
-Admin-gated REST routes should also carry `requiresAdmin: true` so the `requireAdmin` middleware enforces the gate (it admits a Better Auth admin session or the `ADMIN_API_TOKEN` service token). See [plugins-api-registration.md](../plugins/plugins-api-registration.md).
+Login-gated REST routes can carry `requiresAuth: true` so the shared `requireLogin` middleware (`api/middleware/require-login.ts`) enforces the gate — 401 for anonymous callers, `req.userId` set for authenticated ones. Admin-gated routes carry `requiresAdmin: true` so `requireAdmin` enforces the gate (it admits a Better Auth admin session or the `ADMIN_API_TOKEN` service token). Both middlewares are available to core routers and plugin route configs alike. See [plugins-api-registration.md](../plugins/plugins-api-registration.md).
 
 ## Further Reading
 

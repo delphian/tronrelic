@@ -20,9 +20,10 @@ declare module 'express-serve-static-core' {
         /** Admin auth path that approved the request, set by `requireAdmin`. */
         adminVia?: 'user' | 'service-token';
         /**
-         * Better Auth user id of the admin operator, populated by
-         * `requireAdmin` on the session path. Declared here so audit-logging
-         * admin handlers can read it without ad-hoc casts.
+         * Better Auth user id of the authenticated caller, populated by
+         * `requireAdmin` on the session path and by `requireLogin` for
+         * login-gated routes. Declared here so audit-logging handlers can
+         * read it without ad-hoc casts.
          */
         userId?: string;
     }

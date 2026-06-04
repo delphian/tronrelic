@@ -12,6 +12,7 @@
 
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getServerSideApiUrl } from './lib/api-url';
 
 /** Cookie name for preserved external referrer */
 export const ORIGINAL_REFERRER_COOKIE = '_original_ref';
@@ -193,7 +194,9 @@ async function emitBootstrapEvent(
     tid: string,
     referralCode: string | null
 ): Promise<void> {
-    const backendUrl = process.env.SITE_BACKEND || 'http://localhost:4000';
+    // Resolved outside the try: a missing SITE_BACKEND is a deployment
+    // error that must surface, while the fetch below stays best-effort.
+    const backendUrl = getServerSideApiUrl();
     try {
         await fetch(`${backendUrl}/api/user/bootstrap`, {
             method: 'POST',

@@ -14,6 +14,7 @@
  */
 
 import { headers } from 'next/headers';
+import { getServerSideApiUrl } from '../../../lib/api-url';
 
 /**
  * Minimal SSR-safe shape of the Better Auth session response.
@@ -53,14 +54,17 @@ export interface ISSRSession {
  * Forwards every inbound cookie to the backend's `/api/auth/get-session`
  * endpoint so the BA session cookie reaches the auth pipeline. Returns
  * `null` when no session is active, the backend is unreachable, or the
- * response is malformed — every failure mode collapses to "render
- * signed-out" rather than throwing, which keeps SSR resilient.
+ * response is malformed — runtime failure modes collapse to "render
+ * signed-out" rather than throwing, which keeps SSR resilient. A missing
+ * `SITE_BACKEND` is a deployment error, not a runtime failure, and throws.
  *
  * @returns Resolved session for the inbound request, or null.
  */
 export async function getServerSession(): Promise<ISSRSession | null> {
+    // Resolved outside the try: a missing SITE_BACKEND must surface
+    // rather than collapse to signed-out.
+    const backendUrl = getServerSideApiUrl();
     try {
-        const backendUrl = process.env.SITE_BACKEND || 'http://localhost:4000';
         const reqHeaders = await headers();
         const cookieHeader = reqHeaders.get('cookie');
 

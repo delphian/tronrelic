@@ -8,30 +8,10 @@
  */
 
 import { Router } from 'express';
-import type { Request, Response, NextFunction } from 'express';
 import { asyncHandler } from '../../../api/middleware/async-handler.js';
 import { createRateLimiter } from '../../../api/middleware/rate-limit.js';
-import { getSessionForRequest } from '../../../modules/identity/services/auth-facade.js';
+import { requireLogin } from '../../../api/middleware/require-login.js';
 import type { ToolsController } from './tools.controller.js';
-
-/**
- * Require the caller to be signed in.
- *
- * Resolves the Better Auth session and returns 401 for anonymous callers;
- * any authenticated account passes. The approval checker only reads public
- * on-chain data for an address the caller types in, so a linked wallet is not
- * a prerequisite — login is the bar, matching the frontend `isLoggedIn` gate
- * in `ApprovalChecker`. `getSessionForRequest` resolves to null rather than
- * throwing, so this middleware never rejects.
- */
-async function requireLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const session = await getSessionForRequest(req);
-    if (!session) {
-        res.status(401).json({ error: 'Authentication required', message: 'Sign in to use this tool' });
-        return;
-    }
-    next();
-}
 
 /**
  * Create the tools router with all public endpoints.
@@ -62,6 +42,9 @@ export function createToolsRouter(controller: ToolsController): Router {
     router.post('/stake/from-trx', rateLimiter, asyncHandler(controller.estimateStakeFromTrx));
     router.post('/stake/from-energy', rateLimiter, asyncHandler(controller.estimateStakeFromEnergy));
     router.post('/signature/verify', rateLimiter, asyncHandler(controller.verifySignature));
+    // The approval checker only reads public on-chain data for an address the
+    // caller types in, so a linked wallet is not a prerequisite — login is the
+    // bar, matching the frontend `isLoggedIn` gate in `ApprovalChecker`.
     router.post('/approval/check', requireLogin, approvalRateLimiter, asyncHandler(controller.checkApprovals));
     router.post('/timestamp/convert', rateLimiter, asyncHandler(controller.convertTimestamp));
 

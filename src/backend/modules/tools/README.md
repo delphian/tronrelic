@@ -42,9 +42,9 @@ The Signature Verifier supports direct URL linking via query parameters: `/tools
 
 ## Security
 
-### Rate Limiting
+### Rate Limiting and Authentication
 
-All endpoints are unauthenticated and rate-limited at 30 requests per 60-second window per IP address, using the same Redis-backed `createRateLimiter` infrastructure as other public routes.
+Endpoints are rate-limited at 30 requests per 60-second window per IP address, using the same Redis-backed `createRateLimiter` infrastructure as other public routes. All tools are unauthenticated except the approval checker, which is gated by the shared `requireLogin` middleware (`api/middleware/require-login.ts`) and has its own tighter limiter (10 requests per 60 seconds).
 
 ### Async Error Handling
 

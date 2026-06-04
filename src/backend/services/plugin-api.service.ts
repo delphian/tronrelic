@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction, type RequestHan
 import type { IPlugin, IApiRouteConfig, IHttpRequest, IHttpResponse, IHttpNext, ApiRouteHandler, ApiMiddleware } from '@/types';
 import { logger } from '../lib/logger.js';
 import { requireAdmin } from '../api/middleware/admin-auth.js';
+import { requireLogin } from '../api/middleware/require-login.js';
 
 /**
  * Adapt Express Request to framework-agnostic IHttpRequest.
@@ -234,8 +235,8 @@ export class PluginApiService {
             middlewareChain.push(requireAdmin);
             logger.debug({ pluginId, path }, 'Admin auth middleware applied to route');
         } else if (requiresAuth) {
-            // TODO: Implement authentication middleware
-            // middlewareChain.push(authMiddleware);
+            middlewareChain.push(requireLogin);
+            logger.debug({ pluginId, path }, 'Login auth middleware applied to route');
         }
 
         // Adapt plugin handler to Express RequestHandler
