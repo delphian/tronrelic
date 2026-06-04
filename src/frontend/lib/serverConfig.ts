@@ -117,7 +117,8 @@ export async function getServerConfig(): Promise<RuntimeConfig> {
 
     // Resolved outside the try: a missing SITE_BACKEND must surface as a
     // deployment error, not degrade into the unreachable-backend fallback.
-    const backendUrl = getServerSideApiUrl().replace(/\/$/, '');
+    // Trailing-slash normalization happens inside getServerSideApiUrl().
+    const backendUrl = getServerSideApiUrl();
 
     try {
         const response = await fetch(`${backendUrl}/api/config/public`, {

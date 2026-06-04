@@ -13,6 +13,10 @@ import {
 } from '../../../modules/identity/services/auth-facade.js';
 import { requireLogin } from '../require-login.js';
 
+/**
+ * No-op ISystemLogService implementation injected into GroupService so
+ * facade session augmentation runs without console noise during tests.
+ */
 class NullLogger implements ISystemLogService {
     info() {} warn() {} error() {} debug() {} trace() {} fatal() {}
     child(): ISystemLogService { return this; }
@@ -31,6 +35,11 @@ class NullLogger implements ISystemLogService {
 // the matching ObjectId.
 const PLAIN_USER = 'd1d1d1d1d1d1d1d1d1d1d1d1';
 
+/**
+ * Build minimal Express req/res/next doubles for exercising the middleware:
+ * the res records `status()`/`json()` calls for assertion, and `called()`
+ * reports whether `next()` ran.
+ */
 function makeReqRes() {
     const req: any = {
         headers: {} as Record<string, string>,

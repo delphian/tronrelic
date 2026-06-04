@@ -52,7 +52,7 @@
  * code (getServerSideProps, API routes, etc.). Client components should use
  * getClientSideApiUrl() instead.
  *
- * @returns {string} The base API URL without /api suffix (e.g., http://backend:4000)
+ * @returns {string} The base API URL without /api suffix or trailing slash (e.g., http://backend:4000)
  *
  * @example
  * ```typescript
@@ -71,7 +71,9 @@ export function getServerSideApiUrl(): string {
     if (!process.env.SITE_BACKEND) {
         throw new Error('SITE_BACKEND environment variable is required for server-side API requests');
     }
-    return process.env.SITE_BACKEND;
+    // Strip any trailing slash so `${url}/api/...` interpolation at call
+    // sites can never produce `//api/...` paths.
+    return process.env.SITE_BACKEND.replace(/\/$/, '');
 }
 
 /**

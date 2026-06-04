@@ -45,7 +45,9 @@ export function createToolsRouter(controller: ToolsController): Router {
     // The approval checker only reads public on-chain data for an address the
     // caller types in, so a linked wallet is not a prerequisite — login is the
     // bar, matching the frontend `isLoggedIn` gate in `ApprovalChecker`.
-    router.post('/approval/check', requireLogin, approvalRateLimiter, asyncHandler(controller.checkApprovals));
+    // Rate limit before the login gate so anonymous spam is throttled before
+    // it reaches Better Auth session resolution.
+    router.post('/approval/check', approvalRateLimiter, requireLogin, asyncHandler(controller.checkApprovals));
     router.post('/timestamp/convert', rateLimiter, asyncHandler(controller.convertTimestamp));
 
     return router;

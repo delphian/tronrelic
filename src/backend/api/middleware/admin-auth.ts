@@ -6,30 +6,6 @@ import {
 } from '../../modules/identity/services/auth-facade.js';
 
 /**
- * Augment Express Request with the admin-auth path that approved the call.
- *
- * `'user'` — request was approved via a Better Auth session whose user is a
- *            member of the `admin` group. `req.userId` carries that BA user
- *            id; audit logs should record it.
- * `'service-token'` — request carried a valid `ADMIN_API_TOKEN`. Used by CI
- *            scripts and the bootstrap-first-admin recipe. No human
- *            attribution; audit logs note this fact explicitly.
- */
-declare module 'express-serve-static-core' {
-    interface Request {
-        /** Admin auth path that approved the request, set by `requireAdmin`. */
-        adminVia?: 'user' | 'service-token';
-        /**
-         * Better Auth user id of the authenticated caller, populated by
-         * `requireAdmin` on the session path and by `requireLogin` for
-         * login-gated routes. Declared here so audit-logging handlers can
-         * read it without ad-hoc casts.
-         */
-        userId?: string;
-    }
-}
-
-/**
  * Pull the admin token candidate off a request without enforcing.
  * Accepts the same two transport methods as `requireAdmin`: `x-admin-token`
  * header (preferred) and `Authorization: Bearer {token}`.
