@@ -1019,8 +1019,14 @@ export class BlockchainService implements IBlockchainService {
                         updateOne: {
                             filter: { txId: result.payload.txId },
                             // ITransactionPersistencePayload deliberately widens `type` to string;
-                            // the driver's $set typing requires TransactionDoc's TronTransactionType union.
-                            update: { $set: result.payload as Partial<TransactionDoc> },
+                            // the driver's $set typing requires TransactionDoc's TronTransactionType
+                            // union, so narrow only that field and keep the rest compiler-checked.
+                            update: {
+                                $set: {
+                                    ...result.payload,
+                                    type: result.payload.type as TransactionDoc['type']
+                                }
+                            },
                             upsert: true
                         }
                     });
