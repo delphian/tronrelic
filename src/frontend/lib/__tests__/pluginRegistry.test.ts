@@ -23,11 +23,11 @@ function makePlugin(id: string, overrides: Partial<IPlugin> = {}): IPlugin {
 }
 
 describe('pluginRegistry.bootstrap failure isolation', () => {
-    let errorSpy: ReturnType<typeof vi.fn>;
+    let errorSpy: ReturnType<typeof vi.fn<typeof console.error>>;
 
     beforeEach(() => {
         pluginRegistry.clear();
-        errorSpy = vi.fn();
+        errorSpy = vi.fn<typeof console.error>();
         vi.spyOn(console, 'error').mockImplementation(errorSpy);
     });
 

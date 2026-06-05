@@ -18,7 +18,7 @@ import type {
     IPlacementService
 } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
-import { PlacementService } from '../placements/placement.service.js';
+import { PlacementService, type PlacementBroadcastCallback } from '../placements/placement.service.js';
 import { PlacementResolver } from '../placements/placement-resolver.js';
 import {
     routeMatches,
@@ -657,12 +657,12 @@ describe('PlacementService broadcast wiring', () => {
     let logger: MockLogger;
     let db: ReturnType<typeof createMockDatabaseService>;
     let service: PlacementService;
-    let broadcast: ReturnType<typeof vi.fn>;
+    let broadcast: ReturnType<typeof vi.fn<PlacementBroadcastCallback>>;
 
     beforeEach(() => {
         logger = new MockLogger();
         db = createMockDatabaseService();
-        broadcast = vi.fn();
+        broadcast = vi.fn<PlacementBroadcastCallback>();
         PlacementService.__resetForTests();
         PlacementService.setDependencies(db, logger);
         service = PlacementService.getInstance();
