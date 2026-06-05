@@ -47,6 +47,10 @@ Disallow: /_next/
 
 User-agent: Google-Extended
 Allow: /
+Disallow: /system
+Disallow: /system/
+Disallow: /api/
+Disallow: /_next/
 
 User-agent: CCBot
 Allow: /

@@ -127,19 +127,27 @@ export function CrawlerDashboard() {
     }, [pathBotClass, sinceHours]);
 
     // Build one chart series per bot class that has at least one event in
-    // the window — all-zero series only add legend noise.
-    const trendSeries: ChartSeries[] = useMemo(() => {
+    // the window — all-zero series only add legend noise. Color resolution
+    // stays outside the memo so a theme switch re-resolves on the next
+    // render instead of serving stale memoized values.
+    const trendSeriesData = useMemo(() => {
         if (!trend || trend.length === 0) return [];
         return BOT_CLASS_SERIES
             .map(cls => ({
                 id: cls.key,
                 label: cls.label,
-                color: resolveCSSColor(cls.cssVar, cls.fallback),
+                cssVar: cls.cssVar,
+                fallback: cls.fallback,
                 fill: false,
                 data: trend.map(p => ({ date: p.day, value: p.counts[cls.key] ?? 0 }))
             }))
             .filter(series => series.data.some(d => d.value > 0));
     }, [trend]);
+
+    const trendSeries: ChartSeries[] = trendSeriesData.map(({ cssVar, fallback, ...series }) => ({
+        ...series,
+        color: resolveCSSColor(cssVar, fallback)
+    }));
 
     const numberFormatter = useMemo(() => new Intl.NumberFormat(), []);
 

@@ -365,7 +365,8 @@ describe('TrafficService', () => {
 
             const out = await TrafficService.getInstance().getPathsByBotClass('ai_crawler', { sinceHours: 168, limit: 10 });
 
-            expect(captured.sql).toContain('bot_class = {botClass:String}');
+            // NULL fold mirrors the trend query so 'unclassified' is drillable.
+            expect(captured.sql).toContain("coalesce(bot_class, 'unclassified') = {botClass:String}");
             expect(captured.sql).not.toContain("'ai_crawler'");
             expect(captured.params).toEqual({ sinceHours: 168, limit: 10, botClass: 'ai_crawler' });
             expect(out).toEqual([{ key: '/markets', count: 14 }]);
