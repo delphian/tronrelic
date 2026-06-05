@@ -37,7 +37,9 @@ import type { IPlugin, IPluginManifest } from '@/types';
 /**
  * No plugins discovered.
  */
-export const discoveredPlugins: IPlugin[] = [];
+export async function loadDiscoveredPlugins(): Promise<IPlugin[]> {
+    return [];
+}
 `;
 
 const frontendPluginStub = `/**
