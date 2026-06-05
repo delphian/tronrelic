@@ -91,25 +91,31 @@ export function GscKeywords() {
         return () => { active = false; };
     }, []);
 
-    const clicksSeries: ChartSeries[] = useMemo(() => {
-        if (!daily || daily.length === 0) return [];
-        return [{
-            id: 'clicks',
-            label: 'Clicks',
-            color: resolveCSSColor('--color-primary', '#4b8cff'),
-            data: daily.map(b => ({ date: b.date, value: b.totalClicks }))
-        }];
-    }, [daily]);
+    // Memoize only the data mapping; colors resolve on every render so a
+    // theme switch re-resolves instead of serving stale memoized values.
+    const clicksSeriesData = useMemo(
+        () => (daily ?? []).map(b => ({ date: b.date, value: b.totalClicks })),
+        [daily]
+    );
 
-    const impressionsSeries: ChartSeries[] = useMemo(() => {
-        if (!daily || daily.length === 0) return [];
-        return [{
-            id: 'impressions',
-            label: 'Impressions',
-            color: resolveCSSColor('--color-success', '#57d48c'),
-            data: daily.map(b => ({ date: b.date, value: b.totalImpressions }))
-        }];
-    }, [daily]);
+    const impressionsSeriesData = useMemo(
+        () => (daily ?? []).map(b => ({ date: b.date, value: b.totalImpressions })),
+        [daily]
+    );
+
+    const clicksSeries: ChartSeries[] = clicksSeriesData.length > 0 ? [{
+        id: 'clicks',
+        label: 'Clicks',
+        color: resolveCSSColor('--color-primary', '#4b8cff'),
+        data: clicksSeriesData
+    }] : [];
+
+    const impressionsSeries: ChartSeries[] = impressionsSeriesData.length > 0 ? [{
+        id: 'impressions',
+        label: 'Impressions',
+        color: resolveCSSColor('--color-success', '#57d48c'),
+        data: impressionsSeriesData
+    }] : [];
 
     const numberFormatter = useMemo(() => new Intl.NumberFormat(), []);
 

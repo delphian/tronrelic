@@ -669,7 +669,10 @@ export class TrafficService {
      *
      * `botClass` is bound as a query parameter — it originates from the
      * request and must never be interpolated. The controller additionally
-     * validates it against the known `BotClass` set before calling.
+     * validates it against the known `BotClass` set before calling. NULL
+     * rows are folded to `'unclassified'` in the comparison (mirroring
+     * `getBotClassTimeSeries`) so the synthetic bucket the trend chart
+     * surfaces is drillable here too.
      *
      * Returns `[]` when ClickHouse is unavailable or the query fails.
      *
@@ -694,7 +697,7 @@ export class TrafficService {
                 count() AS count
             FROM ${TABLE_NAME}
             WHERE timestamp > now() - INTERVAL {sinceHours:UInt32} HOUR
-              AND bot_class = {botClass:String}
+              AND coalesce(bot_class, 'unclassified') = {botClass:String}
               AND path != ''
             GROUP BY key
             ORDER BY count DESC
