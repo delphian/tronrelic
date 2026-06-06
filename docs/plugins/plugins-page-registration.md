@@ -17,7 +17,7 @@ Frontend `pages` arrays are statically imported into `plugins.generated.ts` by `
 Plugin needs UI? Set `manifest.frontend = true` (for pages) and `manifest.backend = true` (for menu registration). Backend `init()` registers menu nodes; frontend `frontend.ts` declares `pages` (and optionally `adminPages`); page components accept `{ context, initialData }` and never import from `apps/frontend`.
 
 ```bash
-npm run build --workspace src/plugins/my-plugin
+npm --prefix src/plugins/trp-my-plugin run build
 npm run generate:plugins
 npm run dev
 # /system/plugins → Install → Enable

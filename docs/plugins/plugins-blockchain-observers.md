@@ -50,7 +50,7 @@ Addresses arrive Base58, amounts in both SUN and TRX, USD already converted. Obs
 Plugin observers are factory functions: receive injected dependencies, return an instance of an internal class extending `BaseObserver`.
 
 ```typescript
-// src/plugins/<id>/src/backend/delegation-tracker.observer.ts
+// src/plugins/trp-<id>/src/backend/delegation-tracker.observer.ts
 import type {
     ITransaction,
     IBaseObserver,
@@ -83,7 +83,7 @@ export function createDelegationTrackerObserver(
 Wire it from the plugin's `init` hook using only the injected `IPluginContext`:
 
 ```typescript
-// src/plugins/<id>/src/backend/backend.ts
+// src/plugins/trp-<id>/src/backend/backend.ts
 export const myPluginBackendPlugin = definePlugin({
     manifest: myPluginManifest,
     init: async (context: IPluginContext) => {

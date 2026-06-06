@@ -11,7 +11,7 @@ Widgets are extra vulnerable to hydration mismatch: SSR data arrives via the wid
 Each plugin exports a `widgetComponents` map from `src/frontend/widgets/index.ts`. Keys must match backend widget IDs exactly. The plugin's `build:frontend` step compiles this to `dist/frontend/widgets/index.js` and `package.json` advertises it via `exports."./frontend/widgets"`. The `npm run generate:plugins` registry generator reads the exports map and emits static imports into `widgets.generated.ts`. Re-run that command after adding or renaming a widget.
 
 ```typescript
-// src/plugins/my-plugin/src/frontend/widgets/index.ts
+// src/plugins/trp-my-plugin/src/frontend/widgets/index.ts
 import type { ComponentType } from 'react';
 import { MyFeedWidget } from './MyFeedWidget';
 
