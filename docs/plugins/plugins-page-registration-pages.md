@@ -63,7 +63,7 @@ All public pages must follow the [SSR + Live Updates pattern](../frontend/react/
 ## Build and Enable
 
 ```bash
-npm run build --workspace src/plugins/my-plugin
+npm --prefix src/plugins/trp-my-plugin run build
 npm run generate:plugins
 npm run dev
 # Then in /system/plugins admin UI: Install → Enable

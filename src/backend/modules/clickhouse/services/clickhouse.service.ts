@@ -364,7 +364,13 @@ export class ClickHouseService implements IClickHouseService {
                         LIMIT 100
                     `,
                     query_params: {
-                        lastPollTime: this.lastErrorPollTime.toISOString()
+                        // Pass the Date object itself — @clickhouse/client serializes it
+                        // to a timezone-agnostic Unix timestamp (seconds.millis), which
+                        // DateTime64(3) params accept. An ISO-8601 string (toISOString)
+                        // is rejected: the 'T' separator and 'Z' suffix fail ClickHouse's
+                        // DateTime64 parameter parsing, so the poll would error forever
+                        // and the cursor would never advance.
+                        lastPollTime: this.lastErrorPollTime
                     },
                     format: 'JSONEachRow',
                     abort_signal: controller.signal

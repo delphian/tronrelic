@@ -8,7 +8,7 @@ Plugins ship backend and frontend from one workspace and load through generated 
 
 ## Plugin Package Layout
 
-Every plugin lives at `src/plugins/<plugin-id>/`, colocating backend and frontend because a feature almost always spans both runtimes.
+Every plugin lives at `src/plugins/trp-<plugin-id>/`, colocating backend and frontend because a feature almost always spans both runtimes. Naming is three-layered: the repo and directory carry a `trp-` prefix (`trp-memo-tracker`), the manifest `id` drops it (`memo-tracker`), and the workspace name is `@tronrelic/plugin-<plugin-id>`. The manifest `id` is authoritative — the registry generators read it from `src/manifest.ts` (falling back to the `package.json` name suffix), never from the directory name — and it drives all runtime surfaces: the `plugin_<plugin-id>_` collection prefix, `/api/plugins/<plugin-id>/` routes, and `/system/plugins/<plugin-id>` admin pages.
 
 ### Directory Essentials
 
@@ -109,7 +109,7 @@ Account, wallet, and group data are not on the context — reach them through th
 Defer heavy logic to modules under `src/backend/**`; keep the entry file focused on wiring. Instantiate observers in `init` by passing injected dependencies into factory functions. Subscribe to transaction types inside the observer constructor so wiring happens at instantiation. Emit events only through injected services.
 
 ```typescript
-// src/plugins/<id>/src/backend/hello-world.observer.ts
+// src/plugins/trp-<id>/src/backend/hello-world.observer.ts
 export function createHelloWorldObserver(
     BaseObserver: abstract new (logger: ISystemLogService) => IBaseObserver,
     observerRegistry: IObserverRegistry,
@@ -129,7 +129,7 @@ export function createHelloWorldObserver(
     return new HelloWorldObserver();
 }
 
-// src/plugins/<id>/src/backend/backend.ts
+// src/plugins/trp-<id>/src/backend/backend.ts
 export const helloWorldBackendPlugin = definePlugin({
     manifest: helloWorldManifest,
     init: async ({ BaseObserver, observerRegistry, websocketService, logger }: IPluginContext) => {
@@ -170,7 +170,7 @@ Root-level `npm run build`: each plugin's `tsc -p tsconfig.json` compiles backen
 
 > **Prerequisite:** `src/plugins/trp-ai-assistant/` is not present on a fresh clone. Populate via `./scripts/setup.sh` with `trp-ai-assistant` enabled in `plugins.json` first.
 
-1. `cp -R src/plugins/trp-ai-assistant src/plugins/<new-id>`. Update workspace name to `@tronrelic/plugin-<new-id>` so npm workspaces resolve it.
+1. `cp -R src/plugins/trp-ai-assistant src/plugins/trp-<new-id>`. Update workspace name to `@tronrelic/plugin-<new-id>` so npm workspaces resolve it.
 2. `npm install` from repo root to link the workspace.
 3. Update `src/manifest.ts`: id, title, version, accurate `backend`/`frontend` booleans, description (becomes part of `/api/plugins/manifests`).
 4. Implement `src/backend/backend.ts` exporting `definePlugin({ manifest, init })` using only the injected `IPluginContext`.
