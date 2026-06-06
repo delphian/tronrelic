@@ -349,7 +349,7 @@ export class ClickHouseService implements IClickHouseService {
                 errors = await this.client.query({
                     query: `
                         SELECT
-                            event_time,
+                            toUnixTimestamp64Milli(event_time) AS event_time_ms,
                             database,
                             table,
                             format,
@@ -380,7 +380,8 @@ export class ClickHouseService implements IClickHouseService {
             }
 
             const errorRows = await errors.json<{
-                event_time: string;
+                /** Epoch milliseconds — ClickHouse quotes 64-bit ints as strings in JSON output */
+                event_time_ms: string;
                 database: string;
                 table: string;
                 format: string;
@@ -409,9 +410,13 @@ export class ClickHouseService implements IClickHouseService {
                 }, 'ClickHouse async insert failed');
             }
 
-            // Update last poll time to the most recent error
+            // Update last poll time to the most recent error. Use the epoch-ms
+            // projection rather than a formatted event_time string: ClickHouse
+            // emits DateTime64 as a timezone-less string in the *server's* zone,
+            // which new Date() would parse as Node-local time — skewing the
+            // cursor whenever the two hosts disagree on timezone.
             const lastError = errorRows[errorRows.length - 1];
-            this.lastErrorPollTime = new Date(lastError.event_time);
+            this.lastErrorPollTime = new Date(Number(lastError.event_time_ms));
         } catch (error) {
             // Check if this was a timeout (abort)
             if (error instanceof Error && error.name === 'AbortError') {
