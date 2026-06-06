@@ -349,7 +349,7 @@ export class ClickHouseService implements IClickHouseService {
                 errors = await this.client.query({
                     query: `
                         SELECT
-                            toUnixTimestamp64Milli(event_time) AS event_time_ms,
+                            toUnixTimestamp64Milli(event_time_microseconds) AS event_time_ms,
                             database,
                             table,
                             format,
@@ -359,8 +359,8 @@ export class ClickHouseService implements IClickHouseService {
                             rows
                         FROM system.asynchronous_insert_log
                         WHERE (status = 'ParsingError' OR status = 'FlushError')
-                          AND event_time > {lastPollTime:DateTime64(3)}
-                        ORDER BY event_time ASC
+                          AND event_time_microseconds > {lastPollTime:DateTime64(3)}
+                        ORDER BY event_time_microseconds ASC
                         LIMIT 100
                     `,
                     query_params: {
