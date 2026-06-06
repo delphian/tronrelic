@@ -359,18 +359,20 @@ export class ClickHouseService implements IClickHouseService {
                             rows
                         FROM system.asynchronous_insert_log
                         WHERE (status = 'ParsingError' OR status = 'FlushError')
-                          AND event_time_microseconds > {lastPollTime:DateTime64(3)}
+                          AND toUnixTimestamp64Milli(event_time_microseconds) > {lastPollTimeMs:Int64}
                         ORDER BY event_time_microseconds ASC
                         LIMIT 100
                     `,
                     query_params: {
-                        // Pass the Date object itself — @clickhouse/client serializes it
-                        // to a timezone-agnostic Unix timestamp (seconds.millis), which
-                        // DateTime64(3) params accept. An ISO-8601 string (toISOString)
-                        // is rejected: the 'T' separator and 'Z' suffix fail ClickHouse's
-                        // DateTime64 parameter parsing, so the poll would error forever
-                        // and the cursor would never advance.
-                        lastPollTime: this.lastErrorPollTime
+                        // Compare epoch milliseconds on both sides of the filter. The
+                        // cursor is built from toUnixTimestamp64Milli (floor semantics),
+                        // so a raw `event_time_microseconds > {cursor:DateTime64(3)}`
+                        // comparison re-matches the newest row forever whenever it has
+                        // a sub-millisecond remainder. An integer parameter also avoids
+                        // ClickHouse DateTime64 param parsing entirely — the construct
+                        // behind two prior regressions (ISO-8601 string rejected; plain
+                        // DateTime column failing toUnixTimestamp64Milli).
+                        lastPollTimeMs: this.lastErrorPollTime.getTime()
                     },
                     format: 'JSONEachRow',
                     abort_signal: controller.signal
