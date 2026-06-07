@@ -34,7 +34,6 @@ import { PagesModule } from './modules/pages/index.js';
 import { WidgetsModule } from './modules/widgets/index.js';
 import { IdentityModule } from './modules/identity/index.js';
 import { TrafficModule } from './modules/traffic/index.js';
-import { AddressLabelsModule } from './modules/address-labels/index.js';
 import { ToolsModule } from './modules/tools/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
@@ -224,7 +223,6 @@ interface BootstrapContext {
         widgets: WidgetsModule;
         identity: IdentityModule;
         traffic: TrafficModule;
-        addressLabels: AddressLabelsModule;
         tools: ToolsModule;
         scheduler: SchedulerModule;
     };
@@ -314,7 +312,6 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const widgetsModule = new WidgetsModule();
     const identityModule = new IdentityModule();
     const trafficModule = new TrafficModule();
-    const addressLabelsModule = new AddressLabelsModule();
     const toolsModule = new ToolsModule();
     const schedulerModule = new SchedulerModule();
 
@@ -325,7 +322,6 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const schedulerService = schedulerModule.getSchedulerService();
     await identityModule.init(sharedDeps);
     await trafficModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
-    await addressLabelsModule.init(sharedDeps);
     await toolsModule.init(sharedDeps);
 
     return {
@@ -345,7 +341,6 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             widgets: widgetsModule,
             identity: identityModule,
             traffic: trafficModule,
-            addressLabels: addressLabelsModule,
             tools: toolsModule,
             scheduler: schedulerModule,
         },
@@ -381,7 +376,6 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     // more-specific prefixes.
     await modules.traffic.run();
     await modules.identity.run();
-    await modules.addressLabels.run();
     await modules.tools.run();
     await modules.scheduler.run();
 

@@ -20,7 +20,6 @@ import { UsdtParametersService } from '../modules/usdt-parameters/usdt-parameter
 import { TronGridClient } from '../modules/blockchain/tron-grid.client.js';
 import { BlockchainService } from '../modules/blockchain/blockchain.service.js';
 import { ClickHouseService } from '../modules/clickhouse/services/clickhouse.service.js';
-import { AddressLabelService } from '../modules/address-labels/services/address-label.service.js';
 import { SignatureService } from '../modules/auth/signature.service.js';
 import { getRedisClient } from './redis.js';
 import { loadDiscoveredPlugins } from './plugins.generated.js';
@@ -97,9 +96,6 @@ export async function loadPlugins(
     BlockchainService.setDependencies(database);
     const blockchainService = BlockchainService.getInstance();
 
-    // Get AddressLabelService (initialized by AddressLabelsModule in bootstrap)
-    const addressLabelService = AddressLabelService.getInstance();
-
     // Get ClickHouse service if initialized (optional)
     const clickhouseService = ClickHouseService.isInitialized()
         ? ClickHouseService.getInstance()
@@ -170,7 +166,6 @@ export async function loadPlugins(
                 usdtParameters: usdtParametersService,
                 tronGrid: tronGridClient,
                 blockchainService,
-                addressLabelService,
                 signatureService: new SignatureService(tronWebInstance),
                 services: serviceRegistry,
                 hooks: pluginHooks,
