@@ -15,7 +15,6 @@ import type { IChainParametersService } from '../chain-parameters/IChainParamete
 import type { IUsdtParametersService } from '../usdt-parameters/IUsdtParametersService.js';
 import type { ITronGridService } from '../tron-grid/ITronGridService.js';
 import type { IBlockchainService } from '../blockchain/IBlockchainService.js';
-import type { IAddressLabelService } from '../address-label/IAddressLabelService.js';
 import type { IServiceRegistry } from '../services/IServiceRegistry.js';
 import type { ISignatureService } from '../services/ISignatureService.js';
 import type { IPluginHooks } from '../hooks/IPluginHooks.js';
@@ -107,9 +106,6 @@ export interface IPluginContext {
 
     /** Blockchain service for accessing sync state and processed block data */
     blockchainService: IBlockchainService;
-
-    /** Address label service for looking up and contributing blockchain address labels */
-    addressLabelService: IAddressLabelService;
 
     /** Signature verification service for proving TRON wallet ownership */
     signatureService: ISignatureService;
