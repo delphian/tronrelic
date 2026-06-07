@@ -20,8 +20,15 @@ import styles from './page.module.scss';
 /** Tab identifiers for the traffic admin page. */
 type TrafficTab = 'analytics' | 'visitors' | 'pages' | 'crawlers' | 'seo' | 'settings';
 
-/** Tabs governed by the global period picker and bot filter. */
+/** Tabs governed by the global period picker. */
 const GOVERNED_TABS: ReadonlySet<TrafficTab> = new Set(['analytics', 'visitors', 'pages']);
+
+/**
+ * Tabs the bot filter actually applies to. Pages is period-governed but
+ * deliberately unfiltered — only JS-running clients emit `page` events, so
+ * the toggle would be an inert control there.
+ */
+const BOT_FILTERED_TABS: ReadonlySet<TrafficTab> = new Set(['analytics', 'visitors']);
 
 /** Polling interval for the live-visitor counter (ms). */
 const LIVE_POLL_MS = 30_000;
@@ -67,14 +74,20 @@ export default function SystemTrafficPage() {
     /**
      * Memoized custom date range built from the date input values.
      * Aligns to localized midnight: start at 00:00:00 of start date,
-     * end at 23:59:59.999 of end date. Undefined unless period is
-     * 'custom' with two valid dates.
+     * end at 23:59:59.999 of end date. Dates are constructed with the
+     * multi-argument constructor (offset-less string parsing is
+     * engine-dependent) and inverted ranges return undefined — the
+     * backend would otherwise silently serve its default window while
+     * the UI displays the custom dates. Undefined unless period is
+     * 'custom' with two valid, ordered dates.
      */
     const customRange = useMemo<ICustomDateRange | undefined>(() => {
         if (period !== 'custom' || !customStart || !customEnd) return undefined;
-        const start = new Date(`${customStart}T00:00:00`);
-        const end = new Date(`${customEnd}T23:59:59.999`);
-        if (isNaN(start.getTime()) || isNaN(end.getTime())) return undefined;
+        const [startY, startM, startD] = customStart.split('-').map(Number);
+        const [endY, endM, endD] = customEnd.split('-').map(Number);
+        const start = new Date(startY, startM - 1, startD, 0, 0, 0, 0);
+        const end = new Date(endY, endM - 1, endD, 23, 59, 59, 999);
+        if (isNaN(start.getTime()) || isNaN(end.getTime()) || start.getTime() > end.getTime()) return undefined;
         return { startDate: start.toISOString(), endDate: end.toISOString() };
     }, [period, customStart, customEnd]);
 
@@ -161,24 +174,26 @@ export default function SystemTrafficPage() {
                         onCustomStartChange={setCustomStart}
                         onCustomEndChange={setCustomEnd}
                     />
-                    <div className={styles.bot_toggle} role="group" aria-label="Bot traffic filter">
-                        <button
-                            type="button"
-                            className={!includeBots ? styles.bot_btn__active : styles.bot_btn}
-                            onClick={() => setIncludeBots(false)}
-                            aria-pressed={!includeBots}
-                        >
-                            Humans only
-                        </button>
-                        <button
-                            type="button"
-                            className={includeBots ? styles.bot_btn__active : styles.bot_btn}
-                            onClick={() => setIncludeBots(true)}
-                            aria-pressed={includeBots}
-                        >
-                            Include bots
-                        </button>
-                    </div>
+                    {BOT_FILTERED_TABS.has(activeTab) && (
+                        <div className={styles.bot_toggle} role="group" aria-label="Bot traffic filter">
+                            <button
+                                type="button"
+                                className={!includeBots ? styles.bot_btn__active : styles.bot_btn}
+                                onClick={() => setIncludeBots(false)}
+                                aria-pressed={!includeBots}
+                            >
+                                Humans only
+                            </button>
+                            <button
+                                type="button"
+                                className={includeBots ? styles.bot_btn__active : styles.bot_btn}
+                                onClick={() => setIncludeBots(true)}
+                                aria-pressed={includeBots}
+                            >
+                                Include bots
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 

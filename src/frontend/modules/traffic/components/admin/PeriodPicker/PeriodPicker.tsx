@@ -98,7 +98,10 @@ export function PeriodPicker({
                         className={styles.date_input}
                         value={customStart}
                         max={customEnd}
-                        onChange={(e) => onCustomStartChange(e.target.value)}
+                        // Ignore empty clears — Custom mode must always carry a
+                        // real range, or the backend silently serves its default
+                        // window while the UI still claims custom dates.
+                        onChange={(e) => { if (e.target.value) onCustomStartChange(e.target.value); }}
                         aria-label="Start date"
                     />
                     <span className={styles.date_range__separator}>to</span>
@@ -108,7 +111,7 @@ export function PeriodPicker({
                         value={customEnd}
                         min={customStart}
                         max={toDateInputValue(new Date())}
-                        onChange={(e) => onCustomEndChange(e.target.value)}
+                        onChange={(e) => { if (e.target.value) onCustomEndChange(e.target.value); }}
                         aria-label="End date"
                     />
                 </div>

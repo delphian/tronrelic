@@ -123,13 +123,17 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
     const [trend, setTrend] = useState<IOverviewTrend | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [metric, setMetric] = useState<TrendMetric>('visitors');
+    // Stale-while-revalidate: previous data stays visible during a window
+    // change, dimmed via this flag so the refresh is perceptible.
+    const [isFetching, setIsFetching] = useState(true);
 
     useEffect(() => {
         let active = true;
+        setIsFetching(true);
         adminGetOverviewTrend(period, customRange, !includeBots)
             .then(data => { if (active) { setTrend(data); setError(null); } })
             .catch(err => { if (active) setError(err instanceof Error ? err.message : 'Failed to load'); })
-            .finally(() => { /* trend stays stale-visible during refetch */ });
+            .finally(() => { if (active) setIsFetching(false); });
         return () => { active = false; };
     }, [period, customRange, includeBots]);
 
@@ -160,7 +164,7 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
     const numberFormatter = new Intl.NumberFormat();
 
     return (
-        <Card padding="md" className={styles.container}>
+        <Card padding="md" className={isFetching ? `${styles.container} ${styles.container_fetching}` : styles.container} aria-busy={isFetching}>
             <div className={styles.kpi_strip} role="group" aria-label="Headline metrics">
                 <button
                     type="button"

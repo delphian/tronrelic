@@ -1077,7 +1077,7 @@ export class TrafficService {
                     SELECT DISTINCT candidate_uid
                     FROM ${TABLE_NAME}
                     WHERE ${clause}${botFilter}
-                )
+                )${botFilter}
                 GROUP BY candidate_uid
             ) AS f USING (candidate_uid)
             GROUP BY day
