@@ -1,8 +1,9 @@
 /**
  * VisitorAnalytics Styles
  *
- * Admin analytics dashboard showing daily visitor chart and traffic origins table.
- * Uses container queries for responsive behavior.
+ * New-visitor first-touch table for the admin dashboard. The daily-visitor
+ * chart and local filter controls moved to the page-level OverviewTrend and
+ * global controls. Uses container queries for responsive behavior.
  */
 
 @use '../../../../../app/breakpoints' as *;
@@ -38,44 +39,6 @@
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
     margin: 0;
-}
-
-.toggle_group {
-    display: flex;
-    gap: 0;
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-}
-
-.toggle_btn {
-    padding: var(--padding-xs) var(--gap-md);
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text-muted);
-    background: var(--color-surface);
-    border: none;
-    cursor: pointer;
-    transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.toggle_btn:hover:not(.toggle_btn__active) {
-    background: var(--color-surface-muted);
-}
-
-.toggle_btn__active {
-    background: var(--color-primary);
-    color: var(--button-primary-color);
-}
-
-.toggle_btn:focus-visible {
-    outline: var(--focus-outline-width) solid var(--color-focus);
-    outline-offset: var(--focus-outline-offset);
-    box-shadow: var(--focus-shadow);
-}
-
-.chart_wrapper {
-    min-height: 320px;
 }
 
 /* Traffic origins table */

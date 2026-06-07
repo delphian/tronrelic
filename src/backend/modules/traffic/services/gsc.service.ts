@@ -82,6 +82,41 @@ export interface IGscKeyword {
     position: number;
 }
 
+/**
+ * True per-day site totals fetched with the date-only dimension.
+ *
+ * The GSC API silently drops anonymized (low-volume) queries from any
+ * response that includes the `query` dimension, so summing keyword rows
+ * systematically undercounts clicks — on a low-traffic property most days
+ * return zero keyword rows even when GSC's own dashboard shows clicks.
+ * A date-only request is not subject to query anonymization and returns
+ * the property's real daily totals.
+ */
+export interface IGscDailyTotalDocument {
+    /** Calendar day this total represents (UTC midnight). */
+    date: Date;
+    /** Total clicks across all queries, including anonymized ones. */
+    clicks: number;
+    /** Total impressions across all queries, including anonymized ones. */
+    impressions: number;
+    /** When this total was fetched from GSC. */
+    fetchedAt: Date;
+}
+
+/**
+ * Aggregated keywords for a period plus the actual (delay-shifted) window
+ * the aggregation covered, so the UI can show true coverage instead of a
+ * misleading "last 7 days" label.
+ */
+export interface IGscKeywordsPeriodResult {
+    /** Inclusive window start (ISO-8601 UTC). */
+    windowStart: string;
+    /** Inclusive window end (ISO-8601 UTC) — always ~3 days behind now. */
+    windowEnd: string;
+    /** Aggregated keywords sorted by clicks descending. */
+    keywords: IGscKeyword[];
+}
+
 /** Key-value store keys for GSC configuration. */
 const KV_CREDENTIALS = 'gsc:credentials';
 const KV_SITE_URL = 'gsc:siteUrl';
@@ -89,6 +124,12 @@ const KV_LAST_FETCH = 'gsc:lastFetch';
 
 /** Collection name following module_{module-id}_{collection} convention. */
 const COLLECTION_NAME = 'module_user_gsc_queries';
+
+/**
+ * Per-day site totals from the date-only GSC request. Physical name keeps
+ * the `module_user_` prefix for consistency with the keyword collection.
+ */
+const TOTALS_COLLECTION_NAME = 'module_user_gsc_daily_totals';
 
 /** Maximum rows per GSC API request. */
 const GSC_ROW_LIMIT = 5000;
@@ -113,6 +154,7 @@ const GSC_MAX_PAGES = 100;
 export class GscService {
     private static instance: GscService;
     private readonly collection: Collection<IGscQueryDocument>;
+    private readonly totalsCollection: Collection<IGscDailyTotalDocument>;
 
     /**
      * Private constructor enforces singleton pattern. Use setDependencies()
@@ -128,6 +170,7 @@ export class GscService {
         private readonly logger: ISystemLogService
     ) {
         this.collection = database.getCollection<IGscQueryDocument>(COLLECTION_NAME);
+        this.totalsCollection = database.getCollection<IGscDailyTotalDocument>(TOTALS_COLLECTION_NAME);
     }
 
     /**
@@ -188,6 +231,14 @@ export class GscService {
         await this.collection.createIndex(
             { fetchedAt: 1 },
             { expireAfterSeconds: 120 * 24 * 60 * 60, name: 'gsc_ttl' }
+        );
+        await this.totalsCollection.createIndex(
+            { date: 1 },
+            { unique: true, name: 'gsc_totals_dedup' }
+        );
+        await this.totalsCollection.createIndex(
+            { fetchedAt: 1 },
+            { expireAfterSeconds: 120 * 24 * 60 * 60, name: 'gsc_totals_ttl' }
         );
         this.logger.info('GSC query indexes created');
     }
@@ -397,10 +448,72 @@ export class GscService {
             }
         }
 
+        await this.fetchAndStoreDailyTotals(searchConsole, siteUrl, start, end, now);
+
         await this.database.set(KV_LAST_FETCH, now.toISOString());
         this.logger.info({ rowsFetched: totalRows, siteUrl }, 'GSC data fetch complete');
 
         return { rowsFetched: totalRows };
+    }
+
+    /**
+     * Fetch true per-day site totals with a date-only request and upsert
+     * them into the totals collection.
+     *
+     * The keyword fetch above requests the `query` dimension, which makes
+     * GSC silently drop anonymized (low-volume) queries — summing those
+     * rows undercounts clicks, sometimes to zero on quiet days. A request
+     * with only the `date` dimension is exempt from query anonymization,
+     * so these totals match what GSC's own dashboard reports. One row per
+     * day means a single un-paginated request covers any sane window.
+     *
+     * @param searchConsole - Authenticated Search Console client.
+     * @param siteUrl - GSC property URL.
+     * @param start - ISO date string (YYYY-MM-DD), inclusive.
+     * @param end - ISO date string (YYYY-MM-DD), inclusive.
+     * @param fetchedAt - Timestamp stamped onto each upserted row (drives TTL).
+     */
+    private async fetchAndStoreDailyTotals(
+        searchConsole: ReturnType<typeof google.searchconsole>,
+        siteUrl: string,
+        start: string,
+        end: string,
+        fetchedAt: Date
+    ): Promise<void> {
+        const response = await searchConsole.searchanalytics.query({
+            siteUrl,
+            requestBody: {
+                startDate: start,
+                endDate: end,
+                dimensions: ['date'],
+                rowLimit: GSC_ROW_LIMIT
+            }
+        });
+
+        const rows = response.data.rows ?? [];
+        const bulkOps = rows.reduce<Array<{ updateOne: { filter: Record<string, unknown>; update: { $set: IGscDailyTotalDocument }; upsert: true } }>>((ops, row) => {
+            const dateStr = row.keys?.[0];
+            if (!dateStr) {
+                return ops;
+            }
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) {
+                return ops;
+            }
+            const doc: IGscDailyTotalDocument = {
+                date,
+                clicks: row.clicks ?? 0,
+                impressions: row.impressions ?? 0,
+                fetchedAt
+            };
+            ops.push({ updateOne: { filter: { date: doc.date }, update: { $set: doc }, upsert: true } });
+            return ops;
+        }, []);
+
+        if (bulkOps.length > 0) {
+            await this.totalsCollection.bulkWrite(bulkOps);
+        }
+        this.logger.info({ days: bulkOps.length, siteUrl }, 'GSC daily totals stored');
     }
 
     /**
@@ -409,6 +522,14 @@ export class GscService {
      * Aggregates stored GSC query rows into daily buckets, each containing
      * the top keywords ranked by clicks. Accounts for the 3-day GSC data
      * delay — the most recent bucket will be offset accordingly.
+     *
+     * Per-day totals come from the date-only totals collection (immune to
+     * GSC's query anonymization) when a totals row exists for the day,
+     * falling back to keyword-row sums for data fetched before the totals
+     * collection existed. Every day in the window is emitted — days with
+     * no data carry zero totals — so a stalled `gsc:fetch` job or a quiet
+     * day renders as an explicit flat line instead of silently vanishing
+     * from the chart.
      *
      * @param days - Number of daily buckets to return (default: 14)
      * @param topN - Maximum keywords per bucket (default: 15)
@@ -427,26 +548,29 @@ export class GscService {
         const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - GSC_DATA_DELAY_DAYS, 23, 59, 59, 999));
         const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - GSC_DATA_DELAY_DAYS - days + 1, 0, 0, 0, 0));
 
-        const results = await this.collection.aggregate<{
-            _id: { date: string; query: string };
-            clicks: number;
-            impressions: number;
-            weightedPosition: number;
-        }>([
-            { $match: { date: { $gte: since, $lte: end } } },
-            {
-                $group: {
-                    _id: {
-                        date: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-                        query: '$query'
-                    },
-                    clicks: { $sum: '$clicks' },
-                    impressions: { $sum: '$impressions' },
-                    weightedPosition: { $sum: { $multiply: ['$position', '$impressions'] } }
-                }
-            },
-            { $sort: { '_id.date': 1, clicks: -1 } }
-        ]).toArray();
+        const [results, totals] = await Promise.all([
+            this.collection.aggregate<{
+                _id: { date: string; query: string };
+                clicks: number;
+                impressions: number;
+                weightedPosition: number;
+            }>([
+                { $match: { date: { $gte: since, $lte: end } } },
+                {
+                    $group: {
+                        _id: {
+                            date: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+                            query: '$query'
+                        },
+                        clicks: { $sum: '$clicks' },
+                        impressions: { $sum: '$impressions' },
+                        weightedPosition: { $sum: { $multiply: ['$position', '$impressions'] } }
+                    }
+                },
+                { $sort: { '_id.date': 1, clicks: -1 } }
+            ]).toArray(),
+            this.totalsCollection.find({ date: { $gte: since, $lte: end } }).toArray()
+        ]);
 
         const dayMap = new Map<string, {
             totalClicks: number;
@@ -454,12 +578,18 @@ export class GscService {
             keywords: Array<{ keyword: string; clicks: number; impressions: number; ctr: number; position: number }>;
         }>();
 
+        // Zero-fill every UTC day in the window so absent days are an
+        // explicit zero, not a hole the chart silently skips.
+        for (let i = 0; i < days; i++) {
+            const day = new Date(since.getTime() + i * 24 * 60 * 60 * 1000);
+            dayMap.set(day.toISOString().split('T')[0], { totalClicks: 0, totalImpressions: 0, keywords: [] });
+        }
+
         for (const row of results) {
-            const date = row._id.date;
-            if (!dayMap.has(date)) {
-                dayMap.set(date, { totalClicks: 0, totalImpressions: 0, keywords: [] });
+            const bucket = dayMap.get(row._id.date);
+            if (!bucket) {
+                continue;
             }
-            const bucket = dayMap.get(date)!;
             bucket.totalClicks += row.clicks;
             bucket.totalImpressions += row.impressions;
             if (bucket.keywords.length < topN) {
@@ -474,6 +604,15 @@ export class GscService {
                         ? Math.round((row.weightedPosition / row.impressions) * 10) / 10
                         : 0
                 });
+            }
+        }
+
+        // True daily totals win over keyword-row sums where available.
+        for (const total of totals) {
+            const bucket = dayMap.get(total.date.toISOString().split('T')[0]);
+            if (bucket) {
+                bucket.totalClicks = total.clicks;
+                bucket.totalImpressions = total.impressions;
             }
         }
 
@@ -496,11 +635,16 @@ export class GscService {
      * impressions, and averaging CTR and position. Results are sorted
      * by clicks descending.
      *
+     * The window is shifted back by the GSC ingestion delay, so "last 7
+     * days" covers the 7 days ending ~3 days ago — the returned
+     * `windowStart`/`windowEnd` carry the actual dates so the UI can show
+     * true coverage instead of an off-by-three-days period label.
+     *
      * @param periodHours - Lookback period in hours
      * @param limit - Maximum keywords to return (default: 10)
-     * @returns Aggregated keyword data sorted by clicks descending
+     * @returns The delay-shifted window and its aggregated keywords
      */
-    async getKeywordsForPeriod(periodHours: number, limit: number = 10): Promise<IGscKeyword[]> {
+    async getKeywordsForPeriod(periodHours: number, limit: number = 10): Promise<IGscKeywordsPeriodResult> {
         // Shift window by the GSC ingestion delay so the period aligns
         // with available data (e.g. "last 7 days" queries the 7 days
         // ending at now - GSC_DATA_DELAY_DAYS, not ending at now).
@@ -527,7 +671,7 @@ export class GscService {
             { $limit: limit }
         ]).toArray();
 
-        return results.map(r => ({
+        const keywords = results.map(r => ({
             keyword: r._id,
             clicks: r.totalClicks,
             impressions: r.totalImpressions,
@@ -538,5 +682,11 @@ export class GscService {
                 ? Math.round((r.weightedPosition / r.totalImpressions) * 10) / 10
                 : 0
         }));
+
+        return {
+            windowStart: since.toISOString(),
+            windowEnd: end.toISOString(),
+            keywords
+        };
     }
 }

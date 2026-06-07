@@ -492,4 +492,185 @@ describe('TrafficService', () => {
             expect(captured.sql).toContain('user_id = {id:String}');
         });
     });
+
+    describe('excludeBots filter', () => {
+        const range = { since: new Date('2026-06-01T00:00:00.000Z') };
+        const HUMAN_FILTER = "(bot_class = 'human' OR bot_class IS NULL)";
+
+        /**
+         * Wire a mock ClickHouse that records every generated SQL string.
+         *
+         * @returns The captured SQL list (joined for substring assertions).
+         */
+        function captureSql(): { sqls: string[] } {
+            const captured = { sqls: [] as string[] };
+            const ch = createMockClickHouse();
+            ch.query = async <T>(sql: string): Promise<T[]> => {
+                captured.sqls.push(sql);
+                return [] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+            return captured;
+        }
+
+        it('getDailyVisitors applies the human filter only when requested', async () => {
+            // Referer headers are spoofable; the filter is what keeps the
+            // visitor chart honest. NULL stays included because legacy
+            // pre-classifier rows cannot be assumed to be bots.
+            const captured = captureSql();
+
+            await TrafficService.getInstance().getDailyVisitors(range, true);
+            expect(captured.sqls.join('\n')).toContain(HUMAN_FILTER);
+
+            captured.sqls.length = 0;
+            await TrafficService.getInstance().getDailyVisitors(range);
+            expect(captured.sqls.join('\n')).not.toContain(HUMAN_FILTER);
+        });
+
+        it('getTrafficSources applies the human filter only when requested', async () => {
+            const captured = captureSql();
+
+            await TrafficService.getInstance().getTrafficSources(range, true);
+            expect(captured.sqls.join('\n')).toContain(HUMAN_FILTER);
+
+            captured.sqls.length = 0;
+            await TrafficService.getInstance().getTrafficSources(range);
+            expect(captured.sqls.join('\n')).not.toContain(HUMAN_FILTER);
+        });
+
+        it('getNewVisitors filters both the tid set and the grouped rows', async () => {
+            // A crawler spoofing a google referrer must neither appear as a
+            // visitor (inner IN set) nor contribute first-touch attribution
+            // (outer grouped rows).
+            const captured = captureSql();
+
+            await TrafficService.getInstance().getNewVisitors(range, 50, 0, true);
+
+            for (const sql of captured.sqls) {
+                const inner = sql.indexOf(HUMAN_FILTER);
+                const outer = sql.lastIndexOf(HUMAN_FILTER);
+                expect(inner).toBeGreaterThan(-1);
+                expect(outer).toBeGreaterThan(inner);
+            }
+        });
+
+        it('getTrafficSourceDetails applies the human filter to the summary read', async () => {
+            const captured = captureSql();
+
+            await TrafficService.getInstance().getTrafficSourceDetails(range, 'google.com', true);
+
+            expect(captured.sqls[0]).toContain(HUMAN_FILTER);
+        });
+    });
+
+    describe('visitors-primary aggregates', () => {
+        it('getTrafficSources counts distinct visitors alongside raw events', async () => {
+            // Raw event counts overstate audiences (one visitor → many rows);
+            // analytics convention leads with unique visitors.
+            const ch = createMockClickHouse();
+            const captured: { sql?: string } = {};
+            ch.query = async <T>(sql: string): Promise<T[]> => {
+                captured.sql = sql;
+                return [{ source: 'google.com', visitors: '17', count: '63' }] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            const out = await TrafficService.getInstance().getTrafficSources({ since: new Date('2026-06-01T00:00:00.000Z') });
+
+            expect(captured.sql).toContain('uniqExact(candidate_uid) AS visitors');
+            expect(captured.sql).toContain('ORDER BY visitors DESC');
+            expect(out).toEqual([{ source: 'google.com', visitors: 17, count: 63 }]);
+        });
+    });
+
+    describe('getOverviewTrend()', () => {
+        it('returns the empty shape when ClickHouse is unavailable', async () => {
+            TrafficService.setDependencies(undefined, createMockLogger());
+            const out = await TrafficService.getInstance().getOverviewTrend({ since: new Date('2026-06-01T00:00:00.000Z') });
+            expect(out.granularity).toBe('day');
+            expect(out.series).toEqual([]);
+            expect(out.current.visitors).toBe(0);
+        });
+
+        it('uses hourly zero-filled buckets for a 24h window', async () => {
+            // A "24 Hours" view bucketed by day is one bar; hourly buckets are
+            // what makes the short window readable. Absent hours must be
+            // explicit zeros so the chart shows quiet, not gaps.
+            const ch = createMockClickHouse();
+            const sqls: string[] = [];
+            ch.query = async <T>(sql: string): Promise<T[]> => {
+                sqls.push(sql);
+                if (sql.includes('GROUP BY bucket')) {
+                    return [{ bucket: '2026-06-01 05:00:00', visitors: '3', pageviews: '7' }] as T[];
+                }
+                return [{ visitors: '10', pageviews: '25', sessions: '0', avgDurationMs: null, bounces: '0' }] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            const out = await TrafficService.getInstance().getOverviewTrend({
+                since: new Date('2026-06-01T00:00:00.000Z'),
+                until: new Date('2026-06-02T00:00:00.000Z')
+            });
+
+            expect(out.granularity).toBe('hour');
+            expect(sqls.some(s => s.includes('toStartOfHour(timestamp)'))).toBe(true);
+            // 00:00 through 24:00 inclusive — 25 hourly buckets, one populated.
+            expect(out.series).toHaveLength(25);
+            expect(out.series.find(p => p.bucket === '2026-06-01T05:00:00.000Z'))
+                .toEqual({ bucket: '2026-06-01T05:00:00.000Z', visitors: 3, pageviews: 7 });
+            expect(out.series.filter(p => p.visitors === 0)).toHaveLength(24);
+            expect(out.current.visitors).toBe(10);
+            // sessions = 0 → bounce rate is 0, not NaN.
+            expect(out.current.bounceRate).toBe(0);
+        });
+
+        it('uses daily buckets beyond 48h and queries an equal-length previous window', async () => {
+            const ch = createMockClickHouse();
+            const calls: Array<{ sql: string; params: Record<string, unknown> }> = [];
+            ch.query = async <T>(sql: string, params?: unknown): Promise<T[]> => {
+                calls.push({ sql, params: params as Record<string, unknown> });
+                if (sql.includes('GROUP BY bucket')) return [] as T[];
+                return [{ visitors: '5', pageviews: '9', sessions: '0', avgDurationMs: null, bounces: '0' }] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            const out = await TrafficService.getInstance().getOverviewTrend({
+                since: new Date('2026-05-03T00:00:00.000Z'),
+                until: new Date('2026-06-02T00:00:00.000Z')
+            });
+
+            expect(out.granularity).toBe('day');
+            expect(calls[2].sql).toContain('toDate(timestamp)');
+            // Promise.all evaluates in order: current KPIs, previous KPIs, series.
+            // The previous window slides back by the full 30-day window length.
+            expect(String(calls[1].params.since)).toContain('2026-04-03');
+            expect(String(calls[1].params.until)).toContain('2026-05-03');
+            // 05-03 through 06-02 inclusive — 31 zero-filled daily buckets.
+            expect(out.series).toHaveLength(31);
+            expect(out.previous.visitors).toBe(5);
+        });
+    });
+
+    describe('getLiveVisitorCount()', () => {
+        it('returns 0 when ClickHouse is unavailable', async () => {
+            TrafficService.setDependencies(undefined, createMockLogger());
+            expect(await TrafficService.getInstance().getLiveVisitorCount()).toBe(0);
+        });
+
+        it('counts distinct visitors over the last five minutes, honoring the bot filter', async () => {
+            const ch = createMockClickHouse();
+            const captured: { sql?: string } = {};
+            ch.query = async <T>(sql: string): Promise<T[]> => {
+                captured.sql = sql;
+                return [{ visitors: '4' }] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            const count = await TrafficService.getInstance().getLiveVisitorCount(true);
+
+            expect(captured.sql).toContain('INTERVAL 5 MINUTE');
+            expect(captured.sql).toContain("(bot_class = 'human' OR bot_class IS NULL)");
+            expect(count).toBe(4);
+        });
+    });
 });

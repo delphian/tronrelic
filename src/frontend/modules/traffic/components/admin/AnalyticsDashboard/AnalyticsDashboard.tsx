@@ -6,27 +6,33 @@
  * evaluation, and conversion tracking.
  *
  * Sections:
- * 1. Engagement summary cards (avg duration, pages/session, bounce rate)
- * 2. Conversion funnel (visitors → return → wallet → verified)
+ * 1. Overview headline — KPI strip with period deltas + unified trend chart
+ * 2. Conversion funnel (visitors → logged in)
  * 3. Traffic sources breakdown (direct, organic, social, referral)
- * 4. Top landing pages with engagement metrics
+ * 4. Top landing pages
  * 5. Geographic distribution by country
- * 6. Device and screen size breakdown
+ * 6. Device breakdown
  * 7. UTM campaign performance with conversion rates
  * 8. New vs returning visitor retention chart
+ * 9. Better Auth account overview
+ *
+ * The lookback period, custom range, and bot filter arrive as props from the
+ * page-level global controls so every tab reads the same window. All table
+ * primary numbers are distinct visitors, matching analytics-platform
+ * convention; raw event counts remain available server-side.
  */
 
 'use client';
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
-    Users, TrendingUp, MousePointerClick,
-    Globe, Smartphone, BarChart3, Target, ChevronDown, ChevronRight, Calendar
+    Users, MousePointerClick,
+    Globe, Smartphone, BarChart3, Target, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
-import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
+import { OverviewTrend } from '../OverviewTrend';
 import {
     adminGetTrafficSources,
     adminGetTrafficSourceDetails,
@@ -34,7 +40,6 @@ import {
     adminGetGeoDistribution,
     adminGetDeviceBreakdown,
     adminGetCampaignPerformance,
-    adminGetEngagement,
     adminGetConversionFunnel,
     adminGetRetention,
     adminGetAnalyticsOverview,
@@ -48,7 +53,6 @@ import type {
     IGeoEntry,
     IDeviceEntry,
     ICampaignEntry,
-    IEngagementMetrics,
     IFunnelStage,
     IRetentionEntry,
     IAnalyticsOverview,
@@ -70,14 +74,6 @@ function resolveCSSColor(varName: string, fallback: string): string {
     const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
     return value || fallback;
 }
-
-/** Period option labels for display. */
-const PERIOD_OPTIONS: { value: AnalyticsPeriod; label: string }[] = [
-    { value: '24h', label: '24 Hours' },
-    { value: '7d', label: '7 Days' },
-    { value: '30d', label: '30 Days' },
-    { value: '90d', label: '90 Days' },
-];
 
 /**
  * Format seconds into a human-readable duration string.
@@ -109,40 +105,28 @@ function getCategoryClass(category: string): string {
     }
 }
 
-/**
- * Format a Date as a YYYY-MM-DD string for native date inputs.
- *
- * @param date - Date to format
- * @returns ISO date string without time component
- */
-function toDateInputValue(date: Date): string {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+interface IAnalyticsDashboardProps {
+    /** Selected lookback period from the page-level controls. */
+    period: AnalyticsPeriod;
+    /** Custom date range when `period === 'custom'`. */
+    customRange?: ICustomDateRange;
+    /** Whether classified bot rows are included. */
+    includeBots: boolean;
 }
 
 /**
  * Aggregate analytics dashboard for admin traffic insights.
  *
- * Fetches data from multiple analytics endpoints and renders engagement
- * metrics, conversion funnel, traffic sources, landing pages, geography,
- * devices, campaigns, and retention data with period filtering.
+ * Fetches data from multiple analytics endpoints and renders the overview
+ * headline, conversion funnel, traffic sources, landing pages, geography,
+ * devices, campaigns, and retention data for the globally selected window.
+ *
+ * @param props - Global period, custom range, and bot-filter selection.
  */
-export function AnalyticsDashboard() {
-    const [period, setPeriod] = useState<AnalyticsPeriod>('24h');
+export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyticsDashboardProps) {
     const [loading, setLoading] = useState(true);
 
-    // Custom date range state — dates as YYYY-MM-DD strings in local time
-    const [customStart, setCustomStart] = useState(() => {
-        const d = new Date();
-        d.setDate(d.getDate() - 7);
-        return toDateInputValue(d);
-    });
-    const [customEnd, setCustomEnd] = useState(() => toDateInputValue(new Date()));
-
     // Data state
-    const [engagement, setEngagement] = useState<IEngagementMetrics | null>(null);
     const [overview, setOverview] = useState<IAnalyticsOverview | null>(null);
     const [funnel, setFunnel] = useState<IFunnelStage[]>([]);
     const [trafficSources, setTrafficSources] = useState<ITrafficSource[]>([]);
@@ -158,19 +142,7 @@ export function AnalyticsDashboard() {
     const [sourceDetails, setSourceDetails] = useState<Record<string, ITrafficSourceDetails>>({});
     const [sourceDetailsLoading, setSourceDetailsLoading] = useState<string | null>(null);
 
-    /**
-     * Memoized custom date range built from the date input values.
-     * Aligns to localized midnight: start at 00:00:00 of start date,
-     * end at 23:59:59.999 of end date. Returns undefined if period is
-     * not 'custom' or either date input is empty/invalid.
-     */
-    const customRange = useMemo<ICustomDateRange | undefined>(() => {
-        if (period !== 'custom' || !customStart || !customEnd) return undefined;
-        const start = new Date(`${customStart}T00:00:00`);
-        const end = new Date(`${customEnd}T23:59:59.999`);
-        if (isNaN(start.getTime()) || isNaN(end.getTime())) return undefined;
-        return { startDate: start.toISOString(), endDate: end.toISOString() };
-    }, [period, customStart, customEnd]);
+    const excludeBots = !includeBots;
 
     /**
      * Toggle drill-down for a traffic source row.
@@ -189,7 +161,7 @@ export function AnalyticsDashboard() {
         if (!sourceDetails[source]) {
             setSourceDetailsLoading(source);
             try {
-                const details = await adminGetTrafficSourceDetails(source, period, customRange);
+                const details = await adminGetTrafficSourceDetails(source, period, customRange, excludeBots);
                 setSourceDetails(prev => ({ ...prev, [source]: details }));
             } catch (error) {
                 console.error('Failed to fetch source details:', error);
@@ -198,7 +170,7 @@ export function AnalyticsDashboard() {
                 setSourceDetailsLoading(prev => prev === source ? null : prev);
             }
         }
-    }, [expandedSource, sourceDetails, period, customRange]);
+    }, [expandedSource, sourceDetails, period, customRange, excludeBots]);
 
     /**
      * Fetch all analytics data for the selected period.
@@ -210,7 +182,6 @@ export function AnalyticsDashboard() {
         setSourceDetails({});
         try {
             const [
-                engagementRes,
                 funnelRes,
                 sourcesRes,
                 pagesRes,
@@ -220,18 +191,16 @@ export function AnalyticsDashboard() {
                 retentionRes,
                 overviewRes,
             ] = await Promise.all([
-                adminGetEngagement(period, customRange),
-                adminGetConversionFunnel(period, customRange),
-                adminGetTrafficSources(period, customRange),
-                adminGetTopLandingPages({ period, limit: 15, customRange }),
-                adminGetGeoDistribution({ period, limit: 20, customRange }),
-                adminGetDeviceBreakdown(period, customRange),
-                adminGetCampaignPerformance({ period, limit: 15, customRange }),
-                adminGetRetention(period, customRange),
+                adminGetConversionFunnel(period, customRange, excludeBots),
+                adminGetTrafficSources(period, customRange, excludeBots),
+                adminGetTopLandingPages({ period, limit: 15, customRange, excludeBots }),
+                adminGetGeoDistribution({ period, limit: 20, customRange, excludeBots }),
+                adminGetDeviceBreakdown(period, customRange, excludeBots),
+                adminGetCampaignPerformance({ period, limit: 15, customRange, excludeBots }),
+                adminGetRetention(period, customRange, excludeBots),
                 adminGetAnalyticsOverview(),
             ]);
 
-            setEngagement(engagementRes);
             setFunnel(funnelRes.stages);
             setTrafficSources(sourcesRes.sources);
             setTrafficTotal(sourcesRes.total);
@@ -246,7 +215,7 @@ export function AnalyticsDashboard() {
         } finally {
             setLoading(false);
         }
-    }, [period, customRange]);
+    }, [period, customRange, excludeBots]);
 
     useEffect(() => {
         fetchAll();
@@ -268,9 +237,9 @@ export function AnalyticsDashboard() {
         }
     ];
 
-    /** Maximum count in traffic sources for bar scaling. */
+    /** Maximum visitors in traffic sources for bar scaling. */
     const maxSourceCount = trafficSources.length > 0
-        ? trafficSources[0].count
+        ? trafficSources[0].visitors
         : 1;
 
     /** Maximum visitors in landing pages for bar scaling. */
@@ -285,122 +254,13 @@ export function AnalyticsDashboard() {
 
     return (
         <div className={styles.dashboard}>
-            {/* Period selector */}
-            <div className={styles.controls}>
-                <span className={styles.controls__label}>Period:</span>
-                {PERIOD_OPTIONS.map(opt => (
-                    <Button
-                        key={opt.value}
-                        variant={period === opt.value ? 'primary' : 'secondary'}
-                        size="sm"
-                        onClick={() => setPeriod(opt.value)}
-                    >
-                        {opt.label}
-                    </Button>
-                ))}
-                <Button
-                    variant={period === 'custom' ? 'primary' : 'secondary'}
-                    size="sm"
-                    onClick={() => setPeriod('custom')}
-                    aria-label="Custom date range"
-                >
-                    <Calendar size={14} className={styles.controls__icon} />
-                    Custom
-                </Button>
-                {period === 'custom' && (
-                    <div className={styles.date_range}>
-                        <input
-                            type="date"
-                            className={styles.date_input}
-                            value={customStart}
-                            max={customEnd}
-                            onChange={(e) => setCustomStart(e.target.value)}
-                            aria-label="Start date"
-                        />
-                        <span className={styles.date_range__separator}>to</span>
-                        <input
-                            type="date"
-                            className={styles.date_input}
-                            value={customEnd}
-                            min={customStart}
-                            max={toDateInputValue(new Date())}
-                            onChange={(e) => setCustomEnd(e.target.value)}
-                            aria-label="End date"
-                        />
-                    </div>
-                )}
-            </div>
+            {/* Overview headline — KPI strip + unified trend (owns its fetch) */}
+            <OverviewTrend period={period} customRange={customRange} includeBots={includeBots} />
 
             {loading ? (
                 <div className={styles.loading}>Loading analytics data...</div>
             ) : (
                 <>
-                    {/* Account Overview (Better Auth) */}
-                    {overview && (
-                        <Card>
-                            <h3 className={styles.section_title}>
-                                <Users size={16} className={styles.section_title__icon} />
-                                Accounts
-                            </h3>
-                            <div className={styles.metrics_grid}>
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__value}>
-                                        {overview.totalAccounts.toLocaleString()}
-                                    </div>
-                                    <div className={styles.metric_card__label}>Total Accounts</div>
-                                </div>
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__value}>
-                                        {overview.accountsWithWallets.toLocaleString()}
-                                    </div>
-                                    <div className={styles.metric_card__label}>With Wallet</div>
-                                </div>
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__value}>
-                                        {Math.round(overview.walletAdoptionRate * 100)}%
-                                    </div>
-                                    <div className={styles.metric_card__label}>Wallet Adoption</div>
-                                </div>
-                            </div>
-                        </Card>
-                    )}
-
-                    {/* Engagement Summary Cards */}
-                    {engagement && (
-                        <Card>
-                            <h3 className={styles.section_title}>
-                                <TrendingUp size={16} className={styles.section_title__icon} />
-                                Engagement Overview
-                            </h3>
-                            <div className={styles.metrics_grid}>
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__value}>
-                                        {engagement.totalUsers.toLocaleString()}
-                                    </div>
-                                    <div className={styles.metric_card__label}>Active Visitors</div>
-                                </div>
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__value}>
-                                        {formatDuration(engagement.avgSessionDuration)}
-                                    </div>
-                                    <div className={styles.metric_card__label}>Avg Session Duration</div>
-                                </div>
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__value}>
-                                        {engagement.avgPagesPerSession}
-                                    </div>
-                                    <div className={styles.metric_card__label}>Pages / Session</div>
-                                </div>
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__value}>
-                                        {engagement.bounceRate}%
-                                    </div>
-                                    <div className={styles.metric_card__label}>Bounce Rate</div>
-                                </div>
-                            </div>
-                        </Card>
-                    )}
-
                     {/* Conversion Funnel */}
                     {funnel.length > 0 && (
                         <Card>
@@ -488,11 +348,11 @@ export function AnalyticsDashboard() {
                                                                         {s.category}
                                                                     </span>
                                                                 </td>
-                                                                <td className={styles.table__number}>{s.count.toLocaleString()}</td>
+                                                                <td className={styles.table__number}>{s.visitors.toLocaleString()}</td>
                                                                 <td className={styles.table__bar_cell}>
                                                                     <div
                                                                         className={styles.table__bar}
-                                                                        style={{ width: `${(s.count / maxSourceCount) * 100}%` }}
+                                                                        style={{ width: `${(s.visitors / maxSourceCount) * 100}%` }}
                                                                     />
                                                                 </td>
                                                                 <td className={styles.table__number}>{s.percentage}%</td>
@@ -832,6 +692,36 @@ export function AnalyticsDashboard() {
                                 yAxisFormatter={(v) => v.toLocaleString()}
                                 emptyLabel="No retention data for this period"
                             />
+                        </Card>
+                    )}
+
+                    {/* Account Overview (Better Auth) — site-wide, not time-windowed */}
+                    {overview && (
+                        <Card>
+                            <h3 className={styles.section_title}>
+                                <Users size={16} className={styles.section_title__icon} />
+                                Accounts
+                            </h3>
+                            <div className={styles.metrics_grid}>
+                                <div className={styles.metric_card}>
+                                    <div className={styles.metric_card__value}>
+                                        {overview.totalAccounts.toLocaleString()}
+                                    </div>
+                                    <div className={styles.metric_card__label}>Total Accounts</div>
+                                </div>
+                                <div className={styles.metric_card}>
+                                    <div className={styles.metric_card__value}>
+                                        {overview.accountsWithWallets.toLocaleString()}
+                                    </div>
+                                    <div className={styles.metric_card__label}>With Wallet</div>
+                                </div>
+                                <div className={styles.metric_card}>
+                                    <div className={styles.metric_card__value}>
+                                        {Math.round(overview.walletAdoptionRate * 100)}%
+                                    </div>
+                                    <div className={styles.metric_card__label}>Wallet Adoption</div>
+                                </div>
+                            </div>
                         </Card>
                     )}
                 </>

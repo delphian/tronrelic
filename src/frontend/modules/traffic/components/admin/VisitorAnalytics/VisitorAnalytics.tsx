@@ -1,46 +1,33 @@
 /**
  * VisitorAnalytics Component
  *
- * Admin analytics displaying daily visitor trends and the anonymous
- * first-touches table.
+ * Admin table of new visitors (anonymous first touches): the earliest
+ * cookieless `bootstrap` row for each visitor whose first-ever contact falls
+ * in the window, newest first. Recorded server-side by the Next.js
+ * middleware, so it captures bots, crawlers, and unfurlers alongside humans;
+ * the page-level bot filter (humans-only by default) governs which appear.
  *
- * Renders two sections:
- * 1. Daily visitors chart with 30d/90d toggle
- * 2. Anonymous first touches table — the earliest cookieless `bootstrap` row
- *    for each visitor in the window, newest first. Recorded server-side by the
- *    Next.js middleware, so it deliberately includes bots, crawlers, and
- *    unfurlers alongside humans; that first-touch noise is itself the signal.
- *    Per-page clickstream for cookied (tid) and registered (user_id) visitors
- *    lives in the sibling PageActivity sections.
+ * The daily-visitors chart that previously lived here was superseded by the
+ * unified OverviewTrend headline on the Analytics tab — platforms show one
+ * chart, not two competing ones. The lookback window, custom range, and bot
+ * filter arrive as props from the page-level global controls.
+ *
+ * Per-page clickstream for cookied (tid) and registered (user_id) visitors
+ * lives in the sibling PageActivity sections.
  */
 
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { LineChart } from '../../../../../features/charts/components/LineChart';
-import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
+import React, { useEffect, useState } from 'react';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Button } from '../../../../../components/ui/Button';
-import {
-    adminGetDailyVisitors,
-    adminGetAnonymousFirstTouches
-} from '../../../api';
-import type { IDailyVisitorData, IVisitorOrigin, VisitorPeriod } from '../../../api';
+import { adminGetAnonymousFirstTouches } from '../../../api';
+import type { AnalyticsPeriod, ICustomDateRange, IVisitorOrigin, VisitorPeriod } from '../../../api';
 import { getDeviceIcon } from '../../../lib/deviceIcon';
 import styles from './VisitorAnalytics.module.scss';
 
-/**
- * Resolve a CSS variable to its computed hex value.
- *
- * @param varName - CSS variable name
- * @param fallback - Hex fallback for SSR
- * @returns Resolved hex color string
- */
-function resolveCSSColor(varName: string, fallback: string): string {
-    if (typeof document === 'undefined') return fallback;
-    const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-    return value || fallback;
-}
+/** Rows per table page. */
+const PAGE_LIMIT = 25;
 
 /**
  * Format UTM parameters into a readable summary string.
@@ -58,68 +45,49 @@ function formatUtm(utm: IVisitorOrigin['utm']): string | null {
     return parts.length > 0 ? parts.join(' / ') : null;
 }
 
-/** Available chart range options. */
-type ChartRange = '30d' | '90d';
-
-/** Period option labels for display. */
-const PERIOD_LABELS: Record<VisitorPeriod, string> = {
-    '24h': '24 Hours',
-    '7d': '7 Days',
-    '30d': '30 Days',
-    '90d': '90 Days'
-};
+interface IVisitorAnalyticsProps {
+    /** Selected lookback period from the page-level controls. */
+    period: AnalyticsPeriod;
+    /** Custom date range when `period === 'custom'`. */
+    customRange?: ICustomDateRange;
+    /** Whether classified bot rows are included. */
+    includeBots: boolean;
+}
 
 /**
- * VisitorAnalytics displays aggregate visitor analytics for the admin dashboard.
+ * New-visitor first-touch table for the admin dashboard, showing
+ * first-touch acquisition data (original referrer, landing page, country,
+ * device, UTM) for SEO and marketing analysis.
  *
- * Includes a daily visitor trend chart (30d/90d) and an anonymous first-touches
- * table showing first-touch acquisition data (original referrer, landing page,
- * country, device, UTM) for SEO and marketing analysis.
+ * @param props - Global period, custom range, and bot-filter selection.
  */
-export function VisitorAnalytics() {
-    const [chartRange, setChartRange] = useState<ChartRange>('30d');
-    const [chartData, setChartData] = useState<IDailyVisitorData[]>([]);
-    const [chartLoading, setChartLoading] = useState(true);
-
-    const [firstTouchesPeriod, setFirstTouchesPeriod] = useState<VisitorPeriod>('24h');
+export function VisitorAnalytics({ period, customRange, includeBots }: IVisitorAnalyticsProps) {
     const [firstTouches, setFirstTouches] = useState<IVisitorOrigin[]>([]);
     const [firstTouchesTotal, setFirstTouchesTotal] = useState(0);
     const [firstTouchesLoading, setFirstTouchesLoading] = useState(true);
     const [firstTouchesPage, setFirstTouchesPage] = useState(1);
-    const firstTouchesLimit = 25;
 
-    /**
-     * Fetch daily visitor chart data using typed API client.
-     */
-    const fetchChartData = useCallback(async () => {
-        setChartLoading(true);
-        try {
-            const days = chartRange === '30d' ? 30 : 90;
-            const data = await adminGetDailyVisitors(days);
-            setChartData(data);
-        } catch (error) {
-            console.error('Failed to fetch daily visitors:', error);
-            setChartData([]);
-        } finally {
-            setChartLoading(false);
-        }
-    }, [chartRange]);
-
-    useEffect(() => { fetchChartData(); }, [fetchChartData]);
+    // Window or filter changes invalidate the page cursor.
+    useEffect(() => {
+        setFirstTouchesPage(1);
+    }, [period, customRange, includeBots]);
 
     useEffect(() => {
         let active = true;
         /**
          * Fetch the first-touches page, dropping the result if a newer
-         * period/page selection (or unmount) superseded it before resolving.
+         * window/page selection (or unmount) superseded it before resolving.
          */
         const fetchFirstTouches = async (): Promise<void> => {
             setFirstTouchesLoading(true);
             try {
                 const result = await adminGetAnonymousFirstTouches({
-                    period: firstTouchesPeriod,
-                    limit: firstTouchesLimit,
-                    skip: (firstTouchesPage - 1) * firstTouchesLimit
+                    ...(period === 'custom'
+                        ? { customRange }
+                        : { period: period as VisitorPeriod }),
+                    limit: PAGE_LIMIT,
+                    skip: (firstTouchesPage - 1) * PAGE_LIMIT,
+                    excludeBots: !includeBots
                 });
                 if (active) {
                     setFirstTouches(result.visitors ?? []);
@@ -139,108 +107,28 @@ export function VisitorAnalytics() {
         };
         fetchFirstTouches();
         return () => { active = false; };
-    }, [firstTouchesPeriod, firstTouchesPage]);
+    }, [period, customRange, includeBots, firstTouchesPage]);
 
-    /**
-     * Build chart series from daily visitor data.
-     */
-    const chartSeries: ChartSeries[] = chartData.length > 0
-        ? [{
-            id: 'daily-visitors',
-            label: 'Unique Visitors',
-            data: chartData.map(d => ({
-                date: d.date,
-                value: d.count
-            })),
-            color: resolveCSSColor('--color-primary', '#4b8cff'),
-            fill: true
-        }]
-        : [];
-
-    const chartDays = chartRange === '30d' ? 30 : 90;
-    const minDate = new Date();
-    minDate.setDate(minDate.getDate() - chartDays);
-    minDate.setHours(0, 0, 0, 0);
-
-    const totalFirstTouchesPages = firstTouchesTotal > 0 ? Math.ceil(firstTouchesTotal / firstTouchesLimit) : 1;
-
-    /**
-     * Handle period change and reset pagination for first touches.
-     *
-     * @param period - The new period to filter by
-     */
-    const handleFirstTouchesPeriodChange = (period: VisitorPeriod): void => {
-        setFirstTouchesPeriod(period);
-        setFirstTouchesPage(1);
-    };
+    const totalFirstTouchesPages = firstTouchesTotal > 0 ? Math.ceil(firstTouchesTotal / PAGE_LIMIT) : 1;
 
     return (
         <div className={styles.container}>
-            {/* Daily Visitors Chart */}
             <div className={styles.section}>
                 <div className={styles.section_header}>
-                    <h2 className={styles.section_title}>Daily Visitors</h2>
-                    <div className={styles.toggle_group} role="group" aria-label="Chart range">
-                        <button
-                            className={`${styles.toggle_btn} ${chartRange === '30d' ? styles.toggle_btn__active : ''}`}
-                            onClick={() => setChartRange('30d')}
-                            aria-pressed={chartRange === '30d'}
-                        >
-                            30 Days
-                        </button>
-                        <button
-                            className={`${styles.toggle_btn} ${chartRange === '90d' ? styles.toggle_btn__active : ''}`}
-                            onClick={() => setChartRange('90d')}
-                            aria-pressed={chartRange === '90d'}
-                        >
-                            90 Days
-                        </button>
-                    </div>
-                </div>
-                <div className={styles.chart_wrapper}>
-                    {chartLoading ? (
-                        <div className={styles.loading}>Loading chart data...</div>
-                    ) : (
-                        <LineChart
-                            series={chartSeries}
-                            height={320}
-                            minDate={minDate}
-                            maxDate={new Date()}
-                            yAxisMin={0}
-                            yAxisFormatter={val => Math.round(val).toLocaleString()}
-                            emptyLabel="No visitor data available for this period."
-                        />
-                    )}
-                </div>
-            </div>
-
-            {/* Anonymous First Touches Table */}
-            <div className={styles.section}>
-                <div className={styles.section_header}>
-                    <h2 className={styles.section_title}>Anonymous First Touches</h2>
-                    <div className={styles.toggle_group} role="group" aria-label="Anonymous first touches time period">
-                        {(Object.keys(PERIOD_LABELS) as VisitorPeriod[]).map(period => (
-                            <button
-                                key={period}
-                                className={`${styles.toggle_btn} ${firstTouchesPeriod === period ? styles.toggle_btn__active : ''}`}
-                                onClick={() => handleFirstTouchesPeriodChange(period)}
-                                aria-pressed={firstTouchesPeriod === period}
-                            >
-                                {PERIOD_LABELS[period]}
-                            </button>
-                        ))}
-                    </div>
+                    <h2 className={styles.section_title}>New Visitors</h2>
                 </div>
                 <p className="text-muted">
-                    The first cookieless hit per visitor — server-recorded, so bots and crawlers
-                    are included by design. Per-page activity for cookied and registered visitors
-                    is in the sections below.
+                    The first cookieless hit per visitor, server-recorded.{' '}
+                    {includeBots
+                        ? 'Bots, crawlers, and unfurlers are included; referrers are client-supplied and often spoofed by crawlers.'
+                        : 'Showing human-classified visitors only — switch the page filter to "Include bots" to see crawler and unfurler first touches.'}
+                    {' '}Per-page activity for cookied and registered visitors is on the Pages tab.
                 </p>
 
                 {firstTouchesLoading ? (
                     <div className={styles.loading}>Loading first touches...</div>
                 ) : firstTouches.length === 0 ? (
-                    <div className={styles.empty}>No anonymous first touches found in this period.</div>
+                    <div className={styles.empty}>No new visitors found in this period.</div>
                 ) : (
                     <>
                         <div className={styles.table_wrapper}>
@@ -300,7 +188,7 @@ export function VisitorAnalytics() {
                                 Previous
                             </Button>
                             <span className={styles.page_info}>
-                                Page {firstTouchesPage} of {totalFirstTouchesPages} ({firstTouchesTotal.toLocaleString()} first touches)
+                                Page {firstTouchesPage} of {totalFirstTouchesPages} ({firstTouchesTotal.toLocaleString()} new visitors)
                             </span>
                             <Button
                                 onClick={() => setFirstTouchesPage(firstTouchesPage + 1)}

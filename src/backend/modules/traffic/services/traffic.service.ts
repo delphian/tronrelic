@@ -210,27 +210,43 @@ export interface ITrafficVisitorOrigin {
     utmCampaign: string | null;
 }
 
-/** Referrer-domain (or `'direct'`) row count. */
+/**
+ * Referrer-domain (or `'direct'`) bucket. `visitors` (distinct tids) is the
+ * primary measure — the convention every analytics platform leads with —
+ * while `count` keeps the raw event rows for diagnostic context.
+ */
 export interface ITrafficSourceBucket {
     source: string;
+    /** Distinct visitors (tids) — the primary measure. */
+    visitors: number;
+    /** Raw event rows. */
     count: number;
 }
 
-/** Landing-path row count. */
+/** Landing-path bucket: distinct visitors primary, raw event rows secondary. */
 export interface ILandingPageBucket {
     path: string;
+    /** Distinct visitors (tids) — the primary measure. */
+    visitors: number;
+    /** Raw event rows. */
     count: number;
 }
 
-/** Country (ISO-3166 alpha-2) row count. `null` excluded by the query. */
+/** Country (ISO-3166 alpha-2) bucket. `null` excluded by the query. */
 export interface IGeoBucket {
     country: string | null;
+    /** Distinct visitors (tids) — the primary measure. */
+    visitors: number;
+    /** Raw event rows. */
     count: number;
 }
 
-/** Device-category row count. */
+/** Device-category bucket. */
 export interface IDeviceBucket {
     device: string;
+    /** Distinct visitors (tids) — the primary measure. */
+    visitors: number;
+    /** Raw event rows. */
     count: number;
 }
 
@@ -270,6 +286,50 @@ export interface IEngagementMetrics {
     avgDurationMs: number;
     pagesPerSession: number;
     bounceRate: number;
+}
+
+/**
+ * Headline KPIs for one window of the overview trend. `sessions`,
+ * `avgDurationMs`, and `bounceRate` read zero until session-event emission
+ * ships (Phase D) — consumers should treat `sessions === 0` as
+ * "instrumentation not available", not as a measured zero.
+ */
+export interface IOverviewKpis {
+    /** Distinct visitors (tids) in the window. */
+    visitors: number;
+    /** Interactive `page` events in the window. */
+    pageviews: number;
+    /** `session_start` events in the window. */
+    sessions: number;
+    /** Average `session_end` duration in ms. */
+    avgDurationMs: number;
+    /** Bounced sessions / sessions (0-1). */
+    bounceRate: number;
+}
+
+/** One time bucket of the overview trend series. */
+export interface IOverviewTrendPoint {
+    /** Bucket start — ISO-8601 UTC for hour buckets, `YYYY-MM-DD` for days. */
+    bucket: string;
+    /** Distinct visitors (tids) in the bucket. */
+    visitors: number;
+    /** Interactive `page` events in the bucket. */
+    pageviews: number;
+}
+
+/**
+ * The unified dashboard headline: current-window KPIs, the equal-length
+ * previous window for delta rendering, and the zero-filled time series.
+ */
+export interface IOverviewTrend {
+    /** Bucket size — hourly for windows ≤ 48h, daily otherwise. */
+    granularity: 'hour' | 'day';
+    /** KPIs for the requested window. */
+    current: IOverviewKpis;
+    /** KPIs for the equal-length window immediately before it. */
+    previous: IOverviewKpis;
+    /** Zero-filled per-bucket visitors/pageviews, oldest first. */
+    series: IOverviewTrendPoint[];
 }
 
 /**
@@ -386,6 +446,16 @@ export const TRAFFIC_EVENTS_TABLE_NAME = 'traffic_events';
 const TABLE_NAME = TRAFFIC_EVENTS_TABLE_NAME;
 const DEFAULT_AGGREGATE_HOURS = 24;
 const DEFAULT_AGGREGATE_LIMIT = 20;
+
+/**
+ * WHERE fragment selecting human traffic for the `excludeBots` analytics
+ * reads. The `Referer` header is client-supplied and commonly spoofed by
+ * crawlers (google.com referrers on scanner traffic are routine), so
+ * visitor/source counts that ignore `bot_class` overstate real audiences.
+ * NULL rows are kept: they predate the classifier and cannot be assumed
+ * to be bots.
+ */
+const HUMAN_ROWS_FILTER = "(bot_class = 'human' OR bot_class IS NULL)";
 
 /**
  * ClickHouse-backed traffic events store.
@@ -786,15 +856,17 @@ export class TrafficService {
      * Distinct analytics visitors (tids) per calendar day over the window.
      *
      * @param range - Inclusive date window.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
      * @returns One point per day with the distinct-visitor count, oldest first.
      */
-    async getDailyVisitors(range: IAnalyticsDateRange): Promise<IDailyVisitorPoint[]> {
+    async getDailyVisitors(range: IAnalyticsDateRange, excludeBots = false): Promise<IDailyVisitorPoint[]> {
         if (!this.clickhouse) return [];
         const { clause, params } = this.rangeParams(range);
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
             SELECT toDate(timestamp) AS day, uniqExact(candidate_uid) AS visitors
             FROM ${TABLE_NAME}
-            WHERE ${clause}
+            WHERE ${clause}${botFilter}
             GROUP BY day
             ORDER BY day ASC
         `;
@@ -857,25 +929,29 @@ export class TrafficService {
 
     /**
      * Referrer-domain breakdown. Null/empty referers collapse to `'direct'`.
+     * Distinct visitors lead; raw event counts ride along.
      *
      * @param range - Inclusive date window.
-     * @returns Source-domain row counts, descending.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
+     * @returns Source-domain buckets, by visitors descending.
      */
-    async getTrafficSources(range: IAnalyticsDateRange): Promise<ITrafficSourceBucket[]> {
+    async getTrafficSources(range: IAnalyticsDateRange, excludeBots = false): Promise<ITrafficSourceBucket[]> {
         if (!this.clickhouse) return [];
         const { clause, params } = this.rangeParams(range);
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
             SELECT
                 multiIf(referer IS NULL OR referer = '', 'direct', domain(referer)) AS source,
+                uniqExact(candidate_uid) AS visitors,
                 count() AS count
             FROM ${TABLE_NAME}
-            WHERE ${clause}
+            WHERE ${clause}${botFilter}
             GROUP BY source
-            ORDER BY count DESC
+            ORDER BY visitors DESC, count DESC
         `;
         try {
-            const rows = await this.clickhouse.query<{ source: string; count: string | number }>(sql, params);
-            return rows.map(r => ({ source: r.source, count: Number(r.count) }));
+            const rows = await this.clickhouse.query<{ source: string; visitors: string | number; count: string | number }>(sql, params);
+            return rows.map(r => ({ source: r.source, visitors: Number(r.visitors), count: Number(r.count) }));
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read traffic sources');
             return [];
@@ -883,26 +959,28 @@ export class TrafficService {
     }
 
     /**
-     * Top landing paths by event count.
+     * Top landing paths. Distinct visitors lead; raw event counts ride along.
      *
      * @param range - Inclusive date window.
      * @param limit - Max rows.
-     * @returns Path row counts, descending.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
+     * @returns Path buckets, by visitors descending.
      */
-    async getTopLandingPages(range: IAnalyticsDateRange, limit = 20): Promise<ILandingPageBucket[]> {
+    async getTopLandingPages(range: IAnalyticsDateRange, limit = 20, excludeBots = false): Promise<ILandingPageBucket[]> {
         if (!this.clickhouse) return [];
         const { clause, params } = this.rangeParams(range);
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
-            SELECT path AS path, count() AS count
+            SELECT path AS path, uniqExact(candidate_uid) AS visitors, count() AS count
             FROM ${TABLE_NAME}
-            WHERE ${clause} AND path != ''
+            WHERE ${clause}${botFilter} AND path != ''
             GROUP BY path
-            ORDER BY count DESC
+            ORDER BY visitors DESC, count DESC
             LIMIT {limit:UInt32}
         `;
         try {
-            const rows = await this.clickhouse.query<{ path: string; count: string | number }>(sql, { ...params, limit });
-            return rows.map(r => ({ path: r.path, count: Number(r.count) }));
+            const rows = await this.clickhouse.query<{ path: string; visitors: string | number; count: string | number }>(sql, { ...params, limit });
+            return rows.map(r => ({ path: r.path, visitors: Number(r.visitors), count: Number(r.count) }));
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read top landing pages');
             return [];
@@ -911,25 +989,28 @@ export class TrafficService {
 
     /**
      * Geographic distribution (ISO-3166 alpha-2). Null country excluded.
+     * Distinct visitors lead; raw event counts ride along.
      *
      * @param range - Inclusive date window.
      * @param limit - Max rows.
-     * @returns Country row counts, descending.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
+     * @returns Country buckets, by visitors descending.
      */
-    async getGeoDistribution(range: IAnalyticsDateRange, limit = 30): Promise<IGeoBucket[]> {
+    async getGeoDistribution(range: IAnalyticsDateRange, limit = 30, excludeBots = false): Promise<IGeoBucket[]> {
         if (!this.clickhouse) return [];
         const { clause, params } = this.rangeParams(range);
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
-            SELECT country, count() AS count
+            SELECT country, uniqExact(candidate_uid) AS visitors, count() AS count
             FROM ${TABLE_NAME}
-            WHERE ${clause} AND country IS NOT NULL
+            WHERE ${clause}${botFilter} AND country IS NOT NULL
             GROUP BY country
-            ORDER BY count DESC
+            ORDER BY visitors DESC, count DESC
             LIMIT {limit:UInt32}
         `;
         try {
-            const rows = await this.clickhouse.query<{ country: string | null; count: string | number }>(sql, { ...params, limit });
-            return rows.map(r => ({ country: r.country, count: Number(r.count) }));
+            const rows = await this.clickhouse.query<{ country: string | null; visitors: string | number; count: string | number }>(sql, { ...params, limit });
+            return rows.map(r => ({ country: r.country, visitors: Number(r.visitors), count: Number(r.count) }));
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read geo distribution');
             return [];
@@ -937,24 +1018,27 @@ export class TrafficService {
     }
 
     /**
-     * Device-category breakdown.
+     * Device-category breakdown. Distinct visitors lead; raw event counts
+     * ride along.
      *
      * @param range - Inclusive date window.
-     * @returns Device row counts, descending.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
+     * @returns Device buckets, by visitors descending.
      */
-    async getDeviceBreakdown(range: IAnalyticsDateRange): Promise<IDeviceBucket[]> {
+    async getDeviceBreakdown(range: IAnalyticsDateRange, excludeBots = false): Promise<IDeviceBucket[]> {
         if (!this.clickhouse) return [];
         const { clause, params } = this.rangeParams(range);
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
-            SELECT device, count() AS count
+            SELECT device, uniqExact(candidate_uid) AS visitors, count() AS count
             FROM ${TABLE_NAME}
-            WHERE ${clause}
+            WHERE ${clause}${botFilter}
             GROUP BY device
-            ORDER BY count DESC
+            ORDER BY visitors DESC, count DESC
         `;
         try {
-            const rows = await this.clickhouse.query<{ device: string; count: string | number }>(sql, params);
-            return rows.map(r => ({ device: r.device, count: Number(r.count) }));
+            const rows = await this.clickhouse.query<{ device: string; visitors: string | number; count: string | number }>(sql, params);
+            return rows.map(r => ({ device: r.device, visitors: Number(r.visitors), count: Number(r.count) }));
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read device breakdown');
             return [];
@@ -968,11 +1052,13 @@ export class TrafficService {
      * day activity.
      *
      * @param range - Inclusive date window.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
      * @returns Per-day new/returning split, oldest first.
      */
-    async getRetention(range: IAnalyticsDateRange): Promise<IRetentionPoint[]> {
+    async getRetention(range: IAnalyticsDateRange, excludeBots = false): Promise<IRetentionPoint[]> {
         if (!this.clickhouse) return [];
         const { clause, params } = this.rangeParams(range);
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
             SELECT
                 d.day AS day,
@@ -981,7 +1067,7 @@ export class TrafficService {
             FROM (
                 SELECT candidate_uid, toDate(timestamp) AS day
                 FROM ${TABLE_NAME}
-                WHERE ${clause}
+                WHERE ${clause}${botFilter}
                 GROUP BY candidate_uid, day
             ) AS d
             INNER JOIN (
@@ -990,7 +1076,7 @@ export class TrafficService {
                 WHERE candidate_uid IN (
                     SELECT DISTINCT candidate_uid
                     FROM ${TABLE_NAME}
-                    WHERE ${clause}
+                    WHERE ${clause}${botFilter}
                 )
                 GROUP BY candidate_uid
             ) AS f USING (candidate_uid)
@@ -1011,18 +1097,20 @@ export class TrafficService {
      * tids that ever carried a non-null `user_id`.
      *
      * @param range - Inclusive date window.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
      * @returns Distinct/converted counts and the derived rate.
      */
-    async getBinaryConversionFunnel(range: IAnalyticsDateRange): Promise<IBinaryConversionFunnel> {
+    async getBinaryConversionFunnel(range: IAnalyticsDateRange, excludeBots = false): Promise<IBinaryConversionFunnel> {
         const empty: IBinaryConversionFunnel = { distinctVisitors: 0, converted: 0, conversionRate: 0 };
         if (!this.clickhouse) return empty;
         const { clause, params } = this.rangeParams(range);
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
             SELECT
                 uniqExact(candidate_uid) AS distinctVisitors,
                 uniqExactIf(candidate_uid, user_id IS NOT NULL) AS converted
             FROM ${TABLE_NAME}
-            WHERE ${clause}
+            WHERE ${clause}${botFilter}
         `;
         try {
             const rows = await this.clickhouse.query<{ distinctVisitors: string | number; converted: string | number }>(sql, params);
@@ -1043,11 +1131,13 @@ export class TrafficService {
      *
      * @param range - Inclusive date window.
      * @param limit - Max campaigns.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
      * @returns Per-campaign visitors, conversions, and rate, by visitors desc.
      */
-    async getCampaignPerformance(range: IAnalyticsDateRange, limit = 20): Promise<ICampaignPerformanceBucket[]> {
+    async getCampaignPerformance(range: IAnalyticsDateRange, limit = 20, excludeBots = false): Promise<ICampaignPerformanceBucket[]> {
         if (!this.clickhouse) return [];
         const { clause, params } = this.rangeParams(range);
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
             SELECT
                 coalesce(utm_campaign, '(none)') AS campaign,
@@ -1056,7 +1146,7 @@ export class TrafficService {
                 uniqExact(candidate_uid) AS visitors,
                 uniqExactIf(candidate_uid, user_id IS NOT NULL) AS conversions
             FROM ${TABLE_NAME}
-            WHERE ${clause} AND utm_campaign IS NOT NULL
+            WHERE ${clause}${botFilter} AND utm_campaign IS NOT NULL
             GROUP BY campaign, source, medium
             ORDER BY visitors DESC
             LIMIT {limit:UInt32}
@@ -1091,12 +1181,14 @@ export class TrafficService {
      * emission.
      *
      * @param range - Inclusive date window.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
      * @returns Aggregate engagement metrics.
      */
-    async getEngagementMetrics(range: IAnalyticsDateRange): Promise<IEngagementMetrics> {
+    async getEngagementMetrics(range: IAnalyticsDateRange, excludeBots = false): Promise<IEngagementMetrics> {
         const empty: IEngagementMetrics = { sessions: 0, avgDurationMs: 0, pagesPerSession: 0, bounceRate: 0 };
         if (!this.clickhouse) return empty;
         const { clause, params } = this.rangeParams(range);
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
             SELECT
                 countIf(event_type = 'session_start') AS sessions,
@@ -1104,7 +1196,7 @@ export class TrafficService {
                 avgIf(duration_ms, event_type = 'session_end' AND duration_ms IS NOT NULL) AS avgDurationMs,
                 countIf(event_type = 'session_end' AND (duration_ms IS NULL OR duration_ms < 10000)) AS bounces
             FROM ${TABLE_NAME}
-            WHERE ${clause}
+            WHERE ${clause}${botFilter}
         `;
         try {
             const rows = await this.clickhouse.query<{
@@ -1129,6 +1221,154 @@ export class TrafficService {
     }
 
     /**
+     * The unified dashboard headline: KPIs for the window and the
+     * equal-length window before it (for period-over-period deltas), plus a
+     * zero-filled visitors/pageviews time series.
+     *
+     * Buckets are hourly when the window is ≤ 48 hours — a "24 Hours" view
+     * bucketed by day is one bar and carries no information — and daily
+     * otherwise. Days/hours with no rows are emitted as explicit zeros so
+     * gaps read as "no traffic", not as missing chart segments.
+     *
+     * @param range - Inclusive date window.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
+     * @returns Granularity, current/previous KPIs, and the bucket series.
+     */
+    async getOverviewTrend(range: IAnalyticsDateRange, excludeBots = false): Promise<IOverviewTrend> {
+        const emptyKpis = (): IOverviewKpis => ({ visitors: 0, pageviews: 0, sessions: 0, avgDurationMs: 0, bounceRate: 0 });
+        if (!this.clickhouse) {
+            return { granularity: 'day', current: emptyKpis(), previous: emptyKpis(), series: [] };
+        }
+
+        const HOUR_MS = 60 * 60 * 1000;
+        const DAY_MS = 24 * HOUR_MS;
+        const until = range.until ?? new Date();
+        // Guard against degenerate/inverted ranges so the previous window
+        // and the zero-fill loop stay finite.
+        const windowMs = Math.max(until.getTime() - range.since.getTime(), HOUR_MS);
+        const granularity: 'hour' | 'day' = windowMs <= 48 * HOUR_MS ? 'hour' : 'day';
+
+        const currentRange: IAnalyticsDateRange = { since: range.since, until };
+        const previousRange: IAnalyticsDateRange = {
+            since: new Date(range.since.getTime() - windowMs),
+            until: range.since
+        };
+
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
+
+        /**
+         * Build and run the KPI aggregate for one window.
+         *
+         * @param r - The window to aggregate.
+         * @returns The window's headline KPIs.
+         */
+        const fetchKpis = async (r: IAnalyticsDateRange): Promise<IOverviewKpis> => {
+            const { clause, params } = this.rangeParams(r);
+            const sql = `
+                SELECT
+                    uniqExact(candidate_uid) AS visitors,
+                    countIf(event_type = 'page') AS pageviews,
+                    countIf(event_type = 'session_start') AS sessions,
+                    avgIf(duration_ms, event_type = 'session_end' AND duration_ms IS NOT NULL) AS avgDurationMs,
+                    countIf(event_type = 'session_end' AND (duration_ms IS NULL OR duration_ms < 10000)) AS bounces
+                FROM ${TABLE_NAME}
+                WHERE ${clause}${botFilter}
+            `;
+            const rows = await this.clickhouse!.query<{
+                visitors: string | number; pageviews: string | number; sessions: string | number;
+                avgDurationMs: string | number | null; bounces: string | number;
+            }>(sql, params);
+            const row = rows[0];
+            if (!row) return emptyKpis();
+            const sessions = Number(row.sessions);
+            const bounces = Number(row.bounces);
+            return {
+                visitors: Number(row.visitors),
+                pageviews: Number(row.pageviews),
+                sessions,
+                avgDurationMs: Number(row.avgDurationMs ?? 0),
+                bounceRate: sessions > 0 ? bounces / sessions : 0
+            };
+        };
+
+        const bucketExpr = granularity === 'hour' ? 'toStartOfHour(timestamp)' : 'toDate(timestamp)';
+        const { clause, params } = this.rangeParams(currentRange);
+        const seriesSql = `
+            SELECT
+                ${bucketExpr} AS bucket,
+                uniqExact(candidate_uid) AS visitors,
+                countIf(event_type = 'page') AS pageviews
+            FROM ${TABLE_NAME}
+            WHERE ${clause}${botFilter}
+            GROUP BY bucket
+            ORDER BY bucket ASC
+        `;
+
+        try {
+            const [current, previous, seriesRows] = await Promise.all([
+                fetchKpis(currentRange),
+                fetchKpis(previousRange),
+                this.clickhouse.query<{ bucket: string; visitors: string | number; pageviews: string | number }>(seriesSql, params)
+            ]);
+
+            // Zero-fill every bucket in the window, then overlay the rows.
+            const stepMs = granularity === 'hour' ? HOUR_MS : DAY_MS;
+            const since = range.since;
+            const floorUtc = granularity === 'hour'
+                ? Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate(), since.getUTCHours())
+                : Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate());
+            const keyFor = (ms: number): string => granularity === 'hour'
+                ? new Date(ms).toISOString()
+                : new Date(ms).toISOString().split('T')[0];
+
+            const buckets = new Map<string, IOverviewTrendPoint>();
+            for (let ms = floorUtc; ms <= until.getTime(); ms += stepMs) {
+                const key = keyFor(ms);
+                buckets.set(key, { bucket: key, visitors: 0, pageviews: 0 });
+            }
+            for (const row of seriesRows) {
+                const key = granularity === 'hour'
+                    ? clickHouseDateToIso(String(row.bucket))
+                    : String(row.bucket);
+                const point = buckets.get(key);
+                if (point) {
+                    point.visitors = Number(row.visitors);
+                    point.pageviews = Number(row.pageviews);
+                }
+            }
+
+            return { granularity, current, previous, series: Array.from(buckets.values()) };
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read overview trend');
+            return { granularity, current: emptyKpis(), previous: emptyKpis(), series: [] };
+        }
+    }
+
+    /**
+     * Distinct visitors active in the last five minutes — the "online now"
+     * counter every analytics platform headlines.
+     *
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
+     * @returns The live visitor count (0 when ClickHouse is unavailable).
+     */
+    async getLiveVisitorCount(excludeBots = false): Promise<number> {
+        if (!this.clickhouse) return 0;
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
+        const sql = `
+            SELECT uniqExact(candidate_uid) AS visitors
+            FROM ${TABLE_NAME}
+            WHERE timestamp > now() - INTERVAL 5 MINUTE${botFilter}
+        `;
+        try {
+            const rows = await this.clickhouse.query<{ visitors: string | number }>(sql, {});
+            return Number(rows[0]?.visitors ?? 0);
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read live visitor count');
+            return 0;
+        }
+    }
+
+    /**
      * Visitors whose global first-seen (across the full table) falls inside the
      * window — the "new arrivals" of the period — newest first, with first-touch
      * attribution and lifetime activity counts.
@@ -1139,19 +1379,25 @@ export class TrafficService {
      * The inner `IN` filters which tids participate, not which of their rows
      * count, so `min`/`max`/`argMin` still see each tid's full history.
      *
+     * With `excludeBots`, both the participating-tid set and the grouped rows
+     * are restricted to human-classified rows, so crawlers spoofing referrers
+     * neither appear as visitors nor contribute attribution.
+     *
      * @param range - Inclusive date window.
      * @param limit - Page size.
      * @param skip - Pagination offset.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
      * @returns A page of new-visitor origins plus the unpaginated total.
      */
-    async getNewVisitors(range: IAnalyticsDateRange, limit = 50, skip = 0): Promise<INewVisitorsPage> {
+    async getNewVisitors(range: IAnalyticsDateRange, limit = 50, skip = 0, excludeBots = false): Promise<INewVisitorsPage> {
         if (!this.clickhouse) return { visitors: [], total: 0 };
         const { clause, params } = this.rangeParams(range);
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         let firstSeenClause = 'firstSeen >= parseDateTimeBestEffort({since:String})';
         if (range.until) {
             firstSeenClause += ' AND firstSeen <= parseDateTimeBestEffort({until:String})';
         }
-        const activeInWindow = `candidate_uid IN (SELECT DISTINCT candidate_uid FROM ${TABLE_NAME} WHERE ${clause})`;
+        const activeInWindow = `candidate_uid IN (SELECT DISTINCT candidate_uid FROM ${TABLE_NAME} WHERE ${clause}${botFilter})`;
         const pageSql = `
             SELECT
                 candidate_uid AS userId,
@@ -1169,7 +1415,7 @@ export class TrafficService {
                 count() AS pageViews,
                 countIf(event_type = 'session_start') AS sessionsCount
             FROM ${TABLE_NAME}
-            WHERE ${activeInWindow}
+            WHERE ${activeInWindow}${botFilter}
             GROUP BY candidate_uid
             HAVING ${firstSeenClause}
             ORDER BY firstSeen DESC
@@ -1179,7 +1425,7 @@ export class TrafficService {
             SELECT count() AS total FROM (
                 SELECT candidate_uid, min(timestamp) AS firstSeen
                 FROM ${TABLE_NAME}
-                WHERE ${activeInWindow}
+                WHERE ${activeInWindow}${botFilter}
                 GROUP BY candidate_uid
                 HAVING ${firstSeenClause}
             )
@@ -1238,10 +1484,11 @@ export class TrafficService {
      *
      * @param range - Inclusive date window.
      * @param source - Referrer domain (e.g. `'duckduckgo.com'`) or `'direct'`.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
      * @returns The source breakdown, or an empty shell when the source has no
      *          events in the window.
      */
-    async getTrafficSourceDetails(range: IAnalyticsDateRange, source: string): Promise<ITrafficSourceDetailsResult> {
+    async getTrafficSourceDetails(range: IAnalyticsDateRange, source: string, excludeBots = false): Promise<ITrafficSourceDetailsResult> {
         const empty: ITrafficSourceDetailsResult = {
             source,
             visitors: 0,
@@ -1255,8 +1502,9 @@ export class TrafficService {
         };
         if (!this.clickhouse) return empty;
         const { clause, params } = this.rangeParams(range);
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sourceExpr = `multiIf(referer IS NULL OR referer = '', 'direct', domain(referer))`;
-        const where = `${clause} AND ${sourceExpr} = {source:String}`;
+        const where = `${clause}${botFilter} AND ${sourceExpr} = {source:String}`;
         const p = { ...params, source };
         const round1 = (n: number): number => Math.round(n * 10) / 10;
         try {

@@ -41,6 +41,8 @@ export function createAdminTrafficRouter(controller: TrafficController): Router 
 export function createAdminAnalyticsRouter(controller: TrafficController): Router {
     const router = Router();
 
+    router.get('/overview-trend', controller.getOverviewTrend.bind(controller));
+    router.get('/live', controller.getLiveVisitors.bind(controller));
     router.get('/daily-visitors', controller.getDailyVisitors.bind(controller));
     router.get('/visitor-origins', controller.getVisitorOrigins.bind(controller));
     router.get('/new-users', controller.getNewUsers.bind(controller));

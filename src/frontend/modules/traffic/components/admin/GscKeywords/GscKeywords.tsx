@@ -13,18 +13,25 @@
  * - **Top keywords table** — clicks, impressions, CTR, and average position
  *   per query over a selectable window.
  *
+ * Chart totals come from the backend's date-only GSC totals (immune to
+ * query anonymization); the keyword table is limited to non-anonymized
+ * queries by the GSC API itself. The header surfaces the fetch status
+ * (configured / last fetch) so a stalled `gsc:fetch` job is visible, and
+ * the window picker shows the actual delay-shifted dates covered.
+ *
  * Data is delayed ~3 days by GSC's ingestion lag (handled server-side).
  * Mirrors the TrafficDashboard pattern: client-only, session-cookie auth,
  * fetch-on-mount, per-panel loading/error state.
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Search, TrendingUp } from 'lucide-react';
+import { AlertTriangle, Search, TrendingUp } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
 import { Card } from '../../../../../components/ui/Card';
-import { adminGetGscKeywords, adminGetGscKeywordsByDay } from '../../../api';
-import type { IGscKeyword, IGscDailyKeywords } from '../../../api';
+import { ClientTime } from '../../../../../components/ui/ClientTime';
+import { adminGetGscKeywords, adminGetGscKeywordsByDay, adminGetGscStatus } from '../../../api';
+import type { IGscKeyword, IGscDailyKeywords, IGscStatus } from '../../../api';
 import styles from './GscKeywords.module.scss';
 
 /** Keyword-table lookback windows. 30d is the backend's hard ceiling. */
@@ -58,12 +65,15 @@ export function GscKeywords() {
     const [periodHours, setPeriodHours] = useState<number>(168);
 
     const [keywords, setKeywords] = useState<IGscKeyword[] | null>(null);
+    const [keywordsWindow, setKeywordsWindow] = useState<{ start: string; end: string } | null>(null);
     const [keywordsError, setKeywordsError] = useState<string | null>(null);
     const [keywordsLoading, setKeywordsLoading] = useState(true);
 
     const [daily, setDaily] = useState<IGscDailyKeywords[] | null>(null);
     const [dailyError, setDailyError] = useState<string | null>(null);
     const [dailyLoading, setDailyLoading] = useState(true);
+
+    const [status, setStatus] = useState<IGscStatus | null>(null);
 
     // Keyword table fetch — re-runs when the window changes.
     useEffect(() => {
@@ -72,7 +82,14 @@ export function GscKeywords() {
         setKeywordsError(null);
 
         adminGetGscKeywords({ periodHours, limit: 25 })
-            .then(data => { if (active) setKeywords(data); })
+            .then(data => {
+                if (active) {
+                    setKeywords(data.keywords);
+                    setKeywordsWindow(data.windowStart && data.windowEnd
+                        ? { start: data.windowStart, end: data.windowEnd }
+                        : null);
+                }
+            })
             .catch(err => { if (active) setKeywordsError(err instanceof Error ? err.message : 'Failed to load'); })
             .finally(() => { if (active) setKeywordsLoading(false); });
 
@@ -87,6 +104,19 @@ export function GscKeywords() {
             .then(data => { if (active) setDaily(data); })
             .catch(err => { if (active) setDailyError(err instanceof Error ? err.message : 'Failed to load'); })
             .finally(() => { if (active) setDailyLoading(false); });
+
+        return () => { active = false; };
+    }, []);
+
+    // Status fetch — surfaces configured/last-fetch so a stalled gsc:fetch
+    // job is distinguishable from genuinely-zero clicks. Best-effort: a
+    // status failure must not block the data panels.
+    useEffect(() => {
+        let active = true;
+
+        adminGetGscStatus()
+            .then(data => { if (active) setStatus(data); })
+            .catch(() => { /* status line simply stays hidden */ });
 
         return () => { active = false; };
     }, []);
@@ -128,21 +158,49 @@ export function GscKeywords() {
                         Google Search Console queries that surfaced this site,
                         refreshed daily by the <code>gsc:fetch</code> job. GSC
                         delays its data ~3 days; windows are shifted to match.
+                        Keyword rows exclude queries Google anonymizes, so the
+                        charts use true daily totals fetched separately.
                         Configure credentials in the Settings tab.
                     </p>
+                    {status && !status.configured && (
+                        <p className={styles.meta_warning}>
+                            <AlertTriangle size={14} aria-hidden="true" />
+                            GSC credentials are not configured — no data is being fetched.
+                        </p>
+                    )}
+                    {status?.configured && !status.lastFetch && (
+                        <p className={styles.meta_warning}>
+                            <AlertTriangle size={14} aria-hidden="true" />
+                            The daily <code>gsc:fetch</code> job has not stored data yet.
+                        </p>
+                    )}
+                    {status?.configured && status.lastFetch && (
+                        <p className={styles.meta}>
+                            Last fetched <ClientTime date={status.lastFetch} format="relative" />.
+                        </p>
+                    )}
                 </div>
-                <div className={styles.window_picker} role="group" aria-label="Lookback window">
-                    {PERIOD_OPTIONS.map(opt => (
-                        <button
-                            key={opt.hours}
-                            type="button"
-                            onClick={() => setPeriodHours(opt.hours)}
-                            className={opt.hours === periodHours ? styles.window_active : styles.window_button}
-                            aria-pressed={opt.hours === periodHours}
-                        >
-                            {opt.label}
-                        </button>
-                    ))}
+                <div className={styles.picker_stack}>
+                    <div className={styles.window_picker} role="group" aria-label="Lookback window">
+                        {PERIOD_OPTIONS.map(opt => (
+                            <button
+                                key={opt.hours}
+                                type="button"
+                                onClick={() => setPeriodHours(opt.hours)}
+                                className={opt.hours === periodHours ? styles.window_active : styles.window_button}
+                                aria-pressed={opt.hours === periodHours}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                    {keywordsWindow && (
+                        <p className={styles.meta}>
+                            Covers <ClientTime date={keywordsWindow.start} format="date" />
+                            {' – '}
+                            <ClientTime date={keywordsWindow.end} format="date" />
+                        </p>
+                    )}
                 </div>
             </header>
 
@@ -197,9 +255,10 @@ export function GscKeywords() {
                     <p className={styles.panel_loading}>Loading…</p>
                 ) : !keywords || keywords.length === 0 ? (
                     <p className={styles.panel_empty}>
-                        No keyword data in this window. GSC credentials may not
-                        be configured (Settings tab), or the daily fetch has not
-                        run yet.
+                        No keyword data in this window — note GSC windows end
+                        ~3 days ago, and Google omits anonymized low-volume
+                        queries from keyword rows entirely. Check the fetch
+                        status above and the Settings tab.
                     </p>
                 ) : (
                     <table className={styles.table}>

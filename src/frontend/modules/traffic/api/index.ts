@@ -23,6 +23,8 @@ export {
     adminGetConversionFunnel,
     adminGetRetention,
     adminGetAnalyticsOverview,
+    adminGetOverviewTrend,
+    adminGetLiveVisitors,
     // Google Search Console functions
     adminGetGscStatus,
     adminSaveGscCredentials,
@@ -57,8 +59,12 @@ export type {
     IFunnelStage,
     IRetentionEntry,
     IAnalyticsOverview,
+    IOverviewKpis,
+    IOverviewTrendPoint,
+    IOverviewTrend,
     IGscStatus,
     IGscKeyword,
+    IGscKeywordsResult,
     IGscDailyKeywords,
     ITrafficBucket,
     IBotClassDailyPoint
