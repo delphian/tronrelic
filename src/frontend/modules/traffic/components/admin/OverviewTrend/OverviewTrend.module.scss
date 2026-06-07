@@ -1,0 +1,138 @@
+/**
+ * OverviewTrend styles.
+ *
+ * KPI strip above the unified trend chart. Visitors/Pageviews KPIs are
+ * buttons that switch the chart metric; the active one carries a primary
+ * accent. Container query collapses the strip on narrow widths.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.container {
+    container-type: inline-size;
+    container-name: overview-trend;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.kpi_strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--grid-gap-sm);
+}
+
+.kpi,
+.kpi_active,
+.kpi_static {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--gap-2xs);
+    padding: var(--card-padding-xs) var(--padding-sm);
+    border-radius: var(--radius-md);
+    border: var(--border-width-thin) solid var(--color-border);
+    background: var(--color-surface-muted);
+    text-align: left;
+}
+
+.kpi,
+.kpi_active {
+    cursor: pointer;
+    transition: border-color var(--transition-base), background-color var(--transition-base);
+    font-family: inherit;
+}
+
+.kpi:hover {
+    border-color: var(--color-border-strong);
+}
+
+.kpi_active {
+    border-color: var(--color-primary-alpha-38);
+    background: var(--color-primary-alpha-10);
+}
+
+.kpi_label {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+}
+
+.kpi_value {
+    font-size: var(--font-size-heading-md);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.kpi_note {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+.delta_good,
+.delta_bad,
+.delta_flat {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+}
+
+.delta_good {
+    color: var(--color-success);
+}
+
+.delta_bad {
+    color: var(--color-danger);
+}
+
+.delta_flat {
+    color: var(--color-text-subtle);
+}
+
+.footnote {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+    margin: 0;
+}
+
+.loading,
+.error {
+    font-size: var(--font-size-body-sm);
+    margin: 0;
+}
+
+.loading {
+    color: var(--color-text-muted);
+}
+
+.error {
+    color: var(--color-danger);
+}
+
+/* Visually hidden text for screen readers on delta direction. */
+.sr_only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+@container overview-trend (max-width: #{$breakpoint-mobile-md}) {
+    .kpi_strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .kpi_value {
+        font-size: var(--font-size-heading-sm);
+    }
+}

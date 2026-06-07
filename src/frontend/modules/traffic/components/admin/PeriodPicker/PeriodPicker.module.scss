@@ -1,0 +1,46 @@
+/**
+ * PeriodPicker styles.
+ *
+ * Preset-period buttons plus the custom date-range inputs. Visual
+ * treatment mirrors the former AnalyticsDashboard controls so the picker
+ * reads identically now that it is hoisted to the page level.
+ */
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: var(--input-group-gap);
+    flex-wrap: wrap;
+}
+
+.controls__icon {
+    margin-right: var(--gap-xs);
+    vertical-align: middle;
+}
+
+.date_range {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.date_range__separator {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.date_input {
+    font-size: var(--font-size-body-sm);
+    font-family: inherit;
+    padding: var(--padding-xs) var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    color: var(--color-text);
+    color-scheme: dark;
+}
+
+.date_input:focus-visible {
+    outline: var(--border-width-medium) solid var(--color-primary);
+    outline-offset: calc(-1 * var(--border-width-medium));
+}

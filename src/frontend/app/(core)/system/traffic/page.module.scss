@@ -49,6 +49,64 @@
     border-bottom-color: var(--color-primary);
 }
 
+/* Live "online now" counter, pushed to the right edge of the tab row. */
+.live {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    margin-left: auto;
+    align-self: center;
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-success-text);
+    font-variant-numeric: tabular-nums;
+
+    svg {
+        color: var(--color-success);
+    }
+}
+
+/* Global period + bot-filter bar governing Analytics/Visitors/Pages. */
+.global_controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    flex-wrap: wrap;
+}
+
+.bot_toggle {
+    display: flex;
+    gap: 0;
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.bot_btn,
+.bot_btn__active {
+    padding: var(--padding-xs) var(--gap-md);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-medium);
+    border: none;
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.bot_btn {
+    color: var(--color-text-muted);
+    background: var(--color-surface);
+}
+
+.bot_btn:hover {
+    color: var(--color-text);
+}
+
+.bot_btn__active {
+    color: var(--color-text);
+    background: var(--gradient-primary);
+}
+
 .content {
     flex: 1;
 }

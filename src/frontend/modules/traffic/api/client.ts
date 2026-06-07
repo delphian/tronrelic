@@ -69,15 +69,21 @@ export interface IVisitorOrigin {
 /**
  * Get daily unique visitor counts for charting (admin endpoint).
  * @param days - Number of days to look back (default: 90)
+ * @param options - `excludeBots` restricts counts to human-classified rows
  * @returns Array of daily visitor count data points
  */
-export async function adminGetDailyVisitors(days: number = 90
+export async function adminGetDailyVisitors(days: number = 90,
+    options?: { excludeBots?: boolean }
 ): Promise<IDailyVisitorData[]> {
     // The ClickHouse-backed endpoint takes a date window, not a `days` count;
     // convert. Backend returns { data: [{ day, visitors }] }.
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const response = await apiClient.get('/admin/users/analytics/daily-visitors', {
-        params: { startDate: since.toISOString(), endDate: new Date().toISOString() }
+        params: {
+            startDate: since.toISOString(),
+            endDate: new Date().toISOString(),
+            ...(options?.excludeBots ? { bots: 'exclude' } : {})
+        }
     });
     const rows = (response.data as { data?: Array<{ day: string; visitors: number }> }).data ?? [];
     return rows.map(r => ({ date: r.day, count: r.visitors }));
@@ -88,16 +94,22 @@ export async function adminGetDailyVisitors(days: number = 90
  * endpoint).
  *
  * A first touch is the earliest `bootstrap` row for a cookieless visitor —
- * server-recorded by the Next.js middleware, so this surface intentionally
- * includes bots, crawlers, and unfurlers as well as humans. Filtered by global
- * first-seen (new arrivals in the window) and sorted most recent first.
- * @param options - Period, pagination options
+ * server-recorded by the Next.js middleware, so this surface includes bots,
+ * crawlers, and unfurlers unless `excludeBots` restricts it to
+ * human-classified rows. Filtered by global first-seen (new arrivals in the
+ * window) and sorted most recent first.
+ * @param options - Period, pagination, and bot-filter options
  * @returns Paginated list of first-touch origins
  */
-export async function adminGetAnonymousFirstTouches(options?: { period?: VisitorPeriod; limit?: number; skip?: number }
+export async function adminGetAnonymousFirstTouches(options?: { period?: VisitorPeriod; customRange?: { startDate: string; endDate: string }; limit?: number; skip?: number; excludeBots?: boolean }
 ): Promise<{ visitors: IVisitorOrigin[]; total: number }> {
+    const { excludeBots, customRange, period, ...rest } = options ?? {};
     const response = await apiClient.get('/admin/users/analytics/new-users', {
-        params: options
+        params: {
+            ...rest,
+            ...(customRange ? customRange : { period }),
+            ...(excludeBots ? { bots: 'exclude' } : {})
+        }
     });
     return response.data as { visitors: IVisitorOrigin[]; total: number };
 }
@@ -143,13 +155,14 @@ export interface IPageHit {
  * @returns Paginated activity rows plus the unpaginated subject total
  */
 export async function adminGetPageActivity(subject: PageActivitySubject,
-    options?: { period?: VisitorPeriod; limit?: number; skip?: number }
+    options?: { period?: VisitorPeriod; customRange?: { startDate: string; endDate: string }; limit?: number; skip?: number }
 ): Promise<{ rows: IPageActivityRow[]; total: number }> {
     const endpoint = subject === 'tid'
         ? '/admin/users/analytics/tid-activity'
         : '/admin/users/analytics/user-activity';
+    const { customRange, period, ...rest } = options ?? {};
     const response = await apiClient.get(endpoint, {
-        params: options
+        params: { ...rest, ...(customRange ? customRange : { period }) }
     });
     return response.data as { rows: IPageActivityRow[]; total: number };
 }
@@ -164,10 +177,11 @@ export async function adminGetPageActivity(subject: PageActivitySubject,
  */
 export async function adminGetPageHits(subject: PageActivitySubject,
     id: string,
-    options?: { period?: VisitorPeriod; limit?: number }
+    options?: { period?: VisitorPeriod; customRange?: { startDate: string; endDate: string }; limit?: number }
 ): Promise<IPageHit[]> {
+    const { customRange, period, ...rest } = options ?? {};
     const response = await apiClient.get('/admin/users/analytics/page-hits', {
-        params: { subject, id, ...options }
+        params: { subject, id, ...rest, ...(customRange ? customRange : { period }) }
     });
     return (response.data as { data?: IPageHit[] }).data ?? [];
 }
@@ -187,11 +201,15 @@ export interface ICustomDateRange {
     endDate: string;
 }
 
-/** Traffic source entry in aggregate breakdown. */
+/** Traffic source entry in aggregate breakdown. Visitors is the primary measure. */
 export interface ITrafficSource {
     source: string;
     category: string;
+    /** Distinct visitors (tids) — the primary measure. */
+    visitors: number;
+    /** Raw event rows. */
     count: number;
+    /** Share of total visitors (0-100, one decimal). */
     percentage: number;
 }
 
@@ -231,17 +249,21 @@ export interface ILandingPage {
     avgPageViews: number;
 }
 
-/** Country entry in geographic distribution. */
+/** Country entry in geographic distribution. Visitors is the primary measure. */
 export interface IGeoEntry {
     country: string;
+    /** Distinct visitors (tids) — the primary measure. */
     count: number;
+    /** Share of total visitors (0-100, one decimal). */
     percentage: number;
 }
 
-/** Device category entry. */
+/** Device category entry. Visitors is the primary measure. */
 export interface IDeviceEntry {
     device: string;
+    /** Distinct visitors (tids) — the primary measure. */
     count: number;
+    /** Share of total visitors (0-100, one decimal). */
     percentage: number;
 }
 
@@ -310,24 +332,31 @@ function categorizeTrafficSource(source: string): string {
 /**
  * Get aggregate traffic source breakdown (admin endpoint).
  * @param period - Lookback period (default: '30d')
- * @returns Traffic sources with counts and percentages
+ * @param customRange - Custom date range overriding the period
+ * @param excludeBots - Restrict to human-classified rows
+ * @returns Traffic sources with visitor counts and percentages
  */
 export async function adminGetTrafficSources(period: AnalyticsPeriod = '30d',
-    customRange?: ICustomDateRange
+    customRange?: ICustomDateRange,
+    excludeBots?: boolean
 ): Promise<{ sources: ITrafficSource[]; total: number }> {
-    const params = customRange ? customRange : { period };
+    const params = {
+        ...(customRange ? customRange : { period }),
+        ...(excludeBots ? { bots: 'exclude' } : {})
+    };
     const response = await apiClient.get('/admin/users/analytics/traffic-sources', {
         params
     });
-    // Backend (TrafficService) returns { data: [{ source, count }] }. Derive
-    // the category badge and percentage client-side.
-    const rows = (response.data as { data?: Array<{ source: string; count: number }> }).data ?? [];
-    const total = rows.reduce((sum, r) => sum + (r.count ?? 0), 0);
+    // Backend returns { data: [{ source, visitors, count }] }. Derive the
+    // category badge and percentage (of visitors) client-side.
+    const rows = (response.data as { data?: Array<{ source: string; visitors: number; count: number }> }).data ?? [];
+    const total = rows.reduce((sum, r) => sum + (r.visitors ?? 0), 0);
     const sources: ITrafficSource[] = rows.map(r => ({
         source: r.source,
         category: categorizeTrafficSource(r.source),
+        visitors: r.visitors,
         count: r.count,
-        percentage: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0
+        percentage: total > 0 ? Math.round((r.visitors / total) * 1000) / 10 : 0
     }));
     return { sources, total };
 }
@@ -339,13 +368,20 @@ export async function adminGetTrafficSources(period: AnalyticsPeriod = '30d',
  * engagement metrics, and conversion rates for visitors from the given source.
  * @param source - Referrer domain (e.g. 'duckduckgo.com') or 'direct'
  * @param period - Lookback period (default: '30d')
+ * @param customRange - Custom date range overriding the period
+ * @param excludeBots - Restrict to human-classified rows
  * @returns Detailed source breakdown
  */
 export async function adminGetTrafficSourceDetails(source: string,
     period: AnalyticsPeriod = '30d',
-    customRange?: ICustomDateRange
+    customRange?: ICustomDateRange,
+    excludeBots?: boolean
 ): Promise<ITrafficSourceDetails> {
-    const params = customRange ? { source, ...customRange } : { source, period };
+    const params = {
+        source,
+        ...(customRange ? customRange : { period }),
+        ...(excludeBots ? { bots: 'exclude' } : {})
+    };
     const response = await apiClient.get('/admin/users/analytics/traffic-source-details', {
         params
     });
@@ -354,43 +390,50 @@ export async function adminGetTrafficSourceDetails(source: string,
 
 /**
  * Get top landing pages by visitor count (admin endpoint).
- * @param options - Period and limit options
+ * @param options - Period, limit, and bot-filter options
  * @returns Landing pages with engagement metrics
  */
-export async function adminGetTopLandingPages(options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
+export async function adminGetTopLandingPages(options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange; excludeBots?: boolean }
 ): Promise<{ pages: ILandingPage[]; totalPages: number; totalVisitors: number }> {
-    const { customRange, ...rest } = options ?? {};
-    const params = customRange ? { ...customRange, limit: rest.limit } : rest;
+    const { customRange, excludeBots, ...rest } = options ?? {};
+    const params = {
+        ...(customRange ? { ...customRange, limit: rest.limit } : rest),
+        ...(excludeBots ? { bots: 'exclude' } : {})
+    };
     const response = await apiClient.get('/admin/users/analytics/top-landing-pages', {
         params
     });
-    // Backend returns { data: [{ path, count }] }. Per-page session/view
-    // averages no longer exist (session events land post-Phase-D), so they
-    // surface as 0.
-    const rows = (response.data as { data?: Array<{ path: string; count: number }> }).data ?? [];
-    const pages: ILandingPage[] = rows.map(r => ({ path: r.path, visitors: r.count, avgSessions: 0, avgPageViews: 0 }));
-    return { pages, totalPages: pages.length, totalVisitors: rows.reduce((sum, r) => sum + (r.count ?? 0), 0) };
+    // Backend returns { data: [{ path, visitors, count }] }. Per-page
+    // session/view averages no longer exist (session events land
+    // post-Phase-D), so they surface as 0.
+    const rows = (response.data as { data?: Array<{ path: string; visitors: number; count: number }> }).data ?? [];
+    const pages: ILandingPage[] = rows.map(r => ({ path: r.path, visitors: r.visitors, avgSessions: 0, avgPageViews: 0 }));
+    return { pages, totalPages: pages.length, totalVisitors: rows.reduce((sum, r) => sum + (r.visitors ?? 0), 0) };
 }
 
 /**
  * Get geographic distribution of visitors (admin endpoint).
- * @param options - Period and limit options
- * @returns Country distribution with counts
+ * @param options - Period, limit, and bot-filter options
+ * @returns Country distribution with visitor counts
  */
-export async function adminGetGeoDistribution(options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
+export async function adminGetGeoDistribution(options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange; excludeBots?: boolean }
 ): Promise<{ countries: IGeoEntry[]; total: number }> {
-    const { customRange, ...rest } = options ?? {};
-    const params = customRange ? { ...customRange, limit: rest.limit } : rest;
+    const { customRange, excludeBots, ...rest } = options ?? {};
+    const params = {
+        ...(customRange ? { ...customRange, limit: rest.limit } : rest),
+        ...(excludeBots ? { bots: 'exclude' } : {})
+    };
     const response = await apiClient.get('/admin/users/analytics/geo-distribution', {
         params
     });
-    // Backend returns { data: [{ country, count }] }; derive percentage.
-    const rows = (response.data as { data?: Array<{ country: string | null; count: number }> }).data ?? [];
-    const total = rows.reduce((sum, r) => sum + (r.count ?? 0), 0);
+    // Backend returns { data: [{ country, visitors, count }] }; visitors is
+    // the primary measure; derive percentage from it.
+    const rows = (response.data as { data?: Array<{ country: string | null; visitors: number; count: number }> }).data ?? [];
+    const total = rows.reduce((sum, r) => sum + (r.visitors ?? 0), 0);
     const countries: IGeoEntry[] = rows.map(r => ({
         country: r.country ?? 'Unknown',
-        count: r.count,
-        percentage: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0
+        count: r.visitors,
+        percentage: total > 0 ? Math.round((r.visitors / total) * 1000) / 10 : 0
     }));
     return { countries, total };
 }
@@ -398,23 +441,29 @@ export async function adminGetGeoDistribution(options?: { period?: AnalyticsPeri
 /**
  * Get device and screen size breakdown (admin endpoint).
  * @param period - Lookback period (default: '30d')
+ * @param customRange - Custom date range overriding the period
+ * @param excludeBots - Restrict to human-classified rows
  * @returns Device and screen size distributions
  */
 export async function adminGetDeviceBreakdown(period: AnalyticsPeriod = '30d',
-    customRange?: ICustomDateRange
+    customRange?: ICustomDateRange,
+    excludeBots?: boolean
 ): Promise<{ devices: IDeviceEntry[]; screenSizes: IScreenSizeEntry[]; total: number }> {
-    const params = customRange ? customRange : { period };
+    const params = {
+        ...(customRange ? customRange : { period }),
+        ...(excludeBots ? { bots: 'exclude' } : {})
+    };
     const response = await apiClient.get('/admin/users/analytics/device-breakdown', {
         params
     });
-    // Backend returns { data: [{ device, count }] }; screen-size dimension was
-    // dropped in the ClickHouse re-platform.
-    const rows = (response.data as { data?: Array<{ device: string; count: number }> }).data ?? [];
-    const total = rows.reduce((sum, r) => sum + (r.count ?? 0), 0);
+    // Backend returns { data: [{ device, visitors, count }] }; visitors is the
+    // primary measure. Screen-size dimension was dropped in the re-platform.
+    const rows = (response.data as { data?: Array<{ device: string; visitors: number; count: number }> }).data ?? [];
+    const total = rows.reduce((sum, r) => sum + (r.visitors ?? 0), 0);
     const devices: IDeviceEntry[] = rows.map(r => ({
         device: r.device,
-        count: r.count,
-        percentage: total > 0 ? Math.round((r.count / total) * 1000) / 10 : 0
+        count: r.visitors,
+        percentage: total > 0 ? Math.round((r.visitors / total) * 1000) / 10 : 0
     }));
     return { devices, screenSizes: [], total };
 }
@@ -424,10 +473,13 @@ export async function adminGetDeviceBreakdown(period: AnalyticsPeriod = '30d',
  * @param options - Period and limit options
  * @returns Campaign entries with conversion rates
  */
-export async function adminGetCampaignPerformance(options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange }
+export async function adminGetCampaignPerformance(options?: { period?: AnalyticsPeriod; limit?: number; customRange?: ICustomDateRange; excludeBots?: boolean }
 ): Promise<{ campaigns: ICampaignEntry[]; total: number }> {
-    const { customRange, ...rest } = options ?? {};
-    const params = customRange ? { ...customRange, limit: rest.limit } : rest;
+    const { customRange, excludeBots, ...rest } = options ?? {};
+    const params = {
+        ...(customRange ? { ...customRange, limit: rest.limit } : rest),
+        ...(excludeBots ? { bots: 'exclude' } : {})
+    };
     const response = await apiClient.get('/admin/users/analytics/campaign-performance', {
         params
     });
@@ -455,9 +507,13 @@ export async function adminGetCampaignPerformance(options?: { period?: Analytics
  * @returns Engagement summary (avg duration, pages/session, bounce rate)
  */
 export async function adminGetEngagement(period: AnalyticsPeriod = '30d',
-    customRange?: ICustomDateRange
+    customRange?: ICustomDateRange,
+    excludeBots?: boolean
 ): Promise<IEngagementMetrics> {
-    const params = customRange ? customRange : { period };
+    const params = {
+        ...(customRange ? customRange : { period }),
+        ...(excludeBots ? { bots: 'exclude' } : {})
+    };
     const response = await apiClient.get('/admin/users/analytics/engagement', {
         params
     });
@@ -480,9 +536,13 @@ export async function adminGetEngagement(period: AnalyticsPeriod = '30d',
  * @returns Funnel stages with drop-off percentages
  */
 export async function adminGetConversionFunnel(period: AnalyticsPeriod = '30d',
-    customRange?: ICustomDateRange
+    customRange?: ICustomDateRange,
+    excludeBots?: boolean
 ): Promise<{ stages: IFunnelStage[] }> {
-    const params = customRange ? customRange : { period };
+    const params = {
+        ...(customRange ? customRange : { period }),
+        ...(excludeBots ? { bots: 'exclude' } : {})
+    };
     const response = await apiClient.get('/admin/users/analytics/conversion-funnel', {
         params
     });
@@ -507,9 +567,13 @@ export async function adminGetConversionFunnel(period: AnalyticsPeriod = '30d',
  * @returns Daily new vs returning visitor counts
  */
 export async function adminGetRetention(period: AnalyticsPeriod = '30d',
-    customRange?: ICustomDateRange
+    customRange?: ICustomDateRange,
+    excludeBots?: boolean
 ): Promise<{ data: IRetentionEntry[] }> {
-    const params = customRange ? customRange : { period };
+    const params = {
+        ...(customRange ? customRange : { period }),
+        ...(excludeBots ? { bots: 'exclude' } : {})
+    };
     const response = await apiClient.get('/admin/users/analytics/retention', {
         params
     });
@@ -517,6 +581,72 @@ export async function adminGetRetention(period: AnalyticsPeriod = '30d',
     // the component keys retention rows on `date`.
     const rows = (response.data as { data?: Array<{ day: string; newVisitors: number; returningVisitors: number }> }).data ?? [];
     return { data: rows.map(r => ({ date: r.day, newVisitors: r.newVisitors, returningVisitors: r.returningVisitors })) };
+}
+
+/** Headline KPIs for one window of the overview trend. */
+export interface IOverviewKpis {
+    /** Distinct visitors (tids). */
+    visitors: number;
+    /** Interactive `page` events. */
+    pageviews: number;
+    /** `session_start` events — 0 until session instrumentation ships. */
+    sessions: number;
+    /** Average session duration in ms — 0 until session instrumentation ships. */
+    avgDurationMs: number;
+    /** Bounced sessions / sessions (0-1) — 0 until session instrumentation ships. */
+    bounceRate: number;
+}
+
+/** One time bucket of the overview trend series. */
+export interface IOverviewTrendPoint {
+    /** Bucket start — ISO-8601 UTC for hours, `YYYY-MM-DD` for days. */
+    bucket: string;
+    visitors: number;
+    pageviews: number;
+}
+
+/** Unified dashboard headline: KPIs + previous window + zero-filled series. */
+export interface IOverviewTrend {
+    granularity: 'hour' | 'day';
+    current: IOverviewKpis;
+    previous: IOverviewKpis;
+    series: IOverviewTrendPoint[];
+}
+
+/**
+ * Get the unified overview trend (admin endpoint): current/previous-window
+ * KPIs for delta rendering plus the zero-filled visitors/pageviews series.
+ * @param period - Lookback period (default: '30d')
+ * @param customRange - Custom date range overriding the period
+ * @param excludeBots - Restrict to human-classified rows
+ * @returns Granularity, both KPI windows, and the bucket series
+ */
+export async function adminGetOverviewTrend(period: AnalyticsPeriod = '30d',
+    customRange?: ICustomDateRange,
+    excludeBots?: boolean
+): Promise<IOverviewTrend> {
+    const params = {
+        ...(customRange ? customRange : { period }),
+        ...(excludeBots ? { bots: 'exclude' } : {})
+    };
+    const response = await apiClient.get('/admin/users/analytics/overview-trend', {
+        params
+    });
+    return response.data as IOverviewTrend;
+}
+
+/**
+ * Get the count of visitors active in the last five minutes (admin endpoint).
+ * @param excludeBots - Restrict to human-classified rows
+ * @returns Live visitor count and the window size
+ */
+export async function adminGetLiveVisitors(excludeBots?: boolean
+): Promise<{ visitors: number; windowMinutes: number }> {
+    const response = await apiClient.get('/admin/users/analytics/live', {
+        params: excludeBots ? { bots: 'exclude' } : {}
+    });
+    const d = response.data as { visitors?: number; windowMinutes?: number };
+    return { visitors: d.visitors ?? 0, windowMinutes: d.windowMinutes ?? 5 };
 }
 
 /** Better Auth account overview for the analytics dashboard. */
@@ -614,16 +744,35 @@ export interface IGscDailyKeywords {
 }
 
 /**
+ * Aggregated GSC keywords plus the delay-shifted window actually covered.
+ * GSC data lags ~3 days, so "7d" covers the 7 days ending ~3 days ago —
+ * `windowStart`/`windowEnd` carry the true dates for display.
+ */
+export interface IGscKeywordsResult {
+    /** Inclusive window start (ISO-8601 UTC). */
+    windowStart: string;
+    /** Inclusive window end (ISO-8601 UTC). */
+    windowEnd: string;
+    /** Keywords sorted by clicks descending. */
+    keywords: IGscKeyword[];
+}
+
+/**
  * Get aggregated GSC keywords for a lookback window (admin endpoint).
  * @param options - Window in hours (default 168 = 7d) and row limit
- * @returns Keywords sorted by clicks descending
+ * @returns Keywords sorted by clicks descending plus the covered window
  */
 export async function adminGetGscKeywords(options?: { periodHours?: number; limit?: number }
-): Promise<IGscKeyword[]> {
+): Promise<IGscKeywordsResult> {
     const response = await apiClient.get('/admin/users/analytics/gsc/keywords', {
         params: options
     });
-    return (response.data as { keywords: IGscKeyword[] }).keywords ?? [];
+    const data = response.data as Partial<IGscKeywordsResult>;
+    return {
+        windowStart: data.windowStart ?? '',
+        windowEnd: data.windowEnd ?? '',
+        keywords: data.keywords ?? []
+    };
 }
 
 /**

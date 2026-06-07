@@ -13,51 +13,7 @@
     gap: var(--gap-lg);
 }
 
-.controls {
-    display: flex;
-    align-items: center;
-    gap: var(--input-group-gap);
-    flex-wrap: wrap;
-}
-
-.controls__label {
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
-    font-weight: var(--font-weight-medium);
-}
-
-.controls__icon {
-    margin-right: var(--gap-xs);
-    vertical-align: middle;
-}
-
-/* Custom date range picker */
-.date_range {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-sm);
-}
-
-.date_range__separator {
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
-}
-
-.date_input {
-    font-size: var(--font-size-body-sm);
-    font-family: inherit;
-    padding: var(--padding-xs) var(--padding-sm);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    color: var(--color-text);
-    color-scheme: dark;
-}
-
-.date_input:focus {
-    outline: var(--border-width-medium) solid var(--color-primary);
-    outline-offset: calc(-1 * var(--border-width-medium));
-}
+/* Period controls moved to the shared PeriodPicker component. */
 
 .section_title {
     font-size: var(--font-size-heading-sm);

@@ -13,7 +13,7 @@ Owns cookieless behavioral analytics: the ClickHouse `traffic_events` pipeline, 
 | Scheduled job | `gsc:fetch` (daily, `0 3 * * *`) |
 | ClickHouse table | `traffic_events` (migrations 010, 012, 013) |
 | Event types | `bootstrap` (cookieless first touch, incl. bots) · `page` (interactive navigation) |
-| Mongo collection | `module_user_gsc_queries` (GSC keyword cache — physical name preserved) |
+| Mongo collections | `module_user_gsc_queries` (GSC keyword cache — physical name preserved) · `module_user_gsc_daily_totals` (date-only GSC daily totals) |
 | Analytics key | cookieless `tronrelic_tid` (`candidate_uid`), independent of identity |
 | Bootstrap order | Inits/runs **before** `IdentityModule` so its `/api/admin/users/{traffic,analytics}` routers mount ahead of the accounts `/api/admin/users` catch-all |
 
@@ -29,7 +29,7 @@ Physical storage names are unchanged from when this code lived under the user mo
 |------|----------------|
 | `TrafficModule.ts` | Two-phase lifecycle; constructs services, mounts the admin router, registers `gsc:fetch` |
 | `services/traffic.service.ts` | ClickHouse `traffic_events` writes + admin aggregate reads; `buildTrafficEvent`, `ITrafficEvent` |
-| `services/gsc.service.ts` | Google Search Console keyword fetch/store (`module_user_gsc_queries`) |
+| `services/gsc.service.ts` | Google Search Console keyword fetch/store (`module_user_gsc_queries`) plus date-only daily totals (`module_user_gsc_daily_totals`) — GSC drops anonymized queries from keyword rows, so chart totals come from the date-only fetch |
 | `services/bot-classifier.ts` | User-Agent → `BotClass` (powers `traffic_events.bot_class`) |
 | `services/geo.service.ts` | IP → country, referrer parsing, device derivation, `getClientIP`; defines `DeviceCategory` / `ScreenSizeCategory` |
 | `api/traffic.{controller,routes}.ts` | `/api/admin/users/traffic/*` raw-traffic reads **and** `/api/admin/users/analytics/*` dashboard aggregates (ClickHouse-backed), including the per-tid / per-user page-activity reads |
@@ -51,7 +51,7 @@ The `/api/admin/users/traffic/*` reads below are under `requireAdmin` and accept
 | GET | `/api/admin/users/traffic/bot-trend` | Daily counts per `bot_class` (default `sinceHours=168`); NULL folded to `unclassified` |
 | GET | `/api/admin/users/traffic/bot-paths` | Top paths for one `botClass` (validated against the `BotClass` allow-list, 400 on miss) |
 
-The `/api/admin/users/analytics/*` router (also `requireAdmin`) serves the `/system/traffic` dashboard aggregates — daily visitors, anonymous first touches (`new-users`), traffic sources, geo/device breakdowns, engagement, the binary conversion funnel, retention, and the GSC endpoints — all backed by `traffic_events`. GSC reads expose the keyword cache: `gsc/keywords` (aggregated clicks/impressions/CTR/position for a `periodHours` window) and `gsc/keywords-by-day` (daily buckets for trend charts); both are Mongo-backed and return empty until the `gsc:fetch` job has stored data. The frontend consumes everything through `src/frontend/modules/traffic/api/client.ts`.
+The `/api/admin/users/analytics/*` router (also `requireAdmin`) serves the `/system/traffic` dashboard aggregates — the unified `overview-trend` headline (current + equal-length-previous-window KPIs for delta rendering, plus a zero-filled visitors/pageviews series bucketed hourly for windows ≤ 48h and daily otherwise), the `live` counter (distinct visitors in the last 5 minutes), daily visitors, anonymous first touches (`new-users`), traffic sources, geo/device breakdowns, engagement, the binary conversion funnel, retention, and the GSC endpoints — all backed by `traffic_events`. Every windowed analytics read accepts `bots=exclude` to restrict counts to human-classified rows (`bot_class = 'human'` or legacy NULL) — referrers are client-supplied and routinely spoofed by crawlers, so the default include-everything counts overstate real audiences; the dashboard's global filter defaults to humans-only. The `traffic-sources`, `top-landing-pages`, `geo-distribution`, and `device-breakdown` buckets carry `visitors` (distinct tids, the primary measure per analytics convention) alongside the raw event `count`. GSC reads expose the keyword cache: `gsc/keywords` (aggregated clicks/impressions/CTR/position for a `periodHours` window, plus `windowStart`/`windowEnd` carrying the ~3-day-delay-shifted dates actually covered) and `gsc/keywords-by-day` (zero-filled daily buckets for trend charts; per-day totals come from `module_user_gsc_daily_totals` because GSC omits anonymized queries from keyword rows). Both are Mongo-backed and return empty/zero until the `gsc:fetch` job has stored data. The frontend consumes everything through `src/frontend/modules/traffic/api/client.ts`.
 
 Per-page clickstream reads live on the same router: `tid-activity` and `user-activity` summarize `page` events by anonymous tid (`user_id IS NULL`) and registered account (`user_id IS NOT NULL`) respectively, and `page-hits?subject=tid|user&id=` returns one subject's ordered page hits — "every page they hit".
 

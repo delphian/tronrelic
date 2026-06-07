@@ -47,6 +47,21 @@ const KNOWN_BOT_CLASSES = new Set([
 ]);
 
 /**
+ * Parse the optional `bots` query param on the visitor-analytics reads.
+ *
+ * `bots=exclude` restricts counts to human-classified rows (legacy NULL
+ * rows kept); anything else — including the param's absence — keeps the
+ * historical include-everything behavior so existing consumers see no
+ * change unless they opt in.
+ *
+ * @param value - Raw `req.query.bots` value.
+ * @returns True when bot rows should be excluded.
+ */
+function parseExcludeBots(value: unknown): boolean {
+    return value === 'exclude';
+}
+
+/**
  * Controller for the traffic-events and analytics admin surfaces.
  */
 export class TrafficController {
@@ -188,13 +203,45 @@ export class TrafficController {
     // ────────────────────────────────────────────────────────────────────────
 
     /**
-     * GET /api/admin/users/analytics/daily-visitors
+     * GET /api/admin/users/analytics/overview-trend?period=&bots=exclude
+     * Unified dashboard headline: current/previous-window KPIs plus the
+     * zero-filled visitors/pageviews series (hourly ≤ 48h, daily otherwise).
+     */
+    async getOverviewTrend(req: Request, res: Response): Promise<void> {
+        const range = resolveAnalyticsRange(req.query);
+        const excludeBots = parseExcludeBots(req.query.bots);
+        try {
+            res.json(await this.trafficService.getOverviewTrend(range, excludeBots));
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to fetch overview trend');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch overview trend' });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/live?bots=exclude
+     * Distinct visitors active in the last five minutes.
+     */
+    async getLiveVisitors(req: Request, res: Response): Promise<void> {
+        const excludeBots = parseExcludeBots(req.query.bots);
+        try {
+            const visitors = await this.trafficService.getLiveVisitorCount(excludeBots);
+            res.json({ visitors, windowMinutes: 5, clickhouseEnabled: this.trafficService.isEnabled() });
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to fetch live visitors');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch live visitors' });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/daily-visitors?bots=exclude
      * Distinct analytics visitors (tids) per day.
      */
     async getDailyVisitors(req: Request, res: Response): Promise<void> {
         const range = resolveAnalyticsRange(req.query);
+        const excludeBots = parseExcludeBots(req.query.bots);
         try {
-            res.json({ data: await this.trafficService.getDailyVisitors(range) });
+            res.json({ data: await this.trafficService.getDailyVisitors(range, excludeBots) });
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch daily visitors');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch daily visitors' });
@@ -218,13 +265,14 @@ export class TrafficController {
     }
 
     /**
-     * GET /api/admin/users/analytics/traffic-sources
+     * GET /api/admin/users/analytics/traffic-sources?bots=exclude
      * Referrer-domain breakdown.
      */
     async getTrafficSources(req: Request, res: Response): Promise<void> {
         const range = resolveAnalyticsRange(req.query);
+        const excludeBots = parseExcludeBots(req.query.bots);
         try {
-            res.json({ data: await this.trafficService.getTrafficSources(range) });
+            res.json({ data: await this.trafficService.getTrafficSources(range, excludeBots) });
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch traffic sources');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch traffic sources' });
@@ -232,7 +280,7 @@ export class TrafficController {
     }
 
     /**
-     * GET /api/admin/users/analytics/new-users?period=&limit=&skip=
+     * GET /api/admin/users/analytics/new-users?period=&limit=&skip=&bots=exclude
      * Visitors whose global first-seen falls within the window, newest first.
      * Returns `{ visitors, total }` unwrapped — the client types this as
      * `{ visitors: IVisitorOrigin[]; total }` and reads it directly.
@@ -241,8 +289,9 @@ export class TrafficController {
         const range = resolveAnalyticsRange(req.query);
         const limit = parsePositiveInt(req.query.limit, 50, MAX_LIMIT);
         const skip = parseNonNegativeInt(req.query.skip, 0);
+        const excludeBots = parseExcludeBots(req.query.bots);
         try {
-            res.json(await this.trafficService.getNewVisitors(range, limit, skip));
+            res.json(await this.trafficService.getNewVisitors(range, limit, skip, excludeBots));
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch new users');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch new users' });
@@ -307,7 +356,7 @@ export class TrafficController {
     }
 
     /**
-     * GET /api/admin/users/analytics/traffic-source-details?source=&period=
+     * GET /api/admin/users/analytics/traffic-source-details?source=&period=&bots=exclude
      * Drill-down breakdown for one referrer source. Returns the
      * `ITrafficSourceDetails` shape unwrapped — the client reads it directly.
      */
@@ -318,8 +367,9 @@ export class TrafficController {
             return;
         }
         const range = resolveAnalyticsRange(req.query);
+        const excludeBots = parseExcludeBots(req.query.bots);
         try {
-            res.json(await this.trafficService.getTrafficSourceDetails(range, source));
+            res.json(await this.trafficService.getTrafficSourceDetails(range, source, excludeBots));
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch traffic source details');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch traffic source details' });
@@ -327,14 +377,15 @@ export class TrafficController {
     }
 
     /**
-     * GET /api/admin/users/analytics/top-landing-pages?limit=
-     * Top landing paths by event count.
+     * GET /api/admin/users/analytics/top-landing-pages?limit=&bots=exclude
+     * Top landing paths by distinct visitors.
      */
     async getTopLandingPages(req: Request, res: Response): Promise<void> {
         const range = resolveAnalyticsRange(req.query);
         const limit = parsePositiveInt(req.query.limit, 20, MAX_LIMIT);
+        const excludeBots = parseExcludeBots(req.query.bots);
         try {
-            res.json({ data: await this.trafficService.getTopLandingPages(range, limit) });
+            res.json({ data: await this.trafficService.getTopLandingPages(range, limit, excludeBots) });
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch top landing pages');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch top landing pages' });
@@ -342,14 +393,15 @@ export class TrafficController {
     }
 
     /**
-     * GET /api/admin/users/analytics/geo-distribution?limit=
+     * GET /api/admin/users/analytics/geo-distribution?limit=&bots=exclude
      * Country distribution (ISO-3166 alpha-2).
      */
     async getGeoDistribution(req: Request, res: Response): Promise<void> {
         const range = resolveAnalyticsRange(req.query);
         const limit = parsePositiveInt(req.query.limit, 30, MAX_LIMIT);
+        const excludeBots = parseExcludeBots(req.query.bots);
         try {
-            res.json({ data: await this.trafficService.getGeoDistribution(range, limit) });
+            res.json({ data: await this.trafficService.getGeoDistribution(range, limit, excludeBots) });
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch geo distribution');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch geo distribution' });
@@ -357,13 +409,14 @@ export class TrafficController {
     }
 
     /**
-     * GET /api/admin/users/analytics/device-breakdown
+     * GET /api/admin/users/analytics/device-breakdown?bots=exclude
      * Device-category breakdown.
      */
     async getDeviceBreakdown(req: Request, res: Response): Promise<void> {
         const range = resolveAnalyticsRange(req.query);
+        const excludeBots = parseExcludeBots(req.query.bots);
         try {
-            res.json({ data: await this.trafficService.getDeviceBreakdown(range) });
+            res.json({ data: await this.trafficService.getDeviceBreakdown(range, excludeBots) });
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch device breakdown');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch device breakdown' });
@@ -371,13 +424,14 @@ export class TrafficController {
     }
 
     /**
-     * GET /api/admin/users/analytics/retention
+     * GET /api/admin/users/analytics/retention?bots=exclude
      * New-vs-returning visitors per day.
      */
     async getRetention(req: Request, res: Response): Promise<void> {
         const range = resolveAnalyticsRange(req.query);
+        const excludeBots = parseExcludeBots(req.query.bots);
         try {
-            res.json({ data: await this.trafficService.getRetention(range) });
+            res.json({ data: await this.trafficService.getRetention(range, excludeBots) });
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch retention');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch retention' });
@@ -385,13 +439,14 @@ export class TrafficController {
     }
 
     /**
-     * GET /api/admin/users/analytics/conversion-funnel
+     * GET /api/admin/users/analytics/conversion-funnel?bots=exclude
      * Binary conversion funnel (distinct tids → tids ever logged in).
      */
     async getConversionFunnel(req: Request, res: Response): Promise<void> {
         const range = resolveAnalyticsRange(req.query);
+        const excludeBots = parseExcludeBots(req.query.bots);
         try {
-            res.json(await this.trafficService.getBinaryConversionFunnel(range));
+            res.json(await this.trafficService.getBinaryConversionFunnel(range, excludeBots));
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch conversion funnel');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch conversion funnel' });
@@ -399,14 +454,15 @@ export class TrafficController {
     }
 
     /**
-     * GET /api/admin/users/analytics/campaign-performance?limit=
+     * GET /api/admin/users/analytics/campaign-performance?limit=&bots=exclude
      * UTM-campaign aggregates joined to the binary conversion.
      */
     async getCampaignPerformance(req: Request, res: Response): Promise<void> {
         const range = resolveAnalyticsRange(req.query);
         const limit = parsePositiveInt(req.query.limit, 20, MAX_LIMIT);
+        const excludeBots = parseExcludeBots(req.query.bots);
         try {
-            res.json({ data: await this.trafficService.getCampaignPerformance(range, limit) });
+            res.json({ data: await this.trafficService.getCampaignPerformance(range, limit, excludeBots) });
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch campaign performance');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch campaign performance' });
@@ -414,13 +470,14 @@ export class TrafficController {
     }
 
     /**
-     * GET /api/admin/users/analytics/engagement
+     * GET /api/admin/users/analytics/engagement?bots=exclude
      * Average duration, pages/session, bounce rate (session events).
      */
     async getEngagementMetrics(req: Request, res: Response): Promise<void> {
         const range = resolveAnalyticsRange(req.query);
+        const excludeBots = parseExcludeBots(req.query.bots);
         try {
-            res.json(await this.trafficService.getEngagementMetrics(range));
+            res.json(await this.trafficService.getEngagementMetrics(range, excludeBots));
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch engagement metrics');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch engagement metrics' });
@@ -521,14 +578,16 @@ export class TrafficController {
      * GET /api/admin/users/analytics/gsc/keywords?periodHours=168&limit=25
      * Aggregated GSC keywords (clicks/impressions/CTR/position) for the
      * window. Pass-through to the daily-fetched keyword cache; returns an
-     * empty array until the `gsc:fetch` job has stored data.
+     * empty array until the `gsc:fetch` job has stored data. The response
+     * carries `windowStart`/`windowEnd` — the delay-shifted dates actually
+     * covered — so the UI can label the period truthfully.
      */
     async getGscKeywords(req: Request, res: Response): Promise<void> {
         const periodHours = parsePositiveInt(req.query.periodHours, 168, MAX_SINCE_HOURS);
         const limit = parsePositiveInt(req.query.limit, 25, MAX_LIMIT);
         try {
-            const keywords = await this.gscService.getKeywordsForPeriod(periodHours, limit);
-            res.json({ periodHours, limit, keywords });
+            const result = await this.gscService.getKeywordsForPeriod(periodHours, limit);
+            res.json({ periodHours, limit, ...result });
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch GSC keywords');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch GSC keywords' });

@@ -22,21 +22,13 @@
 
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Button } from '../../../../../components/ui/Button';
 import { adminGetPageActivity, adminGetPageHits } from '../../../api';
-import type { IPageActivityRow, IPageHit, PageActivitySubject, VisitorPeriod } from '../../../api';
+import type { AnalyticsPeriod, ICustomDateRange, IPageActivityRow, IPageHit, PageActivitySubject, VisitorPeriod } from '../../../api';
 import { getDeviceIcon } from '../../../lib/deviceIcon';
 import styles from './PageActivity.module.scss';
-
-/** Period option labels for display. */
-const PERIOD_LABELS: Record<VisitorPeriod, string> = {
-    '24h': '24 Hours',
-    '7d': '7 Days',
-    '30d': '30 Days',
-    '90d': '90 Days'
-};
 
 /** Rows per activity-table page. */
 const PAGE_LIMIT = 25;
@@ -44,10 +36,19 @@ const PAGE_LIMIT = 25;
 /** Max page hits fetched for a drill-down. */
 const HITS_LIMIT = 200;
 
+/**
+ * The resolved lookback window passed to the API client: either a preset
+ * period or a custom date range, derived from the page-level controls.
+ */
+interface IActivityWindow {
+    period?: VisitorPeriod;
+    customRange?: ICustomDateRange;
+}
+
 interface IPageHitsRowProps {
     subject: PageActivitySubject;
     id: string;
-    period: VisitorPeriod;
+    window: IActivityWindow;
 }
 
 /**
@@ -59,7 +60,7 @@ interface IPageHitsRowProps {
  * @param props - The subject to fetch hits for and the active window.
  * @returns A table row spanning the parent's columns with the page-hit list.
  */
-function PageHitsRow({ subject, id, period }: IPageHitsRowProps) {
+function PageHitsRow({ subject, id, window }: IPageHitsRowProps) {
     const [hits, setHits] = useState<IPageHit[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -72,7 +73,7 @@ function PageHitsRow({ subject, id, period }: IPageHitsRowProps) {
         const fetchHits = async (): Promise<void> => {
             setLoading(true);
             try {
-                const result = await adminGetPageHits(subject, id, { period, limit: HITS_LIMIT });
+                const result = await adminGetPageHits(subject, id, { ...window, limit: HITS_LIMIT });
                 if (active) {
                     setHits(result);
                 }
@@ -89,7 +90,7 @@ function PageHitsRow({ subject, id, period }: IPageHitsRowProps) {
         };
         fetchHits();
         return () => { active = false; };
-    }, [subject, id, period]);
+    }, [subject, id, window]);
 
     return (
         <tr className={styles.detail_row}>
@@ -133,16 +134,17 @@ interface IPageActivityTableProps {
     description: string;
     /** Column header for the subject id (e.g. "Traffic ID" / "Account"). */
     subjectHeading: string;
+    /** Resolved lookback window from the page-level controls. */
+    window: IActivityWindow;
 }
 
 /**
  * One subject's page-activity table with a per-row clickstream drill-down.
  *
- * @param props - Table configuration.
+ * @param props - Table configuration and the global window.
  * @returns The rendered activity section.
  */
-function PageActivityTable({ subject, title, description, subjectHeading }: IPageActivityTableProps) {
-    const [period, setPeriod] = useState<VisitorPeriod>('24h');
+function PageActivityTable({ subject, title, description, subjectHeading, window }: IPageActivityTableProps) {
     const [rows, setRows] = useState<IPageActivityRow[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -150,17 +152,23 @@ function PageActivityTable({ subject, title, description, subjectHeading }: IPag
 
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
+    // Window changes invalidate the page cursor and any open drill-down.
+    useEffect(() => {
+        setPage(1);
+        setExpandedId(null);
+    }, [window]);
+
     useEffect(() => {
         let active = true;
         /**
-         * Fetch the activity page, dropping the result if a newer period/page
+         * Fetch the activity page, dropping the result if a newer window/page
          * selection (or unmount) superseded this request before it resolved.
          */
         const fetchRows = async (): Promise<void> => {
             setLoading(true);
             try {
                 const result = await adminGetPageActivity(subject, {
-                    period,
+                    ...window,
                     limit: PAGE_LIMIT,
                     skip: (page - 1) * PAGE_LIMIT
                 });
@@ -182,20 +190,9 @@ function PageActivityTable({ subject, title, description, subjectHeading }: IPag
         };
         fetchRows();
         return () => { active = false; };
-    }, [subject, period, page]);
+    }, [subject, window, page]);
 
     const totalPages = total > 0 ? Math.ceil(total / PAGE_LIMIT) : 1;
-
-    /**
-     * Change the lookback period and reset pagination + any open drill-down.
-     *
-     * @param next - The selected period.
-     */
-    const handlePeriodChange = (next: VisitorPeriod): void => {
-        setPeriod(next);
-        setPage(1);
-        setExpandedId(null);
-    };
 
     /**
      * Toggle a row's page-hit drill-down open or closed. The expanded row owns
@@ -212,18 +209,6 @@ function PageActivityTable({ subject, title, description, subjectHeading }: IPag
         <div className={styles.section}>
             <div className={styles.section_header}>
                 <h2 className={styles.section_title}>{title}</h2>
-                <div className={styles.toggle_group} role="group" aria-label={`${title} time period`}>
-                    {(Object.keys(PERIOD_LABELS) as VisitorPeriod[]).map(option => (
-                        <button
-                            key={option}
-                            className={`${styles.toggle_btn} ${period === option ? styles.toggle_btn__active : ''}`}
-                            onClick={() => handlePeriodChange(option)}
-                            aria-pressed={period === option}
-                        >
-                            {PERIOD_LABELS[option]}
-                        </button>
-                    ))}
-                </div>
             </div>
             <p className="text-muted">{description}</p>
 
@@ -273,7 +258,7 @@ function PageActivityTable({ subject, title, description, subjectHeading }: IPag
                                             </td>
                                         </tr>
                                         {expandedId === row.id && (
-                                            <PageHitsRow subject={subject} id={row.id} period={period} />
+                                            <PageHitsRow subject={subject} id={row.id} window={window} />
                                         )}
                                     </React.Fragment>
                                 ))}
@@ -308,12 +293,31 @@ function PageActivityTable({ subject, title, description, subjectHeading }: IPag
     );
 }
 
+interface IPageActivityProps {
+    /** Selected lookback period from the page-level controls. */
+    period: AnalyticsPeriod;
+    /** Custom date range when `period === 'custom'`. */
+    customRange?: ICustomDateRange;
+}
+
 /**
- * PageActivity renders the anonymous-tid and registered-user clickstream tables.
+ * PageActivity renders the anonymous-tid and registered-user clickstream
+ * tables, both governed by the page-level lookback window. Only interactive
+ * `page` events feed these tables, so the bot filter does not apply —
+ * non-JS crawlers never emit them.
  *
+ * @param props - Global period and custom range selection.
  * @returns The rendered page-activity sections.
  */
-export function PageActivity() {
+export function PageActivity({ period, customRange }: IPageActivityProps) {
+    // Memoized: the parent re-renders on live-counter polls, and a fresh
+    // window identity would re-fire every table's fetch effect.
+    const window = useMemo<IActivityWindow>(() => (
+        period === 'custom'
+            ? { customRange }
+            : { period: period as VisitorPeriod }
+    ), [period, customRange]);
+
     return (
         <div className={styles.container}>
             <PageActivityTable
@@ -321,12 +325,14 @@ export function PageActivity() {
                 title="Anonymous Visitor Activity"
                 subjectHeading="Traffic ID"
                 description="Per-page navigation for cookied anonymous visitors, keyed on the traffic id. Expand a row to see every page they hit."
+                window={window}
             />
             <PageActivityTable
                 subject="user"
                 title="Registered User Activity"
                 subjectHeading="Account"
                 description="Per-page navigation for signed-in accounts, keyed on the Better Auth user id. Expand a row to see every page they hit."
+                window={window}
             />
         </div>
     );
