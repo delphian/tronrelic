@@ -24,7 +24,8 @@ Every backend service and plugin logs through `SystemLogService.getInstance()`. 
 
 | File | Purpose |
 |------|---------|
-| `LogsModule.ts` | IModule implementation, two-phase lifecycle, menu + route registration |
+| `LogsModule.ts` | IModule implementation, two-phase lifecycle, menu + route registration, ai-assistant watch |
+| `ai-tools.ts` | Read-only AI tool definitions + service-registry watch registration |
 | `services/system-log.service.ts` | Singleton logger + MongoDB storage, sanitization, child loggers, stats |
 | `database/SystemLog.ts` | Mongoose schema, compound indexes, `ISystemLogDocument` interface |
 | `api/system-log.controller.ts` | Express handlers for all 6 endpoints |
@@ -73,6 +74,16 @@ All under `/api/admin/system/logs`, all require `X-Admin-Token` header.
 | PATCH | `/:id/resolve` | Mark as resolved with `resolvedBy` field |
 | PATCH | `/:id/unresolve` | Revert resolution |
 | DELETE | `/` | Bulk delete all logs (destructive) |
+
+## AI Tools
+
+`run()` watches the service registry for the plugin-provided `ai-assistant` service (`IAiAssistantService`) and registers three strictly read-only tools (`providerId: 'logs'`) whenever it appears — the watch pattern covers the assistant loading after modules and toggling at runtime. Handlers call `SystemLogService` directly. The deprecated `resolved` column is excluded from every tool input and output. Registration failures are logged and swallowed; AI tooling never blocks module startup.
+
+| Tool | Backed By | Parameters |
+|------|-----------|------------|
+| `tronrelic-query-system-logs` | `getLogs()` | `levels` (default `["error","warn"]`), `service`, `startTime`/`endTime` (ISO 8601), `page`, `limit` (default 20, cap 50). List-view context truncated at 500 chars |
+| `tronrelic-get-system-log` | `getLogById()` | `id` (required, 24-hex). Full untruncated context |
+| `tronrelic-get-log-statistics` | `getStatistics()` | None. Total + per-level + per-service counts; doubles as `service` value discovery |
 
 ## Service Patterns
 

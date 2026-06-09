@@ -315,7 +315,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const toolsModule = new ToolsModule();
     const schedulerModule = new SchedulerModule();
 
-    await logsModule.init({ pinoLogger, database: coreDatabase, app });
+    await logsModule.init({ pinoLogger, database: coreDatabase, app, serviceRegistry });
     await pagesModule.init(sharedDeps);
     await widgetsModule.init(sharedDeps);
     await schedulerModule.init({ database: coreDatabase, menuService, app });
