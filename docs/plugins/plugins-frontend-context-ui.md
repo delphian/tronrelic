@@ -13,7 +13,7 @@ Layout components carry typed props — `<layout.Stack gap="md">` fails compilat
 ```typescript
 interface IFrontendPluginContext {
     pluginId: string;              // Used internally for namespacing events and API routes
-    layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section
+    layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
     ui: IUIComponents;             // Card, Badge, Button, IconButton, Switch, Input, Skeleton, ClientTime, Tooltip, IconPickerModal, Table family
     charts: IChartComponents;      // LineChart
     system: ISystemComponents;     // SchedulerMonitor (admin)
@@ -36,6 +36,39 @@ Page structure. Use these for all structural markup.
 | `Stack` | `gap?: 'sm'\|'md'\|'lg'`, `direction?: 'vertical'\|'horizontal'`, `children`, `className?` | Flex container with gap |
 | `Grid` | `gap?: 'sm'\|'md'\|'lg'`, `columns?: 2\|3\|'responsive'`, `children`, `className?` | Grid layout |
 | `Section` | `gap?: 'sm'\|'md'\|'lg'`, `children`, `className?` | Spaced content section |
+| `SubMenu` | `namespace`, `items: ISubMenuItem[]`, `activeUrl?`, `onSelect?: (item) => void`, `ariaLabel?` | In-page tab row backed by the menu service — see below |
+
+### SubMenu — In-Page Tab Navigation
+
+This is the recommended way to build a plugin's internal navigation: the tab row on a single-page admin surface (query / history / tools / settings and the like). The alternative — a hand-rolled `<button>` array with local `activeTab` state — works but is dead-end UI. Backing the row with the menu service instead inherits per-user gating, ordering, live refresh, and runtime extensibility: another plugin can contribute a tab into your row by registering a node. `SubMenu` is the cross-workspace-safe wrapper over the core navigation component; plugins cannot import that component directly, so consume it here.
+
+The flow has three steps. **Register** each tab as a leaf node in the plugin's *own* menu namespace (not `main`) during a backend lifecycle hook, memory-only, setting `requiresAdmin` yourself — the namespace sits outside the System container, so nothing forces the gate for you. **Fetch** that namespace tree SSR-first in the page's `serverDataFetcher` so it arrives as a prop (no loading flash). **Render** the row with `SubMenu`, providing `onSelect` to drive `activeTab` and `activeUrl` to highlight the current tab. Omitting `onSelect` makes the tabs ordinary navigation links instead.
+
+```tsx
+// Backend (plugin init): register tabs in the plugin's own namespace.
+context.menuService.subscribe('ready', async () => {
+    await context.menuService.create({
+        namespace: 'ai-assistant',
+        label: 'Query',
+        url: '/system/plugins/ai-assistant?tab=query',
+        icon: 'Search',
+        order: 0,
+        enabled: true,
+        requiresAdmin: true // caller owns gating outside the System subtree
+    });
+    // ...history, tools, settings
+});
+
+// Frontend (client page): render the SSR-fetched tree as in-page tabs.
+const { layout } = context;
+const [tab, setTab] = useState('query');
+<layout.SubMenu
+    namespace="ai-assistant"
+    items={submenuTree}
+    activeUrl={`/system/plugins/ai-assistant?tab=${tab}`}
+    onSelect={(item) => setTab(tabKeyFromUrl(item.url))}
+/>
+```
 
 ## UI (`context.ui`)
 

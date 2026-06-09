@@ -330,6 +330,55 @@ export const myPluginBackendPlugin = definePlugin({
 
 **Cleanup pattern:** Track menu node IDs during registration, then delete them in the `disable()` hook to remove navigation entries when plugin is disabled.
 
+## Submenu Pattern (Namespaced Tab Rows)
+
+An admin page's submenu — the in-page tab row on surfaces like `/system/traffic` or the AI assistant admin (query / history / tools / settings) — is just a menu. Pages historically hand-roll these as `<button>` arrays with local `activeTab` state, duplicating the same pattern across surfaces. Backing the row with the menu service instead inherits per-user gating, ordering, live `menu:update` refresh, and runtime extensibility: a *different* plugin can contribute a tab into the row by registering a node, which a hand-rolled array cannot offer.
+
+### How It Works
+
+Register each tab as a leaf node in a dedicated namespace (not `main`), memory-only (`persist=false`). Keeping it out of `main` keeps the tabs out of the global nav chrome — only the page's own submenu component reads that namespace. The namespace also sits outside the System container, so the non-bypassable `requiresAdmin` force does **not** apply: the caller owns security and sets `requiresAdmin` per node explicitly (see [The System Container](#the-system-container)).
+
+The frontend renders the row with `MenuNavClient` (`src/frontend/components/layout/MenuNav/`). Two additive, opt-in props govern behavior; both default to undefined, so existing navigation consumers are unchanged:
+
+| Prop | Effect when set |
+|------|-----------------|
+| `onItemSelect(item, event)` | Leaf clicks call this and suppress navigation, letting the page drive `activeTab` (e.g. sync a `?tab=` query param) instead of routing. |
+| `activeUrl` | Highlights the leaf whose `url` matches, bypassing pathname matching — required because the route is identical across tabs. |
+
+The click decision is the caller's: omit `onItemSelect` and a tab navigates like any link; provide it and the tab drives in-page state. Because `onItemSelect` is a function it cannot cross the server boundary — the consumer is the page's own client component (which already holds `activeTab` state and the SSR-fetched namespace tree), rendering `MenuNavClient` directly rather than the server `MenuNavSSR` wrapper.
+
+**Core admin pages** (modules) render `MenuNavClient` directly. **Plugins** cannot import core components across the workspace boundary, so they consume `context.layout.SubMenu` from `IFrontendPluginContext` — a thin wrapper over `MenuNavClient` with a friendlier `onSelect(item)` callback. A plugin registers its tabs in its own namespace via `context.menuService.create(...)`, fetches that namespace tree SSR-first through its `serverDataFetcher`, and renders the row with `context.layout.SubMenu`. See [plugins-frontend-context-ui.md](../../../../docs/plugins/plugins-frontend-context-ui.md#submenu--in-page-tab-navigation).
+
+### Example
+
+```typescript
+// Backend: register the tabs in the page's own namespace during `ready`.
+menuService.subscribe('ready', async () => {
+    await menuService.create({
+        namespace: 'ai-assistant',
+        label: 'Query',
+        url: '/system/plugins/ai-assistant?tab=query',
+        icon: 'Search',
+        order: 0,
+        parent: null,
+        enabled: true,
+        requiresAdmin: true // caller owns gating outside the System subtree
+    });
+    // ...history, tools, settings
+});
+```
+
+```tsx
+// Frontend (page client component): render the row as in-page tabs.
+<MenuNavClient
+    namespace="ai-assistant"
+    items={submenuTree}
+    generatedAt={generatedAt}
+    activeUrl={`/system/plugins/ai-assistant?tab=${activeTab}`}
+    onItemSelect={(item) => setActiveTab(tabKeyFromUrl(item.url))}
+/>
+```
+
 ## Pre-Implementation Checklist
 
 Before implementing menu integration or navigation UI:

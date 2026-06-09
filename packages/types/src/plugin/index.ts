@@ -20,6 +20,7 @@ export type {
     IFrontendPluginContext,
     IUIComponents,
     ILayoutComponents,
+    ISubMenuItem,
     IChartComponents,
     ISystemComponents,
     IApiClient,
