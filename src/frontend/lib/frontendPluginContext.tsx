@@ -28,6 +28,11 @@ import { LineChart } from '../features/charts/components/LineChart';
 import { BarChart } from '../features/charts/components/BarChart';
 import { SchedulerMonitor } from '../modules/scheduler';
 import { Page, PageHeader, Stack, Grid, Section } from '../components/layout';
+// Imported by direct path, not the layout barrel: the barrel is kept
+// client-safe and excludes MenuNav (MenuNavSSR pulls next/headers). SubMenu
+// wraps only the client-safe MenuNavClient, so importing the file directly
+// keeps server-only code out of this client bundle.
+import { SubMenu } from '../components/layout/MenuNav/SubMenu';
 import { useAuthSession } from '../modules/user/components/SessionProvider';
 import { getSocket } from './socketClient';
 import { getRuntimeConfig } from './runtimeConfig';
@@ -343,7 +348,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             PageHeader,
             Stack,
             Grid,
-            Section
+            Section,
+            SubMenu
         };
 
         const charts: IChartComponents = {
@@ -440,7 +446,8 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         PageHeader,
         Stack,
         Grid,
-        Section
+        Section,
+        SubMenu
     };
 
     const charts: IChartComponents = {

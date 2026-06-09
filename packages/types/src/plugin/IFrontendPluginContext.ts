@@ -330,6 +330,49 @@ export interface IChartComponents {
 }
 
 /**
+ * Serialized menu node consumed by the `SubMenu` layout component.
+ *
+ * Mirrors the wire shape the menu service emits (`GET /api/menu`) after JSON
+ * serialization, so a plugin can pass the namespace tree it fetched via
+ * `serverDataFetcher` straight through without remapping. All ids and the
+ * `parent` reference are opaque strings.
+ */
+export interface ISubMenuItem {
+    /** Stable node id. */
+    _id: string;
+
+    /** Display label for the tab. */
+    label: string;
+
+    /** Tab url; also the active-state key when paired with `activeUrl`. */
+    url?: string;
+
+    /** Optional lucide-react icon name. */
+    icon?: string;
+
+    /** Sort order within the row (ascending). */
+    order: number;
+
+    /** Parent node id, or null for a root-level tab. */
+    parent?: string | null;
+
+    /** Whether the tab renders; disabled tabs are filtered out. */
+    enabled: boolean;
+
+    /** Namespace the node belongs to. */
+    namespace?: string;
+
+    /** Group ids that gate visibility (any-of). */
+    requiresGroups?: string[];
+
+    /** Whether the node is admin-gated. */
+    requiresAdmin?: boolean;
+
+    /** Nested children, when the node is a container. */
+    children?: ISubMenuItem[];
+}
+
+/**
  * Layout component library provided to frontend plugins.
  *
  * Contains structural layout components for building consistent page layouts.
@@ -442,6 +485,41 @@ export interface ILayoutComponents {
         children: React.ReactNode;
         gap?: 'sm' | 'md' | 'lg';
         className?: string;
+    }>;
+
+    /**
+     * In-page submenu (tab row) backed by the menu service.
+     *
+     * The recommended way to build a plugin's internal navigation — the row of
+     * tabs on a single-page admin surface (e.g. query / history / tools /
+     * settings). Register the tabs as leaf nodes in the plugin's own menu
+     * namespace (memory-only, caller-set `requiresAdmin`), fetch that namespace
+     * tree SSR-first via the plugin `serverDataFetcher`, and render it here.
+     * Backing the row with the menu service — instead of a hand-rolled
+     * `<button>` array — inherits per-user gating, ordering, live refresh, and
+     * lets other plugins contribute tabs into the row.
+     *
+     * Provide `onSelect` to drive in-page tab state (clicks suppress
+     * navigation); omit it for ordinary navigation links. Pair `onSelect` with
+     * `activeUrl` to highlight the active tab, since all tabs share one route.
+     *
+     * @example
+     * ```tsx
+     * const [tab, setTab] = useState('query');
+     * <layout.SubMenu
+     *   namespace="ai-assistant"
+     *   items={submenuTree}
+     *   activeUrl={`/system/plugins/ai-assistant?tab=${tab}`}
+     *   onSelect={(item) => setTab(tabKeyFromUrl(item.url))}
+     * />
+     * ```
+     */
+    SubMenu: ComponentType<{
+        namespace: string;
+        items: ISubMenuItem[];
+        activeUrl?: string;
+        onSelect?: (item: ISubMenuItem) => void;
+        ariaLabel?: string;
     }>;
 }
 

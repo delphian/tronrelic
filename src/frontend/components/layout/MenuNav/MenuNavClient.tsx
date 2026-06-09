@@ -18,6 +18,15 @@
  * pass `namespace="main"` and rely on per-user `requiresAdmin` gating
  * to filter the rendered tree.
  *
+ * By default each leaf renders as a navigating `<Link>` whose active state is
+ * derived from the current pathname. Callers building an in-page submenu — a
+ * tab row backed by its own menu namespace — opt into different behavior with
+ * two additive props: `onItemSelect` intercepts leaf clicks so activation
+ * drives local state (e.g. a `?tab=` query param) instead of route navigation,
+ * and `activeUrl` overrides pathname-based highlighting because the route does
+ * not change between tabs. Both default to undefined, leaving existing
+ * navigation consumers untouched.
+ *
  * @example
  * ```tsx
  * <MenuNavClient
@@ -31,6 +40,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -76,6 +86,26 @@ interface IMenuNavClientProps {
      * Defaults to "{namespace} navigation".
      */
     ariaLabel?: string;
+
+    /**
+     * Optional activation handler for leaf items. When provided, clicking a
+     * leaf link calls this callback and suppresses navigation (the handler
+     * receives the already-default-prevented event), letting a caller drive
+     * in-page tab state — for example syncing a `?tab=` query param — instead
+     * of routing. Omitted (the default) preserves ordinary `<Link>`
+     * navigation, so existing consumers are unaffected. Container (parent)
+     * nodes are unaffected; only leaf links honor this.
+     */
+    onItemSelect?: (item: MenuNodeSerialized, event: ReactMouseEvent<HTMLAnchorElement>) => void;
+
+    /**
+     * Optional active-item override. When set, the leaf whose `url` equals this
+     * value is highlighted instead of deriving active state from the current
+     * pathname. Pair it with `onItemSelect` for in-page tab submenus where the
+     * route is identical across tabs. Omitted (the default) keeps
+     * pathname-based highlighting for navigation consumers.
+     */
+    activeUrl?: string;
 }
 
 /**
@@ -97,8 +127,10 @@ interface IMenuNavClientProps {
  * @param props.items - Menu items from server
  * @param props.generatedAt - SSR snapshot timestamp seeded onto Redux
  * @param props.ariaLabel - Optional accessible label
+ * @param props.onItemSelect - Optional leaf activation handler; suppresses navigation when set
+ * @param props.activeUrl - Optional active-item override keyed by url; bypasses pathname matching
  */
-export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMenuNavClientProps) {
+export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItemSelect, activeUrl }: IMenuNavClientProps) {
     const pathname = usePathname();
     const dispatch = useAppDispatch();
     const menuConfig = useMenuConfig(namespace);
@@ -272,9 +304,15 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
      * that overflowed into the "More" menu.
      */
     const renderLinkItem = (item: MenuNodeSerialized, isNested = false): JSX.Element => {
-        const isActive = item.url === '/'
-            ? pathname === '/'
-            : pathname.startsWith(item.url!);
+        // When the caller supplies `activeUrl` (in-page tab mode) the active
+        // item is the one whose url matches it exactly — the route does not
+        // change between tabs, so pathname matching cannot tell them apart.
+        // Without it, fall back to pathname matching for navigation links.
+        const isActive = activeUrl !== undefined
+            ? item.url === activeUrl
+            : item.url === '/'
+                ? pathname === '/'
+                : pathname.startsWith(item.url!);
 
         // Nested rows (inside category dropdowns) are vertical-list items
         // where icon-top and label-hiding both degrade readability. Force
@@ -309,7 +347,17 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel }: IMen
                 role={isNested ? 'menuitem' : undefined}
                 aria-current={isActive ? 'page' : undefined}
                 aria-label={rowShowLabels ? undefined : item.label}
-                onClick={() => {
+                onClick={(event) => {
+                    // Opt-in activation: when the caller provides onItemSelect,
+                    // the item drives in-page state (e.g. a `?tab=` submenu)
+                    // instead of navigating. Preventing default keeps the
+                    // <Link> href intact for SSR and no-JS visitors while
+                    // suppressing client-side navigation. Omitting the handler
+                    // preserves ordinary link navigation for existing consumers.
+                    if (onItemSelect) {
+                        event.preventDefault();
+                        onItemSelect(item, event);
+                    }
                     if (isNested) {
                         closeDropdown();
                         // Trigger PriorityNav's click-outside handler to close "More" dropdown
