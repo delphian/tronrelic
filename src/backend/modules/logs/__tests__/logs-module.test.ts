@@ -2,9 +2,12 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LogsModule } from '../LogsModule.js';
+import { AI_TOOL_NAMES } from '../ai-tools.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import type { Express } from 'express';
+import type { IServiceRegistry } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
+import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
 /**
  * Mock Pino logger for testing.
@@ -82,6 +85,7 @@ describe('LogsModule', () => {
     let mockPino: MockPinoLogger;
     let mockDatabase: ReturnType<typeof createMockDatabaseService>;
     let mockApp: Partial<Express>;
+    let mockServiceRegistry: IServiceRegistry;
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -91,6 +95,7 @@ describe('LogsModule', () => {
         mockPino = new MockPinoLogger();
         mockDatabase = createMockDatabaseService();
         mockApp = createMockApp();
+        mockServiceRegistry = createMockServiceRegistry();
     });
 
     describe('Metadata', () => {
@@ -118,7 +123,8 @@ describe('LogsModule', () => {
             await module.init({
                 pinoLogger: mockPino as any,
                 database: mockDatabase as any,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockServiceRegistry
             });
 
             // Verify module initialized successfully (no errors thrown)
@@ -134,7 +140,8 @@ describe('LogsModule', () => {
             await module.init({
                 pinoLogger: mockPino as any,
                 database: mockDatabase as any,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockServiceRegistry
             });
 
             // Verify module can provide log service after init
@@ -178,7 +185,8 @@ describe('LogsModule', () => {
             await module.init({
                 pinoLogger: mockPino as any,
                 database: mockDatabase as any,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockServiceRegistry
             });
 
             await module.run();
@@ -209,12 +217,98 @@ describe('LogsModule', () => {
             await module.init({
                 pinoLogger: mockPino as any,
                 database: mockDatabase as any,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockServiceRegistry
             });
 
             await expect(module.run()).rejects.toThrow(
                 'Failed to register system logs menu item'
             );
+        });
+    });
+
+    describe('AI tool registration', () => {
+        /**
+         * Build a fake ai-assistant service with spied tool methods.
+         */
+        function createMockAiAssistant() {
+            return {
+                registerTool: vi.fn(),
+                unregisterTool: vi.fn().mockReturnValue(false)
+            };
+        }
+
+        /**
+         * Test: tools register when ai-assistant appears after run().
+         *
+         * Verifies the watch pattern handles the normal boot order where
+         * the ai-assistant plugin loads after modules.
+         */
+        it('should register log tools when ai-assistant becomes available', async () => {
+            await module.init({
+                pinoLogger: mockPino as any,
+                database: mockDatabase as any,
+                app: mockApp as any,
+                serviceRegistry: mockServiceRegistry
+            });
+            await module.run();
+
+            const ai = createMockAiAssistant();
+            mockServiceRegistry.register('ai-assistant', ai);
+
+            const registeredNames = ai.registerTool.mock.calls.map(call => call[0].name);
+            expect(registeredNames).toEqual([
+                AI_TOOL_NAMES.queryLogs,
+                AI_TOOL_NAMES.getLog,
+                AI_TOOL_NAMES.getStatistics
+            ]);
+            for (const call of ai.registerTool.mock.calls) {
+                expect(call[1]).toBe('logs');
+            }
+        });
+
+        /**
+         * Test: tools register when ai-assistant is already present.
+         *
+         * Verifies the synchronous-onAvailable semantics of watch() cover
+         * the case where the service registered before run().
+         */
+        it('should register log tools when ai-assistant is already registered', async () => {
+            const ai = createMockAiAssistant();
+            mockServiceRegistry.register('ai-assistant', ai);
+
+            await module.init({
+                pinoLogger: mockPino as any,
+                database: mockDatabase as any,
+                app: mockApp as any,
+                serviceRegistry: mockServiceRegistry
+            });
+            await module.run();
+
+            expect(ai.registerTool).toHaveBeenCalledTimes(3);
+        });
+
+        /**
+         * Test: run() survives a failing ai-assistant registration.
+         *
+         * Verifies that AI tooling stays optional — a throwing registerTool
+         * must not take the logs module (and thus the application) down.
+         */
+        it('should not throw when tool registration fails', async () => {
+            const ai = createMockAiAssistant();
+            ai.registerTool.mockImplementation(() => {
+                throw new Error('duplicate tool');
+            });
+            mockServiceRegistry.register('ai-assistant', ai);
+
+            await module.init({
+                pinoLogger: mockPino as any,
+                database: mockDatabase as any,
+                app: mockApp as any,
+                serviceRegistry: mockServiceRegistry
+            });
+
+            await expect(module.run()).resolves.not.toThrow();
         });
     });
 
@@ -229,7 +323,8 @@ describe('LogsModule', () => {
             await module.init({
                 pinoLogger: mockPino as any,
                 database: mockDatabase as any,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockServiceRegistry
             });
 
             const router = module.createRouter();
@@ -249,7 +344,8 @@ describe('LogsModule', () => {
             await module.init({
                 pinoLogger: mockPino as any,
                 database: mockDatabase as any,
-                app: mockApp as any
+                app: mockApp as any,
+                serviceRegistry: mockServiceRegistry
             });
 
             // Verify service accessible after init

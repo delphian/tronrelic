@@ -27,12 +27,13 @@
  */
 
 import type { Express } from 'express';
-import type { IDatabaseService, IModule, IModuleMetadata } from '@/types';
+import type { IDatabaseService, IModule, IModuleMetadata, IServiceRegistry, ServiceWatchDisposer } from '@/types';
 import type pino from 'pino';
 import { logger } from '../../lib/logger.js';
 import { SystemLogService } from './services/system-log.service.js';
 import { SystemLogController } from './api/system-log.controller.js';
 import { createSystemLogRouter } from './api/system-log.router.js';
+import { registerLogAiTools } from './ai-tools.js';
 import type { Router } from 'express';
 
 /**
@@ -63,6 +64,13 @@ export interface ILogsModuleDependencies {
      * The module will attach its admin router using IoC pattern.
      */
     app: Express;
+
+    /**
+     * Shared service registry, watched for the plugin-provided
+     * `ai-assistant` service so the module can register its read-only
+     * log AI tools whenever the assistant is available.
+     */
+    serviceRegistry: IServiceRegistry;
 }
 
 /**
@@ -136,6 +144,14 @@ export class LogsModule implements IModule<ILogsModuleDependencies> {
     private pinoLogger!: pino.Logger;
     private database!: IDatabaseService;
     private app!: Express;
+    private serviceRegistry!: IServiceRegistry;
+
+    /**
+     * Disposer for the ai-assistant service-registry watch created in run().
+     * Modules live for the process lifetime, so this is held for symmetry
+     * with the plugin facade pattern rather than ever being invoked.
+     */
+    private unwatchAiAssistant: ServiceWatchDisposer | null = null;
 
     /**
      * Services created during init() phase.
@@ -174,6 +190,7 @@ export class LogsModule implements IModule<ILogsModuleDependencies> {
         this.pinoLogger = dependencies.pinoLogger;
         this.database = dependencies.database;
         this.app = dependencies.app;
+        this.serviceRegistry = dependencies.serviceRegistry;
 
         // Initialize SystemLogService singleton with Pino logger
         // After this, all logger.info/warn/error calls will save to MongoDB
@@ -229,6 +246,12 @@ export class LogsModule implements IModule<ILogsModuleDependencies> {
             this.logger.error({ error }, 'Failed to register system logs menu item');
             throw new Error(`Failed to register system logs menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
+
+        // Watch for the ai-assistant plugin service and contribute the
+        // read-only log AI tools whenever it is (re-)enabled. The watch
+        // pattern is required because the assistant is an optional plugin
+        // that loads after modules and can toggle at runtime.
+        this.unwatchAiAssistant = registerLogAiTools(this.serviceRegistry, this.logService, this.logger);
 
         // Router is mounted by system router via: router.use('/logs', createSystemLogRouter())
         this.logger.info('Logs module running (routes available via system router)');
