@@ -312,7 +312,7 @@ export function MenuNavClient({ namespace, items, generatedAt, ariaLabel, onItem
             ? item.url === activeUrl
             : item.url === '/'
                 ? pathname === '/'
-                : pathname.startsWith(item.url!);
+                : !!item.url && pathname.startsWith(item.url);
 
         // Nested rows (inside category dropdowns) are vertical-list items
         // where icon-top and label-hiding both degrade readability. Force

@@ -22,8 +22,7 @@
  */
 'use client';
 
-import type { MouseEvent as ReactMouseEvent } from 'react';
-import type { MenuNodeSerialized } from '@/shared';
+import type { ISubMenuItem } from '@/types';
 import { MenuNavClient } from './MenuNavClient';
 
 /**
@@ -34,7 +33,7 @@ export interface ISubMenuProps {
     namespace: string;
 
     /** Serialized menu nodes for the namespace, fetched SSR-first by the caller. */
-    items: MenuNodeSerialized[];
+    items: ISubMenuItem[];
 
     /**
      * Url of the active tab. Highlights the matching leaf instead of deriving
@@ -47,7 +46,7 @@ export interface ISubMenuProps {
      * navigation, letting the page drive in-page tab state. Omitted leaves the
      * row as ordinary navigation links.
      */
-    onSelect?: (item: MenuNodeSerialized) => void;
+    onSelect?: (item: ISubMenuItem) => void;
 
     /** Optional accessible label for the nav element. */
     ariaLabel?: string;
@@ -77,9 +76,7 @@ export function SubMenu({ namespace, items, activeUrl, onSelect, ariaLabel, gene
             generatedAt={generatedAt}
             ariaLabel={ariaLabel}
             activeUrl={activeUrl}
-            onItemSelect={onSelect
-                ? (item: MenuNodeSerialized, _event: ReactMouseEvent<HTMLAnchorElement>) => onSelect(item)
-                : undefined}
+            onItemSelect={onSelect ? (item) => onSelect(item) : undefined}
         />
     );
 }
