@@ -202,6 +202,13 @@ services:
             # Backend URL for SSR (reads from .env: http://backend:4000 for Docker, http://localhost:4000 for local)
             - SITE_BACKEND=${SITE_BACKEND}
 
+            # Public site domain used ONLY by the degraded SSR fallback in
+            # serverConfig.ts. Under normal operation siteUrl comes from the
+            # backend /api/config/public response; if the backend is unreachable
+            # during a cold start the fallback emits canonical/OG/sitemap URLs
+            # from this value instead of defaulting to http://localhost:3000.
+            - SITE_URL=${SITE_URL}
+
             # NOTE: NEXT_PUBLIC_* variables removed
             # Runtime config is fetched from backend API and injected via SSR
             # See docs/system/system-runtime-config.md for details
