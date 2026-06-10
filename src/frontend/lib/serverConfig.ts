@@ -116,6 +116,19 @@ let fallbackRetryAt = 0;
 const FALLBACK_RETRY_MS = 10_000;
 
 /**
+ * In-flight fetch shared by concurrent callers to prevent a cache stampede.
+ *
+ * Next.js invokes getServerConfig() once per SSR request. During cold start —
+ * or every FALLBACK_RETRY_MS tick while the backend is down — many requests
+ * arrive before cachedConfig or the fallback window is populated. Without
+ * deduplication each would open its own /api/config/public fetch, stacking N
+ * five-second timeouts and hammering a backend that is already struggling.
+ * Holding the single in-flight promise here collapses that burst into one
+ * fetch; it is cleared in the finally below so the next window can retry.
+ */
+let activeFetchPromise: Promise<RuntimeConfig> | null = null;
+
+/**
  * Fetches runtime configuration from backend and caches it.
  *
  * Flow:
@@ -150,67 +163,83 @@ export async function getServerConfig(): Promise<RuntimeConfig> {
         return fallbackConfig;
     }
 
+    // Join an already in-flight fetch instead of opening a duplicate. This is
+    // what bounds an outage to one retry per FALLBACK_RETRY_MS window even
+    // under concurrent SSR traffic — without it, every request that clears the
+    // two guards above would race its own fetch.
+    if (activeFetchPromise) {
+        return activeFetchPromise;
+    }
+
     // Resolved outside the try: a missing SITE_BACKEND must surface as a
     // deployment error, not degrade into the unreachable-backend fallback.
     // Trailing-slash normalization happens inside getServerSideApiUrl().
     const backendUrl = getServerSideApiUrl();
 
-    try {
-        const response = await fetch(`${backendUrl}/api/config/public`, {
-            cache: 'no-store', // Don't let Next.js cache this (we cache manually)
-            signal: AbortSignal.timeout(5000) // 5 second timeout
-        });
+    activeFetchPromise = (async () => {
+        try {
+            const response = await fetch(`${backendUrl}/api/config/public`, {
+                cache: 'no-store', // Don't let Next.js cache this (we cache manually)
+                signal: AbortSignal.timeout(5000) // 5 second timeout
+            });
 
-        if (!response.ok) {
-            throw new Error(`Config fetch failed: ${response.status}`);
+            if (!response.ok) {
+                throw new Error(`Config fetch failed: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (!data.success || !data.config) {
+                throw new Error('Invalid config response format');
+            }
+
+            // Cache the live config for container lifetime and clear any prior
+            // degraded fallback so subsequent requests stop serving it.
+            cachedConfig = data.config;
+            fallbackConfig = null;
+            fallbackRetryAt = 0;
+            console.log('[ServerConfig] Fetched and cached runtime config from backend:', data.config.siteUrl);
+
+            return data.config;
+        } catch (error) {
+            // Backend unreachable — degrade so SSR keeps rendering.
+            console.warn('[ServerConfig] Failed to fetch runtime config, using fallback:', error);
+
+            const siteUrl = process.env.SITE_URL || 'http://localhost:3000';
+
+            const degraded: RuntimeConfig = {
+                siteUrl: siteUrl.replace(/\/$/, ''),
+                apiUrl: `${backendUrl}/api`.replace(/\/$/, ''),
+                socketUrl: backendUrl.replace(/\/$/, ''),
+                chainParameters: {
+                    totalEnergyLimit: 180_000_000_000,
+                    totalEnergyCurrentLimit: 180_000_000_000,
+                    totalFrozenForEnergy: 19_000_000_000_000_000, // ~19B TRX staked for energy (network average)
+                    energyPerTrx: 9.5, // 180B / 19B TRX (live network ratio)
+                    energyFee: 100,
+                    totalBandwidthLimit: 43_200_000_000,
+                    totalFrozenForBandwidth: 27_000_000_000_000_000, // ~27B TRX staked for bandwidth (network average)
+                    bandwidthPerTrx: 1.6 // 43.2B / 27B TRX (live network ratio)
+                },
+                isUsingFallback: true
+            };
+
+            // Cache the fallback ONLY briefly. Unlike the live config it is never
+            // latched for the container lifetime — once the window elapses the
+            // next request retries the backend, so a transient blip cannot poison
+            // the frontend until a manual restart.
+            fallbackConfig = degraded;
+            fallbackRetryAt = Date.now() + FALLBACK_RETRY_MS;
+
+            return degraded;
+        } finally {
+            // Release the shared promise so the next window (success latches
+            // cachedConfig; failure latches the fallback window) can retry.
+            activeFetchPromise = null;
         }
+    })();
 
-        const data = await response.json();
-
-        if (!data.success || !data.config) {
-            throw new Error('Invalid config response format');
-        }
-
-        // Cache the live config for container lifetime and clear any prior
-        // degraded fallback so subsequent requests stop serving it.
-        cachedConfig = data.config;
-        fallbackConfig = null;
-        fallbackRetryAt = 0;
-        console.log('[ServerConfig] Fetched and cached runtime config from backend:', data.config.siteUrl);
-
-        return data.config;
-    } catch (error) {
-        // Backend unreachable — degrade so SSR keeps rendering.
-        console.warn('[ServerConfig] Failed to fetch runtime config, using fallback:', error);
-
-        const siteUrl = process.env.SITE_URL || 'http://localhost:3000';
-
-        const degraded: RuntimeConfig = {
-            siteUrl: siteUrl.replace(/\/$/, ''),
-            apiUrl: `${backendUrl}/api`.replace(/\/$/, ''),
-            socketUrl: backendUrl.replace(/\/$/, ''),
-            chainParameters: {
-                totalEnergyLimit: 180_000_000_000,
-                totalEnergyCurrentLimit: 180_000_000_000,
-                totalFrozenForEnergy: 19_000_000_000_000_000, // ~19B TRX staked for energy (network average)
-                energyPerTrx: 9.5, // 180B / 19B TRX (live network ratio)
-                energyFee: 100,
-                totalBandwidthLimit: 43_200_000_000,
-                totalFrozenForBandwidth: 27_000_000_000_000_000, // ~27B TRX staked for bandwidth (network average)
-                bandwidthPerTrx: 1.6 // 43.2B / 27B TRX (live network ratio)
-            },
-            isUsingFallback: true
-        };
-
-        // Cache the fallback ONLY briefly. Unlike the live config it is never
-        // latched for the container lifetime — once the window elapses the
-        // next request retries the backend, so a transient blip cannot poison
-        // the frontend until a manual restart.
-        fallbackConfig = degraded;
-        fallbackRetryAt = Date.now() + FALLBACK_RETRY_MS;
-
-        return degraded;
-    }
+    return activeFetchPromise;
 }
 
 /**
@@ -225,4 +254,5 @@ export function clearServerConfigCache(): void {
     cachedConfig = null;
     fallbackConfig = null;
     fallbackRetryAt = 0;
+    activeFetchPromise = null;
 }
