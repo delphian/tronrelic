@@ -7,6 +7,7 @@
  */
 
 import type { IAiTool } from './IAiTool.js';
+import type { IAiConversationMessage } from './IAiConversationMessage.js';
 
 /**
  * Options for a non-streaming AI query submitted through
@@ -33,6 +34,26 @@ import type { IAiTool } from './IAiTool.js';
 export interface IAiQueryOptions {
     /** The user's natural language prompt. Required. */
     prompt: string;
+
+    /**
+     * Prior conversation turns for multi-turn (chat) queries. When present,
+     * the AI Assistant seeds Claude's Messages request with these turns
+     * before appending `prompt` as the newest user turn — giving the model
+     * the full thread for context. Omit for one-shot queries (the default);
+     * the result is identical to passing an empty array.
+     *
+     * Turns are sent verbatim and are NOT template-expanded — only `prompt`
+     * and the system prompt resolve `{%variable%}` patterns, so a transcript
+     * stays a literal record of what was already said.
+     */
+    messages?: IAiConversationMessage[];
+
+    /**
+     * Optional conversation grouping id. Persisted on the query history
+     * record so every turn of one chat shares an id and can be grouped in
+     * the history view. Omit for one-shot queries.
+     */
+    conversationId?: string;
 
     /** Override the system prompt. Falls back to configured default. */
     systemPrompt?: string;
