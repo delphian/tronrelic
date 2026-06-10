@@ -11,6 +11,7 @@
 
 export type { IAiTool, IAiToolInputSchema } from './IAiTool.js';
 export { AI_TOOL_NAME_PATTERN } from './IAiTool.js';
+export type { IAiConversationMessage } from './IAiConversationMessage.js';
 export type { IAiAssistantService } from './IAiAssistantService.js';
 export type { IAiQueryOptions } from './IAiQueryOptions.js';
 export type { IAiQueryResult } from './IAiQueryResult.js';

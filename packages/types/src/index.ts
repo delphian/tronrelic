@@ -48,7 +48,7 @@ export type { IUserGroup, ICreateUserGroupInput, IUpdateUserGroupInput, IUserGro
 export type { ITronGridService, ITronGridAccountResponse, ITronGridAccountPermission } from './tron-grid/index.js';
 export type { IBlockStats, IBlock, IBlockchainService, ITransactionTimeseriesPoint } from './blockchain/index.js';
 export type { IToolsService, IAddressConversionResult, IAddressValidationResult } from './tools/index.js';
-export type { IAiTool, IAiToolInputSchema, IAiAssistantService, IAiQueryOptions, IAiQueryResult, IModelInfo } from './ai-tools/index.js';
+export type { IAiTool, IAiToolInputSchema, IAiConversationMessage, IAiAssistantService, IAiQueryOptions, IAiQueryResult, IModelInfo } from './ai-tools/index.js';
 export { AI_TOOL_NAME_PATTERN } from './ai-tools/index.js';
 export type {
     HookDescriptor,
