@@ -162,8 +162,14 @@ services:
             - ./.run:/app/.run
             # Mount uploads directory for file persistence
             - ./public/uploads:/app/public/uploads
+        # Gate readiness on /api/config/public actually serving a siteUrl, not
+        # just process liveness. The frontend's depends_on (service_healthy)
+        # waits on this, so "healthy" must mean the runtime-config endpoint is
+        # ready — otherwise the frontend can boot and lazily cache a degraded
+        # fallback. Marked unhealthy never restarts the backend (restart:always
+        # reacts to exit, not health), so this only tightens the startup gate.
         healthcheck:
-            test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/api/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); });"]
+            test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/api/config/public', (r) => { let d=''; r.on('data', c => d += c); r.on('end', () => { try { process.exit(r.statusCode === 200 && JSON.parse(d)?.config?.siteUrl ? 0 : 1); } catch { process.exit(1); } }); }).on('error', () => process.exit(1));"]
             interval: 30s
             timeout: 10s
             retries: 3

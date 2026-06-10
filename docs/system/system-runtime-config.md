@@ -27,7 +27,7 @@ Backend Database → /api/config/public → SSR Cache → HTML Injection → Cli
 
 ### Frontend SSR (Server-Side)
 
-`getServerConfig()` (`src/frontend/lib/serverConfig.ts`) fetches `/api/config/public` on first SSR request, caches in memory for the container's lifetime (zero overhead after), falls back to env vars if backend unavailable. All server components, `generateMetadata`, `sitemap.ts`, and `layout.tsx` `await getServerConfig()`.
+`getServerConfig()` (`src/frontend/lib/serverConfig.ts`) fetches `/api/config/public` on first SSR request and caches a *successful* response for the container's lifetime (zero overhead after). If the backend is unavailable it serves a degraded fallback pointing at the internal backend URL, but caches that fallback for only ~10s and retries on the next request. The fallback is never latched for the container lifetime — a transient backend blip self-heals instead of poisoning every client with unreachable, mixed-content URLs until a manual restart. All server components, `generateMetadata`, `sitemap.ts`, and `layout.tsx` `await getServerConfig()`.
 
 ### Frontend Client (Browser)
 

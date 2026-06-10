@@ -83,36 +83,71 @@ export interface RuntimeConfig {
 }
 
 /**
- * In-memory cache for runtime configuration.
- * Null until first fetch, then cached for container lifetime.
+ * In-memory cache for a *successful* runtime configuration fetch.
+ * Null until the first good fetch, then cached for the container lifetime.
+ * Only live config (isUsingFallback: false) is ever stored here.
  */
 let cachedConfig: RuntimeConfig | null = null;
+
+/**
+ * Short-lived cache for the degraded fallback config.
+ *
+ * The degraded fallback points the client at the internal backend URL
+ * (e.g. http://backend:4000), which the browser cannot reach. If we latched
+ * it for the container lifetime, a single transient backend blip during a
+ * lazy first fetch would poison every client with mixed-content/unreachable
+ * URLs until someone manually restarted the frontend. Instead we cache the
+ * fallback for only FALLBACK_RETRY_MS and retry on the next request, so the
+ * frontend self-heals within seconds of the backend recovering.
+ */
+let fallbackConfig: RuntimeConfig | null = null;
+
+/**
+ * Timestamp (ms) after which the cached fallback is considered stale and the
+ * backend is retried on the next call to getServerConfig().
+ */
+let fallbackRetryAt = 0;
+
+/**
+ * How long to serve the degraded fallback before retrying the backend. Bounds
+ * backend load during an outage (at most one retry per window) while keeping
+ * recovery fast once the backend is healthy again.
+ */
+const FALLBACK_RETRY_MS = 10_000;
 
 /**
  * Fetches runtime configuration from backend and caches it.
  *
  * Flow:
  * 1. First call: Fetches from backend /api/config/public
- * 2. Subsequent calls: Returns cached value (no fetch)
- * 3. On error: Falls back to environment variables (local dev safety)
+ * 2. After a successful fetch: Returns the cached live config (no fetch)
+ * 3. On error: Serves a degraded fallback, cached only briefly, then retries
  *
  * Fetch timing:
- * - Typically called during first SSR request (when layout.tsx renders)
- * - Happens once per container lifetime (not per request)
- * - Zero overhead after initial fetch
+ * - Typically called during the first SSR request (when layout.tsx renders)
+ * - A successful fetch happens once per container lifetime (zero overhead after)
+ * - While degraded, retries at most once per FALLBACK_RETRY_MS until success
  *
  * Error handling:
  * A missing SITE_BACKEND is a deployment error and throws — it is not
  * caught by the fallback below. If the backend is unreachable or returns
- * an error, falls back to a degraded config (isUsingFallback: true) so
- * SSR keeps rendering while the backend recovers.
+ * an error, serves a degraded config (isUsingFallback: true) so SSR keeps
+ * rendering, but caches it only briefly (FALLBACK_RETRY_MS) and retries the
+ * backend on the next request — the fallback is never latched for the
+ * container lifetime, so the frontend self-heals once the backend recovers.
  *
  * @returns Runtime configuration with siteUrl, apiUrl, and socketUrl
  */
 export async function getServerConfig(): Promise<RuntimeConfig> {
-    // Return cached value if already fetched
+    // Return the live config if we have one (latched for container lifetime).
     if (cachedConfig) {
         return cachedConfig;
+    }
+
+    // Serve the degraded fallback only inside its short retry window. Past it,
+    // fall through and re-attempt the backend so recovery is automatic.
+    if (fallbackConfig && Date.now() < fallbackRetryAt) {
+        return fallbackConfig;
     }
 
     // Resolved outside the try: a missing SITE_BACKEND must surface as a
@@ -136,8 +171,11 @@ export async function getServerConfig(): Promise<RuntimeConfig> {
             throw new Error('Invalid config response format');
         }
 
-        // Cache the config for container lifetime
+        // Cache the live config for container lifetime and clear any prior
+        // degraded fallback so subsequent requests stop serving it.
         cachedConfig = data.config;
+        fallbackConfig = null;
+        fallbackRetryAt = 0;
         console.log('[ServerConfig] Fetched and cached runtime config from backend:', data.config.siteUrl);
 
         return data.config;
@@ -147,7 +185,7 @@ export async function getServerConfig(): Promise<RuntimeConfig> {
 
         const siteUrl = process.env.SITE_URL || 'http://localhost:3000';
 
-        const fallbackConfig: RuntimeConfig = {
+        const degraded: RuntimeConfig = {
             siteUrl: siteUrl.replace(/\/$/, ''),
             apiUrl: `${backendUrl}/api`.replace(/\/$/, ''),
             socketUrl: backendUrl.replace(/\/$/, ''),
@@ -164,10 +202,14 @@ export async function getServerConfig(): Promise<RuntimeConfig> {
             isUsingFallback: true
         };
 
-        // Cache the fallback config (don't retry every request)
-        cachedConfig = fallbackConfig;
+        // Cache the fallback ONLY briefly. Unlike the live config it is never
+        // latched for the container lifetime — once the window elapses the
+        // next request retries the backend, so a transient blip cannot poison
+        // the frontend until a manual restart.
+        fallbackConfig = degraded;
+        fallbackRetryAt = Date.now() + FALLBACK_RETRY_MS;
 
-        return fallbackConfig;
+        return degraded;
     }
 }
 
@@ -181,4 +223,6 @@ export async function getServerConfig(): Promise<RuntimeConfig> {
  */
 export function clearServerConfigCache(): void {
     cachedConfig = null;
+    fallbackConfig = null;
+    fallbackRetryAt = 0;
 }
