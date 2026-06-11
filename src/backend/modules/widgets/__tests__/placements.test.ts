@@ -361,6 +361,25 @@ describe('PlacementService CRUD', () => {
         expect(cleared?.title).toBeUndefined();
     });
 
+    it('persists titleUrl on create and clears it with titleUrl: null', async () => {
+        const placement = await service.create({
+            typeId: 't',
+            zoneId: 'main-after',
+            routes: ['/'],
+            title: 'Operator Title',
+            titleUrl: '/markets'
+        });
+        expect(placement.titleUrl).toBe('/markets');
+
+        const updated = await service.update(placement.id, { titleUrl: '/u/TXyz' });
+        expect(updated?.titleUrl).toBe('/u/TXyz');
+
+        const cleared = await service.update(placement.id, { titleUrl: null });
+        expect(cleared?.titleUrl).toBeUndefined();
+        // Clearing the link leaves the title intact.
+        expect(cleared?.title).toBe('Operator Title');
+    });
+
     it('update preserves untouched fields', async () => {
         const placement = await service.create({
             typeId: 't',

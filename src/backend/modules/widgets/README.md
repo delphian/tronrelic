@@ -71,7 +71,7 @@ All endpoints require admin auth (cookie path: verified wallet + admin group; se
 | GET | `/api/admin/system/widgets/placements` | — | `{ success, placements: IWidgetPlacement[] }` | Query: `zoneId?`, `pluginId?`, `source?` (`plugin`\|`operator`), `enabledOnly?` |
 | GET | `/api/admin/system/widgets/placements/:id` | — | `{ success, placement }` or 404 | |
 | POST | `/api/admin/system/widgets/placements` | `IPlacementInput` | `{ success, placement }` 201 | Always `source: 'operator'`; rejects unknown `typeId`/`zoneId` |
-| PATCH | `/api/admin/system/widgets/placements/:id` | `IPlacementPatch` | `{ success, placement }` or 404 | Operator-editable on every row, including plugin-source. `title: null` clears the override |
+| PATCH | `/api/admin/system/widgets/placements/:id` | `IPlacementPatch` | `{ success, placement }` or 404 | Operator-editable on every row, including plugin-source. `title: null` / `titleUrl: null` clears that field; `titleUrl` must be a root-relative internal path |
 | DELETE | `/api/admin/system/widgets/placements/:id` | — | 204 / 400 / 404 | 400 on plugin-source rows (use disable or restore-defaults) |
 | POST | `/api/admin/system/widgets/placements/:id/restore-defaults` | — | `{ success, placement }` | 400 on operator rows; 409 when plugin has not registered in this process |
 
@@ -115,6 +115,7 @@ The placement service emits via a callback `WidgetsModule.init()` wires to `WebS
 | `routes` | string[] | Route filter — empty matches every route |
 | `order` | number | Sort key within zone (lower renders first); plugin default `100` |
 | `title` | string? | Operator override of widget heading |
+| `titleUrl` | string? | Operator-only root-relative URL that links the heading; only renders when `title` is set |
 | `instanceConfig` | object? | Per-instance config; the type's data fetcher consumes it |
 | `enabled` | boolean | `false` hides the row at SSR resolve |
 | `source` | `'plugin'` \| `'operator'` | Discriminator; controls disable vs. delete semantics |
@@ -127,9 +128,9 @@ Indexes (migration 001): `(typeId, pluginId)` sparse unique for plugin-row atomi
 
 **Plugin enable** — Plugin code calls `widgets.registerWidget(input, pluginId)` during `init()`. The service caches the original args under `${pluginId}::${typeId}` (for restore-defaults), mints a type descriptor via `defineWidgetType` and stores it in the type registry, then calls `placementService.ensurePluginPlacement(...)` which upserts the row with `enabled: true` while preserving operator customisations on existing rows via `$setOnInsert`.
 
-**Plugin disable** — `PluginManagerService` looks up the widgets service from the registry and calls `widgets.unregisterAllForOwner(pluginId)`, which soft-disables every plugin-source placement, disposes every owned widget type, and disposes every owned zone. Placement rows stay in MongoDB; operator customisations to `order`, `routes`, `title`, `instanceConfig` survive the next enable. The plugin-default cache is *not* cleared so restore-defaults continues to work on soft-disabled rows.
+**Plugin disable** — `PluginManagerService` looks up the widgets service from the registry and calls `widgets.unregisterAllForOwner(pluginId)`, which soft-disables every plugin-source placement, disposes every owned widget type, and disposes every owned zone. Placement rows stay in MongoDB; operator customisations to `order`, `routes`, `title`, `titleUrl`, `instanceConfig` survive the next enable. The plugin-default cache is *not* cleared so restore-defaults continues to work on soft-disabled rows.
 
-**Operator create/edit/delete** — flows through the admin REST endpoints, which adapt to `IWidgetsService` methods. Operator-source rows go in with `source: 'operator'` and no `pluginId`. Plugin-source rows can be patched (order, routes, title, enabled) but not deleted via the API.
+**Operator create/edit/delete** — flows through the admin REST endpoints, which adapt to `IWidgetsService` methods. Operator-source rows go in with `source: 'operator'` and no `pluginId`. Plugin-source rows can be patched (order, routes, title, titleUrl, instanceConfig, enabled) but not deleted via the API.
 
 **Restore-defaults** — only valid on plugin-source rows. The service looks up cached registration args by `(pluginId, typeId)` and applies them atomically via `placementService.restoreToPluginDefaults(id, defaults)`; the row's id and `createdAt` survive. Cache misses (plugin never registered this process) throw with a message that translates to HTTP 409 — re-enable the plugin to repopulate.
 

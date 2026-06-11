@@ -272,3 +272,83 @@ describe('PlacementsController instanceConfig schema validation', () => {
         });
     });
 });
+
+describe('PlacementsController titleUrl validation', () => {
+    let widgets: IWidgetsService;
+    let logger: ISystemLogService;
+    let controller: PlacementsController;
+    let res: ReturnType<typeof buildResponseStub>;
+
+    beforeEach(() => {
+        logger = buildLoggerStub();
+        res = buildResponseStub();
+    });
+
+    it('rejects an off-site titleUrl with 400 and never reaches the service', async () => {
+        widgets = buildWidgetsServiceStub({
+            createPlacement: vi.fn(async () => { throw new Error('should not reach service'); })
+        });
+        controller = new PlacementsController(widgets, logger);
+
+        const req = {
+            body: { ...validCreateBody, titleUrl: 'https://evil.example.com' }
+        } as Request;
+
+        await controller.createPlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json.mock.calls[0][0].error).toMatch(/titleUrl/);
+        expect(widgets.createPlacement).not.toHaveBeenCalled();
+    });
+
+    it('rejects a protocol-relative titleUrl', async () => {
+        widgets = buildWidgetsServiceStub();
+        controller = new PlacementsController(widgets, logger);
+
+        const req = {
+            body: { ...validCreateBody, titleUrl: '//evil.example.com' }
+        } as Request;
+
+        await controller.createPlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(widgets.createPlacement).not.toHaveBeenCalled();
+    });
+
+    it('accepts an internal root-relative titleUrl and forwards it to the service', async () => {
+        widgets = buildWidgetsServiceStub({
+            createPlacement: vi.fn(async () => ({ id: 'new-id' } as IWidgetPlacement))
+        });
+        controller = new PlacementsController(widgets, logger);
+
+        const req = {
+            body: { ...validCreateBody, titleUrl: '/markets?tab=energy' }
+        } as Request;
+
+        await controller.createPlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(widgets.createPlacement).toHaveBeenCalledWith(
+            expect.objectContaining({ titleUrl: '/markets?tab=energy' })
+        );
+    });
+
+    it('forwards titleUrl: null on patch as an explicit clear signal', async () => {
+        widgets = buildWidgetsServiceStub({
+            updatePlacement: vi.fn(async () => ({ id: 'p1' } as IWidgetPlacement))
+        });
+        controller = new PlacementsController(widgets, logger);
+
+        const req = {
+            params: { id: 'p1' },
+            body: { titleUrl: null }
+        } as unknown as Request;
+
+        await controller.updatePlacement(req, res);
+
+        expect(widgets.updatePlacement).toHaveBeenCalledWith(
+            'p1',
+            expect.objectContaining({ titleUrl: null })
+        );
+    });
+});

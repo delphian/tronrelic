@@ -61,6 +61,25 @@ const MAX_ORDER = 10_000;
 const MAX_TITLE_LENGTH = 80;
 
 /**
+ * Upper bound on a placement `titleUrl` length. Internal paths are
+ * short by nature; 512 leaves ample room for query strings and hash
+ * fragments without inviting pathological inputs.
+ */
+const MAX_TITLE_URL_LENGTH = 512;
+
+/**
+ * Format gate for a placement `titleUrl`. The heading link is
+ * internal-only: the value must be a single-leading-slash root-relative
+ * path (e.g. `/markets`, `/u/TXyz?tab=holdings#summary`). The negative
+ * lookahead rejects protocol-relative (`//host`) and the backslash
+ * trick (`/\host`) that browsers normalise to off-site navigation;
+ * forbidding whitespace and backslash anywhere blocks header/newline
+ * injection. A leading `/` makes scheme URIs (`javascript:`, `data:`)
+ * structurally impossible, so no separate scheme blocklist is needed.
+ */
+const INTERNAL_PATH_PATTERN = /^\/(?![/\\])[^\s\\]*$/;
+
+/**
  * Format gate for zone ids. Lowercase-dotted (letters, digits,
  * hyphens, underscores, colons for namespaced cases), starts with a
  * letter, max 64 chars. Anything else is malformed input and must not
@@ -359,7 +378,7 @@ export class PlacementsController {
     };
 
     private parseCreateBody(body: unknown):
-        | { input: { typeId: string; zoneId: string; routes: string[]; order?: number; title?: string; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
+        | { input: { typeId: string; zoneId: string; routes: string[]; order?: number; title?: string; titleUrl?: string; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
         | { error: string } {
         if (!body || typeof body !== 'object') {
             return { error: 'Request body must be an object' };
@@ -389,6 +408,9 @@ export class PlacementsController {
         const titleResult = this.parseTitle(b.title);
         if ('error' in titleResult) return titleResult;
 
+        const titleUrlResult = this.parseTitleUrl(b.titleUrl);
+        if ('error' in titleUrlResult) return titleUrlResult;
+
         const instanceConfigResult = this.parseInstanceConfig(b.instanceConfig);
         if ('error' in instanceConfigResult) return instanceConfigResult;
 
@@ -401,6 +423,7 @@ export class PlacementsController {
                 routes: routesResult.routes,
                 order: orderResult.order,
                 title: titleResult.title,
+                titleUrl: titleUrlResult.titleUrl,
                 instanceConfig: instanceConfigResult.instanceConfig,
                 enabled
             }
@@ -408,13 +431,13 @@ export class PlacementsController {
     }
 
     private parsePatchBody(body: unknown):
-        | { patch: { zoneId?: string; routes?: string[]; order?: number; title?: string | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
+        | { patch: { zoneId?: string; routes?: string[]; order?: number; title?: string | null; titleUrl?: string | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
         | { error: string } {
         if (!body || typeof body !== 'object') {
             return { error: 'Request body must be an object' };
         }
         const b = body as Record<string, unknown>;
-        const patch: { zoneId?: string; routes?: string[]; order?: number; title?: string | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } = {};
+        const patch: { zoneId?: string; routes?: string[]; order?: number; title?: string | null; titleUrl?: string | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } = {};
 
         if (b.zoneId !== undefined) {
             if (typeof b.zoneId !== 'string' || b.zoneId.length === 0) {
@@ -445,6 +468,16 @@ export class PlacementsController {
                 const result = this.parseTitle(b.title);
                 if ('error' in result) return result;
                 patch.title = result.title;
+            }
+        }
+
+        if (b.titleUrl !== undefined) {
+            if (b.titleUrl === null) {
+                patch.titleUrl = null;
+            } else {
+                const result = this.parseTitleUrl(b.titleUrl);
+                if ('error' in result) return result;
+                patch.titleUrl = result.titleUrl;
             }
         }
 
@@ -509,6 +542,30 @@ export class PlacementsController {
             return { error: `title must be at most ${MAX_TITLE_LENGTH} characters` };
         }
         return { title: trimmed };
+    }
+
+    /**
+     * Validate a `titleUrl` heading link. Accepts only internal,
+     * root-relative paths — see {@link INTERNAL_PATH_PATTERN} for the
+     * rejected forms. Returns the trimmed value, or a structured error
+     * the caller maps to a 400.
+     */
+    private parseTitleUrl(value: unknown): { titleUrl?: string } | { error: string } {
+        if (value === undefined) return { titleUrl: undefined };
+        if (typeof value !== 'string') {
+            return { error: 'titleUrl must be a string' };
+        }
+        const trimmed = value.trim();
+        if (trimmed.length === 0) {
+            return { error: 'titleUrl must be non-empty when provided' };
+        }
+        if (trimmed.length > MAX_TITLE_URL_LENGTH) {
+            return { error: `titleUrl must be at most ${MAX_TITLE_URL_LENGTH} characters` };
+        }
+        if (!INTERNAL_PATH_PATTERN.test(trimmed)) {
+            return { error: "titleUrl must be a root-relative path beginning with '/' (e.g. '/markets'); absolute or off-site URLs are not allowed" };
+        }
+        return { titleUrl: trimmed };
     }
 
     private parseInstanceConfig(value: unknown):

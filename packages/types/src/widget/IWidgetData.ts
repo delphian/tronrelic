@@ -34,6 +34,14 @@ export interface IWidgetData {
     title?: string;
 
     /**
+     * Optional root-relative URL that turns the rendered title into a
+     * link. Carried verbatim from the resolved placement; only takes
+     * effect when `title` is also present, since the host chrome links
+     * the title text.
+     */
+    titleUrl?: string;
+
+    /**
      * Pre-fetched data for SSR rendering.
      *
      * This is the result of calling the widget's fetchData() function.

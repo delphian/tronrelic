@@ -151,6 +151,7 @@ export class PlacementResolver {
                 pluginId: owner,
                 order: placement.order,
                 title: placement.title,
+                titleUrl: placement.titleUrl,
                 data,
                 // Forward the same instance config the fetcher received so
                 // the frontend component can branch on it. Mirror the

@@ -41,12 +41,17 @@ export interface IPlacementListFilter {
  * Omitting `title` from the patch leaves the existing value unchanged.
  * `title: ''` is rejected at the controller boundary so blank cannot
  * sneak in through clients that drop empty strings.
+ *
+ * `titleUrl` follows the same three-state convention as `title`:
+ * a string sets the heading link, `null` clears it (`$unset`), and
+ * omission leaves it unchanged.
  */
 export interface IPlacementPatch {
     zoneId?: string;
     routes?: string[];
     order?: number;
     title?: string | null;
+    titleUrl?: string | null;
     instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }
