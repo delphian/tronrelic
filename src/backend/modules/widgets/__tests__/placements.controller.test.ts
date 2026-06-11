@@ -315,6 +315,26 @@ describe('PlacementsController titleUrl validation', () => {
         expect(widgets.createPlacement).not.toHaveBeenCalled();
     });
 
+    it.each([
+        '/..//evil.example.com',
+        '/abc/..//evil.example.com',
+        '/markets//holdings'
+    ])('rejects a titleUrl with a traversal or double-slash bypass: %s', async (titleUrl) => {
+        widgets = buildWidgetsServiceStub({
+            createPlacement: vi.fn(async () => { throw new Error('should not reach service'); })
+        });
+        controller = new PlacementsController(widgets, logger);
+
+        const req = {
+            body: { ...validCreateBody, titleUrl }
+        } as Request;
+
+        await controller.createPlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(widgets.createPlacement).not.toHaveBeenCalled();
+    });
+
     it('accepts an internal root-relative titleUrl and forwards it to the service', async () => {
         widgets = buildWidgetsServiceStub({
             createPlacement: vi.fn(async () => ({ id: 'new-id' } as IWidgetPlacement))
