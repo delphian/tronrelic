@@ -74,10 +74,14 @@ const MAX_TITLE_URL_LENGTH = 512;
  * lookahead rejects protocol-relative (`//host`) and the backslash
  * trick (`/\host`) that browsers normalise to off-site navigation;
  * forbidding whitespace and backslash anywhere blocks header/newline
- * injection. A leading `/` makes scheme URIs (`javascript:`, `data:`)
+ * injection. The `(?!.*\/\/)` and `(?!.*\.\.)` guards forbid a `//`
+ * sequence or `..` traversal segment *anywhere* in the value, closing
+ * the normalisation bypass where `/..//evil.com` collapses to the
+ * protocol-relative `//evil.com` once a client resolves dot segments.
+ * A leading `/` makes scheme URIs (`javascript:`, `data:`)
  * structurally impossible, so no separate scheme blocklist is needed.
  */
-const INTERNAL_PATH_PATTERN = /^\/(?![/\\])[^\s\\]*$/;
+const INTERNAL_PATH_PATTERN = /^\/(?![/\\])(?!.*\/\/)(?!.*\.\.)[^\s\\]*$/;
 
 /**
  * Format gate for zone ids. Lowercase-dotted (letters, digits,
