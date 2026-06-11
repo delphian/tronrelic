@@ -23,8 +23,8 @@ import type { PlacementSource } from '@/types';
  * Placements survive plugin disable/re-enable cycles because plugin
  * lifecycle calls `softDisable` (flip `enabled: false`) rather than
  * deleting rows. Operator customisations to `order`, `routes`,
- * `title`, or `instanceConfig` therefore persist across plugin
- * lifecycle events. Hard delete is reserved for the admin API.
+ * `title`, `titleUrl`, or `instanceConfig` therefore persist across
+ * plugin lifecycle events. Hard delete is reserved for the admin API.
  */
 export interface IWidgetPlacementDocument {
     _id: ObjectId;
@@ -38,6 +38,8 @@ export interface IWidgetPlacementDocument {
     order: number;
     /** Optional heading rendered above the widget. */
     title?: string;
+    /** Optional root-relative URL linking the heading. Operator-only. */
+    titleUrl?: string;
     /** Per-instance configuration. */
     instanceConfig?: Record<string, unknown>;
     /** Whether the placement currently renders. */

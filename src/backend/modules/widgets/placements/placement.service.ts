@@ -295,6 +295,7 @@ export class PlacementService implements IPlacementService {
             updatedAt: now
         };
         if (input.title !== undefined) doc.title = input.title;
+        if (input.titleUrl !== undefined) doc.titleUrl = input.titleUrl;
         if (input.instanceConfig !== undefined) doc.instanceConfig = input.instanceConfig;
         if (source === 'plugin' && options.pluginId !== undefined) doc.pluginId = options.pluginId;
 
@@ -324,6 +325,13 @@ export class PlacementService implements IPlacementService {
             unsetOps.title = '';
         } else if (patch.title !== undefined) {
             setOps.title = patch.title;
+        }
+        if (patch.titleUrl === null) {
+            // Explicit unset signal — drop the heading link so the
+            // title renders as plain text again.
+            unsetOps.titleUrl = '';
+        } else if (patch.titleUrl !== undefined) {
+            setOps.titleUrl = patch.titleUrl;
         }
         if (patch.instanceConfig !== undefined) setOps.instanceConfig = patch.instanceConfig;
         if (patch.enabled !== undefined) setOps.enabled = patch.enabled;
@@ -368,10 +376,11 @@ export class PlacementService implements IPlacementService {
      * restore from a plain update.
      *
      * @param id - Placement id (stringified ObjectId).
-     * @param defaults - Plugin defaults to apply. `instanceConfig` is
-     *   not part of plugin registration args — it is operator state —
-     *   so it is intentionally absent from the input. The row's
-     *   existing `instanceConfig` survives restore.
+     * @param defaults - Plugin defaults to apply. `instanceConfig` and
+     *   `titleUrl` are not part of plugin registration args — they are
+     *   operator state — so they are intentionally absent from the
+     *   input. The row's existing `instanceConfig` and `titleUrl`
+     *   survive restore.
      * @returns Updated placement, or null when no row matches.
      */
     async restoreToPluginDefaults(
@@ -458,6 +467,7 @@ function toPublic(doc: IWidgetPlacementDocument): IWidgetPlacement {
         routes: doc.routes,
         order: doc.order,
         title: doc.title,
+        titleUrl: doc.titleUrl,
         instanceConfig: doc.instanceConfig,
         enabled: doc.enabled,
         source: doc.source,

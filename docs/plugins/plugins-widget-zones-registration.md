@@ -8,7 +8,7 @@ Getting registration wrong fails in operator-visible ways: the widget never appe
 
 ## What You Register
 
-A plugin registers a **widget type** — an id, label, a `defaultDataFetcher`, and default placement parameters (zone, routes, order, optional title). The platform stores the type descriptor in an in-memory type registry and upserts a `source: 'plugin'` row into `module_widgets_placements` keyed by `(typeId, pluginId)`. From that point forward the placement is operator-owned: `zoneId`, `routes`, `order`, `title`, `instanceConfig`, and `enabled` are all overridable through `/system/widgets`. The plugin's stated defaults are cached so an operator can revert via restore-defaults.
+A plugin registers a **widget type** — an id, label, a `defaultDataFetcher`, and default placement parameters (zone, routes, order, optional title). The platform stores the type descriptor in an in-memory type registry and upserts a `source: 'plugin'` row into `module_widgets_placements` keyed by `(typeId, pluginId)`. From that point forward the placement is operator-owned: `zoneId`, `routes`, `order`, `title`, `titleUrl`, `instanceConfig`, and `enabled` are all overridable through `/system/widgets`. The plugin's stated defaults are cached so an operator can revert via restore-defaults.
 
 A plugin may *additionally* register **zones** if it wants to expose new injection points other plugins (or operators) can target. Zones are runtime-only — they live for the plugin's enabled lifetime and disappear on disable. Most plugins consume zones rather than declare them.
 
@@ -82,7 +82,7 @@ widgets.registerType({
 
 ## Operator Overrides
 
-Once a plugin-source row exists, the operator can edit it from `/system/widgets`. Editable fields are `zoneId`, `routes`, `order`, `title`, `instanceConfig`, and `enabled`. The plugin's original `registerWidget(input, ownerId)` arguments are cached in process so the operator can revert via the restore-defaults action — which resets everything except the row's id and `createdAt`. Operators can also create entirely new placements of the same widget type pointing at different zones or routes; those new rows are `source: 'operator'` and can be deleted outright.
+Once a plugin-source row exists, the operator can edit it from `/system/widgets`. Editable fields are `zoneId`, `routes`, `order`, `title`, `titleUrl`, `instanceConfig`, and `enabled`. The plugin's original `registerWidget(input, ownerId)` arguments are cached in process so the operator can revert via the restore-defaults action — which resets everything except the row's id and `createdAt`. Operators can also create entirely new placements of the same widget type pointing at different zones or routes; those new rows are `source: 'operator'` and can be deleted outright.
 
 Treat the values in `IRegisterWidgetInput` as *defaults*, not invariants. Anything an operator might reasonably want to retarget — zone, route filter, order, instance config — belongs in those defaults rather than hardcoded in the data fetcher.
 

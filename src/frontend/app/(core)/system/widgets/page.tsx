@@ -78,6 +78,7 @@ interface IPlacement {
     routes: string[];
     order: number;
     title?: string;
+    titleUrl?: string;
     instanceConfig?: Record<string, unknown>;
     enabled: boolean;
     source: 'plugin' | 'operator';
@@ -88,13 +89,15 @@ interface IPlacement {
 
 /**
  * Patch shape sent to PATCH /placements/:id. `title: null` is the
- * explicit unset signal honored server-side as `$unset: { title }`.
+ * explicit unset signal honored server-side as `$unset: { title }`;
+ * `titleUrl: null` clears the heading link the same way.
  */
 interface IPlacementPatch {
     zoneId?: string;
     routes?: string[];
     order?: number;
     title?: string | null | undefined;
+    titleUrl?: string | null | undefined;
     instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }
@@ -109,6 +112,7 @@ interface IPlacementCreate {
     routes: string[];
     order?: number;
     title?: string;
+    titleUrl?: string;
     instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }
@@ -1187,6 +1191,7 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
     const [routeDraft, setRouteDraft] = useState<string>('');
     const [order, setOrder] = useState<number>(initial?.order ?? 100);
     const [title, setTitle] = useState<string>(initial?.title ?? '');
+    const [titleUrl, setTitleUrl] = useState<string>(initial?.titleUrl ?? '');
     const [enabled, setEnabled] = useState<boolean>(initial?.enabled ?? true);
     const [saving, setSaving] = useState<boolean>(false);
     const [routeError, setRouteError] = useState<string | null>(null);
@@ -1371,6 +1376,7 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
                         routes,
                         order,
                         title: title.trim().length > 0 ? title.trim() : undefined,
+                        titleUrl: titleUrl.trim().length > 0 ? titleUrl.trim() : undefined,
                         instanceConfig: parsedInstanceConfig,
                         enabled
                     };
@@ -1390,11 +1396,23 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
                             : hadInitialTitle
                                 ? null
                                 : undefined;
+                    // titleUrl follows the same three-state convention
+                    // as title: set when non-empty, explicit null clear
+                    // when blanked after having a value, omit otherwise.
+                    const trimmedTitleUrl = titleUrl.trim();
+                    const hadInitialTitleUrl = typeof initial?.titleUrl === 'string' && initial.titleUrl.length > 0;
+                    const titleUrlPatch: string | null | undefined =
+                        trimmedTitleUrl.length > 0
+                            ? trimmedTitleUrl
+                            : hadInitialTitleUrl
+                                ? null
+                                : undefined;
                     const payload: IPlacementPatch = {
                         zoneId,
                         routes,
                         order,
                         title: titlePatch,
+                        titleUrl: titleUrlPatch,
                         instanceConfig: parsedInstanceConfig,
                         enabled
                     };
@@ -1404,7 +1422,7 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
                 setSaving(false);
             }
         },
-        [configFields, configValue, enabled, initial?.title, mode, onSubmit, order, rawMode, rawText, routes, title, typeId, zoneId]
+        [configFields, configValue, enabled, initial?.title, initial?.titleUrl, mode, onSubmit, order, rawMode, rawText, routes, title, titleUrl, typeId, zoneId]
     );
 
     const canSubmit = typeId.length > 0 && zoneId.length > 0;
@@ -1528,6 +1546,20 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
                         maxLength={80}
                         disabled={saving}
                     />
+                </div>
+                <div className={styles.field}>
+                    <label htmlFor="wp-title-url">Title link</label>
+                    <Input
+                        id="wp-title-url"
+                        value={titleUrl}
+                        onChange={(e) => setTitleUrl(e.target.value)}
+                        placeholder="/markets (optional)"
+                        maxLength={512}
+                        disabled={saving}
+                    />
+                    <span className={styles.field_hint}>
+                        Internal path only (must start with <code>/</code>). Links the title; needs a title override to show.
+                    </span>
                 </div>
             </div>
 

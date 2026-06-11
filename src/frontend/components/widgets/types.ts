@@ -31,6 +31,12 @@ export interface WidgetData {
     title?: string;
 
     /**
+     * Optional root-relative URL that turns the rendered title into a
+     * link. Only takes effect when `title` is also present.
+     */
+    titleUrl?: string;
+
+    /**
      * Pre-fetched data for SSR rendering.
      *
      * The structure is defined by the individual plugin and can be any

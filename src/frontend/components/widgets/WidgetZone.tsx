@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import Link from 'next/link';
 import type { WidgetData } from './types';
 import { getWidgetComponent } from './widgets.generated';
 import { WidgetWithContext } from './WidgetWithContext';
@@ -120,7 +121,13 @@ export function WidgetZone({
                     data-plugin-id={widget.pluginId}
                 >
                     {widget.title && (
-                        <h2 className="text-xl font-semibold mb-4">{widget.title}</h2>
+                        <h2 className="text-xl font-semibold mb-4">
+                            {widget.titleUrl ? (
+                                <Link href={widget.titleUrl}>{widget.title}</Link>
+                            ) : (
+                                widget.title
+                            )}
+                        </h2>
                     )}
                     <WidgetRenderer widget={widget} route={route} params={params} />
                 </div>

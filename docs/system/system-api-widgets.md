@@ -60,6 +60,7 @@ The placements controller refuses input on any of:
 - `routes` entry that doesn't start with `/`, contains whitespace, or carries a glob marker outside the trailing segment.
 - `order` outside `[0, 10000]`, non-integer, or non-finite.
 - `title` empty after trim, or longer than 80 characters. Pass `title: null` on PATCH to clear an existing override (`$unset`).
+- `titleUrl` not a root-relative internal path (must start with a single `/`; protocol-relative, absolute, or scheme URLs are rejected), or longer than 512 characters. Pass `titleUrl: null` on PATCH to clear the heading link (`$unset`).
 - `instanceConfig` not a plain object.
 
 ## Route Pattern Grammar

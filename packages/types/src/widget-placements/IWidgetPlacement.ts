@@ -49,6 +49,15 @@ export interface IWidgetPlacement {
     /** Optional heading rendered above the widget. */
     readonly title?: string;
     /**
+     * Optional root-relative URL that turns the rendered heading into a
+     * link. Operator-only state — plugins never seed it. Only honoured
+     * when {@link title} is also set, since the host chrome links the
+     * title text. Validated at the admin boundary to a single-leading-
+     * slash internal path (e.g. `/markets`); absolute or off-site URLs
+     * are rejected.
+     */
+    readonly titleUrl?: string;
+    /**
      * Per-instance configuration the widget type's data fetcher /
      * component may consume. Validated against the type's
      * `configSchema` if provided (admin UI concern, forthcoming).
@@ -76,6 +85,8 @@ export interface IPlacementInput {
     routes: string[];
     order?: number;
     title?: string;
+    /** Optional root-relative link target for the heading. See {@link IWidgetPlacement.titleUrl}. */
+    titleUrl?: string;
     instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }
