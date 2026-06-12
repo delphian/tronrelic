@@ -290,14 +290,11 @@ export function CurrentBlock({ initialBlock }: CurrentBlockProps) {
                                 <div className={styles.graph_section}>
                                     <div className={styles.graph_header}>
                                         <h3 className={styles.section_title}>Transaction Volume</h3>
-                                        <div className={styles.period_selector}>
+                                        <div className="segmented-control">
                                             {(['live', 1, 7, 30] as const).map(period => (
                                                 <button
                                                     key={period}
-                                                    className={cn(
-                                                        styles.period_button,
-                                                        selectedPeriod === period && styles.period_button_active
-                                                    )}
+                                                    className={selectedPeriod === period ? 'is-active' : undefined}
                                                     onClick={() => setSelectedPeriod(period)}
                                                 >
                                                     {period === 'live' ? 'Live' : `${period}d`}

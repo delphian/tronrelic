@@ -88,12 +88,12 @@ export function TimestampConverter() {
             <div className={styles.container}>
             <Card>
                 <Stack gap="md">
-                    <div className={styles.type_selector}>
+                    <div className="segmented-control">
                         {(Object.keys(INPUT_CONFIG) as InputType[]).map(type => (
                             <button
                                 key={type}
                                 type="button"
-                                className={`${styles.type_button} ${type === inputType ? styles.type_button_active : ''}`}
+                                className={type === inputType ? 'is-active' : undefined}
                                 onClick={() => { setInputType(type); setResult(null); setError(null); }}
                             >
                                 {INPUT_CONFIG[type].label.split(' (')[0]}
