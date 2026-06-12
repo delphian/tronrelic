@@ -4,8 +4,6 @@ import { WidgetZone, fetchWidgetsForRoute } from '../components/widgets';
 import { buildMetadata } from '../lib/seo';
 import { getServerConfig } from '../lib/serverConfig';
 
-export const dynamic = 'force-dynamic';
-
 export async function generateMetadata(): Promise<Metadata> {
   const { siteUrl } = await getServerConfig();
 
