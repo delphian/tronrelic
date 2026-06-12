@@ -283,6 +283,8 @@ export interface IChartComponents {
             data: Array<{ date: string; value: number; max?: number; count?: number }>;
             color?: string;
             fill?: boolean;
+            /** Optional aggregate annotation rendered after the label in the legend only (not the tooltip). Lets the legend act as a complete key, e.g. a window total. */
+            legendValue?: React.ReactNode;
         }>;
         yAxisFormatter?: (value: number) => string;
         xAxisFormatter?: (value: Date) => string;
@@ -291,6 +293,8 @@ export interface IChartComponents {
         emptyLabel?: string;
         height?: number;
         className?: string;
+        /** Render the legend. Defaults to true. Set false to suppress it (e.g. when a host supplies its own key). */
+        showLegend?: boolean;
         /** Fixed minimum date for X-axis (prevents auto-scaling when data is sparse) */
         minDate?: Date;
         /** Fixed maximum date for X-axis (prevents auto-scaling when data is sparse) */
@@ -315,6 +319,8 @@ export interface IChartComponents {
             label: string;
             data: Array<{ date: string; value: number; metadata?: Record<string, unknown> }>;
             color?: string;
+            /** Optional aggregate annotation rendered after the label in the legend only (not the tooltip or bar title). Lets the legend act as a complete key, e.g. a window total. */
+            legendValue?: React.ReactNode;
         }>;
         /** Rendering density (default: 'normal') */
         mode?: 'normal' | 'widget';
@@ -322,6 +328,8 @@ export interface IChartComponents {
         height?: number;
         yAxisFormatter?: (value: number) => string;
         xAxisFormatter?: (value: Date) => string;
+        /** Render the legend. Defaults to the mode's behavior (shown in 'normal', hidden in 'widget'); set explicitly to override — e.g. true to show a key in a compact widget. */
+        showLegend?: boolean;
         emptyLabel?: string;
         className?: string;
         /** Fixed minimum value for Y-axis (overrides auto-calculated minimum) */

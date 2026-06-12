@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { cn } from '../../../../lib/cn';
 import styles from './BarChart.module.css';
 
@@ -31,6 +31,12 @@ export interface BarChartSeries {
      * (`var(--chart-color-2)`). Defaults to the `--chart-color-*` palette by index.
      */
     color?: string;
+    /**
+     * Optional aggregate annotation rendered after the label in the legend only
+     * (never the tooltip or bar title), letting the legend serve as a complete
+     * key — e.g. a per-series window total.
+     */
+    legendValue?: ReactNode;
 }
 
 /**
@@ -71,6 +77,12 @@ interface BarChartProps {
     yAxisMin?: number;
     /** Fixed maximum value for Y-axis (overrides auto-calculated maximum) */
     yAxisMax?: number;
+    /**
+     * Render the legend. Defaults to the mode's behavior (`normal` shows it,
+     * `widget` hides it); set explicitly to override — e.g. `true` to surface a
+     * key in a compact widget that no longer renders its own summary line.
+     */
+    showLegend?: boolean;
 }
 
 /**
@@ -242,11 +254,15 @@ export function BarChart({
     className,
     emptyLabel = 'Not enough data to render a chart.',
     yAxisMin: fixedYMin,
-    yAxisMax: fixedYMax
+    yAxisMax: fixedYMax,
+    showLegend
 }: BarChartProps) {
     const chrome = CHROME[mode];
     const height = propHeight ?? chrome.defaultHeight;
     const isWidget = mode === 'widget';
+    // Tri-state: an explicit prop overrides the mode default, so a compact
+    // widget can opt into the legend as its key. Left undefined, the mode rules.
+    const resolvedShowLegend = showLegend ?? chrome.showLegend;
 
     const [container, setContainer] = useState<HTMLElement | null>(null);
     const [containerWidth, setContainerWidth] = useState(chrome.minWidth);
@@ -653,7 +669,7 @@ export function BarChart({
                 </div>
             )}
 
-            {chrome.showLegend && (
+            {resolvedShowLegend && (
                 <figcaption className={styles.legend}>
                     {series.filter(item => item.data.length > 0).map(item => {
                         const isHidden = hiddenSeries.has(item.id);
@@ -672,6 +688,9 @@ export function BarChart({
                                     style={{ background: isHidden ? 'transparent' : color, borderColor: color }}
                                 />
                                 <span className={styles.legend__label}>{item.label}</span>
+                                {item.legendValue !== undefined && (
+                                    <span className={styles.legend__value}>{item.legendValue}</span>
+                                )}
                             </button>
                         );
                     })}
