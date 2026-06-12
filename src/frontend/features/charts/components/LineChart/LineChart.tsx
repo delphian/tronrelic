@@ -615,7 +615,7 @@ export function LineChart({
                                         style={{ background: isHidden ? 'transparent' : color, borderColor: color }}
                                     />
                                     <span className={styles.legend__label}>{item.label}</span>
-                                    {item.legendValue !== undefined && (
+                                    {item.legendValue != null && (
                                         <span className={styles.legend__value}>{item.legendValue}</span>
                                     )}
                                 </button>
