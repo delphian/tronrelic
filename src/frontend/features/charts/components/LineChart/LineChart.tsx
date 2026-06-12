@@ -42,8 +42,16 @@ interface LineChartProps {
     height?: number;
     /** Custom formatter for Y-axis labels */
     yAxisFormatter?: (value: number) => string;
-    /** Custom formatter for X-axis and tooltip dates */
+    /** Custom formatter for X-axis tick labels (also the tooltip date heading when no tooltipDateFormatter is given) */
     xAxisFormatter?: (value: Date) => string;
+    /**
+     * Custom formatter for the tooltip's date heading; falls back to
+     * `xAxisFormatter` when omitted. Lets a chart keep compact relative axis
+     * labels ("3h", "now") while the tooltip shows an absolute localized date —
+     * matching the BarChart's tooltip behavior. The tooltip mounts only on
+     * hover (client-only), so a localized value here is hydration-safe.
+     */
+    tooltipDateFormatter?: (value: Date) => string;
     /** Additional CSS class names */
     className?: string;
     /** Message to show when no data is available */
@@ -156,6 +164,7 @@ export function LineChart({
     height = 320,
     yAxisFormatter = value => value.toLocaleString(),
     xAxisFormatter = value => value.toLocaleDateString(),
+    tooltipDateFormatter,
     className,
     emptyLabel = 'Not enough data to render a chart.',
     minDate: fixedMinDate,
@@ -557,7 +566,7 @@ export function LineChart({
                     style={{ left: tooltip.x, top: tooltip.y }}
                     role="presentation"
                 >
-                    <span className={styles.tooltip__label}>{xAxisFormatter(tooltip.date)}</span>
+                    <span className={styles.tooltip__label}>{(tooltipDateFormatter ?? xAxisFormatter)(tooltip.date)}</span>
                     {tooltip.items.map(item => (
                         <div key={item.label} className={styles.tooltip__meta}>
                             <span style={{ color: item.color }}>{item.label}</span>

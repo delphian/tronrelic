@@ -561,13 +561,15 @@
      * SEGMENTED CONTROL TOKENS
      * ======================================================================== */
 
-    --segmented-control-background: var(--color-surface-muted);
-    --segmented-control-border: var(--border-width-thin) solid var(--color-primary-alpha-18);
-    --segmented-control-padding: var(--spacing-1);  /* 0.25rem */
-    --segmented-control-button-padding: var(--spacing-3) var(--spacing-7); /* 0.45rem 0.9rem */
-    --segmented-control-button-font-size: var(--font-size-sm);
-    --segmented-control-active-background: var(--gradient-primary);
-    --segmented-control-active-color: var(--color-text);
+    --segmented-control-background: var(--color-surface-elevated);
+    --segmented-control-border: var(--border-width-thin) solid var(--color-border);
+    --segmented-control-border-radius: var(--radius-sm);
+    --segmented-control-divider: var(--border-width-thin) solid var(--color-border);
+    --segmented-control-padding: 0;
+    --segmented-control-button-padding: var(--spacing-1) var(--spacing-3); /* 0.25rem 0.4rem */
+    --segmented-control-button-font-size: var(--font-size-xs);
+    --segmented-control-active-background: var(--color-primary);
+    --segmented-control-active-color: var(--color-on-primary);
 
     /* ========================================================================
      * METER/PROGRESS TOKENS

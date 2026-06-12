@@ -286,6 +286,8 @@ export interface IChartComponents {
         }>;
         yAxisFormatter?: (value: number) => string;
         xAxisFormatter?: (value: Date) => string;
+        /** Custom formatter for the tooltip's date heading; falls back to xAxisFormatter. Lets the axis keep compact relative labels while the tooltip shows an absolute localized date. */
+        tooltipDateFormatter?: (value: Date) => string;
         emptyLabel?: string;
         height?: number;
         className?: string;

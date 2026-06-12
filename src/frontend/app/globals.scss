@@ -259,9 +259,10 @@ button:focus-visible {
 .segmented-control {
   display: inline-flex;
   background: var(--segmented-control-background);
-  border-radius: var(--radius-full);
-  padding: var(--segmented-control-padding);
   border: var(--segmented-control-border);
+  border-radius: var(--segmented-control-border-radius);
+  padding: var(--segmented-control-padding);
+  overflow: hidden;
 }
 
 .segmented-control button {
@@ -269,10 +270,23 @@ button:focus-visible {
   background: transparent;
   color: var(--color-text-muted);
   font-size: var(--segmented-control-button-font-size);
+  font-weight: var(--font-weight-medium);
   padding: var(--segmented-control-button-padding);
-  border-radius: var(--radius-full);
   cursor: pointer;
   transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+.segmented-control button:not(:last-child) {
+  border-right: var(--segmented-control-divider);
+}
+
+.segmented-control button:not(.is-active):hover {
+  color: var(--color-text);
+}
+
+.segmented-control button:disabled {
+  opacity: var(--opacity-60);
+  cursor: not-allowed;
 }
 
 .segmented-control button.is-active {

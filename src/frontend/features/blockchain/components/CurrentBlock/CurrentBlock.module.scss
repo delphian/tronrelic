@@ -241,36 +241,6 @@
     margin-bottom: var(--spacing-5);
 }
 
-.period_selector {
-    display: flex;
-    gap: var(--spacing-2);
-    background: var(--color-surface-elevated);
-    padding: 0.2rem;
-    border-radius: var(--radius-sm);
-    border: var(--border-width-thin) solid var(--color-border-strong);
-}
-
-.period_button {
-    padding: 0.25rem 0.5rem;
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    background: transparent;
-    color: var(--color-text-subtle);
-    border: none;
-    border-radius: 3px;
-    cursor: pointer;
-    transition: all var(--transition-base);
-}
-
-.period_button:hover {
-    background: var(--color-border-strong);
-    color: var(--color-text-muted);
-}
-
-.period_button_active {
-    background: var(--color-primary-alpha-15);
-    color: var(--color-primary);
-}
 
 .graph_content {
     position: relative;
@@ -354,11 +324,6 @@
 
     .graph_content {
         min-height: 160px;
-    }
-
-    .period_button {
-        padding: 0.2rem 0.4rem;
-        font-size: var(--font-size-xs);
     }
 }
 
