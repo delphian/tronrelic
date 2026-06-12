@@ -262,7 +262,6 @@ button:focus-visible {
   border: var(--segmented-control-border);
   border-radius: var(--segmented-control-border-radius);
   padding: var(--segmented-control-padding);
-  overflow: hidden;
 }
 
 .segmented-control button {
@@ -274,6 +273,20 @@ button:focus-visible {
   padding: var(--segmented-control-button-padding);
   cursor: pointer;
   transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+/* Round the end buttons rather than clipping the container with overflow:hidden,
+   so the active button's background still follows the rounded corners while the
+   global :focus-visible outline (offset + shadow) stays fully visible on the
+   first/last buttons. */
+.segmented-control button:first-child {
+  border-top-left-radius: var(--segmented-control-border-radius);
+  border-bottom-left-radius: var(--segmented-control-border-radius);
+}
+
+.segmented-control button:last-child {
+  border-top-right-radius: var(--segmented-control-border-radius);
+  border-bottom-right-radius: var(--segmented-control-border-radius);
 }
 
 .segmented-control button:not(:last-child) {
