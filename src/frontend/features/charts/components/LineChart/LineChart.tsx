@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { cn } from '../../../../lib/cn';
 import styles from './LineChart.module.css';
 
@@ -30,6 +30,12 @@ export interface ChartSeries {
     color?: string;
     /** Whether to fill area under the line (default: true) */
     fill?: boolean;
+    /**
+     * Optional aggregate annotation rendered after the label in the legend only
+     * (never the tooltip), letting the legend serve as a complete key — e.g. a
+     * headline metric the host would otherwise render in a separate row.
+     */
+    legendValue?: ReactNode;
 }
 
 /**
@@ -54,6 +60,8 @@ interface LineChartProps {
     tooltipDateFormatter?: (value: Date) => string;
     /** Additional CSS class names */
     className?: string;
+    /** Render the legend. Defaults to true; set false to suppress it. */
+    showLegend?: boolean;
     /** Message to show when no data is available */
     emptyLabel?: string;
     /** Fixed minimum date for X-axis (prevents auto-scaling when data is sparse) */
@@ -166,6 +174,7 @@ export function LineChart({
     xAxisFormatter = value => value.toLocaleDateString(),
     tooltipDateFormatter,
     className,
+    showLegend = true,
     emptyLabel = 'Not enough data to render a chart.',
     minDate: fixedMinDate,
     maxDate: fixedMaxDate,
@@ -586,30 +595,35 @@ export function LineChart({
                 </div>
             )}
 
-            <figcaption className={styles.legend}>
-                <div className={styles.legend__items}>
-                    {series.filter(item => item.data.length > 0).map((item, index) => {
-                        const isHidden = hiddenSeries.has(item.id);
-                        const color = item.color ?? DEFAULT_COLORS[index % DEFAULT_COLORS.length];
-                        return (
-                            <button
-                                key={`legend-${item.id}`}
-                                className={cn(styles.legend__item, isHidden && styles['legend__item--hidden'])}
-                                onClick={() => toggleSeries(item.id)}
-                                type="button"
-                                aria-pressed={!isHidden}
-                                title={isHidden ? `Show ${item.label}` : `Hide ${item.label}`}
-                            >
-                                <span
-                                    className={styles.legend__dot}
-                                    style={{ background: isHidden ? 'transparent' : color, borderColor: color }}
-                                />
-                                <span className={styles.legend__label}>{item.label}</span>
-                            </button>
-                        );
-                    })}
-                </div>
-            </figcaption>
+            {showLegend && (
+                <figcaption className={styles.legend}>
+                    <div className={styles.legend__items}>
+                        {series.filter(item => item.data.length > 0).map((item, index) => {
+                            const isHidden = hiddenSeries.has(item.id);
+                            const color = item.color ?? DEFAULT_COLORS[index % DEFAULT_COLORS.length];
+                            return (
+                                <button
+                                    key={`legend-${item.id}`}
+                                    className={cn(styles.legend__item, isHidden && styles['legend__item--hidden'])}
+                                    onClick={() => toggleSeries(item.id)}
+                                    type="button"
+                                    aria-pressed={!isHidden}
+                                    title={isHidden ? `Show ${item.label}` : `Hide ${item.label}`}
+                                >
+                                    <span
+                                        className={styles.legend__dot}
+                                        style={{ background: isHidden ? 'transparent' : color, borderColor: color }}
+                                    />
+                                    <span className={styles.legend__label}>{item.label}</span>
+                                    {item.legendValue !== undefined && (
+                                        <span className={styles.legend__value}>{item.legendValue}</span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </figcaption>
+            )}
         </figure>
     );
 }

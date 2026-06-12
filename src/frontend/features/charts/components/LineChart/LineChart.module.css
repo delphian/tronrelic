@@ -115,3 +115,9 @@
     color: var(--color-text-subtle);
     font-size: var(--font-size-sm);
 }
+
+.legend__value {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+}
