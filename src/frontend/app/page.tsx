@@ -1,11 +1,8 @@
 import type { Metadata } from 'next';
-import { BlockStatsServer, CurrentBlock } from '../features/blockchain/components';
 import { Page } from '../components/layout';
 import { WidgetZone, fetchWidgetsForRoute } from '../components/widgets';
 import { buildMetadata } from '../lib/seo';
 import { getServerConfig } from '../lib/serverConfig';
-import { getServerSideApiUrl } from '../lib/api-url';
-import styles from './page.module.css';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,19 +25,6 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function HomePage(): Promise<JSX.Element> {
-  // Fetch initial block data for SSR - component renders fully without loading flash
-  let initialBlock = null;
-  try {
-    const response = await fetch(`${getServerSideApiUrl()}/api/blockchain/latest`, { cache: 'no-store' });
-    if (response.ok) {
-      const data = await response.json();
-      initialBlock = data.block;
-    }
-  } catch (error) {
-    console.error('Failed to fetch initial block for SSR:', error);
-    // SSR fetch failed - component will show loading state until WebSocket connects
-  }
-
   // Fetch widgets for homepage - enables plugin widgets to render on the homepage
   const widgets = await fetchWidgetsForRoute('/', {});
 
@@ -93,24 +77,6 @@ export default async function HomePage(): Promise<JSX.Element> {
 
   return (
     <Page>
-      {/*
-        LCP Optimization: Two-layer rendering for instant paint
-
-        BlockStatsServer (server component) renders the block number immediately
-        without waiting for JavaScript hydration. CurrentBlock (client component)
-        overlays it after hydration and provides live updates.
-
-        This eliminates ~800ms+ "element render delay" on throttled mobile devices.
-      */}
-      <section className={styles.block_stats_section}>
-        {/* Server-rendered stats - paints immediately (LCP element) */}
-        <BlockStatsServer
-          blockNumber={initialBlock?.blockNumber ?? null}
-          transactionCount={initialBlock?.transactionCount ?? null}
-        />
-        {/* Client component - fades in after hydration with live updates */}
-        <CurrentBlock initialBlock={initialBlock} />
-      </section>
       <script
         suppressHydrationWarning
         type="application/ld+json"
