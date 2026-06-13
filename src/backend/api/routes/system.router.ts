@@ -6,6 +6,7 @@ import { SystemMonitorController } from '../../modules/system/system-monitor.con
 import { getRedisClient } from '../../loaders/redis.js';
 import { PluginWebSocketRegistry } from '../../services/plugin-websocket-registry.js';
 import { createSystemLogRouter } from '../../modules/logs/index.js';
+import { TransactionToolGuard } from '../../modules/blockchain/transaction-tool-guard.js';
 
 export function systemRouter(database: IDatabaseService) {
   const router = Router();
@@ -21,6 +22,11 @@ export function systemRouter(database: IDatabaseService) {
   router.get('/blockchain/metrics', controller.getBlockProcessingMetrics);
   router.get('/blockchain/observers', controller.getObserverStats);
   router.post('/blockchain/sync', controller.triggerBlockchainSync);
+
+  // Usage and rate-limit stats for the transaction-detail AI tool.
+  router.get('/blockchain/transaction-tool/stats', (_req, res) => {
+    res.json({ success: true, stats: TransactionToolGuard.getInstance().snapshot() });
+  });
 
   // Scheduler endpoints moved to SchedulerModule (/api/admin/system/scheduler/*)
 

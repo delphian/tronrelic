@@ -11,6 +11,7 @@ import { DelegationFlowModel, ContractActivityModel, TokenModel } from '../../da
 import { QueueService } from '../../services/queue.service.js';
 import { blockchainConfig } from '../../config/blockchain.js';
 import { TronGridClient, type TronGridBlock, type TronGridTransaction, type TronGridTransactionInfo } from './tron-grid.client.js';
+import { normalizeContractType, resolveOwnerAddress, resolveRecipient, resolveAmounts, describeContract } from './transaction-parse.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { getRedisClient } from '../../loaders/redis.js';
@@ -60,9 +61,7 @@ interface TransactionBuildContext {
 }
 
 
-type TransactionType = TransactionDoc['type'];
 type TransactionAddress = TransactionDoc['from'];
-type TransactionContract = TransactionDoc['contract'];
 type TransactionResource = TransactionDoc['energy'];
 type TransactionAnalysis = TransactionDoc['analysis'];
 
@@ -1265,16 +1264,16 @@ export class BlockchainService implements IBlockchainService {
             return null;
         }
 
-        const contractType = this.normalizeContractType(contract.type);
+        const contractType = normalizeContractType(contract.type);
         const value = (contract.parameter?.value ?? {}) as Record<string, unknown>;
 
         const timestamp = new Date(context.blockTime.getTime());
         const blockNumber = block.block_header.raw_data.number;
 
-        const ownerAddress = TronGridClient.toBase58Address(value.owner_address as string) ?? 'unknown';
-        const recipientAddress = this.resolveRecipient(contractType, value, ownerAddress);
+        const ownerAddress = resolveOwnerAddress(value);
+        const recipientAddress = resolveRecipient(contractType, value, ownerAddress);
 
-        const { rawAmountSun, amountTRX } = this.resolveAmounts(contractType, value);
+        const { rawAmountSun, amountTRX } = resolveAmounts(contractType, value);
         const amountUSD = context.priceUSD ? Number((amountTRX * context.priceUSD).toFixed(2)) : undefined;
 
         // Store raw hex memo data - consumers decode on frontend for display
@@ -1283,6 +1282,10 @@ export class BlockchainService implements IBlockchainService {
 
         const energyMetrics = this.buildEnergyMetrics(info);
         const bandwidthMetrics = this.buildBandwidthMetrics(info);
+
+        // Native execution result rides in the block payload (ret[].contractRet),
+        // so capturing it costs no extra API call. Empty string → undefined.
+        const status = transaction.ret?.[0]?.contractRet || undefined;
 
         const fromInsight = this.addressInsights.enrich(ownerAddress);
         const toInsight = this.addressInsights.enrich(recipientAddress);
@@ -1295,6 +1298,7 @@ export class BlockchainService implements IBlockchainService {
             // TRON protocol: resource field is "ENERGY" for energy operations, or undefined/null for BANDWIDTH
             // Observers must interpret undefined as BANDWIDTH (default resource type per TRON specification)
             subType: typeof value.resource === 'string' ? (value.resource as string) : undefined,
+            status,
             from: {
                 address: ownerAddress,
                 type: fromInsight.type ?? 'wallet',
@@ -1310,7 +1314,7 @@ export class BlockchainService implements IBlockchainService {
             amountUSD,
             energy: energyMetrics,
             bandwidth: bandwidthMetrics,
-            contract: this.describeContract(contractType, value),
+            contract: describeContract(contractType, value),
             memo,
             internalTransactions,
             notifications: [],
@@ -1347,93 +1351,6 @@ export class BlockchainService implements IBlockchainService {
         const rawTransaction: ITransaction = { payload, snapshot, categories: emptyCategories, rawValue, info };
 
         return new ProcessedTransaction(rawTransaction);
-    }
-
-    /**
-     * Extract the recipient address from a transaction based on contract type.
-     *
-     * Different contract types store the recipient in different fields - TransferContract uses to_address, TriggerSmartContract uses contract_address,
-     * delegation uses receiver_address, and so on. This method normalizes that variation so downstream code always has a consistent recipient field
-     * regardless of transaction type, falling back to the sender address for self-directed transactions like stake operations.
-     */
-    private resolveRecipient(contractType: TransactionType, value: Record<string, unknown>, fallback: string): string {
-        const candidates: Array<string | null | undefined> = [];
-
-        switch (contractType) {
-            case 'TransferContract':
-            case 'TransferAssetContract':
-                candidates.push(value.to_address as string);
-                break;
-            case 'TriggerSmartContract':
-                candidates.push(value.contract_address as string);
-                break;
-            case 'DelegateResourceContract':
-            case 'UnDelegateResourceContract':
-                candidates.push(value.receiver_address as string);
-                break;
-            case 'FreezeBalanceContract':
-            case 'FreezeBalanceV2Contract':
-            case 'UnfreezeBalanceContract':
-                candidates.push(value.receiver_address as string);
-                break;
-            default:
-                candidates.push(value.to_address as string);
-        }
-
-        for (const candidate of candidates) {
-            const address = TronGridClient.toBase58Address(candidate ?? undefined);
-            if (address) {
-                return address;
-            }
-        }
-
-        return fallback;
-    }
-
-    /**
-     * Extract transaction amounts from contract parameters based on transaction type.
-     *
-     * Amount fields vary by contract type - TransferContract uses 'amount', TriggerSmartContract uses 'call_value', delegation uses 'balance', and so on.
-     * This method normalizes those differences and handles both string and numeric values from TronGrid, returning amounts in both sun (atomic units)
-     * and TRX (human-readable) formats for consistent downstream handling.
-     */
-    private resolveAmounts(contractType: TransactionType, value: Record<string, unknown>) {
-        let rawAmountSun = 0;
-
-        const extract = (field: string) => {
-            const val = value[field];
-            if (typeof val === 'number') {
-                return val;
-            }
-            if (typeof val === 'string') {
-                const parsed = Number(val);
-                return Number.isFinite(parsed) ? parsed : 0;
-            }
-            return 0;
-        };
-
-        switch (contractType) {
-            case 'TransferContract':
-                rawAmountSun = extract('amount');
-                break;
-            case 'TriggerSmartContract':
-                rawAmountSun = extract('call_value');
-                break;
-            case 'DelegateResourceContract':
-            case 'UnDelegateResourceContract':
-                rawAmountSun = extract('balance');
-                break;
-            case 'FreezeBalanceContract':
-            case 'FreezeBalanceV2Contract':
-            case 'UnfreezeBalanceContract':
-                rawAmountSun = extract('frozen_balance') || extract('amount');
-                break;
-            default:
-                rawAmountSun = extract('amount');
-        }
-
-        const amountTRX = rawAmountSun / 1_000_000;
-        return { rawAmountSun, amountTRX };
     }
 
     /**
@@ -1487,120 +1404,6 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
-     * Build a structured contract description with method name and relevant parameters.
-     *
-     * Extracts contract-specific details based on transaction type - for TransferContract it captures the recipient and amount, for TriggerSmartContract
-     * it decodes the method selector from calldata, for delegation it includes resource type and balance, and so on. This normalization provides a
-     * consistent contract representation across different transaction types so observers and analytics code don't need transaction-specific parsing logic.
-     */
-    private describeContract(contractType: TransactionType, value: Record<string, unknown>): TransactionContract {
-        switch (contractType) {
-            case 'TransferContract':
-                return {
-                    address: TronGridClient.toBase58Address(value.to_address as string) ?? 'unknown',
-                    method: 'transfer',
-                    parameters: {
-                        amountTRX: this.resolveAmounts(contractType, value).amountTRX
-                    }
-                };
-            case 'TriggerSmartContract': {
-                const data = typeof value.data === 'string' ? value.data : '';
-                const method = data?.length >= 8 ? `0x${data.slice(0, 8)}` : undefined;
-                return {
-                    address: TronGridClient.toBase58Address(value.contract_address as string) ?? 'unknown',
-                    method,
-                    parameters: {
-                        rawData: data,
-                        callValueTRX: this.resolveAmounts(contractType, value).amountTRX
-                    }
-                };
-            }
-            case 'DelegateResourceContract':
-                return {
-                    address: TronGridClient.toBase58Address(value.receiver_address as string) ?? 'unknown',
-                    method: 'delegateResource',
-                    parameters: {
-                        resource: value.resource,
-                        balanceTRX: this.resolveAmounts(contractType, value).amountTRX
-                    }
-                };
-            case 'UnDelegateResourceContract':
-                return {
-                    address: TronGridClient.toBase58Address(value.receiver_address as string) ?? 'unknown',
-                    method: 'undelegateResource',
-                    parameters: {
-                        resource: value.resource,
-                        balanceTRX: this.resolveAmounts(contractType, value).amountTRX
-                    }
-                };
-            case 'FreezeBalanceContract':
-            case 'FreezeBalanceV2Contract':
-                return {
-                    address: TronGridClient.toBase58Address(value.receiver_address as string) ?? 'unknown',
-                    method: 'freezeBalance',
-                    parameters: {
-                        resource: value.resource,
-                        duration: value.frozen_duration,
-                        balanceTRX: this.resolveAmounts(contractType, value).amountTRX
-                    }
-                };
-            case 'UnfreezeBalanceContract':
-                return {
-                    address: TronGridClient.toBase58Address(value.receiver_address as string) ?? 'unknown',
-                    method: 'unfreezeBalance',
-                    parameters: {
-                        resource: value.resource
-                    }
-                };
-            case 'AssetIssueContract':
-                return {
-                    address: TronGridClient.toBase58Address(value.owner_address as string) ?? 'unknown',
-                    method: 'assetIssue',
-                    parameters: {
-                        name: value.name,
-                        abbr: value.abbr,
-                        totalSupply: value.total_supply
-                    }
-                };
-            default:
-                return {
-                    address: TronGridClient.toBase58Address(value.contract_address as string) ?? 'unknown',
-                    method: contractType,
-                    parameters: value
-                };
-        }
-    }
-
-    /**
-     * Map raw TronGrid contract type strings to normalized transaction types.
-     * Ensures consistent type names across the application by validating against a known list, defaulting to 'Unknown' for unrecognized contract types.
-     */
-    private normalizeContractType(rawType: string | undefined): TransactionType {
-        const knownTypes: TransactionType[] = [
-            'TransferContract',
-            'TransferAssetContract',
-            'TriggerSmartContract',
-            'ParticipateAssetIssueContract',
-            'FreezeBalanceContract',
-            'FreezeBalanceV2Contract',
-            'UnfreezeBalanceContract',
-            'DelegateResourceContract',
-            'UnDelegateResourceContract',
-            'VoteWitnessContract',
-            'AssetIssueContract',
-            'CreateSmartContract',
-            'Unknown'
-        ];
-
-        if (rawType && knownTypes.includes(rawType as TransactionType)) {
-            return rawType as TransactionType;
-        }
-
-        return 'Unknown';
-    }
-
-
-    /**
      * Broadcast real-time block completion events to connected WebSocket clients.
      *
      * Emits block:new events with aggregate statistics so the frontend can display live sync progress and transaction volume metrics.
@@ -1638,6 +1441,7 @@ export class BlockchainService implements IBlockchainService {
             timestamp: payload.timestamp.toISOString(),
             type: (payload.type as TronTransactionDocument['type']) ?? 'Unknown',
             subType: payload.subType,
+            status: payload.status,
             from: payload.from,
             to: payload.to,
             amount: payload.amount ?? 0,

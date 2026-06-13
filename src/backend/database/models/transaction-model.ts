@@ -21,6 +21,7 @@ const TransactionSchema = new Schema<TransactionDoc>({
   timestamp: { type: Date, index: true, required: true },
   type: { type: String, required: true },
   subType: String,
+  status: String,
   from: {
     address: { type: String, required: true },
     name: String,
