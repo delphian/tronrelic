@@ -20,6 +20,16 @@ import { normalizeContractType, resolveOwnerAddress, resolveRecipient, resolveAm
 /** Permanent cache collection for resolved transaction detail. */
 const COLLECTION = 'core_transaction_details';
 
+/** A TRON transaction id is a 64-character hex hash. Guards the public contract. */
+const TXID_PATTERN = /^[0-9a-fA-F]{64}$/;
+
+/**
+ * Max cache misses filled concurrently per chunk. Each miss issues two provider
+ * requests, and the provider's request queue is shared (with the sync pipeline)
+ * and capped, so 25 keeps in-flight requests (≤50) well under that ceiling.
+ */
+const FILL_CHUNK_SIZE = 25;
+
 /** Stored cache document — the contract shape plus Mongo's id. */
 type CachedTransaction = IBlockTransaction & { _id?: unknown };
 
@@ -95,7 +105,7 @@ export class TransactionDetailService implements ITransactionDetailService {
      * @returns Resolved transactions.
      */
     public async getTransactionsByIds(txIds: string[]): Promise<IBlockTransaction[]> {
-        const unique = [...new Set(txIds)].filter(id => id);
+        const unique = [...new Set(txIds)].filter(id => id && TXID_PATTERN.test(id));
         if (unique.length === 0) {
             return [];
         }
@@ -105,9 +115,22 @@ export class TransactionDetailService implements ITransactionDetailService {
         const found = new Set(hits.map(tx => tx.txId));
 
         const missing = unique.filter(id => !found.has(id));
-        const filled = await Promise.all(missing.map(id => this.fetchAndCache(id)));
 
-        return [...hits, ...filled.filter((tx): tx is IBlockTransaction => tx !== null)];
+        // Fill misses in bounded chunks. Each miss issues two provider requests
+        // against a shared, capped queue, so an unbounded fan-out would overflow
+        // it (and starve the sync pipeline) on large batches.
+        const filled: IBlockTransaction[] = [];
+        for (let i = 0; i < missing.length; i += FILL_CHUNK_SIZE) {
+            const chunk = missing.slice(i, i + FILL_CHUNK_SIZE);
+            const results = await Promise.all(chunk.map(id => this.fetchAndCache(id)));
+            for (const tx of results) {
+                if (tx !== null) {
+                    filled.push(tx);
+                }
+            }
+        }
+
+        return [...hits, ...filled];
     }
 
     /**
@@ -158,7 +181,7 @@ export class TransactionDetailService implements ITransactionDetailService {
             return null;
         }
 
-        const contract = rawTx.raw_data.contract?.[0];
+        const contract = rawTx.raw_data?.contract?.[0];
         if (!contract) {
             return null;
         }
@@ -179,7 +202,7 @@ export class TransactionDetailService implements ITransactionDetailService {
             from: { address: ownerAddress },
             to: { address: recipientAddress },
             feeSun: info.fee,
-            memo: TronGridClient.decodeMemo(rawTx.raw_data.data)
+            memo: TronGridClient.decodeMemo(rawTx.raw_data?.data)
         };
 
         if (rawAmountSun > 0) {

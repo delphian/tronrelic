@@ -74,9 +74,14 @@ export function buildTransactionTool(detailService: ITransactionDetailService, g
                 return { success: false, error: 'Rate limit exceeded for the transaction lookup tool. Try again shortly.' };
             }
 
-            const transaction = await detailService.getTransactionById(txId);
-            guard.recordResolved(transaction !== null);
-            return { success: true, transaction };
+            try {
+                const transaction = await detailService.getTransactionById(txId);
+                guard.recordResolved(transaction !== null);
+                return { success: true, transaction };
+            } catch (error) {
+                logger.error({ error, txId }, 'Transaction lookup tool failed');
+                return { success: false, error: 'An internal error occurred while retrieving the transaction.' };
+            }
         }
     };
 }
