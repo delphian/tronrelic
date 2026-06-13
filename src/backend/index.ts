@@ -35,6 +35,7 @@ import { WidgetsModule } from './modules/widgets/index.js';
 import { IdentityModule } from './modules/identity/index.js';
 import { TrafficModule } from './modules/traffic/index.js';
 import { ToolsModule } from './modules/tools/index.js';
+import { AiToolsModule } from './modules/ai-tools/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
 import { CacheService } from './services/cache.service.js';
@@ -227,6 +228,7 @@ interface BootstrapContext {
         identity: IdentityModule;
         traffic: TrafficModule;
         tools: ToolsModule;
+        aiTools: AiToolsModule;
         scheduler: SchedulerModule;
     };
 }
@@ -329,6 +331,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const identityModule = new IdentityModule();
     const trafficModule = new TrafficModule();
     const toolsModule = new ToolsModule();
+    const aiToolsModule = new AiToolsModule();
     const schedulerModule = new SchedulerModule();
 
     await logsModule.init({ pinoLogger, database: coreDatabase, app, serviceRegistry });
@@ -339,6 +342,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await identityModule.init(sharedDeps);
     await trafficModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
     await toolsModule.init(sharedDeps);
+    await aiToolsModule.init(sharedDeps);
 
     return {
         app,
@@ -358,6 +362,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             identity: identityModule,
             traffic: trafficModule,
             tools: toolsModule,
+            aiTools: aiToolsModule,
             scheduler: schedulerModule,
         },
     };
@@ -393,6 +398,7 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     await modules.traffic.run();
     await modules.identity.run();
     await modules.tools.run();
+    await modules.aiTools.run();
     await modules.scheduler.run();
 
     // Mount the hook-system introspection endpoint. The route is

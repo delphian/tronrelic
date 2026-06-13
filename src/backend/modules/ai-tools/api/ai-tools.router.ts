@@ -1,0 +1,42 @@
+/**
+ * @file ai-tools.router.ts
+ *
+ * Express router for the AI tool governance admin API, mounted at
+ * `/api/admin/system/ai-tools`. Every endpoint is rate-limited and requires
+ * admin authentication — the rate limiter runs first so it bounds the
+ * brute-force cost against the auth gate itself.
+ */
+
+import { Router } from 'express';
+import type { AiToolsController } from './ai-tools.controller.js';
+import { requireAdmin } from '../../../api/middleware/admin-auth.js';
+import { createAdminRateLimiter } from '../../../api/middleware/rate-limit.js';
+
+/**
+ * Build the AI tool admin router.
+ *
+ * @param controller - The controller whose handlers back each route.
+ * @returns The configured router.
+ */
+export function createAiToolsAdminRouter(controller: AiToolsController): Router {
+    const router = Router();
+
+    router.use(createAdminRateLimiter('ai-tools-admin'));
+    router.use(requireAdmin);
+
+    router.get('/tools', controller.listTools);
+    router.patch('/tools/:name', controller.setToolEnabled);
+
+    router.get('/activity', controller.listActivity);
+    router.get('/activity/:id', controller.getActivity);
+
+    router.get('/approvals', controller.listApprovals);
+    router.post('/approvals/:id/approve', controller.approve);
+    router.post('/approvals/:id/reject', controller.reject);
+
+    router.get('/policy', controller.getPolicy);
+    router.put('/policy/:name', controller.setPolicy);
+    router.delete('/policy/:name', controller.clearPolicy);
+
+    return router;
+}

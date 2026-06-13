@@ -49,7 +49,8 @@ const PHASE_TRACKS: ReadonlyArray<{ id: HookPhase; label: string }> = [
     { id: 'http.api', label: 'REST API Request' },
     { id: 'websocket.event', label: 'WebSocket Event' },
     { id: 'scheduler.tick', label: 'Scheduler Tick' },
-    { id: 'observer.dispatch', label: 'Observer Dispatch' }
+    { id: 'observer.dispatch', label: 'Observer Dispatch' },
+    { id: 'ai.tool', label: 'AI Tool Invocation' }
 ];
 
 /**
