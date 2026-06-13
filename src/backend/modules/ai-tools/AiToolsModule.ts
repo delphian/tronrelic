@@ -18,16 +18,20 @@ import type { Express } from 'express';
 import type {
     IDatabaseService,
     IHookRegistry,
+    IMenuService,
     IModule,
     IModuleMetadata,
     IServiceRegistry
 } from '@/types';
 import { logger } from '../../lib/logger.js';
+import { WebSocketService } from '../../services/websocket.service.js';
+import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { AiToolRegistry } from './services/ai-tool-registry.js';
 import { ToolPolicyEngine } from './services/tool-policy-engine.js';
 import { ToolAuditStore } from './services/tool-audit-store.js';
 import { ToolApprovalQueue } from './services/tool-approval-queue.js';
 import { AiToolGovernor } from './services/ai-tool-governor.js';
+import { AiProviderRegistry } from './services/ai-provider-registry.js';
 import { AiToolsController } from './api/ai-tools.controller.js';
 import { createAiToolsAdminRouter } from './api/ai-tools.router.js';
 
@@ -36,6 +40,9 @@ export const AI_TOOLS_SERVICE = 'ai-tools';
 
 /** Service-registry name for the tool execution governor. */
 export const AI_TOOL_GOVERNOR_SERVICE = 'ai-tool-governor';
+
+/** Service-registry name for the installed-AI-provider registry. */
+export const AI_PROVIDERS_SERVICE = 'ai-providers';
 
 /**
  * Dependencies the AI tools module needs at bootstrap. A subset of the shared
@@ -48,6 +55,8 @@ export interface IAiToolsModuleDependencies {
     serviceRegistry: IServiceRegistry;
     /** Hook registry the governor invokes the `ai.toolInvoke`/`ai.toolInvoked` seams through. */
     hookRegistry: IHookRegistry;
+    /** Menu service for registering the `/system/ai-tools` admin nav item. */
+    menuService: IMenuService;
     /** Express app the admin router mounts onto. */
     app: Express;
 }
@@ -66,6 +75,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private database!: IDatabaseService;
     private serviceRegistry!: IServiceRegistry;
     private hookRegistry!: IHookRegistry;
+    private menuService!: IMenuService;
     private app!: Express;
 
     private registry!: AiToolRegistry;
@@ -73,6 +83,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private audit!: ToolAuditStore;
     private approvals!: ToolApprovalQueue;
     private governor!: AiToolGovernor;
+    private providerRegistry!: AiProviderRegistry;
     private controller!: AiToolsController;
 
     private readonly logger = logger.child({ module: 'ai-tools' });
@@ -89,6 +100,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.database = dependencies.database;
         this.serviceRegistry = dependencies.serviceRegistry;
         this.hookRegistry = dependencies.hookRegistry;
+        this.menuService = dependencies.menuService;
         this.app = dependencies.app;
 
         this.registry = new AiToolRegistry(this.logger, this.database);
@@ -104,7 +116,8 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         await this.approvals.ensureIndexes();
 
         this.governor = new AiToolGovernor(this.logger, this.registry, this.policy, this.audit, this.approvals, this.hookRegistry);
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor);
+        this.providerRegistry = new AiProviderRegistry(this.logger);
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry);
 
         this.logger.info('ai-tools module initialized');
     }
@@ -118,11 +131,31 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
 
         this.app.use('/api/admin/system/ai-tools', createAiToolsAdminRouter(this.controller));
 
+        // Surface governed events to the admin dashboard as lightweight refetch
+        // signals. WebSocketService is initialised earlier in bootstrap; when
+        // WebSockets are disabled its emit is a no-op, so governance still runs.
+        this.governor.setBroadcast((event, payload) => {
+            WebSocketService.getInstance().emit({ event, payload });
+        });
+
         this.serviceRegistry.register(AI_TOOLS_SERVICE, this.registry);
         this.serviceRegistry.register(AI_TOOL_GOVERNOR_SERVICE, this.governor);
+        this.serviceRegistry.register(AI_PROVIDERS_SERVICE, this.providerRegistry);
+
+        // Admin nav item under the System container. Memory-only (re-created each
+        // boot); the parent-chain walk forces `requiresAdmin` on it.
+        await this.menuService.create({
+            namespace: 'main',
+            label: 'AI Tools',
+            url: '/system/ai-tools',
+            icon: 'Wrench',
+            order: 36,
+            parent: MAIN_SYSTEM_CONTAINER_ID,
+            enabled: true
+        });
 
         this.logger.info(
-            { services: [AI_TOOLS_SERVICE, AI_TOOL_GOVERNOR_SERVICE] },
+            { services: [AI_TOOLS_SERVICE, AI_TOOL_GOVERNOR_SERVICE, AI_PROVIDERS_SERVICE] },
             'ai-tools module running (admin router mounted, services registered)'
         );
     }

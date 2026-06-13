@@ -24,21 +24,22 @@ disable: async (context: IPluginContext) => {
 
 ## Sharing the Contract — Types-Only Sibling Package
 
-Provider plugins publish their service interface (e.g. `IAiAssistantService`, `IAiTool`) as a small types-only sibling package at `packages/types/` inside the provider's repo, named like `@delphian/trp-<plugin>-types`. TronRelic treats these as workspaces of the root `tronrelic` package (see `package.json` `"workspaces": ["src/plugins/*/packages/*"]`), so the root `npm ci` links the package into `/app/node_modules` once and every plugin resolves the import via Node's module walk-up. Consumer plugins declare the types package in *both* `peerDependencies` and `devDependencies` — matching how core types like `@delphian/tronrelic-types` are handled — and import the real interface:
+Provider plugins publish their service interface as a small types-only sibling package at `packages/types/` inside the provider's repo, named like `@delphian/trp-<plugin>-types`. TronRelic treats these as workspaces of the root `tronrelic` package (see `package.json` `"workspaces": ["src/plugins/*/packages/*"]`), so the root `npm ci` links the package into `/app/node_modules` once and every plugin resolves the import via Node's module walk-up. Consumer plugins declare the types package in *both* `peerDependencies` and `devDependencies` — matching how core types like `@delphian/tronrelic-types` are handled — and import the real interface:
 
 ```typescript
-import type { IAiAssistantService, IAiTool } from '@delphian/trp-ai-assistant-types';
+import type { IXPosterService } from '@delphian/trp-x-poster-types';
 
-const ai = context.services.get<IAiAssistantService>('ai-assistant');
-if (ai) {
-    const tool: IAiTool = { name: 'my-tool', description: '…', inputSchema: { /* … */ }, handler };
-    ai.registerTool(tool);
+const xposter = context.services.get<IXPosterService>('x-poster');
+if (xposter) {
+    const ready = await xposter.isConfigured();
 }
 ```
 
-**Consumers must use `import type` only.** The types package exists purely so the TypeScript compiler sees the real contract — a signature change in the provider then surfaces as a build error in the consumer instead of a silent runtime break. `import type` erases at compile time and leaves no `require`/`import` in emitted JS, so listing the types package creates no runtime dependency on the provider plugin. The runtime lookup still flows through `context.services.get('ai-assistant')` and returns `undefined` when the provider is disabled or uninstalled — graceful degradation is preserved. If a consumer ever needs a runtime value (a constant, a helper) from the provider, promote that code to a package that ships runtime JS and declare a real dependency; do not value-import from a types-only package.
+**Platform-wide contracts live in core, not a sibling package.** A service interface that many plugins consume belongs in `@delphian/tronrelic-types`, not in one plugin's sibling package. The AI tool contracts (`IAiTool`, `IAiAssistantService`) and the `'ai-tools'` registry (`IAiToolRegistry`) are core for exactly this reason — every tool-providing plugin and the AI provider need them — so a tool provider imports them from `@delphian/tronrelic-types` and registers tools on the core `'ai-tools'` registry, never on a provider's sibling package. The sibling-package pattern is for a contract specific to one plugin that only some peers consume, like `IXPosterService` above.
 
-Canonical provider: `trp-ai-assistant/packages/types/`. Canonical consumer: `trp-bazi-fortune/src/backend/backend.ts`.
+**Consumers must use `import type` only.** The types package exists purely so the TypeScript compiler sees the real contract — a signature change in the provider then surfaces as a build error in the consumer instead of a silent runtime break. `import type` erases at compile time and leaves no `require`/`import` in emitted JS, so listing the types package creates no runtime dependency on the provider plugin. The runtime lookup still flows through `context.services.get('x-poster')` and returns `undefined` when the provider is disabled or uninstalled — graceful degradation is preserved. If a consumer ever needs a runtime value (a constant, a helper) from the provider, promote that code to a package that ships runtime JS and declare a real dependency; do not value-import from a types-only package.
+
+Canonical sibling-package provider: `trp-x-poster` (publishes `IXPosterService` as `@delphian/trp-x-poster-types`). Canonical consumers: `trp-bazi-fortune/src/backend/backend.ts` watches the core `'ai-assistant'` service for AI queries; tool providers like `trp-telegram-bot` watch the core `'ai-tools'` registry to register tools.
 
 ### Anti-Pattern: Do Not Redeclare the Interface Locally
 
@@ -53,12 +54,12 @@ Two lookup shapes. The choice is about consumer lifetime, not provider identity.
 Use `get()` when the caller needs the service at a single moment and doesn't care whether it appears or disappears later (an admin route, a one-off migration, diagnostics). Always handle the undefined case:
 
 ```typescript
-import type { IAiAssistantService } from '@delphian/trp-ai-assistant-types';
+import type { IAiAssistantService } from '@delphian/tronrelic-types';
 
 const ai = context.services.get<IAiAssistantService>('ai-assistant');
 if (ai) {
     const result = await ai.ask('Analyze recent transactions');
-    context.logger.info({ text: result.text }, 'ai response');
+    context.logger.info({ text: result.responseText }, 'ai response');
 }
 ```
 
@@ -67,18 +68,20 @@ if (ai) {
 Use `watch()` when the caller's behavior depends on the service being present over time — registering peer-facing hooks the moment a provider appears, dropping cached references when it goes away. `watch()` fires `onAvailable` synchronously if the service is already registered at subscription time, re-fires on every subsequent re-registration, and fires `onUnavailable` whenever the provider unregisters. This closes two gaps `get()` cannot: the boot-order race where the consumer's `init()` runs before the provider's, and runtime churn where a provider is disabled and re-enabled by an operator.
 
 ```typescript
-let unwatchAi: (() => void) | null = null;
+import type { IAiToolRegistry } from '@delphian/tronrelic-types';
+
+let unwatchTools: (() => void) | null = null;
 
 init: async (context: IPluginContext) => {
-    unwatchAi = context.services.watch<IAiAssistantService>('ai-assistant', {
-        onAvailable: (ai) => ai.registerTool(myToolDefinition),
-        onUnavailable: () => context.logger.info('ai-assistant gone — tool unregistered')
+    unwatchTools = context.services.watch<IAiToolRegistry>('ai-tools', {
+        onAvailable: (registry) => registry.registerTool(myToolDefinition, myManifest.id),
+        onUnavailable: () => context.logger.info('ai-tools gone — tool unregistered')
     });
 },
 
 disable: async (context: IPluginContext) => {
-    unwatchAi?.();
-    unwatchAi = null;
+    unwatchTools?.();
+    unwatchTools = null;
 }
 ```
 

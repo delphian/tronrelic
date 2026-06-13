@@ -93,7 +93,7 @@ export class ToolPolicyEngine {
         const base: IToolPolicy = {
             rateLimit: RATE_DEFAULTS[cap.sideEffect],
             requireApproval,
-            allowUnattended: cap.sideEffect !== 'external'
+            allowUnattended: cap.allowUnattended ?? (cap.sideEffect !== 'external')
         };
         return { ...base, ...this.overrides[name] };
     }

@@ -1,0 +1,120 @@
+/**
+ * @file egress.ts
+ *
+ * Shared egress / SSRF guard for tools and services that accept a model- or
+ * user-supplied URL. A URL the platform (or an upstream like Telegram) fetches
+ * server-side is both an exfiltration vector and an SSRF risk: a secret in the
+ * query string leaks to whatever host the URL names, and a private-range target
+ * can reach internal infrastructure (cloud metadata endpoints, loopback
+ * services, internal APIs).
+ *
+ * Promoted out of trp-x-poster so every URL-fetching tool (x-poster,
+ * telegram-bot, and any future one) shares one implementation instead of
+ * re-deriving the fiddly private-range tables. Kept pure — no `node:dns` /
+ * `node:net` — so it stays browser-safe for the isomorphic types package.
+ * Callers that can resolve DNS (e.g. before fetching bytes themselves) run the
+ * lookup and pass each resolved address through {@link isPrivateIp}; this guard
+ * covers the scheme, the special-hostname, and the IP-literal cases that need no
+ * resolution.
+ */
+
+/** Outcome of {@link assertPublicHttpUrl}: the parsed URL, or a correctable reason. */
+export type IEgressCheckResult =
+    | { ok: true; url: URL }
+    | { ok: false; error: string };
+
+/** Options for {@link assertPublicHttpUrl}. */
+export interface IEgressCheckOptions {
+    /**
+     * Permit `http:` in addition to `https:`. Defaults to false — https only,
+     * the safer default for a server-side fetch. Enable only when a legitimate
+     * source serves plaintext http.
+     */
+    allowHttp?: boolean;
+}
+
+/**
+ * Whether an IP address literal belongs to a private, loopback, link-local, or
+ * other non-public range — the set an SSRF guard must reject.
+ *
+ * Covers IPv4 (0/8, 10/8, 100.64/10 CGNAT, 127/8, 169.254/16 link-local,
+ * 172.16/12, 192.168/16) and IPv6 (::1 loopback, fc00::/7 unique-local,
+ * fe80::/10 link-local). A string that is not a recognizable IP literal returns
+ * false — gate hostname inputs through {@link assertPublicHttpUrl} plus DNS
+ * resolution, not this function.
+ *
+ * @param ip - An IP address literal (IPv4 dotted-quad or IPv6), case-insensitive.
+ * @returns True when the address is in a non-public range.
+ */
+export function isPrivateIp(ip: string): boolean {
+    const addr = ip.trim().toLowerCase().replace(/^\[|\]$/g, '');
+    let result = false;
+
+    if (
+        addr === '::1' || addr === '0:0:0:0:0:0:0:1'
+        || addr.startsWith('fc') || addr.startsWith('fd') || addr.startsWith('fe80:')
+    ) {
+        result = true;
+    } else {
+        const parts = addr.split('.');
+        if (parts.length === 4 && parts.every(part => /^\d{1,3}$/.test(part))) {
+            const a = Number(parts[0]);
+            const b = Number(parts[1]);
+            result =
+                a === 0 || a === 10 || a === 127
+                || (a === 100 && b >= 64 && b <= 127)
+                || (a === 169 && b === 254)
+                || (a === 172 && b >= 16 && b <= 31)
+                || (a === 192 && b === 168);
+        }
+    }
+    return result;
+}
+
+/**
+ * Validate that a model- or user-supplied URL is a safe public-fetch target:
+ * an http(s) URL whose host is neither a special internal name nor a
+ * private-range IP literal. This is the resolution-free half of an SSRF guard —
+ * it cannot catch a public hostname that *resolves* to a private address, so a
+ * caller that fetches the bytes itself should still resolve the host and run
+ * each address through {@link isPrivateIp}.
+ *
+ * Public IP literals (v4 and v6) are permitted; bare single-label hostnames are
+ * rejected because a legitimate public host is always fully qualified.
+ *
+ * @param raw - The candidate URL string.
+ * @param options - Scheme options; https-only by default.
+ * @returns `{ ok: true, url }` with the parsed URL, or `{ ok: false, error }`
+ *          carrying a reason the model can correct from.
+ */
+export function assertPublicHttpUrl(raw: string, options: IEgressCheckOptions = {}): IEgressCheckResult {
+    let url: URL | null = null;
+    try {
+        url = new URL(raw);
+    } catch {
+        url = null;
+    }
+
+    let result: IEgressCheckResult;
+    if (!url) {
+        result = { ok: false, error: 'URL must be a valid absolute URL.' };
+    } else if (url.protocol !== 'https:' && !(options.allowHttp === true && url.protocol === 'http:')) {
+        result = { ok: false, error: options.allowHttp ? 'URL must use http or https.' : 'URL must use https.' };
+    } else {
+        const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+        const isIpLiteral = host.includes(':') || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+
+        if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) {
+            result = { ok: false, error: 'URL host is not a permitted public host.' };
+        } else if (isIpLiteral) {
+            result = isPrivateIp(host)
+                ? { ok: false, error: 'URL resolves to a non-public address.' }
+                : { ok: true, url };
+        } else if (!host.includes('.')) {
+            result = { ok: false, error: 'URL host must be a fully-qualified public hostname.' };
+        } else {
+            result = { ok: true, url };
+        }
+    }
+    return result;
+}

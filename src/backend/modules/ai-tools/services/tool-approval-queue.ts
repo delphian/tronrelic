@@ -119,6 +119,15 @@ export class ToolApprovalQueue {
     }
 
     /**
+     * Count requests still awaiting a decision, for the nav pending-count badge.
+     *
+     * @returns The number of `pending` requests.
+     */
+    async countPending(): Promise<number> {
+        return this.database.count(COLLECTION, { status: 'pending' });
+    }
+
+    /**
      * Transition a pending request to `approved` or `rejected`.
      *
      * @param id - The request id.

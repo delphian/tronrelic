@@ -75,6 +75,8 @@ See `src/backend/hooks/registry.ts` for the live list. Today:
 |---|---|---|---|---|
 | `ssr.htmlAttributes` | `ssr.page` | `waterfall` | 100 | Stamp attributes onto the root `<html>` element. Seeded `{ lang: 'en' }`. Last writer wins per key. Backed by `POST /api/ssr/html-attributes`. |
 | `ssr.headFragments` | `ssr.page` | `waterfall` | 200 | Contribute `<style>` / `<link>` / `<meta>` / `<script>` to the rendered `<head>`. Backed by `POST /api/ssr/head-fragments`. |
+| `ai.toolInvoke` | `ai.tool` | `series` | 100 | Inspect a governed AI tool call before it runs (after schema validation). Throw `HookAbortError` to veto or hold; the governor surfaces the abort to the model as a denial. For compliance / lethal-trifecta gating. |
+| `ai.toolInvoked` | `ai.tool` | `observer` | 200 | Fired after a governed AI tool call completes, with the full `IToolInvocationRecord`. For audit fan-out, alerting, and lethal-trifecta watch; cannot change the outcome. |
 
 Adding a seam is a PR to `registry.ts`: declare the descriptor with its types, then wire core to invoke it via `hookRegistry.invoke(descriptor, input, seed?)`. The bar to add is intentionally higher than the bar to use — that asymmetry is what keeps the surface small.
 

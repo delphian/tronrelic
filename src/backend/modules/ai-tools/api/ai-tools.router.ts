@@ -27,10 +27,14 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
     router.get('/tools', controller.listTools);
     router.patch('/tools/:name', controller.setToolEnabled);
 
+    router.get('/trifecta', controller.getTrifecta);
+    router.get('/providers', controller.listProviders);
+
     router.get('/activity', controller.listActivity);
     router.get('/activity/:id', controller.getActivity);
 
     router.get('/approvals', controller.listApprovals);
+    router.get('/approvals/count', controller.getApprovalsCount);
     router.post('/approvals/:id/approve', controller.approve);
     router.post('/approvals/:id/reject', controller.reject);
 
