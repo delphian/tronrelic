@@ -54,6 +54,7 @@ export interface TronTransactionDocument {
   timestamp: string;
   type: TronTransactionType;
   subType?: string;
+  status?: string;
   from: AddressMetadata;
   to: AddressMetadata;
   amount: number;

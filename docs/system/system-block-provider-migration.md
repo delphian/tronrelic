@@ -145,3 +145,4 @@ Risk concentrates in Step 4 and is mitigated by the Step 1 golden suite — with
 - [modules-architecture.md](./modules/modules-architecture.md) — singleton `setDependencies`/`getInstance` and DI conventions the steps follow
 - [system-testing.md](./system-testing.md) — Vitest mock infrastructure used by the fixture and adapter contract suites
 - [environment.md](../environment.md) — env var behaviors; Step 8 adds the `BLOCK_PROVIDER` family
+- [system-domain-types.md](./system-domain-types.md) — the contract-layer complement: the source-independence rule for return types like `IBlockTransaction` that this provider decoupling makes safe to expose

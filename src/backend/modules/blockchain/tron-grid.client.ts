@@ -359,6 +359,35 @@ export class TronGridClient {
         });
     }
 
+    /**
+     * Fetch a single raw transaction by id via `/wallet/gettransactionbyid`.
+     *
+     * Returns the transaction's `raw_data` (contract, memo, type) and `ret`
+     * (contractRet status). This is the complement to `getTransactionInfo`,
+     * which carries the receipt, fee, and block number but not `raw_data`.
+     * Returns null on any error or when the id is unknown so callers can treat
+     * a miss as "not resolvable" rather than throwing.
+     *
+     * @param txId - Transaction hash to fetch.
+     * @returns The raw transaction, or null.
+     */
+    async getTransactionById(txId: string): Promise<TronGridTransaction | null> {
+        try {
+            const tx = await retry(
+                () => this.post<TronGridTransaction>('/wallet/gettransactionbyid', { value: txId }),
+                {
+                    ...blockchainConfig.retry,
+                    onRetry: (attempt, error) => logger.warn({ attempt, error, txId }, 'Retrying TronGrid getTransactionById')
+                }
+            );
+            // An unknown id returns an empty object `{}` (no txID), not an error.
+            return tx?.txID ? tx : null;
+        } catch (error) {
+            logger.error({ error, txId }, 'Failed to fetch transaction by id');
+            return null;
+        }
+    }
+
     async getTransactionInfo(txId: string): Promise<TronGridTransactionInfo | null> {
         try {
             return await retry(

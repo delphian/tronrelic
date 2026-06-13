@@ -40,6 +40,9 @@ import { SystemConfigService } from './services/system-config/index.js';
 import { CacheService } from './services/cache.service.js';
 import { ChainParametersFetcher } from './modules/chain-parameters/chain-parameters-fetcher.js';
 import { ChainParametersService } from './modules/chain-parameters/chain-parameters.service.js';
+import { TransactionDetailService } from './modules/blockchain/transaction-detail.service.js';
+import { registerTransactionAiTools } from './modules/blockchain/transaction-ai-tools.js';
+import { TronGridClient } from './modules/blockchain/tron-grid.client.js';
 import { UsdtParametersFetcher } from './modules/usdt-parameters/usdt-parameters-fetcher.js';
 import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters.service.js';
 import { createApiRouter } from './api/routes/index.js';
@@ -297,6 +300,19 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // plugins can discover them via late-binding DI instead of importing
     // concrete classes.
     serviceRegistry.register('chain-parameters', ChainParametersService.getInstance());
+
+    // Transaction-detail lookup: a lazily-populated, permanent cache that fills
+    // misses from the injected provider. Dependencies are injected here rather
+    // than self-instantiated so the provider stays swappable.
+    TransactionDetailService.setDependencies(coreDatabase, TronGridClient.getInstance());
+    const transactionDetailService = TransactionDetailService.getInstance();
+    await transactionDetailService.ensureIndexes();
+    serviceRegistry.register('transaction-details', transactionDetailService);
+
+    // Expose the transaction-detail lookup to the AI assistant as a read-only,
+    // rate-limited core tool. Watches for the assistant service rather than
+    // resolving it once, since it is a runtime-toggleable plugin.
+    registerTransactionAiTools(serviceRegistry, transactionDetailService);
 
     // Menu module next (others need menuService)
     const menuModule = new MenuModule();

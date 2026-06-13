@@ -17,6 +17,12 @@ export interface ITransactionPersistencePayload {
     type: string;
     /** Optional sub-categorization for complex transaction types */
     subType?: string;
+    /**
+     * Native execution result from the transaction's `ret[].contractRet`
+     * (e.g. 'SUCCESS', 'REVERT', 'OUT_OF_ENERGY'). Optional: absent on records
+     * persisted before status capture was added, populated for all new rows.
+     */
+    status?: string;
     /** Source address with enriched metadata (exchange vs wallet, known names) */
     from: {
         address: string;

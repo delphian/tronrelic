@@ -90,6 +90,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [system-database.md](./system-database.md) | `IDatabaseService`, three-tier access, namespace isolation |
 | [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) | Block retrieval, enrichment pipeline, observer dispatch |
 | [system-block-provider-migration.md](./system-block-provider-migration.md) | Proposed TronGrid decoupling — `IBlockProvider` design, provider research, migration plan |
+| [system-domain-types.md](./system-domain-types.md) | Source-independence rule for the types package — admission test, `IBlockTransaction`, known debt |
 | [system-scheduler-operations.md](./system-scheduler-operations.md) | Job control, cron syntax, persistence, troubleshooting |
 | [system-api.md](./system-api.md) | Admin API gateway — auth, conventions, troubleshooting, links to per-domain detail docs |
 | [system-api-overview.md](./system-api-overview.md) | `/health/*` (database, clickhouse, redis, server), `/config`, `/config/system` |
