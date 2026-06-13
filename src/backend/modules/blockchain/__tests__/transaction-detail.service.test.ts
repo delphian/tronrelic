@@ -14,6 +14,16 @@ import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-
 const COLLECTION = 'core_transaction_details';
 const HEX_ADDRESS = '41a614f803b6fd780986a42c78ec9c7f77e6ded13c';
 
+// Real TRON transaction ids are 64-char hex; the service validates this shape
+// and drops anything else, so test fixtures must use well-formed ids.
+const TX_CACHED = 'a'.repeat(64);
+const TX_MISS = 'b'.repeat(64);
+const TX_PERSIST = 'c'.repeat(64);
+const TX_BATCH_HIT = 'd'.repeat(64);
+const TX_BATCH_MISS = 'e'.repeat(64);
+const TX_DUP = 'f'.repeat(64);
+const TX_GONE = '0'.repeat(64);
+
 /** Build a minimal raw transaction (TransferContract) for the given id. */
 function rawTransfer(txId: string): TronGridTransaction {
     return {
@@ -63,7 +73,7 @@ describe('TransactionDetailService', () => {
 
     it('serves a cache hit without calling the provider', async () => {
         await database.insertOne(COLLECTION, {
-            txId: 'tx1',
+            txId: TX_CACHED,
             blockNumber: 999,
             timestamp: new Date(),
             type: 'TransferContract',
@@ -74,7 +84,7 @@ describe('TransactionDetailService', () => {
             memo: null
         });
 
-        const tx = await service.getTransactionById('tx1');
+        const tx = await service.getTransactionById(TX_CACHED);
 
         expect(tx?.blockNumber).toBe(999);
         expect(provider.getTransactionById).not.toHaveBeenCalled();
@@ -82,13 +92,13 @@ describe('TransactionDetailService', () => {
     });
 
     it('fills a miss from the provider and maps chain fields', async () => {
-        provider.getTransactionById.mockResolvedValue(rawTransfer('tx2'));
-        provider.getTransactionInfo.mockResolvedValue(infoFor('tx2'));
+        provider.getTransactionById.mockResolvedValue(rawTransfer(TX_MISS));
+        provider.getTransactionInfo.mockResolvedValue(infoFor(TX_MISS));
 
-        const tx = await service.getTransactionById('tx2');
+        const tx = await service.getTransactionById(TX_MISS);
 
         expect(tx).toMatchObject({
-            txId: 'tx2',
+            txId: TX_MISS,
             blockNumber: 555,
             type: 'TransferContract',
             status: 'SUCCESS',
@@ -104,11 +114,11 @@ describe('TransactionDetailService', () => {
     });
 
     it('persists a miss so the next lookup is a cache hit', async () => {
-        provider.getTransactionById.mockResolvedValue(rawTransfer('tx3'));
-        provider.getTransactionInfo.mockResolvedValue(infoFor('tx3'));
+        provider.getTransactionById.mockResolvedValue(rawTransfer(TX_PERSIST));
+        provider.getTransactionInfo.mockResolvedValue(infoFor(TX_PERSIST));
 
-        await service.getTransactionById('tx3');
-        await service.getTransactionById('tx3');
+        await service.getTransactionById(TX_PERSIST);
+        await service.getTransactionById(TX_PERSIST);
 
         expect(provider.getTransactionById).toHaveBeenCalledTimes(1);
         expect(provider.getTransactionInfo).toHaveBeenCalledTimes(1);
@@ -116,33 +126,33 @@ describe('TransactionDetailService', () => {
 
     it('fills only the misses in a batch', async () => {
         await database.insertOne(COLLECTION, {
-            txId: 'hit', blockNumber: 1, timestamp: new Date(), type: 'TransferContract',
+            txId: TX_BATCH_HIT, blockNumber: 1, timestamp: new Date(), type: 'TransferContract',
             status: 'SUCCESS', from: { address: 'a' }, to: { address: 'b' }, feeSun: 0, memo: null
         });
-        provider.getTransactionById.mockResolvedValue(rawTransfer('miss'));
-        provider.getTransactionInfo.mockResolvedValue(infoFor('miss'));
+        provider.getTransactionById.mockResolvedValue(rawTransfer(TX_BATCH_MISS));
+        provider.getTransactionInfo.mockResolvedValue(infoFor(TX_BATCH_MISS));
 
-        const txs = await service.getTransactionsByIds(['hit', 'miss']);
+        const txs = await service.getTransactionsByIds([TX_BATCH_HIT, TX_BATCH_MISS]);
 
-        expect(txs.map(t => t.txId).sort()).toEqual(['hit', 'miss']);
+        expect(txs.map(t => t.txId).sort()).toEqual([TX_BATCH_HIT, TX_BATCH_MISS].sort());
         expect(provider.getTransactionById).toHaveBeenCalledTimes(1);
-        expect(provider.getTransactionById).toHaveBeenCalledWith('miss');
+        expect(provider.getTransactionById).toHaveBeenCalledWith(TX_BATCH_MISS);
     });
 
     it('de-duplicates repeated ids into a single provider fetch', async () => {
-        provider.getTransactionById.mockResolvedValue(rawTransfer('dup'));
-        provider.getTransactionInfo.mockResolvedValue(infoFor('dup'));
+        provider.getTransactionById.mockResolvedValue(rawTransfer(TX_DUP));
+        provider.getTransactionInfo.mockResolvedValue(infoFor(TX_DUP));
 
-        const txs = await service.getTransactionsByIds(['dup', 'dup', 'dup']);
+        const txs = await service.getTransactionsByIds([TX_DUP, TX_DUP, TX_DUP]);
 
         expect(txs).toHaveLength(1);
         expect(provider.getTransactionById).toHaveBeenCalledTimes(1);
     });
 
     it('returns null when the receipt cannot be resolved', async () => {
-        provider.getTransactionById.mockResolvedValue(rawTransfer('gone'));
+        provider.getTransactionById.mockResolvedValue(rawTransfer(TX_GONE));
         provider.getTransactionInfo.mockResolvedValue(null);
 
-        expect(await service.getTransactionById('gone')).toBeNull();
+        expect(await service.getTransactionById(TX_GONE)).toBeNull();
     });
 });
