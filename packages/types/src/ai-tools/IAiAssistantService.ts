@@ -2,11 +2,12 @@
  * @file IAiAssistantService.ts
  *
  * Public service interface for an AI Assistant plugin. Consuming plugins
- * discover this service at runtime via the shared service registry and use
- * it to register tools, submit programmatic queries, or both.
+ * discover this service at runtime via the shared service registry and use it
+ * to submit programmatic queries (`query` / `ask`) and list models. Tool
+ * registration is core-owned — register tools on the `'ai-tools'` registry
+ * (`IAiToolRegistry`), not here. See system-ai-tools.md.
  */
 
-import type { IAiTool } from './IAiTool.js';
 import type { IAiQueryOptions } from './IAiQueryOptions.js';
 import type { IAiQueryResult } from './IAiQueryResult.js';
 import type { IModelInfo } from './IModelInfo.js';
@@ -18,15 +19,11 @@ import type { IModelInfo } from './IModelInfo.js';
  * ```typescript
  * const ai = context.services.get<IAiAssistantService>('ai-assistant');
  * if (ai) {
- *     // Register tools for the model — pass your plugin's manifest id so
- *     // the admin UI can group tools by their source.
- *     ai.registerTool(myTool, 'my-plugin');
- *
  *     // Submit a programmatic query using configured defaults
  *     const result = await ai.ask('How many transactions in the last hour?');
  *
  *     // Submit a query with explicit overrides
- *     const result = await ai.query({
+ *     const detailed = await ai.query({
  *         prompt: 'Analyze {%system-status%}',
  *         maxTokens: 8192,
  *         includeTools: false
@@ -38,37 +35,6 @@ import type { IModelInfo } from './IModelInfo.js';
  * since the AI Assistant plugin may be disabled.
  */
 export interface IAiAssistantService {
-    /**
-     * Register a tool for the model to use during AI-assisted queries.
-     *
-     * `providerId` attributes the tool to a plugin or module so the admin UI
-     * can group tools by their source. Pass your plugin's manifest id (e.g.
-     * `'telegram-bot'`); omit only for legacy callers — the registry will tag
-     * those as `'unknown'`. Attribution is captured at registration time, not
-     * inferred from the tool name.
-     *
-     * @param tool - Tool definition including name, schema, and handler.
-     * @param providerId - Plugin/module id that owns this tool (e.g. the
-     *                     caller's `manifest.id`). Defaults to `'unknown'`.
-     * @throws If a tool with the same name is already registered.
-     */
-    registerTool(tool: IAiTool, providerId?: string): void;
-
-    /**
-     * Remove a previously registered tool by name.
-     *
-     * @param name - The tool name to unregister.
-     * @returns `true` if the tool was found and removed, `false` otherwise.
-     */
-    unregisterTool(name: string): boolean;
-
-    /**
-     * List all currently registered tools.
-     *
-     * @returns Array of registered tool definitions.
-     */
-    listTools(): IAiTool[];
-
     /**
      * Execute a non-streaming AI query with explicit parameter overrides.
      *

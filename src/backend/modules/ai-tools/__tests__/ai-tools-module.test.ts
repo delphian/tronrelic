@@ -9,10 +9,15 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { HookAbortError } from '@/types';
-import type { IAiTool, IHookRegistry, IToolInvocationContext } from '@/types';
-import { AiToolsModule } from '../index.js';
+import type { IAiTool, IAiToolCapability, IHookRegistry, IMenuService, IToolInvocationContext } from '@/types';
+import { AiToolsModule, detectTrifecta } from '../index.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
+
+/** Minimal menu service whose `create` records the admin nav registration. */
+function createMockMenuService(): IMenuService {
+    return { create: vi.fn(async () => ({ _id: 'menu-ai-tools' })) } as unknown as IMenuService;
+}
 
 /** Minimal hook registry whose `invoke` is a no-op unless a test overrides it. */
 function createMockHookRegistry(): IHookRegistry {
@@ -46,6 +51,17 @@ function externalTool(handler = vi.fn(async () => ({ posted: true }))): IAiTool 
     };
 }
 
+/** An external tool the author cleared for unattended use (reversible, opt-in). */
+function unattendedExternalTool(handler = vi.fn(async () => ({ sent: true }))): IAiTool {
+    return {
+        name: 'test-unattended',
+        description: 'An external but reversible tool cleared for unattended use.',
+        inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+        capability: { sideEffect: 'external', reversible: true, sensitivity: 'internal', allowUnattended: true },
+        handler
+    };
+}
+
 const interactiveCtx: IToolInvocationContext = { actor: { kind: 'admin', id: 'admin-1' }, triggerPath: 'interactive', aiProviderId: 'test-provider' };
 const scheduledCtx: IToolInvocationContext = { actor: { kind: 'system' }, triggerPath: 'scheduled', aiProviderId: 'test-provider' };
 
@@ -64,6 +80,7 @@ describe('AiToolsModule', () => {
             database: createMockDatabaseService(),
             serviceRegistry: mockRegistry,
             hookRegistry: mockHooks,
+            menuService: createMockMenuService(),
             app: mockApp as never
         });
     });
@@ -150,6 +167,17 @@ describe('AiToolsModule', () => {
             expect(result.status).toBe('denied');
         });
 
+        it('permits an allowUnattended external tool on an autonomous run', async () => {
+            const handler = vi.fn(async () => ({ sent: true }));
+            const registry = module.getRegistry();
+            registry.registerTool(unattendedExternalTool(handler), 'test');
+            await registry.setEnabled('test-unattended', true); // external ships disabled
+
+            const result = await module.getGovernor().invoke('test-unattended', {}, scheduledCtx);
+            expect(result.status).toBe('ok');
+            expect(handler).toHaveBeenCalledOnce();
+        });
+
         it('denies when a pre-invocation hook vetoes via HookAbortError', async () => {
             module.getRegistry().registerTool(readTool(), 'test');
             (mockHooks.invoke as ReturnType<typeof vi.fn>).mockImplementation(async (descriptor: { id: string }) => {
@@ -176,6 +204,68 @@ describe('AiToolsModule', () => {
             const result = await module.getGovernor().invoke('needs-id', {}, interactiveCtx);
             expect(result.status).toBe('denied');
             expect(result.error).toContain('id');
+        });
+    });
+
+    describe('broadcast signals', () => {
+        it('emits an activity refetch signal on every invocation', async () => {
+            const events: string[] = [];
+            module.getGovernor().setBroadcast((event) => events.push(event));
+            module.getRegistry().registerTool(readTool(), 'test');
+
+            await module.getGovernor().invoke('test-read', {}, interactiveCtx);
+
+            expect(events).toContain('ai-tools:activity');
+        });
+
+        it('emits an approvals-changed signal when an interactive external call is held', async () => {
+            const events: string[] = [];
+            const governor = module.getGovernor();
+            governor.setBroadcast((event) => events.push(event));
+            const registry = module.getRegistry();
+            registry.registerTool(externalTool(), 'test');
+            await registry.setEnabled('test-external', true);
+
+            const result = await governor.invoke('test-external', {}, interactiveCtx);
+
+            expect(result.status).toBe('pending-approval');
+            expect(events).toContain('ai-tools:approvals-changed');
+        });
+    });
+
+    describe('trifecta detection', () => {
+        /** Register an enabled-by-default tool carrying the given capability. */
+        function register(name: string, capability: IAiToolCapability): void {
+            module.getRegistry().registerTool({
+                name,
+                description: name,
+                inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+                capability,
+                handler: vi.fn(async () => ({}))
+            }, 'test');
+        }
+
+        it('flags the trifecta when an enabled secret reader, untrusted source, and external sink co-exist', async () => {
+            register('secret-reader', { sideEffect: 'read', reversible: true, sensitivity: 'secret' });
+            register('memo-reader', { sideEffect: 'read', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true });
+            register('poster', { sideEffect: 'external', reversible: false, sensitivity: 'public' });
+            await module.getRegistry().setEnabled('poster', true); // external ships disabled
+
+            const status = detectTrifecta(module.getRegistry().listToolInfo());
+            expect(status.present).toBe(true);
+            expect(status.privateData).toContain('secret-reader');
+            expect(status.untrustedContent).toContain('memo-reader');
+            expect(status.exfiltration).toContain('poster');
+        });
+
+        it('does not flag when the exfiltration leg is disabled', () => {
+            register('secret-reader', { sideEffect: 'read', reversible: true, sensitivity: 'secret' });
+            register('memo-reader', { sideEffect: 'read', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true });
+            register('poster', { sideEffect: 'external', reversible: false, sensitivity: 'public' }); // stays disabled by default
+
+            const status = detectTrifecta(module.getRegistry().listToolInfo());
+            expect(status.present).toBe(false);
+            expect(status.exfiltration).toHaveLength(0);
         });
     });
 });

@@ -67,8 +67,13 @@ export type {
     IAiToolRegistry,
     IAiToolDeclaration,
     IAiToolInfo,
+    ITrifectaStatus,
+    IAiProviderInfo,
+    IAiProviderRegistry,
     IAiToolInvokeContext
 } from './ai-tools/index.js';
+export { isPrivateIp, assertPublicHttpUrl } from './egress/index.js';
+export type { IEgressCheckResult, IEgressCheckOptions } from './egress/index.js';
 export type {
     HookDescriptor,
     HookKind,

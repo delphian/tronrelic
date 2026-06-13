@@ -8,12 +8,14 @@ Provider-agnostic governance for AI tools — the registry every tool registers 
 |---|---|
 | Module id | `ai-tools` |
 | Module class | `src/backend/modules/ai-tools/AiToolsModule.ts` |
-| Service registry names | `'ai-tools'` → `IAiToolRegistry`, `'ai-tool-governor'` → `IAiToolGovernor` |
+| Service registry names | `'ai-tools'` → `IAiToolRegistry`, `'ai-tool-governor'` → `IAiToolGovernor`, `'ai-providers'` → `IAiProviderRegistry` |
 | Admin API base | `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`) |
-| Types package | `@delphian/tronrelic-types` → `IAiTool`, `IAiToolCapability`, `IAiToolRegistry`, `IAiToolGovernor`, `IToolInvocation{Context,Result,Record}`, `IToolPolicy`, `IAiToolInvokeContext` |
+| Admin dashboard | `/system/ai-tools` (Registry · Activity · Approvals · Policy tabs + trifecta banner + provider panel) |
+| Types package | `@delphian/tronrelic-types` → `IAiTool`, `IAiToolCapability`, `IAiToolRegistry`, `IAiToolGovernor`, `IAiProviderRegistry`, `ITrifectaStatus`, `IToolInvocation{Context,Result,Record}`, `IToolPolicy`, `IAiToolInvokeContext` |
 | Owned collections | `module_ai-tools_invocations`, `module_ai-tools_approvals` |
 | KV keys (core `_kv`) | `ai-tools:tool-states`, `ai-tools:policy-overrides` |
 | Hook seams | `ai.toolInvoke` (series, veto/hold), `ai.toolInvoked` (observer, audit fan-out) |
+| WebSocket signals | `ai-tools:activity`, `ai-tools:approvals-changed` (timestamp-only refetch cues; data stays behind the gated REST feed) |
 | Bootstrap order | Inits/runs alongside the other modules, before `loadPlugins` |
 | Standard | [system-ai-tools.md](../../../../docs/system/system-ai-tools.md) |
 
@@ -48,7 +50,9 @@ A tool declares `IAiToolCapability`; the registry sets its first-boot enabled st
 | `sideEffect: 'external'` / `reversible: false` / `spendsMoney` | **disabled** | rate cap + approval (when irreversible) + **autonomous default-deny** |
 | `sensitivity: 'secret'` | — | arguments redacted in the audit record |
 
-**Autonomous default-deny:** on `triggerPath` `scheduled` or `programmatic`, an `external` tool is denied unless its policy sets `allowUnattended`. **Approval:** irreversible/public effects park as `pending-approval` and run only when an admin approves.
+**Autonomous default-deny:** on `triggerPath` `scheduled` or `programmatic`, an `external` tool is denied unless `allowUnattended` is set — declared on the tool's capability for a genuinely-safe tool, or forced by an admin policy override. **Approval:** irreversible/public effects park as `pending-approval` and run only when an admin approves.
+
+**Lethal-trifecta detection:** `detectTrifecta()` scans the *enabled* set for the co-presence of a `sensitivity: 'secret'` reader, a `surfacesUntrustedContent` source, and an `external` sink — the combination that lets injected text read a secret and exfiltrate it in one turn. `GET /trifecta` surfaces `present` plus the tool names forming each leg, so an operator can break the chain by disabling one.
 
 ## Service Contracts
 
@@ -58,7 +62,11 @@ Tool providers consume this. `registerTool(tool, providerId)`, `unregisterTool(n
 
 ### `'ai-tool-governor'` → `IAiToolGovernor`
 
-The AI provider plugin consumes this. `invoke(name, input, ctx)` returns `IToolInvocationResult`. The concrete `AiToolGovernor` also exposes `approve(approvalId, by)` / `reject(approvalId, by)` for the admin surface.
+The AI provider plugin consumes this. `invoke(name, input, ctx)` returns `IToolInvocationResult`. The concrete `AiToolGovernor` also exposes `approve(approvalId, by)` / `reject(approvalId, by)` for the admin surface, and `setBroadcast(fn)` which the module wires to `WebSocketService` so governed events emit refetch signals.
+
+### `'ai-providers'` → `IAiProviderRegistry`
+
+The installed AI provider plugin registers itself here (`registerProvider`/`unregisterProvider`/`listProviders`) so the Provider panel stays provider-agnostic — `trp-ai-assistant` registers on enable and unregisters on disable.
 
 ## Admin REST API
 
@@ -68,9 +76,12 @@ All under `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`).
 |---|---|---|
 | GET | `/tools` | Registry: tools with capability, provider, enabled state |
 | PATCH | `/tools/:name` | Toggle enabled (`{ enabled }`) |
+| GET | `/trifecta` | Lethal-trifecta status over the enabled set (`present` + tool names per leg) |
+| GET | `/providers` | Installed AI provider plugins (Provider panel) |
 | GET | `/activity` | Invocation audit feed (filters: `toolName`, `status`, `triggerPath`, `providerId`, `aiProviderId`, `limit`, `offset`) |
 | GET | `/activity/:id` | One invocation record |
 | GET | `/approvals` | Pending held invocations |
+| GET | `/approvals/count` | Pending-approval count (nav/tab badge) |
 | POST | `/approvals/:id/approve` | Approve and run a held invocation |
 | POST | `/approvals/:id/reject` | Reject without running |
 | GET | `/policy` | Per-tool overrides + usage tallies |
@@ -82,7 +93,7 @@ Declared in `src/backend/hooks/registry.ts`. `ai.toolInvoke` (series, `IAiToolIn
 
 ## Lifecycle Obligations
 
-`init()` constructs the registry, policy engine, audit store, approval queue, and governor; loads persisted tool-states and policy overrides; and ensures the two collections' indexes (the collections are new, so index creation here is correct rather than a migration). `run()` mounts the admin router and registers `'ai-tools'` + `'ai-tool-governor'`. Errors in either phase fail the boot — there is no degraded mode.
+`init()` constructs the registry, policy engine, audit store, approval queue, governor, and provider registry; loads persisted tool-states and policy overrides; and ensures the two collections' indexes (the collections are new, so index creation here is correct rather than a migration). `run()` mounts the admin router, registers `'ai-tools'` / `'ai-tool-governor'` / `'ai-providers'`, wires the governor's broadcast sink to `WebSocketService`, and registers the `/system/ai-tools` admin nav item under the System container. Errors in either phase fail the boot — there is no degraded mode.
 
 ## Related
 

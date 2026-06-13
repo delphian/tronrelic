@@ -2,7 +2,7 @@
 
 AI tools let a model call back into TronRelic during a query — look up a transaction, read logs, post to a channel, generate an image. This document is the contract every tool implements and the accountability and security every tool must meet, whichever AI provider plugin is installed.
 
-> **Status.** The capability metadata and the central tool governor described here are being introduced incrementally; today the registry and dispatch live in the active AI provider plugin (`trp-ai-assistant`). The *requirements* in [Accountability and security](#accountability-and-security) are mandatory now — classify your tool and apply the matching guardrails by hand, as the reference tools already do.
+> **Status.** The capability metadata, the core registry, and the central governor are live in the [`ai-tools` module](../../src/backend/modules/ai-tools/README.md): tools register with the `'ai-tools'` service, declare a `capability`, and execute through the governor, which validates input, applies policy by class, bounds the handler with a timeout, audits the call, and parks approvals. Authors still own the per-tool concerns the governor cannot — object-level authorization, egress control, and result-size caps.
 
 ## Why This Matters
 
@@ -29,7 +29,7 @@ Register through the service registry with `watch()` (never `get()` — it cover
 
 ## Classify Your Tool
 
-Classify every tool before it ships; the class drives the guardrails core expects. Until the formal `capability` field lands on the contract, encode the classification in the description and apply the guards by hand.
+Classify every tool before it ships; the class drives the guardrails the governor applies. Declare it in the `capability` field on `IAiTool` — the governor derives policy from the class instead of trusting prose in the description.
 
 | Dimension | Values | Drives |
 |---|---|---|
@@ -46,7 +46,7 @@ A transaction lookup is read / internal. A log query is read / secret / surfaces
 
 Mandatory for every tool; scale to the class. A read-only lookup needs little, an external action needs all of it.
 
-**Least privilege, default-deny for danger.** External, irreversible, and money-spending tools are opt-in and ship disabled. They must not run on autonomous paths (scheduled prompts, programmatic `ask()` from other plugins) unless explicitly authorized — an unattended run has no human to catch a mistake.
+**Least privilege, default-deny for danger.** External, irreversible, and money-spending tools are opt-in and ship disabled. They must not run on autonomous paths (scheduled prompts, programmatic `ask()` from other plugins) unless explicitly authorized — an unattended run has no human to catch a mistake. Authorize a genuinely-safe external tool for unattended use by declaring `allowUnattended: true` on its capability, or via an admin policy override.
 
 **Validate every input.** The schema is a hint to the model, not a guarantee. Re-check every argument in the handler (format, range, enum) and reject with a descriptive error the model can correct from. Never pass model-supplied values into a query, path, command, or URL unchecked.
 
@@ -58,13 +58,13 @@ Mandatory for every tool; scale to the class. A read-only lookup needs little, a
 
 **Audit every invocation.** Record who triggered it (interactive admin / scheduled / programmatic), the arguments, the outcome, and the cost — enough to reconstruct what happened. `trp-image-gen`'s per-call history is the reference shape.
 
-**Control egress.** A URL-fetching tool must block private-IP/SSRF targets and non-HTTP(S) schemes and cap response size. Reuse the shared egress helper rather than re-implementing it.
+**Control egress.** A URL-fetching tool must block private-IP/SSRF targets and non-HTTP(S) schemes and cap response size. Use the shared egress guard — `assertPublicHttpUrl` / `isPrivateIp` from `@delphian/tronrelic-types` — rather than re-implementing the private-range tables. A tool that fetches the bytes itself should also resolve the host and re-check the resolved address (`trp-x-poster` is the reference).
 
 **Cap result size.** Truncate large payloads and point the model at a follow-up tool for the full record, so one call cannot blow the context window. The log tools are the reference.
 
 ## How It Works
 
-The provider advertises the enabled tools to the model; when the model emits a tool call, the handler runs server-side and its result is fed back so the model can continue. Core is centralizing the cross-cutting concerns — input validation, policy by capability class, a per-handler timeout, audit, and human approval — behind a single governor and declared hook seams, so authors stop re-implementing them and operators get one place to see and tune every tool. See [system-hooks.md](./system-hooks.md) for the seam mechanism.
+The provider advertises the enabled tools to the model; when the model emits a tool call, the provider routes it through `governor.invoke()`, which runs the handler server-side and feeds the result back so the model can continue. Core centralizes the cross-cutting concerns — input validation, policy by capability class, a per-handler timeout, audit, and human approval — behind that single governor and the declared hook seams, so authors stop re-implementing them and operators get one place to see and tune every tool. Core also surfaces the lethal-trifecta status over the *enabled* set at `GET /api/admin/system/ai-tools/trifecta`. Operators see and tune all of this at the admin-gated `/system/ai-tools` dashboard — Registry (capability badges + enable toggles), Activity (live audit feed), Approvals (approve/reject + live pending count), and Policy (per-tool overrides), plus a trifecta banner and a provider panel — which lives in core and survives swapping the provider plugin. See [system-hooks.md](./system-hooks.md) for the seam mechanism and the [`ai-tools` module README](../../src/backend/modules/ai-tools/README.md) for the full governor pipeline.
 
 ## Example
 

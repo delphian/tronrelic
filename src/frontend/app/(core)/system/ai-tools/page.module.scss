@@ -1,0 +1,167 @@
+/**
+ * Styles for the /system/ai-tools admin dashboard. Tab row, trifecta banner,
+ * and the small layout helpers the tabs share. Visual surfaces come from the
+ * Card / Badge / Table / Button primitives; this module only adds structure.
+ */
+
+@use '../../../breakpoints' as *;
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+    container-type: inline-size;
+    container-name: ai-tools-dashboard;
+}
+
+.header_row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    flex-wrap: wrap;
+}
+
+.tabs {
+    display: flex;
+    gap: var(--gap-sm);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    flex-wrap: wrap;
+}
+
+.tab,
+.tab__active {
+    padding: var(--gap-sm) var(--gap-md);
+    background: none;
+    border: none;
+    border-bottom: var(--border-width-medium) solid transparent;
+    cursor: pointer;
+    font-size: var(--font-size-body-lg);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+    transition: color var(--transition-base), border-color var(--transition-base);
+}
+
+.tab:hover {
+    color: var(--color-text);
+}
+
+.tab__active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+}
+
+.content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+/* Tool name + description stack inside a table cell. */
+.tool_name {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.tool_desc {
+    margin-top: var(--gap-2xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    max-width: var(--max-width-prose);
+}
+
+/* Capability badge row. */
+.badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+}
+
+/* Filter bar above the activity feed. */
+.filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
+    align-items: center;
+}
+
+.filter_select {
+    background: var(--input-background);
+    color: var(--color-text);
+    border: var(--input-border);
+    border-radius: var(--input-border-radius);
+    padding: var(--input-padding-sm);
+    font-size: var(--font-size-body-sm);
+}
+
+/* Inline row actions (approve/reject, edit/clear). */
+.row_actions {
+    display: flex;
+    gap: var(--gap-sm);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* Empty / loading placeholder text. */
+.placeholder {
+    padding: var(--padding-lg);
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+/* Trifecta banner contributing-tool lists. */
+.trifecta_legs {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--gap-sm);
+    margin-top: var(--gap-sm);
+}
+
+.trifecta_leg_label {
+    font-size: var(--font-size-caption);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text-subtle);
+}
+
+/* Provider panel rows. */
+.provider_row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+/* Monospace digest / args preview. */
+.mono {
+    font-family: var(--font-mono, monospace);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    word-break: break-word;
+}
+
+/* Policy editor inline field grid. */
+.policy_editor {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--gap-sm);
+}
+
+.policy_field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
+.policy_field_label {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+@container (min-width: #{$breakpoint-mobile-lg}) {
+    .trifecta_legs {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}

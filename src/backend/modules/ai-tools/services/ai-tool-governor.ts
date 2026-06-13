@@ -171,6 +171,30 @@ export class AiToolGovernor implements IAiToolGovernor {
         private readonly hookRegistry: IHookRegistry
     ) {}
 
+    /** Optional sink for refetch signals over WebSocket; wired by the module. */
+    private broadcast?: (event: string, payload: unknown) => void;
+
+    /**
+     * Wire a broadcast sink so governed events surface to the admin dashboard as
+     * lightweight refetch signals. The module passes a closure over
+     * `WebSocketService`; left unset (e.g. in tests) emission is a no-op. Signals
+     * carry only a timestamp — never the invocation record — so the data stays
+     * behind the admin-gated REST feed rather than a global socket broadcast.
+     *
+     * @param fn - Emit callback invoked with an event name and signal payload.
+     */
+    setBroadcast(fn: (event: string, payload: unknown) => void): void {
+        this.broadcast = fn;
+    }
+
+    /**
+     * Emit a refetch signal that the approval queue changed (parked, approved,
+     * or rejected) — drives the Approvals tab and the nav pending-count badge.
+     */
+    private notifyApprovalsChanged(): void {
+        this.broadcast?.('ai-tools:approvals-changed', { timestamp: new Date().toISOString() });
+    }
+
     /** @inheritdoc */
     async invoke(name: string, input: Record<string, unknown>, ctx: IToolInvocationContext): Promise<IToolInvocationResult> {
         const tool = this.registry.getTool(name);
@@ -224,6 +248,7 @@ export class AiToolGovernor implements IAiToolGovernor {
         const request = await this.approvals.resolve(approvalId, 'approved', resolvedBy);
         let result: IToolInvocationResult | null = null;
         if (request) {
+            this.notifyApprovalsChanged();
             const tool = this.registry.getTool(request.toolName);
             const cap = tool?.capability ?? DEFAULT_CAPABILITY;
             if (!tool) {
@@ -243,7 +268,11 @@ export class AiToolGovernor implements IAiToolGovernor {
      * @returns The rejected request, or null when none matched.
      */
     async reject(approvalId: string, resolvedBy?: string): Promise<IToolApprovalRequest | null> {
-        return this.approvals.resolve(approvalId, 'rejected', resolvedBy);
+        const request = await this.approvals.resolve(approvalId, 'rejected', resolvedBy);
+        if (request) {
+            this.notifyApprovalsChanged();
+        }
+        return request;
     }
 
     /**
@@ -325,6 +354,7 @@ export class AiToolGovernor implements IAiToolGovernor {
             context: ctx,
             capability: tool.capability
         });
+        this.notifyApprovalsChanged();
         const record = this.buildRecord(tool.name, providerId, cap, ctx, input, 'pending-approval', {});
         await this.audit.record(record);
         await this.notifyInvoked(record);
@@ -410,5 +440,6 @@ export class AiToolGovernor implements IAiToolGovernor {
         } catch (error: unknown) {
             this.logger.warn({ error, tool: record.toolName }, 'ai.toolInvoked hook failed');
         }
+        this.broadcast?.('ai-tools:activity', { timestamp: record.createdAt });
     }
 }

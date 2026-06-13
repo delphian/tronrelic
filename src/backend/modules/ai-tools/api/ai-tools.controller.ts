@@ -4,8 +4,8 @@
  * Admin HTTP handlers for the AI tool governance surface: the tool registry
  * with capability badges and enable toggles, the live invocation audit feed,
  * the approval queue, and the policy editor. Mounted under
- * `/api/admin/system/ai-tools`. The frontend dashboard (a later phase) renders
- * these; the endpoints are the provider-neutral source of truth.
+ * `/api/admin/system/ai-tools`. The `/system/ai-tools` dashboard renders these;
+ * the endpoints are the provider-neutral source of truth.
  */
 
 import type { Request, Response } from 'express';
@@ -15,6 +15,8 @@ import type { ToolPolicyEngine } from '../services/tool-policy-engine.js';
 import type { ToolAuditStore, IToolInvocationQuery } from '../services/tool-audit-store.js';
 import type { ToolApprovalQueue } from '../services/tool-approval-queue.js';
 import type { AiToolGovernor } from '../services/ai-tool-governor.js';
+import type { AiProviderRegistry } from '../services/ai-provider-registry.js';
+import { detectTrifecta } from '../services/trifecta-detector.js';
 
 /**
  * Read the Better Auth admin id `requireAdmin` set on the request, for audit
@@ -38,13 +40,15 @@ export class AiToolsController {
      * @param audit - Invocation audit store.
      * @param approvals - Approval queue.
      * @param governor - Tool governor (for approve/reject execution).
+     * @param providers - Installed-AI-provider registry (for the Provider panel).
      */
     constructor(
         private readonly registry: AiToolRegistry,
         private readonly policy: ToolPolicyEngine,
         private readonly audit: ToolAuditStore,
         private readonly approvals: ToolApprovalQueue,
-        private readonly governor: AiToolGovernor
+        private readonly governor: AiToolGovernor,
+        private readonly providers: AiProviderRegistry
     ) {}
 
     /** GET /tools — registry with capability, provider, and enabled state. */
@@ -65,6 +69,16 @@ export class AiToolsController {
             return;
         }
         res.json({ name: req.params.name, enabled });
+    };
+
+    /** GET /trifecta — lethal-trifecta status over the enabled tool set. */
+    getTrifecta = async (_req: Request, res: Response): Promise<void> => {
+        res.json(detectTrifecta(this.registry.listToolInfo()));
+    };
+
+    /** GET /providers — installed AI provider plugins for the Provider panel. */
+    listProviders = async (_req: Request, res: Response): Promise<void> => {
+        res.json({ providers: this.providers.listProviders() });
     };
 
     /** GET /activity — paged invocation audit feed with filters. */
@@ -108,6 +122,11 @@ export class AiToolsController {
     /** GET /approvals — pending held invocations awaiting human decision. */
     listApprovals = async (_req: Request, res: Response): Promise<void> => {
         res.json({ approvals: await this.approvals.listPending() });
+    };
+
+    /** GET /approvals/count — pending approval count for the nav badge. */
+    getApprovalsCount = async (_req: Request, res: Response): Promise<void> => {
+        res.json({ count: await this.approvals.countPending() });
     };
 
     /** POST /approvals/:id/approve — approve and run a held invocation. */

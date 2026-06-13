@@ -55,6 +55,16 @@ export interface IAiToolCapability {
     requiresApproval?: boolean;
 
     /**
+     * Whether the tool is safe to run on autonomous trigger paths (scheduled
+     * prompts, programmatic `ask()` from other plugins). Defaults to false for
+     * `external` tools — an unattended run has no human to catch a mistake — and
+     * true otherwise. Declaring it lets a tool author opt a genuinely-safe
+     * external tool into unattended use without an operator policy override; an
+     * admin policy override still wins over this declaration.
+     */
+    allowUnattended?: boolean;
+
+    /**
      * Named policy id, or an inline policy, overriding the class-derived
      * defaults. Resolved by the governor's policy engine.
      */
