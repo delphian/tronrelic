@@ -40,12 +40,16 @@ export interface IPendingApproval {
     resolvedBy?: string;
 }
 
-/** One page of invocation audit records plus the unpaginated total. */
+/**
+ * One page of invocation audit records plus the unpaginated total. Mirrors the
+ * backend `IToolInvocationPage` exactly — the activity endpoint returns
+ * `{ records, total }`, so this must not rename or add fields the server never
+ * sends (a cast in `listActivity` would otherwise hide the mismatch until it
+ * crashes the tab at runtime).
+ */
 export interface IActivityPage {
-    items: IToolInvocationRecord[];
+    records: IToolInvocationRecord[];
     total: number;
-    limit: number;
-    offset: number;
 }
 
 /** Filters accepted by the activity feed. */

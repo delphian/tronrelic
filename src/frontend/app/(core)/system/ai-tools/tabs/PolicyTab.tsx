@@ -11,7 +11,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { IAiToolInfo, IToolPolicy } from '@/types';
 import { Stack } from '../../../../../components/layout';
-import { Switch } from '../../../../../components/ui/Switch';
 import { Button } from '../../../../../components/ui/Button';
 import { Input } from '../../../../../components/ui/Input';
 import { Badge } from '../../../../../components/ui/Badge';
@@ -27,6 +26,27 @@ const RATE_WINDOW_MS = 60_000;
 type Usage = IPolicyResponse['usage'][string];
 
 /**
+ * Tri-state for an optional boolean policy field. `inherit` leaves the field out
+ * of the saved override so the governor keeps the capability-class default;
+ * `on`/`off` force the value. Seeding from the override (undefined → `inherit`)
+ * is what prevents a save from silently overwriting a class default an admin
+ * never meant to touch.
+ */
+type TriState = 'inherit' | 'on' | 'off';
+
+/**
+ * Map an override field's stored value to its tri-state. An absent field
+ * (`undefined`) means the override does not set it, so the class default
+ * applies — `inherit`.
+ *
+ * @param value - The override field value, or undefined when unset.
+ * @returns The matching tri-state.
+ */
+function triFrom(value: boolean | undefined): TriState {
+    return value === undefined ? 'inherit' : value ? 'on' : 'off';
+}
+
+/**
  * Editable policy row for one tool. Local form state is seeded from the tool's
  * current override so each row edits independently.
  */
@@ -36,8 +56,8 @@ function PolicyRow({ tool, override, usage, onSaved }: {
     usage?: Usage;
     onSaved: () => void;
 }) {
-    const [requireApproval, setRequireApproval] = useState<boolean>(override?.requireApproval ?? false);
-    const [allowUnattended, setAllowUnattended] = useState<boolean>(override?.allowUnattended ?? false);
+    const [requireApproval, setRequireApproval] = useState<TriState>(triFrom(override?.requireApproval));
+    const [allowUnattended, setAllowUnattended] = useState<TriState>(triFrom(override?.allowUnattended));
     const [rateMax, setRateMax] = useState<string>(override?.rateLimit ? String(override.rateLimit.max) : '');
     const [costCeiling, setCostCeiling] = useState<string>(override?.costCeilingUsd !== undefined ? String(override.costCeilingUsd) : '');
     const [busy, setBusy] = useState(false);
@@ -46,12 +66,23 @@ function PolicyRow({ tool, override, usage, onSaved }: {
     const hasOverride = override !== undefined;
 
     const save = useCallback(async () => {
-        const policy: IToolPolicy = { requireApproval, allowUnattended };
-        if (rateMax.trim() !== '' && Number.isFinite(Number(rateMax))) {
-            policy.rateLimit = { max: Number(rateMax), windowMs: RATE_WINDOW_MS };
+        // Only write a tri-state field when the admin forced it. Leaving it out
+        // lets the governor keep the capability-class default rather than pinning
+        // (and possibly disabling) it — e.g. an unset approval gate stays on.
+        const policy: IToolPolicy = {};
+        if (requireApproval !== 'inherit') {
+            policy.requireApproval = requireApproval === 'on';
         }
-        if (costCeiling.trim() !== '' && Number.isFinite(Number(costCeiling))) {
-            policy.costCeilingUsd = Number(costCeiling);
+        if (allowUnattended !== 'inherit') {
+            policy.allowUnattended = allowUnattended === 'on';
+        }
+        const parsedRate = Number(rateMax);
+        if (rateMax.trim() !== '' && Number.isFinite(parsedRate) && parsedRate >= 0) {
+            policy.rateLimit = { max: Math.floor(parsedRate), windowMs: RATE_WINDOW_MS };
+        }
+        const parsedCost = Number(costCeiling);
+        if (costCeiling.trim() !== '' && Number.isFinite(parsedCost) && parsedCost >= 0) {
+            policy.costCeilingUsd = parsedCost;
         }
         setBusy(true);
         try {
@@ -91,11 +122,29 @@ function PolicyRow({ tool, override, usage, onSaved }: {
                 <div className={styles.policy_editor}>
                     <label className={styles.policy_field}>
                         <span className={styles.policy_field_label}>Require approval</span>
-                        <Switch on={requireApproval} onChange={setRequireApproval} size="sm" aria-label={`Require approval for ${tool.name}`} />
+                        <select
+                            className={styles.filter_select}
+                            value={requireApproval}
+                            onChange={(e) => setRequireApproval(e.target.value as TriState)}
+                            aria-label={`Require approval for ${tool.name}`}
+                        >
+                            <option value="inherit">Default</option>
+                            <option value="on">On</option>
+                            <option value="off">Off</option>
+                        </select>
                     </label>
                     <label className={styles.policy_field}>
                         <span className={styles.policy_field_label}>Allow unattended</span>
-                        <Switch on={allowUnattended} onChange={setAllowUnattended} size="sm" aria-label={`Allow unattended runs for ${tool.name}`} />
+                        <select
+                            className={styles.filter_select}
+                            value={allowUnattended}
+                            onChange={(e) => setAllowUnattended(e.target.value as TriState)}
+                            aria-label={`Allow unattended runs for ${tool.name}`}
+                        >
+                            <option value="inherit">Default</option>
+                            <option value="on">On</option>
+                            <option value="off">Off</option>
+                        </select>
                     </label>
                     <label className={styles.policy_field}>
                         <span className={styles.policy_field_label}>Rate / min</span>

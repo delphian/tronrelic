@@ -21,6 +21,7 @@ import type {
     IMenuService,
     IModule,
     IModuleMetadata,
+    ISchedulerService,
     IServiceRegistry
 } from '@/types';
 import { logger } from '../../lib/logger.js';
@@ -44,6 +45,12 @@ export const AI_TOOL_GOVERNOR_SERVICE = 'ai-tool-governor';
 /** Service-registry name for the installed-AI-provider registry. */
 export const AI_PROVIDERS_SERVICE = 'ai-providers';
 
+/** Scheduler job that prunes audit records past the retention window. */
+export const AUDIT_PRUNE_JOB = 'ai-tools:prune-audit';
+
+/** Daily (04:00) cron for the audit retention sweep. */
+const AUDIT_PRUNE_SCHEDULE = '0 4 * * *';
+
 /**
  * Dependencies the AI tools module needs at bootstrap. A subset of the shared
  * module dependency bundle, so the bootstrap can inject `sharedDeps` directly.
@@ -59,6 +66,12 @@ export interface IAiToolsModuleDependencies {
     menuService: IMenuService;
     /** Express app the admin router mounts onto. */
     app: Express;
+    /**
+     * Scheduler for the audit retention sweep. Optional/nullable so tests and a
+     * scheduler-disabled deployment still boot the module; when absent the prune
+     * job simply is not registered and the audit collection is not auto-trimmed.
+     */
+    scheduler?: ISchedulerService | null;
 }
 
 /**
@@ -77,6 +90,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private hookRegistry!: IHookRegistry;
     private menuService!: IMenuService;
     private app!: Express;
+    private scheduler: ISchedulerService | null = null;
 
     private registry!: AiToolRegistry;
     private policy!: ToolPolicyEngine;
@@ -102,6 +116,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.hookRegistry = dependencies.hookRegistry;
         this.menuService = dependencies.menuService;
         this.app = dependencies.app;
+        this.scheduler = dependencies.scheduler ?? null;
 
         this.registry = new AiToolRegistry(this.logger, this.database);
         await this.registry.loadStates();
@@ -141,6 +156,19 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.serviceRegistry.register(AI_TOOLS_SERVICE, this.registry);
         this.serviceRegistry.register(AI_TOOL_GOVERNOR_SERVICE, this.governor);
         this.serviceRegistry.register(AI_PROVIDERS_SERVICE, this.providerRegistry);
+
+        // Daily audit retention sweep. A Mongo TTL index can't enforce this —
+        // `createdAt` is an ISO string, not a Date — so retention is a scheduled
+        // range delete. SchedulerService supports late registration; the
+        // scheduler module starts ticking after every module's run().
+        if (this.scheduler) {
+            this.scheduler.register(AUDIT_PRUNE_JOB, AUDIT_PRUNE_SCHEDULE, async () => {
+                await this.audit.pruneExpired();
+            });
+            this.logger.info({ job: AUDIT_PRUNE_JOB }, 'AI tool audit retention job registered');
+        } else {
+            this.logger.info('Scheduler disabled — AI tool audit retention job not registered');
+        }
 
         // Admin nav item under the System container. Memory-only (re-created each
         // boot); the parent-chain walk forces `requiresAdmin` on it.

@@ -148,9 +148,16 @@ export class ToolApprovalQueue {
             if (resolvedBy !== undefined) {
                 setFields.resolvedBy = resolvedBy;
             }
-            await this.database.updateMany(COLLECTION, { id, status: 'pending' }, { $set: setFields });
-            resolved = { ...existing, status, resolvedAt, resolvedBy };
-            this.logger.info({ id, status, resolvedBy }, `AI tool approval ${status}: ${existing.toolName}`);
+            // The conditional update — not the read above — is the gate. Filtering
+            // on `status: 'pending'` makes the transition atomic: two concurrent
+            // resolves serialize on the document, so only the first modifies it
+            // and gets the request back. The loser sees a zero modified count and
+            // returns null, so `governor.approve()` runs the handler exactly once.
+            const modified = await this.database.updateMany(COLLECTION, { id, status: 'pending' }, { $set: setFields });
+            if (modified > 0) {
+                resolved = { ...existing, status, resolvedAt, resolvedBy };
+                this.logger.info({ id, status, resolvedBy }, `AI tool approval ${status}: ${existing.toolName}`);
+            }
         }
         return resolved;
     }

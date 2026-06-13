@@ -342,7 +342,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await identityModule.init(sharedDeps);
     await trafficModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
     await toolsModule.init(sharedDeps);
-    await aiToolsModule.init(sharedDeps);
+    await aiToolsModule.init({ ...sharedDeps, scheduler: schedulerService });
 
     return {
         app,

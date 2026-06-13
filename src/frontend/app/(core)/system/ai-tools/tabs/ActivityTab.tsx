@@ -51,7 +51,7 @@ export function ActivityTab() {
         if (triggerPath) query.triggerPath = triggerPath;
         try {
             const page = await listActivity(query);
-            setItems(page.items);
+            setItems(page.records);
             setTotal(page.total);
             setError(null);
         } catch (err) {

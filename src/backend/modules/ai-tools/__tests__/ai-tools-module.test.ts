@@ -9,14 +9,31 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { HookAbortError } from '@/types';
-import type { IAiTool, IAiToolCapability, IHookRegistry, IMenuService, IToolInvocationContext } from '@/types';
-import { AiToolsModule, detectTrifecta } from '../index.js';
+import type { IAiTool, IAiToolCapability, IHookRegistry, IMenuService, ISchedulerService, ISystemLogService, IToolInvocationContext } from '@/types';
+import { AiToolsModule, AUDIT_PRUNE_JOB, ToolApprovalQueue, detectTrifecta } from '../index.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
 /** Minimal menu service whose `create` records the admin nav registration. */
 function createMockMenuService(): IMenuService {
     return { create: vi.fn(async () => ({ _id: 'menu-ai-tools' })) } as unknown as IMenuService;
+}
+
+/** Minimal logger that swallows every level and returns itself for `child()`. */
+function createMockLogger(): ISystemLogService {
+    const logger = {
+        info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), trace: vi.fn(), fatal: vi.fn(),
+        child: vi.fn(() => logger)
+    };
+    return logger as unknown as ISystemLogService;
+}
+
+/** Minimal scheduler whose `register` records the job name, schedule, and handler. */
+function createMockScheduler(): ISchedulerService {
+    return {
+        register: vi.fn(),
+        unregister: vi.fn(async () => undefined)
+    } as unknown as ISchedulerService;
 }
 
 /** Minimal hook registry whose `invoke` is a no-op unless a test overrides it. */
@@ -105,6 +122,32 @@ describe('AiToolsModule', () => {
             expect(mockApp.use).toHaveBeenCalledWith('/api/admin/system/ai-tools', expect.any(Function));
             expect(mockRegistry.get('ai-tools')).toBeDefined();
             expect(mockRegistry.get('ai-tool-governor')).toBeDefined();
+        });
+
+        it('registers the audit retention job when a scheduler is injected', async () => {
+            const scheduler = createMockScheduler();
+            const scheduledModule = new AiToolsModule();
+            await scheduledModule.init({
+                database: createMockDatabaseService(),
+                serviceRegistry: createMockServiceRegistry(),
+                hookRegistry: createMockHookRegistry(),
+                menuService: createMockMenuService(),
+                app: { use: vi.fn() } as never,
+                scheduler
+            });
+            await scheduledModule.run();
+
+            const register = scheduler.register as ReturnType<typeof vi.fn>;
+            expect(register).toHaveBeenCalledWith(AUDIT_PRUNE_JOB, expect.any(String), expect.any(Function));
+            // The handler must run the retention sweep without throwing.
+            const handler = register.mock.calls.find(c => c[0] === AUDIT_PRUNE_JOB)?.[2] as () => Promise<void>;
+            await expect(handler()).resolves.toBeUndefined();
+        });
+
+        it('runs without a scheduler (no retention job registered)', async () => {
+            // The beforeEach module omits the scheduler; run() must not throw.
+            await module.run();
+            expect(mockApp.use).toHaveBeenCalledWith('/api/admin/system/ai-tools', expect.any(Function));
         });
     });
 
@@ -267,5 +310,41 @@ describe('AiToolsModule', () => {
             expect(status.present).toBe(false);
             expect(status.exfiltration).toHaveLength(0);
         });
+    });
+});
+
+describe('ToolApprovalQueue', () => {
+    /** Build a queue over a fresh mock database. */
+    function makeQueue(): ToolApprovalQueue {
+        return new ToolApprovalQueue(createMockLogger(), createMockDatabaseService());
+    }
+
+    it('resolves a pending request only once under concurrent approvals', async () => {
+        const queue = makeQueue();
+        await queue.enqueue({
+            id: 'req-1',
+            toolName: 'test-external',
+            providerId: 'test',
+            input: {},
+            context: interactiveCtx
+        });
+
+        // Two simultaneous approvals race to resolve the same request. The
+        // conditional update must let exactly one win so the governor runs the
+        // handler once, not twice.
+        const [a, b] = await Promise.all([
+            queue.resolve('req-1', 'approved', 'admin-1'),
+            queue.resolve('req-1', 'approved', 'admin-2')
+        ]);
+
+        expect([a, b].filter(Boolean)).toHaveLength(1);
+    });
+
+    it('returns null when resolving an already-resolved request', async () => {
+        const queue = makeQueue();
+        await queue.enqueue({ id: 'req-2', toolName: 't', providerId: 'test', input: {}, context: interactiveCtx });
+
+        expect(await queue.resolve('req-2', 'approved', 'admin-1')).not.toBeNull();
+        expect(await queue.resolve('req-2', 'rejected', 'admin-2')).toBeNull();
     });
 });

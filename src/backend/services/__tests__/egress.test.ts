@@ -18,14 +18,20 @@ describe('isPrivateIp', () => {
         }
     });
 
-    it('flags IPv6 loopback, unique-local, and link-local ranges', () => {
-        for (const ip of ['::1', 'fc00::1', 'fd12:3456::1', 'fe80::1']) {
+    it('flags IPv6 unspecified, loopback, unique-local, and the full fe80::/10 link-local range', () => {
+        for (const ip of ['::', '::1', 'fc00::1', 'fd12:3456::1', 'fe80::1', 'fe90::1', 'fea0::1', 'febf::1']) {
             expect(isPrivateIp(ip), ip).toBe(true);
         }
     });
 
-    it('does not flag public addresses', () => {
-        for (const ip of ['8.8.8.8', '1.1.1.1', '93.184.216.34', '172.15.0.1', '172.32.0.1', '2606:4700:4700::1111']) {
+    it('flags IPv4-mapped IPv6 literals in both dotted and URL-normalized hex forms', () => {
+        for (const ip of ['::ffff:127.0.0.1', '::ffff:7f00:1', '::ffff:10.0.0.5', '::ffff:0a00:5', '0:0:0:0:0:ffff:127.0.0.1']) {
+            expect(isPrivateIp(ip), ip).toBe(true);
+        }
+    });
+
+    it('does not flag public addresses, including public IPv4-mapped literals', () => {
+        for (const ip of ['8.8.8.8', '1.1.1.1', '93.184.216.34', '172.15.0.1', '172.32.0.1', '2606:4700:4700::1111', '::ffff:8.8.8.8', '::ffff:0808:0808']) {
             expect(isPrivateIp(ip), ip).toBe(false);
         }
     });
@@ -51,6 +57,7 @@ describe('assertPublicHttpUrl', () => {
         expect(assertPublicHttpUrl('https://169.254.169.254/latest/meta-data').ok).toBe(false);
         expect(assertPublicHttpUrl('https://10.0.0.5/x').ok).toBe(false);
         expect(assertPublicHttpUrl('https://[::1]/x').ok).toBe(false);
+        expect(assertPublicHttpUrl('https://[::ffff:127.0.0.1]/x').ok).toBe(false);
         expect(assertPublicHttpUrl('https://8.8.8.8/x').ok).toBe(true);
     });
 
