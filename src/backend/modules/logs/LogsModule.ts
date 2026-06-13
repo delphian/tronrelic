@@ -66,9 +66,9 @@ export interface ILogsModuleDependencies {
     app: Express;
 
     /**
-     * Shared service registry, watched for the plugin-provided
-     * `ai-assistant` service so the module can register its read-only
-     * log AI tools whenever the assistant is available.
+     * Shared service registry, watched for the core `'ai-tools'` registry so
+     * the module can register its read-only log AI tools whenever the AI tools
+     * module is available.
      */
     serviceRegistry: IServiceRegistry;
 }
@@ -147,11 +147,11 @@ export class LogsModule implements IModule<ILogsModuleDependencies> {
     private serviceRegistry!: IServiceRegistry;
 
     /**
-     * Disposer for the ai-assistant service-registry watch created in run().
+     * Disposer for the `'ai-tools'` service-registry watch created in run().
      * Modules live for the process lifetime, so this is held for symmetry
      * with the plugin facade pattern rather than ever being invoked.
      */
-    private unwatchAiAssistant: ServiceWatchDisposer | null = null;
+    private unwatchAiTools: ServiceWatchDisposer | null = null;
 
     /**
      * Services created during init() phase.
@@ -247,11 +247,11 @@ export class LogsModule implements IModule<ILogsModuleDependencies> {
             throw new Error(`Failed to register system logs menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
 
-        // Watch for the ai-assistant plugin service and contribute the
-        // read-only log AI tools whenever it is (re-)enabled. The watch
-        // pattern is required because the assistant is an optional plugin
-        // that loads after modules and can toggle at runtime.
-        this.unwatchAiAssistant = registerLogAiTools(this.serviceRegistry, this.logService, this.logger);
+        // Watch for the core `'ai-tools'` registry and contribute the read-only
+        // log AI tools whenever it is available. The watch pattern covers the
+        // boot-order race — the AI tools module publishes the registry in its
+        // run() phase, after this module's run() sets up the watch.
+        this.unwatchAiTools = registerLogAiTools(this.serviceRegistry, this.logService, this.logger);
 
         // Router is mounted by system router via: router.use('/logs', createSystemLogRouter())
         this.logger.info('Logs module running (routes available via system router)');

@@ -3,23 +3,29 @@
  *
  * AI tool registrations for the logs module. Exposes three strictly
  * read-only tools backed by SystemLogService — query-system-logs,
- * get-system-log, and get-log-statistics — so the AI assistant can
- * inspect system health and investigate errors.
+ * get-system-log, and get-log-statistics — so an AI agent can inspect
+ * system health and investigate errors.
  *
- * Tools are registered against the ai-assistant service via the
- * service-registry watch pattern: the AI assistant is a plugin that
- * loads after modules and may be disabled or re-enabled at runtime, so
- * the module subscribes to its presence rather than resolving it once.
- * When ai-assistant unregisters, its tool registry forgets these tools;
- * each onAvailable re-registers them.
+ * Tools register on the core `'ai-tools'` registry via the service-registry
+ * watch pattern: the AI tools module publishes the registry during its `run()`
+ * phase, after this watch is set up, so the module subscribes to its presence
+ * rather than resolving it once. Each onAvailable re-registers the tools.
+ *
+ * The query and get tools surface raw log context — which can contain secrets
+ * (tokens in error payloads) and attacker-influenced strings (memo text,
+ * request data) — so they declare `sensitivity: 'secret'` and
+ * `surfacesUntrustedContent: true`. The statistics tool returns only aggregate
+ * counts, so it is plain read/internal. The governor adds rate limiting and a
+ * redacted audit record from those classifications; the result/context caps
+ * below stay as defense for the model's context window.
  *
  * The legacy `resolved` column is intentionally absent from every tool
  * surface — it is unused and scheduled for removal.
  */
 
 import type {
-    IAiAssistantService,
     IAiTool,
+    IAiToolRegistry,
     IServiceRegistry,
     ISystemLogService,
     LogLevel,
@@ -114,6 +120,10 @@ function buildTools(logService: SystemLogService): IAiTool[] {
             'Long context payloads are truncated in this list view — call ' + AI_TOOL_NAMES.getLog + ' with an entry id for the full record. ' +
             'Defaults to error and warn levels only; pass `levels` explicitly to widen. ' +
             'Service names can be discovered via ' + AI_TOOL_NAMES.getStatistics + '. This tool is read-only.',
+        // Capability: read / secret / surfaces-untrusted — log context can carry
+        // secrets and attacker-influenced strings. Governor redacts the audit
+        // and rate-limits; this tool is a trifecta private-data + untrusted leg.
+        capability: { sideEffect: 'read', reversible: true, sensitivity: 'secret', surfacesUntrustedContent: true },
         inputSchema: {
             type: 'object',
             description: 'Optional filters and pagination for the log query',
@@ -193,6 +203,9 @@ function buildTools(logService: SystemLogService): IAiTool[] {
             'full context payload (error stacks, request details, plugin metadata) without truncation. ' +
             'Use this after ' + AI_TOOL_NAMES.queryLogs + ' surfaces an entry worth drilling into. ' +
             'Returns null when no entry exists for the id. This tool is read-only.',
+        // Capability: read / secret / surfaces-untrusted — returns the full,
+        // untruncated context payload, the most sensitive log surface.
+        capability: { sideEffect: 'read', reversible: true, sensitivity: 'secret', surfacesUntrustedContent: true },
         inputSchema: {
             type: 'object',
             description: 'Identifier of the log entry to fetch',
@@ -223,6 +236,9 @@ function buildTools(logService: SystemLogService): IAiTool[] {
             'Use this first when asked about overall system health, and to discover valid `service` values for ' +
             AI_TOOL_NAMES.queryLogs + '. Counts are cached for up to 30 seconds. ' +
             'Takes no parameters. This tool is read-only.',
+        // Capability: read / internal — aggregate counts only, no log content,
+        // so it is neither a secret nor an untrusted-content surface.
+        capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal' },
         inputSchema: {
             type: 'object',
             description: 'No parameters',
@@ -244,14 +260,13 @@ function buildTools(logService: SystemLogService): IAiTool[] {
 }
 
 /**
- * Watch the service registry for the ai-assistant service and register
+ * Watch the service registry for the core `'ai-tools'` registry and register
  * the log tools whenever it becomes available.
  *
  * Each tool is unregistered before registration so re-availability
- * (plugin disable/enable cycles, hot reload) never trips the
- * duplicate-name guard in `registerTool`. Registration failures are
- * logged and swallowed — AI tooling is optional capability and must
- * never take the logs module down.
+ * (operator churn, hot reload) never trips the duplicate-name guard in
+ * `registerTool`. Registration failures are logged and swallowed — AI tooling
+ * is optional capability and must never take the logs module down.
  *
  * @param serviceRegistry - Shared service registry to watch.
  * @param logService - SystemLogService singleton backing the tool handlers.
@@ -265,16 +280,16 @@ export function registerLogAiTools(
 ): ServiceWatchDisposer {
     const tools = buildTools(logService);
 
-    return serviceRegistry.watch<IAiAssistantService>('ai-assistant', {
-        onAvailable: (ai) => {
+    return serviceRegistry.watch<IAiToolRegistry>('ai-tools', {
+        onAvailable: (registry) => {
             try {
                 for (const tool of tools) {
-                    ai.unregisterTool(tool.name);
-                    ai.registerTool(tool, PROVIDER_ID);
+                    registry.unregisterTool(tool.name);
+                    registry.registerTool(tool, PROVIDER_ID);
                 }
-                logger.info({ tools: tools.map(tool => tool.name) }, 'Registered log AI tools with ai-assistant');
+                logger.info({ tools: tools.map(tool => tool.name) }, 'Registered log AI tools with the core ai-tools registry');
             } catch (error) {
-                logger.error({ error }, 'Failed to register log AI tools with ai-assistant');
+                logger.error({ error }, 'Failed to register log AI tools with the core ai-tools registry');
             }
         }
     });

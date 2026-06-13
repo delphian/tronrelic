@@ -6,7 +6,6 @@ import { SystemMonitorController } from '../../modules/system/system-monitor.con
 import { getRedisClient } from '../../loaders/redis.js';
 import { PluginWebSocketRegistry } from '../../services/plugin-websocket-registry.js';
 import { createSystemLogRouter } from '../../modules/logs/index.js';
-import { TransactionToolGuard } from '../../modules/blockchain/transaction-tool-guard.js';
 
 export function systemRouter(database: IDatabaseService) {
   const router = Router();
@@ -23,10 +22,10 @@ export function systemRouter(database: IDatabaseService) {
   router.get('/blockchain/observers', controller.getObserverStats);
   router.post('/blockchain/sync', controller.triggerBlockchainSync);
 
-  // Usage and rate-limit stats for the transaction-detail AI tool.
-  router.get('/blockchain/transaction-tool/stats', (_req, res) => {
-    res.json({ success: true, stats: TransactionToolGuard.getInstance().snapshot() });
-  });
+  // The transaction-detail AI tool's usage/rate-limit stats moved to the core
+  // AI tools governance surface (audit feed + policy counters) under
+  // /api/admin/system/ai-tools — the bespoke endpoint here was retired with
+  // TransactionToolGuard when the core governor took over rate limiting.
 
   // Scheduler endpoints moved to SchedulerModule (/api/admin/system/scheduler/*)
 

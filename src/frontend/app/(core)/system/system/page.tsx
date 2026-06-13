@@ -7,7 +7,6 @@ import { OverviewBar } from './components/OverviewBar';
 import { SystemConfigSection } from './components/SystemConfigSection';
 import { ServerSection } from './components/ServerSection';
 import { BlockchainSection } from './components/BlockchainSection';
-import { TransactionToolSection } from './components/TransactionToolSection';
 import { WebSocketsSection } from './components/WebSocketsSection';
 import { MongoSection } from './components/MongoSection';
 import { ClickHouseSection } from './components/ClickHouseSection';
@@ -36,9 +35,6 @@ export default function SystemAdminPage() {
                     </ConsoleRow>
                     <ConsoleRow id="blockchain" title="Blockchain" status="idle">
                         <BlockchainSection />
-                    </ConsoleRow>
-                    <ConsoleRow id="transaction-tool" title="Transaction Tool" status="idle">
-                        <TransactionToolSection />
                     </ConsoleRow>
                     <ConsoleRow id="websockets" title="WebSockets" status="idle">
                         <WebSocketsSection />

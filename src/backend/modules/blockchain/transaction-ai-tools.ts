@@ -1,23 +1,22 @@
 /**
  * Core AI tool: retrieve a single TRON transaction's detail by id.
  *
- * Registered against the `ai-assistant` service through the service-registry
- * watch pattern (the assistant is a runtime-toggleable plugin that loads after
- * core, so we subscribe to its presence rather than resolving it once), the
- * same approach the logs module uses. The tool is strictly read-only and
- * backed by the cached `ITransactionDetailService`; every invocation passes
- * through `TransactionToolGuard`, which rate-limits and records usage for the
- * admin stats endpoint.
+ * Registered on the core `'ai-tools'` registry through the service-registry
+ * watch pattern (the registry is published by the AI tools module during its
+ * `run()` phase, after this watch is set up, so we subscribe to its presence
+ * rather than resolving it once). The tool is strictly read-only and backed by
+ * the cached `ITransactionDetailService`. Rate limiting, audit, and per-tool
+ * usage tallies are owned by the core governor and policy engine — this module
+ * declares the tool's capability class and lets governance do the rest.
  */
 import type {
-    IAiAssistantService,
     IAiTool,
+    IAiToolRegistry,
     IServiceRegistry,
     ITransactionDetailService,
     ServiceWatchDisposer
 } from '@/types';
 import { logger } from '../../lib/logger.js';
-import { TransactionToolGuard } from './transaction-tool-guard.js';
 
 /** Provider id passed to `registerTool` so the admin UI groups the tool under core. */
 const PROVIDER_ID = 'core-blockchain';
@@ -29,14 +28,13 @@ export const TRANSACTION_TOOL_NAME = 'tronrelic-get-transaction';
 const TXID_PATTERN = /^[0-9a-fA-F]{64}$/;
 
 /**
- * Build the read-only transaction-lookup tool bound to a detail service and a
- * usage guard. Exported so tests can exercise the handler directly.
+ * Build the read-only transaction-lookup tool bound to a detail service.
+ * Exported so tests can exercise the handler directly.
  *
  * @param detailService - Cached transaction-detail lookup service.
- * @param guard - Rate limiter and usage counter.
  * @returns The tool definition ready for `registerTool`.
  */
-export function buildTransactionTool(detailService: ITransactionDetailService, guard: TransactionToolGuard): IAiTool {
+export function buildTransactionTool(detailService: ITransactionDetailService): IAiTool {
     return {
         name: TRANSACTION_TOOL_NAME,
         description:
@@ -49,6 +47,9 @@ export function buildTransactionTool(detailService: ITransactionDetailService, g
             'or a null transaction when the id cannot be resolved on-chain (which is not ' +
             'an error). Returns factual blockchain data only. This tool is read-only and ' +
             'rate-limited: it never submits, modifies, or broadcasts anything.',
+        // Capability: read / internal — strictly read-only on-chain lookup. The
+        // governor applies the read-class rate cap and writes the audit record.
+        capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal' },
         inputSchema: {
             type: 'object',
             description: 'The transaction to look up.',
@@ -62,21 +63,13 @@ export function buildTransactionTool(detailService: ITransactionDetailService, g
             additionalProperties: false
         },
         handler: async (input: Record<string, unknown>) => {
-            guard.beginInvocation();
-
             const txId = typeof input.txId === 'string' ? input.txId.trim() : '';
             if (!TXID_PATTERN.test(txId)) {
-                guard.rejectInvalid();
                 return { success: false, error: 'txId must be a 64-character hexadecimal transaction hash' };
-            }
-
-            if (!guard.tryConsume()) {
-                return { success: false, error: 'Rate limit exceeded for the transaction lookup tool. Try again shortly.' };
             }
 
             try {
                 const transaction = await detailService.getTransactionById(txId);
-                guard.recordResolved(transaction !== null);
                 return { success: true, transaction };
             } catch (error) {
                 logger.error({ error, txId }, 'Transaction lookup tool failed');
@@ -87,13 +80,13 @@ export function buildTransactionTool(detailService: ITransactionDetailService, g
 }
 
 /**
- * Register the transaction-lookup tool with the ai-assistant service whenever
- * it becomes available. Unregister-then-register keeps re-availability
- * (plugin disable/enable, hot reload) from tripping the duplicate-name guard.
+ * Register the transaction-lookup tool on the core `'ai-tools'` registry
+ * whenever it becomes available. Unregister-then-register keeps re-availability
+ * (operator churn, hot reload) from tripping the duplicate-name guard.
  * Registration failures are logged and swallowed — AI tooling is optional and
  * must never destabilize core.
  *
- * @param serviceRegistry - Shared registry to watch for `ai-assistant`.
+ * @param serviceRegistry - Shared registry to watch for `'ai-tools'`.
  * @param detailService - Cached transaction-detail lookup service.
  * @returns Disposer that removes the watch subscription.
  */
@@ -102,16 +95,16 @@ export function registerTransactionAiTools(
     detailService: ITransactionDetailService
 ): ServiceWatchDisposer {
     const log = logger.child({ module: 'transaction-ai-tools' });
-    const tool = buildTransactionTool(detailService, TransactionToolGuard.getInstance());
+    const tool = buildTransactionTool(detailService);
 
-    return serviceRegistry.watch<IAiAssistantService>('ai-assistant', {
-        onAvailable: (ai) => {
+    return serviceRegistry.watch<IAiToolRegistry>('ai-tools', {
+        onAvailable: (registry) => {
             try {
-                ai.unregisterTool(tool.name);
-                ai.registerTool(tool, PROVIDER_ID);
-                log.info({ tool: tool.name }, 'Registered transaction AI tool with ai-assistant');
+                registry.unregisterTool(tool.name);
+                registry.registerTool(tool, PROVIDER_ID);
+                log.info({ tool: tool.name }, 'Registered transaction AI tool with the core ai-tools registry');
             } catch (error) {
-                log.error({ error }, 'Failed to register transaction AI tool with ai-assistant');
+                log.error({ error }, 'Failed to register transaction AI tool with the core ai-tools registry');
             }
         }
     });

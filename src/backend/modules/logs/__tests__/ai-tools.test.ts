@@ -66,7 +66,7 @@ function registerAndCapture(logService: any): Record<string, IAiTool> {
         unregisterTool: vi.fn().mockReturnValue(false)
     };
     registerLogAiTools(registry, logService, createMockLogger());
-    registry.register('ai-assistant', ai);
+    registry.register('ai-tools', ai);
     return captured;
 }
 
@@ -211,11 +211,28 @@ describe('logs AI tools', () => {
                 unregisterTool: vi.fn().mockReturnValue(true)
             };
             registerLogAiTools(registry, logService as any, createMockLogger());
-            registry.register('ai-assistant', ai);
+            registry.register('ai-tools', ai);
 
             expect(ai.unregisterTool.mock.calls.map(call => call[0])).toEqual(
                 Object.values(AI_TOOL_NAMES)
             );
+        });
+    });
+
+    describe('capability classification', () => {
+        it('classifies the log-reading tools as read/secret/surfaces-untrusted', () => {
+            expect(tools[AI_TOOL_NAMES.queryLogs].capability).toEqual({
+                sideEffect: 'read', reversible: true, sensitivity: 'secret', surfacesUntrustedContent: true
+            });
+            expect(tools[AI_TOOL_NAMES.getLog].capability).toEqual({
+                sideEffect: 'read', reversible: true, sensitivity: 'secret', surfacesUntrustedContent: true
+            });
+        });
+
+        it('classifies the aggregate-statistics tool as plain read/internal', () => {
+            expect(tools[AI_TOOL_NAMES.getStatistics].capability).toEqual({
+                sideEffect: 'read', reversible: true, sensitivity: 'internal'
+            });
         });
     });
 });

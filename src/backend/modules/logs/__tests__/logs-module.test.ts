@@ -229,9 +229,9 @@ describe('LogsModule', () => {
 
     describe('AI tool registration', () => {
         /**
-         * Build a fake ai-assistant service with spied tool methods.
+         * Build a fake core `'ai-tools'` registry with spied tool methods.
          */
-        function createMockAiAssistant() {
+        function createMockAiToolRegistry() {
             return {
                 registerTool: vi.fn(),
                 unregisterTool: vi.fn().mockReturnValue(false)
@@ -239,12 +239,12 @@ describe('LogsModule', () => {
         }
 
         /**
-         * Test: tools register when ai-assistant appears after run().
+         * Test: tools register when the `'ai-tools'` registry appears after run().
          *
-         * Verifies the watch pattern handles the normal boot order where
-         * the ai-assistant plugin loads after modules.
+         * Verifies the watch pattern handles the boot order where the AI tools
+         * module publishes the registry after this module's run() sets up the watch.
          */
-        it('should register log tools when ai-assistant becomes available', async () => {
+        it('should register log tools when the ai-tools registry becomes available', async () => {
             await module.init({
                 pinoLogger: mockPino as any,
                 database: mockDatabase as any,
@@ -253,8 +253,8 @@ describe('LogsModule', () => {
             });
             await module.run();
 
-            const ai = createMockAiAssistant();
-            mockServiceRegistry.register('ai-assistant', ai);
+            const ai = createMockAiToolRegistry();
+            mockServiceRegistry.register('ai-tools', ai);
 
             const registeredNames = ai.registerTool.mock.calls.map(call => call[0].name);
             expect(registeredNames).toEqual([
@@ -268,14 +268,14 @@ describe('LogsModule', () => {
         });
 
         /**
-         * Test: tools register when ai-assistant is already present.
+         * Test: tools register when the `'ai-tools'` registry is already present.
          *
          * Verifies the synchronous-onAvailable semantics of watch() cover
-         * the case where the service registered before run().
+         * the case where the registry registered before run().
          */
-        it('should register log tools when ai-assistant is already registered', async () => {
-            const ai = createMockAiAssistant();
-            mockServiceRegistry.register('ai-assistant', ai);
+        it('should register log tools when the ai-tools registry is already registered', async () => {
+            const ai = createMockAiToolRegistry();
+            mockServiceRegistry.register('ai-tools', ai);
 
             await module.init({
                 pinoLogger: mockPino as any,
@@ -289,17 +289,17 @@ describe('LogsModule', () => {
         });
 
         /**
-         * Test: run() survives a failing ai-assistant registration.
+         * Test: run() survives a failing tool registration.
          *
          * Verifies that AI tooling stays optional — a throwing registerTool
          * must not take the logs module (and thus the application) down.
          */
         it('should not throw when tool registration fails', async () => {
-            const ai = createMockAiAssistant();
+            const ai = createMockAiToolRegistry();
             ai.registerTool.mockImplementation(() => {
                 throw new Error('duplicate tool');
             });
-            mockServiceRegistry.register('ai-assistant', ai);
+            mockServiceRegistry.register('ai-tools', ai);
 
             await module.init({
                 pinoLogger: mockPino as any,
