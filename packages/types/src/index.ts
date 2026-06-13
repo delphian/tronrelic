@@ -51,6 +51,24 @@ export type { IToolsService, IAddressConversionResult, IAddressValidationResult 
 export type { IAiTool, IAiToolInputSchema, IAiConversationMessage, IAiAssistantService, IAiQueryOptions, IAiQueryResult, IModelInfo } from './ai-tools/index.js';
 export { AI_TOOL_NAME_PATTERN } from './ai-tools/index.js';
 export type {
+    IAiToolCapability,
+    AiToolSideEffect,
+    AiToolSensitivity,
+    IToolPolicy,
+    IToolPolicyDecision,
+    ToolPolicyVerdict,
+    IToolInvocationContext,
+    IToolInvocationActor,
+    ToolTriggerPath,
+    IToolInvocationResult,
+    ToolInvocationStatus,
+    IToolInvocationRecord,
+    IAiToolGovernor,
+    IAiToolRegistry,
+    IAiToolDeclaration,
+    IAiToolInfo
+} from './ai-tools/index.js';
+export type {
     HookDescriptor,
     HookKind,
     HookPhase,

@@ -11,6 +11,13 @@
 
 export type { IAiTool, IAiToolInputSchema } from './IAiTool.js';
 export { AI_TOOL_NAME_PATTERN } from './IAiTool.js';
+export type { IAiToolCapability, AiToolSideEffect, AiToolSensitivity } from './IAiToolCapability.js';
+export type { IToolPolicy, IToolPolicyDecision, ToolPolicyVerdict } from './IToolPolicy.js';
+export type { IToolInvocationContext, IToolInvocationActor, ToolTriggerPath } from './IToolInvocationContext.js';
+export type { IToolInvocationResult, ToolInvocationStatus } from './IToolInvocationResult.js';
+export type { IToolInvocationRecord } from './IToolInvocationRecord.js';
+export type { IAiToolGovernor } from './IAiToolGovernor.js';
+export type { IAiToolRegistry, IAiToolDeclaration, IAiToolInfo } from './IAiToolRegistry.js';
 export type { IAiConversationMessage } from './IAiConversationMessage.js';
 export type { IAiAssistantService } from './IAiAssistantService.js';
 export type { IAiQueryOptions } from './IAiQueryOptions.js';

@@ -48,6 +48,7 @@ Everything under `src/backend/` — modules, blockchain sync, scheduler, databas
 | [System Dashboard](docs/system/system-dashboard.md) | /system UI, job control, monitoring |
 | [Database Migrations](docs/system/system-database-migrations.md) | Schema evolution, transaction support |
 | [Logging System](docs/system/system-logging.md) | Pino, MongoDB persistence, log queries |
+| [AI Tool Standard](docs/system/system-ai-tools.md) | Tool contract, capability classes, accountability & security for AI tools |
 | [Menu Module](src/backend/modules/menu/README.md) | Navigation management, plugin integration |
 | [Pages Module](src/backend/modules/pages/README.md) | CMS, markdown, file uploads |
 | [Identity Module](src/backend/modules/identity/README.md) | Better Auth, groups, wallet store, account directory |
