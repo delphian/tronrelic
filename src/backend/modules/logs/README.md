@@ -77,7 +77,7 @@ All under `/api/admin/system/logs`, all require `X-Admin-Token` header.
 
 ## AI Tools
 
-`run()` watches the service registry for the plugin-provided `ai-assistant` service (`IAiAssistantService`) and registers three strictly read-only tools (`providerId: 'logs'`) whenever it appears — the watch pattern covers the assistant loading after modules and toggling at runtime. Handlers call `SystemLogService` directly. The deprecated `resolved` column is excluded from every tool input and output. Registration failures are logged and swallowed; AI tooling never blocks module startup.
+`run()` watches the service registry for the core `'ai-tools'` registry (`IAiToolRegistry`) and registers three strictly read-only tools (`providerId: 'logs'`) whenever it appears — the watch pattern covers the AI tools module publishing the registry after this module's `run()` sets up the watch. Governance (rate limiting, audit, policy) is core-owned; each tool declares its capability and the governor does the rest. The query and get tools surface raw log context (potential secrets and attacker-influenced strings), so they declare `sensitivity: 'secret'` and `surfacesUntrustedContent: true`; the statistics tool returns only aggregate counts and is plain `read`/`internal`. Handlers call `SystemLogService` directly. The deprecated `resolved` column is excluded from every tool input and output. Registration failures are logged and swallowed; AI tooling never blocks module startup. See [system-ai-tools.md](../../../../docs/system/system-ai-tools.md).
 
 | Tool | Backed By | Parameters |
 |------|-----------|------------|
