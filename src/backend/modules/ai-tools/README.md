@@ -16,6 +16,7 @@ Provider-agnostic governance for AI tools — the registry every tool registers 
 | KV keys (core `_kv`) | `ai-tools:tool-states`, `ai-tools:policy-overrides` |
 | Hook seams | `ai.toolInvoke` (series, veto/hold), `ai.toolInvoked` (observer, audit fan-out) |
 | WebSocket signals | `ai-tools:activity`, `ai-tools:approvals-changed` (timestamp-only refetch cues; data stays behind the gated REST feed) |
+| Scheduler jobs | `ai-tools:prune-audit` (daily 04:00) — range-deletes `module_ai-tools_invocations` past the 90-day window; registered only when a scheduler is injected |
 | Bootstrap order | Inits/runs alongside the other modules, before `loadPlugins` |
 | Standard | [system-ai-tools.md](../../../../docs/system/system-ai-tools.md) |
 
@@ -93,7 +94,7 @@ Declared in `src/backend/hooks/registry.ts`. `ai.toolInvoke` (series, `IAiToolIn
 
 ## Lifecycle Obligations
 
-`init()` constructs the registry, policy engine, audit store, approval queue, governor, and provider registry; loads persisted tool-states and policy overrides; and ensures the two collections' indexes (the collections are new, so index creation here is correct rather than a migration). `run()` mounts the admin router, registers `'ai-tools'` / `'ai-tool-governor'` / `'ai-providers'`, wires the governor's broadcast sink to `WebSocketService`, and registers the `/system/ai-tools` admin nav item under the System container. Errors in either phase fail the boot — there is no degraded mode.
+`init()` constructs the registry, policy engine, audit store, approval queue, governor, and provider registry; loads persisted tool-states and policy overrides; and ensures the two collections' indexes (the collections are new, so index creation here is correct rather than a migration). `run()` mounts the admin router, registers `'ai-tools'` / `'ai-tool-governor'` / `'ai-providers'`, wires the governor's broadcast sink to `WebSocketService`, registers the daily `ai-tools:prune-audit` retention job (only when a scheduler is injected), and registers the `/system/ai-tools` admin nav item under the System container. Errors in either phase fail the boot — there is no degraded mode.
 
 ## Related
 

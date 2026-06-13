@@ -100,10 +100,16 @@ export class AiToolsController {
             query.status = req.query.status as ToolInvocationStatus;
         }
         if (typeof req.query.limit === 'string') {
-            query.limit = Number.parseInt(req.query.limit, 10);
+            const parsed = Number.parseInt(req.query.limit, 10);
+            if (!Number.isNaN(parsed)) {
+                query.limit = parsed;
+            }
         }
         if (typeof req.query.offset === 'string') {
-            query.offset = Number.parseInt(req.query.offset, 10);
+            const parsed = Number.parseInt(req.query.offset, 10);
+            if (!Number.isNaN(parsed)) {
+                query.offset = parsed;
+            }
         }
         const page = await this.audit.list(query);
         res.json(page);

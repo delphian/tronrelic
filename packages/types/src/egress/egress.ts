@@ -34,25 +34,67 @@ export interface IEgressCheckOptions {
 }
 
 /**
+ * Extract the embedded IPv4 from an IPv4-mapped IPv6 literal and return it as a
+ * dotted-quad, or null when `addr` is not such a literal. Handles both the
+ * dotted form (`::ffff:127.0.0.1`) and the form `URL` normalizes to — the hex
+ * tail (`::ffff:7f00:1`) — so a private IPv4 target cannot tunnel through the
+ * IPv6 representation past {@link isPrivateIp}.
+ *
+ * @param addr - A lowercased, bracket-stripped address literal.
+ * @returns The embedded IPv4 dotted-quad, or null.
+ */
+function ipv4FromMappedIpv6(addr: string): string | null {
+    const prefix = addr.startsWith('::ffff:')
+        ? '::ffff:'
+        : addr.startsWith('0:0:0:0:0:ffff:') ? '0:0:0:0:0:ffff:' : null;
+    let result: string | null = null;
+    if (prefix !== null) {
+        const tail = addr.slice(prefix.length);
+        if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(tail)) {
+            result = tail;
+        } else {
+            const groups = tail.split(':');
+            if (groups.length >= 1 && groups.length <= 2 && groups.every(g => /^[0-9a-f]{1,4}$/.test(g))) {
+                const value = groups.length === 2
+                    ? ((parseInt(groups[0], 16) << 16) | parseInt(groups[1], 16))
+                    : parseInt(groups[0], 16);
+                result = [
+                    (value >>> 24) & 0xff,
+                    (value >>> 16) & 0xff,
+                    (value >>> 8) & 0xff,
+                    value & 0xff
+                ].join('.');
+            }
+        }
+    }
+    return result;
+}
+
+/**
  * Whether an IP address literal belongs to a private, loopback, link-local, or
  * other non-public range — the set an SSRF guard must reject.
  *
  * Covers IPv4 (0/8, 10/8, 100.64/10 CGNAT, 127/8, 169.254/16 link-local,
- * 172.16/12, 192.168/16) and IPv6 (::1 loopback, fc00::/7 unique-local,
- * fe80::/10 link-local). A string that is not a recognizable IP literal returns
- * false — gate hostname inputs through {@link assertPublicHttpUrl} plus DNS
- * resolution, not this function.
+ * 172.16/12, 192.168/16) and IPv6 (`::` unspecified, ::1 loopback, fc00::/7
+ * unique-local, fe80::/10 link-local). IPv4-mapped IPv6 literals
+ * (`::ffff:a.b.c.d` and the hex form `URL` normalizes them to) are decoded to
+ * their embedded IPv4 and tested against the IPv4 ranges, closing the
+ * mapped-address SSRF bypass. A string that is not a recognizable IP literal
+ * returns false — gate hostname inputs through {@link assertPublicHttpUrl} plus
+ * DNS resolution, not this function.
  *
  * @param ip - An IP address literal (IPv4 dotted-quad or IPv6), case-insensitive.
  * @returns True when the address is in a non-public range.
  */
 export function isPrivateIp(ip: string): boolean {
-    const addr = ip.trim().toLowerCase().replace(/^\[|\]$/g, '');
+    const normalized = ip.trim().toLowerCase().replace(/^\[|\]$/g, '');
+    const addr = ipv4FromMappedIpv6(normalized) ?? normalized;
     let result = false;
 
     if (
-        addr === '::1' || addr === '0:0:0:0:0:0:0:1'
-        || addr.startsWith('fc') || addr.startsWith('fd') || addr.startsWith('fe80:')
+        addr === '::' || addr === '0:0:0:0:0:0:0:0'
+        || addr === '::1' || addr === '0:0:0:0:0:0:0:1'
+        || addr.startsWith('fc') || addr.startsWith('fd') || /^fe[89ab]/.test(addr)
     ) {
         result = true;
     } else {
