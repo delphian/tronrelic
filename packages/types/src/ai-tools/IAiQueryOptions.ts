@@ -6,7 +6,6 @@
  * the configured defaults in the AI Assistant settings tab.
  */
 
-import type { IAiTool } from './IAiTool.js';
 import type { IAiConversationMessage } from './IAiConversationMessage.js';
 
 /**
@@ -94,9 +93,6 @@ export interface IAiQueryOptions {
 
     /** Whether to include registered (enabled) tools in the request. Default: true. */
     includeTools?: boolean;
-
-    /** Additional one-off tools to include alongside registered tools for this query only. */
-    additionalTools?: IAiTool[];
 
     /**
      * Client-generated UUID for WebSocket streaming. When provided,

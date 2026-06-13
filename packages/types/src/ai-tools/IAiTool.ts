@@ -11,6 +11,8 @@
  * - Descriptions should be detailed (see JSDoc on each field)
  */
 
+import type { IAiToolCapability } from './IAiToolCapability.js';
+
 /** Regex pattern for valid Anthropic tool names. */
 export const AI_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -103,6 +105,14 @@ export interface IAiTool {
     description: string;
     /** JSON Schema defining the tool's expected input parameters. */
     inputSchema: IAiToolInputSchema;
+    /**
+     * Governance classification — the tool's side effect, reversibility, spend,
+     * data sensitivity, and approval requirement. The governor derives the
+     * guardrails (rate limit, quota, cost cap, approval, audit redaction) from
+     * this. Optional for back-compat; when absent the governor treats the tool
+     * as read/internal and warns at startup. See {@link IAiToolCapability}.
+     */
+    capability?: IAiToolCapability;
     /** Async handler executed server-side when the model invokes this tool. */
     handler: (input: Record<string, unknown>) => Promise<unknown>;
 }

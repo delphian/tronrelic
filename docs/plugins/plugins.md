@@ -34,6 +34,8 @@ Only **installed AND enabled** plugins load at runtime. See [plugins-system-arch
 
 **Core-pipeline hooks.** The inverse directional flow: where the service registry lets plugins *publish* capabilities, the hook system (`context.hooks`) lets plugins *contribute* into core's own execution at typed seams it declares — SSR `<head>` injection, request lifecycle, and so on. Handlers register against descriptors from a central `HOOKS` registry (no magic strings), are scoped to the plugin lifecycle, and surface on the `/system/hooks` admin timeline so operators can see who is mutating what. See [system-hooks.md](../system/system-hooks.md) for the contract, archetypes, and failure-isolation rules.
 
+**AI tools.** Expose tools a model can invoke during an AI query (look up a transaction, post to a channel, generate an image) by registering an `IAiTool` on the AI tool registry. Tools are provider-neutral — the installed AI provider plugin (`trp-ai-assistant` for Anthropic) is only the transport. Every tool must declare its capability class and meet the platform's accountability and security requirements. See [system-ai-tools.md](../system/system-ai-tools.md).
+
 ## Quick Reference
 
 Canonical reference implementation: `src/plugins/trp-ai-assistant/` — exercises lifecycle hooks, scheduler jobs, service registry publication, admin routes, and SSR-first pages. New-plugin walkthrough: [plugins-system-architecture.md → Adding or updating a plugin](./plugins-system-architecture.md#adding-or-updating-a-plugin).
@@ -82,6 +84,7 @@ For the complete Hello World walkthrough including the observer factory, see [pl
 - [plugins-websocket-subscriptions.md](./plugins-websocket-subscriptions.md) — Real-time subscriptions, rooms, event namespacing
 - [plugins-service-registry.md](./plugins-service-registry.md) — Cross-component service sharing
 - [system-hooks.md](../system/system-hooks.md) — Core-pipeline hooks: declared seams, archetypes, plugin facade, admin introspection
+- [system-ai-tools.md](../system/system-ai-tools.md) — AI tool contract, capability classes, and the accountability/security every tool must meet
 - [system-database.md](../system/system-database.md#plugins) — Scoped storage, indexes, key-value config
 
 **Related topics:**
