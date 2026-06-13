@@ -35,4 +35,4 @@ export type {
 
 export type { IPluginHooks } from './IPluginHooks.js';
 
-export type { ICoreHooks, ICoreSsrHooks } from './ICoreHooks.js';
+export type { ICoreHooks, ICoreSsrHooks, ICoreAiHooks } from './ICoreHooks.js';

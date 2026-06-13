@@ -66,7 +66,8 @@ export type {
     IAiToolGovernor,
     IAiToolRegistry,
     IAiToolDeclaration,
-    IAiToolInfo
+    IAiToolInfo,
+    IAiToolInvokeContext
 } from './ai-tools/index.js';
 export type {
     HookDescriptor,
@@ -86,7 +87,8 @@ export type {
     IHookSnapshot,
     IPluginHooks,
     ICoreHooks,
-    ICoreSsrHooks
+    ICoreSsrHooks,
+    ICoreAiHooks
 } from './hooks/index.js';
 export { HookAbortError, isHookAbortError } from './hooks/index.js';
 export type { IHeadFragment, HeadFragmentTag, ISsrHeadContext } from './ssr/index.js';

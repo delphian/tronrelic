@@ -31,6 +31,8 @@
 import type { HookDescriptor } from './HookDescriptor.js';
 import type { ISsrHeadContext } from '../ssr/ISsrHeadContext.js';
 import type { IHeadFragment } from '../ssr/IHeadFragment.js';
+import type { IAiToolInvokeContext } from '../ai-tools/IAiToolHookContext.js';
+import type { IToolInvocationRecord } from '../ai-tools/IToolInvocationRecord.js';
 
 /**
  * SSR-phase declared seams. Mirrors the `HOOKS.ssr` object in core's
@@ -64,15 +66,37 @@ export interface ICoreSsrHooks {
 }
 
 /**
+ * AI-tool-phase declared seams. Mirrors the `HOOKS.ai` object in core's
+ * `registry.ts`. The AI tool governor invokes these around every governed
+ * tool call, regardless of which AI provider plugin drove it.
+ */
+export interface ICoreAiHooks {
+    /**
+     * Series seam fired before a governed tool runs — after schema validation,
+     * before execution. A handler throws `HookAbortError` to veto or hold the
+     * call; the governor surfaces the abort to the model as a denial.
+     */
+    readonly toolInvoke: HookDescriptor<IAiToolInvokeContext, void, 'series'>;
+
+    /**
+     * Observer seam fired after a governed tool call completes, with the full
+     * invocation record. For audit fan-out, alerting, and lethal-trifecta
+     * watch — handlers cannot change the outcome.
+     */
+    readonly toolInvoked: HookDescriptor<IToolInvocationRecord, void, 'observer'>;
+}
+
+/**
  * Aggregate shape of every declared seam, grouped by pipeline phase.
  *
- * The non-SSR phases (`http`, `websocket`, `scheduler`, `observer`) are
+ * The remaining phases (`http`, `websocket`, `scheduler`, `observer`) are
  * declared as empty marker objects so adding the first seam in those
  * phases is a one-line interface extension instead of a structural
  * surprise for existing consumers.
  */
 export interface ICoreHooks {
     readonly ssr: ICoreSsrHooks;
+    readonly ai: ICoreAiHooks;
     readonly http: Readonly<Record<string, never>>;
     readonly websocket: Readonly<Record<string, never>>;
     readonly scheduler: Readonly<Record<string, never>>;

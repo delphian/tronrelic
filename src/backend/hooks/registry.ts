@@ -21,7 +21,7 @@
  * @module backend/hooks/registry
  */
 
-import type { IHeadFragment, ISsrHeadContext } from '@/types';
+import type { IHeadFragment, ISsrHeadContext, IAiToolInvokeContext, IToolInvocationRecord } from '@/types';
 import { defineHook } from './define-hook.js';
 
 /**
@@ -79,6 +79,41 @@ export const HOOKS = {
                 'Contribute <style>, <link>, <meta>, or <script> elements to the rendered <head>. ' +
                 'Handlers receive the request path, cookies, and query, and thread an array of head ' +
                 'fragments through the pipeline.'
+        })
+    },
+    ai: {
+        /**
+         * Series seam fired before a governed AI tool runs — after the
+         * governor validates the model's input against the tool schema and
+         * before it executes the handler. A handler throws `HookAbortError`
+         * to veto or hold the call; the governor surfaces the abort to the
+         * model as a denial. Lets a compliance or lethal-trifecta plugin
+         * block a tool call without forking the AI provider plugin.
+         */
+        toolInvoke: defineHook<IAiToolInvokeContext, void, 'series'>({
+            id: 'ai.toolInvoke',
+            kind: 'series',
+            phase: 'ai.tool',
+            order: 100,
+            description:
+                'Inspect a governed AI tool invocation before it runs (after schema validation, before ' +
+                'execution). Throw HookAbortError to veto or hold the call; the governor surfaces the abort ' +
+                'to the model as a denial.'
+        }),
+        /**
+         * Observer seam fired after a governed AI tool call completes, with
+         * the full invocation record. For audit fan-out, alerting, and
+         * lethal-trifecta watch — handlers run in parallel and cannot change
+         * the outcome.
+         */
+        toolInvoked: defineHook<IToolInvocationRecord, void, 'observer'>({
+            id: 'ai.toolInvoked',
+            kind: 'observer',
+            phase: 'ai.tool',
+            order: 200,
+            description:
+                'Fired after a governed AI tool call completes, with the full invocation record. For audit ' +
+                'fan-out, alerting, and lethal-trifecta watch — handlers cannot change the outcome.'
         })
     },
     http: {} as Record<string, never>,
