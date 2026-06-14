@@ -14,6 +14,15 @@ The danger compounds when the *enabled* tool set spans the **lethal trifecta**: 
 
 Core defines the tool contract, the capability vocabulary, and the registry, governor, policy, and audit. An AI **provider plugin** is only a transport: it formats tool declarations for its vendor's API, runs the agentic loop, and routes each tool call back through core. `trp-ai-assistant` is the Anthropic provider; an OpenAI or Google provider would be a separate plugin. Tools are provider-neutral and must never import or assume a specific provider.
 
+**Checking whether a provider is available.** Ask the core `'ai-providers'` registry, never a provider's own service name:
+
+```typescript
+const providers = context.services.get<IAiProviderRegistry>('ai-providers');
+const aiAvailable = providers?.listProviders().some(p => p.active) ?? false;
+```
+
+`'ai-assistant'` is the manifest id and service key of `trp-ai-assistant` alone — `has('ai-assistant')` couples you to Anthropic and reports `false` the moment the installed provider is OpenAI or Google, even though an assistant is reachable. The `'ai-providers'` registry is core-owned (the `ai-tools` module always publishes it) and provider-neutral by construction, so a presence/active check there survives a provider swap. Most tool code needs no such check at all — `watch('ai-tools')` registration covers boot order and whatever provider is installed picks the tools up; reserve the registry lookup for admin surfaces that report "is an assistant reachable?".
+
 ## The Tool Contract
 
 A tool is an [`IAiTool`](../../packages/types/src/ai-tools/IAiTool.ts) with four fields.

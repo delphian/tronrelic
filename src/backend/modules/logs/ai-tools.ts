@@ -76,16 +76,33 @@ function parseIsoDate(value: unknown, name: string): Date | undefined {
 }
 
 /**
+ * Minimal structural shape of a persisted log entry that {@link projectLogEntry}
+ * consumes. Declared locally rather than importing the Mongoose-backed
+ * `ISystemLogDocument`, so the projection stays decoupled from the storage layer
+ * (the log service contract returns `any`, so this is the narrowest honest shape
+ * the projection depends on). `_id` is the one storage-derived field, stringified
+ * into the projected `id`.
+ */
+interface ILogEntrySource {
+    _id: unknown;
+    timestamp?: Date | string;
+    level?: LogLevel;
+    message?: string;
+    service?: string;
+    context?: unknown;
+}
+
+/**
  * Project a raw log document into the shape returned to the model,
  * omitting the deprecated `resolved` fields and optionally truncating
  * the context payload for list views.
  *
- * @param log - Raw `system_logs` document (lean object).
+ * @param log - A persisted log entry; see {@link ILogEntrySource}.
  * @param truncateContext - When true, serialized context is capped at
  *                          {@link LIST_CONTEXT_MAX_CHARS} characters.
  * @returns Plain object safe to JSON-stringify into the tool result.
  */
-function projectLogEntry(log: any, truncateContext: boolean): Record<string, unknown> {
+function projectLogEntry(log: ILogEntrySource, truncateContext: boolean): Record<string, unknown> {
     let context: unknown = log.context ?? null;
     if (truncateContext && context !== null) {
         const serialized = JSON.stringify(context);

@@ -11,6 +11,7 @@
  * - Descriptions should be detailed (see JSDoc on each field)
  */
 
+import type { JSONSchema7Definition } from 'json-schema';
 import type { IAiToolCapability } from './IAiToolCapability.js';
 
 /** Regex pattern for valid Anthropic tool names. */
@@ -26,8 +27,13 @@ export const AI_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 export interface IAiToolInputSchema {
     /** Must be 'object' per Anthropic tool-use spec. */
     type: 'object';
-    /** Property definitions keyed by parameter name. Each value is a JSON Schema object. */
-    properties: Record<string, unknown>;
+    /**
+     * Property definitions keyed by parameter name. Each value is a JSON Schema
+     * fragment (`JSONSchema7Definition`), mirroring `JSONSchema7['properties']`,
+     * so tool authors get type checking and autocomplete on each parameter's
+     * `type`, `description`, `enum`, `items`, and bounds.
+     */
+    properties: Record<string, JSONSchema7Definition>;
     /** Parameter names that must be provided. Anthropic recommends explicit required arrays. */
     required?: string[];
     /**
