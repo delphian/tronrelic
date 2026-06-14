@@ -72,7 +72,7 @@ function validateInput(input: Record<string, unknown>, schema: IAiTool['inputSch
             // JSONSchema7Definition is `JSONSchema7 | boolean`; only an object
             // schema carries a `type`, and only a single scalar type name is
             // checked here (multi-type arrays are left to the handler).
-            const expected = typeof definition === 'object' && typeof definition.type === 'string' ? definition.type : undefined;
+            const expected = definition && typeof definition === 'object' && typeof definition.type === 'string' ? definition.type : undefined;
             if (expected && !matchesType(value, expected)) {
                 error = `Parameter "${key}" must be of type ${expected}.`;
                 break;
