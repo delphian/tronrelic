@@ -141,23 +141,27 @@
     word-break: break-word;
 }
 
-/* Policy editor inline field grid. */
-.policy_editor {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--gap-sm);
-}
-
-.policy_field {
+/* Tool name + override badge, inline in the first (expanding) column. */
+.tool_cell {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: var(--gap-sm);
+    flex-wrap: wrap;
 }
 
-.policy_field_label {
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
+/* Keep the usage tally on one line so its column hugs the content. */
+.usage_cell {
+    white-space: nowrap;
+}
+
+/*
+ * Policy controls (tri-state selects, numeric inputs) fill their column without
+ * forcing it wider than the header — min-width:0 lets the cell shrink to the
+ * header label while width:100% spreads the control across it.
+ */
+.cell_control {
+    width: 100%;
+    min-width: 0;
 }
 
 @container (min-width: #{$breakpoint-mobile-lg}) {

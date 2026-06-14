@@ -6,7 +6,10 @@
  * are overridable per tool by an admin. A fixed-window rate limiter (promoted
  * from the core blockchain module's TransactionToolGuard) caps invocations per
  * tool and globally, protecting upstream providers and the model's context
- * budget from a looping or prompt-injected agent.
+ * budget from a looping or prompt-injected agent. A parallel rolling-window
+ * accumulator caps a paid tool's spend against its declared per-call cost
+ * (`capability.costPerCallUsd`) so an operator's cost ceiling is enforceable
+ * without the handler reporting actual spend.
  *
  * The engine is provider-neutral and owns no I/O beyond loading and persisting
  * admin overrides through the injected database.
@@ -38,10 +41,19 @@ const RATE_DEFAULTS: Record<IAiToolCapability['sideEffect'], { max: number; wind
 /** Global ceiling across every tool in one window — a backstop against fan-out. */
 const GLOBAL_RATE = { max: 240, windowMs: 60_000 };
 
+/** Rolling window over which a tool's spend accumulates against its cost ceiling. */
+const COST_WINDOW_MS = 86_400_000;
+
 /** Rolling fixed-window counter. */
 interface IWindowState {
     windowStart: number;
     count: number;
+}
+
+/** Rolling spend accumulator for a tool's cost ceiling. */
+interface ICostWindowState {
+    windowStart: number;
+    spentUsd: number;
 }
 
 /** Per-tool usage tally surfaced to the admin policy view. */
@@ -58,6 +70,7 @@ interface IToolCounters {
  */
 export class ToolPolicyEngine {
     private readonly perToolWindows = new Map<string, IWindowState>();
+    private readonly costWindows = new Map<string, ICostWindowState>();
     private globalWindow: IWindowState = { windowStart: Date.now(), count: 0 };
     private readonly counters = new Map<string, IToolCounters>();
     private overrides: Record<string, IToolPolicy> = {};
@@ -116,6 +129,11 @@ export class ToolPolicyEngine {
         const counters = this.counterFor(tool.name);
         counters.invocations++;
 
+        // The declared per-call cost (≥ 0) is the unit charged against the
+        // operator's ceiling; without it, cost enforcement cannot apply.
+        const costPerCall = typeof cap.costPerCallUsd === 'number' && cap.costPerCallUsd >= 0 ? cap.costPerCallUsd : undefined;
+        const ceiling = policy.costCeilingUsd;
+
         let decision: IToolPolicyDecision;
         if (ctx.triggerPath !== 'interactive' && cap.sideEffect === 'external' && !policy.allowUnattended) {
             counters.denied++;
@@ -126,11 +144,20 @@ export class ToolPolicyEngine {
         } else if (policy.requireApproval) {
             counters.needsApproval++;
             decision = { verdict: 'needs-approval', reason: 'This tool requires human approval before it runs.' };
+        } else if (ceiling !== undefined && ceiling >= 0 && costPerCall !== undefined && this.wouldExceedCostCeiling(tool.name, costPerCall, ceiling)) {
+            // Checked before consuming rate budget so a cost denial does not
+            // spend a rate slot.
+            counters.denied++;
+            decision = { verdict: 'deny', reason: `Cost ceiling of $${ceiling} reached for "${tool.name}". Try again later.` };
         } else if (policy.rateLimit && !this.consume(tool.name, policy.rateLimit)) {
             counters.rateLimited++;
             counters.denied++;
             decision = { verdict: 'deny', reason: `Rate limit exceeded for "${tool.name}". Try again shortly.` };
         } else {
+            // Charge the declared cost only now that the call is allowed.
+            if (ceiling !== undefined && ceiling >= 0 && costPerCall !== undefined) {
+                this.chargeCost(tool.name, costPerCall);
+            }
             counters.allowed++;
             decision = { verdict: 'allow' };
         }
@@ -230,5 +257,62 @@ export class ToolPolicyEngine {
             this.counters.set(name, counters);
         }
         return counters;
+    }
+
+    /**
+     * Whether charging one more invocation's declared cost would push the tool's
+     * rolling-window spend over its ceiling. Rolls the window first; records
+     * nothing.
+     *
+     * @param name - Tool name.
+     * @param costPerCall - Declared USD cost of this invocation.
+     * @param ceiling - The tool's cost ceiling in USD.
+     * @returns `true` when this call must be denied to stay within the ceiling.
+     */
+    private wouldExceedCostCeiling(name: string, costPerCall: number, ceiling: number): boolean {
+        const window = this.costWindowFor(name);
+        this.rollCost(window, Date.now());
+        return window.spentUsd + costPerCall > ceiling;
+    }
+
+    /**
+     * Record one invocation's declared cost against the tool's rolling window.
+     * Call only when the invocation is allowed.
+     *
+     * @param name - Tool name.
+     * @param costPerCall - Declared USD cost to add.
+     */
+    private chargeCost(name: string, costPerCall: number): void {
+        const window = this.costWindowFor(name);
+        this.rollCost(window, Date.now());
+        window.spentUsd += costPerCall;
+    }
+
+    /**
+     * Reset a cost window when its duration has elapsed.
+     *
+     * @param window - The cost window to roll in place.
+     * @param now - Current epoch milliseconds.
+     */
+    private rollCost(window: ICostWindowState, now: number): void {
+        if (now - window.windowStart >= COST_WINDOW_MS) {
+            window.windowStart = now;
+            window.spentUsd = 0;
+        }
+    }
+
+    /**
+     * Get or create the per-tool cost window.
+     *
+     * @param name - Tool name.
+     * @returns The tool's cost window state.
+     */
+    private costWindowFor(name: string): ICostWindowState {
+        let window = this.costWindows.get(name);
+        if (!window) {
+            window = { windowStart: Date.now(), spentUsd: 0 };
+            this.costWindows.set(name, window);
+        }
+        return window;
     }
 }

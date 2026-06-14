@@ -41,6 +41,16 @@ export interface IAiToolCapability {
     /** Whether invoking the tool costs money (a paid upstream API). Drives cost ceilings and quotas. */
     spendsMoney?: boolean;
 
+    /**
+     * Representative USD cost of one successful invocation, charged against an
+     * operator's cost ceiling (`IToolPolicy.costCeilingUsd`). A tool that sets
+     * `spendsMoney: true` must declare this so the governor can hold a running
+     * spend tally; the registry warns when it is missing. Set it to the
+     * worst-case per-call cost for variable-cost tools so the ceiling errs
+     * toward safety.
+     */
+    costPerCallUsd?: number;
+
     /** Sensitivity of the data the tool returns. */
     sensitivity: AiToolSensitivity;
 
