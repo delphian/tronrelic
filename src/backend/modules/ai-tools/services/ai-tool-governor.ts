@@ -52,7 +52,7 @@ const RESULT_DIGEST_MAX = 500;
  * @returns A reason string when invalid, or null when acceptable.
  */
 function validateInput(input: Record<string, unknown>, schema: IAiTool['inputSchema']): string | null {
-    const properties = (schema.properties ?? {}) as Record<string, { type?: string }>;
+    const properties = schema.properties ?? {};
     let error: string | null = null;
 
     for (const key of schema.required ?? []) {
@@ -68,7 +68,11 @@ function validateInput(input: Record<string, unknown>, schema: IAiTool['inputSch
     }
     if (error === null) {
         for (const [key, value] of Object.entries(input)) {
-            const expected = properties[key]?.type;
+            const definition = properties[key];
+            // JSONSchema7Definition is `JSONSchema7 | boolean`; only an object
+            // schema carries a `type`, and only a single scalar type name is
+            // checked here (multi-type arrays are left to the handler).
+            const expected = typeof definition === 'object' && typeof definition.type === 'string' ? definition.type : undefined;
             if (expected && !matchesType(value, expected)) {
                 error = `Parameter "${key}" must be of type ${expected}.`;
                 break;
