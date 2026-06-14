@@ -65,6 +65,15 @@ function PolicyRow({ tool, override, usage, onSaved }: {
 
     const hasOverride = override !== undefined;
 
+    // Pending edits relative to the saved override. Save stays disabled until a
+    // field actually changes, so a long tool list doesn't present a column of
+    // live Save buttons inviting redundant no-op writes.
+    const dirty =
+        requireApproval !== triFrom(override?.requireApproval) ||
+        allowUnattended !== triFrom(override?.allowUnattended) ||
+        rateMax !== (override?.rateLimit ? String(override.rateLimit.max) : '') ||
+        costCeiling !== (override?.costCeilingUsd !== undefined ? String(override.costCeilingUsd) : '');
+
     const save = useCallback(async () => {
         // Only write a tri-state field when the admin forced it. Leaving it out
         // lets the governor keep the capability-class default rather than pinning
@@ -112,53 +121,47 @@ function PolicyRow({ tool, override, usage, onSaved }: {
     return (
         <Tr>
             <Td>
-                <div className={styles.tool_name}>{tool.name}</div>
-                {hasOverride && <Badge tone="info">override</Badge>}
+                <div className={styles.tool_cell}>
+                    <span className={styles.tool_name}>{tool.name}</span>
+                    {hasOverride && <Badge tone="info">override</Badge>}
+                </div>
             </Td>
-            <Td muted>
+            <Td muted className={styles.usage_cell}>
                 {usage ? `${usage.invocations} calls · ${usage.denied} denied · ${usage.needsApproval} held` : 'no activity'}
             </Td>
             <Td>
-                <div className={styles.policy_editor}>
-                    <label className={styles.policy_field}>
-                        <span className={styles.policy_field_label}>Require approval</span>
-                        <select
-                            className={styles.filter_select}
-                            value={requireApproval}
-                            onChange={(e) => setRequireApproval(e.target.value as TriState)}
-                            aria-label={`Require approval for ${tool.name}`}
-                        >
-                            <option value="inherit">Default</option>
-                            <option value="on">On</option>
-                            <option value="off">Off</option>
-                        </select>
-                    </label>
-                    <label className={styles.policy_field}>
-                        <span className={styles.policy_field_label}>Allow unattended</span>
-                        <select
-                            className={styles.filter_select}
-                            value={allowUnattended}
-                            onChange={(e) => setAllowUnattended(e.target.value as TriState)}
-                            aria-label={`Allow unattended runs for ${tool.name}`}
-                        >
-                            <option value="inherit">Default</option>
-                            <option value="on">On</option>
-                            <option value="off">Off</option>
-                        </select>
-                    </label>
-                    <label className={styles.policy_field}>
-                        <span className={styles.policy_field_label}>Rate / min</span>
-                        <Input type="number" min={0} value={rateMax} onChange={(e) => setRateMax(e.target.value)} placeholder="default" aria-label={`Rate limit per minute for ${tool.name}`} style={{ maxWidth: '7rem' }} />
-                    </label>
-                    <label className={styles.policy_field}>
-                        <span className={styles.policy_field_label}>Cost ceiling (USD)</span>
-                        <Input type="number" min={0} step="0.01" value={costCeiling} onChange={(e) => setCostCeiling(e.target.value)} placeholder="none" aria-label={`Cost ceiling for ${tool.name}`} style={{ maxWidth: '7rem' }} />
-                    </label>
-                </div>
+                <select
+                    className={`${styles.filter_select} ${styles.cell_control}`}
+                    value={requireApproval}
+                    onChange={(e) => setRequireApproval(e.target.value as TriState)}
+                    aria-label={`Require approval for ${tool.name}`}
+                >
+                    <option value="inherit">Default</option>
+                    <option value="on">On</option>
+                    <option value="off">Off</option>
+                </select>
+            </Td>
+            <Td>
+                <select
+                    className={`${styles.filter_select} ${styles.cell_control}`}
+                    value={allowUnattended}
+                    onChange={(e) => setAllowUnattended(e.target.value as TriState)}
+                    aria-label={`Allow unattended runs for ${tool.name}`}
+                >
+                    <option value="inherit">Default</option>
+                    <option value="on">On</option>
+                    <option value="off">Off</option>
+                </select>
+            </Td>
+            <Td>
+                <Input type="number" min={0} value={rateMax} onChange={(e) => setRateMax(e.target.value)} placeholder="default" aria-label={`Rate limit per minute for ${tool.name}`} className={styles.cell_control} />
+            </Td>
+            <Td>
+                <Input type="number" min={0} step="0.01" value={costCeiling} onChange={(e) => setCostCeiling(e.target.value)} placeholder="none" aria-label={`Cost ceiling for ${tool.name}`} className={styles.cell_control} />
             </Td>
             <Td>
                 <div className={styles.row_actions}>
-                    <Button variant="primary" size="sm" loading={busy} onClick={() => { void save(); }}>Save</Button>
+                    <Button variant="primary" size="sm" loading={busy} disabled={busy || !dirty} onClick={() => { void save(); }}>Save</Button>
                     <Button variant="ghost" size="sm" disabled={busy || !hasOverride} onClick={() => { void clear(); }}>Clear</Button>
                 </div>
             </Td>
@@ -202,13 +205,28 @@ export function PolicyTab() {
             <p className="text-muted" style={{ margin: 0, fontSize: 'var(--font-size-body-sm)' }}>
                 Overrides force these values over the capability-class defaults. Clear an override to revert a tool to its class defaults.
             </p>
+            <p className="text-muted" style={{ margin: 0, fontSize: 'var(--font-size-body-sm)' }}>
+                Both dropdowns are three-way: <strong>Default</strong> keeps the tool&apos;s capability-class
+                default, while <strong>On</strong>/<strong>Off</strong> force it. <strong>Require approval</strong> On
+                holds every call in the Approvals tab before it runs (by default only external, irreversible tools are
+                held). <strong>Unattended</strong> sets whether the tool may run on autonomous paths — scheduled prompts
+                and programmatic queries — where external tools are otherwise barred. <strong>Rate / min</strong> caps
+                invocations per minute across all callers; blank inherits the class default (120 read, 60 write, 30
+                external), under a 240/min global ceiling. <strong>Cost ceiling (USD)</strong> caps a paid tool&apos;s spend
+                over a rolling 24-hour window — each allowed call is charged the tool&apos;s declared per-call cost, and
+                further calls are denied once the ceiling would be exceeded; blank means no cap, and a tool that
+                declares no per-call cost cannot be capped.
+            </p>
             <div className="table-scroll">
                 <Table>
                     <Thead>
                         <Tr>
-                            <Th>Tool</Th>
+                            <Th width="expand">Tool</Th>
                             <Th width="shrink">Usage</Th>
-                            <Th>Override</Th>
+                            <Th>Require approval</Th>
+                            <Th>Unattended</Th>
+                            <Th>Rate / min</Th>
+                            <Th>Cost ceiling (USD)</Th>
                             <Th width="shrink">Actions</Th>
                         </Tr>
                     </Thead>

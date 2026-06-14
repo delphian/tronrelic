@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { HookAbortError } from '@/types';
 import type { IAiTool, IAiToolCapability, IHookRegistry, IMenuService, ISchedulerService, ISystemLogService, IToolInvocationContext } from '@/types';
 import { AiToolsModule, AUDIT_PRUNE_JOB, ToolApprovalQueue, detectTrifecta } from '../index.js';
+import { ToolPolicyEngine } from '../services/tool-policy-engine.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
@@ -76,6 +77,17 @@ function unattendedExternalTool(handler = vi.fn(async () => ({ sent: true }))): 
         inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
         capability: { sideEffect: 'external', reversible: true, sensitivity: 'internal', allowUnattended: true },
         handler
+    };
+}
+
+/** A paid external tool (reversible, so interactive calls skip the approval gate). */
+function paidTool(costPerCallUsd?: number): IAiTool {
+    return {
+        name: 'paid-gen',
+        description: 'A paid external test tool.',
+        inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+        capability: { sideEffect: 'external', reversible: true, sensitivity: 'internal', spendsMoney: true, costPerCallUsd },
+        handler: vi.fn(async () => ({}))
     };
 }
 
@@ -310,6 +322,44 @@ describe('AiToolsModule', () => {
             expect(status.present).toBe(false);
             expect(status.exfiltration).toHaveLength(0);
         });
+    });
+});
+
+describe('ToolPolicyEngine cost ceiling', () => {
+    /** Build an engine over fresh mock dependencies. */
+    function makeEngine(): ToolPolicyEngine {
+        return new ToolPolicyEngine(createMockLogger(), createMockDatabaseService());
+    }
+
+    it('charges the declared per-call cost and denies once the ceiling would be exceeded', async () => {
+        const engine = makeEngine();
+        await engine.setOverride('paid-gen', { costCeilingUsd: 0.10 });
+        const tool = paidTool(0.04);
+
+        const verdicts = [
+            engine.check(tool, interactiveCtx).verdict, // spend → 0.04
+            engine.check(tool, interactiveCtx).verdict, // spend → 0.08
+            engine.check(tool, interactiveCtx).verdict  // 0.12 would exceed 0.10
+        ];
+
+        expect(verdicts).toEqual(['allow', 'allow', 'deny']);
+    });
+
+    it('cannot cap a tool that declares no per-call cost', async () => {
+        const engine = makeEngine();
+        await engine.setOverride('paid-gen', { costCeilingUsd: 0.01 });
+        const tool = paidTool(undefined); // spendsMoney but nothing to charge
+
+        const verdicts = [0, 1, 2].map(() => engine.check(tool, interactiveCtx).verdict);
+        expect(verdicts).toEqual(['allow', 'allow', 'allow']);
+    });
+
+    it('leaves a paid tool uncapped when no ceiling override is set', () => {
+        const engine = makeEngine();
+        const tool = paidTool(5); // expensive per call, but no ceiling
+
+        expect(engine.check(tool, interactiveCtx).verdict).toBe('allow');
+        expect(engine.check(tool, interactiveCtx).verdict).toBe('allow');
     });
 });
 

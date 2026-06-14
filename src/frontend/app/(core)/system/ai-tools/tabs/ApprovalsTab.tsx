@@ -79,6 +79,12 @@ export function ApprovalsTab({ onChanged }: { onChanged: () => void }) {
     return (
         <Stack gap="md">
             {error && <div className="alert" role="alert">{error}</div>}
+            <p className="text-muted" style={{ margin: 0, fontSize: 'var(--font-size-body-sm)' }}>
+                Approving runs the action now, separately from the chat that requested it: that turn already ended — the
+                agent was told the action was pending and continued without the result, so approving neither resumes the
+                conversation nor returns the result to it. Holds from scheduled or programmatic prompts have no requester
+                waiting at all, so approve only when the side effect itself is the goal.
+            </p>
             {approvals.length === 0
                 ? <div className={styles.placeholder}>No actions are awaiting approval.</div>
                 : (
