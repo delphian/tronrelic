@@ -257,6 +257,11 @@ export class AiToolGovernor implements IAiToolGovernor {
             const cap = tool?.capability ?? DEFAULT_CAPABILITY;
             if (!tool) {
                 result = await this.fail(request.toolName, request.providerId, request.input, request.context, cap, 'error', 'Tool is no longer registered.');
+            } else if (!this.policy.tryChargeCost(tool)) {
+                // An approved hold bypasses check(), so gate and charge the cost
+                // ceiling here too — otherwise paid tools that require approval
+                // (the default for external/irreversible) would never be metered.
+                result = await this.fail(request.toolName, request.providerId, request.input, request.context, cap, 'denied', `Cost ceiling reached for "${tool.name}"; the approved action was not run.`);
             } else {
                 result = await this.executeTool(tool, request.providerId, request.input, request.context, cap);
             }

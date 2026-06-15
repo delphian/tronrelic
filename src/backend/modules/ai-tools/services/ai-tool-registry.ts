@@ -103,11 +103,11 @@ export class AiToolRegistry implements IAiToolRegistry {
                 { tool: tool.name, provider },
                 `AI tool "${tool.name}" registered without a capability classification; treating as read/internal`
             );
-        } else if (tool.capability.spendsMoney === true && tool.capability.costPerCallUsd === undefined) {
+        } else if (tool.capability.spendsMoney === true && (typeof tool.capability.costPerCallUsd !== 'number' || tool.capability.costPerCallUsd < 0)) {
             this.logger.warn(
                 { tool: tool.name, provider },
-                `AI tool "${tool.name}" declares spendsMoney but no costPerCallUsd; ` +
-                'cost-ceiling enforcement cannot charge this tool until it declares a per-call cost'
+                `AI tool "${tool.name}" declares spendsMoney but has an invalid or missing costPerCallUsd; ` +
+                'cost-ceiling enforcement cannot charge this tool until it declares a valid non-negative per-call cost'
             );
         }
 

@@ -361,6 +361,34 @@ describe('ToolPolicyEngine cost ceiling', () => {
         expect(engine.check(tool, interactiveCtx).verdict).toBe('allow');
         expect(engine.check(tool, interactiveCtx).verdict).toBe('allow');
     });
+
+    it('gates and charges the approved-execution path (tryChargeCost) at the ceiling', async () => {
+        // The governor calls this for an approved hold, which bypasses check();
+        // it must charge and deny the same way so approval-required paid tools
+        // are governed too.
+        const engine = makeEngine();
+        await engine.setOverride('paid-gen', { costCeilingUsd: 0.10 });
+        const tool = paidTool(0.04);
+
+        const admits = [engine.tryChargeCost(tool), engine.tryChargeCost(tool), engine.tryChargeCost(tool)];
+
+        expect(admits).toEqual([true, true, false]);
+    });
+
+    it('admits a call that exactly meets the ceiling despite float accumulation', async () => {
+        const engine = makeEngine();
+        await engine.setOverride('paid-gen', { costCeilingUsd: 0.30 });
+        const tool = paidTool(0.10); // 0.1 + 0.1 + 0.1 === 0.30000000000000004 in IEEE 754
+
+        const admits = [
+            engine.tryChargeCost(tool),
+            engine.tryChargeCost(tool),
+            engine.tryChargeCost(tool), // exactly meets 0.30 — the epsilon must admit, not float-deny
+            engine.tryChargeCost(tool)  // genuinely exceeds
+        ];
+
+        expect(admits).toEqual([true, true, true, false]);
+    });
 });
 
 describe('ToolApprovalQueue', () => {

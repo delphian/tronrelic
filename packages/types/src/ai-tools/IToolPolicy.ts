@@ -20,11 +20,12 @@ export interface IToolPolicy {
     quota?: { max: number; windowMs: number };
 
     /**
-     * Maximum spend, in USD, within a rolling 24h window before the governor
-     * denies further invocations. Enforced per tool by charging the declared
-     * `capability.costPerCallUsd` on each allowed call — a tool with no declared
-     * per-call cost cannot be enforced. Applies to money-spending tools
-     * (`capability.spendsMoney`).
+     * Maximum spend, in USD, within a fixed 24h window (reset when the window
+     * elapses — not a sliding window) before the governor denies further
+     * invocations. Enforced per tool by charging the declared
+     * `capability.costPerCallUsd` on each invocation that runs, including
+     * approved holds — a tool with no declared per-call cost cannot be enforced.
+     * Applies to money-spending tools (`capability.spendsMoney`).
      */
     costCeilingUsd?: number;
 

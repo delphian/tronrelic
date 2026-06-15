@@ -6,7 +6,7 @@
  * are overridable per tool by an admin. A fixed-window rate limiter (promoted
  * from the core blockchain module's TransactionToolGuard) caps invocations per
  * tool and globally, protecting upstream providers and the model's context
- * budget from a looping or prompt-injected agent. A parallel rolling-window
+ * budget from a looping or prompt-injected agent. A parallel fixed-window
  * accumulator caps a paid tool's spend against its declared per-call cost
  * (`capability.costPerCallUsd`) so an operator's cost ceiling is enforceable
  * without the handler reporting actual spend.
@@ -41,7 +41,7 @@ const RATE_DEFAULTS: Record<IAiToolCapability['sideEffect'], { max: number; wind
 /** Global ceiling across every tool in one window — a backstop against fan-out. */
 const GLOBAL_RATE = { max: 240, windowMs: 60_000 };
 
-/** Rolling window over which a tool's spend accumulates against its cost ceiling. */
+/** Fixed window over which a tool's spend accumulates against its cost ceiling. */
 const COST_WINDOW_MS = 86_400_000;
 
 /** Rolling fixed-window counter. */
@@ -50,7 +50,7 @@ interface IWindowState {
     count: number;
 }
 
-/** Rolling spend accumulator for a tool's cost ceiling. */
+/** Fixed-window spend accumulator for a tool's cost ceiling. */
 interface ICostWindowState {
     windowStart: number;
     spentUsd: number;
@@ -165,6 +165,32 @@ export class ToolPolicyEngine {
     }
 
     /**
+     * Atomically admit and charge one invocation against the tool's cost
+     * ceiling, for execution paths that bypass {@link check} — notably an
+     * approved hold, which the governor runs directly without re-checking
+     * policy. Returns false (charging nothing) when the call would exceed the
+     * ceiling, true otherwise, charging the declared cost when the tool has both
+     * a ceiling and a per-call cost.
+     *
+     * @param tool - The tool about to run.
+     * @returns Whether the invocation is admitted within its cost ceiling.
+     */
+    tryChargeCost(tool: IAiTool): boolean {
+        const cap = tool.capability ?? DEFAULT_CAPABILITY;
+        const policy = this.effectivePolicyFor(tool.name, cap);
+        const costPerCall = typeof cap.costPerCallUsd === 'number' && cap.costPerCallUsd >= 0 ? cap.costPerCallUsd : undefined;
+        const ceiling = policy.costCeilingUsd;
+        if (ceiling === undefined || ceiling < 0 || costPerCall === undefined) {
+            return true;
+        }
+        if (this.wouldExceedCostCeiling(tool.name, costPerCall, ceiling)) {
+            return false;
+        }
+        this.chargeCost(tool.name, costPerCall);
+        return true;
+    }
+
+    /**
      * Replace the override for one tool, or clear it when `policy` is null, and
      * persist. Backs the admin policy editor.
      *
@@ -261,8 +287,9 @@ export class ToolPolicyEngine {
 
     /**
      * Whether charging one more invocation's declared cost would push the tool's
-     * rolling-window spend over its ceiling. Rolls the window first; records
-     * nothing.
+     * windowed spend over its ceiling. Rolls the window first; records nothing.
+     * The 1e-9 epsilon absorbs binary-float accumulation error so a call that
+     * exactly meets the ceiling is not denied (e.g. 0.01*9 + 0.01 > 0.10).
      *
      * @param name - Tool name.
      * @param costPerCall - Declared USD cost of this invocation.
@@ -272,7 +299,7 @@ export class ToolPolicyEngine {
     private wouldExceedCostCeiling(name: string, costPerCall: number, ceiling: number): boolean {
         const window = this.costWindowFor(name);
         this.rollCost(window, Date.now());
-        return window.spentUsd + costPerCall > ceiling;
+        return window.spentUsd + costPerCall - ceiling > 1e-9;
     }
 
     /**
