@@ -48,10 +48,10 @@ A tool declares `IAiToolCapability`; the registry sets its first-boot enabled st
 |---|---|---|
 | `sideEffect: 'read'` | enabled | light rate cap |
 | `sideEffect: 'write'` | enabled | rate cap + full-arg audit |
-| `sideEffect: 'external'` / `reversible: false` / `spendsMoney` | **disabled** | rate cap + approval (when irreversible) + **autonomous default-deny** |
+| `sideEffect: 'external'` / `reversible: false` / `spendsMoney` | **disabled** | rate cap + approval (irreversible & not self-curated) + **autonomous default-deny** (unless self-curated) |
 | `sensitivity: 'secret'` | — | arguments redacted in the audit record |
 
-**Autonomous default-deny:** on `triggerPath` `scheduled` or `programmatic`, an `external` tool is denied unless `allowUnattended` is set — declared on the tool's capability for a genuinely-safe tool, or forced by an admin policy override. **Approval:** irreversible/public effects park as `pending-approval` and run only when an admin approves.
+**Autonomous default-deny:** on `triggerPath` `scheduled` or `programmatic`, an `external` tool is denied unless it declares `forcesCuratorReview: true` — its own human-review queue makes an unattended call safe, because the call can only draft into that queue — or an admin policy override grants `allowUnattended`. **Approval:** an external/irreversible tool that does not self-curate parks as `pending-approval` and runs only when an admin approves; a `forcesCuratorReview` tool relies on its own queue, so the governor adds no second gate. Both gates derive from the capability — a tool cannot opt itself out of either; only an admin policy override (`IToolPolicy`) can relax them.
 
 **Lethal-trifecta detection:** `detectTrifecta()` scans the *enabled* set for the co-presence of a `sensitivity: 'secret'` reader, a `surfacesUntrustedContent` source, and an `external` sink — the combination that lets injected text read a secret and exfiltrate it in one turn. `GET /trifecta` surfaces `present` plus the tool names forming each leg, so an operator can break the chain by disabling one.
 

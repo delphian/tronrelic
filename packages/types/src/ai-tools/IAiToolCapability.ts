@@ -7,8 +7,6 @@
  * class instead of trusting prose in the tool description.
  */
 
-import type { IToolPolicy } from './IToolPolicy.js';
-
 /**
  * What a tool does to the world.
  * - `read` — returns data, mutates nothing.
@@ -61,22 +59,17 @@ export interface IAiToolCapability {
      */
     surfacesUntrustedContent?: boolean;
 
-    /** Whether each invocation must be approved by a human before it runs. */
-    requiresApproval?: boolean;
-
     /**
-     * Whether the tool is safe to run on autonomous trigger paths (scheduled
-     * prompts, programmatic `ask()` from other plugins). Defaults to false for
-     * `external` tools — an unattended run has no human to catch a mistake — and
-     * true otherwise. Declaring it lets a tool author opt a genuinely-safe
-     * external tool into unattended use without an operator policy override; an
-     * admin policy override still wins over this declaration.
+     * Whether the tool guarantees, by its own construction, that every effect it
+     * produces is held for a human curator's review before it takes hold — a
+     * built-in approval queue, for example. This describes what the tool *does*,
+     * not what it *wants*: the governor derives its gates from the fact rather
+     * than accepting a request to relax them. A self-curated external/irreversible
+     * tool needs no governor approval (its curator is the approval, so a second
+     * gate would be redundant) and is safe on autonomous trigger paths (an
+     * unattended call can do no more than draft into the curator's queue). Leave
+     * false unless the tool truly enforces its own human review — an operator
+     * policy override is the only way to drop review for a tool that does not.
      */
-    allowUnattended?: boolean;
-
-    /**
-     * Named policy id, or an inline policy, overriding the class-derived
-     * defaults. Resolved by the governor's policy engine.
-     */
-    policy?: string | IToolPolicy;
+    forcesCuratorReview?: boolean;
 }

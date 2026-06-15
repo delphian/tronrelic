@@ -69,13 +69,18 @@ function externalTool(handler = vi.fn(async () => ({ posted: true }))): IAiTool 
     };
 }
 
-/** An external tool the author cleared for unattended use (reversible, opt-in). */
-function unattendedExternalTool(handler = vi.fn(async () => ({ sent: true }))): IAiTool {
+/**
+ * A self-curated external/irreversible tool: it forces its own human curator
+ * review, so the governor derives no approval gate (the curator is the approval)
+ * and it is safe on autonomous paths (an unattended call can only draft into the
+ * curator's queue).
+ */
+function curatedExternalTool(handler = vi.fn(async () => ({ sent: true }))): IAiTool {
     return {
-        name: 'test-unattended',
-        description: 'An external but reversible tool cleared for unattended use.',
+        name: 'test-curated',
+        description: 'An external, irreversible tool that forces its own curator review.',
         inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
-        capability: { sideEffect: 'external', reversible: true, sensitivity: 'internal', allowUnattended: true },
+        capability: { sideEffect: 'external', reversible: false, sensitivity: 'public', forcesCuratorReview: true },
         handler
     };
 }
@@ -222,13 +227,13 @@ describe('AiToolsModule', () => {
             expect(result.status).toBe('denied');
         });
 
-        it('permits an allowUnattended external tool on an autonomous run', async () => {
+        it('permits a self-curated external tool on an autonomous run', async () => {
             const handler = vi.fn(async () => ({ sent: true }));
             const registry = module.getRegistry();
-            registry.registerTool(unattendedExternalTool(handler), 'test');
-            await registry.setEnabled('test-unattended', true); // external ships disabled
+            registry.registerTool(curatedExternalTool(handler), 'test');
+            await registry.setEnabled('test-curated', true); // external ships disabled
 
-            const result = await module.getGovernor().invoke('test-unattended', {}, scheduledCtx);
+            const result = await module.getGovernor().invoke('test-curated', {}, scheduledCtx);
             expect(result.status).toBe('ok');
             expect(handler).toHaveBeenCalledOnce();
         });
