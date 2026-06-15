@@ -213,7 +213,7 @@ export function PolicyTab() {
                 and programmatic queries — where external tools are otherwise barred. <strong>Rate / min</strong> caps
                 invocations per minute across all callers; blank inherits the class default (120 read, 60 write, 30
                 external), under a 240/min global ceiling. <strong>Cost ceiling (USD)</strong> caps a paid tool&apos;s spend
-                over a rolling 24-hour window — each allowed call is charged the tool&apos;s declared per-call cost, and
+                over a fixed 24-hour window — each call that runs is charged the tool&apos;s declared per-call cost, and
                 further calls are denied once the ceiling would be exceeded; blank means no cap, and a tool that
                 declares no per-call cost cannot be capped.
             </p>

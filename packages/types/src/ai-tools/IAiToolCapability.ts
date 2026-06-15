@@ -42,12 +42,12 @@ export interface IAiToolCapability {
     spendsMoney?: boolean;
 
     /**
-     * Representative USD cost of one successful invocation, charged against an
-     * operator's cost ceiling (`IToolPolicy.costCeilingUsd`). A tool that sets
-     * `spendsMoney: true` must declare this so the governor can hold a running
-     * spend tally; the registry warns when it is missing. Set it to the
-     * worst-case per-call cost for variable-cost tools so the ceiling errs
-     * toward safety.
+     * Representative USD cost of one invocation, charged against an operator's
+     * cost ceiling (`IToolPolicy.costCeilingUsd`) each time the tool runs. A
+     * tool that sets `spendsMoney: true` must declare this so the governor can
+     * hold a running spend tally; the registry warns when it is missing or
+     * invalid. Set it to the worst-case per-call cost for variable-cost tools so
+     * the ceiling errs toward safety.
      */
     costPerCallUsd?: number;
 
