@@ -102,6 +102,13 @@ export class ToolPolicyEngine {
      * @returns The merged policy the engine will enforce.
      */
     effectivePolicyFor(name: string, cap: IAiToolCapability): IToolPolicy {
+        // Merge over DEFAULT_CAPABILITY so a partial or empty capability object
+        // (possible from an untyped/`as any` caller) can never leave a field
+        // undefined: an undefined sideEffect would otherwise skip both the rate
+        // limit (RATE_DEFAULTS[undefined]) and the external autonomous-deny,
+        // failing open. A partial object then falls back to the read/internal
+        // default — the same safe class an unclassified tool receives.
+        const fullCap = { ...DEFAULT_CAPABILITY, ...cap };
         // An external, irreversible effect must be reviewed by a human before it
         // takes hold. A tool that forces its own curator review supplies that
         // review itself, so the governor adds no second gate; otherwise the
@@ -110,15 +117,15 @@ export class ToolPolicyEngine {
         // the admin override merged below can relax them, which keeps the bypass
         // an on-record operator decision rather than a tool self-grant.
         const isUnreviewedDangerousEffect =
-            cap.sideEffect === 'external' && cap.reversible === false && cap.forcesCuratorReview !== true;
+            fullCap.sideEffect === 'external' && fullCap.reversible === false && fullCap.forcesCuratorReview !== true;
         const base: IToolPolicy = {
-            rateLimit: RATE_DEFAULTS[cap.sideEffect],
+            rateLimit: RATE_DEFAULTS[fullCap.sideEffect],
             requireApproval: isUnreviewedDangerousEffect,
             // Non-external tools are unattended-safe. An external tool is safe on
             // autonomous paths only when it forces its own curator review — an
             // unattended trigger can then do no more than draft into that review
             // queue. Every other external tool is barred from autonomous runs.
-            allowUnattended: cap.sideEffect !== 'external' || cap.forcesCuratorReview === true
+            allowUnattended: fullCap.sideEffect !== 'external' || fullCap.forcesCuratorReview === true
         };
         return { ...base, ...this.overrides[name] };
     }

@@ -28,7 +28,10 @@ interface CapabilityBadge {
  */
 function badgesFor(cap?: IAiToolCapability): CapabilityBadge[] {
     const badges: CapabilityBadge[] = [];
-    if (!cap) {
+    // A capability with no declared side effect (absent, or a partial/malformed
+    // object) is unclassified — render the single warning badge rather than an
+    // empty one from an undefined sideEffect label.
+    if (!cap || !cap.sideEffect) {
         badges.push({ label: 'unclassified', tone: 'warning' });
         return badges;
     }
