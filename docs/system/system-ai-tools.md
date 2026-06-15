@@ -47,15 +47,17 @@ Classify every tool before it ships; the class drives the guardrails the governo
 | Spends money | yes / no | Cost cap + quota |
 | Sensitivity | `public` · `internal` · `secret` | Audit redaction + trifecta accounting |
 | Surfaces untrusted content | yes / no | Trifecta accounting (injection source) |
-| Requires approval | yes / no | Human-in-the-loop gate |
+| Forces curator review | yes / no | Tool self-gates every effect → no governor approval added; safe unattended |
 
-A transaction lookup is read / internal. A log query is read / secret / surfaces-untrusted. A tweet is external / irreversible / requires-approval. An image generation is external / spends-money.
+A transaction lookup is read / internal. A log query is read / secret / surfaces-untrusted. A tweet is external / irreversible and forces-curator-review (its plugin holds every post for human approval). An image generation is external / spends-money.
+
+`forcesCuratorReview` is the only governance field a tool may declare, and it is a *description* of behaviour, not a request: the governor derives the approval gate and the autonomous-path rule from it. There is no field that lets a tool exempt itself from review — an external, irreversible effect is always reviewed by someone (the tool's own curator, or the governor). Dropping review for a tool that does not self-curate is an operator-only decision (an admin policy override), never a tool self-grant.
 
 ## Accountability and Security
 
 Mandatory for every tool; scale to the class. A read-only lookup needs little, an external action needs all of it.
 
-**Least privilege, default-deny for danger.** External, irreversible, and money-spending tools are opt-in and ship disabled. They must not run on autonomous paths (scheduled prompts, programmatic `ask()` from other plugins) unless explicitly authorized — an unattended run has no human to catch a mistake. Authorize a genuinely-safe external tool for unattended use by declaring `allowUnattended: true` on its capability, or via an admin policy override.
+**Least privilege, default-deny for danger.** External, irreversible, and money-spending tools are opt-in and ship disabled. They must not run on autonomous paths (scheduled prompts, programmatic `ask()` from other plugins) — an unattended run has no human to catch a mistake. A tool that declares `forcesCuratorReview: true` is the exception: because every effect it produces is held for a human curator, an unattended call can do no more than draft into that queue, so the governor treats it as autonomous-safe. Any other external tool runs unattended only via an admin policy override.
 
 **Validate every input.** The schema is a hint to the model, not a guarantee. Re-check every argument in the handler (format, range, enum) and reject with a descriptive error the model can correct from. Never pass model-supplied values into a query, path, command, or URL unchecked.
 
@@ -63,7 +65,7 @@ Mandatory for every tool; scale to the class. A read-only lookup needs little, a
 
 **Bound side-effecting and paid tools.** Rate-limit, quota, and cap cost. A looping or injected model must not drain an API budget or flood a channel. `TransactionToolGuard` is the reference limiter.
 
-**Require human approval for irreversible or public effects.** Park the action for admin approval instead of executing inline. `trp-x-poster` is the reference: every AI-authored post waits for a human.
+**Require human approval for irreversible or public effects.** Either let the governor park the action for admin approval, or declare `forcesCuratorReview: true` when the tool holds every effect in its own review queue. `trp-x-poster` is the reference: it declares `forcesCuratorReview` and every AI-authored post waits for a human in its History tab.
 
 **Audit every invocation.** Record who triggered it (interactive admin / scheduled / programmatic), the arguments, the outcome, and the cost — enough to reconstruct what happened. `trp-image-gen`'s per-call history is the reference shape.
 
@@ -114,7 +116,7 @@ const tool: IAiTool = {
 
 ## Pre-Ship Checklist
 
-- [ ] Classified: side effect, reversibility, spend, sensitivity, untrusted-content, approval
+- [ ] Classified: side effect, reversibility, spend, sensitivity, untrusted-content, forces-curator-review
 - [ ] `description` states purpose, when (not) to use, params, return shape, limits
 - [ ] Every input re-validated in the handler; descriptive errors returned
 - [ ] Object access authorized for id-addressed tools

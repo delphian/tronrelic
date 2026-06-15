@@ -3,8 +3,10 @@
 /**
  * @fileoverview Renders an AI tool's capability classification as a row of
  * tone-coded badges (side effect, reversibility, spend, sensitivity,
- * untrusted-content, approval, unattended). Shared by the Registry, Activity,
- * and Policy tabs so the risk class reads consistently everywhere.
+ * untrusted-content, self-curated review). Shared by the Registry, Activity,
+ * and Policy tabs so the risk class reads consistently everywhere. These badges
+ * show what the tool *declares*; the effective approval/unattended gates the
+ * governor derives from that declaration live on the Policy tab.
  */
 
 import type { IAiToolCapability } from '@/types';
@@ -48,11 +50,8 @@ function badgesFor(cap?: IAiToolCapability): CapabilityBadge[] {
     if (cap.surfacesUntrustedContent) {
         badges.push({ label: 'untrusted content', tone: 'warning' });
     }
-    if (cap.requiresApproval) {
-        badges.push({ label: 'approval', tone: 'info' });
-    }
-    if (cap.allowUnattended && cap.sideEffect === 'external') {
-        badges.push({ label: 'unattended ok', tone: 'neutral' });
+    if (cap.forcesCuratorReview) {
+        badges.push({ label: 'forces review', tone: 'info' });
     }
     return badges;
 }

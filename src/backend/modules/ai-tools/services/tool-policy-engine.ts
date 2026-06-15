@@ -102,11 +102,23 @@ export class ToolPolicyEngine {
      * @returns The merged policy the engine will enforce.
      */
     effectivePolicyFor(name: string, cap: IAiToolCapability): IToolPolicy {
-        const requireApproval = cap.requiresApproval ?? (cap.sideEffect === 'external' && cap.reversible === false);
+        // An external, irreversible effect must be reviewed by a human before it
+        // takes hold. A tool that forces its own curator review supplies that
+        // review itself, so the governor adds no second gate; otherwise the
+        // governor owns the approval. Both gates are derived purely from the
+        // tool's declared nature — a tool cannot opt itself out of either. Only
+        // the admin override merged below can relax them, which keeps the bypass
+        // an on-record operator decision rather than a tool self-grant.
+        const isUnreviewedDangerousEffect =
+            cap.sideEffect === 'external' && cap.reversible === false && cap.forcesCuratorReview !== true;
         const base: IToolPolicy = {
             rateLimit: RATE_DEFAULTS[cap.sideEffect],
-            requireApproval,
-            allowUnattended: cap.allowUnattended ?? (cap.sideEffect !== 'external')
+            requireApproval: isUnreviewedDangerousEffect,
+            // Non-external tools are unattended-safe. An external tool is safe on
+            // autonomous paths only when it forces its own curator review — an
+            // unattended trigger can then do no more than draft into that review
+            // queue. Every other external tool is barred from autonomous runs.
+            allowUnattended: cap.sideEffect !== 'external' || cap.forcesCuratorReview === true
         };
         return { ...base, ...this.overrides[name] };
     }
