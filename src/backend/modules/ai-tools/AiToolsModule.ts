@@ -33,6 +33,8 @@ import { ToolAuditStore } from './services/tool-audit-store.js';
 import { ToolApprovalQueue } from './services/tool-approval-queue.js';
 import { AiToolGovernor } from './services/ai-tool-governor.js';
 import { AiProviderRegistry } from './services/ai-provider-registry.js';
+import { CurationQueue } from './services/curation-queue.js';
+import { CurationService } from './services/curation-service.js';
 import { AiToolsController } from './api/ai-tools.controller.js';
 import { createAiToolsAdminRouter } from './api/ai-tools.router.js';
 
@@ -44,6 +46,9 @@ export const AI_TOOL_GOVERNOR_SERVICE = 'ai-tool-governor';
 
 /** Service-registry name for the installed-AI-provider registry. */
 export const AI_PROVIDERS_SERVICE = 'ai-providers';
+
+/** Service-registry name for the central curation queue. */
+export const CURATION_SERVICE = 'curation';
 
 /** Scheduler job that prunes audit records past the retention window. */
 export const AUDIT_PRUNE_JOB = 'ai-tools:prune-audit';
@@ -96,6 +101,8 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private policy!: ToolPolicyEngine;
     private audit!: ToolAuditStore;
     private approvals!: ToolApprovalQueue;
+    private curationQueue!: CurationQueue;
+    private curation!: CurationService;
     private governor!: AiToolGovernor;
     private providerRegistry!: AiProviderRegistry;
     private controller!: AiToolsController;
@@ -130,9 +137,19 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.approvals = new ToolApprovalQueue(this.logger, this.database);
         await this.approvals.ensureIndexes();
 
+        this.curationQueue = new CurationQueue(this.logger, this.database);
+        await this.curationQueue.ensureIndexes();
+        this.curation = new CurationService(this.logger, this.curationQueue);
+
+        // Verify a tool's `curationTypeId` binding against the live curation
+        // registry. A declared binding relaxes the tool's gates only while its
+        // owning type is registered, and re-tightens the moment that owner is
+        // disabled — verification rather than the honour-system boolean alone.
+        this.policy.setCurationResolver((typeId) => this.curation.hasType(typeId));
+
         this.governor = new AiToolGovernor(this.logger, this.registry, this.policy, this.audit, this.approvals, this.hookRegistry);
         this.providerRegistry = new AiProviderRegistry(this.logger);
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry);
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation);
 
         this.logger.info('ai-tools module initialized');
     }
@@ -153,9 +170,16 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             WebSocketService.getInstance().emit({ event, payload });
         });
 
+        // Curation decisions and new holds nudge the dashboard to refetch, the
+        // same lightweight signal the governor uses for approvals.
+        this.curation.setBroadcast((event, payload) => {
+            WebSocketService.getInstance().emit({ event, payload });
+        });
+
         this.serviceRegistry.register(AI_TOOLS_SERVICE, this.registry);
         this.serviceRegistry.register(AI_TOOL_GOVERNOR_SERVICE, this.governor);
         this.serviceRegistry.register(AI_PROVIDERS_SERVICE, this.providerRegistry);
+        this.serviceRegistry.register(CURATION_SERVICE, this.curation);
 
         // Daily audit retention sweep. A Mongo TTL index can't enforce this —
         // `createdAt` is an ISO string, not a Date — so retention is a scheduled
@@ -183,7 +207,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         });
 
         this.logger.info(
-            { services: [AI_TOOLS_SERVICE, AI_TOOL_GOVERNOR_SERVICE, AI_PROVIDERS_SERVICE] },
+            { services: [AI_TOOLS_SERVICE, AI_TOOL_GOVERNOR_SERVICE, AI_PROVIDERS_SERVICE, CURATION_SERVICE] },
             'ai-tools module running (admin router mounted, services registered)'
         );
     }
@@ -212,5 +236,18 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             throw new Error('AiToolsModule not initialized - call init() first');
         }
         return this.registry;
+    }
+
+    /**
+     * The curation service, for tests and in-process consumers.
+     *
+     * @returns The curation service instance.
+     * @throws If called before `init()`.
+     */
+    getCuration(): CurationService {
+        if (!this.curation) {
+            throw new Error('AiToolsModule not initialized - call init() first');
+        }
+        return this.curation;
     }
 }

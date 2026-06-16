@@ -1,0 +1,80 @@
+# Central Curation Queue
+
+One core admin surface for every effect held for human review before it takes hold — drafted tweets, generated images, any future reviewable content. Lives in the [`ai-tools` module](../../src/backend/modules/ai-tools/README.md) and is published as the `'curation'` service.
+
+## Why This Matters
+
+Without it, every plugin that needs human review re-implements its own approval queue and its own review UI — `trp-x-poster` held drafted tweets in a private collection reviewed from its own History tab. Operators then hunt across plugins for things to approve, and each queue re-solves the same problem unevenly. Centralizing gives one inbox and, crucially, turns `forcesCuratorReview` from an honor-system boolean into a **verifiable binding**: the governor relaxes a tool's gates only while a real curation type backs the claim. The pattern mirrors CMS editorial queues (Drupal Content Moderation, Sanity's separate workflow-metadata document).
+
+## How It Works
+
+Core owns only the **decision** (held → approved / rejected) and the **envelope**; the owning content type owns the payload, the preview, and what approval *does*. The envelope is a pointer, never the payload: it stores an opaque `ref` (e.g. `{ postId }`) the type resolves back to its own record, plus a cached `preview` used only as the disabled-owner fallback. While the owner is registered the queue renders from a live `describe()`, so the snapshot never goes stale.
+
+A provider registers an `ICurationType` and producers call `hold()`; the admin surface lists and decides. Core records the decision first (the queue's atomic gate), then invokes the type's callback — so a callback failure leaves the item decided rather than re-opening a half-committed effect. A type whose plugin is disabled is unregistered, so its held items **block** on decision until the plugin returns; this is intentional, not data loss.
+
+### The Type Contract
+
+A provider gives core the content-specific operations it cannot infer. Core stays payload-agnostic — it only ever sees the generic `ICurationPreview` (`title` / `body` / `media` / `fields` / `editable`).
+
+| Member | Role |
+|---|---|
+| `typeId` | Namespaced `<provider>:<name>` (e.g. `x-poster:tweet`); the binding key |
+| `describe(ref)` | Flatten the record into the generic preview; resolves cross-plugin URLs |
+| `onApprove(item)` | Commit the effect (publish, schedule) |
+| `onReject(item)` | Discard the effect |
+| `applyEdit?(item, patch)` | Optional: apply a generic edit (today `{ body }`); the type validates and owns the write |
+
+### The Verifiable Binding
+
+An AI tool keeps `forcesCuratorReview: boolean` (the declaration) and adds `curationTypeId` (the verification). Three valid states:
+
+| Capability | Governor behavior |
+|---|---|
+| Neither | Ordinary external tool — default-deny, parks for approval |
+| `forcesCuratorReview: true` only | Legacy honor system — trusted on the tool's word (its own private queue) |
+| `forcesCuratorReview: true` + `curationTypeId` | Honored **only while** that type is registered; re-tightens the moment the owner is disabled |
+
+The governor resolves the binding live against the curation registry (`ToolPolicyEngine.setCurationResolver` → `CurationService.hasType`). Declaring `curationTypeId` without `forcesCuratorReview: true` is incoherent and rejected at tool registration.
+
+### Editing
+
+The admin edits the neutral `body` text in a core modal; the write routes core → `CurationService.edit` → the type's `applyEdit` → the plugin's own record, then core re-derives and re-caches the preview. The type is the validation authority (x-poster enforces the ≤280 tweet limit and throws on violation). A type without `applyEdit` is not editable and shows no edit affordance. Rich per-type editors are a future extension on the same seam.
+
+## Quick Reference
+
+| Surface | Value |
+|---|---|
+| Service registry name | `'curation'` → `ICurationService` |
+| Owned collection | `module_ai-tools_curations` |
+| Admin tab | `/system/ai-tools` → Curation |
+| WebSocket signal | `ai-tools:curations-changed` (refetch cue) |
+| REST | `GET /curations`, `GET /curations/count`, `PATCH /curations/:id`, `POST /curations/:id/{approve,reject}` under `/api/admin/system/ai-tools` |
+| Types | `@delphian/tronrelic-types` → `ICurationType`, `ICurationItem`, `ICurationPreview`, `ICurationService`, `ICurationEditPatch` |
+
+## Example
+
+A provider registers its type and routes held effects in:
+
+```typescript
+// On init, via the registry (watch covers boot-order + churn):
+context.services.watch<ICurationService>('curation', {
+    onAvailable: (curation) => curation.registerType({
+        typeId: 'x-poster:tweet',
+        label: 'X Tweet',
+        describe: async (ref) => ({ body: (await poster.getPost(String(ref.postId)))?.text }),
+        onApprove: (item) => poster.approvePost(String(item.ref.postId)),  // → scheduled
+        onReject: (item) => poster.rejectPost(String(item.ref.postId)),
+        applyEdit: (item, patch) => poster.editPostText(String(item.ref.postId), patch.body ?? '')
+    }, manifest.id)
+});
+
+// The tool's handler holds the effect rather than performing it:
+await curation.hold({ typeId: 'x-poster:tweet', ref: { postId }, source: 'ai-tool:x-post-tweet' });
+```
+
+## Further Reading
+
+- [system-ai-tools.md](./system-ai-tools.md) — the AI tool standard; `forcesCuratorReview` and the capability vocabulary the binding hardens
+- [AI Tools Module README](../../src/backend/modules/ai-tools/README.md) — the module that owns the curation service, governor, and registry
+- [trp-x-poster README](../../src/plugins/trp-x-poster/README.md) — the reference curation type and the History/central-queue coexistence
+- [plugins-service-registry.md](../plugins/plugins-service-registry.md) — `watch()` vs `get()` for registering a type and discovering `'curation'`

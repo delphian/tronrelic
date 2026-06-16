@@ -70,6 +70,10 @@ Typed extension points where core invites plugins into its own execution. Descri
 
 The contract and governance for tools a model can invoke during an AI query. Core owns the tool shape, the capability classes (read / write / external, sensitivity, reversibility), and the accountability and security every tool must meet — input validation, object authorization, rate/quota/cost limits, human approval for irreversible effects, and per-invocation audit — so every AI provider plugin and tool inherits the same guarantees. Provider-neutral: `trp-ai-assistant` is only the Anthropic transport. See [system-ai-tools.md](./system-ai-tools.md).
 
+### Curation
+
+One core admin surface (`/system/ai-tools` → Curation, in the AI Tools module) for every effect held for human review before it takes hold. Plugins register a content type (preview / approve / reject / optional edit); core owns the decision and a pointer-plus-preview envelope while the type owns the payload and what approval does. It also hardens a tool's `forcesCuratorReview` into a verifiable `curationTypeId` binding the governor checks live. See [system-curation.md](./system-curation.md).
+
 ### Logging
 
 Pino-based logger with MongoDB persistence for historical queries. See [system-logging.md](./system-logging.md).
@@ -106,6 +110,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [system-database-migrations.md](./system-database-migrations.md) | Migration discovery, transactions, REST API, admin UI |
 | [system-hooks.md](./system-hooks.md) | Declared seams, four archetypes, plugin facade, introspection, admin UI |
 | [system-ai-tools.md](./system-ai-tools.md) | AI tool contract, capability classes, accountability and security requirements |
+| [system-curation.md](./system-curation.md) | Central curation queue, the type contract, the verifiable `curationTypeId` binding |
 | [system-logging.md](./system-logging.md) | Pino, MongoDB persistence, log queries |
 | [Menu Module README](../../src/backend/modules/menu/README.md) | Menu service, plugin integration, WebSocket events |
 | [Pages Module README](../../src/backend/modules/pages/README.md) | Markdown CMS, storage providers, file uploads |

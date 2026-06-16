@@ -16,21 +16,23 @@ import type { ITrifectaStatus } from '@/types';
 import { Page, PageHeader } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { getSocket } from '../../../../lib/socketClient';
-import { getTrifecta, getApprovalsCount } from '../../../../modules/ai-tools';
+import { getTrifecta, getApprovalsCount, getCurationsCount } from '../../../../modules/ai-tools';
 import { TrifectaPanel } from './components/TrifectaPanel';
 import { RegistryTab } from './tabs/RegistryTab';
 import { ActivityTab } from './tabs/ActivityTab';
 import { ApprovalsTab } from './tabs/ApprovalsTab';
+import { CurationTab } from './tabs/CurationTab';
 import { PolicyTab } from './tabs/PolicyTab';
 import styles from './page.module.scss';
 
 /** The dashboard tabs. */
-type TabId = 'registry' | 'activity' | 'approvals' | 'policy';
+type TabId = 'registry' | 'activity' | 'approvals' | 'curation' | 'policy';
 
 const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
     { id: 'registry', label: 'Registry' },
     { id: 'activity', label: 'Activity' },
     { id: 'approvals', label: 'Approvals' },
+    { id: 'curation', label: 'Curation' },
     { id: 'policy', label: 'Policy' }
 ];
 
@@ -43,6 +45,7 @@ export default function AiToolsAdminPage() {
     const [activeTab, setActiveTab] = useState<TabId>('registry');
     const [trifecta, setTrifecta] = useState<ITrifectaStatus | null>(null);
     const [pending, setPending] = useState(0);
+    const [pendingCuration, setPendingCuration] = useState(0);
 
     const refreshTrifecta = useCallback(async () => {
         try {
@@ -60,18 +63,32 @@ export default function AiToolsAdminPage() {
         }
     }, []);
 
+    const refreshPendingCuration = useCallback(async () => {
+        try {
+            setPendingCuration(await getCurationsCount());
+        } catch {
+            /* secondary data — leave the count as-is on failure */
+        }
+    }, []);
+
     useEffect(() => {
         void refreshTrifecta();
         void refreshPending();
-    }, [refreshTrifecta, refreshPending]);
+        void refreshPendingCuration();
+    }, [refreshTrifecta, refreshPending, refreshPendingCuration]);
 
-    // Keep the pending badge live regardless of which tab is open.
+    // Keep both pending badges live regardless of which tab is open.
     useEffect(() => {
         const socket = getSocket();
-        const handler = () => { void refreshPending(); };
-        socket.on('ai-tools:approvals-changed', handler);
-        return () => { socket.off('ai-tools:approvals-changed', handler); };
-    }, [refreshPending]);
+        const onApprovals = () => { void refreshPending(); };
+        const onCurations = () => { void refreshPendingCuration(); };
+        socket.on('ai-tools:approvals-changed', onApprovals);
+        socket.on('ai-tools:curations-changed', onCurations);
+        return () => {
+            socket.off('ai-tools:approvals-changed', onApprovals);
+            socket.off('ai-tools:curations-changed', onCurations);
+        };
+    }, [refreshPending, refreshPendingCuration]);
 
     return (
         <Page>
@@ -92,6 +109,9 @@ export default function AiToolsAdminPage() {
                             {tab.id === 'approvals' && pending > 0 && (
                                 <> <Badge tone="warning">{pending}</Badge></>
                             )}
+                            {tab.id === 'curation' && pendingCuration > 0 && (
+                                <> <Badge tone="warning">{pendingCuration}</Badge></>
+                            )}
                         </button>
                     ))}
                 </div>
@@ -100,6 +120,7 @@ export default function AiToolsAdminPage() {
                     {activeTab === 'registry' && <RegistryTab onChanged={refreshTrifecta} />}
                     {activeTab === 'activity' && <ActivityTab />}
                     {activeTab === 'approvals' && <ApprovalsTab onChanged={refreshPending} />}
+                    {activeTab === 'curation' && <CurationTab onChanged={refreshPendingCuration} />}
                     {activeTab === 'policy' && <PolicyTab />}
                 </div>
             </div>

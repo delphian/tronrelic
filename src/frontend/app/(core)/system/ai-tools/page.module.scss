@@ -133,6 +133,59 @@
     flex-wrap: wrap;
 }
 
+/* Curation queue preview cell: body text, media thumbnail, labelled fields. */
+.curation_preview {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    max-width: var(--max-width-prose);
+}
+
+.curation_body {
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.curation_thumb {
+    max-width: var(--avatar-size-lg);
+    max-height: var(--avatar-size-lg);
+    width: auto;
+    height: auto;
+    border-radius: var(--radius-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    object-fit: cover;
+}
+
+.curation_fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+}
+
+.curation_field {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.curation_field_label {
+    color: var(--color-text-subtle);
+}
+
+/* Inline editor textarea in the curation edit modal. */
+.curation_textarea {
+    width: 100%;
+    resize: vertical;
+    background: var(--input-background);
+    color: var(--color-text);
+    border: var(--input-border);
+    border-radius: var(--input-border-radius);
+    padding: var(--input-padding);
+    font-size: var(--font-size-body);
+    font-family: inherit;
+}
+
 /* Monospace digest / args preview. */
 .mono {
     font-family: var(--font-mono, monospace);

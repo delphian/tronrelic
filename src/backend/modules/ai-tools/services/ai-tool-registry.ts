@@ -96,6 +96,16 @@ export class AiToolRegistry implements IAiToolRegistry {
         if (this.tools.has(tool.name)) {
             throw new Error(`Tool "${tool.name}" is already registered`);
         }
+        if (tool.capability?.curationTypeId && tool.capability.forcesCuratorReview !== true) {
+            // A curation binding is only meaningful for a tool that forces
+            // curator review — it is the verification of that claim. Declaring
+            // the binding without the claim is incoherent, so reject it rather
+            // than silently honour a binding that grants nothing.
+            throw new Error(
+                `AI tool "${tool.name}" declares curationTypeId "${tool.capability.curationTypeId}" ` +
+                'without forcesCuratorReview: true. Set forcesCuratorReview: true or remove curationTypeId.'
+            );
+        }
 
         const provider = providerId || UNKNOWN_PROVIDER;
         if (!tool.capability) {

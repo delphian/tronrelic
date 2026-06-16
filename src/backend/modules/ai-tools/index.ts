@@ -6,8 +6,10 @@
  * registry (`'ai-tools'`, `'ai-tool-governor'`) rather than these exports.
  */
 
-export { AiToolsModule, AI_TOOLS_SERVICE, AI_TOOL_GOVERNOR_SERVICE, AI_PROVIDERS_SERVICE, AUDIT_PRUNE_JOB } from './AiToolsModule.js';
+export { AiToolsModule, AI_TOOLS_SERVICE, AI_TOOL_GOVERNOR_SERVICE, AI_PROVIDERS_SERVICE, CURATION_SERVICE, AUDIT_PRUNE_JOB } from './AiToolsModule.js';
 export { AiProviderRegistry } from './services/ai-provider-registry.js';
+export { CurationQueue } from './services/curation-queue.js';
+export { CurationService, CURATIONS_CHANGED_EVENT } from './services/curation-service.js';
 export type { IAiToolsModuleDependencies } from './AiToolsModule.js';
 export { AiToolRegistry } from './services/ai-tool-registry.js';
 export { AiToolGovernor } from './services/ai-tool-governor.js';
