@@ -75,6 +75,19 @@ export type {
 export { isPrivateIp, assertPublicHttpUrl } from './egress/index.js';
 export type { IEgressCheckResult, IEgressCheckOptions } from './egress/index.js';
 export type {
+    ICurationPreview,
+    ICurationPreviewField,
+    ICurationPreviewMedia,
+    ICurationItem,
+    CurationItemStatus,
+    ICurationType,
+    ICurationEditPatch,
+    ICurationService,
+    ICurationRegistry,
+    ICurationTypeInfo,
+    ICurationHoldInput
+} from './curation/index.js';
+export type {
     HookDescriptor,
     HookKind,
     HookPhase,

@@ -74,6 +74,7 @@ export class ToolPolicyEngine {
     private globalWindow: IWindowState = { windowStart: Date.now(), count: 0 };
     private readonly counters = new Map<string, IToolCounters>();
     private overrides: Record<string, IToolPolicy> = {};
+    private curationTypeResolver: ((typeId: string) => boolean) | null = null;
 
     /**
      * @param logger - Module-scoped logger.
@@ -91,6 +92,19 @@ export class ToolPolicyEngine {
      */
     async loadOverrides(): Promise<void> {
         this.overrides = (await this.database.get<Record<string, IToolPolicy>>(POLICY_OVERRIDES_KEY)) ?? {};
+    }
+
+    /**
+     * Wire the predicate that verifies an AI tool's `curationTypeId` binding —
+     * whether a matching curation type is registered right now. The module
+     * injects `curationService.hasType` here. Until it is set, a declared
+     * `curationTypeId` fails safe (treated as unresolved), so the binding can
+     * only ever tighten a tool's gates, never loosen them by default.
+     *
+     * @param resolver - Live predicate: does this curation type exist now?
+     */
+    setCurationResolver(resolver: (typeId: string) => boolean): void {
+        this.curationTypeResolver = resolver;
     }
 
     /**
@@ -116,8 +130,9 @@ export class ToolPolicyEngine {
         // tool's declared nature — a tool cannot opt itself out of either. Only
         // the admin override merged below can relax them, which keeps the bypass
         // an on-record operator decision rather than a tool self-grant.
+        const curatorReviewHonored = this.curatorReviewHonored(fullCap);
         const isUnreviewedDangerousEffect =
-            fullCap.sideEffect === 'external' && fullCap.reversible === false && fullCap.forcesCuratorReview !== true;
+            fullCap.sideEffect === 'external' && fullCap.reversible === false && !curatorReviewHonored;
         const base: IToolPolicy = {
             rateLimit: RATE_DEFAULTS[fullCap.sideEffect],
             requireApproval: isUnreviewedDangerousEffect,
@@ -125,9 +140,33 @@ export class ToolPolicyEngine {
             // autonomous paths only when it forces its own curator review — an
             // unattended trigger can then do no more than draft into that review
             // queue. Every other external tool is barred from autonomous runs.
-            allowUnattended: fullCap.sideEffect !== 'external' || fullCap.forcesCuratorReview === true
+            allowUnattended: fullCap.sideEffect !== 'external' || curatorReviewHonored
         };
         return { ...base, ...this.overrides[name] };
+    }
+
+    /**
+     * Whether the governor honours a tool's forced-curator-review claim. A tool
+     * that does not declare it is never honoured. A tool that declares it with no
+     * `curationTypeId` is trusted on its word (the legacy honour-system: the tool
+     * runs its own private review queue). A tool that declares a `curationTypeId`
+     * binds to a core curation type and is honoured only while that type is
+     * registered — verification, not trust — so the moment the owning provider is
+     * disabled the binding stops resolving and the tool's gates re-tighten.
+     *
+     * @param cap - The tool's full capability (already merged over defaults).
+     * @returns Whether the curator-review relaxation applies.
+     */
+    private curatorReviewHonored(cap: IAiToolCapability): boolean {
+        let honored: boolean;
+        if (cap.forcesCuratorReview !== true) {
+            honored = false;
+        } else if (!cap.curationTypeId) {
+            honored = true;
+        } else {
+            honored = this.curationTypeResolver?.(cap.curationTypeId) ?? false;
+        }
+        return honored;
     }
 
     /**

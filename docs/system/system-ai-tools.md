@@ -48,10 +48,13 @@ Classify every tool before it ships; the class drives the guardrails the governo
 | Sensitivity | `public` · `internal` · `secret` | Audit redaction + trifecta accounting |
 | Surfaces untrusted content | yes / no | Trifecta accounting (injection source) |
 | Forces curator review | yes / no | Tool self-gates every effect → no governor approval added; safe unattended |
+| Curation binding (`curationTypeId`) | type id / none | Verifies `forcesCuratorReview` against a live curation type; re-tightens if the owner is disabled |
 
 A transaction lookup is read / internal. A log query is read / secret / surfaces-untrusted. A tweet is external / irreversible and forces-curator-review (its plugin holds every post for human approval). An image generation is external / spends-money.
 
 `forcesCuratorReview` is the only governance field a tool may declare, and it is a *description* of behaviour, not a request: the governor derives the approval gate and the autonomous-path rule from it. There is no field that lets a tool exempt itself from review — an external, irreversible effect is always reviewed by someone (the tool's own curator, or the governor). Dropping review for a tool that does not self-curate is an operator-only decision (an admin policy override), never a tool self-grant.
+
+A tool can harden that declaration from honour-system to verified by also setting `curationTypeId` — the id of a [central curation type](./system-curation.md) it routes every effect into. The governor then honours the review relaxation only while that type is registered and re-tightens the moment its owning plugin is disabled. The boolean alone stays valid (legacy self-hosted queues); the id makes the claim checkable. See [system-curation.md](./system-curation.md).
 
 ## Accountability and Security
 
@@ -65,7 +68,7 @@ Mandatory for every tool; scale to the class. A read-only lookup needs little, a
 
 **Bound side-effecting and paid tools.** Rate-limit, quota, and cap cost. A looping or injected model must not drain an API budget or flood a channel. `TransactionToolGuard` is the reference limiter.
 
-**Require human approval for irreversible or public effects.** Either let the governor park the action for admin approval, or declare `forcesCuratorReview: true` when the tool holds every effect in its own review queue. `trp-x-poster` is the reference: it declares `forcesCuratorReview` and every AI-authored post waits for a human in its History tab.
+**Require human approval for irreversible or public effects.** Either let the governor park the action for admin approval, or declare `forcesCuratorReview: true` when the tool holds every effect in its own review queue. `trp-x-poster` is the reference: it declares `forcesCuratorReview`, binds `curationTypeId: 'x-poster:tweet'`, and routes every AI-authored post into the [central curation queue](./system-curation.md) (also still reviewable in its History tab).
 
 **Audit every invocation.** Record who triggered it (interactive admin / scheduled / programmatic), the arguments, the outcome, and the cost — enough to reconstruct what happened. `trp-image-gen`'s per-call history is the reference shape.
 
@@ -129,6 +132,7 @@ const tool: IAiTool = {
 
 ## Further Reading
 
+- [system-curation.md](./system-curation.md) — the central curation queue and the verifiable `curationTypeId` binding
 - [trp-ai-assistant/README.md](../../src/plugins/trp-ai-assistant/README.md) — the reference AI provider plugin: registration, dispatch, programmatic queries
 - [plugins-service-registry.md](../plugins/plugins-service-registry.md) — `watch()` vs `get()`, registration lifecycle
 - [system-hooks.md](./system-hooks.md) — declared seams that tool governance attaches to

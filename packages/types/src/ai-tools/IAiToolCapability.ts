@@ -72,4 +72,17 @@ export interface IAiToolCapability {
      * policy override is the only way to drop review for a tool that does not.
      */
     forcesCuratorReview?: boolean;
+
+    /**
+     * Namespaced id of the core curation type this tool routes every effect
+     * into (e.g. `x-poster:tweet`). It turns `forcesCuratorReview` from a
+     * self-attestation into a verifiable binding: when present, the governor
+     * honours the curator-review relaxation only while a matching type is
+     * registered on the `'curation'` service, and re-tightens the tool's gates
+     * the moment that owner goes away. Omit it to keep the legacy honour-system
+     * behaviour, where `forcesCuratorReview: true` is trusted on the tool's word
+     * (the tool runs its own private review queue). Declaring it without
+     * `forcesCuratorReview: true` is incoherent and rejected at registration.
+     */
+    curationTypeId?: string;
 }

@@ -9,8 +9,8 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { HookAbortError } from '@/types';
-import type { IAiTool, IAiToolCapability, IHookRegistry, IMenuService, ISchedulerService, ISystemLogService, IToolInvocationContext } from '@/types';
-import { AiToolsModule, AUDIT_PRUNE_JOB, ToolApprovalQueue, detectTrifecta } from '../index.js';
+import type { IAiTool, IAiToolCapability, ICurationType, IHookRegistry, IMenuService, ISchedulerService, ISystemLogService, IToolInvocationContext } from '@/types';
+import { AiToolsModule, AUDIT_PRUNE_JOB, CurationQueue, CurationService, ToolApprovalQueue, detectTrifecta } from '../index.js';
 import { ToolPolicyEngine } from '../services/tool-policy-engine.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
@@ -82,6 +82,33 @@ function curatedExternalTool(handler = vi.fn(async () => ({ sent: true }))): IAi
         inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
         capability: { sideEffect: 'external', reversible: false, sensitivity: 'public', forcesCuratorReview: true },
         handler
+    };
+}
+
+/**
+ * A self-curated external tool bound to a core curation type. The binding turns
+ * `forcesCuratorReview` from a claim into something the governor verifies: the
+ * relaxation applies only while the bound type is registered.
+ */
+function boundCuratedTool(curationTypeId: string, handler = vi.fn(async () => ({ sent: true }))): IAiTool {
+    return {
+        name: 'test-bound',
+        description: 'An external tool that routes every effect into a core curation type.',
+        inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+        capability: { sideEffect: 'external', reversible: false, sensitivity: 'public', forcesCuratorReview: true, curationTypeId },
+        handler
+    };
+}
+
+/** Build a curation type whose callbacks are spies, overridable per test. */
+function spyCurationType(over: Partial<ICurationType> = {}): ICurationType {
+    return {
+        typeId: 'x-poster:tweet',
+        label: 'Tweet',
+        describe: vi.fn(async (ref: Record<string, unknown>) => ({ body: `draft ${String(ref.postId ?? '')}` })),
+        onApprove: vi.fn(async () => undefined),
+        onReject: vi.fn(async () => undefined),
+        ...over
     };
 }
 
@@ -327,6 +354,176 @@ describe('AiToolsModule', () => {
             expect(status.present).toBe(false);
             expect(status.exfiltration).toHaveLength(0);
         });
+    });
+
+    describe('curation binding', () => {
+        it('rejects a tool that declares curationTypeId without forcesCuratorReview', () => {
+            const incoherent: IAiTool = {
+                name: 'test-incoherent',
+                description: 'binds to a curation type but does not force review',
+                inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+                capability: { sideEffect: 'external', reversible: false, sensitivity: 'public', curationTypeId: 'x-poster:tweet' },
+                handler: vi.fn(async () => ({}))
+            };
+            expect(() => module.getRegistry().registerTool(incoherent, 'test')).toThrow(/curationTypeId/);
+        });
+
+        it('bars a bound tool on an autonomous run until its curation type is registered', async () => {
+            const handler = vi.fn(async () => ({ sent: true }));
+            const registry = module.getRegistry();
+            registry.registerTool(boundCuratedTool('x-poster:tweet', handler), 'test');
+            await registry.setEnabled('test-bound', true); // external ships disabled
+
+            // Binding unresolved (no curation type registered): the verified claim
+            // does not hold, so the external tool is barred on the autonomous path.
+            const barred = await module.getGovernor().invoke('test-bound', {}, scheduledCtx);
+            expect(barred.status).toBe('denied');
+            expect(handler).not.toHaveBeenCalled();
+
+            // Register the matching type: the binding resolves and the tool is
+            // autonomous-safe (an unattended call can only draft into the queue).
+            module.getCuration().registerType(spyCurationType(), 'x-poster');
+            const permitted = await module.getGovernor().invoke('test-bound', {}, scheduledCtx);
+            expect(permitted.status).toBe('ok');
+            expect(handler).toHaveBeenCalledOnce();
+        });
+
+        it('re-tightens a bound tool when its curation type is unregistered', async () => {
+            const registry = module.getRegistry();
+            registry.registerTool(boundCuratedTool('x-poster:tweet'), 'test');
+            await registry.setEnabled('test-bound', true);
+            const curation = module.getCuration();
+            curation.registerType(spyCurationType(), 'x-poster');
+
+            expect((await module.getGovernor().invoke('test-bound', {}, scheduledCtx)).status).toBe('ok');
+
+            // Disabling the owning provider unregisters its type; the binding stops
+            // resolving and the tool's autonomous bar returns.
+            curation.unregisterType('x-poster:tweet');
+            expect((await module.getGovernor().invoke('test-bound', {}, scheduledCtx)).status).toBe('denied');
+        });
+    });
+});
+
+describe('CurationService', () => {
+    /** Build a curation service over a fresh mock database. */
+    function makeService(): CurationService {
+        const logger = createMockLogger();
+        const queue = new CurationQueue(logger, createMockDatabaseService());
+        return new CurationService(logger, queue);
+    }
+
+    it('registers types and reports them', () => {
+        const service = makeService();
+        const type = spyCurationType();
+        service.registerType(type, 'x-poster');
+
+        expect(service.hasType('x-poster:tweet')).toBe(true);
+        expect(service.getType('x-poster:tweet')).toBe(type);
+        expect(service.listTypes()).toEqual([{ typeId: 'x-poster:tweet', label: 'Tweet', providerId: 'x-poster' }]);
+    });
+
+    it('holds an effect: caches the preview from describe() and stores it pending', async () => {
+        const service = makeService();
+        const type = spyCurationType();
+        service.registerType(type, 'x-poster');
+
+        const item = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' }, source: 'ai-tool:x-post-tweet' });
+
+        expect(item.status).toBe('pending');
+        expect(item.preview.body).toBe('draft p1');
+        expect(item.providerId).toBe('x-poster');
+        expect(item.source).toBe('ai-tool:x-post-tweet');
+        expect(type.describe).toHaveBeenCalledWith({ postId: 'p1' });
+        expect(await service.countPending()).toBe(1);
+    });
+
+    it('throws when holding for an unregistered type', async () => {
+        const service = makeService();
+        await expect(service.hold({ typeId: 'nope:thing', ref: {} })).rejects.toThrow(/nope:thing/);
+    });
+
+    it('approve records the decision then commits via onApprove', async () => {
+        const service = makeService();
+        const type = spyCurationType();
+        service.registerType(type, 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+
+        const decided = await service.approve(held.id, 'admin-1');
+
+        expect(decided?.status).toBe('approved');
+        expect(decided?.decidedBy).toBe('admin-1');
+        expect(type.onApprove).toHaveBeenCalledOnce();
+        expect(type.onReject).not.toHaveBeenCalled();
+        expect(await service.countPending()).toBe(0);
+    });
+
+    it('reject records the decision then discards via onReject', async () => {
+        const service = makeService();
+        const type = spyCurationType();
+        service.registerType(type, 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
+
+        const decided = await service.reject(held.id, 'admin-1');
+
+        expect(decided?.status).toBe('rejected');
+        expect(type.onReject).toHaveBeenCalledOnce();
+        expect(type.onApprove).not.toHaveBeenCalled();
+    });
+
+    it('blocks a decision when the owning type is unregistered, leaving the item pending', async () => {
+        const service = makeService();
+        const type = spyCurationType();
+        service.registerType(type, 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
+
+        service.unregisterType('x-poster:tweet');
+        const decided = await service.approve(held.id, 'admin-1');
+
+        expect(decided).toBeNull();
+        expect(type.onApprove).not.toHaveBeenCalled();
+        expect(await service.countPending()).toBe(1); // not lost — waits for the owner to return
+    });
+
+    it('keeps the decision recorded even when the type callback throws', async () => {
+        const service = makeService();
+        const type = spyCurationType({ onApprove: vi.fn(async () => { throw new Error('publish failed'); }) });
+        service.registerType(type, 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
+
+        const decided = await service.approve(held.id, 'admin-1');
+
+        expect(decided?.status).toBe('approved'); // decision stands; callback failure is isolated
+        expect(await service.countPending()).toBe(0);
+    });
+
+    it('edit applies the patch through the type, then re-derives and re-caches the preview', async () => {
+        const service = makeService();
+        // Simulate the owning plugin's record: applyEdit mutates it, describe reads it.
+        let stored = 'original';
+        const type = spyCurationType({
+            describe: vi.fn(async () => ({ body: stored, editable: true })),
+            applyEdit: vi.fn(async (_item, patch) => { if (typeof patch.body === 'string') stored = patch.body; })
+        });
+        service.registerType(type, 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+        expect(held.preview.body).toBe('original');
+
+        const updated = await service.edit(held.id, { body: 'edited' }, 'admin-1');
+
+        expect(type.applyEdit).toHaveBeenCalledWith(expect.objectContaining({ id: held.id }), { body: 'edited' });
+        expect(updated?.preview.body).toBe('edited');
+        // The cached snapshot is refreshed too, so the disabled-owner fallback is current.
+        expect((await service.get(held.id))?.preview.body).toBe('edited');
+        expect(await service.countPending()).toBe(1); // edit does not decide the item
+    });
+
+    it('edit returns null for a type that is not editable', async () => {
+        const service = makeService();
+        service.registerType(spyCurationType(), 'x-poster'); // no applyEdit
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
+
+        expect(await service.edit(held.id, { body: 'x' })).toBeNull();
     });
 });
 

@@ -42,5 +42,11 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
     router.put('/policy/:name', controller.setPolicy);
     router.delete('/policy/:name', controller.clearPolicy);
 
+    router.get('/curations', controller.listCurations);
+    router.get('/curations/count', controller.getCurationsCount);
+    router.patch('/curations/:id', controller.editCuration);
+    router.post('/curations/:id/approve', controller.approveCuration);
+    router.post('/curations/:id/reject', controller.rejectCuration);
+
     return router;
 }

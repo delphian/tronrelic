@@ -1,6 +1,6 @@
 {
     "name": "@delphian/tronrelic-types",
-    "version": "3.9.0",
+    "version": "3.11.0",
     "description": "Core type definitions for the TronRelic platform",
     "type": "module",
     "main": "dist/index.js",
