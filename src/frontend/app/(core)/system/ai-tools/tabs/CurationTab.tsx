@@ -65,6 +65,7 @@ function CurationEditForm({ initialBody, onCancel, onSave }: {
                 onChange={event => setBody(event.target.value)}
                 rows={5}
                 aria-label="Edit held content"
+                disabled={saving}
             />
             <div className={styles.row_actions}>
                 <Button variant="primary" size="sm" loading={saving} onClick={() => { void submit(); }}>Save</Button>
@@ -222,15 +223,15 @@ export function CurationTab({ onChanged }: { onChanged: () => void }) {
                                         <Td><CurationPreview preview={item.preview} /></Td>
                                         <Td>
                                             <div className={styles.row_actions}>
-                                                <Button variant="primary" size="sm" loading={busyId === item.id} onClick={() => { void resolve(item.id, 'approve'); }}>
+                                                <Button variant="primary" size="sm" loading={busyId === item.id} disabled={busyId !== null && busyId !== item.id} onClick={() => { void resolve(item.id, 'approve'); }}>
                                                     <Check size={16} /> Approve
                                                 </Button>
                                                 {item.preview.editable && (
-                                                    <Button variant="secondary" size="sm" disabled={busyId === item.id} onClick={() => openEditor(item)}>
+                                                    <Button variant="secondary" size="sm" disabled={busyId !== null} onClick={() => openEditor(item)}>
                                                         <Pencil size={16} /> Edit
                                                     </Button>
                                                 )}
-                                                <Button variant="danger" size="sm" disabled={busyId === item.id} onClick={() => { void resolve(item.id, 'reject'); }}>
+                                                <Button variant="danger" size="sm" disabled={busyId !== null && busyId !== item.id} onClick={() => { void resolve(item.id, 'reject'); }}>
                                                     <X size={16} /> Reject
                                                 </Button>
                                             </div>

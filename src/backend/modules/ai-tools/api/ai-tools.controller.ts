@@ -282,13 +282,22 @@ export class AiToolsController {
             });
             return;
         }
-        const result = action === 'approve'
-            ? await this.curation.approve(id, actorId(req))
-            : await this.curation.reject(id, actorId(req));
-        if (!result) {
-            res.status(409).json({ error: 'Curation item could not be decided; it may have just been resolved.' });
-            return;
+        try {
+            const result = action === 'approve'
+                ? await this.curation.approve(id, actorId(req))
+                : await this.curation.reject(id, actorId(req));
+            if (!result) {
+                res.status(409).json({ error: 'Curation item could not be decided; it may have just been resolved.' });
+                return;
+            }
+            res.json(serializeCurationItem(result));
+        } catch (error) {
+            // The decision was recorded but the owning type could not complete the
+            // effect (publish/cleanup failed). The item has left the pending queue,
+            // so surface the failure rather than reporting a false success.
+            res.status(502).json({
+                error: `Decision recorded, but the provider could not complete it: ${error instanceof Error ? error.message : String(error)}`
+            });
         }
-        res.json(serializeCurationItem(result));
     };
 }

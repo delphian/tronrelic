@@ -161,7 +161,8 @@ export class CurationService implements ICurationService {
      * @returns The pending envelopes.
      */
     async listPending(limit?: number): Promise<ICurationItem[]> {
-        return this.queue.listPending(limit);
+        const items = await this.queue.listPending(limit);
+        return Promise.all(items.map(item => this.withLivePreview(item)));
     }
 
     /**
@@ -174,13 +175,38 @@ export class CurationService implements ICurationService {
     }
 
     /**
-     * Fetch one envelope by id.
+     * Fetch one envelope by id, resolving a live preview while it is pending and
+     * its owner is registered.
      *
      * @param id - The envelope id.
      * @returns The envelope, or null when absent.
      */
     async get(id: string): Promise<ICurationItem | null> {
-        return this.queue.get(id);
+        const item = await this.queue.get(id);
+        return item && item.status === 'pending' ? this.withLivePreview(item) : item;
+    }
+
+    /**
+     * Resolve an item's preview live from its registered type so the queue never
+     * shows a stale snapshot while the owner is present (the cached preview is the
+     * disabled-owner fallback, per the curation design). Falls back to the cached
+     * snapshot when the owner is unregistered or `describe()` fails.
+     *
+     * @param item - The stored envelope.
+     * @returns The envelope with a freshly resolved preview, or the original.
+     */
+    private async withLivePreview(item: ICurationItem): Promise<ICurationItem> {
+        const entry = this.types.get(item.typeId);
+        let resolved = item;
+        if (entry) {
+            try {
+                const preview = await entry.type.describe(item.ref);
+                resolved = { ...item, preview };
+            } catch (error) {
+                this.logger.warn({ error, id: item.id }, 'Live preview resolution failed; using cached snapshot');
+            }
+        }
+        return resolved;
     }
 
     /**
@@ -190,6 +216,8 @@ export class CurationService implements ICurationService {
      * @param decidedBy - Better Auth user id of the deciding curator.
      * @returns The decided envelope, or null when blocked (missing, no longer
      *          pending, or owner unregistered).
+     * @throws When the owning type's `onApprove` fails; the decision is still
+     *         recorded, so the caller surfaces the failure rather than retrying.
      */
     async approve(id: string, decidedBy?: string): Promise<ICurationItem | null> {
         return this.decide(id, 'approved', decidedBy);
@@ -201,6 +229,8 @@ export class CurationService implements ICurationService {
      * @param id - The envelope id.
      * @param decidedBy - Better Auth user id of the deciding curator.
      * @returns The decided envelope, or null under the same conditions as approve.
+     * @throws When the owning type's `onReject` fails; the decision is still
+     *         recorded.
      */
     async reject(id: string, decidedBy?: string): Promise<ICurationItem | null> {
         return this.decide(id, 'rejected', decidedBy);
@@ -225,12 +255,32 @@ export class CurationService implements ICurationService {
         if (existing && existing.status === 'pending') {
             const entry = this.types.get(existing.typeId);
             if (entry?.type.applyEdit) {
-                await entry.type.applyEdit(existing, patch);
-                const preview = await entry.type.describe(existing.ref);
-                await this.queue.updatePreview(id, preview);
-                await this.notifyChanged();
-                this.logger.info({ id, typeId: existing.typeId, editedBy }, 'Curation item edited');
-                result = { ...existing, preview };
+                // Re-confirm pending immediately before mutating the provider
+                // payload, narrowing the edit-vs-decide race. The window is not
+                // fully closed, so a registered type's applyEdit should also guard
+                // on its own pending state (x-poster's editPostText conditions on
+                // pending_approval) for complete safety.
+                const latest = await this.queue.get(id);
+                if (latest && latest.status === 'pending') {
+                    await entry.type.applyEdit(latest, patch);
+                    // The edit already landed in the provider's record; a failure
+                    // to re-derive the preview must not report the edit as failed.
+                    // Fall back to patching the cached body so the snapshot still
+                    // advances and the API returns success.
+                    let preview = latest.preview;
+                    try {
+                        preview = await entry.type.describe(latest.ref);
+                    } catch (error) {
+                        this.logger.error({ error, id }, 'Re-describe after edit failed; falling back to the patched body');
+                        if (patch.body !== undefined) {
+                            preview = { ...preview, body: patch.body };
+                        }
+                    }
+                    await this.queue.updatePreview(id, preview);
+                    await this.notifyChanged();
+                    this.logger.info({ id, typeId: latest.typeId, editedBy }, 'Curation item edited');
+                    result = { ...latest, preview };
+                }
             }
         }
         return result;
@@ -238,14 +288,16 @@ export class CurationService implements ICurationService {
 
     /**
      * Record a terminal decision and invoke the owning type's callback. The
-     * decision is persisted before the callback runs, so a callback failure
-     * leaves the item decided (the contract requires callbacks be retry-safe)
-     * rather than re-opening an effect that may already have partly committed.
+     * decision is persisted and broadcast before the callback runs; a callback
+     * failure then propagates to the caller (the item stays decided and won't
+     * reappear, so the curator is told the provider-side effect failed rather than
+     * seeing a false success). Callbacks must be retry-safe.
      *
      * @param id - The envelope id.
      * @param status - The terminal state.
      * @param decidedBy - Better Auth user id of the deciding curator.
      * @returns The decided envelope, or null when the decision cannot proceed.
+     * @throws When the owning type's callback fails after the decision is recorded.
      */
     private async decide(
         id: string,
@@ -269,8 +321,13 @@ export class CurationService implements ICurationService {
             } else {
                 const resolved = await this.queue.resolve(id, status, decidedBy);
                 if (resolved) {
-                    await this.commit(entry.type, resolved);
+                    // The decision is recorded; broadcast it before committing so
+                    // the queue badge updates regardless of the commit outcome.
                     await this.notifyChanged();
+                    // A commit failure propagates to the caller: the item has left
+                    // the pending queue and won't reappear, so the curator must be
+                    // told the provider-side effect did not complete.
+                    await this.commit(entry.type, resolved);
                 }
                 result = resolved;
             }
@@ -279,25 +336,20 @@ export class CurationService implements ICurationService {
     }
 
     /**
-     * Invoke the owning type's terminal callback, isolating its failure from the
-     * already-recorded decision.
+     * Invoke the owning type's terminal callback. A failure propagates to the
+     * caller so the curator learns the provider-side effect did not complete; the
+     * decision is already recorded and is not rolled back (callbacks must be
+     * retry-safe).
      *
      * @param type - The owning curation type.
      * @param item - The decided envelope.
-     * @returns Resolves once the callback settles.
+     * @returns Resolves once the callback settles; rejects if it throws.
      */
     private async commit(type: ICurationType, item: ICurationItem): Promise<void> {
-        try {
-            if (item.status === 'approved') {
-                await type.onApprove(item);
-            } else {
-                await type.onReject(item);
-            }
-        } catch (error) {
-            this.logger.error(
-                { error, id: item.id, typeId: item.typeId, status: item.status },
-                'Curation type callback threw after decision recorded'
-            );
+        if (item.status === 'approved') {
+            await type.onApprove(item);
+        } else {
+            await type.onReject(item);
         }
     }
 
