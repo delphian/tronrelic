@@ -485,16 +485,54 @@ describe('CurationService', () => {
         expect(await service.countPending()).toBe(1); // not lost — waits for the owner to return
     });
 
-    it('keeps the decision recorded even when the type callback throws', async () => {
+    it('surfaces a failed commit to the caller while leaving the decision recorded', async () => {
         const service = makeService();
         const type = spyCurationType({ onApprove: vi.fn(async () => { throw new Error('publish failed'); }) });
         service.registerType(type, 'x-poster');
         const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
 
-        const decided = await service.approve(held.id, 'admin-1');
-
-        expect(decided?.status).toBe('approved'); // decision stands; callback failure is isolated
+        // The commit failure propagates so the curator is not shown a false success...
+        await expect(service.approve(held.id, 'admin-1')).rejects.toThrow('publish failed');
+        // ...but the decision still stands — the item has left the pending queue.
         expect(await service.countPending()).toBe(0);
+    });
+
+    it('resolves a live preview for pending items in listPending and get', async () => {
+        const service = makeService();
+        let stored = 'v1';
+        const type = spyCurationType({ describe: vi.fn(async () => ({ body: stored })) });
+        service.registerType(type, 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+        expect(held.preview.body).toBe('v1');
+
+        // The provider's record changes out of band; the cached snapshot is stale.
+        stored = 'v2';
+        expect((await service.listPending())[0].preview.body).toBe('v2');
+        expect((await service.get(held.id))?.preview.body).toBe('v2');
+    });
+
+    it('edit falls back to the patched body when re-describe fails', async () => {
+        const service = makeService();
+        let calls = 0;
+        const type = spyCurationType({
+            describe: vi.fn(async () => {
+                calls += 1;
+                if (calls === 1) {
+                    return { body: 'original', editable: true }; // hold-time snapshot
+                }
+                throw new Error('describe boom'); // re-describe after the edit
+            }),
+            applyEdit: vi.fn(async () => undefined)
+        });
+        service.registerType(type, 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
+
+        const updated = await service.edit(held.id, { body: 'edited' }, 'admin-1');
+
+        expect(type.applyEdit).toHaveBeenCalledOnce();
+        // The edit applied; a failed re-describe must not report failure — fall
+        // back to the patched body so the snapshot still advances.
+        expect(updated?.preview.body).toBe('edited');
     });
 
     it('edit applies the patch through the type, then re-derives and re-caches the preview', async () => {
