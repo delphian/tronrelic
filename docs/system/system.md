@@ -42,6 +42,10 @@ Tabbed web UI at `/system` (requires `ADMIN_API_TOKEN`) for live metrics, job to
 
 Navigation service that aggregates menu nodes from core and plugins. Supports DB-backed and memory-only entries, multiple namespaces, and emits WebSocket events when structure changes; plugins register through lifecycle hooks — no core edits. See [Menu Module README](../../src/backend/modules/menu/README.md).
 
+### Widgets
+
+Owns the widget subsystem behind one public service — `IWidgetsService`, registry name `'widgets'` — covering zone definitions, placement persistence, widget-type registration, and the `/system/widgets` admin UI. Plugins, modules, admin controllers, and the SSR router reach widgets only through this service; there is no other entry point. See [Widgets Module README](../../src/backend/modules/widgets/README.md) and [system-api-widgets.md](./system-api-widgets.md).
+
 ### Migrations
 
 Schema evolution discovered automatically from system, module, and plugin directories; topologically sorted by dependency; executed serially with MongoDB transaction wrapping (replica set required) and full audit history. See [system-database-migrations.md](./system-database-migrations.md).
@@ -49,6 +53,10 @@ Schema evolution discovered automatically from system, module, and plugin direct
 ### Pages
 
 Markdown-authored CMS for admin-published content. `PageService` (singleton, implements `IPageService`) depends on `IStorageProvider`, so the storage backend (local FS, S3, custom) is swappable via DI. Rendered HTML cached in Redis 24h with auto-invalidation; a route blacklist prevents slugs from shadowing core routes. See [Pages Module README](../../src/backend/modules/pages/README.md).
+
+### Tools
+
+User-facing TRON utilities — address-format conversion, energy estimation, bidirectional stake calculation, signature verification, token-approval checking, timestamp/block conversion — each on its own page under the Tools menu, served from `/api/tools/*`. Stateless: no collections of its own; calculations read the shared `transactions` collection and live `ChainParametersService` values. See [Tools Module README](../../src/backend/modules/tools/README.md).
 
 ### Authentication & Authorization
 
@@ -68,7 +76,7 @@ Typed extension points where core invites plugins into its own execution. Descri
 
 ### AI Tools
 
-The contract and governance for tools a model can invoke during an AI query. Core owns the tool shape, the capability classes (read / write / external, sensitivity, reversibility), and the accountability and security every tool must meet — input validation, object authorization, rate/quota/cost limits, human approval for irreversible effects, and per-invocation audit — so every AI provider plugin and tool inherits the same guarantees. Provider-neutral: `trp-ai-assistant` is only the Anthropic transport. See [system-ai-tools.md](./system-ai-tools.md).
+The contract and governance for tools a model can invoke during an AI query. Core owns the tool shape, the capability classes (read / write / external, sensitivity, reversibility), and the accountability and security every tool must meet — input validation, object authorization, rate/quota/cost limits, human approval for irreversible effects, and per-invocation audit — so every AI provider plugin and tool inherits the same guarantees. Provider-neutral: `trp-ai-assistant` is only the Anthropic transport. See [system-ai-tools.md](./system-ai-tools.md) and [AI Tools Module README](../../src/backend/modules/ai-tools/README.md).
 
 ### Curation
 
@@ -76,7 +84,7 @@ One core admin surface (`/system/ai-tools` → Curation, in the AI Tools module)
 
 ### Logging
 
-Pino-based logger with MongoDB persistence for historical queries. See [system-logging.md](./system-logging.md).
+Pino-based logger with MongoDB persistence for historical queries. See [system-logging.md](./system-logging.md) and [Logs Module README](../../src/backend/modules/logs/README.md).
 
 ### Testing
 
@@ -106,6 +114,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [system-api-scheduler.md](./system-api-scheduler.md) | Scheduler status, health, job PATCH |
 | [system-api-logs.md](./system-api-logs.md) | System log query/resolve/delete endpoints |
 | [system-api-websockets.md](./system-api-websockets.md) | WebSocket admin metrics + real-time event catalog |
+| [system-api-widgets.md](./system-api-widgets.md) | Widget placements admin CRUD, zone and widget-type introspection |
 | [system-dashboard.md](./system-dashboard.md) | Dashboard tabs and controls |
 | [system-database-migrations.md](./system-database-migrations.md) | Migration discovery, transactions, REST API, admin UI |
 | [system-hooks.md](./system-hooks.md) | Declared seams, four archetypes, plugin facade, introspection, admin UI |
@@ -116,6 +125,10 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [Pages Module README](../../src/backend/modules/pages/README.md) | Markdown CMS, storage providers, file uploads |
 | [Identity Module README](../../src/backend/modules/identity/README.md) | Better Auth, groups, wallet store, account directory |
 | [Traffic Module README](../../src/backend/modules/traffic/README.md) | ClickHouse traffic_events, tid/ref cookies, analytics |
+| [Tools Module README](../../src/backend/modules/tools/README.md) | TRON utility calculators — address conversion, energy/stake math, signature verification |
+| [Widgets Module README](../../src/backend/modules/widgets/README.md) | `IWidgetsService`, zones, placements, widget-types, SSR router integration |
+| [Logs Module README](../../src/backend/modules/logs/README.md) | `SystemLogService` singleton, `system_logs` persistence, metadata sanitizer |
+| [AI Tools Module README](../../src/backend/modules/ai-tools/README.md) | Tool registry, governor, policy, invocation audit, human-approval queue |
 | [system-testing.md](./system-testing.md) | Vitest, Mongoose mocks, fixtures |
 
 ## Related
