@@ -125,7 +125,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [Pages Module README](../../src/backend/modules/pages/README.md) | Markdown CMS, storage providers, file uploads |
 | [Identity Module README](../../src/backend/modules/identity/README.md) | Better Auth, groups, wallet store, account directory |
 | [Traffic Module README](../../src/backend/modules/traffic/README.md) | ClickHouse traffic_events, tid/ref cookies, analytics |
-| [Tools Module README](../../src/backend/modules/tools/README.md) | TRON utility calculators — address conversion, energy/stake math, signature verification |
+| [Tools Module README](../../src/backend/modules/tools/README.md) | TRON utility calculators — address conversion, energy/stake math, signature verification, token approvals, timestamp/block conversion |
 | [Widgets Module README](../../src/backend/modules/widgets/README.md) | `IWidgetsService`, zones, placements, widget-types, SSR router integration |
 | [Logs Module README](../../src/backend/modules/logs/README.md) | `SystemLogService` singleton, `system_logs` persistence, metadata sanitizer |
 | [AI Tools Module README](../../src/backend/modules/ai-tools/README.md) | Tool registry, governor, policy, invocation audit, human-approval queue |
