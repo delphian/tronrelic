@@ -29,17 +29,16 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages ./packages
 COPY --parents src/plugins/*/package.json src/plugins/*/package-lock.json ./
-# Nested per-plugin workspace manifests (e.g. src/plugins/trp-ai-assistant/packages/types/).
-# The root package.json declares `src/plugins/*/packages/*` as a workspace glob; without
-# these manifests present at install time, npm silently skips them and consumer plugins
-# cannot resolve imports like `@delphian/trp-ai-assistant-types`.
-COPY --parents src/plugins/*/packages/*/package.json src/plugins/*/packages/*/package-lock.json ./
 
 RUN --mount=type=secret,id=npmrc,target=/root/.npmrc npm ci
 
-# Plugins are installed independently — they declare their own manifests
-# (including private @delphian/* types from GitHub Packages) and are not
-# top-level entries in the root workspaces array.
+# Plugins are installed independently — they declare their own manifests and
+# are not entries in the root workspaces array. Each plugin's @delphian/* type
+# contracts — core (@delphian/tronrelic-types) and any cross-plugin contract —
+# are its own `dependencies`, so they install per-plugin from GitHub Packages
+# here and resolve from the plugin's own node_modules. No plugin resolves
+# another plugin's types from sibling in-tree source; the `src/plugins/*/packages/*`
+# workspace hoist that once did this is gone.
 #
 # `--omit=dev` skips each plugin's own devDependencies (typescript, vitest,
 # @types/*, and peer libs like react/next/mongodb that plugins list in both
@@ -74,11 +73,11 @@ WORKDIR /app
 
 COPY . .
 
-# Build every workspace package (core `packages/*` and each plugin's nested
-# `packages/*`) before `build:plugins`. Consumer plugins resolve cross-plugin
-# types via each nested package's compiled `dist/*.d.ts`; without this,
-# consumer tsc runs fail with TS2307. `--if-present` skips members without a
-# build script.
+# Build the core `packages/*` workspaces (notably @delphian/tronrelic-types)
+# before `build:plugins`. Plugin `packages/*` are no longer root workspaces —
+# consumer plugins resolve cross-plugin types from their own registry-installed
+# dependency, not from in-tree sibling source. `--if-present` skips members
+# without a build script.
 RUN npm run build --workspaces --if-present
 
 RUN npm run build:plugins

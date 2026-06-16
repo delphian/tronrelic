@@ -6,6 +6,10 @@ Self-contained blockchain features that own observers, REST routes, pages, widge
 
 Plugins fail in isolation, depend on interfaces, and register their own surfaces dynamically. Features like whale alerts and delegation tracking iterate without rewriting shared infrastructure; operators toggle them at runtime without restarts.
 
+## Plugins Couple Only Through Published Contracts
+
+A plugin may depend on core or on another plugin **only** through that component's published, versioned types package (`@delphian/tronrelic-types`, `@delphian/trp-<name>-types`) — declared in its own `package.json` and consumed `import type`-only, so the coupling is a compile-time contract with no runtime dependency. The monorepo is a development convenience, never a dependency channel: resolving another plugin's source or types by workspace co-location is a defect even when it compiles here, because it breaks on a standalone install. The test is blunt — a plugin that wouldn't build against only its own declared dependencies is wrong.
+
 ## Plugin Lifecycle
 
 Five states, controlled from `/system/plugins` without restarts:
