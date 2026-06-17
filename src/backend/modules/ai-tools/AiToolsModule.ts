@@ -36,6 +36,8 @@ import { AiProviderRegistry } from './services/ai-provider-registry.js';
 import { AiQueryHistoryService } from './services/ai-query-history.service.js';
 import { CurationQueue } from './services/curation-queue.js';
 import { CurationService } from './services/curation-service.js';
+import { SavedPromptsService } from './services/saved-prompts.service.js';
+import { runScheduledPrompts } from './services/scheduled-prompts-runner.js';
 import { AiToolsController } from './api/ai-tools.controller.js';
 import { createAiToolsAdminRouter } from './api/ai-tools.router.js';
 
@@ -56,6 +58,16 @@ export const AUDIT_PRUNE_JOB = 'ai-tools:prune-audit';
 
 /** Daily (04:00) cron for the audit retention sweep. */
 const AUDIT_PRUNE_SCHEDULE = '0 4 * * *';
+
+/** Scheduler job that fires cron-scheduled saved prompts on the master tick. */
+export const SCHEDULED_PROMPTS_JOB = 'ai-tools:run-scheduled-prompts';
+
+/**
+ * Every 2 minutes (at :00 seconds). The single master tick all scheduled
+ * prompts evaluate against — no prompt registers its own job — so this is also
+ * the resolution at which a prompt's cron can fire.
+ */
+const SCHEDULED_PROMPTS_SCHEDULE = '0 */2 * * * *';
 
 /**
  * Dependencies the AI tools module needs at bootstrap. A subset of the shared
@@ -107,6 +119,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private governor!: AiToolGovernor;
     private providerRegistry!: AiProviderRegistry;
     private queryHistory!: AiQueryHistoryService;
+    private savedPrompts!: SavedPromptsService;
     private controller!: AiToolsController;
 
     private readonly logger = logger.child({ module: 'ai-tools' });
@@ -155,7 +168,10 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.queryHistory = new AiQueryHistoryService(this.logger, this.database);
         await this.queryHistory.ensureIndexes();
 
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation, this.queryHistory);
+        this.savedPrompts = new SavedPromptsService(this.database);
+        await this.savedPrompts.ensureIndexes();
+
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation, this.queryHistory, this.savedPrompts);
 
         this.logger.info('ai-tools module initialized');
     }
@@ -196,8 +212,44 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
                 await this.audit.pruneExpired();
             });
             this.logger.info({ job: AUDIT_PRUNE_JOB }, 'AI tool audit retention job registered');
+
+            // Cron-scheduled saved prompts. Every prompt with a cron evaluates on
+            // this single master tick — no prompt registers its own job. The run
+            // is autonomous, so it executes against whichever AI provider is
+            // active, resolved fresh each tick from the provider registry; with
+            // no provider installed the tick is a no-op and the prompts (and
+            // their schedules) wait, untouched, until one is enabled.
+            let promptTickInFlight = false;
+            let promptTickStartedAt = 0;
+            this.scheduler.register(SCHEDULED_PROMPTS_JOB, SCHEDULED_PROMPTS_SCHEDULE, async () => {
+                // Skip overlapping ticks: a streaming provider query can take
+                // minutes, and re-entering with the same saved-prompts snapshot
+                // would duplicate-fire prompts the first tick hasn't claimed yet.
+                if (promptTickInFlight) {
+                    this.logger.error(
+                        { job: SCHEDULED_PROMPTS_JOB, runningForMs: Date.now() - promptTickStartedAt },
+                        'Scheduled prompts tick still running when next tick fired; skipping this tick'
+                    );
+                    return;
+                }
+                const provider = this.providerRegistry.getActive();
+                if (!provider) {
+                    return;
+                }
+                promptTickInFlight = true;
+                promptTickStartedAt = Date.now();
+                try {
+                    await runScheduledPrompts(this.savedPrompts, this.logger, provider);
+                } catch (error) {
+                    this.logger.error({ error, job: SCHEDULED_PROMPTS_JOB }, 'Scheduled prompts job failed');
+                    throw error;
+                } finally {
+                    promptTickInFlight = false;
+                }
+            });
+            this.logger.info({ job: SCHEDULED_PROMPTS_JOB }, 'AI tool scheduled-prompts job registered');
         } else {
-            this.logger.info('Scheduler disabled — AI tool audit retention job not registered');
+            this.logger.info('Scheduler disabled — AI tool audit retention and scheduled-prompts jobs not registered');
         }
 
         // Admin nav item under the System container. Memory-only (re-created each

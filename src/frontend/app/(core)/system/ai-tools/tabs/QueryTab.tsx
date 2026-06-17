@@ -21,7 +21,7 @@ import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
-import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IModelInfo } from '@/types';
+import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IModelInfo, ISavedPrompt } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
@@ -37,6 +37,7 @@ import {
     getQueryModels,
     type IStreamAck
 } from '../../../../../modules/ai-tools';
+import { SavedPromptsPanel } from './SavedPromptsPanel';
 import pageStyles from '../page.module.scss';
 import styles from './QueryTab.module.scss';
 
@@ -185,6 +186,8 @@ export function QueryTab() {
     const [conversations, setConversations] = useState<ConversationGroup[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyError, setHistoryError] = useState<string | null>(null);
+    /** Shared saved-prompts list; the panel loads it on first open and the composer reads it. */
+    const [savedPrompts, setSavedPrompts] = useState<ISavedPrompt[]>([]);
 
     /** The queryId whose stream chunks the handler currently accepts. */
     const activeQueryIdRef = useRef<string | null>(null);
@@ -570,6 +573,14 @@ export function QueryTab() {
             </div>
 
             {view === 'chat' ? (
+                <>
+                <SavedPromptsPanel
+                    prompts={savedPrompts}
+                    onPromptsChange={setSavedPrompts}
+                    currentPromptText={input}
+                    onLoadPromptText={(text) => { setInput(text); textareaRef.current?.focus(); }}
+                    onError={setError}
+                />
                 <Card className={styles.chat_card}>
                     <div className={styles.chat_header}>
                         <Bot size={16} className={styles.chat_header_icon} />
@@ -726,6 +737,7 @@ export function QueryTab() {
                         </div>
                     </div>
                 </Card>
+                </>
             ) : (
                 <Stack gap="md">
                     <div className={styles.history_header}>

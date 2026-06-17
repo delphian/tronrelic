@@ -28,3 +28,4 @@ export type { IAiQueryRecord, AiQueryMode } from './IAiQueryRecord.js';
 export type { IAiQueryOptions } from './IAiQueryOptions.js';
 export type { IAiQueryResult } from './IAiQueryResult.js';
 export type { IModelInfo } from './IModelInfo.js';
+export type { ISavedPrompt } from './ISavedPrompt.js';

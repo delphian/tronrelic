@@ -1,0 +1,421 @@
+/**
+ * Styles for the Query tab's saved-prompts surface: the collapsible panel that
+ * lists saved prompt templates (load / duplicate / delete / edit), its inline
+ * save row, and the schedule editor rendered inside the shared modal.
+ *
+ * Visual surfaces come from Card / Button / IconButton / Switch primitives;
+ * this module adds the panel layout, the prompt rows, the schedule chips, and
+ * the editor sections. Responsiveness is driven by a container query on the
+ * panel so it adapts whether the dashboard renders full-width or narrower.
+ */
+
+@use '../../../../breakpoints' as *;
+
+/*
+ * ===========================================================================
+ * COLLAPSIBLE PANEL — header toggle + body (save row + prompt list).
+ * ===========================================================================
+ */
+.panel_card {
+    container-type: inline-size;
+    container-name: saved-prompts;
+    padding: 0;
+    overflow: hidden;
+}
+
+.panel_toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    width: 100%;
+    padding: var(--padding-sm) var(--card-padding-sm);
+    background: var(--color-surface-muted);
+    border: none;
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    cursor: pointer;
+
+    &:focus-visible {
+        outline: var(--focus-outline-width) solid var(--focus-outline-color);
+        outline-offset: calc(-1 * var(--focus-outline-width));
+    }
+}
+
+.panel_icon {
+    color: var(--color-primary);
+}
+
+.panel_count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--icon-size-md);
+    padding: 0 var(--padding-2xs);
+    border-radius: var(--radius-full);
+    background: var(--color-primary-alpha-15);
+    color: var(--color-primary);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+}
+
+.panel_chevron {
+    margin-left: auto;
+    color: var(--color-text-muted);
+}
+
+.panel_body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    padding: var(--card-padding-sm);
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+/* Inline save row: name input + Save button to capture the composer text. */
+.save_row {
+    display: flex;
+    gap: var(--gap-sm);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.name_input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: var(--input-padding-sm);
+    background: var(--input-background);
+    border: var(--input-border);
+    border-radius: var(--input-border-radius);
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+    font-family: inherit;
+
+    &:focus-visible {
+        outline: none;
+        border-color: var(--input-border-focus);
+        box-shadow: var(--input-shadow-focus);
+    }
+
+    &::placeholder {
+        color: var(--color-text-muted);
+    }
+}
+
+/*
+ * ===========================================================================
+ * PROMPT LIST — one row per saved prompt (load / schedule chip / actions).
+ * ===========================================================================
+ */
+.loading,
+.empty {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    padding: var(--padding-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+.spinning {
+    animation: saved-prompt-spin 1s linear infinite;
+}
+
+@keyframes saved-prompt-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    padding: var(--padding-xs) var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    flex-wrap: wrap;
+}
+
+.row_error {
+    border-color: var(--color-danger-alpha-50);
+}
+
+.row_main {
+    flex: 1 1 12rem;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+/* Click-to-load: the prompt name loads its body into the composer. */
+.row_name {
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &:hover {
+        color: var(--color-primary);
+        text-decoration: underline;
+    }
+
+    &:focus-visible {
+        outline: var(--focus-outline-width) solid var(--focus-outline-color);
+        outline-offset: var(--focus-outline-offset);
+        border-radius: var(--radius-xs);
+    }
+}
+
+.row_meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.row_actions {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    margin-left: auto;
+}
+
+/*
+ * Schedule chip — surfaces a prompt's cron state inline and links to the
+ * editor. Active uses the success wash, paused the warning wash, none neutral.
+ */
+.schedule_chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: var(--padding-2xs) var(--padding-xs);
+    border-radius: var(--radius-full);
+    border: var(--border-width-thin) solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    cursor: pointer;
+
+    &:focus-visible {
+        outline: var(--focus-outline-width) solid var(--focus-outline-color);
+        outline-offset: var(--focus-outline-offset);
+    }
+}
+
+.schedule_chip_active {
+    border-color: var(--color-success-alpha-45);
+    background: var(--color-success-alpha-18);
+    color: var(--color-success-text);
+}
+
+.schedule_chip_paused {
+    border-color: var(--color-warning-alpha-40);
+    background: var(--color-warning-alpha-15);
+    color: var(--color-warning-text);
+}
+
+.schedule_chip_text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: var(--max-width-xs);
+}
+
+/*
+ * ===========================================================================
+ * SCHEDULE / EDIT MODAL — name + body section and the cron schedule section.
+ * ===========================================================================
+ */
+.edit {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.edit_section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+}
+
+.section_label {
+    margin: 0;
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text-muted);
+}
+
+.field_label {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.text_input,
+.cron_input,
+.textarea {
+    width: 100%;
+    padding: var(--input-padding);
+    background: var(--input-background);
+    border: var(--input-border);
+    border-radius: var(--input-border-radius);
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+    font-family: inherit;
+    transition: var(--input-transition);
+
+    &:focus-visible {
+        outline: none;
+        border-color: var(--input-border-focus);
+        box-shadow: var(--input-shadow-focus);
+    }
+
+    &::placeholder {
+        color: var(--color-text-muted);
+    }
+}
+
+.textarea {
+    resize: vertical;
+    min-height: 8rem;
+    line-height: var(--line-height-relaxed);
+}
+
+.cron_input {
+    font-family: var(--font-mono);
+
+    &[aria-invalid='true'] {
+        border-color: var(--color-danger-alpha-50);
+    }
+}
+
+.schedule_description {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+}
+
+.schedule_description_muted {
+    color: var(--color-text-muted);
+}
+
+.schedule_description_ok {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    color: var(--color-success-text);
+}
+
+.schedule_description_error {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    color: var(--color-danger);
+}
+
+.next_run {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.next_run_paused {
+    color: var(--color-warning-text);
+}
+
+.presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-2xs);
+}
+
+.enabled_row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+}
+
+.enabled_hint {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.last_run {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.last_run_error {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    color: var(--color-danger);
+}
+
+.edit_actions {
+    display: flex;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+/*
+ * Delete-confirm modal body.
+ */
+.confirm {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.confirm_text {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+}
+
+.confirm_warning {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    margin: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-warning-text);
+}
+
+.confirm_actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+}
