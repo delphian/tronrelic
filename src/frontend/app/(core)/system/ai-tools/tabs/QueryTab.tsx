@@ -305,15 +305,6 @@ export function QueryTab() {
         }
     }, [messages]);
 
-    // Auto-grow the composer textarea with its content, capped by CSS max-height.
-    useEffect(() => {
-        const ta = textareaRef.current;
-        if (ta) {
-            ta.style.height = 'auto';
-            ta.style.height = `${ta.scrollHeight}px`;
-        }
-    }, [input]);
-
     /**
      * Send the composer text as the next chat turn. Snapshots the completed
      * transcript as the history payload, appends a user turn and an empty pending
