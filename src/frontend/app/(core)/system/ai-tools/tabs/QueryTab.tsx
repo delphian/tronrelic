@@ -15,9 +15,12 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Send, Bot, User, AlertCircle, X, Copy, CheckCircle, Plus, History, MessageSquare, RefreshCw } from 'lucide-react';
-import { remark } from 'remark';
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
-import remarkHtml from 'remark-html';
+import remarkRehype from 'remark-rehype';
+import rehypeSanitize from 'rehype-sanitize';
+import rehypeStringify from 'rehype-stringify';
 import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IModelInfo } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Card } from '../../../../../components/ui/Card';
@@ -43,8 +46,22 @@ const QUERY_STREAM_EVENT = 'ai-tools:query-stream';
 /** Number of history records pulled for the grouped conversation list. */
 const HISTORY_LIMIT = 100;
 
-/** Singleton remark processor for converting assistant markdown to HTML. */
-const markdownProcessor = remark().use(remarkGfm).use(remarkHtml, { sanitize: true });
+/**
+ * Singleton unified processor converting assistant markdown to sanitized HTML.
+ * The pipeline parses markdown (remark-parse + GFM), bridges to a HAST tree via
+ * remark-rehype WITHOUT `allowDangerousHtml` so any raw HTML the model emits is
+ * dropped, then runs rehype-sanitize (GitHub-flavored default schema) to strip
+ * dangerous elements/attributes before serializing. This is real sanitization —
+ * required because the output is rendered via dangerouslySetInnerHTML on
+ * AI-generated, untrusted-influenced content. The deprecated remark-html
+ * `{ sanitize: true }` option it replaces is a no-op in remark-html v13+.
+ */
+const markdownProcessor = unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .use(remarkRehype)
+    .use(rehypeSanitize)
+    .use(rehypeStringify);
 
 /**
  * One turn in the chat transcript. `pending` marks the assistant turn currently
@@ -307,6 +324,16 @@ export function QueryTab() {
         }
         setError(null);
 
+        // The backend scopes stream chunks to the requesting socket, so the live
+        // socket id is required. It is only undefined before the deferred socket
+        // connects; surface that instead of POSTing an empty value the server
+        // could never route a stream back to.
+        const socketId = getSocket().id;
+        if (!socketId) {
+            setError('Live connection not ready yet — wait a moment and try again.');
+            return;
+        }
+
         // Exclude failed turns so a stream error does not poison later context.
         const priorMessages: IAiConversationMessage[] = messages
             .filter(turn => !turn.error && turn.content)
@@ -338,6 +365,7 @@ export function QueryTab() {
             const ack = await submitQuery({
                 prompt: trimmed,
                 queryId,
+                socketId,
                 model: modelOverride || undefined,
                 messages: priorMessages,
                 conversationId,
@@ -443,6 +471,25 @@ export function QueryTab() {
      * @param conversationId - Id of the conversation to resume.
      */
     const openConversation = useCallback(async (conversationId: string) => {
+        // If a stream is still in flight, abort it before abandoning the current
+        // transcript — otherwise the server query keeps consuming tokens after the
+        // user has navigated away from it. Clear the streaming UI state up front so
+        // any late chunk from the old query is rejected by the queryId filter.
+        const inFlightQueryId = activeQueryIdRef.current;
+        if (inFlightQueryId) {
+            activeQueryIdRef.current = null;
+            streamingTurnIdRef.current = null;
+            setStreaming(false);
+            try {
+                await cancelQuery(inFlightQueryId);
+            } catch {
+                // Best-effort: even if the cancel call fails, the queryId filter
+                // already discards the abandoned stream's chunks on this client.
+            }
+            if (!isMountedRef.current) {
+                return;
+            }
+        }
         try {
             const records = await getConversation(conversationId);
             if (!isMountedRef.current) {
@@ -587,7 +634,7 @@ export function QueryTab() {
                                             ) : (
                                                 <div
                                                     className={styles.turn_markdown}
-                                                    // Assistant output is sanitized by remark-html (sanitize: true).
+                                                    // Assistant output is sanitized by the rehype-sanitize pipeline in renderAssistantHtml.
                                                     dangerouslySetInnerHTML={{ __html: renderAssistantHtml(turn.content, !!turn.pending) }}
                                                 />
                                             )}

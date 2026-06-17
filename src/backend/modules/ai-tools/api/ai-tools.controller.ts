@@ -38,10 +38,40 @@ const QUERY_STREAM_EVENT = 'ai-tools:query-stream';
 interface IQueryRequestBody {
     prompt?: unknown;
     queryId?: unknown;
+    socketId?: unknown;
     model?: unknown;
     stream?: unknown;
     messages?: unknown;
     conversationId?: unknown;
+}
+
+/**
+ * Validate a client-supplied `messages` array of prior conversation turns.
+ *
+ * The schema advertised to the model is only a hint; the array arrives over an
+ * admin HTTP body and must be re-checked before it reaches the provider. Each
+ * entry must be an object whose `role` is exactly `'user'` or `'assistant'` and
+ * whose `content` is a string. Returns a descriptive error string on the first
+ * malformed entry, or null when every entry is well-formed.
+ *
+ * @param messages - The raw `messages` value from the request body.
+ * @returns An error message describing the first problem, or null when valid.
+ */
+function validateMessages(messages: unknown[]): string | null {
+    for (let i = 0; i < messages.length; i += 1) {
+        const entry = messages[i];
+        if (typeof entry !== 'object' || entry === null) {
+            return `messages[${i}] must be an object with "role" and "content".`;
+        }
+        const { role, content } = entry as { role?: unknown; content?: unknown };
+        if (role !== 'user' && role !== 'assistant') {
+            return `messages[${i}].role must be "user" or "assistant".`;
+        }
+        if (typeof content !== 'string') {
+            return `messages[${i}].content must be a string.`;
+        }
+    }
+    return null;
 }
 
 /**
@@ -137,10 +167,12 @@ export class AiToolsController {
     /**
      * POST /query — submit an AI query against the active provider.
      *
-     * Streaming (default): requires `queryId`, fires the provider's
-     * `queryStream` and broadcasts each chunk as `ai-tools:query-stream`, then
-     * responds 200 immediately — the stream settles in the background and an
-     * `IAiQueryRecord` is appended to history on completion or failure.
+     * Streaming (default): requires `queryId` and `socketId`, fires the
+     * provider's `queryStream` and emits each chunk as `ai-tools:query-stream`
+     * to the requesting socket only, then responds 200 immediately — the stream
+     * settles in the background and an `IAiQueryRecord` is appended to history on
+     * completion or failure. On early failure a terminal error chunk is emitted
+     * so the client unsticks.
      *
      * Non-streaming (`stream === false`): awaits `provider.query`, appends a
      * record, and returns the result.
@@ -161,13 +193,37 @@ export class AiToolsController {
 
         const model = typeof body.model === 'string' ? body.model : undefined;
         const conversationId = typeof body.conversationId === 'string' ? body.conversationId : undefined;
-        const messages = Array.isArray(body.messages) ? (body.messages as IAiConversationMessage[]) : undefined;
+
+        // `messages` is a model hint, not a guarantee — re-validate the array and
+        // every entry before it reaches the provider.
+        let messages: IAiConversationMessage[] | undefined;
+        if (body.messages !== undefined) {
+            if (!Array.isArray(body.messages)) {
+                res.status(400).json({ error: 'Body field "messages" must be an array.' });
+                return;
+            }
+            const messagesError = validateMessages(body.messages);
+            if (messagesError) {
+                res.status(400).json({ error: messagesError });
+                return;
+            }
+            messages = body.messages as IAiConversationMessage[];
+        }
+
         const stream = body.stream !== false; // default true
 
         if (stream) {
             const queryId = body.queryId;
             if (typeof queryId !== 'string' || queryId.trim().length === 0) {
                 res.status(400).json({ error: 'Streaming queries require a non-empty string "queryId".' });
+                return;
+            }
+
+            // Chunks are delivered only to the requesting socket, so the client
+            // must identify it. Without it the stream has nowhere to go.
+            const socketId = body.socketId;
+            if (typeof socketId !== 'string' || socketId.trim().length === 0) {
+                res.status(400).json({ error: 'Streaming queries require a non-empty string "socketId".' });
                 return;
             }
 
@@ -179,7 +235,7 @@ export class AiToolsController {
                 .queryStream(
                     { prompt, queryId, model, messages, conversationId, mode: 'stream' },
                     (chunk: IAiStreamChunk) => {
-                        WebSocketService.getInstance().emit({ event: QUERY_STREAM_EVENT, payload: chunk });
+                        WebSocketService.getInstance().emitToSocket(socketId, QUERY_STREAM_EVENT, chunk);
                     }
                 )
                 .then((result) => {
@@ -188,6 +244,15 @@ export class AiToolsController {
                     );
                 })
                 .catch((error: unknown) => {
+                    // Emit a terminal error chunk so a client still waiting on the
+                    // stream unsticks. The message is sanitized — never surface
+                    // provider internals or credentials to the browser.
+                    const errorChunk: IAiStreamChunk = {
+                        queryId,
+                        type: 'error',
+                        error: 'The AI query failed before completing.'
+                    };
+                    WebSocketService.getInstance().emitToSocket(socketId, QUERY_STREAM_EVENT, errorChunk);
                     void this.history.append(
                         this.buildRecord(
                             'stream',

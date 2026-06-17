@@ -335,15 +335,31 @@ export class WebSocketService implements IWebSocketService {
         // carry only a timestamp or count, never governed data.
         this.io.emit(event.event, event.payload);
         break;
-      case 'ai-tools:query-stream':
-        // Streamed AI response chunks (IAiStreamChunk) for the /system/ai-tools
-        // Query tab. Broadcast globally on the shared admin socket; the payload
-        // carries a queryId and the client filters chunks to its own query.
-        this.io.emit(event.event, event.payload);
-        break;
       default:
         logger.warn({ event }, 'Unknown socket event');
     }
+  }
+
+  /**
+   * Emit an event to a single connected socket.
+   *
+   * Socket.IO auto-creates a per-socket room keyed by the socket id, so
+   * `io.to(socketId)` targets exactly that one client. Used to scope streamed
+   * AI response chunks to the requesting browser instead of broadcasting them
+   * to every connected session — a chunk may contain governed data, so a global
+   * broadcast would leak it to other admins on the shared socket.
+   *
+   * @param socketId - The id of the target socket (the client's `getSocket().id`).
+   * @param event - The event name to emit.
+   * @param payload - The event payload delivered to the target socket.
+   */
+  public emitToSocket(socketId: string, event: string, payload: unknown): void {
+    if (!this.io) {
+      logger.warn('Attempted to emit to socket without WebSocket initialization');
+      return;
+    }
+
+    this.io.to(socketId).emit(event, payload);
   }
 
   public emitToWallet(wallet: string, event: any) {

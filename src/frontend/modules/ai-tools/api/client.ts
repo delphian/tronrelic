@@ -328,10 +328,16 @@ export async function clearPolicy(name: string): Promise<void> {
  * client-minted `queryId` whose stream chunks arrive over WebSocket; the prior
  * turns ride in `messages` and `conversationId` groups the multi-turn chat. A
  * non-streaming request sets `stream: false` and resolves to a result inline.
+ *
+ * `socketId` is the id of the live core socket the caller subscribes on. The
+ * backend scopes `ai-tools:query-stream` chunks to that single socket instead of
+ * broadcasting globally, so other admin sessions never receive this query's
+ * deltas. Required for a streaming request.
  */
 export interface IQueryRequest {
     prompt: string;
     queryId?: string;
+    socketId?: string;
     model?: string;
     stream?: boolean;
     messages?: IAiConversationMessage[];
