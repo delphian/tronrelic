@@ -168,6 +168,25 @@ describe('runScheduledPrompts', () => {
         expect(savedPrompts.recordRunResult).toHaveBeenCalledTimes(1);
     });
 
+    it('anchors on scheduleAnchorAt over an older lastRunAt so a just-edited schedule does not fire retroactively', async () => {
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({
+                id: 'rescheduled',
+                cron: '* * * * *',
+                createdAt: minutesAgo(60),
+                lastRunAt: minutesAgo(30),
+                scheduleAnchorAt: new Date().toISOString()
+            })
+        ]);
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, provider);
+        // The next every-minute occurrence after the just-now anchor is ~1 minute
+        // out, so the prompt waits this tick rather than firing on the stale
+        // lastRunAt / createdAt.
+        expect(provider.query).not.toHaveBeenCalled();
+        expect(savedPrompts.recordRunResult).not.toHaveBeenCalled();
+    });
+
     it('captures lastRunError when the query throws', async () => {
         provider.query.mockRejectedValueOnce(new Error('Provider down'));
         const savedPrompts = createMockSavedPrompts([

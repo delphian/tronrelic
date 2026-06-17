@@ -251,6 +251,27 @@ describe('SavedPromptsService', () => {
             await expect(service.create({ name: 'n', prompt: 'p', scheduleEnabled: 'yes' as any }))
                 .rejects.toBeInstanceOf(SavedPromptValidationError);
         });
+
+        it('anchors the schedule at creation when a cron is supplied', async () => {
+            const created = await service.create({ name: 'Anchored', prompt: 'p', cron: '0 9 * * *' });
+            // scheduleAnchorAt seeds the runner's "next occurrence" anchor so a
+            // freshly scheduled prompt counts from now, never retroactively.
+            expect(created.scheduleAnchorAt).toBe(created.createdAt);
+        });
+
+        it('maps a duplicate-key insert error to DuplicatePromptNameError (create race)', async () => {
+            await service.create({ name: 'First', prompt: 'p' });
+            const collection = database._collections.get('module_ai-tools_prompts')!;
+            // A concurrent create slips past assertNameUnique, then the unique
+            // name index rejects it with Mongo's duplicate-key error (11000).
+            collection.insertOne = vi.fn(async () => {
+                const err: any = new Error('E11000 duplicate key');
+                err.code = 11000;
+                throw err;
+            });
+            await expect(service.create({ name: 'Totally Different', prompt: 'p' }))
+                .rejects.toBeInstanceOf(DuplicatePromptNameError);
+        });
     });
 
     describe('update', () => {
@@ -313,6 +334,52 @@ describe('SavedPromptsService', () => {
             const second = await service.create({ name: 'B', prompt: 'b' });
 
             await expect(service.update(second.id, { name: 'A' }))
+                .rejects.toBeInstanceOf(DuplicatePromptNameError);
+        });
+
+        it('re-anchors the schedule when the cron value changes', async () => {
+            const created = await service.create({ name: 'Reanchor', prompt: 'p', cron: '0 9 * * *' });
+            await new Promise(r => setTimeout(r, 2));
+            const updated = await service.update(created.id, { cron: '0 12 * * *' });
+
+            // A real cron change resets the anchor to the edit time so the runner
+            // waits for the next future occurrence rather than firing retroactively.
+            expect(updated.scheduleAnchorAt).toBe(updated.updatedAt);
+            expect(updated.scheduleAnchorAt).not.toBe(created.scheduleAnchorAt);
+        });
+
+        it('does not re-anchor when the same cron is re-saved', async () => {
+            const created = await service.create({ name: 'NoReanchor', prompt: 'p', cron: '0 9 * * *' });
+            await new Promise(r => setTimeout(r, 2));
+            // The editor always sends the cron field on a schedule save, so a
+            // pause/resume or no-op re-save must NOT shift the cadence.
+            const updated = await service.update(created.id, { cron: '0 9 * * *', scheduleEnabled: false });
+            expect(updated.scheduleAnchorAt).toBe(created.scheduleAnchorAt);
+        });
+
+        it('leaves the anchor and lastRunAt untouched on a body-only edit', async () => {
+            const created = await service.create({ name: 'BodyEdit', prompt: 'old', cron: '0 9 * * *' });
+            await service.recordRunResult(created.id, '2026-05-18T12:00:00Z', null);
+            const updated = await service.update(created.id, { prompt: 'new body' });
+
+            expect(updated.prompt).toBe('new body');
+            expect(updated.scheduleAnchorAt).toBe(created.scheduleAnchorAt);
+            // lastRunAt stays the genuine last-run time — a body edit is not a run.
+            expect(updated.lastRunAt).toBe('2026-05-18T12:00:00Z');
+        });
+
+        it('maps a duplicate-key findOneAndUpdate error to DuplicatePromptNameError (rename race)', async () => {
+            const a = await service.create({ name: 'Alpha', prompt: 'a' });
+            await service.create({ name: 'Beta', prompt: 'b' });
+            const collection = database._collections.get('module_ai-tools_prompts')!;
+            // A concurrent rename slips past assertNameUnique, then the unique
+            // name index rejects the write with Mongo's duplicate-key error (11000).
+            collection.findOneAndUpdate = vi.fn(async () => {
+                const err: any = new Error('E11000 duplicate key');
+                err.code = 11000;
+                throw err;
+            });
+            await expect(service.update(a.id, { name: 'Gamma' }))
                 .rejects.toBeInstanceOf(DuplicatePromptNameError);
         });
     });
