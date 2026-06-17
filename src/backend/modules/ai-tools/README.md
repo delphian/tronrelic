@@ -11,12 +11,12 @@ Provider-agnostic governance for AI tools — the registry every tool registers 
 | Service registry names | `'ai-tools'` → `IAiToolRegistry`, `'ai-tool-governor'` → `IAiToolGovernor`, `'ai-providers'` → `IAiProviderRegistry`, `'curation'` → `ICurationService` |
 | Admin API base | `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`) |
 | Admin dashboard | `/system/ai-tools` (Registry · Query · Activity · Approvals · Curation · Policy tabs + trifecta banner + provider panel) |
-| Types package | `@delphian/tronrelic-types` → `IAiTool`, `IAiToolCapability`, `IAiToolRegistry`, `IAiToolGovernor`, `IAiProvider`, `IAiProviderRegistry`, `IAiStreamChunk`, `IAiQueryRecord`, `AiQueryMode`, `ITrifectaStatus`, `IToolInvocation{Context,Result,Record}`, `IToolPolicy`, `IAiToolInvokeContext` |
-| Owned collections | `module_ai-tools_invocations`, `module_ai-tools_approvals`, `module_ai-tools_curations`, `module_ai-tools_query_history` |
+| Types package | `@delphian/tronrelic-types` → `IAiTool`, `IAiToolCapability`, `IAiToolRegistry`, `IAiToolGovernor`, `IAiProvider`, `IAiProviderRegistry`, `IAiStreamChunk`, `IAiQueryRecord`, `AiQueryMode`, `ISavedPrompt`, `ITrifectaStatus`, `IToolInvocation{Context,Result,Record}`, `IToolPolicy`, `IAiToolInvokeContext` |
+| Owned collections | `module_ai-tools_invocations`, `module_ai-tools_approvals`, `module_ai-tools_curations`, `module_ai-tools_query_history`, `module_ai-tools_prompts` |
 | KV keys (core `_kv`) | `ai-tools:tool-states`, `ai-tools:policy-overrides` |
 | Hook seams | `ai.toolInvoke` (series, veto/hold), `ai.toolInvoked` (observer, audit fan-out) |
 | WebSocket signals | `ai-tools:activity`, `ai-tools:approvals-changed`, `ai-tools:curations-changed` (timestamp-only refetch cues; data stays behind the gated REST feed); `ai-tools:query-stream` (`IAiStreamChunk`, **global broadcast** keyed by `queryId` — client filters) |
-| Scheduler jobs | `ai-tools:prune-audit` (daily 04:00) — range-deletes `module_ai-tools_invocations` past the 90-day window; registered only when a scheduler is injected |
+| Scheduler jobs | `ai-tools:prune-audit` (daily 04:00) — range-deletes `module_ai-tools_invocations` past the 90-day window. `ai-tools:run-scheduled-prompts` (every 2 min) — fires cron-scheduled saved prompts against the active provider. Both registered only when a scheduler is injected |
 | Bootstrap order | Inits/runs alongside the other modules, before `loadPlugins` |
 | Standard | [system-ai-tools.md](../../../../docs/system/system-ai-tools.md) |
 
@@ -38,7 +38,9 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 | `services/curation-service.ts` | `'curation'` → `ICurationService`: type registry + hold/approve/reject/edit orchestration |
 | `services/ai-provider-registry.ts` | `'ai-providers'` → `IAiProviderRegistry`: provider metadata + executable instance; `getActive()` |
 | `services/ai-query-history.service.ts` | `module_ai-tools_query_history` writes/queries for the Query tab (`IAiQueryRecord`) |
-| `api/ai-tools.controller.ts` · `api/ai-tools.router.ts` | Admin REST surface (governance + the `/query*` query backend) |
+| `services/saved-prompts.service.ts` | `module_ai-tools_prompts` CRUD + cron validation + scheduler bookkeeping (`ISavedPrompt`); atomic field-level writes; failure-streak auto-pause |
+| `services/scheduled-prompts-runner.ts` | Per-tick cron evaluator: fires due prompts via `getActive().query({ mode: 'programmatic' })`, claim-before-fire to avoid double-firing |
+| `api/ai-tools.controller.ts` · `api/ai-tools.router.ts` | Admin REST surface (governance + the `/query*` query backend, incl. `/query/prompts*`) |
 
 ## The Governed Pipeline
 
@@ -92,6 +94,9 @@ All under `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`).
 | GET | `/query/history` | Paged query history, newest first (`limit`, `offset`) |
 | GET | `/query/conversations/:conversationId` | One conversation's turns, oldest first (Query tab "open in chat") |
 | GET | `/query/models` | Available models from the active provider |
+| GET | `/query/prompts` | Saved prompt templates, newest-updated first |
+| POST | `/query/prompts` | Create (no `id`) or update (with `id`) a saved prompt; returns the refreshed list. 400 invalid · 404 missing · 409 duplicate name |
+| DELETE | `/query/prompts/:id` | Delete a saved prompt template |
 | GET | `/activity` | Invocation audit feed (filters: `toolName`, `status`, `triggerPath`, `providerId`, `aiProviderId`, `limit`, `offset`) |
 | GET | `/activity/:id` | One invocation record |
 | GET | `/approvals` | Pending held invocations |
@@ -112,13 +117,19 @@ Streaming is fire-and-forget: `POST /query` (default) requires a client-generate
 
 History lives in `module_ai-tools_query_history` (`IAiQueryRecord`), indexed unique `{ id }`, descending `{ createdAt }`, and sparse `{ conversationId, createdAt }` for oldest-first thread reads. Turns sharing a `conversationId` form one chat.
 
+### Saved Prompts & Scheduling
+
+Saved prompts are durable, **provider-independent** user assets — a named prompt body, optionally carrying a cron schedule — owned by core so they outlive any provider swap (a plugin-scoped copy would be orphaned when the transport is disabled). `SavedPromptsService` owns `module_ai-tools_prompts` (`ISavedPrompt`) with atomic field-level writes; each prompt is its own document keyed by `id`, indexed unique `{ id }`, case-insensitive-unique `{ name }`, and descending `{ updatedAt }`. The `/query/prompts*` routes back the Query tab's saved-prompts panel and cron editor.
+
+`ai-tools:run-scheduled-prompts` evaluates every prompt with a cron on each 2-minute tick (`runScheduledPrompts`). A due prompt is **claimed before it fires** — `lastRunAt` is written first — so a slow query can never double-fire on the next tick (worst case is a skipped run on crash, never a duplicate). The run executes through `getActive().query({ mode: 'programmatic' })`, which the provider attributes as `triggerPath: 'programmatic'` / `actor: system`; the governor's external-tool default-deny keys on `triggerPath !== 'interactive'`, so an autonomous run gets the same protection a dedicated `scheduled` path would — the public `IAiQueryOptions` deliberately carries no trigger field, which keeps any caller from claiming `interactive`. With no provider installed the tick is a no-op and prompts wait untouched. Five consecutive failures auto-pause a schedule (`scheduleEnabled: false`) with an annotated `lastRunError`; any success or schedule edit resets the streak.
+
 ## Hook Seams
 
 Declared in `src/backend/hooks/registry.ts`. `ai.toolInvoke` (series, `IAiToolInvokeContext`) fires before execution — throw `HookAbortError` to block; lets a compliance or lethal-trifecta plugin veto without forking the provider. `ai.toolInvoked` (observer, `IToolInvocationRecord`) fires after, for audit fan-out and alerting. Both surface on `/system/hooks`.
 
 ## Lifecycle Obligations
 
-`init()` constructs the registry, policy engine, audit store, approval queue, curation queue + service, governor, provider registry, and query-history service; loads persisted tool-states and policy overrides; ensures every collection's indexes (the collections are new, so index creation here is correct rather than a migration — including `module_ai-tools_query_history`); and injects the curation binding resolver into the policy engine (`policy.setCurationResolver(curation.hasType)`). `run()` mounts the admin router, registers `'ai-tools'` / `'ai-tool-governor'` / `'ai-providers'` / `'curation'`, wires the governor's and curation service's broadcast sinks to `WebSocketService`, registers the daily `ai-tools:prune-audit` retention job (only when a scheduler is injected), and registers the `/system/ai-tools` admin nav item under the System container. Errors in either phase fail the boot — there is no degraded mode.
+`init()` constructs the registry, policy engine, audit store, approval queue, curation queue + service, governor, provider registry, query-history service, and saved-prompts service; loads persisted tool-states and policy overrides; ensures every collection's indexes (the collections are new, so index creation here is correct rather than a migration — including `module_ai-tools_query_history` and `module_ai-tools_prompts`); and injects the curation binding resolver into the policy engine (`policy.setCurationResolver(curation.hasType)`). `run()` mounts the admin router, registers `'ai-tools'` / `'ai-tool-governor'` / `'ai-providers'` / `'curation'`, wires the governor's and curation service's broadcast sinks to `WebSocketService`, registers the daily `ai-tools:prune-audit` retention job and the 2-minute `ai-tools:run-scheduled-prompts` job (both only when a scheduler is injected), and registers the `/system/ai-tools` admin nav item under the System container. Errors in either phase fail the boot — there is no degraded mode.
 
 ## Related
 

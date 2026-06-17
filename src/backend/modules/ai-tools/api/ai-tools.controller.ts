@@ -28,6 +28,8 @@ import type { AiToolGovernor } from '../services/ai-tool-governor.js';
 import type { AiProviderRegistry } from '../services/ai-provider-registry.js';
 import type { AiQueryHistoryService } from '../services/ai-query-history.service.js';
 import type { CurationService } from '../services/curation-service.js';
+import type { SavedPromptsService } from '../services/saved-prompts.service.js';
+import { SavedPromptValidationError } from '../services/saved-prompts.service.js';
 import { WebSocketService } from '../../../services/websocket.service.js';
 import { detectTrifecta } from '../services/trifecta-detector.js';
 
@@ -122,6 +124,7 @@ export class AiToolsController {
      * @param providers - Installed-AI-provider registry (Provider panel + active-provider actuation).
      * @param curation - Central curation queue (for the Curation tab).
      * @param history - Core query-history store (for the Query tab).
+     * @param savedPrompts - Saved prompt templates + cron scheduling (Query tab).
      */
     constructor(
         private readonly registry: AiToolRegistry,
@@ -131,7 +134,8 @@ export class AiToolsController {
         private readonly governor: AiToolGovernor,
         private readonly providers: AiProviderRegistry,
         private readonly curation: CurationService,
-        private readonly history: AiQueryHistoryService
+        private readonly history: AiQueryHistoryService,
+        private readonly savedPrompts: SavedPromptsService
     ) {}
 
     /** GET /tools — registry with capability, provider, and enabled state. */
@@ -339,6 +343,71 @@ export class AiToolsController {
             res.json({ models: await provider.listModels() });
         } catch (error: unknown) {
             res.status(502).json({ error: error instanceof Error ? error.message : 'Failed to list AI models.' });
+        }
+    };
+
+    /** GET /query/prompts — saved prompt templates, newest-updated first. */
+    listPrompts = async (_req: Request, res: Response): Promise<void> => {
+        try {
+            res.json({ prompts: await this.savedPrompts.list() });
+        } catch {
+            res.status(500).json({ error: 'Failed to load saved prompts.' });
+        }
+    };
+
+    /**
+     * POST /query/prompts — create (no `id`) or update (with `id`) a saved
+     * prompt template. Service-level `SavedPromptValidationError`s map to their
+     * own status codes (400 bad input, 404 missing, 409 duplicate name); any
+     * other failure is a 500. Responds with the full refreshed list so the
+     * client's shared state stays current without a second round-trip.
+     */
+    savePrompt = async (req: Request, res: Response): Promise<void> => {
+        const { id, name, prompt, cron, scheduleEnabled } = (req.body ?? {}) as {
+            id?: unknown;
+            name?: unknown;
+            prompt?: unknown;
+            cron?: unknown;
+            scheduleEnabled?: unknown;
+        };
+        try {
+            const hasId = typeof id === 'string' && id.trim().length > 0;
+            if (hasId) {
+                await this.savedPrompts.update(id as string, {
+                    name: name as string | undefined,
+                    prompt: prompt as string | undefined,
+                    cron: cron as string | null | undefined,
+                    scheduleEnabled: scheduleEnabled as boolean | undefined
+                });
+            } else {
+                await this.savedPrompts.create({
+                    name: name as string,
+                    prompt: prompt as string,
+                    cron: (cron as string | null | undefined) ?? undefined,
+                    scheduleEnabled: scheduleEnabled as boolean | undefined
+                });
+            }
+            res.json({ prompts: await this.savedPrompts.list() });
+        } catch (error: unknown) {
+            if (error instanceof SavedPromptValidationError) {
+                res.status(error.statusCode).json({ error: error.message });
+                return;
+            }
+            res.status(500).json({ error: 'Failed to save prompt.' });
+        }
+    };
+
+    /** DELETE /query/prompts/:id — delete a saved prompt template by id. */
+    deletePrompt = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const removed = await this.savedPrompts.delete(req.params.id);
+            if (!removed) {
+                res.status(404).json({ error: 'Prompt not found' });
+                return;
+            }
+            res.json({ success: true });
+        } catch {
+            res.status(500).json({ error: 'Failed to delete prompt.' });
         }
     };
 

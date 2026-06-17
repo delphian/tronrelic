@@ -20,6 +20,7 @@ import type {
     IAiQueryRecord,
     IAiQueryResult,
     IModelInfo,
+    ISavedPrompt,
     ToolInvocationStatus,
     ToolTriggerPath
 } from '@/types';
@@ -427,4 +428,50 @@ export async function getConversation(conversationId: string): Promise<IAiQueryR
 export async function getQueryModels(): Promise<IModelInfo[]> {
     const data = await parse<{ models: IModelInfo[] }>(await fetch(`${BASE}/query/models`), 'load query models');
     return data.models;
+}
+
+/** Body for {@link saveSavedPrompt}. Omit `id` to create; supply it to update. */
+export interface ISavePromptRequest {
+    id?: string;
+    name?: string;
+    prompt?: string;
+    /** Cron expression; `''`/`null` clears the schedule. Omit to leave unchanged. */
+    cron?: string | null;
+    scheduleEnabled?: boolean;
+}
+
+/**
+ * List every saved prompt template, newest-updated first.
+ *
+ * @returns The saved prompts.
+ */
+export async function listSavedPrompts(): Promise<ISavedPrompt[]> {
+    const data = await parse<{ prompts: ISavedPrompt[] }>(await fetch(`${BASE}/query/prompts`), 'load saved prompts');
+    return data.prompts;
+}
+
+/**
+ * Create (no `id`) or update (with `id`) a saved prompt template. Returns the
+ * full refreshed list so the caller can replace its shared state in one step.
+ *
+ * @param request - The prompt fields to persist.
+ * @returns The updated saved-prompt list.
+ */
+export async function saveSavedPrompt(request: ISavePromptRequest): Promise<ISavedPrompt[]> {
+    const data = await parse<{ prompts: ISavedPrompt[] }>(await fetch(`${BASE}/query/prompts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request)
+    }), 'save prompt');
+    return data.prompts;
+}
+
+/**
+ * Delete a saved prompt template by id.
+ *
+ * @param id - The prompt id.
+ * @returns Resolves when deleted.
+ */
+export async function deleteSavedPrompt(id: string): Promise<void> {
+    await parse(await fetch(`${BASE}/query/prompts/${encodeURIComponent(id)}`, { method: 'DELETE' }), 'delete prompt');
 }
