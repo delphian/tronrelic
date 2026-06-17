@@ -107,10 +107,13 @@ export function SavedPromptsPanel({
 
     /** Duplicate an existing prompt with an auto-suffixed name. */
     const handleDuplicate = useCallback(async (sp: ISavedPrompt) => {
-        const existingNames = new Set(prompts.map(p => p.name));
+        // Compare lowercased: the backend's unique-name index is collation
+        // strength-2 (case-insensitive), so a case-variant match must count as a
+        // collision here too, otherwise the save round-trips to a 409.
+        const existingNames = new Set(prompts.map(p => p.name.toLowerCase()));
         let candidate = `${sp.name} (copy)`;
         let counter = 2;
-        while (existingNames.has(candidate)) {
+        while (existingNames.has(candidate.toLowerCase())) {
             candidate = `${sp.name} (copy ${counter})`;
             counter += 1;
         }

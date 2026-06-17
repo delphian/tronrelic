@@ -48,6 +48,15 @@ export interface ISavedPrompt {
     scheduleEnabled?: boolean;
     /** ISO timestamp of the last scheduled execution attempt. */
     lastRunAt?: string;
+    /**
+     * ISO timestamp from which the runner computes the next cron occurrence,
+     * set whenever the cron value is added or rewritten. Kept separate from
+     * `lastRunAt` so a schedule edit re-anchors the cadence to "now" (matching
+     * the editor's "Next run" preview, never firing an old prompt retroactively)
+     * without falsely reporting that the prompt just ran. The runner anchors on
+     * the latest of `lastRunAt`, `scheduleAnchorAt`, and `createdAt`.
+     */
+    scheduleAnchorAt?: string;
     /** Error message from the most recent scheduled run, or null on success. */
     lastRunError?: string | null;
     /**

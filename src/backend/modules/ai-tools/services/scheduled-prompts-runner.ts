@@ -62,17 +62,29 @@ export async function runScheduledPrompts(
     const now = new Date();
 
     for (const p of scheduled) {
-        const sinceStr = p.lastRunAt || p.createdAt;
-        const since = new Date(sinceStr);
+        // Anchor cron evaluation at the most recent boundary that resets the
+        // schedule clock: a real run (lastRunAt) or a schedule (re)configuration
+        // (scheduleAnchorAt), whichever is later. createdAt is only the fallback
+        // for a prompt that has neither run nor been re-anchored — it must NOT
+        // join the max(), or it would dominate a legitimately older lastRunAt and
+        // suppress a due run. Anchoring on the latest boundary keeps a just-edited
+        // schedule from firing retroactively while preserving the no-double-fire
+        // guarantee of anchoring on the last actual run.
+        const anchorMs = Math.max(
+            p.lastRunAt ? Date.parse(p.lastRunAt) : 0,
+            p.scheduleAnchorAt ? Date.parse(p.scheduleAnchorAt) : 0
+        );
+        const since = new Date(anchorMs > 0 ? anchorMs : Date.parse(p.createdAt));
 
         let fireDue = false;
+        let nextFireTime = 0;
         try {
             // Pin cron resolution to UTC so the backend stays in lock-step with
             // any frontend countdown and never drifts if an operator sets TZ on
             // the container.
             const iter = parseExpression(p.cron as string, { currentDate: since, tz: 'UTC' });
-            const next = iter.next().toDate();
-            fireDue = next.getTime() <= now.getTime();
+            nextFireTime = iter.next().toDate().getTime();
+            fireDue = nextFireTime <= now.getTime();
         } catch (err) {
             logger.warn(
                 { err, promptId: p.id, cron: p.cron },
@@ -92,7 +104,12 @@ export async function runScheduledPrompts(
         // up front closes that window — the worst case becomes a skipped run
         // (process crash mid-query), never a duplicate, which is the right trade
         // for token-spending work.
-        const claimedAt = new Date().toISOString();
+        // Clamp to the scheduled occurrence. If the wall clock stepped backward
+        // (NTP correction) between capturing `now` and here, a claimedAt earlier
+        // than the fired occurrence would let the next tick re-resolve the same
+        // time and double-fire. max() also preserves the real (later) execution
+        // time when a run is genuinely delayed, so a late run never backfills.
+        const claimedAt = new Date(Math.max(Date.now(), nextFireTime)).toISOString();
         try {
             await savedPrompts.recordRunResult(p.id, claimedAt, null);
         } catch (writeErr) {

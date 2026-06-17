@@ -131,7 +131,10 @@ export class SavedPromptsService {
      */
     async get(id: string): Promise<ISavedPrompt | null> {
         const collection = this.database.getCollection<ISavedPrompt>(COLLECTION);
-        const doc = await collection.findOne({ id });
+        // Coerce to a primitive string so the query can never carry a Mongo
+        // operator object even if a future caller bypasses the controller's
+        // type guard — equality-by-id on an admin route, never injectable.
+        const doc = await collection.findOne({ id: String(id) });
         return doc ? stripMongoId(doc) : null;
     }
 
@@ -183,10 +186,25 @@ export class SavedPromptsService {
         if (typeof normalizedCron === 'string') {
             created.cron = normalizedCron;
             created.scheduleEnabled = input.scheduleEnabled !== false;
+            // Anchor the schedule at creation so the runner computes the first
+            // occurrence from now, never retroactively from an earlier instant.
+            created.scheduleAnchorAt = now;
         }
 
         const collection = this.database.getCollection<ISavedPrompt>(COLLECTION);
-        await collection.insertOne(created as ISavedPrompt);
+        // The unique-name index is the real guard; assertNameUnique above is a
+        // fast path. Two concurrent creates of the same name both pass the
+        // pre-check, and the loser is rejected here with a Mongo duplicate-key
+        // error (11000). Map that to the same 409 the pre-check raises so the
+        // race surfaces as a clean conflict, never a 500.
+        try {
+            await collection.insertOne(created as ISavedPrompt);
+        } catch (error: unknown) {
+            if ((error as { code?: number } | null)?.code === 11000) {
+                throw new DuplicatePromptNameError();
+            }
+            throw error;
+        }
         return created;
     }
 
@@ -241,6 +259,17 @@ export class SavedPromptsService {
             // and failure streak so admins don't see misleading state.
             setFields.lastRunError = null;
             setFields.failureCount = 0;
+            // Re-anchor only when the cron VALUE actually changes (added or
+            // rewritten to a different expression). The runner then computes the
+            // next occurrence from now and matches the editor's "Next run"
+            // preview, instead of treating an old prompt as overdue and firing on
+            // the next tick. Guarding on a real change keeps a pause/resume or a
+            // no-op re-save — the editor always sends the cron field — from
+            // needlessly shifting the cadence. lastRunAt is left untouched so it
+            // stays the genuine last-run timestamp the editor displays.
+            if (typeof normalizedCron === 'string' && normalizedCron !== existing.cron) {
+                setFields.scheduleAnchorAt = setFields.updatedAt;
+            }
         }
         if (input.scheduleEnabled !== undefined) {
             setFields.scheduleEnabled = input.scheduleEnabled;
@@ -257,11 +286,25 @@ export class SavedPromptsService {
         // round-trip. Removes both the previous extra read AND a tiny race
         // window where a concurrent write could have landed between the
         // updateOne and the re-fetch.
-        const updated = await collection.findOneAndUpdate(
-            { id },
-            { $set: setFields },
-            { returnDocument: 'after' }
-        ) as ISavedPrompt | null;
+        let updated: ISavedPrompt | null;
+        try {
+            updated = await collection.findOneAndUpdate(
+                // Coerce to a primitive string so the filter can never carry a
+                // Mongo operator object — equality-by-id on an admin route,
+                // never injectable.
+                { id: String(id) },
+                { $set: setFields },
+                { returnDocument: 'after' }
+            ) as ISavedPrompt | null;
+        } catch (error: unknown) {
+            // A concurrent rename to the same name loses the race against the
+            // unique-name index here (11000); surface it as the same 409 the
+            // assertNameUnique pre-check raises, mirroring create().
+            if ((error as { code?: number } | null)?.code === 11000) {
+                throw new DuplicatePromptNameError();
+            }
+            throw error;
+        }
 
         if (!updated) {
             // Disappeared mid-update — caller raced a delete.
