@@ -8,7 +8,7 @@
  * tab adapts whether the dashboard renders full-width or in a narrower panel.
  */
 
-@use '../../../breakpoints' as *;
+@use '../../../../breakpoints' as *;
 
 @mixin focus-outline {
     outline: var(--focus-outline-width) solid var(--focus-outline-color);
