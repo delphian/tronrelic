@@ -28,6 +28,7 @@
     --query-chat-height-sm: 22rem;
     --query-chat-height-md: 32rem;
     --query-composer-min-height: 4.5rem;
+    --query-transcript-min-height: 6rem;
 
     container-type: inline-size;
     container-name: ai-query;
@@ -61,16 +62,18 @@
     flex-direction: column;
     padding: 0;
     overflow: hidden;
-    /* Fixed resting height so the panel does not grow as the conversation
-       fills — the transcript scrolls within and the composer stays on screen.
-       resize: vertical lets the admin drag it taller. */
-    height: var(--query-chat-height-sm);
+    /* Resting height so the panel does not grow as the conversation fills — the
+       transcript scrolls within. It is a min-height, not a fixed height, so
+       dragging the composer textarea taller grows the card to contain it rather
+       than collapsing the transcript or clipping the toolbar. resize: vertical
+       additionally lets the admin drag the whole card taller. */
+    min-height: var(--query-chat-height-sm);
     resize: vertical;
 }
 
 @container ai-query (min-width: #{$breakpoint-mobile-md}) {
     .chat_card {
-        height: var(--query-chat-height-md);
+        min-height: var(--query-chat-height-md);
     }
 }
 
@@ -121,10 +124,12 @@
     50% { opacity: var(--opacity-35); }
 }
 
-/* Scrolling transcript region. */
+/* Scrolling transcript region. Keeps a min-height floor so dragging the
+   composer taller shrinks it only to that floor, then grows the card — the
+   transcript never collapses to zero. */
 .transcript {
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: var(--query-transcript-min-height);
     overflow-y: auto;
     display: flex;
     flex-direction: column;
