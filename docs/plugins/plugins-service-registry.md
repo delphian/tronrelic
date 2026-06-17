@@ -15,10 +15,10 @@ Register during `init()`, unregister during `disable()`:
 ```typescript
 init: async (context: IPluginContext) => {
     const myService = new MyService(context.database, context.logger);
-    context.services.register('ai-assistant', myService);
+    context.services.register('my-service', myService);
 },
 disable: async (context: IPluginContext) => {
-    context.services.unregister('ai-assistant');
+    context.services.unregister('my-service');
 }
 ```
 
@@ -35,11 +35,11 @@ if (xposter) {
 }
 ```
 
-**Platform-wide contracts live in core, not a sibling package.** A service interface that many plugins consume belongs in `@delphian/tronrelic-types`, not in one plugin's sibling package. The AI tool contracts (`IAiTool`, `IAiAssistantService`) and the `'ai-tools'` registry (`IAiToolRegistry`) are core for exactly this reason — every tool-providing plugin and the AI provider need them — so a tool provider imports them from `@delphian/tronrelic-types` and registers tools on the core `'ai-tools'` registry, never on a provider's sibling package. The sibling-package pattern is for a contract specific to one plugin that only some peers consume, like `IXPosterService` above.
+**Platform-wide contracts live in core, not a sibling package.** A service interface that many plugins consume belongs in `@delphian/tronrelic-types`, not in one plugin's sibling package. The AI tool contracts (`IAiTool`, `IAiProvider`), the `'ai-tools'` registry (`IAiToolRegistry`), and the `'ai-providers'` registry (`IAiProviderRegistry`) are core for exactly this reason — every tool-providing plugin and the AI provider need them — so a tool provider imports them from `@delphian/tronrelic-types` and registers tools on the core `'ai-tools'` registry, never on a provider's sibling package. The sibling-package pattern is for a contract specific to one plugin that only some peers consume, like `IXPosterService` above.
 
 **Consumers must use `import type` only.** The types package exists purely so the TypeScript compiler sees the real contract — a signature change in the provider then surfaces as a build error in the consumer instead of a silent runtime break. `import type` erases at compile time and leaves no `require`/`import` in emitted JS, so listing the types package creates no runtime dependency on the provider plugin. The runtime lookup still flows through `context.services.get('x-poster')` and returns `undefined` when the provider is disabled or uninstalled — graceful degradation is preserved. If a consumer ever needs a runtime value (a constant, a helper) from the provider, promote that code to a package that ships runtime JS and declare a real dependency; do not value-import from a types-only package.
 
-Canonical sibling-package provider: `trp-x-poster` (publishes `IXPosterService` as `@delphian/trp-x-poster-types`). Canonical consumers: `trp-bazi-fortune/src/backend/backend.ts` watches the core `'ai-assistant'` service for AI queries; tool providers like `trp-telegram-bot` watch the core `'ai-tools'` registry to register tools.
+Canonical sibling-package provider: `trp-x-poster` (publishes `IXPosterService` as `@delphian/trp-x-poster-types`). Canonical consumers: `trp-bazi-fortune/src/backend/backend.ts` watches the core `'ai-providers'` registry and resolves the active provider lazily via `getActive()` for AI queries; tool providers like `trp-telegram-bot` watch the core `'ai-tools'` registry to register tools.
 
 ### Anti-Pattern: Do Not Redeclare the Interface Locally
 
@@ -51,12 +51,12 @@ Two lookup shapes. The choice is about consumer lifetime, not provider identity.
 
 ### `get()` — One-Shot Read
 
-Use `get()` when the caller needs the service at a single moment and doesn't care whether it appears or disappears later (an admin route, a one-off migration, diagnostics). Always handle the undefined case:
+Use `get()` when the caller needs the service at a single moment and doesn't care whether it appears or disappears later (an admin route, a one-off migration, diagnostics). Always handle the undefined case. For the active AI provider, resolve the core `'ai-providers'` registry and call `getActive()` — never a vendor service key:
 
 ```typescript
-import type { IAiAssistantService } from '@delphian/tronrelic-types';
+import type { IAiProviderRegistry } from '@delphian/tronrelic-types';
 
-const ai = context.services.get<IAiAssistantService>('ai-assistant');
+const ai = context.services.get<IAiProviderRegistry>('ai-providers')?.getActive();
 if (ai) {
     const result = await ai.ask('Analyze recent transactions');
     context.logger.info({ text: result.responseText }, 'ai response');

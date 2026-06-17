@@ -23,13 +23,15 @@ import { ActivityTab } from './tabs/ActivityTab';
 import { ApprovalsTab } from './tabs/ApprovalsTab';
 import { CurationTab } from './tabs/CurationTab';
 import { PolicyTab } from './tabs/PolicyTab';
+import { QueryTab } from './tabs/QueryTab';
 import styles from './page.module.scss';
 
 /** The dashboard tabs. */
-type TabId = 'registry' | 'activity' | 'approvals' | 'curation' | 'policy';
+type TabId = 'registry' | 'query' | 'activity' | 'approvals' | 'curation' | 'policy';
 
 const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
     { id: 'registry', label: 'Registry' },
+    { id: 'query', label: 'Query' },
     { id: 'activity', label: 'Activity' },
     { id: 'approvals', label: 'Approvals' },
     { id: 'curation', label: 'Curation' },
@@ -118,6 +120,7 @@ export default function AiToolsAdminPage() {
 
                 <div className={styles.content}>
                     {activeTab === 'registry' && <RegistryTab onChanged={refreshTrifecta} />}
+                    {activeTab === 'query' && <QueryTab />}
                     {activeTab === 'activity' && <ActivityTab />}
                     {activeTab === 'approvals' && <ApprovalsTab onChanged={refreshPending} />}
                     {activeTab === 'curation' && <CurationTab onChanged={refreshPendingCuration} />}

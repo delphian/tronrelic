@@ -326,6 +326,21 @@ export class WebSocketService implements IWebSocketService {
         // refetch their widget data to see operator changes.
         this.io.emit(event.event, event.payload);
         break;
+      case 'ai-tools:activity':
+      case 'ai-tools:approvals-changed':
+      case 'ai-tools:curations-changed':
+        // Admin-dashboard refetch nudges from the AI tool governor and
+        // curation service. The /system/ai-tools tabs subscribe on the shared
+        // socket without joining a room, so these broadcast globally; payloads
+        // carry only a timestamp or count, never governed data.
+        this.io.emit(event.event, event.payload);
+        break;
+      case 'ai-tools:query-stream':
+        // Streamed AI response chunks (IAiStreamChunk) for the /system/ai-tools
+        // Query tab. Broadcast globally on the shared admin socket; the payload
+        // carries a queryId and the client filters chunks to its own query.
+        this.io.emit(event.event, event.payload);
+        break;
       default:
         logger.warn({ event }, 'Unknown socket event');
     }

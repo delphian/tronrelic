@@ -12,16 +12,18 @@ The danger compounds when the *enabled* tool set spans the **lethal trifecta**: 
 
 ## Provider-Agnostic Model
 
-Core defines the tool contract, the capability vocabulary, and the registry, governor, policy, and audit. An AI **provider plugin** is only a transport: it formats tool declarations for its vendor's API, runs the agentic loop, and routes each tool call back through core. `trp-ai-assistant` is the Anthropic provider; an OpenAI or Google provider would be a separate plugin. Tools are provider-neutral and must never import or assume a specific provider.
+Core defines the tool contract, the capability vocabulary, and the registry, governor, policy, and audit. An AI **provider plugin** is only a transport: it implements the `IAiProvider` execution contract (`query` / `ask` / `queryStream` / `cancel` / `listModels`), formats tool declarations for its vendor's API, runs the agentic loop, and routes each tool call back through core. `trp-ai-assistant` is the Anthropic provider; an OpenAI or Google provider would be a separate plugin. Tools are provider-neutral and must never import or assume a specific provider.
 
-**Checking whether a provider is available.** Ask the core `'ai-providers'` registry, never a provider's own service name:
+**Presence vs actuation.** The core `'ai-providers'` registry (`IAiProviderRegistry`) answers both — never a provider's own service name. Test *presence* (is any provider reachable?) over the metadata list; *actuate* the active provider through `getActive()`, which returns the executable `IAiProvider` instance or `null`:
 
 ```typescript
 const providers = context.services.get<IAiProviderRegistry>('ai-providers');
-const aiAvailable = providers?.listProviders().some(p => p.active) ?? false;
+const aiAvailable = providers?.listProviders().some(p => p.active) ?? false; // presence
+const ai = providers?.getActive();                                          // actuation
+if (ai) await ai.ask('How many transactions in the last hour?');
 ```
 
-`'ai-assistant'` is the manifest id and service key of `trp-ai-assistant` alone — `has('ai-assistant')` couples you to Anthropic and reports `false` the moment the installed provider is OpenAI or Google, even though an assistant is reachable. The `'ai-providers'` registry is core-owned (the `ai-tools` module always publishes it) and provider-neutral by construction, so a presence/active check there survives a provider swap. Most tool code needs no such check at all — `watch('ai-tools')` registration covers boot order and whatever provider is installed picks the tools up; reserve the registry lookup for admin surfaces that report "is an assistant reachable?".
+`'ai-assistant'` is the manifest id of `trp-ai-assistant` alone — there is no `'ai-assistant'` service key any more, and binding to one would couple you to Anthropic and break the moment the installed provider is OpenAI or Google. The `'ai-providers'` registry is core-owned (the `ai-tools` module always publishes it) and provider-neutral by construction, so both the presence check and `getActive()` survive a provider swap. Most tool code needs neither — `watch('ai-tools')` registration covers boot order and whatever provider is installed picks the tools up; reserve the registry lookup for code that *runs* a query or reports "is an assistant reachable?".
 
 ## The Tool Contract
 
@@ -78,7 +80,9 @@ Mandatory for every tool; scale to the class. A read-only lookup needs little, a
 
 ## How It Works
 
-The provider advertises the enabled tools to the model; when the model emits a tool call, the provider routes it through `governor.invoke()`, which runs the handler server-side and feeds the result back so the model can continue. Core centralizes the cross-cutting concerns — input validation, policy by capability class, a per-handler timeout, audit, and human approval — behind that single governor and the declared hook seams, so authors stop re-implementing them and operators get one place to see and tune every tool. Core also surfaces the lethal-trifecta status over the *enabled* set at `GET /api/admin/system/ai-tools/trifecta`. Operators see and tune all of this at the admin-gated `/system/ai-tools` dashboard — Registry (capability badges + enable toggles), Activity (live audit feed), Approvals (approve/reject + live pending count), and Policy (per-tool overrides), plus a trifecta banner and a provider panel — which lives in core and survives swapping the provider plugin. See [system-hooks.md](./system-hooks.md) for the seam mechanism and the [`ai-tools` module README](../../src/backend/modules/ai-tools/README.md) for the full governor pipeline.
+The provider advertises the enabled tools to the model; when the model emits a tool call, the provider routes it through `governor.invoke()`, which runs the handler server-side and feeds the result back so the model can continue. Core centralizes the cross-cutting concerns — input validation, policy by capability class, a per-handler timeout, audit, and human approval — behind that single governor and the declared hook seams, so authors stop re-implementing them and operators get one place to see and tune every tool. Core also surfaces the lethal-trifecta status over the *enabled* set at `GET /api/admin/system/ai-tools/trifecta`. Operators see and tune all of this at the admin-gated `/system/ai-tools` dashboard — Registry (capability badges + enable toggles), Query (multi-turn chat against the active provider), Activity (live audit feed), Approvals (approve/reject + live pending count), Curation, and Policy (per-tool overrides), plus a trifecta banner and a provider panel — which lives in core and survives swapping the provider plugin.
+
+Core also owns a provider-neutral **query backend** in the `ai-tools` module: admin routes under `/api/admin/system/ai-tools/query*` drive `getActive()` and persist history, so the Query tab is not a provider-plugin feature. Streaming uses one core-owned WebSocket event, `ai-tools:query-stream`, carrying an `IAiStreamChunk` keyed by `queryId`; the chunk is broadcast globally and the client filters by `queryId`. See [system-hooks.md](./system-hooks.md) for the seam mechanism and the [`ai-tools` module README](../../src/backend/modules/ai-tools/README.md) for the full governor pipeline and the query routes.
 
 ## Example
 

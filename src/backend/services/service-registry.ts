@@ -39,8 +39,8 @@ type AnyWatchHandlers = IServiceWatchHandlers<unknown>;
  * @example
  * ```typescript
  * const registry = new ServiceRegistry(logger);
- * registry.register('ai-assistant', aiService);
- * const ai = registry.get<IAiAssistantService>('ai-assistant');
+ * registry.register('user-groups', groupService);
+ * const groups = registry.get<IUserGroupService>('user-groups');
  * ```
  */
 export class ServiceRegistry implements IServiceRegistry {

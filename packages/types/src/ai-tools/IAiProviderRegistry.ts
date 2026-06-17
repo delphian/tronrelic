@@ -10,6 +10,8 @@
  * dashboard survive swapping the provider plugin.
  */
 
+import type { IAiProvider } from './IAiProvider.js';
+
 /** Serializable metadata an AI provider plugin reports about itself. */
 export interface IAiProviderInfo {
     /** Provider plugin manifest id (matches `aiProviderId` on invocation records). */
@@ -39,12 +41,15 @@ export interface IAiProviderInfo {
  */
 export interface IAiProviderRegistry {
     /**
-     * Register or replace a provider's metadata. Idempotent — a provider that
-     * re-registers (e.g. after a runtime re-enable) overwrites its prior entry.
+     * Register or replace a provider's metadata together with its executable
+     * instance. Idempotent — a provider that re-registers (e.g. after a runtime
+     * re-enable) overwrites its prior entry.
      *
      * @param info - The provider's self-reported metadata.
+     * @param instance - The provider's executable service, returned by
+     *   {@link IAiProviderRegistry.getActive} while this provider is active.
      */
-    registerProvider(info: IAiProviderInfo): void;
+    registerProvider(info: IAiProviderInfo, instance: IAiProvider): void;
 
     /**
      * Remove a provider's registration.
@@ -60,4 +65,14 @@ export interface IAiProviderRegistry {
      * @returns The provider metadata list.
      */
     listProviders(): IAiProviderInfo[];
+
+    /**
+     * The executable instance of the currently active provider, or `null` when
+     * no provider is installed or active. This is the provider-neutral way for
+     * core surfaces and consumer plugins to actuate "whatever AI provider is
+     * installed" without binding to a vendor service key like `'ai-assistant'`.
+     *
+     * @returns The active provider's executable instance, or `null`.
+     */
+    getActive(): IAiProvider | null;
 }

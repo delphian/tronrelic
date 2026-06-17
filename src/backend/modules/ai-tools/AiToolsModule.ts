@@ -33,6 +33,7 @@ import { ToolAuditStore } from './services/tool-audit-store.js';
 import { ToolApprovalQueue } from './services/tool-approval-queue.js';
 import { AiToolGovernor } from './services/ai-tool-governor.js';
 import { AiProviderRegistry } from './services/ai-provider-registry.js';
+import { AiQueryHistoryService } from './services/ai-query-history.service.js';
 import { CurationQueue } from './services/curation-queue.js';
 import { CurationService } from './services/curation-service.js';
 import { AiToolsController } from './api/ai-tools.controller.js';
@@ -105,6 +106,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private curation!: CurationService;
     private governor!: AiToolGovernor;
     private providerRegistry!: AiProviderRegistry;
+    private queryHistory!: AiQueryHistoryService;
     private controller!: AiToolsController;
 
     private readonly logger = logger.child({ module: 'ai-tools' });
@@ -149,7 +151,11 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
 
         this.governor = new AiToolGovernor(this.logger, this.registry, this.policy, this.audit, this.approvals, this.hookRegistry);
         this.providerRegistry = new AiProviderRegistry(this.logger);
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation);
+
+        this.queryHistory = new AiQueryHistoryService(this.logger, this.database);
+        await this.queryHistory.ensureIndexes();
+
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation, this.queryHistory);
 
         this.logger.info('ai-tools module initialized');
     }

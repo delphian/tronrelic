@@ -8,6 +8,8 @@
 
 export { AiToolsModule, AI_TOOLS_SERVICE, AI_TOOL_GOVERNOR_SERVICE, AI_PROVIDERS_SERVICE, CURATION_SERVICE, AUDIT_PRUNE_JOB } from './AiToolsModule.js';
 export { AiProviderRegistry } from './services/ai-provider-registry.js';
+export { AiQueryHistoryService } from './services/ai-query-history.service.js';
+export type { IAiQueryHistoryQuery, IAiQueryHistoryPage } from './services/ai-query-history.service.js';
 export { CurationQueue } from './services/curation-queue.js';
 export { CurationService, CURATIONS_CHANGED_EVENT } from './services/curation-service.js';
 export type { IAiToolsModuleDependencies } from './AiToolsModule.js';

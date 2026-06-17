@@ -30,6 +30,12 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
     router.get('/trifecta', controller.getTrifecta);
     router.get('/providers', controller.listProviders);
 
+    router.post('/query', controller.query);
+    router.post('/query/:queryId/cancel', controller.cancelQuery);
+    router.get('/query/history', controller.listQueryHistory);
+    router.get('/query/models', controller.listQueryModels);
+    router.get('/query/conversations/:conversationId', controller.getConversationHistory);
+
     router.get('/activity', controller.listActivity);
     router.get('/activity/:id', controller.getActivity);
 

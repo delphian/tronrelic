@@ -1,14 +1,14 @@
 /**
  * @file IAiQueryResult.ts
  *
- * Result of a non-streaming AI query executed through
- * {@link IAiAssistantService.query} or {@link IAiAssistantService.ask}.
+ * Result of an AI query executed through {@link IAiProvider.query},
+ * {@link IAiProvider.ask}, or {@link IAiProvider.queryStream}.
  */
 
 /**
  * The complete result of a programmatic AI query.
  *
- * Returned by both `query()` and `ask()` on `IAiAssistantService`.
+ * Returned by `query()`, `ask()`, and `queryStream()` on `IAiProvider`.
  * Token usage is summed across all tool-use rounds when tools are
  * invoked during the conversation.
  */

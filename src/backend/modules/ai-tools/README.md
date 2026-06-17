@@ -10,12 +10,12 @@ Provider-agnostic governance for AI tools — the registry every tool registers 
 | Module class | `src/backend/modules/ai-tools/AiToolsModule.ts` |
 | Service registry names | `'ai-tools'` → `IAiToolRegistry`, `'ai-tool-governor'` → `IAiToolGovernor`, `'ai-providers'` → `IAiProviderRegistry`, `'curation'` → `ICurationService` |
 | Admin API base | `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`) |
-| Admin dashboard | `/system/ai-tools` (Registry · Activity · Approvals · Curation · Policy tabs + trifecta banner + provider panel) |
-| Types package | `@delphian/tronrelic-types` → `IAiTool`, `IAiToolCapability`, `IAiToolRegistry`, `IAiToolGovernor`, `IAiProviderRegistry`, `ITrifectaStatus`, `IToolInvocation{Context,Result,Record}`, `IToolPolicy`, `IAiToolInvokeContext` |
-| Owned collections | `module_ai-tools_invocations`, `module_ai-tools_approvals`, `module_ai-tools_curations` |
+| Admin dashboard | `/system/ai-tools` (Registry · Query · Activity · Approvals · Curation · Policy tabs + trifecta banner + provider panel) |
+| Types package | `@delphian/tronrelic-types` → `IAiTool`, `IAiToolCapability`, `IAiToolRegistry`, `IAiToolGovernor`, `IAiProvider`, `IAiProviderRegistry`, `IAiStreamChunk`, `IAiQueryRecord`, `AiQueryMode`, `ITrifectaStatus`, `IToolInvocation{Context,Result,Record}`, `IToolPolicy`, `IAiToolInvokeContext` |
+| Owned collections | `module_ai-tools_invocations`, `module_ai-tools_approvals`, `module_ai-tools_curations`, `module_ai-tools_query_history` |
 | KV keys (core `_kv`) | `ai-tools:tool-states`, `ai-tools:policy-overrides` |
 | Hook seams | `ai.toolInvoke` (series, veto/hold), `ai.toolInvoked` (observer, audit fan-out) |
-| WebSocket signals | `ai-tools:activity`, `ai-tools:approvals-changed`, `ai-tools:curations-changed` (timestamp-only refetch cues; data stays behind the gated REST feed) |
+| WebSocket signals | `ai-tools:activity`, `ai-tools:approvals-changed`, `ai-tools:curations-changed` (timestamp-only refetch cues; data stays behind the gated REST feed); `ai-tools:query-stream` (`IAiStreamChunk`, **global broadcast** keyed by `queryId` — client filters) |
 | Scheduler jobs | `ai-tools:prune-audit` (daily 04:00) — range-deletes `module_ai-tools_invocations` past the 90-day window; registered only when a scheduler is injected |
 | Bootstrap order | Inits/runs alongside the other modules, before `loadPlugins` |
 | Standard | [system-ai-tools.md](../../../../docs/system/system-ai-tools.md) |
@@ -36,7 +36,9 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 | `services/tool-approval-queue.ts` | `module_ai-tools_approvals` — park/list/resolve held invocations |
 | `services/curation-queue.ts` | `module_ai-tools_curations` — persist/list/decide/edit held envelopes |
 | `services/curation-service.ts` | `'curation'` → `ICurationService`: type registry + hold/approve/reject/edit orchestration |
-| `api/ai-tools.controller.ts` · `api/ai-tools.router.ts` | Admin REST surface |
+| `services/ai-provider-registry.ts` | `'ai-providers'` → `IAiProviderRegistry`: provider metadata + executable instance; `getActive()` |
+| `services/ai-query-history.service.ts` | `module_ai-tools_query_history` writes/queries for the Query tab (`IAiQueryRecord`) |
+| `api/ai-tools.controller.ts` · `api/ai-tools.router.ts` | Admin REST surface (governance + the `/query*` query backend) |
 
 ## The Governed Pipeline
 
@@ -69,7 +71,7 @@ The AI provider plugin consumes this. `invoke(name, input, ctx)` returns `IToolI
 
 ### `'ai-providers'` → `IAiProviderRegistry`
 
-The installed AI provider plugin registers itself here (`registerProvider`/`unregisterProvider`/`listProviders`) so the Provider panel stays provider-agnostic — `trp-ai-assistant` registers on enable and unregisters on disable.
+The installed AI provider plugin registers itself here, handing the registry both its metadata and its **executable `IAiProvider` instance**: `registerProvider(info, instance)` / `unregisterProvider(id)` / `listProviders()` / `getActive()`. `listProviders()` backs the provider-agnostic Provider panel; `getActive()` returns the active provider's executable instance (or `null`) and is the provider-neutral way for core surfaces (the query backend) and consumer plugins to actuate AI — there is no vendor service key. `trp-ai-assistant` registers on enable and unregisters on disable.
 
 ### `'curation'` → `ICurationService`
 
@@ -85,6 +87,11 @@ All under `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`).
 | PATCH | `/tools/:name` | Toggle enabled (`{ enabled }`) |
 | GET | `/trifecta` | Lethal-trifecta status over the enabled set (`present` + tool names per leg) |
 | GET | `/providers` | Installed AI provider plugins (Provider panel) |
+| POST | `/query` | Run a query against `getActive()`. Streaming by default (requires `queryId`; chunks arrive over WebSocket, 200 returns immediately); non-streaming when body `stream: false` (awaits and returns `result`). 503 when no active provider |
+| POST | `/query/:queryId/cancel` | Abort an in-flight streaming query (`provider.cancel(queryId)`) |
+| GET | `/query/history` | Paged query history, newest first (`limit`, `offset`) |
+| GET | `/query/conversations/:conversationId` | One conversation's turns, oldest first (Query tab "open in chat") |
+| GET | `/query/models` | Available models from the active provider |
 | GET | `/activity` | Invocation audit feed (filters: `toolName`, `status`, `triggerPath`, `providerId`, `aiProviderId`, `limit`, `offset`) |
 | GET | `/activity/:id` | One invocation record |
 | GET | `/approvals` | Pending held invocations |
@@ -97,13 +104,21 @@ All under `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`).
 | PATCH | `/curations/:id` | Apply an operator inline edit (`{ body }`) via the type's `applyEdit` |
 | POST | `/curations/:id/approve` · `/curations/:id/reject` | Decide a held item (404 not-pending · 409 owner-unavailable) |
 
+## Query Backend
+
+A provider-neutral chat surface owned by core, not by any provider plugin. The `/query*` routes resolve the active provider via `IAiProviderRegistry.getActive()` and persist every turn, so the `/system/ai-tools` **Query tab** (multi-turn chat, history with open-in-chat, model picker, streaming + non-streaming) survives a provider swap. There is no batch mode here — batch stays a provider concern.
+
+Streaming is fire-and-forget: `POST /query` (default) requires a client-generated `queryId`, fires `provider.queryStream(opts, onChunk)`, returns 200 immediately, and appends an `IAiQueryRecord` when the stream settles. Each chunk reaches the browser as one **global** WebSocket broadcast of event `ai-tools:query-stream` carrying an `IAiStreamChunk` (with `queryId`); the client filters by its own `queryId`. Non-streaming (`stream: false`) awaits `provider.query` and returns the result inline. Both paths record history; the persisted `mode` is `'stream'` or `'programmatic'` (`AiQueryMode`).
+
+History lives in `module_ai-tools_query_history` (`IAiQueryRecord`), indexed unique `{ id }`, descending `{ createdAt }`, and sparse `{ conversationId, createdAt }` for oldest-first thread reads. Turns sharing a `conversationId` form one chat.
+
 ## Hook Seams
 
 Declared in `src/backend/hooks/registry.ts`. `ai.toolInvoke` (series, `IAiToolInvokeContext`) fires before execution — throw `HookAbortError` to block; lets a compliance or lethal-trifecta plugin veto without forking the provider. `ai.toolInvoked` (observer, `IToolInvocationRecord`) fires after, for audit fan-out and alerting. Both surface on `/system/hooks`.
 
 ## Lifecycle Obligations
 
-`init()` constructs the registry, policy engine, audit store, approval queue, curation queue + service, governor, and provider registry; loads persisted tool-states and policy overrides; ensures the collections' indexes (the collections are new, so index creation here is correct rather than a migration); and injects the curation binding resolver into the policy engine (`policy.setCurationResolver(curation.hasType)`). `run()` mounts the admin router, registers `'ai-tools'` / `'ai-tool-governor'` / `'ai-providers'` / `'curation'`, wires the governor's and curation service's broadcast sinks to `WebSocketService`, registers the daily `ai-tools:prune-audit` retention job (only when a scheduler is injected), and registers the `/system/ai-tools` admin nav item under the System container. Errors in either phase fail the boot — there is no degraded mode.
+`init()` constructs the registry, policy engine, audit store, approval queue, curation queue + service, governor, provider registry, and query-history service; loads persisted tool-states and policy overrides; ensures every collection's indexes (the collections are new, so index creation here is correct rather than a migration — including `module_ai-tools_query_history`); and injects the curation binding resolver into the policy engine (`policy.setCurationResolver(curation.hasType)`). `run()` mounts the admin router, registers `'ai-tools'` / `'ai-tool-governor'` / `'ai-providers'` / `'curation'`, wires the governor's and curation service's broadcast sinks to `WebSocketService`, registers the daily `ai-tools:prune-audit` retention job (only when a scheduler is injected), and registers the `/system/ai-tools` admin nav item under the System container. Errors in either phase fail the boot — there is no degraded mode.
 
 ## Related
 
