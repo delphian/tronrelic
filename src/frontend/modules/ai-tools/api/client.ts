@@ -16,6 +16,10 @@ import type {
     IToolInvocationContext,
     IToolPolicy,
     IAiProviderInfo,
+    IAiConversationMessage,
+    IAiQueryRecord,
+    IAiQueryResult,
+    IModelInfo,
     ToolInvocationStatus,
     ToolTriggerPath
 } from '@/types';
@@ -81,6 +85,23 @@ export interface ICurationItemView {
     createdAt: string;
     decidedAt?: string;
     decidedBy?: string;
+}
+
+/**
+ * One page of AI query-history records plus the unpaginated total. Mirrors the
+ * backend `IAiQueryHistoryPage` exactly — `GET /query/history` returns
+ * `{ records, total }` with dates as ISO strings, so this must not rename or add
+ * fields the server never sends.
+ */
+export interface IAiQueryHistoryPage {
+    records: IAiQueryRecord[];
+    total: number;
+}
+
+/** Pagination for the query-history listing. */
+export interface IQueryHistoryQuery {
+    limit?: number;
+    offset?: number;
 }
 
 /** Per-tool policy overrides plus usage tallies, as returned by `GET /policy`. */
@@ -300,4 +321,104 @@ export async function setPolicy(name: string, policy: IToolPolicy): Promise<void
  */
 export async function clearPolicy(name: string): Promise<void> {
     await parse(await fetch(`${BASE}/policy/${encodeURIComponent(name)}`, { method: 'DELETE' }), 'clear policy override');
+}
+
+/**
+ * Body for a `POST /query`. A streaming request (the default) carries a
+ * client-minted `queryId` whose stream chunks arrive over WebSocket; the prior
+ * turns ride in `messages` and `conversationId` groups the multi-turn chat. A
+ * non-streaming request sets `stream: false` and resolves to a result inline.
+ */
+export interface IQueryRequest {
+    prompt: string;
+    queryId?: string;
+    model?: string;
+    stream?: boolean;
+    messages?: IAiConversationMessage[];
+    conversationId?: string;
+}
+
+/**
+ * The acknowledgement for a streaming `POST /query`. The HTTP call returns
+ * immediately with the echoed `queryId`; the response itself streams as
+ * `ai-tools:query-stream` WebSocket chunks the caller filters by that id.
+ */
+export interface IStreamAck {
+    success: true;
+    queryId: string;
+}
+
+/**
+ * Submit an AI query against the active provider. Streaming (the default) resolves
+ * to a `{ success, queryId }` acknowledgement and the answer arrives over the
+ * `ai-tools:query-stream` WebSocket event; non-streaming (`stream: false`)
+ * resolves to `{ result }`. Callers narrow on whichever they requested.
+ *
+ * @param request - The query body (prompt plus optional streaming/chat fields).
+ * @returns The streaming acknowledgement, or the inline result for `stream: false`.
+ */
+export async function submitQuery(request: IQueryRequest): Promise<IStreamAck | { result: IAiQueryResult }> {
+    return parse<IStreamAck | { result: IAiQueryResult }>(await fetch(`${BASE}/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request)
+    }), 'submit query');
+}
+
+/**
+ * Cancel an in-flight streaming query. Best-effort — the stream still delivers
+ * its own terminal chunk regardless, so callers need not act on the result.
+ *
+ * @param queryId - The streaming query id to abort.
+ * @returns Whether the active provider acknowledged the cancellation.
+ */
+export async function cancelQuery(queryId: string): Promise<boolean> {
+    const data = await parse<{ canceled: boolean }>(
+        await fetch(`${BASE}/query/${encodeURIComponent(queryId)}/cancel`, { method: 'POST' }),
+        'cancel query'
+    );
+    return data.canceled;
+}
+
+/**
+ * Page through the core query history, newest first.
+ *
+ * @param query - Pagination options.
+ * @returns A page of records plus the matching total.
+ */
+export async function getQueryHistory(query: IQueryHistoryQuery = {}): Promise<IAiQueryHistoryPage> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+        if (value !== undefined) {
+            params.set(key, String(value));
+        }
+    }
+    const qs = params.toString();
+    return parse<IAiQueryHistoryPage>(await fetch(`${BASE}/query/history${qs ? `?${qs}` : ''}`), 'load query history');
+}
+
+/**
+ * Fetch every turn of one conversation, oldest first, so the Query tab can
+ * reopen a multi-turn chat in the order it was spoken.
+ *
+ * @param conversationId - The id grouping the conversation's turns.
+ * @returns The conversation's records in chronological order.
+ */
+export async function getConversation(conversationId: string): Promise<IAiQueryRecord[]> {
+    const data = await parse<{ records: IAiQueryRecord[] }>(
+        await fetch(`${BASE}/query/conversations/${encodeURIComponent(conversationId)}`),
+        'load conversation'
+    );
+    return data.records;
+}
+
+/**
+ * List the active provider's available models for the model picker. Resolves to
+ * an empty array when no provider is active, so the picker simply has no choices.
+ *
+ * @returns The available model metadata.
+ */
+export async function getQueryModels(): Promise<IModelInfo[]> {
+    const data = await parse<{ models: IModelInfo[] }>(await fetch(`${BASE}/query/models`), 'load query models');
+    return data.models;
 }

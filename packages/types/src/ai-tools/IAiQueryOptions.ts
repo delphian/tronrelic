@@ -9,8 +9,8 @@
 import type { IAiConversationMessage } from './IAiConversationMessage.js';
 
 /**
- * Options for a non-streaming AI query submitted through
- * {@link IAiAssistantService.query}.
+ * Options for an AI query submitted through {@link IAiProvider.query} or
+ * streamed through {@link IAiProvider.queryStream}.
  *
  * Only `prompt` is required. Omitted parameters resolve from the
  * AI Assistant's stored config so external consumers do not need to

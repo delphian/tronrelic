@@ -82,11 +82,11 @@ async init(deps: IMyModuleDependencies): Promise<void> {
 
 // Module uses registry for optional plugin-provided services
 async handleRequest(req: Request, res: Response): Promise<void> {
-    const ai = this.serviceRegistry.get<IAiAssistantService>('ai-assistant');
+    const ai = this.serviceRegistry.get<IAiProviderRegistry>('ai-providers')?.getActive();
     if (ai) {
-        // Plugin service available — use it
+        // Active AI provider available — use it
     }
-    // Plugin service unavailable — proceed without it
+    // No provider installed — proceed without it
 }
 ```
 

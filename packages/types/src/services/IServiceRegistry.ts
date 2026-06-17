@@ -59,13 +59,13 @@ export type ServiceWatchDisposer = () => void;
  *
  * @example
  * ```typescript
- * // Plugin registers a service during init()
- * context.services.register('ai-assistant', myAiService);
+ * // A module registers a service during init()
+ * context.services.register('user-groups', groupService);
  *
  * // Another plugin retrieves it
- * const ai = context.services.get<IAiAssistantService>('ai-assistant');
- * if (ai) {
- *     const response = await ai.submitPrompt('Analyze this transaction');
+ * const groups = context.services.get<IUserGroupService>('user-groups');
+ * if (groups) {
+ *     const admin = await groups.isAdmin(userId);
  * }
  * ```
  */
@@ -167,9 +167,9 @@ export interface IServiceRegistry {
      * @example
      * ```typescript
      * // In a plugin's init() hook
-     * const unwatch = context.services.watch<IAiAssistantService>('ai-assistant', {
-     *     onAvailable: (ai) => ai.registerTool(myToolDefinition),
-     *     onUnavailable: () => context.logger.info('ai-assistant gone — tool unregistered')
+     * const unwatch = context.services.watch<IAiToolRegistry>('ai-tools', {
+     *     onAvailable: (registry) => registry.registerTool(myToolDefinition, myManifest.id),
+     *     onUnavailable: () => context.logger.info('ai-tools gone — tool unregistered')
      * });
      *
      * // In the plugin's disable() hook

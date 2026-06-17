@@ -1,0 +1,531 @@
+/**
+ * Styles for the AI Tools Query tab — a multi-turn chat surface on the
+ * core /system/ai-tools dashboard. Visual surfaces come from Card / Button /
+ * Badge primitives; this module adds the chat panel layout, the scrolling
+ * transcript, the turn bubbles, and the composer pinned at the bottom.
+ *
+ * All responsive behavior is driven by container queries on `.query` so the
+ * tab adapts whether the dashboard renders full-width or in a narrower panel.
+ */
+
+@use '../../../breakpoints' as *;
+
+@mixin focus-outline {
+    outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow);
+}
+
+/*
+ * Tab-scoped semantic tokens. Defined here (not in core semantic-tokens.scss)
+ * because they describe sizing contracts unique to this chat surface: the chat
+ * panel's fixed resting height (so it does not grow as the conversation fills —
+ * the transcript scrolls within) and the composer textarea's minimum height.
+ * Component code references these tokens; they swap by breakpoint instead of
+ * being redefined.
+ */
+.query {
+    --query-chat-height-sm: 22rem;
+    --query-chat-height-md: 32rem;
+    --query-composer-min-height: 4.5rem;
+
+    container-type: inline-size;
+    container-name: ai-query;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+/* Active-provider line above the chat panel. */
+.provider_line {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.provider_label {
+    color: var(--color-text);
+    font-weight: var(--font-weight-medium);
+}
+
+/*
+ * ===========================================================================
+ * CHAT TRANSCRIPT CARD — header, scrolling transcript, composer footer.
+ * ===========================================================================
+ */
+.chat_card {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+    /* Fixed resting height so the panel does not grow as the conversation
+       fills — the transcript scrolls within and the composer stays on screen.
+       resize: vertical lets the admin drag it taller. */
+    height: var(--query-chat-height-sm);
+    resize: vertical;
+}
+
+@container ai-query (min-width: #{$breakpoint-mobile-md}) {
+    .chat_card {
+        height: var(--query-chat-height-md);
+    }
+}
+
+.chat_header {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    padding: var(--padding-sm) var(--card-padding-sm);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    background: var(--color-surface-muted);
+}
+
+.chat_header_icon {
+    color: var(--color-primary);
+}
+
+.chat_header_label {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.chat_header_actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.streaming_indicator {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-primary);
+}
+
+.streaming_dot {
+    width: var(--gap-xs);
+    height: var(--gap-xs);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: var(--opacity-100); }
+    50% { opacity: var(--opacity-35); }
+}
+
+/* Scrolling transcript region. */
+.transcript {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    padding: var(--card-padding-sm);
+}
+
+/* Top-level send error (network failure before a turn could stream). */
+.chat_error {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    padding: var(--padding-xs) var(--padding-sm);
+    border: var(--border-width-thin) solid var(--alert-danger-border);
+    background: var(--alert-danger-background);
+    border-radius: var(--radius-sm);
+    color: var(--alert-danger-color);
+    font-size: var(--font-size-caption);
+}
+
+.chat_error_icon {
+    color: var(--color-danger);
+    flex-shrink: 0;
+}
+
+/*
+ * ===========================================================================
+ * TRANSCRIPT TURNS — avatar column + main column (role, content, usage/error).
+ * ===========================================================================
+ */
+.turn {
+    display: flex;
+    gap: var(--gap-sm);
+    align-items: flex-start;
+}
+
+.turn_avatar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--avatar-size-sm);
+    height: var(--avatar-size-sm);
+    border-radius: var(--radius-full);
+    color: var(--color-text-muted);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+}
+
+.turn_assistant .turn_avatar {
+    color: var(--color-primary);
+    background: var(--color-primary-alpha-15);
+    border-color: var(--color-primary-alpha-38);
+}
+
+.turn_main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.turn_header {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    min-height: var(--icon-size-md);
+}
+
+.turn_role {
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+}
+
+.turn_copy {
+    margin-left: auto;
+}
+
+/* User message: plain text on a muted surface, wrapping long input safely. */
+.turn_text {
+    padding: var(--padding-sm);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    line-height: var(--line-height-relaxed);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.turn_usage {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.turn_error {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-danger);
+}
+
+/* Assistant message: rendered markdown. */
+.turn_markdown {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    line-height: var(--line-height-relaxed);
+    overflow-wrap: anywhere;
+
+    h1, h2, h3, h4, h5, h6 {
+        margin: var(--gap-sm) 0 var(--gap-xs) 0;
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-text);
+
+        &:first-child {
+            margin-top: 0;
+        }
+    }
+
+    h1 { font-size: var(--font-size-heading-md); }
+    h2 { font-size: var(--font-size-heading-sm); }
+    h3 { font-size: var(--font-size-body-lg); }
+
+    p {
+        margin: 0 0 var(--gap-xs) 0;
+
+        &:last-child {
+            margin-bottom: 0;
+        }
+    }
+
+    ul, ol {
+        margin: 0 0 var(--gap-xs) 0;
+        padding-left: var(--padding-md);
+    }
+
+    li {
+        margin-bottom: var(--gap-2xs);
+    }
+
+    code {
+        font-family: var(--font-mono);
+        font-size: var(--font-size-caption);
+        background: var(--color-surface-muted);
+        padding: var(--padding-2xs) var(--padding-xs);
+        border-radius: var(--radius-sm);
+    }
+
+    pre {
+        margin: 0 0 var(--gap-xs) 0;
+        padding: var(--padding-xs);
+        background: var(--color-surface);
+        border: var(--border-width-thin) solid var(--color-border);
+        border-radius: var(--radius-sm);
+        overflow-x: auto;
+
+        code {
+            background: none;
+            padding: 0;
+            font-size: var(--font-size-caption);
+        }
+    }
+
+    blockquote {
+        margin: 0 0 var(--gap-xs) 0;
+        padding: var(--padding-xs) var(--padding-sm);
+        border-left: var(--border-width-thick) solid var(--color-primary);
+        color: var(--color-text-muted);
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 0 0 var(--gap-xs) 0;
+        font-size: var(--font-size-caption);
+    }
+
+    th, td {
+        padding: var(--padding-xs) var(--padding-xs);
+        border: var(--border-width-thin) solid var(--color-border);
+        text-align: left;
+    }
+
+    th {
+        background: var(--color-surface-muted);
+        font-weight: var(--font-weight-semibold);
+    }
+
+    strong {
+        font-weight: var(--font-weight-semibold);
+    }
+
+    a {
+        color: var(--color-primary);
+        text-decoration: none;
+
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+
+    hr {
+        border: none;
+        border-top: var(--border-width-thin) solid var(--color-border);
+        margin: var(--gap-sm) 0;
+    }
+}
+
+/* Blinking caret appended to a streaming assistant turn. */
+.cursor {
+    display: inline-block;
+    width: var(--border-width-medium);
+    height: 1.1em;
+    background: var(--color-primary);
+    margin-left: var(--border-width-thin);
+    vertical-align: text-bottom;
+    animation: blink 0.8s step-end infinite;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: var(--opacity-100); }
+    50% { opacity: var(--opacity-0); }
+}
+
+.empty_state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--gap-sm);
+    padding: var(--card-padding-md);
+    flex: 1;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    text-align: center;
+}
+
+.empty_state_icon {
+    opacity: var(--opacity-35);
+}
+
+/*
+ * ===========================================================================
+ * COMPOSER FOOTER — textarea + toolbar pinned at the bottom of the chat panel.
+ * ===========================================================================
+ */
+.composer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    padding: var(--card-padding-sm);
+    border-top: var(--border-width-thin) solid var(--color-border);
+    background: var(--color-surface-muted);
+    flex-shrink: 0;
+}
+
+.composer_input {
+    width: 100%;
+    padding: var(--input-padding);
+    background: var(--input-background);
+    border: var(--input-border);
+    border-radius: var(--input-border-radius);
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+    font-family: inherit;
+    resize: none;
+    overflow-y: auto;
+    min-height: var(--query-composer-min-height);
+    max-height: 40vh;
+    transition: var(--input-transition);
+
+    &:focus-visible {
+        outline: none;
+        border-color: var(--input-border-focus);
+        box-shadow: var(--input-shadow-focus);
+    }
+
+    &::placeholder {
+        color: var(--color-text-muted);
+    }
+
+    &:disabled {
+        opacity: var(--opacity-60);
+    }
+}
+
+.composer_toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
+}
+
+.composer_send {
+    margin-left: auto;
+}
+
+@container ai-query (max-width: #{$breakpoint-mobile-md}) {
+    .composer_send {
+        margin-left: 0;
+        width: 100%;
+    }
+}
+
+/* Per-query model override dropdown, matched to the dashboard filter selects. */
+.model_select {
+    background: var(--input-background);
+    color: var(--color-text);
+    border: var(--input-border);
+    border-radius: var(--input-border-radius);
+    padding: var(--input-padding-sm);
+    font-size: var(--font-size-body-sm);
+    max-width: var(--max-width-xs);
+
+    &:focus-visible {
+        @include focus-outline;
+    }
+
+    option {
+        background: var(--color-surface-accent);
+        color: var(--color-text);
+    }
+}
+
+/*
+ * ===========================================================================
+ * HISTORY — past conversations grouped by conversationId.
+ * ===========================================================================
+ */
+.history_header {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+.history_title {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.history_count {
+    margin-left: auto;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.history_list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.history_item {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    padding: var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    flex-wrap: wrap;
+}
+
+.history_item_main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.history_item_prompt {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.history_item_meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}

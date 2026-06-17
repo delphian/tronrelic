@@ -120,12 +120,12 @@ export interface IPluginContext {
      * @example
      * ```typescript
      * // Register a service
-     * context.services.register('ai-assistant', myService);
+     * context.services.register('user-groups', groupService);
      *
      * // Consume a service (handle undefined — provider may be disabled)
-     * const ai = context.services.get<IAiAssistantService>('ai-assistant');
-     * if (ai) {
-     *     await ai.submitPrompt('Analyze this data');
+     * const groups = context.services.get<IUserGroupService>('user-groups');
+     * if (groups) {
+     *     await groups.isAdmin(userId);
      * }
      * ```
      */
