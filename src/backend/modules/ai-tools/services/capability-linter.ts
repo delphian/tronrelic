@@ -128,12 +128,15 @@ export function lintToolCapability(tool: IAiTool): ICapabilityLintFinding[] {
         });
     }
 
-    // A paid tool the ceiling cannot charge escapes cost enforcement entirely.
+    // A paid tool the ceiling cannot charge escapes cost enforcement entirely —
+    // an injected or looping model could drain the API budget uncapped. Reject at
+    // registration so a money-spending tool cannot ship without the declared
+    // per-call cost the cost ceiling needs to meter it.
     if (cap.spendsMoney === true && (typeof cap.costPerCallUsd !== 'number' || !Number.isFinite(cap.costPerCallUsd) || cap.costPerCallUsd < 0)) {
         findings.push({
-            severity: 'warn',
+            severity: 'error',
             message: `AI tool "${tool.name}" declares spendsMoney but has an invalid or missing costPerCallUsd; `
-                + 'cost-ceiling enforcement cannot charge this tool until it declares a valid non-negative per-call cost'
+                + 'declare a valid non-negative per-call cost so the cost ceiling can meter this tool'
         });
     }
 
