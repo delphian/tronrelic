@@ -234,6 +234,21 @@ describe('AiToolsModule', () => {
             expect(info.find(t => t.name === 'test-read')?.enabled).toBe(true);
             expect(info.find(t => t.name === 'test-external')?.enabled).toBe(false);
         });
+
+        it('rejects a spendsMoney tool that declares no chargeable cost', () => {
+            // The cost ceiling meters against the declared costPerCallUsd; a paid
+            // tool without one would register unmetered. Registration must fail
+            // closed so a money-spending tool cannot ship past the cost cap.
+            const registry = module.getRegistry();
+            expect(() => registry.registerTool(paidTool(undefined), 'test')).toThrow(/costPerCallUsd/);
+            expect(registry.getTool('paid-gen')).toBeUndefined();
+        });
+
+        it('registers a spendsMoney tool that declares a valid cost', () => {
+            const registry = module.getRegistry();
+            registry.registerTool(paidTool(0.04), 'test');
+            expect(registry.getTool('paid-gen')).toBeDefined();
+        });
     });
 
     describe('governor', () => {
@@ -709,9 +724,9 @@ describe('capability lint (lintToolCapability)', () => {
         expect(findings).toContainEqual({ severity: 'error', message: expect.stringContaining('curationTypeId') });
     });
 
-    it('warns on a paid tool with no chargeable cost', () => {
+    it('rejects a paid tool with no chargeable cost', () => {
         const findings = lintToolCapability(tool('generates an image', { sideEffect: 'external', reversible: true, sensitivity: 'public', spendsMoney: true }));
-        expect(findings).toContainEqual({ severity: 'warn', message: expect.stringContaining('costPerCallUsd') });
+        expect(findings).toContainEqual({ severity: 'error', message: expect.stringContaining('costPerCallUsd') });
     });
 
     it('warns on a cost declared without spendsMoney', () => {
@@ -756,7 +771,7 @@ describe('capability lint (lintToolCapability)', () => {
 
     it('rejects a NaN costPerCallUsd as an invalid cost', () => {
         const findings = lintToolCapability(tool('generates an image', { sideEffect: 'external', reversible: true, sensitivity: 'public', spendsMoney: true, costPerCallUsd: Number.NaN }));
-        expect(findings).toContainEqual({ severity: 'warn', message: expect.stringContaining('costPerCallUsd') });
+        expect(findings).toContainEqual({ severity: 'error', message: expect.stringContaining('costPerCallUsd') });
     });
 
     it('still nudges an untrusted-content source that declares no capability at all', () => {
