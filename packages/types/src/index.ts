@@ -50,7 +50,9 @@ export type { IBlockStats, IBlock, IBlockTransaction, IBlockTransactionParty, IB
 export type { IToolsService, IAddressConversionResult, IAddressValidationResult } from './tools/index.js';
 export type { IAiTool, IAiToolInputSchema, IAiConversationMessage, IAiProvider, IAiStreamChunk, IAiQueryRecord, AiQueryMode, IAiQueryOptions, IAiQueryResult, IModelInfo, ISavedPrompt } from './ai-tools/index.js';
 export { AI_TOOL_NAME_PATTERN } from './ai-tools/index.js';
+export { UNTRUSTED_CONTENT_NOTICE, UNTRUSTED_CONTENT_SYSTEM_CLAUSE, wrapUntrustedToolResult } from './ai-tools/index.js';
 export type {
+    IUntrustedToolResult,
     IAiToolCapability,
     AiToolSideEffect,
     AiToolSensitivity,

@@ -26,7 +26,7 @@ import type {
     IToolInvocationResult,
     ToolInvocationStatus
 } from '@/types';
-import { isHookAbortError } from '@/types';
+import { isHookAbortError, wrapUntrustedToolResult } from '@/types';
 import { HOOKS } from '../../../hooks/registry.js';
 import { runWithCurationAutoApprove } from './curation-auto-approve-context.js';
 import type { AiToolRegistry } from './ai-tool-registry.js';
@@ -334,7 +334,13 @@ export class AiToolGovernor implements IAiToolGovernor {
             const autoApprove = this.policy.shouldAutoApproveCuration(tool, ctx);
             const result = await runWithCurationAutoApprove(autoApprove, () => this.runWithTimeout(tool, input));
             status = 'ok';
-            content = result;
+            // Provenance separation: a tool that surfaces attacker-influenceable
+            // text is wrapped here, in the provider-neutral chokepoint, so every
+            // provider transport receives already-labeled data and physically
+            // cannot forward the raw payload to the model. Keyed off the declared
+            // capability core already owns — not provider cooperation. Only the
+            // handler's own output is untrusted; the digest records the raw value.
+            content = cap.surfacesUntrustedContent === true ? wrapUntrustedToolResult(result) : result;
             resultDigest = digestResult(result);
         } catch (caught: unknown) {
             status = 'error';

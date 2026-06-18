@@ -11,6 +11,8 @@
 
 export type { IAiTool, IAiToolInputSchema } from './IAiTool.js';
 export { AI_TOOL_NAME_PATTERN } from './IAiTool.js';
+export type { IUntrustedToolResult } from './untrusted-content.js';
+export { UNTRUSTED_CONTENT_NOTICE, UNTRUSTED_CONTENT_SYSTEM_CLAUSE, wrapUntrustedToolResult } from './untrusted-content.js';
 export type { IAiToolCapability, AiToolSideEffect, AiToolSensitivity } from './IAiToolCapability.js';
 export type { IToolPolicy, IToolPolicyDecision, ToolPolicyVerdict } from './IToolPolicy.js';
 export type { IToolInvocationContext, IToolInvocationActor, ToolTriggerPath } from './IToolInvocationContext.js';

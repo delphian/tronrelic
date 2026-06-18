@@ -21,6 +21,7 @@ import type {
     ISystemLogService
 } from '@/types';
 import { AI_TOOL_NAME_PATTERN } from '@/types';
+import { lintToolCapability } from './capability-linter.js';
 
 /** Core `_kv` key (manually namespaced) for persisted per-tool enabled state. */
 const TOOL_STATES_KEY = 'ai-tools:tool-states';
@@ -96,29 +97,21 @@ export class AiToolRegistry implements IAiToolRegistry {
         if (this.tools.has(tool.name)) {
             throw new Error(`Tool "${tool.name}" is already registered`);
         }
-        if (tool.capability?.curationTypeId && tool.capability.forcesCuratorReview !== true) {
-            // A curation binding is only meaningful for a tool that forces
-            // curator review — it is the verification of that claim. Declaring
-            // the binding without the claim is incoherent, so reject it rather
-            // than silently honour a binding that grants nothing.
-            throw new Error(
-                `AI tool "${tool.name}" declares curationTypeId "${tool.capability.curationTypeId}" ` +
-                'without forcesCuratorReview: true. Set forcesCuratorReview: true or remove curationTypeId.'
-            );
-        }
 
         const provider = providerId || UNKNOWN_PROVIDER;
-        if (!tool.capability) {
-            this.logger.warn(
-                { tool: tool.name, provider },
-                `AI tool "${tool.name}" registered without a capability classification; treating as read/internal`
-            );
-        } else if (tool.capability.spendsMoney === true && (typeof tool.capability.costPerCallUsd !== 'number' || tool.capability.costPerCallUsd < 0)) {
-            this.logger.warn(
-                { tool: tool.name, provider },
-                `AI tool "${tool.name}" declares spendsMoney but has an invalid or missing costPerCallUsd; ` +
-                'cost-ceiling enforcement cannot charge this tool until it declares a valid non-negative per-call cost'
-            );
+
+        // Lint the capability declaration once, at registration. An `error`
+        // finding (a self-contradictory declaration) blocks registration so the
+        // mistake fails loudly at boot; `warn` findings — likely
+        // misclassifications, including an undeclared untrusted-content source —
+        // are logged and the tool still registers.
+        const findings = lintToolCapability(tool);
+        const blocking = findings.find(finding => finding.severity === 'error');
+        if (blocking) {
+            throw new Error(blocking.message);
+        }
+        for (const finding of findings) {
+            this.logger.warn({ tool: tool.name, provider }, finding.message);
         }
 
         this.tools.set(tool.name, tool);

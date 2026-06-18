@@ -21,3 +21,5 @@ export type { IToolInvocationQuery, IToolInvocationPage } from './services/tool-
 export { ToolApprovalQueue } from './services/tool-approval-queue.js';
 export type { IToolApprovalRequest, ToolApprovalStatus } from './services/tool-approval-queue.js';
 export { detectTrifecta } from './services/trifecta-detector.js';
+export { lintToolCapability } from './services/capability-linter.js';
+export type { ICapabilityLintFinding, CapabilityLintSeverity } from './services/capability-linter.js';
