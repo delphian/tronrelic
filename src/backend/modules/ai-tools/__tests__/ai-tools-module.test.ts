@@ -12,6 +12,7 @@ import { HookAbortError } from '@/types';
 import type { IAiTool, IAiToolCapability, IAiToolInfo, ICurationType, IHookRegistry, IMenuService, ISchedulerService, ISystemLogService, IToolInvocationContext } from '@/types';
 import { AiToolsModule, AUDIT_PRUNE_JOB, CurationQueue, CurationService, ToolApprovalQueue, detectTrifecta } from '../index.js';
 import { ToolPolicyEngine } from '../services/tool-policy-engine.js';
+import { runWithCurationAutoApprove, shouldAutoApproveCuration } from '../services/curation-auto-approve-context.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 
@@ -532,6 +533,32 @@ describe('AiToolsModule', () => {
             const released = await module.getGovernor().invoke('test-bound', {}, interactiveCtx);
             expect(released.status).toBe('ok');
             expect(onApprove).toHaveBeenCalledOnce();
+        });
+
+        it('clears the auto-approve scope once the governed execution settles, so a detached handler cannot auto-approve', async () => {
+            // Models the timeout race: the governed call (fn) settles while a
+            // handler continuation keeps running and only holds its effect
+            // afterward. The detached continuation shares the same async context,
+            // so it must observe the scope as no longer live.
+            let detachedSawAutoApprove: boolean | null = null;
+            let releaseDetached: (() => void) | null = null;
+            const detached = new Promise<void>((resolve) => { releaseDetached = resolve; });
+
+            await runWithCurationAutoApprove(true, async () => {
+                // Inside the live scope, auto-approve is in effect.
+                expect(shouldAutoApproveCuration()).toBe(true);
+                // A continuation that resolves only after fn returns — a handler
+                // that outran the governor's timeout.
+                void detached.then(() => { detachedSawAutoApprove = shouldAutoApproveCuration(); });
+                // fn settles now (as if runWithTimeout rejected on timeout).
+            });
+
+            // Now let the detached continuation run, after the governed call returned.
+            releaseDetached!();
+            await detached;
+            await Promise.resolve();
+
+            expect(detachedSawAutoApprove).toBe(false);
         });
 
         it('ignores auto-approve on autonomous paths — the effect falls back to a manual hold', async () => {
