@@ -244,6 +244,20 @@ describe('AiToolsModule', () => {
             expect(registry.getTool('paid-gen')).toBeUndefined();
         });
 
+        it('rejects a spendsMoney tool that declares a zero cost', () => {
+            // $0 per call is as unmetered as a missing cost — the ceiling never
+            // trips — so it must fail closed exactly like the missing case.
+            const registry = module.getRegistry();
+            expect(() => registry.registerTool(paidTool(0), 'test')).toThrow(/costPerCallUsd/);
+            expect(registry.getTool('paid-gen')).toBeUndefined();
+        });
+
+        it('rejects a spendsMoney tool that declares a negative cost', () => {
+            const registry = module.getRegistry();
+            expect(() => registry.registerTool(paidTool(-0.01), 'test')).toThrow(/costPerCallUsd/);
+            expect(registry.getTool('paid-gen')).toBeUndefined();
+        });
+
         it('registers a spendsMoney tool that declares a valid cost', () => {
             const registry = module.getRegistry();
             registry.registerTool(paidTool(0.04), 'test');
@@ -771,6 +785,16 @@ describe('capability lint (lintToolCapability)', () => {
 
     it('rejects a NaN costPerCallUsd as an invalid cost', () => {
         const findings = lintToolCapability(tool('generates an image', { sideEffect: 'external', reversible: true, sensitivity: 'public', spendsMoney: true, costPerCallUsd: Number.NaN }));
+        expect(findings).toContainEqual({ severity: 'error', message: expect.stringContaining('costPerCallUsd') });
+    });
+
+    it('rejects a zero costPerCallUsd as non-positive', () => {
+        const findings = lintToolCapability(tool('generates an image', { sideEffect: 'external', reversible: true, sensitivity: 'public', spendsMoney: true, costPerCallUsd: 0 }));
+        expect(findings).toContainEqual({ severity: 'error', message: expect.stringContaining('costPerCallUsd') });
+    });
+
+    it('rejects a negative costPerCallUsd as an invalid cost', () => {
+        const findings = lintToolCapability(tool('generates an image', { sideEffect: 'external', reversible: true, sensitivity: 'public', spendsMoney: true, costPerCallUsd: -0.01 }));
         expect(findings).toContainEqual({ severity: 'error', message: expect.stringContaining('costPerCallUsd') });
     });
 
