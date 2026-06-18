@@ -673,6 +673,32 @@ describe('capability lint (lintToolCapability)', () => {
         const findings = lintToolCapability(tool('Convert a TRON address between hex and base58.', { sideEffect: 'read', reversible: true, sensitivity: 'public' }));
         expect(findings).toHaveLength(0);
     });
+
+    it('does not false-positive on a substring of a hint (memory vs memo)', () => {
+        const findings = lintToolCapability(tool('Report current system memory usage.', { sideEffect: 'read', reversible: true, sensitivity: 'internal' }));
+        expect(findings).toHaveLength(0);
+    });
+
+    it('errors on an invalid sideEffect enum (a typo that would slip default-deny)', () => {
+        const findings = lintToolCapability(tool('does a thing', { sideEffect: 'externel', reversible: true, sensitivity: 'internal' } as unknown as IAiTool['capability']));
+        expect(findings).toContainEqual({ severity: 'error', message: expect.stringContaining('invalid sideEffect') });
+    });
+
+    it('errors on an invalid sensitivity enum (a typo that would skip redaction)', () => {
+        const findings = lintToolCapability(tool('does a thing', { sideEffect: 'read', reversible: true, sensitivity: 'secrect' } as unknown as IAiTool['capability']));
+        expect(findings).toContainEqual({ severity: 'error', message: expect.stringContaining('invalid sensitivity') });
+    });
+
+    it('rejects a NaN costPerCallUsd as an invalid cost', () => {
+        const findings = lintToolCapability(tool('generates an image', { sideEffect: 'external', reversible: true, sensitivity: 'public', spendsMoney: true, costPerCallUsd: Number.NaN }));
+        expect(findings).toContainEqual({ severity: 'warn', message: expect.stringContaining('costPerCallUsd') });
+    });
+
+    it('still nudges an untrusted-content source that declares no capability at all', () => {
+        const findings = lintToolCapability(tool('Read the latest on-chain memo for an address.', undefined));
+        expect(findings).toContainEqual({ severity: 'warn', message: expect.stringContaining('without a capability classification') });
+        expect(findings).toContainEqual({ severity: 'warn', message: expect.stringContaining('surfacesUntrustedContent') });
+    });
 });
 
 describe('CurationService', () => {

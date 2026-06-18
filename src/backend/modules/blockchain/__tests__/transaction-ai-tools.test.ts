@@ -37,10 +37,10 @@ describe('transaction AI tool', () => {
         handler = tool.handler;
     });
 
-    it('declares a read/internal capability', () => {
+    it('declares a read/internal capability that surfaces untrusted memo content', () => {
         const tool = buildTransactionTool(detailService as unknown as ITransactionDetailService);
 
-        expect(tool.capability).toEqual({ sideEffect: 'read', reversible: true, sensitivity: 'internal' });
+        expect(tool.capability).toEqual({ sideEffect: 'read', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true });
     });
 
     it('rejects a malformed txId before any lookup', async () => {

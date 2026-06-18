@@ -31,6 +31,12 @@ export interface ICapabilityLintFinding {
     message: string;
 }
 
+/** Allowed `sideEffect` values; anything else is a typo that degrades policy. */
+const VALID_SIDE_EFFECTS: ReadonlyArray<string> = ['read', 'write', 'external'];
+
+/** Allowed `sensitivity` values; an invalid one silently disables redaction. */
+const VALID_SENSITIVITIES: ReadonlyArray<string> = ['public', 'internal', 'secret'];
+
 /**
  * Description fragments that read like the tool returns text authored by an
  * external, attacker-influenceable party. Matching one is a *heuristic* signal —
@@ -51,7 +57,10 @@ const UNTRUSTED_CONTENT_HINTS = [
  */
 function matchUntrustedHint(description: string): string | null {
     const haystack = description.toLowerCase();
-    const hit = UNTRUSTED_CONTENT_HINTS.find(hint => haystack.includes(hint));
+    // Word-boundary match (with optional plural) so a hint like "memo" does not
+    // fire on "memory" or "cache memory". The hints are controlled constants with
+    // no regex metacharacters, so they need no escaping.
+    const hit = UNTRUSTED_CONTENT_HINTS.find(hint => new RegExp(`\\b${hint}(s|es)?\\b`, 'i').test(haystack));
     return hit ?? null;
 }
 
@@ -71,7 +80,41 @@ export function lintToolCapability(tool: IAiTool): ICapabilityLintFinding[] {
             severity: 'warn',
             message: `AI tool "${tool.name}" registered without a capability classification; treating as read/internal`
         });
+        // A capability-less tool defaults to read/internal with no
+        // surfacesUntrustedContent, so the governor never wraps its result and the
+        // trifecta detector misses the ingress leg. If its description reads like
+        // an untrusted source, that gap is most dangerous exactly here — flag it
+        // even though there is no capability object to inspect.
+        const hint = matchUntrustedHint(tool.description);
+        if (hint) {
+            findings.push({
+                severity: 'warn',
+                message: `AI tool "${tool.name}" declares no capability but its description mentions "${hint}". `
+                    + 'If it returns attacker-influenceable text, classify it with surfacesUntrustedContent: true '
+                    + 'so the governor wraps the result and the trifecta detector counts the injection leg.'
+            });
+        }
         return findings;
+    }
+
+    // An invalid enum is worse than a missing one: types are compile-time only
+    // and a plugin's capability arrives as runtime data, so a typo'd value
+    // silently degrades policy. An unrecognised sideEffect slips the default-deny
+    // (only `external` is gated), and an unrecognised sensitivity skips audit
+    // redaction (only `secret` redacts) — both fail open. Reject at registration.
+    if (!VALID_SIDE_EFFECTS.includes(cap.sideEffect)) {
+        findings.push({
+            severity: 'error',
+            message: `AI tool "${tool.name}" declares an invalid sideEffect "${cap.sideEffect}". `
+                + `Must be one of: ${VALID_SIDE_EFFECTS.join(', ')}.`
+        });
+    }
+    if (!VALID_SENSITIVITIES.includes(cap.sensitivity)) {
+        findings.push({
+            severity: 'error',
+            message: `AI tool "${tool.name}" declares an invalid sensitivity "${cap.sensitivity}". `
+                + `Must be one of: ${VALID_SENSITIVITIES.join(', ')}.`
+        });
     }
 
     // A curation binding only means something for a tool that forces curator
@@ -86,7 +129,7 @@ export function lintToolCapability(tool: IAiTool): ICapabilityLintFinding[] {
     }
 
     // A paid tool the ceiling cannot charge escapes cost enforcement entirely.
-    if (cap.spendsMoney === true && (typeof cap.costPerCallUsd !== 'number' || cap.costPerCallUsd < 0)) {
+    if (cap.spendsMoney === true && (typeof cap.costPerCallUsd !== 'number' || !Number.isFinite(cap.costPerCallUsd) || cap.costPerCallUsd < 0)) {
         findings.push({
             severity: 'warn',
             message: `AI tool "${tool.name}" declares spendsMoney but has an invalid or missing costPerCallUsd; `
