@@ -37,6 +37,7 @@ import { AiQueryHistoryService } from './services/ai-query-history.service.js';
 import { CurationQueue } from './services/curation-queue.js';
 import { CurationService } from './services/curation-service.js';
 import { SavedPromptsService } from './services/saved-prompts.service.js';
+import { PromptVariableRegistry } from './services/prompt-variable-registry.js';
 import { runScheduledPrompts } from './services/scheduled-prompts-runner.js';
 import { AiToolsController } from './api/ai-tools.controller.js';
 import { createAiToolsAdminRouter } from './api/ai-tools.router.js';
@@ -52,6 +53,9 @@ export const AI_PROVIDERS_SERVICE = 'ai-providers';
 
 /** Service-registry name for the central curation queue. */
 export const CURATION_SERVICE = 'curation';
+
+/** Service-registry name for the prompt-variable registry. */
+export const PROMPT_VARIABLES_SERVICE = 'prompt-variables';
 
 /** Scheduler job that prunes audit records past the retention window. */
 export const AUDIT_PRUNE_JOB = 'ai-tools:prune-audit';
@@ -120,6 +124,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private providerRegistry!: AiProviderRegistry;
     private queryHistory!: AiQueryHistoryService;
     private savedPrompts!: SavedPromptsService;
+    private promptVariables!: PromptVariableRegistry;
     private controller!: AiToolsController;
 
     private readonly logger = logger.child({ module: 'ai-tools' });
@@ -171,7 +176,10 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.savedPrompts = new SavedPromptsService(this.database);
         await this.savedPrompts.ensureIndexes();
 
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation, this.queryHistory, this.savedPrompts);
+        this.promptVariables = new PromptVariableRegistry(this.logger, this.database);
+        await this.promptVariables.load();
+
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation, this.queryHistory, this.savedPrompts, this.promptVariables);
 
         this.logger.info('ai-tools module initialized');
     }
@@ -202,6 +210,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.serviceRegistry.register(AI_TOOL_GOVERNOR_SERVICE, this.governor);
         this.serviceRegistry.register(AI_PROVIDERS_SERVICE, this.providerRegistry);
         this.serviceRegistry.register(CURATION_SERVICE, this.curation);
+        this.serviceRegistry.register(PROMPT_VARIABLES_SERVICE, this.promptVariables);
 
         // Daily audit retention sweep. A Mongo TTL index can't enforce this —
         // `createdAt` is an ISO string, not a Date — so retention is a scheduled
@@ -265,7 +274,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         });
 
         this.logger.info(
-            { services: [AI_TOOLS_SERVICE, AI_TOOL_GOVERNOR_SERVICE, AI_PROVIDERS_SERVICE, CURATION_SERVICE] },
+            { services: [AI_TOOLS_SERVICE, AI_TOOL_GOVERNOR_SERVICE, AI_PROVIDERS_SERVICE, CURATION_SERVICE, PROMPT_VARIABLES_SERVICE] },
             'ai-tools module running (admin router mounted, services registered)'
         );
     }
@@ -322,5 +331,19 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             throw new Error('AiToolsModule not initialized - call init() first');
         }
         return this.policy;
+    }
+
+    /**
+     * The prompt-variable registry, for tests and in-process consumers (the AI
+     * provider plugin resolves `{%name%}` patterns through it).
+     *
+     * @returns The prompt-variable registry instance.
+     * @throws If called before `init()`.
+     */
+    getPromptVariables(): PromptVariableRegistry {
+        if (!this.promptVariables) {
+            throw new Error('AiToolsModule not initialized - call init() first');
+        }
+        return this.promptVariables;
     }
 }

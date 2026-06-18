@@ -17,6 +17,7 @@ import type {
     IAiStreamChunk,
     IAiToolInfo,
     ICurationItem,
+    IStaticPromptVariable,
     IToolPolicy,
     ToolInvocationStatus,
     ToolTriggerPath
@@ -31,6 +32,8 @@ import type { AiQueryHistoryService } from '../services/ai-query-history.service
 import type { CurationService } from '../services/curation-service.js';
 import type { SavedPromptsService } from '../services/saved-prompts.service.js';
 import { SavedPromptValidationError } from '../services/saved-prompts.service.js';
+import type { PromptVariableRegistry } from '../services/prompt-variable-registry.js';
+import { PromptVariableValidationError } from '../services/prompt-variable-registry.js';
 import { WebSocketService } from '../../../services/websocket.service.js';
 import { detectTrifecta } from '../services/trifecta-detector.js';
 
@@ -126,6 +129,7 @@ export class AiToolsController {
      * @param curation - Central curation queue (for the Curation tab).
      * @param history - Core query-history store (for the Query tab).
      * @param savedPrompts - Saved prompt templates + cron scheduling (Query tab).
+     * @param promptVariables - Prompt variable registry (Registry tab Variables section + trifecta secret-leg feed).
      */
     constructor(
         private readonly registry: AiToolRegistry,
@@ -136,7 +140,8 @@ export class AiToolsController {
         private readonly providers: AiProviderRegistry,
         private readonly curation: CurationService,
         private readonly history: AiQueryHistoryService,
-        private readonly savedPrompts: SavedPromptsService
+        private readonly savedPrompts: SavedPromptsService,
+        private readonly promptVariables: PromptVariableRegistry
     ) {}
 
     /** GET /tools — registry with capability, provider, and enabled state. */
@@ -186,13 +191,105 @@ export class AiToolsController {
         } catch {
             serverTools = [];
         }
-        res.json(detectTrifecta([...registryTools, ...serverTools], (name, cap) => this.policy.isEgressGated(name, cap)));
+        res.json(detectTrifecta(
+            [...registryTools, ...serverTools],
+            (name, cap) => this.policy.isEgressGated(name, cap),
+            this.promptVariables.getSecretVariableNames()
+        ));
     };
 
     /** GET /providers — installed AI provider plugins for the Provider panel. */
     listProviders = async (_req: Request, res: Response): Promise<void> => {
         res.json({ providers: this.providers.listProviders() });
     };
+
+    /** GET /variables — every prompt variable (dynamic + static) with classification and size. */
+    listVariables = async (_req: Request, res: Response): Promise<void> => {
+        try {
+            res.json({ variables: await this.promptVariables.listInfo() });
+        } catch {
+            res.status(500).json({ error: 'Failed to load prompt variables.' });
+        }
+    };
+
+    /** POST /variables — create an admin-authored static variable. */
+    createVariable = async (req: Request, res: Response): Promise<void> => {
+        const { name, description, category, content, sensitivity } = (req.body ?? {}) as Record<string, unknown>;
+        try {
+            const created = await this.promptVariables.createStatic({
+                name: name as string,
+                description: description as string,
+                category: category as string,
+                content: content as string,
+                sensitivity: sensitivity as IStaticPromptVariable['sensitivity'] | undefined
+            });
+            res.json({ variable: created });
+        } catch (error: unknown) {
+            this.sendVariableError(res, error, 'Failed to create variable.');
+        }
+    };
+
+    /** PATCH /variables/:name — edit a static variable's mutable fields. */
+    updateVariable = async (req: Request, res: Response): Promise<void> => {
+        const { description, category, content, sensitivity } = (req.body ?? {}) as Record<string, unknown>;
+        try {
+            const updated = await this.promptVariables.updateStatic(req.params.name, {
+                description: description as string | undefined,
+                category: category as string | undefined,
+                content: content as string | undefined,
+                sensitivity: sensitivity as IStaticPromptVariable['sensitivity'] | undefined
+            });
+            res.json({ variable: updated });
+        } catch (error: unknown) {
+            this.sendVariableError(res, error, 'Failed to update variable.');
+        }
+    };
+
+    /** DELETE /variables/:name — delete a static variable. */
+    deleteVariable = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const removed = await this.promptVariables.deleteStatic(req.params.name);
+            if (!removed) {
+                res.status(404).json({ error: 'Variable not found.' });
+                return;
+            }
+            res.json({ success: true });
+        } catch (error: unknown) {
+            this.sendVariableError(res, error, 'Failed to delete variable.');
+        }
+    };
+
+    /** PUT /variables/:name/classification — set a variable's sensitivity (works for both kinds). */
+    classifyVariable = async (req: Request, res: Response): Promise<void> => {
+        const sensitivity = (req.body as { sensitivity?: unknown })?.sensitivity;
+        if (sensitivity !== 'public' && sensitivity !== 'internal' && sensitivity !== 'secret') {
+            res.status(400).json({ error: "Body must include sensitivity of 'public', 'internal', or 'secret'." });
+            return;
+        }
+        try {
+            const info = await this.promptVariables.classify(req.params.name, sensitivity);
+            res.json({ variable: info });
+        } catch (error: unknown) {
+            this.sendVariableError(res, error, 'Failed to classify variable.');
+        }
+    };
+
+    /**
+     * Map a prompt-variable failure to a response: a caller-actionable
+     * {@link PromptVariableValidationError} carries its own status code (400/404/409);
+     * anything else is a 500 with a generic message.
+     *
+     * @param res - The response.
+     * @param error - The thrown error.
+     * @param fallback - Generic message for an unexpected (500) failure.
+     */
+    private sendVariableError(res: Response, error: unknown, fallback: string): void {
+        if (error instanceof PromptVariableValidationError) {
+            res.status(error.statusCode).json({ error: error.message });
+            return;
+        }
+        res.status(500).json({ error: fallback });
+    }
 
     /**
      * POST /query — submit an AI query against the active provider.

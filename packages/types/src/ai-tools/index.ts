@@ -22,6 +22,18 @@ export type { IServerToolInvocation } from './IServerToolInvocation.js';
 export type { IAiToolGovernor } from './IAiToolGovernor.js';
 export type { IAiToolRegistry, IAiToolDeclaration, IAiToolInfo } from './IAiToolRegistry.js';
 export type { ITrifectaStatus, TrifectaSeverity } from './ITrifectaStatus.js';
+export type {
+    IPromptVariableDefinition,
+    IStaticPromptVariable,
+    IPromptVariableInfo,
+    IExpandedPromptVariable,
+    PromptVariableKind
+} from './IPromptVariable.js';
+export type {
+    IPromptVariableRegistry,
+    IStaticPromptVariableInput,
+    IStaticPromptVariableUpdate
+} from './IPromptVariableRegistry.js';
 export type { IAiProviderInfo, IAiProviderRegistry } from './IAiProviderRegistry.js';
 export type { IAiToolInvokeContext } from './IAiToolHookContext.js';
 export type { IAiConversationMessage } from './IAiConversationMessage.js';

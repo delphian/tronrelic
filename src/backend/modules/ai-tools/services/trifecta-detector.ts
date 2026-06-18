@@ -31,6 +31,14 @@
  * a `web_fetch` arrives classified as both `surfacesUntrustedContent` (ingress)
  * and an `external` open egress leg, so it is accounted for exactly like a
  * governed tool with no special-casing here.
+ *
+ * The private-data leg is not tool-only. A `secret`-classified prompt variable
+ * splices secret content into the prompt at expansion time, with no tool call
+ * involved — the historical blind spot that let a secret variable beside an
+ * untrusted reader and an open egress report a false `safe`. The caller passes
+ * the secret variable names (from the prompt-variable registry) and they satisfy
+ * the secret-leg presence test identically to a `secret` reader tool, listed
+ * separately so the UI can show the leg comes from a variable.
  */
 
 import type { IAiToolCapability, IAiToolInfo, ITrifectaStatus } from '@/types';
@@ -48,21 +56,29 @@ import type { IAiToolCapability, IAiToolInfo, ITrifectaStatus } from '@/types';
  *          is not auto-approved? Supplied by the policy engine so the advisory
  *          signal credits the exact fact the autonomous gate enforces, including
  *          the admin auto-approve bypass (which un-gates the channel).
+ * @param secretVariableNames - Names of `secret`-classified prompt variables in
+ *          the registry. They supply the private-data leg independently of any
+ *          tool. Defaults to none, so existing tool-only callers are unaffected.
  * @returns The legs, the open/gated split of the exfiltration leg, and the
  *          three-state severity (`safe` / `supervised` / `lethal`).
  */
 export function detectTrifecta(
     tools: IAiToolInfo[],
-    isEgressGated: (name: string, cap: IAiToolCapability | undefined) => boolean
+    isEgressGated: (name: string, cap: IAiToolCapability | undefined) => boolean,
+    secretVariableNames: string[] = []
 ): ITrifectaStatus {
     const enabled = tools.filter(tool => tool.enabled);
     const privateData = enabled.filter(tool => tool.capability?.sensitivity === 'secret').map(tool => tool.name);
+    const privateDataVariables = [...secretVariableNames];
     const untrustedContent = enabled.filter(tool => tool.capability?.surfacesUntrustedContent === true).map(tool => tool.name);
     const external = enabled.filter(tool => tool.capability?.sideEffect === 'external');
     const exfiltration = external.map(tool => tool.name);
     const exfiltrationGated = external.filter(tool => isEgressGated(tool.name, tool.capability)).map(tool => tool.name);
     const exfiltrationOpen = external.filter(tool => !isEgressGated(tool.name, tool.capability)).map(tool => tool.name);
-    const allThreePresent = privateData.length > 0 && untrustedContent.length > 0 && external.length > 0;
+    // The secret leg is present when a secret reader tool OR a secret variable is
+    // in play; either supplies the private data injected text could exfiltrate.
+    const secretLegPresent = privateData.length > 0 || privateDataVariables.length > 0;
+    const allThreePresent = secretLegPresent && untrustedContent.length > 0 && external.length > 0;
     const severity: ITrifectaStatus['severity'] = !allThreePresent
         ? 'safe'
         : exfiltrationOpen.length > 0
@@ -72,6 +88,7 @@ export function detectTrifecta(
         severity,
         present: severity === 'lethal',
         privateData,
+        privateDataVariables,
         untrustedContent,
         exfiltration,
         exfiltrationOpen,

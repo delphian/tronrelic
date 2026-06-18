@@ -76,7 +76,7 @@ export function TrifectaPanel({ status }: { status: ITrifectaStatus }) {
                         : 'The enabled tools combine all three legs with an open off-platform channel, so prompt-injected text could read a secret and exfiltrate it in one turn. Disable one leg below to break the chain.'}
                 </p>
                 <div className={styles.trifecta_legs}>
-                    <Leg label="Private data" tools={status.privateData} tone={accent.tone} />
+                    <Leg label="Private data" tools={[...status.privateData, ...status.privateDataVariables]} tone={accent.tone} />
                     <Leg label="Untrusted content" tools={status.untrustedContent} tone={accent.tone} />
                     {status.exfiltrationOpen.length > 0 && (
                         <Leg label="Exfiltration (open)" tools={status.exfiltrationOpen} tone="danger" />

@@ -10,6 +10,7 @@
 import type {
     IAiToolInfo,
     IAiToolCapability,
+    AiToolSensitivity,
     ICurationPreview,
     ITrifectaStatus,
     IToolInvocationRecord,
@@ -20,6 +21,9 @@ import type {
     IAiQueryRecord,
     IAiQueryResult,
     IModelInfo,
+    IPromptVariableInfo,
+    IStaticPromptVariableInput,
+    IStaticPromptVariableUpdate,
     ISavedPrompt,
     ToolInvocationStatus,
     ToolTriggerPath
@@ -174,6 +178,72 @@ export async function getTrifecta(): Promise<ITrifectaStatus> {
 export async function listProviders(): Promise<IAiProviderInfo[]> {
     const data = await parse<{ providers: IAiProviderInfo[] }>(await fetch(`${BASE}/providers`), 'load providers');
     return data.providers;
+}
+
+/**
+ * List every prompt variable (built-in dynamic + admin-authored static) with its
+ * classification, kind, editability, and resolved size.
+ *
+ * @returns The variable info array.
+ */
+export async function listVariables(): Promise<IPromptVariableInfo[]> {
+    const data = await parse<{ variables: IPromptVariableInfo[] }>(await fetch(`${BASE}/variables`), 'load variables');
+    return data.variables;
+}
+
+/**
+ * Create an admin-authored static variable.
+ *
+ * @param input - The new variable's fields.
+ * @returns The created variable.
+ */
+export async function createVariable(input: IStaticPromptVariableInput): Promise<void> {
+    await parse(await fetch(`${BASE}/variables`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input)
+    }), 'create variable');
+}
+
+/**
+ * Edit a static variable's mutable fields.
+ *
+ * @param name - The variable name.
+ * @param patch - Fields to change.
+ * @returns Resolves when persisted.
+ */
+export async function updateVariable(name: string, patch: IStaticPromptVariableUpdate): Promise<void> {
+    await parse(await fetch(`${BASE}/variables/${encodeURIComponent(name)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch)
+    }), 'update variable');
+}
+
+/**
+ * Delete a static variable.
+ *
+ * @param name - The variable name.
+ * @returns Resolves when deleted.
+ */
+export async function deleteVariable(name: string): Promise<void> {
+    await parse(await fetch(`${BASE}/variables/${encodeURIComponent(name)}`, { method: 'DELETE' }), 'delete variable');
+}
+
+/**
+ * Set a variable's sensitivity classification (works for both kinds). A `secret`
+ * classification feeds the lethal-trifecta detector's private-data leg.
+ *
+ * @param name - The variable name.
+ * @param sensitivity - The new sensitivity.
+ * @returns Resolves when persisted.
+ */
+export async function classifyVariable(name: string, sensitivity: AiToolSensitivity): Promise<void> {
+    await parse(await fetch(`${BASE}/variables/${encodeURIComponent(name)}/classification`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sensitivity })
+    }), 'classify variable');
 }
 
 /**

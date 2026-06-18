@@ -8,12 +8,12 @@ Provider-agnostic governance for AI tools — the registry every tool registers 
 |---|---|
 | Module id | `ai-tools` |
 | Module class | `src/backend/modules/ai-tools/AiToolsModule.ts` |
-| Service registry names | `'ai-tools'` → `IAiToolRegistry`, `'ai-tool-governor'` → `IAiToolGovernor`, `'ai-providers'` → `IAiProviderRegistry`, `'curation'` → `ICurationService` |
+| Service registry names | `'ai-tools'` → `IAiToolRegistry`, `'ai-tool-governor'` → `IAiToolGovernor`, `'ai-providers'` → `IAiProviderRegistry`, `'curation'` → `ICurationService`, `'prompt-variables'` → `IPromptVariableRegistry` |
 | Admin API base | `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`) |
-| Admin dashboard | `/system/ai-tools` (Registry · Query · Activity · Approvals · Curation · Policy tabs + trifecta banner + provider panel) |
-| Types package | `@delphian/tronrelic-types` → `IAiTool`, `IAiToolCapability`, `IAiToolRegistry`, `IAiToolGovernor`, `IAiProvider`, `IAiProviderRegistry`, `IAiStreamChunk`, `IAiQueryRecord`, `AiQueryMode`, `ISavedPrompt`, `ITrifectaStatus`, `IToolInvocation{Context,Result,Record}`, `IToolPolicy`, `IAiToolInvokeContext` |
-| Owned collections | `module_ai-tools_invocations`, `module_ai-tools_approvals`, `module_ai-tools_curations`, `module_ai-tools_query_history`, `module_ai-tools_prompts` |
-| KV keys (core `_kv`) | `ai-tools:tool-states`, `ai-tools:policy-overrides` |
+| Admin dashboard | `/system/ai-tools` (Registry · Query · Activity · Approvals · Curation · Policy tabs + trifecta banner + provider panel). The Registry tab has collapsible Tools and Variables sections |
+| Types package | `@delphian/tronrelic-types` → `IAiTool`, `IAiToolCapability`, `IAiToolRegistry`, `IAiToolGovernor`, `IAiProvider`, `IAiProviderRegistry`, `IAiStreamChunk`, `IAiQueryRecord`, `AiQueryMode`, `ISavedPrompt`, `ITrifectaStatus`, `IToolInvocation{Context,Result,Record}`, `IToolPolicy`, `IAiToolInvokeContext`, `IPromptVariable{Definition,Info,Registry}`, `IStaticPromptVariable` |
+| Owned collections | `module_ai-tools_invocations`, `module_ai-tools_approvals`, `module_ai-tools_curations`, `module_ai-tools_query_history`, `module_ai-tools_prompts`, `module_ai-tools_variables` |
+| KV keys (core `_kv`) | `ai-tools:tool-states`, `ai-tools:policy-overrides`, `ai-tools:variable-classifications` |
 | Hook seams | `ai.toolInvoke` (series, veto/hold), `ai.toolInvoked` (observer, audit fan-out) |
 | WebSocket signals | `ai-tools:activity`, `ai-tools:approvals-changed`, `ai-tools:curations-changed` (timestamp-only refetch cues; data stays behind the gated REST feed); `ai-tools:query-stream` (`IAiStreamChunk`, **global broadcast** keyed by `queryId` — client filters) |
 | Scheduler jobs | `ai-tools:prune-audit` (daily 04:00) — range-deletes `module_ai-tools_invocations` past the 90-day window. `ai-tools:run-scheduled-prompts` (every 2 min) — fires cron-scheduled saved prompts against the active provider. Both registered only when a scheduler is injected |
@@ -38,6 +38,7 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 | `services/curation-queue.ts` | `module_ai-tools_curations` — persist/list/decide/edit held envelopes |
 | `services/curation-service.ts` | `'curation'` → `ICurationService`: type registry + hold/approve/reject/edit orchestration |
 | `services/ai-provider-registry.ts` | `'ai-providers'` → `IAiProviderRegistry`: provider metadata + executable instance; `getActive()` |
+| `services/prompt-variable-registry.ts` | `'prompt-variables'` → `IPromptVariableRegistry`: code-registered dynamic variables + DB-persisted static variables (`module_ai-tools_variables`), classification, `{%name%}` expansion, secret-name feed for the trifecta detector |
 | `services/ai-query-history.service.ts` | `module_ai-tools_query_history` writes/queries for the Query tab (`IAiQueryRecord`) |
 | `services/saved-prompts.service.ts` | `module_ai-tools_prompts` CRUD + cron validation + scheduler bookkeeping (`ISavedPrompt`); atomic field-level writes; failure-streak auto-pause |
 | `services/scheduled-prompts-runner.ts` | Per-tick cron evaluator: fires due prompts via `getActive().query({ mode: 'programmatic' })`, claim-before-fire to avoid double-firing |
@@ -67,7 +68,7 @@ A tool declares `IAiToolCapability`; the registry sets its first-boot enabled st
 
 **Curation mode:** a curation-capable tool (`forcesCuratorReview` honored) defaults to `IToolPolicy.curation: 'require'` — every held effect waits for a human in the Curation tab. An admin may override to `'auto-approve'`: an explicit, audited bypass that releases that tool's held effects without manual review. It is honored **only on the interactive trigger path**; a `scheduled`/`programmatic` run ignores it and falls back to a manual hold, so an unattended run can never auto-execute an external effect. Auto-approve un-gates the egress, so the tool re-arms the lethal-trifecta signal (`exfiltrationGated` → `exfiltrationOpen`). The governor carries the decision across the handler call via an `AsyncLocalStorage` and `CurationService.hold()` approves the new item under `system:policy-auto-approve` — a distinct, non-human decider in the audit.
 
-**Lethal-trifecta detection:** `detectTrifecta()` scans the *enabled* set for the co-presence of a `sensitivity: 'secret'` reader, a `surfacesUntrustedContent` source, and an `external` sink — the combination that lets injected text read a secret and exfiltrate it in one turn. The exfiltration leg splits by whether the channel is autonomously closable: a curator-gated sink (`forcesCuratorReview` honored and not auto-approved) is *supervised*, not lethal — per the Rule of Two, a human releasing every effect is the sanctioned escape hatch. `GET /trifecta` returns `severity` (`safe` / `supervised` / `lethal`), the `present` boolean (= `lethal`, back-compat), and the tool names per leg with the egress split into `exfiltrationOpen` / `exfiltrationGated`. An operator breaks the chain by disabling a leg; an admin auto-approve bypass moves a sink from gated to open, re-arming `lethal`.
+**Lethal-trifecta detection:** `detectTrifecta()` scans the *enabled* set for the co-presence of a private-data source, a `surfacesUntrustedContent` source, and an `external` sink — the combination that lets injected text read a secret and exfiltrate it in one turn. The private-data leg counts both a `sensitivity: 'secret'` reader tool and a `secret`-classified prompt variable (passed in from `PromptVariableRegistry.getSecretVariableNames()`), surfaced in `ITrifectaStatus.privateDataVariables` — a secret variable splices secret content into the prompt with no tool call, so it forms the leg on its own. The exfiltration leg splits by whether the channel is autonomously closable: a curator-gated sink (`forcesCuratorReview` honored and not auto-approved) is *supervised*, not lethal — per the Rule of Two, a human releasing every effect is the sanctioned escape hatch. `GET /trifecta` returns `severity` (`safe` / `supervised` / `lethal`), the `present` boolean (= `lethal`, back-compat), and the tool names per leg with the egress split into `exfiltrationOpen` / `exfiltrationGated`. An operator breaks the chain by disabling a leg; an admin auto-approve bypass moves a sink from gated to open, re-arming `lethal`.
 
 ## Service Contracts
 
@@ -89,6 +90,10 @@ The installed AI provider plugin registers itself here, handing the registry bot
 
 The central queue of effects held for human review across content types. Providers `registerType`/`unregisterType` an `ICurationType` (`describe` / `onApprove` / `onReject` / optional `applyEdit`); producers `hold()`; the admin surface lists and `approve`/`reject`/`edit`. Core owns the decision and the pointer-plus-cached-preview envelope; the owning type owns the payload and what a decision does. The governor reads `hasType()` to verify a tool's `curationTypeId` binding (wired via `ToolPolicyEngine.setCurationResolver` in `init()`). A held item normally waits for a human; a tool whose `IToolPolicy.curation` is `'auto-approve'` has its held effects released immediately by the governor on the interactive path (see **Curation mode** above). Full design: [system-curation.md](../../../../docs/system/system-curation.md).
 
+### `'prompt-variables'` → `IPromptVariableRegistry`
+
+The single registry of prompt variables — the `{%name%}` tokens an AI provider expands into a prompt. Holds two kinds behind one service (the Menu module's dual-backing pattern): `dynamic` variables a provider plugin or core module registers in code (`registerVariable`, classify-only) and `static` variables an admin authors and persists (`createStatic`/`updateStatic`/`deleteStatic`, full CRUD). The AI provider consumes `expandAll`/`expandWithMetadata` at request-build time, so a prompt expands admin-authored statics alongside built-ins. `classify()` sets a variable's sensitivity — a static stores it on the document, a dynamic persists an admin override over its code-declared default. `getSecretVariableNames()` feeds the trifecta detector. A new static defaults to `secret` (fail-safe), and a static that shadows a registered dynamic name is rejected. The `trp-ai-assistant` plugin registers its built-in dynamic variables here via the service watch and was the prior owner of this registry.
+
 ## Admin REST API
 
 All under `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`).
@@ -99,6 +104,11 @@ All under `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`).
 | PATCH | `/tools/:name` | Toggle enabled (`{ enabled }`) |
 | GET | `/trifecta` | Lethal-trifecta status: `severity` (`safe`/`supervised`/`lethal`) + `present` (= lethal) + tool names per leg, egress split `exfiltrationOpen`/`exfiltrationGated` |
 | GET | `/providers` | Installed AI provider plugins (Provider panel) |
+| GET | `/variables` | Every prompt variable (dynamic + static) with kind, effective sensitivity, editability, size |
+| POST | `/variables` | Create an admin-authored static variable (400 invalid · 409 duplicate/shadows a dynamic) |
+| PATCH | `/variables/:name` | Edit a static variable's mutable fields (404 unknown) |
+| DELETE | `/variables/:name` | Delete a static variable |
+| PUT | `/variables/:name/classification` | Set a variable's sensitivity (both kinds); `secret` feeds the trifecta private-data leg |
 | POST | `/query` | Run a query against `getActive()`. Streaming by default (requires `queryId`; chunks arrive over WebSocket, 200 returns immediately); non-streaming when body `stream: false` (awaits and returns `result`). 503 when no active provider |
 | POST | `/query/:queryId/cancel` | Abort an in-flight streaming query (`provider.cancel(queryId)`) |
 | GET | `/query/history` | Paged query history, newest first (`limit`, `offset`) |
@@ -139,7 +149,7 @@ Declared in `src/backend/hooks/registry.ts`. `ai.toolInvoke` (series, `IAiToolIn
 
 ## Lifecycle Obligations
 
-`init()` constructs the registry, policy engine, audit store, approval queue, curation queue + service, governor, provider registry, query-history service, and saved-prompts service; loads persisted tool-states and policy overrides; ensures every collection's indexes (the collections are new, so index creation here is correct rather than a migration — including `module_ai-tools_query_history` and `module_ai-tools_prompts`); and injects the curation binding resolver into the policy engine (`policy.setCurationResolver(curation.hasType)`). `run()` mounts the admin router, registers `'ai-tools'` / `'ai-tool-governor'` / `'ai-providers'` / `'curation'`, wires the governor's and curation service's broadcast sinks to `WebSocketService`, registers the daily `ai-tools:prune-audit` retention job and the 2-minute `ai-tools:run-scheduled-prompts` job (both only when a scheduler is injected), and registers the `/system/ai-tools` admin nav item under the System container. Errors in either phase fail the boot — there is no degraded mode.
+`init()` constructs the registry, policy engine, audit store, approval queue, curation queue + service, governor, provider registry, query-history service, saved-prompts service, and prompt-variable registry; loads persisted tool-states, policy overrides, and prompt-variable statics + classifications; ensures every collection's indexes (the collections are new, so index creation here is correct rather than a migration — including `module_ai-tools_query_history`, `module_ai-tools_prompts`, and `module_ai-tools_variables`); and injects the curation binding resolver into the policy engine (`policy.setCurationResolver(curation.hasType)`). `run()` mounts the admin router, registers `'ai-tools'` / `'ai-tool-governor'` / `'ai-providers'` / `'curation'` / `'prompt-variables'`, wires the governor's and curation service's broadcast sinks to `WebSocketService`, registers the daily `ai-tools:prune-audit` retention job and the 2-minute `ai-tools:run-scheduled-prompts` job (both only when a scheduler is injected), and registers the `/system/ai-tools` admin nav item under the System container. Errors in either phase fail the boot — there is no degraded mode.
 
 ## Related
 
