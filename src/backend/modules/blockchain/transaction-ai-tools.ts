@@ -49,7 +49,10 @@ export function buildTransactionTool(detailService: ITransactionDetailService): 
             'rate-limited: it never submits, modifies, or broadcasts anything.',
         // Capability: read / internal — strictly read-only on-chain lookup. The
         // governor applies the read-class rate cap and writes the audit record.
-        capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal' },
+        // surfacesUntrustedContent: the returned transaction includes on-chain
+        // memo text, which is attacker-controlled, so the governor wraps the
+        // result as untrusted data and the trifecta detector counts the ingress.
+        capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true },
         inputSchema: {
             type: 'object',
             description: 'The transaction to look up.',
