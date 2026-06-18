@@ -158,9 +158,20 @@ export class AiToolsController {
         res.json({ name: req.params.name, enabled });
     };
 
-    /** GET /trifecta — lethal-trifecta status over the enabled tool set. */
+    /**
+     * GET /trifecta — lethal-trifecta status over the enabled tool set.
+     *
+     * Folds the active provider's enabled server-side tools (Anthropic's
+     * `web_search` / `web_fetch`) in alongside the governed registry tools. Those
+     * tools execute outside `governor.invoke()`, so the registry cannot see them;
+     * counting them here keeps the verdict honest — a `web_fetch` contributes both
+     * an untrusted-content ingress and an open egress leg, which turns an
+     * otherwise-`safe` posture `lethal` when a secret reader is also enabled.
+     */
     getTrifecta = async (_req: Request, res: Response): Promise<void> => {
-        res.json(detectTrifecta(this.registry.listToolInfo()));
+        const registryTools = this.registry.listToolInfo();
+        const serverTools = await this.providers.getActive()?.listActiveServerTools() ?? [];
+        res.json(detectTrifecta([...registryTools, ...serverTools], (name, cap) => this.policy.isEgressGated(name, cap)));
     };
 
     /** GET /providers — installed AI provider plugins for the Provider panel. */
@@ -535,6 +546,10 @@ export class AiToolsController {
         const policy = req.body as IToolPolicy;
         if (!policy || typeof policy !== 'object') {
             res.status(400).json({ error: 'Body must be a policy object.' });
+            return;
+        }
+        if (policy.curation !== undefined && policy.curation !== 'require' && policy.curation !== 'auto-approve') {
+            res.status(400).json({ error: "curation must be 'require' or 'auto-approve'." });
             return;
         }
         await this.policy.setOverride(req.params.name, policy);

@@ -308,4 +308,19 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         }
         return this.curation;
     }
+
+    /**
+     * The policy engine, for tests and in-process consumers — notably the
+     * trifecta detector, which credits the same egress-gating fact the engine
+     * enforces on autonomous paths.
+     *
+     * @returns The policy engine instance.
+     * @throws If called before `init()`.
+     */
+    getPolicy(): ToolPolicyEngine {
+        if (!this.policy) {
+            throw new Error('AiToolsModule not initialized - call init() first');
+        }
+        return this.policy;
+    }
 }

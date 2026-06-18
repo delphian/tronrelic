@@ -63,11 +63,13 @@ export type {
     IToolInvocationResult,
     ToolInvocationStatus,
     IToolInvocationRecord,
+    IServerToolInvocation,
     IAiToolGovernor,
     IAiToolRegistry,
     IAiToolDeclaration,
     IAiToolInfo,
     ITrifectaStatus,
+    TrifectaSeverity,
     IAiProviderInfo,
     IAiProviderRegistry,
     IAiToolInvokeContext

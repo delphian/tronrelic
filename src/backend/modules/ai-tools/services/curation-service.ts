@@ -25,6 +25,7 @@ import type {
     ISystemLogService,
     CurationItemStatus
 } from '@/types';
+import { shouldAutoApproveCuration } from './curation-auto-approve-context.js';
 import type { CurationQueue } from './curation-queue.js';
 
 /** A registered type with the id of the provider that owns it. */
@@ -38,6 +39,13 @@ type BroadcastFn = (event: string, payload: unknown) => void;
 
 /** WebSocket event the dashboard listens on to refetch the queue. */
 export const CURATIONS_CHANGED_EVENT = 'ai-tools:curations-changed';
+
+/**
+ * Decider recorded on an item the governor auto-approves via a tool's
+ * `curation: 'auto-approve'` policy — a distinct, non-human actor so the audit
+ * separates a policy bypass from a curator's decision.
+ */
+export const CURATION_AUTO_APPROVE_DECIDED_BY = 'system:policy-auto-approve';
 
 /**
  * Registry + lifecycle orchestrator for the central curation queue.
@@ -129,8 +137,15 @@ export class CurationService implements ICurationService {
      * Hold an effect for review: resolve the type, cache a preview, persist the
      * envelope as `pending`, and signal the dashboard.
      *
+     * When the active governed invocation opted its held effects into
+     * auto-approval (an interactive admin policy bypass — see
+     * {@link shouldAutoApproveCuration}), the freshly held item is approved
+     * immediately under {@link CURATION_AUTO_APPROVE_DECIDED_BY}, running the
+     * owning type's `onApprove` before this returns. A bypass that fails to
+     * commit propagates exactly as a manual approval's failure would.
+     *
      * @param input - The type id, opaque ref, and optional attribution.
-     * @returns The stored pending envelope.
+     * @returns The stored envelope — `approved` when auto-approved, else `pending`.
      * @throws When the type id is not registered.
      */
     async hold(input: ICurationHoldInput): Promise<ICurationItem> {
@@ -151,7 +166,13 @@ export class CurationService implements ICurationService {
         };
         await this.queue.insert(item);
         await this.notifyChanged();
-        return item;
+        let result = item;
+        if (shouldAutoApproveCuration()) {
+            this.logger.info({ id: item.id, typeId: item.typeId }, 'Curation auto-approved by tool policy (interactive bypass)');
+            const approved = await this.approve(item.id, CURATION_AUTO_APPROVE_DECIDED_BY);
+            result = approved ?? item;
+        }
+        return result;
     }
 
     /**

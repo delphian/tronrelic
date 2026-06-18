@@ -38,6 +38,23 @@ export interface IToolPolicy {
      * run has no human to catch a mistake.
      */
     allowUnattended?: boolean;
+
+    /**
+     * How a tool that routes its effects through the central curation queue
+     * (`capability.forcesCuratorReview` with a live `curationTypeId`) handles
+     * those held effects. Only meaningful for such tools; ignored otherwise.
+     *
+     * - `require` (the derived default): every effect waits for a human decision
+     *   in the Curation tab before it takes hold.
+     * - `auto-approve`: the governor approves each held effect immediately so it
+     *   runs without manual review — an explicit, audited operator bypass of the
+     *   human gate. Honoured **only on the interactive trigger path**; on
+     *   `scheduled`/`programmatic` paths it is ignored and the effect falls back
+     *   to a manual hold, so an unattended run can never auto-execute an external
+     *   effect. Turning this on un-gates the tool's egress, so the lethal-trifecta
+     *   signal re-arms (`exfiltrationGated` → `exfiltrationOpen`).
+     */
+    curation?: 'require' | 'auto-approve';
 }
 
 /** The governor's verdict for a single invocation. */

@@ -10,6 +10,7 @@
 
 import type { IToolInvocationContext } from './IToolInvocationContext.js';
 import type { IToolInvocationResult } from './IToolInvocationResult.js';
+import type { IServerToolInvocation } from './IServerToolInvocation.js';
 
 /**
  * Core-owned mediator for tool execution. Provider-neutral: any AI provider
@@ -25,4 +26,20 @@ export interface IAiToolGovernor {
      * @returns The governed outcome to feed back to the model.
      */
     invoke(name: string, input: Record<string, unknown>, ctx: IToolInvocationContext): Promise<IToolInvocationResult>;
+
+    /**
+     * Audit a server-side tool call the governor could not mediate. A
+     * provider-hosted tool (Anthropic's `web_search` / `web_fetch`) runs on the
+     * vendor's infrastructure and never passes through {@link invoke}, so it
+     * would otherwise leave no audit record and stay invisible to the
+     * lethal-trifecta watch. The provider calls this *after* the call completes
+     * to write the same {@link IToolInvocationRecord} shape and fire the
+     * `ai.toolInvoked` observer seam. There is no policy, approval, or
+     * rate-limit stage — the call already happened; this restores accountability
+     * only.
+     *
+     * @param invocation - The completed server-side call's facts.
+     * @returns Resolves once the audit record is written and observers notified.
+     */
+    recordServerToolInvocation(invocation: IServerToolInvocation): Promise<void>;
 }

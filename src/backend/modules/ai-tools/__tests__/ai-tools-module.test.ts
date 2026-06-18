@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { HookAbortError } from '@/types';
-import type { IAiTool, IAiToolCapability, ICurationType, IHookRegistry, IMenuService, ISchedulerService, ISystemLogService, IToolInvocationContext } from '@/types';
+import type { IAiTool, IAiToolCapability, IAiToolInfo, ICurationType, IHookRegistry, IMenuService, ISchedulerService, ISystemLogService, IToolInvocationContext } from '@/types';
 import { AiToolsModule, AUDIT_PRUNE_JOB, CurationQueue, CurationService, ToolApprovalQueue, detectTrifecta } from '../index.js';
 import { ToolPolicyEngine } from '../services/tool-policy-engine.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
@@ -320,6 +320,38 @@ describe('AiToolsModule', () => {
         });
     });
 
+    describe('server-tool audit', () => {
+        it('records a provider-hosted tool call: audited and observer-notified, owned by the AI provider', async () => {
+            const events: string[] = [];
+            const governor = module.getGovernor();
+            governor.setBroadcast((event) => events.push(event));
+
+            await governor.recordServerToolInvocation({
+                toolName: 'web_fetch',
+                capability: { sideEffect: 'external', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true },
+                input: { url: 'https://example.com/a' },
+                status: 'ok',
+                context: interactiveCtx,
+                resultDigest: '1 result(s)'
+            });
+
+            // The post-invocation observer seam fired with the built record — the
+            // same path a governed call takes, so the lethal-trifecta watch sees it.
+            const invoked = (mockHooks.invoke as ReturnType<typeof vi.fn>).mock.calls
+                .find(call => (call[0] as { id?: string })?.id === 'ai.toolInvoked');
+            expect(invoked).toBeDefined();
+            const record = invoked?.[1] as { toolName: string; providerId: string; aiProviderId: string; status: string };
+            expect(record.toolName).toBe('web_fetch');
+            expect(record.status).toBe('ok');
+            // A server tool has no registry owner — it is attributed to the AI
+            // provider plugin that drove the call.
+            expect(record.providerId).toBe('test-provider');
+            expect(record.aiProviderId).toBe('test-provider');
+            // And the activity feed got its refetch signal.
+            expect(events).toContain('ai-tools:activity');
+        });
+    });
+
     describe('trifecta detection', () => {
         /** Register an enabled-by-default tool carrying the given capability. */
         function register(name: string, capability: IAiToolCapability): void {
@@ -332,17 +364,61 @@ describe('AiToolsModule', () => {
             }, 'test');
         }
 
-        it('flags the trifecta when an enabled secret reader, untrusted source, and external sink co-exist', async () => {
+        /** The egress-gating predicate the detector consumes, from the real policy engine. */
+        const egressGated = (name: string, cap: IAiToolCapability | undefined): boolean => module.getPolicy().isEgressGated(name, cap);
+
+        it('flags the trifecta as lethal when an enabled secret reader, untrusted source, and OPEN external sink co-exist', async () => {
             register('secret-reader', { sideEffect: 'read', reversible: true, sensitivity: 'secret' });
             register('memo-reader', { sideEffect: 'read', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true });
-            register('poster', { sideEffect: 'external', reversible: false, sensitivity: 'public' });
+            register('poster', { sideEffect: 'external', reversible: false, sensitivity: 'public' }); // no curator review → open egress
             await module.getRegistry().setEnabled('poster', true); // external ships disabled
 
-            const status = detectTrifecta(module.getRegistry().listToolInfo());
+            const status = detectTrifecta(module.getRegistry().listToolInfo(), egressGated);
+            expect(status.severity).toBe('lethal');
             expect(status.present).toBe(true);
             expect(status.privateData).toContain('secret-reader');
             expect(status.untrustedContent).toContain('memo-reader');
             expect(status.exfiltration).toContain('poster');
+            expect(status.exfiltrationOpen).toContain('poster');
+            expect(status.exfiltrationGated).toHaveLength(0);
+        });
+
+        it('downgrades to supervised when every external sink forces honoured curator review', async () => {
+            register('secret-reader', { sideEffect: 'read', reversible: true, sensitivity: 'secret' });
+            register('memo-reader', { sideEffect: 'read', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true });
+            // forcesCuratorReview with no curationTypeId → honoured (legacy self-hosted queue) → gated egress.
+            register('curated-poster', { sideEffect: 'external', reversible: false, sensitivity: 'public', forcesCuratorReview: true });
+            await module.getRegistry().setEnabled('curated-poster', true);
+
+            const status = detectTrifecta(module.getRegistry().listToolInfo(), egressGated);
+            expect(status.severity).toBe('supervised');
+            expect(status.present).toBe(false); // not lethal: no autonomously closable egress
+            expect(status.exfiltration).toContain('curated-poster'); // leg still present
+            expect(status.exfiltrationGated).toContain('curated-poster');
+            expect(status.exfiltrationOpen).toHaveLength(0);
+        });
+
+        it('flags lethal when a provider-reported server tool supplies the untrusted + open-egress legs (the F1 blind spot, now closed)', () => {
+            // Only an enabled secret reader lives in the registry. The remaining
+            // two legs arrive via the provider-reporting path: a web_fetch entry
+            // (external open egress + surfacesUntrustedContent) the controller
+            // concatenates onto listToolInfo() before calling the detector.
+            register('secret-reader', { sideEffect: 'read', reversible: true, sensitivity: 'secret' });
+            const serverTool: IAiToolInfo = {
+                name: 'web_fetch',
+                description: 'Anthropic web fetch — runs outside the governor.',
+                inputSchema: { type: 'object', properties: {}, additionalProperties: true },
+                capability: { sideEffect: 'external', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true },
+                enabled: true,
+                provider: 'test-provider'
+            };
+
+            const status = detectTrifecta([...module.getRegistry().listToolInfo(), serverTool], egressGated);
+
+            expect(status.severity).toBe('lethal');
+            expect(status.privateData).toContain('secret-reader');
+            expect(status.untrustedContent).toContain('web_fetch'); // one tool supplies two legs
+            expect(status.exfiltrationOpen).toContain('web_fetch');  // no curator gate → open egress
         });
 
         it('does not flag when the exfiltration leg is disabled', () => {
@@ -350,9 +426,27 @@ describe('AiToolsModule', () => {
             register('memo-reader', { sideEffect: 'read', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true });
             register('poster', { sideEffect: 'external', reversible: false, sensitivity: 'public' }); // stays disabled by default
 
-            const status = detectTrifecta(module.getRegistry().listToolInfo());
+            const status = detectTrifecta(module.getRegistry().listToolInfo(), egressGated);
+            expect(status.severity).toBe('safe');
             expect(status.present).toBe(false);
             expect(status.exfiltration).toHaveLength(0);
+        });
+
+        it('re-arms to lethal when an admin auto-approves a gated egress', async () => {
+            register('secret-reader', { sideEffect: 'read', reversible: true, sensitivity: 'secret' });
+            register('memo-reader', { sideEffect: 'read', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true });
+            register('curated-poster', { sideEffect: 'external', reversible: false, sensitivity: 'public', forcesCuratorReview: true });
+            await module.getRegistry().setEnabled('curated-poster', true);
+
+            // Curator-gated by default → supervised, not lethal.
+            expect(detectTrifecta(module.getRegistry().listToolInfo(), egressGated).severity).toBe('supervised');
+
+            // Admin bypass un-gates the egress: the detector re-arms to lethal.
+            await module.getPolicy().setOverride('curated-poster', { curation: 'auto-approve' });
+            const status = detectTrifecta(module.getRegistry().listToolInfo(), egressGated);
+            expect(status.severity).toBe('lethal');
+            expect(status.exfiltrationOpen).toContain('curated-poster');
+            expect(status.exfiltrationGated).toHaveLength(0);
         });
     });
 
@@ -401,6 +495,61 @@ describe('AiToolsModule', () => {
             // resolving and the tool's autonomous bar returns.
             curation.unregisterType('x-poster:tweet');
             expect((await module.getGovernor().invoke('test-bound', {}, scheduledCtx)).status).toBe('denied');
+        });
+    });
+
+    describe('curation auto-approve bypass', () => {
+        /** A curation-capable tool whose handler drafts one effect into the queue. */
+        function holdingTool(curation: CurationService): IAiTool {
+            return {
+                name: 'test-bound',
+                description: 'routes every effect into a core curation type',
+                inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+                capability: { sideEffect: 'external', reversible: false, sensitivity: 'public', forcesCuratorReview: true, curationTypeId: 'x-poster:tweet' },
+                handler: vi.fn(async () => {
+                    await curation.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+                    return { queued: true };
+                })
+            };
+        }
+
+        it('releases a held effect without manual review on the interactive path when policy is auto-approve', async () => {
+            const curation = module.getCuration();
+            const onApprove = vi.fn(async () => undefined);
+            curation.registerType(spyCurationType({ onApprove }), 'x-poster');
+            const registry = module.getRegistry();
+            registry.registerTool(holdingTool(curation), 'test');
+            await registry.setEnabled('test-bound', true);
+
+            // Default (require): the handler runs and drafts, but the effect waits.
+            const held = await module.getGovernor().invoke('test-bound', {}, interactiveCtx);
+            expect(held.status).toBe('ok');
+            expect(onApprove).not.toHaveBeenCalled();
+            expect(await curation.countPending()).toBe(1);
+
+            // Admin flips the bypass: the next held effect auto-approves and runs.
+            await module.getPolicy().setOverride('test-bound', { curation: 'auto-approve' });
+            const released = await module.getGovernor().invoke('test-bound', {}, interactiveCtx);
+            expect(released.status).toBe('ok');
+            expect(onApprove).toHaveBeenCalledOnce();
+        });
+
+        it('ignores auto-approve on autonomous paths — the effect falls back to a manual hold', async () => {
+            const curation = module.getCuration();
+            const onApprove = vi.fn(async () => undefined);
+            curation.registerType(spyCurationType({ onApprove }), 'x-poster');
+            const registry = module.getRegistry();
+            registry.registerTool(holdingTool(curation), 'test');
+            await registry.setEnabled('test-bound', true);
+            await module.getPolicy().setOverride('test-bound', { curation: 'auto-approve' });
+
+            // Scheduled run: the tool is autonomous-safe (it self-curates), so it
+            // runs and drafts — but the bypass is honoured only on the interactive
+            // path, so the effect stays pending for a human.
+            const result = await module.getGovernor().invoke('test-bound', {}, scheduledCtx);
+            expect(result.status).toBe('ok');
+            expect(onApprove).not.toHaveBeenCalled();
+            expect(await curation.countPending()).toBe(1);
         });
     });
 });
