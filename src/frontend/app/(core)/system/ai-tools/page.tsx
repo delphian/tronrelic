@@ -3,8 +3,9 @@
 /**
  * @fileoverview /system/ai-tools — the AI tool governance dashboard.
  *
- * Four tabs (Registry, Activity, Approvals, Policy) plus a lethal-trifecta
- * banner and a live pending-approval count on the Approvals tab. Admin-gated by
+ * Six tabs (Query — the default — then Registry, Activity, Approvals, Curation,
+ * Policy) plus a lethal-trifecta banner and a live pending-approval count on the
+ * Approvals tab. Admin-gated by
  * the /system layout; like the other system pages it is a client component that
  * fetches over the cookie-authenticated admin API. Governed events arrive as
  * WebSocket refetch signals — the data itself always comes from the gated REST
@@ -30,8 +31,8 @@ import styles from './page.module.scss';
 type TabId = 'registry' | 'query' | 'activity' | 'approvals' | 'curation' | 'policy';
 
 const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
-    { id: 'registry', label: 'Registry' },
     { id: 'query', label: 'Query' },
+    { id: 'registry', label: 'Registry' },
     { id: 'activity', label: 'Activity' },
     { id: 'approvals', label: 'Approvals' },
     { id: 'curation', label: 'Curation' },
@@ -44,7 +45,7 @@ const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
  * @returns The page.
  */
 export default function AiToolsAdminPage() {
-    const [activeTab, setActiveTab] = useState<TabId>('registry');
+    const [activeTab, setActiveTab] = useState<TabId>('query');
     const [trifecta, setTrifecta] = useState<ITrifectaStatus | null>(null);
     const [pending, setPending] = useState(0);
     const [pendingCuration, setPendingCuration] = useState(0);

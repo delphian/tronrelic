@@ -67,10 +67,11 @@ function curationFrom(value: IToolPolicy['curation'] | undefined): CurationMode 
  * Editable policy row for one tool. Local form state is seeded from the tool's
  * current override so each row edits independently.
  */
-function PolicyRow({ tool, override, usage, onSaved }: {
+function PolicyRow({ tool, override, usage, defaults, onSaved }: {
     tool: IAiToolInfo;
     override?: IToolPolicy;
     usage?: Usage;
+    defaults?: { requireApproval: boolean; allowUnattended: boolean };
     onSaved: () => void;
 }) {
     const [requireApproval, setRequireApproval] = useState<TriState>(triFrom(override?.requireApproval));
@@ -85,6 +86,13 @@ function PolicyRow({ tool, override, usage, onSaved }: {
     // The curation control only bites on tools that route effects through the
     // central queue; others render a dash so the column isn't a live no-op.
     const curationCapable = tool.capability?.forcesCuratorReview === true;
+
+    // Label the inherited ("Default") option with the value it resolves to, so
+    // an admin reading a row sees the actual behaviour rather than the opaque
+    // word "Default". The resolved value is the governor's own class default
+    // (from GET /policy), not a re-derivation here.
+    const approvalDefaultLabel = defaults ? `Default (${defaults.requireApproval ? 'On' : 'Off'})` : 'Default';
+    const unattendedDefaultLabel = defaults ? `Default (${defaults.allowUnattended ? 'On' : 'Off'})` : 'Default';
 
     // Pending edits relative to the saved override. Save stays disabled until a
     // field actually changes, so a long tool list doesn't present a column of
@@ -161,7 +169,7 @@ function PolicyRow({ tool, override, usage, onSaved }: {
                     onChange={(e) => setRequireApproval(e.target.value as TriState)}
                     aria-label={`Require approval for ${tool.name}`}
                 >
-                    <option value="inherit">Default</option>
+                    <option value="inherit">{approvalDefaultLabel}</option>
                     <option value="on">On</option>
                     <option value="off">Off</option>
                 </select>
@@ -173,7 +181,7 @@ function PolicyRow({ tool, override, usage, onSaved }: {
                     onChange={(e) => setAllowUnattended(e.target.value as TriState)}
                     aria-label={`Allow unattended runs for ${tool.name}`}
                 >
-                    <option value="inherit">Default</option>
+                    <option value="inherit">{unattendedDefaultLabel}</option>
                     <option value="on">On</option>
                     <option value="off">Off</option>
                 </select>
@@ -217,7 +225,7 @@ function PolicyRow({ tool, override, usage, onSaved }: {
  */
 export function PolicyTab() {
     const [tools, setTools] = useState<IAiToolInfo[]>([]);
-    const [policy, setPolicyState] = useState<IPolicyResponse>({ overrides: {}, usage: {} });
+    const [policy, setPolicyState] = useState<IPolicyResponse>({ overrides: {}, usage: {}, defaults: {} });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -248,10 +256,12 @@ export function PolicyTab() {
             </p>
             <p className="text-muted" style={{ margin: 0, fontSize: 'var(--font-size-body-sm)' }}>
                 Both dropdowns are three-way: <strong>Default</strong> keeps the tool&apos;s capability-class
-                default, while <strong>On</strong>/<strong>Off</strong> force it. <strong>Require approval</strong> On
+                default and shows the value it resolves to in parentheses — <em>Default (On)</em> or <em>Default
+                (Off)</em> — while <strong>On</strong>/<strong>Off</strong> force it. <strong>Require approval</strong> On
                 holds every call in the Approvals tab before it runs (by default only external, irreversible tools are
-                held). <strong>Unattended</strong> sets whether the tool may run on autonomous paths — scheduled prompts
-                and programmatic queries — where external tools are otherwise barred. <strong>Rate / min</strong> caps
+                held). <strong>Allow unattended</strong> sets whether the tool may run on autonomous paths — scheduled
+                prompts and programmatic queries — where external tools are otherwise barred; <em>On</em> allows them,
+                <em>Off</em> blocks them. <strong>Rate / min</strong> caps
                 invocations per minute across all callers; blank inherits the class default (120 read, 60 write, 30
                 external), under a 240/min global ceiling. <strong>Cost ceiling (USD)</strong> caps a paid tool&apos;s spend
                 over a fixed 24-hour window — each call that runs is charged the tool&apos;s declared per-call cost, and
@@ -266,17 +276,17 @@ export function PolicyTab() {
                 re-arms the lethal-trifecta banner for that tool. Tools that don&apos;t self-curate show “—”.
             </p>
             <div className="table-scroll">
-                <Table>
+                <Table stickyHeader>
                     <Thead>
                         <Tr>
-                            <Th width="expand">Tool</Th>
-                            <Th width="shrink">Usage</Th>
-                            <Th>Require approval</Th>
-                            <Th>Unattended</Th>
-                            <Th>Curation</Th>
-                            <Th>Rate / min</Th>
-                            <Th>Cost ceiling (USD)</Th>
-                            <Th width="shrink">Actions</Th>
+                            <Th width="shrink" title="Registered tool name; the “override” badge marks a custom policy.">Tool</Th>
+                            <Th width="shrink" title="Calls, denials, and held counts since the last server start.">Usage</Th>
+                            <Th title="Hold every call for human approval before it runs. On = held; Off = runs without approval.">Require approval</Th>
+                            <Th title="Whether the tool may run on autonomous (scheduled / programmatic) paths. On = allowed; Off = blocked.">Allow unattended</Th>
+                            <Th title="How a self-curating tool releases effects: require review, or auto-approve.">Curation</Th>
+                            <Th title="Max invocations per minute across all callers; blank inherits the class default.">Rate / min</Th>
+                            <Th title="Max spend per rolling 24h window for paid tools; blank means no cap.">Cost ceiling (USD)</Th>
+                            <Th width="shrink" title="Save or clear this tool’s policy override.">Actions</Th>
                         </Tr>
                     </Thead>
                     <Tbody>
@@ -286,6 +296,7 @@ export function PolicyTab() {
                                 tool={tool}
                                 override={policy.overrides[tool.name]}
                                 usage={policy.usage[tool.name]}
+                                defaults={policy.defaults[tool.name]}
                                 onSaved={load}
                             />
                         ))}

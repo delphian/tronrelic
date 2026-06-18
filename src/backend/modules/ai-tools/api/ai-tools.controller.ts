@@ -648,9 +648,23 @@ export class AiToolsController {
         res.json(request);
     };
 
-    /** GET /policy — per-tool overrides and usage tallies. */
+    /**
+     * GET /policy — per-tool overrides, usage tallies, and the resolved
+     * class-default behaviour each tool inherits. The defaults let the admin UI
+     * label an inherited ("Default") cell with what it actually resolves to,
+     * rather than the opaque word "Default". Computed from the same engine the
+     * governor enforces with, so the displayed default cannot drift from reality.
+     */
     getPolicy = async (_req: Request, res: Response): Promise<void> => {
-        res.json({ overrides: this.policy.getOverrides(), usage: this.policy.snapshot() });
+        const defaults: Record<string, { requireApproval: boolean; allowUnattended: boolean }> = {};
+        for (const tool of this.registry.listToolInfo()) {
+            const base = this.policy.defaultPolicyFor(tool.capability);
+            defaults[tool.name] = {
+                requireApproval: base.requireApproval ?? false,
+                allowUnattended: base.allowUnattended ?? false
+            };
+        }
+        res.json({ overrides: this.policy.getOverrides(), usage: this.policy.snapshot(), defaults });
     };
 
     /** PUT /policy/:name — set a per-tool policy override. */
