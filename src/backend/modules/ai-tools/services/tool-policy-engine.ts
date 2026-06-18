@@ -68,14 +68,13 @@ const RL_PREFIX = 'aitool:rl:';
 const GLOBAL_KEY = '__global__';
 
 /**
- * The subset of the Redis client the rate store uses. Structural so a test can
- * pass a fake and the engine never imports the ioredis type; the platform's
- * ioredis client satisfies it as-is.
+ * The subset of the Redis client the rate store uses — `INCR` plus an
+ * idempotent `EXPIRE … NX`. Structural so a test can pass a fake and the engine
+ * never imports the ioredis type; the platform's ioredis client satisfies it.
  */
 export interface IRateLimitRedis {
     incr(key: string): Promise<number>;
-    expire(key: string, seconds: number): Promise<unknown>;
-    get(key: string): Promise<string | null>;
+    expire(key: string, seconds: number, mode?: 'NX'): Promise<unknown>;
 }
 
 /** In-memory fixed-window counter (fallback when Redis is absent or down). */
@@ -276,14 +275,17 @@ export class ToolPolicyEngine {
     }
 
     /**
-     * Evaluate a single invocation. On an `allow` verdict the call's rate-limit
-     * budget is consumed; `needs-approval` and `deny` consume nothing.
+     * Evaluate a single invocation. On an `allow` verdict the rate and cost
+     * budgets are consumed. A deny by the approval, authorization, or autonomous
+     * gates consumes nothing; a rate or cost denial leaves only the conservative
+     * increment its fixed-window counter uses (never an over-admit).
      *
      * Order: object-authorization precondition, autonomous-path default-deny for
-     * external tools, approval, cost ceiling, then rate limiting. Cost is peeked
-     * (not charged) before the rate budget is spent and charged only after the
-     * rate check passes, so a cost denial never spends a rate slot and a rate
-     * denial never charges cost.
+     * external tools, approval, rate limiting, then the cost ceiling. Both the
+     * rate and cost budgets are charged atomically (INCR-then-compare) so two
+     * concurrent calls can never both be admitted past a limit. Cost is charged
+     * last, so a call the rate gate already rejected never touches the dollar
+     * budget.
      *
      * @param tool - The resolved tool, including its capability.
      * @param ctx - Caller and trigger context.
@@ -325,21 +327,20 @@ export class ToolPolicyEngine {
         } else if (policy.requireApproval) {
             counters.needsApproval++;
             decision = { verdict: 'needs-approval', reason: 'This tool requires human approval before it runs.' };
-        } else if (costCap !== undefined && await this.wouldExceedCostCalls(tool.name, costCap)) {
-            // Peeked before consuming rate budget so a cost denial does not spend
-            // a rate slot.
-            counters.denied++;
-            decision = { verdict: 'deny', reason: `Cost ceiling of $${policy.costCeilingUsd} reached for "${tool.name}". Try again later.` };
         } else if (policy.rateLimit && !(await this.consumeRate(tool.name, policy.rateLimit))) {
             counters.rateLimited++;
             counters.denied++;
             decision = { verdict: 'deny', reason: `Rate limit exceeded for "${tool.name}". Try again shortly.` };
+        } else if (costCap !== undefined && !(await this.admitCostCall(tool.name, costCap))) {
+            // Charged last and atomically (INCR-then-compare), after the rate
+            // gate, so a rate-rejected call never charges the dollar budget and
+            // two concurrent paid calls can never both be admitted over the
+            // ceiling. A cost denial leaves only its own increment, which makes
+            // the window more conservative (never over-admits) and self-heals at
+            // expiry — the same benign increment-before-reject consumeRate accepts.
+            counters.denied++;
+            decision = { verdict: 'deny', reason: `Cost ceiling of $${policy.costCeilingUsd} reached for "${tool.name}". Try again later.` };
         } else {
-            // Charge one call against the cost cap only now that the call is
-            // allowed (rate already consumed above).
-            if (costCap !== undefined) {
-                await this.chargeCostCall(tool.name);
-            }
             counters.allowed++;
             decision = { verdict: 'allow' };
         }
@@ -363,11 +364,7 @@ export class ToolPolicyEngine {
         if (costCap === undefined) {
             return true;
         }
-        if (await this.wouldExceedCostCalls(tool.name, costCap)) {
-            return false;
-        }
-        await this.chargeCostCall(tool.name);
-        return true;
+        return this.admitCostCall(tool.name, costCap);
     }
 
     /**
@@ -436,33 +433,27 @@ export class ToolPolicyEngine {
     }
 
     /**
-     * Whether charging one more call would push the tool's windowed call count
-     * over its cap. Peeks without incrementing.
+     * Atomically charge one call against the tool's cost window and report
+     * whether it stays within the cap. INCR-then-compare — the same primitive
+     * {@link consumeRate} uses — so two concurrent paid calls can never both be
+     * admitted over the ceiling. A denied call leaves its increment, which only
+     * makes the window more conservative (never over-admits) and self-heals at
+     * expiry.
      *
      * @param name - Tool name.
      * @param maxCalls - The tool's per-window call cap.
-     * @returns `true` when this call must be denied to stay within the ceiling.
+     * @returns `true` when this call fits within the cap.
      */
-    private async wouldExceedCostCalls(name: string, maxCalls: number): Promise<boolean> {
-        const current = await this.peek(`cost:${name}`, COST_WINDOW_MS);
-        return current + 1 > maxCalls;
-    }
-
-    /**
-     * Record one call against the tool's cost window. Call only when allowed.
-     *
-     * @param name - Tool name.
-     * @returns Resolves when counted.
-     */
-    private async chargeCostCall(name: string): Promise<void> {
-        await this.hit(`cost:${name}`, COST_WINDOW_MS);
+    private async admitCostCall(name: string, maxCalls: number): Promise<boolean> {
+        const count = await this.hit(`cost:${name}`, COST_WINDOW_MS);
+        return count <= maxCalls;
     }
 
     /**
      * Increment a fixed-window counter and return its new count. Uses Redis
-     * `INCR` (+ first-hit `EXPIRE`) when a client is present so the window is a
-     * single shared budget across instances; falls back to the in-memory counter
-     * when no client is configured or a Redis call throws.
+     * `INCR` (+ an idempotent `EXPIRE … NX`) when a client is present so the
+     * window is a single shared budget across instances; falls back to the
+     * in-memory counter when no client is configured or a Redis call throws.
      *
      * @param key - Logical counter key (prefixed for Redis).
      * @param windowMs - Window duration.
@@ -473,35 +464,19 @@ export class ToolPolicyEngine {
             try {
                 const redisKey = RL_PREFIX + key;
                 const count = await this.redis.incr(redisKey);
-                if (count === 1) {
-                    await this.redis.expire(redisKey, Math.ceil(windowMs / 1000));
-                }
+                // EXPIRE … NX sets the TTL only when the key has none, so it
+                // self-heals a key left without an expiry — a crash or a failed
+                // EXPIRE between this INCR and the next would otherwise leave a
+                // TTL-less counter (most damagingly the 24h cost window) to
+                // accumulate forever and permanently deny the budget. NX leaves
+                // an existing TTL untouched, so the fixed window never slides.
+                await this.redis.expire(redisKey, Math.ceil(windowMs / 1000), 'NX');
                 return count;
             } catch (error) {
                 this.logger.warn({ error, key }, 'AI tool rate store: Redis unavailable, falling back to in-memory counter');
             }
         }
         return this.memHit(key, windowMs);
-    }
-
-    /**
-     * Read a fixed-window counter without incrementing. Returns 0 for a missing
-     * or expired window. Falls back to the in-memory counter on Redis failure.
-     *
-     * @param key - Logical counter key (prefixed for Redis).
-     * @param windowMs - Window duration (used only by the in-memory fallback).
-     * @returns The counter's current value.
-     */
-    private async peek(key: string, windowMs: number): Promise<number> {
-        if (this.redis) {
-            try {
-                const raw = await this.redis.get(RL_PREFIX + key);
-                return raw ? Number(raw) : 0;
-            } catch (error) {
-                this.logger.warn({ error, key }, 'AI tool rate store: Redis unavailable, falling back to in-memory counter');
-            }
-        }
-        return this.memPeek(key, windowMs);
     }
 
     /**
@@ -519,23 +494,6 @@ export class ToolPolicyEngine {
             this.memWindows.set(key, window);
         }
         window.count++;
-        return window.count;
-    }
-
-    /**
-     * In-memory fixed-window read without incrementing. Returns 0 for a missing
-     * or elapsed window.
-     *
-     * @param key - Counter key.
-     * @param windowMs - Window duration.
-     * @returns The counter's current value.
-     */
-    private memPeek(key: string, windowMs: number): number {
-        const now = Date.now();
-        const window = this.memWindows.get(key);
-        if (!window || now - window.windowStart >= windowMs) {
-            return 0;
-        }
         return window.count;
     }
 

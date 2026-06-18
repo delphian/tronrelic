@@ -1085,6 +1085,42 @@ describe('ToolPolicyEngine Redis-backed shared limits', () => {
         expect((await engine.check(tool, interactiveCtx)).verdict).toBe('allow');
         expect((await engine.check(tool, interactiveCtx)).verdict).toBe('deny');
     });
+
+    it('enforces one shared COST budget across instances (atomic admission)', async () => {
+        // The cost ceiling is charged atomically (INCR-then-compare), so two
+        // instances sharing one store cannot both be admitted over the ceiling —
+        // the TOCTOU hole the peek-then-charge version had.
+        const redis = fakeRedis();
+        const a = new ToolPolicyEngine(createMockLogger(), createMockDatabaseService(), redis);
+        const b = new ToolPolicyEngine(createMockLogger(), createMockDatabaseService(), redis);
+        await a.setOverride('paid-gen', { costCeilingUsd: 0.04 }); // floor(0.04/0.04) = 1 call
+        await b.setOverride('paid-gen', { costCeilingUsd: 0.04 });
+        const tool = paidTool(0.04);
+
+        expect((await a.check(tool, interactiveCtx)).verdict).toBe('allow');
+        // Second instance, same shared cost window: the single paid call is spent.
+        expect((await b.check(tool, interactiveCtx)).verdict).toBe('deny');
+    });
+
+    it('sets every counter TTL with NX so a lost expiry self-heals', async () => {
+        // EXPIRE … NX runs on every hit (not just the first), so a key left
+        // without a TTL gets one on its next hit instead of blocking forever.
+        const store = new Map<string, number>();
+        const expireCalls: Array<string | undefined> = [];
+        const redis = {
+            incr: async (key: string) => { const next = (store.get(key) ?? 0) + 1; store.set(key, next); return next; },
+            expire: async (_key: string, _seconds: number, mode?: 'NX') => { expireCalls.push(mode); return 1; }
+        };
+        const engine = new ToolPolicyEngine(createMockLogger(), createMockDatabaseService(), redis);
+        await engine.setOverride('paid-gen', { rateLimit: { max: 5, windowMs: 60_000 } });
+        const tool = paidTool(0.04);
+
+        await engine.check(tool, interactiveCtx);
+        await engine.check(tool, interactiveCtx); // second hit must still issue EXPIRE NX
+
+        expect(expireCalls.length).toBeGreaterThan(1);
+        expect(expireCalls.every(mode => mode === 'NX')).toBe(true);
+    });
 });
 
 describe('ToolPolicyEngine object-authorization precondition', () => {
