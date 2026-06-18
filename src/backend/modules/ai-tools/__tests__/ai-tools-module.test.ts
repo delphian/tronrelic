@@ -383,6 +383,17 @@ describe('AiToolsModule', () => {
             const result = await module.getGovernor().invoke('test-read', {}, interactiveCtx);
             expect(result.status).toBe('ok');
         });
+
+        it('passes the trusted end-user principal to the handler as its second argument', async () => {
+            const handler = vi.fn(async () => ({ records: [] as string[] }));
+            module.getRegistry().registerTool(userScopedTool(handler), 'test');
+
+            await module.getGovernor().invoke('test-user-scoped', {}, principalCtx);
+
+            // The principal reaches the handler out-of-band (never from model
+            // input), so a user-scoped tool can scope its object access to it.
+            expect(handler).toHaveBeenCalledWith({}, { userId: 'user-42' });
+        });
     });
 
     describe('broadcast signals', () => {
@@ -1004,6 +1015,13 @@ describe('ToolPolicyEngine object-authorization precondition', () => {
 
     it('allows when an end-user principal is present', () => {
         expect(makeEngine().check(userScoped, principalCtx).verdict).toBe('allow');
+    });
+
+    it('denies when the end-user principal has an empty or whitespace userId', () => {
+        // A blank id would scope to nothing — it is treated as no principal at
+        // all, so it must not slip the confused-deputy guard.
+        const emptyUserCtx: IToolInvocationContext = { ...interactiveCtx, endUser: { userId: '   ' } };
+        expect(makeEngine().check(userScoped, emptyUserCtx).verdict).toBe('deny');
     });
 });
 

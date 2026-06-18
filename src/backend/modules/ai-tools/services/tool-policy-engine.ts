@@ -254,15 +254,17 @@ export class ToolPolicyEngine {
         const ceiling = policy.costCeilingUsd;
 
         let decision: IToolPolicyDecision;
-        if (cap.operatesOnUserOwnedObjects === true && !ctx.endUser) {
+        if (cap.operatesOnUserOwnedObjects === true && !ctx.endUser?.userId?.trim()) {
             // Confused-deputy guard, evaluated first. A tool scoped to a
             // specific end user's objects has no meaning under the actor's
             // ambient server/admin authority — there is no principal to
             // authorize the object access against — so deny rather than let it
             // run with whatever authority the platform happens to hold. The
             // actor's `kind` does not satisfy this: an admin is ambient
-            // authority, not a specific end user. Inert until a non-admin path
-            // supplies `ctx.endUser`; no tool declares the flag today.
+            // authority, not a specific end user. A blank or whitespace-only
+            // `userId` is treated as no principal at all — it would scope to
+            // nothing, so it must not pass the gate. Inert until a non-admin
+            // path supplies a real `ctx.endUser`; no tool declares the flag today.
             counters.denied++;
             decision = {
                 verdict: 'deny',
