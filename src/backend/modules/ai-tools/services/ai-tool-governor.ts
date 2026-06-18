@@ -21,6 +21,7 @@ import type {
     IHookRegistry,
     ISystemLogService,
     IServerToolInvocation,
+    IToolEndUserPrincipal,
     IToolInvocationContext,
     IToolInvocationRecord,
     IToolInvocationResult,
@@ -332,7 +333,12 @@ export class AiToolGovernor implements IAiToolGovernor {
             // explicit, interactive-only admin bypass). False for every other
             // tool, leaving the manual review gate intact.
             const autoApprove = this.policy.shouldAutoApproveCuration(tool, ctx);
-            const result = await runWithCurationAutoApprove(autoApprove, () => this.runWithTimeout(tool, input));
+            // Hand the handler the trusted end-user principal (never from model
+            // input) so a tool declaring `operatesOnUserOwnedObjects` can scope
+            // its object access to it. The policy precondition has already
+            // guaranteed a present, non-empty principal for such a tool, so the
+            // handler can rely on it; other tools receive `undefined` and ignore it.
+            const result = await runWithCurationAutoApprove(autoApprove, () => this.runWithTimeout(tool, input, ctx.endUser));
             status = 'ok';
             // Provenance separation: a tool that surfaces attacker-influenceable
             // text is wrapped here, in the provider-neutral chokepoint, so every
@@ -361,15 +367,18 @@ export class AiToolGovernor implements IAiToolGovernor {
      * timeout wins — there is no way to abort an arbitrary handler — but the
      * governor stops awaiting it so one slow tool cannot stall the query.
      *
+     * @param tool - The tool whose handler runs.
+     * @param input - Validated model arguments.
+     * @param principal - The trusted end-user principal, or undefined when none.
      * @returns The handler's resolved value.
      */
-    private async runWithTimeout(tool: IAiTool, input: Record<string, unknown>): Promise<unknown> {
+    private async runWithTimeout(tool: IAiTool, input: Record<string, unknown>, principal?: IToolEndUserPrincipal): Promise<unknown> {
         let timer: ReturnType<typeof setTimeout> | undefined;
         const timeout = new Promise<never>((_, reject) => {
             timer = setTimeout(() => reject(new Error(`Tool "${tool.name}" exceeded the ${HANDLER_TIMEOUT_MS}ms execution budget.`)), HANDLER_TIMEOUT_MS);
         });
         try {
-            return await Promise.race([tool.handler(input), timeout]);
+            return await Promise.race([tool.handler(input, principal), timeout]);
         } finally {
             if (timer) {
                 clearTimeout(timer);
@@ -462,10 +471,12 @@ export class AiToolGovernor implements IAiToolGovernor {
         if (ctx.queryId) {
             record.queryId = ctx.queryId;
         }
-        if (ctx.endUser) {
+        if (ctx.endUser?.userId?.trim()) {
             // Attribute the call to the end user it ran on behalf of, distinct
             // from the actor that drove it — so a user-scoped tool's audit trail
-            // names whose objects were touched, not just the operator.
+            // names whose objects were touched, not just the operator. A blank
+            // or whitespace-only id is not a real principal, so it is not
+            // recorded — keeping junk attribution out of the audit trail.
             record.endUserId = ctx.endUser.userId;
         }
         if (extra.resultDigest !== undefined) {

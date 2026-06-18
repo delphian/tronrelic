@@ -13,6 +13,7 @@
 
 import type { JSONSchema7Definition } from 'json-schema';
 import type { IAiToolCapability } from './IAiToolCapability.js';
+import type { IToolEndUserPrincipal } from './IToolInvocationContext.js';
 
 /** Regex pattern for valid Anthropic tool names. */
 export const AI_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -119,6 +120,19 @@ export interface IAiTool {
      * as read/internal and warns at startup. See {@link IAiToolCapability}.
      */
     capability?: IAiToolCapability;
-    /** Async handler executed server-side when the model invokes this tool. */
-    handler: (input: Record<string, unknown>) => Promise<unknown>;
+    /**
+     * Async handler executed server-side when the model invokes this tool.
+     *
+     * Receives the model-supplied `input` (a hint — re-validate it) and, as a
+     * second argument, the trusted end-user `principal` resolved by the
+     * governor from the invocation context. The principal is non-spoofable: it
+     * never comes from `input`, only from the caller's authenticated context. A
+     * tool that declares `capability.operatesOnUserOwnedObjects` must scope
+     * every object access to `principal.userId` — and the governor guarantees a
+     * present, non-empty principal before such a handler runs, so it can rely
+     * on it. The argument is `undefined` for tools and paths with no end user
+     * (admin/scheduled/programmatic), and an `(input) => …` handler that ignores
+     * it stays valid.
+     */
+    handler: (input: Record<string, unknown>, principal?: IToolEndUserPrincipal) => Promise<unknown>;
 }

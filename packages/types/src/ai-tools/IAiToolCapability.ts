@@ -62,10 +62,11 @@ export interface IAiToolCapability {
     /**
      * Whether the tool reads or mutates objects owned by a specific end user
      * (their files, their records), as opposed to global or admin-scoped data.
-     * Such a tool MUST scope every object access to the principal in
-     * `IToolInvocationContext.endUser` — knowing an id is not authorization, so
-     * the handler verifies ownership before returning or touching an object
-     * (the BOLA guard).
+     * Such a tool MUST scope every object access to the trusted end-user
+     * principal — which the governor passes to the handler as its second
+     * argument (`handler(input, principal)`), never from model `input`. Knowing
+     * an id is not authorization, so the handler verifies ownership against
+     * `principal.userId` before returning or touching an object (the BOLA guard).
      *
      * Setting this turns that obligation into an enforceable precondition: the
      * governor denies the call when no end-user principal is present, so the
