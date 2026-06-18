@@ -75,7 +75,15 @@ export type {
     TrifectaSeverity,
     IAiProviderInfo,
     IAiProviderRegistry,
-    IAiToolInvokeContext
+    IAiToolInvokeContext,
+    IPromptVariableDefinition,
+    IStaticPromptVariable,
+    IPromptVariableInfo,
+    IExpandedPromptVariable,
+    PromptVariableKind,
+    IPromptVariableRegistry,
+    IStaticPromptVariableInput,
+    IStaticPromptVariableUpdate
 } from './ai-tools/index.js';
 export { isPrivateIp, assertPublicHttpUrl } from './egress/index.js';
 export type { IEgressCheckResult, IEgressCheckOptions } from './egress/index.js';

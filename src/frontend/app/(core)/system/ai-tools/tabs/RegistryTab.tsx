@@ -16,6 +16,8 @@ import { useToast } from '../../../../../components/ui/ToastProvider';
 import { listTools, setToolEnabled, listProviders } from '../../../../../modules/ai-tools';
 import { CapabilityBadges } from '../components/CapabilityBadges';
 import { ProviderPanel } from '../components/ProviderPanel';
+import { CollapsibleSection } from '../components/CollapsibleSection';
+import { VariablesSection } from './VariablesSection';
 import styles from '../page.module.scss';
 
 /**
@@ -65,6 +67,9 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
         return <div className={styles.placeholder}>Loading tools…</div>;
     }
 
+    const disabledCount = tools.filter(tool => !tool.enabled).length;
+    const toolsSummary = `${tools.length} tools · ${disabledCount} disabled`;
+
     return (
         <Stack gap="md">
             <ProviderPanel providers={providers} />
@@ -73,42 +78,45 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
                     <AlertCircle size={16} style={{ color: 'var(--color-danger)', verticalAlign: 'text-bottom' }} /> {error}
                 </div>
             )}
-            {tools.length === 0
-                ? <div className={styles.placeholder}>No tools are registered.</div>
-                : (
-                    <div className="table-scroll">
-                        <Table>
-                            <Thead>
-                                <Tr>
-                                    <Th>Tool</Th>
-                                    <Th width="shrink">Provider</Th>
-                                    <Th>Capability</Th>
-                                    <Th width="shrink">Enabled</Th>
-                                </Tr>
-                            </Thead>
-                            <Tbody>
-                                {tools.map(tool => (
-                                    <Tr key={tool.name}>
-                                        <Td>
-                                            <div className={styles.tool_name}>{tool.name}</div>
-                                            <div className={styles.tool_desc}>{tool.description}</div>
-                                        </Td>
-                                        <Td muted>{tool.provider}</Td>
-                                        <Td><CapabilityBadges capability={tool.capability} /></Td>
-                                        <Td>
-                                            <Switch
-                                                on={tool.enabled}
-                                                onChange={(next) => handleToggle(tool.name, next)}
-                                                disabled={busyName === tool.name}
-                                                aria-label={`${tool.enabled ? 'Disable' : 'Enable'} ${tool.name}`}
-                                            />
-                                        </Td>
+            <CollapsibleSection title="Tools" summary={toolsSummary}>
+                {tools.length === 0
+                    ? <div className={styles.placeholder}>No tools are registered.</div>
+                    : (
+                        <div className="table-scroll">
+                            <Table>
+                                <Thead>
+                                    <Tr>
+                                        <Th>Tool</Th>
+                                        <Th width="shrink">Provider</Th>
+                                        <Th>Capability</Th>
+                                        <Th width="shrink">Enabled</Th>
                                     </Tr>
-                                ))}
-                            </Tbody>
-                        </Table>
-                    </div>
-                )}
+                                </Thead>
+                                <Tbody>
+                                    {tools.map(tool => (
+                                        <Tr key={tool.name}>
+                                            <Td>
+                                                <div className={styles.tool_name}>{tool.name}</div>
+                                                <div className={styles.tool_desc}>{tool.description}</div>
+                                            </Td>
+                                            <Td muted>{tool.provider}</Td>
+                                            <Td><CapabilityBadges capability={tool.capability} /></Td>
+                                            <Td>
+                                                <Switch
+                                                    on={tool.enabled}
+                                                    onChange={(next) => handleToggle(tool.name, next)}
+                                                    disabled={busyName === tool.name}
+                                                    aria-label={`${tool.enabled ? 'Disable' : 'Enable'} ${tool.name}`}
+                                                />
+                                            </Td>
+                                        </Tr>
+                                    ))}
+                                </Tbody>
+                            </Table>
+                        </div>
+                    )}
+            </CollapsibleSection>
+            <VariablesSection onChanged={onChanged} />
         </Stack>
     );
 }

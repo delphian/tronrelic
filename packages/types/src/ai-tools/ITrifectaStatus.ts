@@ -43,6 +43,15 @@ export interface ITrifectaStatus {
     /** Enabled tools that return secret / private data (`sensitivity: 'secret'`). */
     privateData: string[];
 
+    /**
+     * Secret-classified prompt (template) variables that supply the private-data
+     * leg independently of any tool — their `secret` content is spliced into the
+     * prompt at expansion time. Listed separately from {@link privateData} so the
+     * admin UI can show that the leg comes from a variable, not a tool, but it
+     * satisfies the secret-leg presence test identically.
+     */
+    privateDataVariables: string[];
+
     /** Enabled tools that surface attacker-controlled content (`surfacesUntrustedContent`). */
     untrustedContent: string[];
 
