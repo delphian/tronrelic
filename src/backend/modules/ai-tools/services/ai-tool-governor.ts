@@ -20,6 +20,7 @@ import type {
     IAiToolGovernor,
     IHookRegistry,
     ISystemLogService,
+    IServerToolInvocation,
     IToolInvocationContext,
     IToolInvocationRecord,
     IToolInvocationResult,
@@ -27,6 +28,7 @@ import type {
 } from '@/types';
 import { isHookAbortError } from '@/types';
 import { HOOKS } from '../../../hooks/registry.js';
+import { runWithCurationAutoApprove } from './curation-auto-approve-context.js';
 import type { AiToolRegistry } from './ai-tool-registry.js';
 import type { ToolPolicyEngine } from './tool-policy-engine.js';
 import type { ToolAuditStore } from './tool-audit-store.js';
@@ -241,6 +243,27 @@ export class AiToolGovernor implements IAiToolGovernor {
         return this.executeTool(tool, providerId, input, ctx, cap);
     }
 
+    /** @inheritdoc */
+    async recordServerToolInvocation(invocation: IServerToolInvocation): Promise<void> {
+        // A server-side tool ran on the AI provider's own infrastructure and
+        // never passed through invoke(), so there is nothing to validate, gate,
+        // or rate-limit — the call already happened. Write the same record shape
+        // a governed call produces (owned by the AI provider that drove it) and
+        // fire the observer seam so the audit feed and the lethal-trifecta watch
+        // see it. buildRecord redacts arguments by the declared sensitivity.
+        const record = this.buildRecord(
+            invocation.toolName,
+            invocation.context.aiProviderId,
+            invocation.capability,
+            invocation.context,
+            invocation.input,
+            invocation.status,
+            { resultDigest: invocation.resultDigest, error: invocation.error }
+        );
+        await this.audit.record(record);
+        await this.notifyInvoked(record);
+    }
+
     /**
      * Approve a held invocation and run it now, bypassing the approval gate.
      *
@@ -304,7 +327,12 @@ export class AiToolGovernor implements IAiToolGovernor {
         let resultDigest: string | undefined;
 
         try {
-            const result = await this.runWithTimeout(tool, input);
+            // Carry the auto-approve decision across the handler call so any
+            // `curation.hold(...)` it triggers can release immediately (an
+            // explicit, interactive-only admin bypass). False for every other
+            // tool, leaving the manual review gate intact.
+            const autoApprove = this.policy.shouldAutoApproveCuration(tool, ctx);
+            const result = await runWithCurationAutoApprove(autoApprove, () => this.runWithTimeout(tool, input));
             status = 'ok';
             content = result;
             resultDigest = digestResult(result);

@@ -47,6 +47,23 @@ function triFrom(value: boolean | undefined): TriState {
 }
 
 /**
+ * Curation handling for a tool that routes effects through the central review
+ * queue. `inherit` omits the field so the governor keeps the derived default
+ * (`require`); `require`/`auto-approve` force it.
+ */
+type CurationMode = 'inherit' | 'require' | 'auto-approve';
+
+/**
+ * Map an override's curation value to the select state. Absent → `inherit`.
+ *
+ * @param value - The override's curation value, or undefined when unset.
+ * @returns The matching select state.
+ */
+function curationFrom(value: IToolPolicy['curation'] | undefined): CurationMode {
+    return value ?? 'inherit';
+}
+
+/**
  * Editable policy row for one tool. Local form state is seeded from the tool's
  * current override so each row edits independently.
  */
@@ -60,10 +77,14 @@ function PolicyRow({ tool, override, usage, onSaved }: {
     const [allowUnattended, setAllowUnattended] = useState<TriState>(triFrom(override?.allowUnattended));
     const [rateMax, setRateMax] = useState<string>(override?.rateLimit ? String(override.rateLimit.max) : '');
     const [costCeiling, setCostCeiling] = useState<string>(override?.costCeilingUsd !== undefined ? String(override.costCeilingUsd) : '');
+    const [curation, setCuration] = useState<CurationMode>(curationFrom(override?.curation));
     const [busy, setBusy] = useState(false);
     const { push } = useToast();
 
     const hasOverride = override !== undefined;
+    // The curation control only bites on tools that route effects through the
+    // central queue; others render a dash so the column isn't a live no-op.
+    const curationCapable = tool.capability?.forcesCuratorReview === true;
 
     // Pending edits relative to the saved override. Save stays disabled until a
     // field actually changes, so a long tool list doesn't present a column of
@@ -72,7 +93,8 @@ function PolicyRow({ tool, override, usage, onSaved }: {
         requireApproval !== triFrom(override?.requireApproval) ||
         allowUnattended !== triFrom(override?.allowUnattended) ||
         rateMax !== (override?.rateLimit ? String(override.rateLimit.max) : '') ||
-        costCeiling !== (override?.costCeilingUsd !== undefined ? String(override.costCeilingUsd) : '');
+        costCeiling !== (override?.costCeilingUsd !== undefined ? String(override.costCeilingUsd) : '') ||
+        curation !== curationFrom(override?.curation);
 
     const save = useCallback(async () => {
         // Only write a tri-state field when the admin forced it. Leaving it out
@@ -93,6 +115,9 @@ function PolicyRow({ tool, override, usage, onSaved }: {
         if (costCeiling.trim() !== '' && Number.isFinite(parsedCost) && parsedCost >= 0) {
             policy.costCeilingUsd = parsedCost;
         }
+        if (curation !== 'inherit') {
+            policy.curation = curation;
+        }
         setBusy(true);
         try {
             await setPolicy(tool.name, policy);
@@ -103,7 +128,7 @@ function PolicyRow({ tool, override, usage, onSaved }: {
         } finally {
             setBusy(false);
         }
-    }, [requireApproval, allowUnattended, rateMax, costCeiling, tool.name, push, onSaved]);
+    }, [requireApproval, allowUnattended, rateMax, costCeiling, curation, tool.name, push, onSaved]);
 
     const clear = useCallback(async () => {
         setBusy(true);
@@ -152,6 +177,22 @@ function PolicyRow({ tool, override, usage, onSaved }: {
                     <option value="on">On</option>
                     <option value="off">Off</option>
                 </select>
+            </Td>
+            <Td>
+                {curationCapable ? (
+                    <select
+                        className={`${styles.filter_select} ${styles.cell_control}`}
+                        value={curation}
+                        onChange={(e) => setCuration(e.target.value as CurationMode)}
+                        aria-label={`Curation handling for ${tool.name}`}
+                    >
+                        <option value="inherit">Default</option>
+                        <option value="require">Require</option>
+                        <option value="auto-approve">Auto-approve</option>
+                    </select>
+                ) : (
+                    <span className="text-subtle">—</span>
+                )}
             </Td>
             <Td>
                 <Input type="number" min={0} value={rateMax} onChange={(e) => setRateMax(e.target.value)} placeholder="default" aria-label={`Rate limit per minute for ${tool.name}`} className={styles.cell_control} />
@@ -217,6 +258,13 @@ export function PolicyTab() {
                 further calls are denied once the ceiling would be exceeded; blank means no cap, and a tool that
                 declares no per-call cost cannot be capped.
             </p>
+            <p className="text-muted" style={{ margin: 0, fontSize: 'var(--font-size-body-sm)' }}>
+                <strong>Curation</strong> applies only to tools that route effects through the central review queue.
+                <strong> Require</strong> (the default) holds every effect for manual approval in the Curation tab;
+                <strong> Auto-approve</strong> is an explicit, audited bypass that releases held effects without review —
+                honoured <strong>only on interactive admin queries</strong>, never on scheduled or programmatic runs, and it
+                re-arms the lethal-trifecta banner for that tool. Tools that don&apos;t self-curate show “—”.
+            </p>
             <div className="table-scroll">
                 <Table>
                     <Thead>
@@ -225,6 +273,7 @@ export function PolicyTab() {
                             <Th width="shrink">Usage</Th>
                             <Th>Require approval</Th>
                             <Th>Unattended</Th>
+                            <Th>Curation</Th>
                             <Th>Rate / min</Th>
                             <Th>Cost ceiling (USD)</Th>
                             <Th width="shrink">Actions</Th>

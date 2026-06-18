@@ -18,6 +18,7 @@ import type { IAiQueryOptions } from './IAiQueryOptions.js';
 import type { IAiQueryResult } from './IAiQueryResult.js';
 import type { IAiStreamChunk } from './IAiStreamChunk.js';
 import type { IModelInfo } from './IModelInfo.js';
+import type { IAiToolInfo } from './IAiToolRegistry.js';
 
 /**
  * Execution contract every AI provider plugin implements and registers on the
@@ -99,4 +100,19 @@ export interface IAiProvider {
      * @throws On API failures or missing API key configuration.
      */
     listModels(): Promise<IModelInfo[]>;
+
+    /**
+     * Report the provider-hosted (server-side) tools currently enabled for the
+     * active configuration — tools the model can invoke that execute on the
+     * vendor's infrastructure and so never pass through the tool governor
+     * (Anthropic's `web_search` / `web_fetch`). Core has no other way to see
+     * them, so the lethal-trifecta detector folds these entries in alongside the
+     * governed registry tools to keep the `safe` / `supervised` / `lethal`
+     * verdict honest: a `web_fetch` reports as both an untrusted-content ingress
+     * and an open egress leg. Return an empty array when none are enabled or the
+     * provider hosts no such tools.
+     *
+     * @returns Capability-classified info for each enabled server-side tool.
+     */
+    listActiveServerTools(): Promise<IAiToolInfo[]>;
 }

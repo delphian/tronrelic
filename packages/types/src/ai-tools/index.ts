@@ -16,9 +16,10 @@ export type { IToolPolicy, IToolPolicyDecision, ToolPolicyVerdict } from './IToo
 export type { IToolInvocationContext, IToolInvocationActor, ToolTriggerPath } from './IToolInvocationContext.js';
 export type { IToolInvocationResult, ToolInvocationStatus } from './IToolInvocationResult.js';
 export type { IToolInvocationRecord } from './IToolInvocationRecord.js';
+export type { IServerToolInvocation } from './IServerToolInvocation.js';
 export type { IAiToolGovernor } from './IAiToolGovernor.js';
 export type { IAiToolRegistry, IAiToolDeclaration, IAiToolInfo } from './IAiToolRegistry.js';
-export type { ITrifectaStatus } from './ITrifectaStatus.js';
+export type { ITrifectaStatus, TrifectaSeverity } from './ITrifectaStatus.js';
 export type { IAiProviderInfo, IAiProviderRegistry } from './IAiProviderRegistry.js';
 export type { IAiToolInvokeContext } from './IAiToolHookContext.js';
 export type { IAiConversationMessage } from './IAiConversationMessage.js';

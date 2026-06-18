@@ -31,7 +31,8 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 | `AiToolsModule.ts` | Two-phase lifecycle; constructs services, mounts the admin router, publishes `'ai-tools'` + `'ai-tool-governor'` |
 | `services/ai-tool-registry.ts` | `IAiToolRegistry`: registration, enabled-state (capability-driven default-deny), declarations for a provider |
 | `services/ai-tool-governor.ts` | `IAiToolGovernor`: the invoke pipeline + approve/reject |
-| `services/tool-policy-engine.ts` | Capability-classed defaults, admin overrides, fixed-window rate limiter, autonomous default-deny |
+| `services/tool-policy-engine.ts` | Capability-classed defaults, admin overrides, fixed-window rate limiter, autonomous default-deny, curation mode (`require`/`auto-approve`) + egress-gating predicate |
+| `services/curation-auto-approve-context.ts` | `AsyncLocalStorage` bridge carrying the governor's auto-approve decision across the handler call to `CurationService.hold()` |
 | `services/tool-audit-store.ts` | `module_ai-tools_invocations` writes/queries, retention prune |
 | `services/tool-approval-queue.ts` | `module_ai-tools_approvals` — park/list/resolve held invocations |
 | `services/curation-queue.ts` | `module_ai-tools_curations` — persist/list/decide/edit held envelopes |
@@ -59,7 +60,9 @@ A tool declares `IAiToolCapability`; the registry sets its first-boot enabled st
 
 **Autonomous default-deny:** on `triggerPath` `scheduled` or `programmatic`, an `external` tool is denied unless it declares `forcesCuratorReview: true` — its own human-review queue makes an unattended call safe, because the call can only draft into that queue — or an admin policy override grants `allowUnattended`. **Approval:** an external/irreversible tool that does not self-curate parks as `pending-approval` and runs only when an admin approves; a `forcesCuratorReview` tool relies on its own queue, so the governor adds no second gate. Both gates derive from the capability — a tool cannot opt itself out of either; only an admin policy override (`IToolPolicy`) can relax them.
 
-**Lethal-trifecta detection:** `detectTrifecta()` scans the *enabled* set for the co-presence of a `sensitivity: 'secret'` reader, a `surfacesUntrustedContent` source, and an `external` sink — the combination that lets injected text read a secret and exfiltrate it in one turn. `GET /trifecta` surfaces `present` plus the tool names forming each leg, so an operator can break the chain by disabling one.
+**Curation mode:** a curation-capable tool (`forcesCuratorReview` honored) defaults to `IToolPolicy.curation: 'require'` — every held effect waits for a human in the Curation tab. An admin may override to `'auto-approve'`: an explicit, audited bypass that releases that tool's held effects without manual review. It is honored **only on the interactive trigger path**; a `scheduled`/`programmatic` run ignores it and falls back to a manual hold, so an unattended run can never auto-execute an external effect. Auto-approve un-gates the egress, so the tool re-arms the lethal-trifecta signal (`exfiltrationGated` → `exfiltrationOpen`). The governor carries the decision across the handler call via an `AsyncLocalStorage` and `CurationService.hold()` approves the new item under `system:policy-auto-approve` — a distinct, non-human decider in the audit.
+
+**Lethal-trifecta detection:** `detectTrifecta()` scans the *enabled* set for the co-presence of a `sensitivity: 'secret'` reader, a `surfacesUntrustedContent` source, and an `external` sink — the combination that lets injected text read a secret and exfiltrate it in one turn. The exfiltration leg splits by whether the channel is autonomously closable: a curator-gated sink (`forcesCuratorReview` honored and not auto-approved) is *supervised*, not lethal — per the Rule of Two, a human releasing every effect is the sanctioned escape hatch. `GET /trifecta` returns `severity` (`safe` / `supervised` / `lethal`), the `present` boolean (= `lethal`, back-compat), and the tool names per leg with the egress split into `exfiltrationOpen` / `exfiltrationGated`. An operator breaks the chain by disabling a leg; an admin auto-approve bypass moves a sink from gated to open, re-arming `lethal`.
 
 ## Service Contracts
 
@@ -77,7 +80,7 @@ The installed AI provider plugin registers itself here, handing the registry bot
 
 ### `'curation'` → `ICurationService`
 
-The central queue of effects held for human review across content types. Providers `registerType`/`unregisterType` an `ICurationType` (`describe` / `onApprove` / `onReject` / optional `applyEdit`); producers `hold()`; the admin surface lists and `approve`/`reject`/`edit`. Core owns the decision and the pointer-plus-cached-preview envelope; the owning type owns the payload and what a decision does. The governor reads `hasType()` to verify a tool's `curationTypeId` binding (wired via `ToolPolicyEngine.setCurationResolver` in `init()`). Full design: [system-curation.md](../../../../docs/system/system-curation.md).
+The central queue of effects held for human review across content types. Providers `registerType`/`unregisterType` an `ICurationType` (`describe` / `onApprove` / `onReject` / optional `applyEdit`); producers `hold()`; the admin surface lists and `approve`/`reject`/`edit`. Core owns the decision and the pointer-plus-cached-preview envelope; the owning type owns the payload and what a decision does. The governor reads `hasType()` to verify a tool's `curationTypeId` binding (wired via `ToolPolicyEngine.setCurationResolver` in `init()`). A held item normally waits for a human; a tool whose `IToolPolicy.curation` is `'auto-approve'` has its held effects released immediately by the governor on the interactive path (see **Curation mode** above). Full design: [system-curation.md](../../../../docs/system/system-curation.md).
 
 ## Admin REST API
 
@@ -87,7 +90,7 @@ All under `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`).
 |---|---|---|
 | GET | `/tools` | Registry: tools with capability, provider, enabled state |
 | PATCH | `/tools/:name` | Toggle enabled (`{ enabled }`) |
-| GET | `/trifecta` | Lethal-trifecta status over the enabled set (`present` + tool names per leg) |
+| GET | `/trifecta` | Lethal-trifecta status: `severity` (`safe`/`supervised`/`lethal`) + `present` (= lethal) + tool names per leg, egress split `exfiltrationOpen`/`exfiltrationGated` |
 | GET | `/providers` | Installed AI provider plugins (Provider panel) |
 | POST | `/query` | Run a query against `getActive()`. Streaming by default (requires `queryId`; chunks arrive over WebSocket, 200 returns immediately); non-streaming when body `stream: false` (awaits and returns `result`). 503 when no active provider |
 | POST | `/query/:queryId/cancel` | Abort an in-flight streaming query (`provider.cancel(queryId)`) |

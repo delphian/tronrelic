@@ -142,7 +142,68 @@ export class ToolPolicyEngine {
             // queue. Every other external tool is barred from autonomous runs.
             allowUnattended: fullCap.sideEffect !== 'external' || curatorReviewHonored
         };
+        // A curation-capable tool defaults to holding every effect for a human
+        // (`require`); an admin override may flip it to `auto-approve`. The field
+        // is meaningless for a tool that does not self-curate, so seed it only
+        // when the binding is honoured — otherwise `auto-approve` could never
+        // fire (no hold to approve) but would still mislead the egress accounting.
+        if (curatorReviewHonored) {
+            base.curation = 'require';
+        }
         return { ...base, ...this.overrides[name] };
+    }
+
+    /**
+     * Whether an external tool's off-platform channel is gated behind honoured
+     * curator review — egress that can do no more than draft into a verified
+     * curation queue before a human releases it. This is the same fact the
+     * autonomous-path gate keys on (see {@link curatorReviewHonored}), exposed
+     * for the lethal-trifecta detector so it can tell an *open* exfiltration leg
+     * (autonomously closable — the dangerous case) from a *supervised* one
+     * (human-in-the-loop, the Rule-of-Two escape hatch). Surfacing the one
+     * predicate keeps the advisory signal and the enforcement decision crediting
+     * the same fact, so the credit evaporates identically when a bound curation
+     * type is unregistered. A non-external tool opens no channel, so it is never
+     * "gated" in this sense.
+     *
+     * Auto-approve un-gates the channel: a held effect that the governor releases
+     * without a human is no longer human-gated, so a tool whose effective policy
+     * is `curation: 'auto-approve'` counts as *open* egress here even though it
+     * still routes through the queue. That keeps the trifecta banner honest — flip
+     * the bypass and the tool moves from `exfiltrationGated` to `exfiltrationOpen`.
+     *
+     * @param name - Tool name (effective-policy lookup key).
+     * @param cap - The tool's capability (may be partial or undefined).
+     * @returns True only for an external tool whose curator review is honoured and
+     *          not auto-approved.
+     */
+    isEgressGated(name: string, cap: IAiToolCapability | undefined): boolean {
+        const fullCap = { ...DEFAULT_CAPABILITY, ...(cap ?? {}) };
+        const honoured = fullCap.sideEffect === 'external' && this.curatorReviewHonored(fullCap);
+        const autoApproves = this.effectivePolicyFor(name, fullCap).curation === 'auto-approve';
+        return honoured && !autoApproves;
+    }
+
+    /**
+     * Whether the held effects of this invocation should be auto-approved — the
+     * governor's bridge decision for `curation: 'auto-approve'`. True only when
+     * the tool actually self-curates (honoured binding), its effective policy opts
+     * into auto-approve, AND the call is on the interactive trigger path. The
+     * interactive-only restriction is the forbidden-corner guard: an autonomous
+     * (scheduled / programmatic) run never auto-executes an external effect — it
+     * falls back to a manual hold instead — so "auto-approve + unattended" is
+     * structurally impossible.
+     *
+     * @param tool - The resolved tool, including its capability.
+     * @param ctx - Caller and trigger context.
+     * @returns Whether held effects of this invocation auto-approve.
+     */
+    shouldAutoApproveCuration(tool: IAiTool, ctx: IToolInvocationContext): boolean {
+        const fullCap = { ...DEFAULT_CAPABILITY, ...(tool.capability ?? {}) };
+        const interactive = ctx.triggerPath === 'interactive';
+        const honoured = this.curatorReviewHonored(fullCap);
+        const autoMode = this.effectivePolicyFor(tool.name, fullCap).curation === 'auto-approve';
+        return interactive && honoured && autoMode;
     }
 
     /**
