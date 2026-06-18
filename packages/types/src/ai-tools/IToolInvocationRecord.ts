@@ -36,6 +36,14 @@ export interface IToolInvocationRecord {
     /** Conversation grouping id, when part of a multi-turn chat. */
     conversationId?: string;
 
+    /**
+     * Better Auth id of the end user the call ran on behalf of, when the
+     * trigger path supplied one. Distinct from `actor`: the actor drove the
+     * run, this principal is whose objects a user-scoped tool was authorized
+     * against. Absent on admin/scheduled/programmatic runs.
+     */
+    endUserId?: string;
+
     /** Per-query id, when supplied — links the call to its run. */
     queryId?: string;
 

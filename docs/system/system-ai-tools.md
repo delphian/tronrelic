@@ -51,6 +51,7 @@ Classify every tool before it ships; the class drives the guardrails the governo
 | Spends money | yes / no | Cost cap + quota |
 | Sensitivity | `public` · `internal` · `secret` | Audit redaction + trifecta accounting |
 | Surfaces untrusted content | yes / no | Trifecta accounting (injection source) |
+| Operates on user-owned objects | yes / no | Requires an end-user principal in context; denied under ambient authority |
 | Forces curator review | yes / no | Tool self-gates every effect → no governor approval added; safe unattended |
 | Curation binding (`curationTypeId`) | type id / none | Verifies `forcesCuratorReview` against a live curation type; re-tightens if the owner is disabled |
 
@@ -70,7 +71,7 @@ Mandatory for every tool; scale to the class. A read-only lookup needs little, a
 
 **Validate every input.** The schema is a hint to the model, not a guarantee. Re-check every argument in the handler (format, range, enum) and reject with a descriptive error the model can correct from. Never pass model-supplied values into a query, path, command, or URL unchecked.
 
-**Authorize object access.** A tool addressed by id (file id, record id) must verify the caller may access that object. Knowing the id is not authorization — ids leak and enumerate.
+**Authorize object access.** A tool addressed by id (file id, record id) must verify the caller may access that object. Knowing the id is not authorization — ids leak and enumerate. A tool that reads or mutates objects belonging to a *specific end user* (their files, their records) declares `operatesOnUserOwnedObjects: true` and scopes every access to `IToolInvocationContext.endUser`. The governor turns this into an enforced precondition: it denies the call when no end-user principal is present, so the tool can never run under the actor's ambient server/admin authority, where "the user" is undefined. Core cannot verify the handler performs the ownership check, but it refuses to run the tool without the identity that check needs. The principal is supplied only by a non-admin-facing query path; admin, scheduled, and programmatic runs leave it unset, so a user-scoped tool is inert until that path exists — by design, not omission. When a non-admin query path is added, resolve its Better Auth principal and set `endUser` on the invocation context the provider passes to the governor.
 
 **Bound side-effecting and paid tools.** Rate-limit, quota, and cap cost. A looping or injected model must not drain an API budget or flood a channel. `TransactionToolGuard` is the reference limiter.
 

@@ -135,8 +135,25 @@ function paidTool(costPerCallUsd?: number): IAiTool {
     };
 }
 
+/**
+ * A read tool scoped to a specific end user's own objects (BOLA-sensitive). It
+ * declares `operatesOnUserOwnedObjects`, so the governor denies it unless the
+ * context carries an `endUser` principal.
+ */
+function userScopedTool(handler = vi.fn(async () => ({ records: [] as string[] }))): IAiTool {
+    return {
+        name: 'test-user-scoped',
+        description: 'Reads the calling end user\'s own records.',
+        inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+        capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal', operatesOnUserOwnedObjects: true },
+        handler
+    };
+}
+
 const interactiveCtx: IToolInvocationContext = { actor: { kind: 'admin', id: 'admin-1' }, triggerPath: 'interactive', aiProviderId: 'test-provider' };
 const scheduledCtx: IToolInvocationContext = { actor: { kind: 'system' }, triggerPath: 'scheduled', aiProviderId: 'test-provider' };
+/** Interactive admin context that also carries the end-user principal a user-scoped tool requires. */
+const principalCtx: IToolInvocationContext = { ...interactiveCtx, endUser: { userId: 'user-42' } };
 
 describe('AiToolsModule', () => {
     let module: AiToolsModule;
@@ -328,6 +345,43 @@ describe('AiToolsModule', () => {
             const result = await module.getGovernor().invoke('needs-id', {}, interactiveCtx);
             expect(result.status).toBe('denied');
             expect(result.error).toContain('id');
+        });
+    });
+
+    describe('object authorization (F2)', () => {
+        it('denies a user-scoped tool when no end-user principal is in context', async () => {
+            const handler = vi.fn(async () => ({ records: ['r1'] }));
+            module.getRegistry().registerTool(userScopedTool(handler), 'test');
+
+            // interactiveCtx is an admin with ambient authority but no end user —
+            // the principal the ownership check would scope to is absent.
+            const result = await module.getGovernor().invoke('test-user-scoped', {}, interactiveCtx);
+
+            expect(result.status).toBe('denied');
+            expect(result.error).toContain('user-owned objects');
+            expect(handler).not.toHaveBeenCalled();
+        });
+
+        it('runs a user-scoped tool when a principal is present and attributes the audit record to the end user', async () => {
+            const handler = vi.fn(async () => ({ records: ['r1'] }));
+            module.getRegistry().registerTool(userScopedTool(handler), 'test');
+
+            const result = await module.getGovernor().invoke('test-user-scoped', {}, principalCtx);
+
+            expect(result.status).toBe('ok');
+            expect(handler).toHaveBeenCalledOnce();
+            // The audit record names the end user the call ran on behalf of,
+            // distinct from the actor that drove it.
+            const invoked = (mockHooks.invoke as ReturnType<typeof vi.fn>).mock.calls
+                .find(call => (call[0] as { id?: string })?.id === 'ai.toolInvoked');
+            expect((invoked?.[1] as { endUserId?: string })?.endUserId).toBe('user-42');
+        });
+
+        it('leaves a tool that does not operate on user-owned objects unaffected by a missing principal', async () => {
+            module.getRegistry().registerTool(readTool(), 'test');
+
+            const result = await module.getGovernor().invoke('test-read', {}, interactiveCtx);
+            expect(result.status).toBe('ok');
         });
     });
 
@@ -924,6 +978,32 @@ describe('ToolPolicyEngine cost ceiling', () => {
         ];
 
         expect(admits).toEqual([true, true, true, false]);
+    });
+});
+
+describe('ToolPolicyEngine object-authorization precondition', () => {
+    /** Build an engine over fresh mock dependencies. */
+    function makeEngine(): ToolPolicyEngine {
+        return new ToolPolicyEngine(createMockLogger(), createMockDatabaseService());
+    }
+
+    /** A user-scoped tool: the precondition keys off its capability flag. */
+    const userScoped: IAiTool = {
+        name: 'us',
+        description: 'user-scoped',
+        inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+        capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal', operatesOnUserOwnedObjects: true },
+        handler: vi.fn(async () => ({}))
+    };
+
+    it('denies when the context carries no end-user principal — evaluated before every other gate', () => {
+        // Admin/interactive does not satisfy it: an admin is ambient authority,
+        // not a specific end user.
+        expect(makeEngine().check(userScoped, interactiveCtx).verdict).toBe('deny');
+    });
+
+    it('allows when an end-user principal is present', () => {
+        expect(makeEngine().check(userScoped, principalCtx).verdict).toBe('allow');
     });
 });
 

@@ -60,6 +60,25 @@ export interface IAiToolCapability {
     surfacesUntrustedContent?: boolean;
 
     /**
+     * Whether the tool reads or mutates objects owned by a specific end user
+     * (their files, their records), as opposed to global or admin-scoped data.
+     * Such a tool MUST scope every object access to the principal in
+     * `IToolInvocationContext.endUser` — knowing an id is not authorization, so
+     * the handler verifies ownership before returning or touching an object
+     * (the BOLA guard).
+     *
+     * Setting this turns that obligation into an enforceable precondition: the
+     * governor denies the call when no end-user principal is present, so the
+     * tool can never run under the actor's ambient server/admin authority,
+     * where "the user" is undefined and the ownership check has nothing to
+     * check against. Core cannot verify the handler performs the check, but it
+     * can — and does — refuse to run the tool without the identity the check
+     * needs. Leave unset for tools that operate on global or admin-scoped data;
+     * a normal tool is unaffected by the presence or absence of a principal.
+     */
+    operatesOnUserOwnedObjects?: boolean;
+
+    /**
      * Whether the tool guarantees, by its own construction, that every effect it
      * produces is held for a human curator's review before it takes hold — a
      * built-in approval queue, for example. This describes what the tool *does*,

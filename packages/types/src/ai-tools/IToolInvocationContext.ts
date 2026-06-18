@@ -25,6 +25,30 @@ export interface IToolInvocationActor {
 }
 
 /**
+ * The end user a query runs *on behalf of* — distinct from the {@link
+ * IToolInvocationActor} driving it. The actor is the operator or process at the
+ * controls (an admin, the scheduler); the principal is whose data and
+ * permissions a tool must scope to. They coincide only by accident — an admin
+ * querying their own account — and must not be conflated: running a
+ * user-scoped tool with the actor's ambient authority instead of the
+ * principal's is the confused-deputy failure (BOLA).
+ *
+ * Absent today: every path is admin-only, so no end user sits behind a query
+ * and this is never populated. It exists so the seam is in place before a
+ * non-admin path is ever added — a tool that declares
+ * `operatesOnUserOwnedObjects` is denied outright while this is absent (see
+ * {@link IAiToolCapability}), so a user-scoped tool can never silently run
+ * under ambient server authority.
+ */
+export interface IToolEndUserPrincipal {
+    /** Better Auth user id whose context the tool must execute in. */
+    userId: string;
+
+    /** Group memberships of the principal, for tools that scope by group. */
+    groups?: string[];
+}
+
+/**
  * Context the AI provider plugin supplies to the governor for each tool call.
  * Lets the policy engine vary its decision by trigger path (e.g. deny
  * `external` tools on autonomous runs) and lets the audit record attribute the
@@ -48,4 +72,13 @@ export interface IToolInvocationContext {
 
     /** Plugin or module id that initiated a programmatic query, when applicable. */
     callerPluginId?: string;
+
+    /**
+     * The end user the query runs on behalf of, when one is known. Supplied
+     * only by a non-admin-facing path; admin, scheduled, and programmatic runs
+     * leave it unset. A tool that declares `operatesOnUserOwnedObjects` is
+     * denied when this is absent, so a user-scoped tool cannot run under the
+     * actor's ambient authority. See {@link IToolEndUserPrincipal}.
+     */
+    endUser?: IToolEndUserPrincipal;
 }

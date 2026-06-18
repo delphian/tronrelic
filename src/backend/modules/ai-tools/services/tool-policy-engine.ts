@@ -254,7 +254,21 @@ export class ToolPolicyEngine {
         const ceiling = policy.costCeilingUsd;
 
         let decision: IToolPolicyDecision;
-        if (ctx.triggerPath !== 'interactive' && cap.sideEffect === 'external' && !policy.allowUnattended) {
+        if (cap.operatesOnUserOwnedObjects === true && !ctx.endUser) {
+            // Confused-deputy guard, evaluated first. A tool scoped to a
+            // specific end user's objects has no meaning under the actor's
+            // ambient server/admin authority — there is no principal to
+            // authorize the object access against — so deny rather than let it
+            // run with whatever authority the platform happens to hold. The
+            // actor's `kind` does not satisfy this: an admin is ambient
+            // authority, not a specific end user. Inert until a non-admin path
+            // supplies `ctx.endUser`; no tool declares the flag today.
+            counters.denied++;
+            decision = {
+                verdict: 'deny',
+                reason: `Tool "${tool.name}" operates on user-owned objects and requires an end-user principal in context; it cannot run under ambient server authority.`
+            };
+        } else if (ctx.triggerPath !== 'interactive' && cap.sideEffect === 'external' && !policy.allowUnattended) {
             counters.denied++;
             decision = {
                 verdict: 'deny',
