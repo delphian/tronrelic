@@ -138,16 +138,21 @@ export class PromptVariableRegistry implements IPromptVariableRegistry {
 
     /** @inheritdoc */
     registerVariable(definition: IPromptVariableDefinition, providerId: string = 'unknown'): void {
+        // Name collisions across kinds are not allowed in either direction:
+        // `createStatic` already rejects a static that shadows a dynamic, and
+        // here a dynamic is refused when an admin static already owns the name.
+        // Letting a plugin-registered dynamic take a name an admin authored as a
+        // static would let plugin code masquerade as / silently replace the
+        // admin's variable — a security boundary, not a mere ambiguity. The
+        // pre-existing static stays authoritative; the colliding registration is
+        // dropped with a loud error rather than throwing, so a sibling variable
+        // in the same batch still registers.
         if (this.statics.has(definition.name)) {
-            // A code variable colliding with an admin static is a real ambiguity;
-            // resolution prefers the dynamic one, so warn rather than silently
-            // shadow. Admin static creation already rejects shadowing a dynamic;
-            // this guards the reverse order (static created before the plugin
-            // registered its dynamic of the same name).
-            this.logger.warn(
+            this.logger.error(
                 { variable: definition.name, provider: providerId },
-                `Dynamic variable "${definition.name}" shadows an existing static variable of the same name`
+                `Dynamic variable "${definition.name}" rejected: an admin static variable already owns that name`
             );
+            return;
         }
         this.dynamic.set(definition.name, { definition, providerId });
         this.logger.info({ variable: definition.name, provider: providerId }, `Prompt variable registered: ${definition.name}`);
@@ -210,41 +215,61 @@ export class PromptVariableRegistry implements IPromptVariableRegistry {
 
     /** @inheritdoc */
     async listInfo(): Promise<IPromptVariableInfo[]> {
-        const infos: IPromptVariableInfo[] = [];
+        // Resolve dynamic sizes concurrently — each resolver may hit a service or
+        // the DB, so awaiting them one at a time in a loop serializes I/O the
+        // panel does not need serialized.
+        const dynamicInfos = await Promise.all(
+            [...this.dynamic.entries()].map(([name, entry]) => this.buildDynamicInfo(name, entry))
+        );
+        const staticInfos = [...this.statics.values()].map(stat => this.buildStaticInfo(stat));
 
-        for (const [name, entry] of this.dynamic) {
-            const { sensitivity, source } = this.dynamicSensitivity(name, entry.definition);
-            infos.push({
-                name,
-                pattern: `{%${name}%}`,
-                description: entry.definition.description,
-                category: entry.definition.category,
-                kind: 'dynamic',
-                sensitivity,
-                sensitivitySource: source,
-                editable: false,
-                sizeBytes: await this.safeSize(name)
-            });
-        }
-
-        for (const [name, stat] of this.statics) {
-            // A static shadowed by a dynamic of the same name is unreachable for
-            // resolution; still list it so an admin can see and delete it.
-            infos.push({
-                name,
-                pattern: `{%${name}%}`,
-                description: stat.description,
-                category: stat.category,
-                kind: 'static',
-                sensitivity: stat.sensitivity,
-                sensitivitySource: 'override',
-                editable: true,
-                sizeBytes: Buffer.byteLength(stat.content, 'utf-8')
-            });
-        }
-
+        const infos = [...dynamicInfos, ...staticInfos];
         infos.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
         return infos;
+    }
+
+    /**
+     * Build the admin info for one static variable. Includes `content` so the
+     * admin edit form can prefill it (omitting it would erase the text on edit).
+     *
+     * @param stat - The static variable.
+     * @returns Its serializable info.
+     */
+    private buildStaticInfo(stat: IStaticPromptVariable): IPromptVariableInfo {
+        return {
+            name: stat.name,
+            pattern: `{%${stat.name}%}`,
+            description: stat.description,
+            category: stat.category,
+            kind: 'static',
+            sensitivity: stat.sensitivity,
+            sensitivitySource: 'override',
+            editable: true,
+            sizeBytes: Buffer.byteLength(stat.content, 'utf-8'),
+            content: stat.content
+        };
+    }
+
+    /**
+     * Build the admin info for one dynamic variable, resolving its current size.
+     *
+     * @param name - Variable name.
+     * @param entry - The registered dynamic entry.
+     * @returns Its serializable info.
+     */
+    private async buildDynamicInfo(name: string, entry: DynamicEntry): Promise<IPromptVariableInfo> {
+        const { sensitivity, source } = this.dynamicSensitivity(name, entry.definition);
+        return {
+            name,
+            pattern: `{%${name}%}`,
+            description: entry.definition.description,
+            category: entry.definition.category,
+            kind: 'dynamic',
+            sensitivity,
+            sensitivitySource: source,
+            editable: false,
+            sizeBytes: await this.safeSize(name)
+        };
     }
 
     /** @inheritdoc */
@@ -338,21 +363,23 @@ export class PromptVariableRegistry implements IPromptVariableRegistry {
             throw new PromptVariableValidationError('Invalid sensitivity');
         }
 
-        if (this.statics.has(name)) {
-            await this.updateStatic(name, { sensitivity: normalized });
-        } else if (this.dynamic.has(name)) {
+        const stat = this.statics.get(name);
+        if (stat) {
+            const updated = await this.updateStatic(name, { sensitivity: normalized });
+            return this.buildStaticInfo(updated);
+        }
+
+        const entry = this.dynamic.get(name);
+        if (entry) {
             this.classifications[name] = normalized;
             await this.database.set(CLASSIFICATIONS_KEY, this.classifications);
             this.logger.info({ variable: name, sensitivity: normalized }, `Dynamic variable reclassified: ${name}`);
-        } else {
-            throw new PromptVariableNotFoundError();
+            // Construct this one variable's info directly — `listInfo()` would
+            // resolve the size of every registered variable just to return one.
+            return this.buildDynamicInfo(name, entry);
         }
 
-        const info = (await this.listInfo()).find(item => item.name === name);
-        if (!info) {
-            throw new PromptVariableNotFoundError();
-        }
-        return info;
+        throw new PromptVariableNotFoundError();
     }
 
     /** @inheritdoc */

@@ -34,13 +34,6 @@ import styles from '../page.module.scss';
 /** Sensitivity options offered in the classification dropdown. */
 const SENSITIVITIES: AiToolSensitivity[] = ['public', 'internal', 'secret'];
 
-/** Badge tone per sensitivity — `secret` reads as the riskiest (danger). */
-const SENSITIVITY_TONE: Record<AiToolSensitivity, 'neutral' | 'warning' | 'danger'> = {
-    public: 'neutral',
-    internal: 'warning',
-    secret: 'danger'
-};
-
 /** Empty create/edit form state. */
 const EMPTY_FORM = { name: '', category: '', description: '', content: '', sensitivity: 'secret' as AiToolSensitivity };
 
@@ -113,7 +106,7 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
             name: variable.name,
             category: variable.category,
             description: variable.description,
-            content: '',
+            content: variable.content ?? '',
             sensitivity: variable.sensitivity
         });
         setFormOpen(true);
