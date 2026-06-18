@@ -194,12 +194,15 @@
     word-break: break-word;
 }
 
-/* Tool name + override badge, inline in the first (expanding) column. */
+/* Tool name + override badge, inline in the first column. Never wraps, so the
+ * column hugs its content (the longest tool name on one line) instead of
+ * expanding — no min-width needed. */
 .tool_cell {
     display: flex;
     align-items: center;
     gap: var(--gap-sm);
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    white-space: nowrap;
 }
 
 /* Keep the usage tally on one line so its column hugs the content. */

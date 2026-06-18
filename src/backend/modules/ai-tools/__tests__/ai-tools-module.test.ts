@@ -977,9 +977,9 @@ describe('ToolPolicyEngine cost ceiling', () => {
         const tool = paidTool(0.04);
 
         const verdicts = [
-            engine.check(tool, interactiveCtx).verdict, // spend → 0.04
-            engine.check(tool, interactiveCtx).verdict, // spend → 0.08
-            engine.check(tool, interactiveCtx).verdict  // 0.12 would exceed 0.10
+            (await engine.check(tool, interactiveCtx)).verdict, // spend → 0.04
+            (await engine.check(tool, interactiveCtx)).verdict, // spend → 0.08
+            (await engine.check(tool, interactiveCtx)).verdict  // 0.12 would exceed 0.10
         ];
 
         expect(verdicts).toEqual(['allow', 'allow', 'deny']);
@@ -990,16 +990,19 @@ describe('ToolPolicyEngine cost ceiling', () => {
         await engine.setOverride('paid-gen', { costCeilingUsd: 0.01 });
         const tool = paidTool(undefined); // spendsMoney but nothing to charge
 
-        const verdicts = [0, 1, 2].map(() => engine.check(tool, interactiveCtx).verdict);
+        const verdicts: string[] = [];
+        for (let i = 0; i < 3; i++) {
+            verdicts.push((await engine.check(tool, interactiveCtx)).verdict);
+        }
         expect(verdicts).toEqual(['allow', 'allow', 'allow']);
     });
 
-    it('leaves a paid tool uncapped when no ceiling override is set', () => {
+    it('leaves a paid tool uncapped when no ceiling override is set', async () => {
         const engine = makeEngine();
         const tool = paidTool(5); // expensive per call, but no ceiling
 
-        expect(engine.check(tool, interactiveCtx).verdict).toBe('allow');
-        expect(engine.check(tool, interactiveCtx).verdict).toBe('allow');
+        expect((await engine.check(tool, interactiveCtx)).verdict).toBe('allow');
+        expect((await engine.check(tool, interactiveCtx)).verdict).toBe('allow');
     });
 
     it('gates and charges the approved-execution path (tryChargeCost) at the ceiling', async () => {
@@ -1010,7 +1013,10 @@ describe('ToolPolicyEngine cost ceiling', () => {
         await engine.setOverride('paid-gen', { costCeilingUsd: 0.10 });
         const tool = paidTool(0.04);
 
-        const admits = [engine.tryChargeCost(tool), engine.tryChargeCost(tool), engine.tryChargeCost(tool)];
+        const admits: boolean[] = [];
+        for (let i = 0; i < 3; i++) {
+            admits.push(await engine.tryChargeCost(tool));
+        }
 
         expect(admits).toEqual([true, true, false]);
     });
@@ -1018,16 +1024,66 @@ describe('ToolPolicyEngine cost ceiling', () => {
     it('admits a call that exactly meets the ceiling despite float accumulation', async () => {
         const engine = makeEngine();
         await engine.setOverride('paid-gen', { costCeilingUsd: 0.30 });
-        const tool = paidTool(0.10); // 0.1 + 0.1 + 0.1 === 0.30000000000000004 in IEEE 754
+        const tool = paidTool(0.10); // ceiling/cost = 0.30/0.10 = 2.9999999999999996 in IEEE 754
 
-        const admits = [
-            engine.tryChargeCost(tool),
-            engine.tryChargeCost(tool),
-            engine.tryChargeCost(tool), // exactly meets 0.30 — the epsilon must admit, not float-deny
-            engine.tryChargeCost(tool)  // genuinely exceeds
-        ];
+        const admits: boolean[] = [];
+        for (let i = 0; i < 4; i++) {
+            // calls 1-3 fit the 3-call cap (the epsilon must admit, not float-deny); the 4th exceeds.
+            admits.push(await engine.tryChargeCost(tool));
+        }
 
         expect(admits).toEqual([true, true, true, false]);
+    });
+});
+
+describe('ToolPolicyEngine Redis-backed shared limits', () => {
+    /** Minimal in-memory stand-in for the Redis commands the engine uses. */
+    function fakeRedis() {
+        const store = new Map<string, number>();
+        return {
+            store,
+            incr: async (key: string) => {
+                const next = (store.get(key) ?? 0) + 1;
+                store.set(key, next);
+                return next;
+            },
+            expire: async () => 1,
+            get: async (key: string) => {
+                const value = store.get(key);
+                return value === undefined ? null : String(value);
+            }
+        };
+    }
+
+    it('enforces one shared budget across instances backed by the same Redis', async () => {
+        // Two engines model two backend instances. With a shared store the
+        // per-tool rate window is a single budget, not one-per-instance — the
+        // F5 fix. Without it, each instance would admit its own full quota.
+        const redis = fakeRedis();
+        const a = new ToolPolicyEngine(createMockLogger(), createMockDatabaseService(), redis);
+        const b = new ToolPolicyEngine(createMockLogger(), createMockDatabaseService(), redis);
+        await a.setOverride('paid-gen', { rateLimit: { max: 1, windowMs: 60_000 } });
+        await b.setOverride('paid-gen', { rateLimit: { max: 1, windowMs: 60_000 } });
+        const tool = paidTool(0.04);
+
+        expect((await a.check(tool, interactiveCtx)).verdict).toBe('allow');
+        // Second instance, same shared window: the single slot is already spent.
+        expect((await b.check(tool, interactiveCtx)).verdict).toBe('deny');
+    });
+
+    it('falls back to per-instance in-memory limiting when Redis errors', async () => {
+        const downRedis = {
+            incr: async () => { throw new Error('redis down'); },
+            expire: async () => { throw new Error('redis down'); },
+            get: async () => { throw new Error('redis down'); }
+        };
+        const engine = new ToolPolicyEngine(createMockLogger(), createMockDatabaseService(), downRedis);
+        await engine.setOverride('paid-gen', { rateLimit: { max: 1, windowMs: 60_000 } });
+        const tool = paidTool(0.04);
+
+        // Degrades safely: still limits (in-memory), never throws.
+        expect((await engine.check(tool, interactiveCtx)).verdict).toBe('allow');
+        expect((await engine.check(tool, interactiveCtx)).verdict).toBe('deny');
     });
 });
 
@@ -1046,21 +1102,21 @@ describe('ToolPolicyEngine object-authorization precondition', () => {
         handler: vi.fn(async () => ({}))
     };
 
-    it('denies when the context carries no end-user principal — evaluated before every other gate', () => {
+    it('denies when the context carries no end-user principal — evaluated before every other gate', async () => {
         // Admin/interactive does not satisfy it: an admin is ambient authority,
         // not a specific end user.
-        expect(makeEngine().check(userScoped, interactiveCtx).verdict).toBe('deny');
+        expect((await makeEngine().check(userScoped, interactiveCtx)).verdict).toBe('deny');
     });
 
-    it('allows when an end-user principal is present', () => {
-        expect(makeEngine().check(userScoped, principalCtx).verdict).toBe('allow');
+    it('allows when an end-user principal is present', async () => {
+        expect((await makeEngine().check(userScoped, principalCtx)).verdict).toBe('allow');
     });
 
-    it('denies when the end-user principal has an empty or whitespace userId', () => {
+    it('denies when the end-user principal has an empty or whitespace userId', async () => {
         // A blank id would scope to nothing — it is treated as no principal at
         // all, so it must not slip the confused-deputy guard.
         const emptyUserCtx: IToolInvocationContext = { ...interactiveCtx, endUser: { userId: '   ' } };
-        expect(makeEngine().check(userScoped, emptyUserCtx).verdict).toBe('deny');
+        expect((await makeEngine().check(userScoped, emptyUserCtx)).verdict).toBe('deny');
     });
 });
 

@@ -21,6 +21,12 @@ interface TableProps extends TableHTMLAttributes<HTMLTableElement> {
      * @default 'default'
      */
     variant?: TableVariant;
+    /**
+     * Pin the header row while the body scrolls. Bounds the wrapper height and
+     * makes it the scroll container so the header stays visible on long tables.
+     * @default false
+     */
+    stickyHeader?: boolean;
 }
 
 /**
@@ -51,9 +57,9 @@ interface TableProps extends TableHTMLAttributes<HTMLTableElement> {
  * @param props - Table component properties
  * @returns A styled table element with wrapper
  */
-export function Table({ variant = 'default', className, children, ...props }: TableProps) {
+export function Table({ variant = 'default', stickyHeader = false, className, children, ...props }: TableProps) {
     return (
-        <div className={styles.table_wrapper}>
+        <div className={cn(styles.table_wrapper, stickyHeader && styles.table_wrapper_sticky)}>
             <table
                 className={cn(
                     styles.table,

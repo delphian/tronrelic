@@ -78,11 +78,15 @@ export function TrifectaPanel({ status }: { status: ITrifectaStatus }) {
                 <div className={styles.trifecta_legs}>
                     <Leg label="Private data" tools={[...status.privateData, ...status.privateDataVariables]} tone={accent.tone} />
                     <Leg label="Untrusted content" tools={status.untrustedContent} tone={accent.tone} />
-                    {status.exfiltrationOpen.length > 0 && (
-                        <Leg label="Exfiltration (open)" tools={status.exfiltrationOpen} tone="danger" />
-                    )}
-                    {status.exfiltrationGated.length > 0 && (
-                        <Leg label="Exfiltration (curator-gated)" tools={status.exfiltrationGated} tone="warning" />
+                    {(status.exfiltrationOpen.length > 0 || status.exfiltrationGated.length > 0) && (
+                        <Stack gap="sm">
+                            {status.exfiltrationOpen.length > 0 && (
+                                <Leg label="Exfiltration (open)" tools={status.exfiltrationOpen} tone="danger" />
+                            )}
+                            {status.exfiltrationGated.length > 0 && (
+                                <Leg label="Exfiltration (curator-gated)" tools={status.exfiltrationGated} tone="warning" />
+                            )}
+                        </Stack>
                     )}
                 </div>
             </Stack>

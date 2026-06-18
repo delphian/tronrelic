@@ -233,7 +233,7 @@ export class AiToolGovernor implements IAiToolGovernor {
             return this.fail(name, providerId, input, ctx, cap, 'error', 'A governance hook failed; the tool was not run.');
         }
 
-        const decision = this.policy.check(tool, ctx);
+        const decision = await this.policy.check(tool, ctx);
         if (decision.verdict === 'deny') {
             return this.fail(name, providerId, input, ctx, cap, 'denied', decision.reason ?? 'Denied by policy.');
         }
@@ -281,7 +281,7 @@ export class AiToolGovernor implements IAiToolGovernor {
             const cap = tool?.capability ?? DEFAULT_CAPABILITY;
             if (!tool) {
                 result = await this.fail(request.toolName, request.providerId, request.input, request.context, cap, 'error', 'Tool is no longer registered.');
-            } else if (!this.policy.tryChargeCost(tool)) {
+            } else if (!(await this.policy.tryChargeCost(tool))) {
                 // An approved hold bypasses check(), so gate and charge the cost
                 // ceiling here too — otherwise paid tools that require approval
                 // (the default for external/irreversible) would never be metered.

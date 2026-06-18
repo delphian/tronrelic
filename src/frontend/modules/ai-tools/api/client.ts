@@ -109,7 +109,7 @@ export interface IQueryHistoryQuery {
     offset?: number;
 }
 
-/** Per-tool policy overrides plus usage tallies, as returned by `GET /policy`. */
+/** Per-tool policy overrides, usage tallies, and resolved class defaults, as returned by `GET /policy`. */
 export interface IPolicyResponse {
     overrides: Record<string, IToolPolicy>;
     usage: Record<string, {
@@ -119,6 +119,12 @@ export interface IPolicyResponse {
         rateLimited: number;
         needsApproval: number;
     }>;
+    /**
+     * The class-default behaviour each tool inherits, before any override —
+     * lets an inherited cell show what "Default" actually resolves to. Keyed by
+     * tool name; a tool absent here has no resolvable default to display.
+     */
+    defaults: Record<string, { requireApproval: boolean; allowUnattended: boolean }>;
 }
 
 /**

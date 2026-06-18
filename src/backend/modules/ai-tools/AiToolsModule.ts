@@ -25,10 +25,11 @@ import type {
     IServiceRegistry
 } from '@/types';
 import { logger } from '../../lib/logger.js';
+import { getRedisClient } from '../../loaders/redis.js';
 import { WebSocketService } from '../../services/websocket.service.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { AiToolRegistry } from './services/ai-tool-registry.js';
-import { ToolPolicyEngine } from './services/tool-policy-engine.js';
+import { ToolPolicyEngine, type IRateLimitRedis } from './services/tool-policy-engine.js';
 import { ToolAuditStore } from './services/tool-audit-store.js';
 import { ToolApprovalQueue } from './services/tool-approval-queue.js';
 import { AiToolGovernor } from './services/ai-tool-governor.js';
@@ -148,7 +149,18 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.registry = new AiToolRegistry(this.logger, this.database);
         await this.registry.loadStates();
 
-        this.policy = new ToolPolicyEngine(this.logger, this.database);
+        // Back the rate/cost windows with Redis so the limits are one shared
+        // budget across backend instances and survive a restart. getRedisClient
+        // throws if Redis is not initialized (e.g. a test boot); the engine then
+        // degrades to per-instance in-memory counters rather than failing.
+        let rateLimitRedis: IRateLimitRedis | undefined;
+        try {
+            rateLimitRedis = getRedisClient();
+        } catch (error) {
+            this.logger.warn({ error }, 'Redis unavailable at init; AI tool rate/cost limits will be per-instance in-memory');
+        }
+
+        this.policy = new ToolPolicyEngine(this.logger, this.database, rateLimitRedis);
         await this.policy.loadOverrides();
 
         this.audit = new ToolAuditStore(this.logger, this.database);
