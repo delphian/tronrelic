@@ -15,6 +15,7 @@ import type {
     IAiQueryRecord,
     IAiQueryResult,
     IAiStreamChunk,
+    IAiToolInfo,
     ICurationItem,
     IToolPolicy,
     ToolInvocationStatus,
@@ -170,7 +171,21 @@ export class AiToolsController {
      */
     getTrifecta = async (_req: Request, res: Response): Promise<void> => {
         const registryTools = this.registry.listToolInfo();
-        const serverTools = await this.providers.getActive()?.listActiveServerTools() ?? [];
+        // The provider half ships in a separate repo and deploys independently,
+        // so a version-skewed active provider may predate listActiveServerTools
+        // (the provider registry does not validate the instance shape), and the
+        // call itself reads provider state that can throw. Guard both — a missing
+        // method or a throw degrades to a registry-only verdict instead of 500ing
+        // the dashboard's trifecta panel.
+        let serverTools: IAiToolInfo[] = [];
+        try {
+            const provider = this.providers.getActive();
+            if (provider && typeof provider.listActiveServerTools === 'function') {
+                serverTools = (await provider.listActiveServerTools()) ?? [];
+            }
+        } catch {
+            serverTools = [];
+        }
         res.json(detectTrifecta([...registryTools, ...serverTools], (name, cap) => this.policy.isEgressGated(name, cap)));
     };
 
