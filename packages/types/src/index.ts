@@ -61,6 +61,7 @@ export type {
     ToolPolicyVerdict,
     IToolInvocationContext,
     IToolInvocationActor,
+    IToolEndUserPrincipal,
     ToolTriggerPath,
     IToolInvocationResult,
     ToolInvocationStatus,

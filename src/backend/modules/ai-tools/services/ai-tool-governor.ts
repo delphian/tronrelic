@@ -462,6 +462,12 @@ export class AiToolGovernor implements IAiToolGovernor {
         if (ctx.queryId) {
             record.queryId = ctx.queryId;
         }
+        if (ctx.endUser) {
+            // Attribute the call to the end user it ran on behalf of, distinct
+            // from the actor that drove it — so a user-scoped tool's audit trail
+            // names whose objects were touched, not just the operator.
+            record.endUserId = ctx.endUser.userId;
+        }
         if (extra.resultDigest !== undefined) {
             record.resultDigest = extra.resultDigest;
         }
