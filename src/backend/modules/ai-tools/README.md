@@ -45,7 +45,9 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 
 ## The Governed Pipeline
 
-`governor.invoke(name, input, ctx)` runs, in order: resolve the tool → enabled-check → validate `input` against the tool's schema → `ai.toolInvoke` seam (a handler throws `HookAbortError` to veto or hold) → policy check → execute the handler under a 30s wall-clock budget → write an `IToolInvocationRecord` → `ai.toolInvoked` seam. It fails safe: an internal fault denies rather than running an ungoverned handler, and a handler fault is caught, audited, and returned to the model as a reason. The result is `{ status: 'ok' | 'denied' | 'pending-approval' | 'error', content, error?, recordId }`.
+`governor.invoke(name, input, ctx)` runs, in order: resolve the tool → enabled-check → validate `input` against the tool's schema → `ai.toolInvoke` seam (a handler throws `HookAbortError` to veto or hold) → policy check → execute the handler under a 30s wall-clock budget → wrap the result for provenance → write an `IToolInvocationRecord` → `ai.toolInvoked` seam. It fails safe: an internal fault denies rather than running an ungoverned handler, and a handler fault is caught, audited, and returned to the model as a reason. The result is `{ status: 'ok' | 'denied' | 'pending-approval' | 'error', content, error?, recordId }`.
+
+**Provenance wrap:** when the tool declares `surfacesUntrustedContent`, a successful result's `content` is the `{ untrustedContentNotice, data }` envelope from `wrapUntrustedToolResult` (`@delphian/tronrelic-types`) — the attacker-influenceable payload labeled as data so the provider forwards it JSON-escaped, never as raw text the model could read as instructions. The audit `resultDigest` records the raw value; only what the model sees is wrapped. Because this lives in the governor, no provider transport can bypass it.
 
 ## Capability Classification & Default State
 
@@ -69,6 +71,8 @@ A tool declares `IAiToolCapability`; the registry sets its first-boot enabled st
 ### `'ai-tools'` → `IAiToolRegistry`
 
 Tool providers consume this. `registerTool(tool, providerId)`, `unregisterTool(name)`, `getEnabledToolDeclarations()` (handler-free, for a provider to format), `getTool`, `listTools`, `listToolInfo`, `setEnabled(name, enabled)`.
+
+`registerTool` lints the capability declaration first (`lintToolCapability`, `services/capability-linter.ts`). A self-contradictory declaration is an `error` and **rejects the registration** — e.g. a `curationTypeId` without `forcesCuratorReview`, the binding it is supposed to verify. Likely misclassifications are `warn`s that log and still register: a `spendsMoney` tool with no chargeable `costPerCallUsd`, a `read` tool marked irreversible or money-spending, or — the F3 footgun — a description that reads like an untrusted-content source (memo, tweet, timeline, fetched page) without `surfacesUntrustedContent` set. Core cannot read a handler's intent, so the untrusted-content check is a heuristic nudge, not a reject; over-declaring only makes the trifecta banner more cautious. The linter is pure and unit-tested independently of the registry.
 
 ### `'ai-tool-governor'` → `IAiToolGovernor`
 
