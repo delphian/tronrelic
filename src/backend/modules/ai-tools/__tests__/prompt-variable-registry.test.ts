@@ -84,11 +84,32 @@ describe('PromptVariableRegistry', () => {
             expect(registry.getSecretVariableNames()).toContain('api-note');
         });
 
+        it('returns static content in listInfo so the edit form can prefill it', async () => {
+            await registry.createStatic({ name: 'note', description: 'd', category: 'c', content: 'BODY', sensitivity: 'internal' });
+
+            const info = (await registry.listInfo()).find(i => i.name === 'note');
+            expect(info?.content).toBe('BODY');
+            expect(info?.kind).toBe('static');
+        });
+
         it('rejects a static name that shadows a registered dynamic variable', async () => {
             registry.registerVariable({ name: 'system-status', description: 'd', category: 'c', resolve: async () => 'x' });
 
             await expect(registry.createStatic({ name: 'system-status', description: 'd', category: 'c', content: 'y' }))
                 .rejects.toBeInstanceOf(DuplicateVariableNameError);
+        });
+
+        it('refuses a dynamic registration that would shadow an existing static (no masquerade)', async () => {
+            await registry.createStatic({ name: 'site-info', description: 'd', category: 'c', content: 'ADMIN', sensitivity: 'internal' });
+
+            // A plugin registering a dynamic of the same name must not take over —
+            // the admin static stays authoritative and reachable.
+            registry.registerVariable({ name: 'site-info', description: 'd', category: 'c', resolve: async () => 'PLUGIN' });
+
+            expect(await registry.resolve('site-info')).toBe('ADMIN');
+            const infos = await registry.listInfo();
+            expect(infos.filter(i => i.name === 'site-info')).toHaveLength(1);
+            expect(infos.find(i => i.name === 'site-info')?.kind).toBe('static');
         });
 
         it('rejects a duplicate static name and an invalid name', async () => {

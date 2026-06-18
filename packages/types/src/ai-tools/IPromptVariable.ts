@@ -120,6 +120,15 @@ export interface IPromptVariableInfo {
 
     /** UTF-8 byte size of the resolved value (0 when the resolver currently fails). */
     sizeBytes: number;
+
+    /**
+     * The constant text, present for `static` variables only. Returned so the
+     * admin edit form prefills it — without it, editing any other field would
+     * resubmit an empty `content` and erase the stored text. A `dynamic`
+     * variable resolves at query time and has no stored content, so this is
+     * omitted for it.
+     */
+    content?: string;
 }
 
 /**
