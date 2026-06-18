@@ -129,14 +129,16 @@ export function lintToolCapability(tool: IAiTool): ICapabilityLintFinding[] {
     }
 
     // A paid tool the ceiling cannot charge escapes cost enforcement entirely —
-    // an injected or looping model could drain the API budget uncapped. Reject at
-    // registration so a money-spending tool cannot ship without the declared
-    // per-call cost the cost ceiling needs to meter it.
-    if (cap.spendsMoney === true && (typeof cap.costPerCallUsd !== 'number' || !Number.isFinite(cap.costPerCallUsd) || cap.costPerCallUsd < 0)) {
+    // an injected or looping model could drain the API budget uncapped. A zero or
+    // negative cost is as unmetered as a missing one: the policy charges $0 per
+    // call, so a costCeilingUsd can never be reached. Reject any non-positive or
+    // non-finite cost at registration so a money-spending tool cannot ship without
+    // a per-call cost the cost ceiling can actually meter.
+    if (cap.spendsMoney === true && (typeof cap.costPerCallUsd !== 'number' || !Number.isFinite(cap.costPerCallUsd) || cap.costPerCallUsd <= 0)) {
         findings.push({
             severity: 'error',
-            message: `AI tool "${tool.name}" declares spendsMoney but has an invalid or missing costPerCallUsd; `
-                + 'declare a valid non-negative per-call cost so the cost ceiling can meter this tool'
+            message: `AI tool "${tool.name}" declares spendsMoney but has an invalid or non-positive costPerCallUsd; `
+                + 'declare a valid positive per-call cost so the cost ceiling can meter this tool'
         });
     }
 
