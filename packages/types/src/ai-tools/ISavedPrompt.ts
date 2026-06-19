@@ -37,6 +37,24 @@ export interface ISavedPrompt {
      * configured default model.
      */
     model?: string;
+    /**
+     * Better Auth user id of the prompt's owner — the admin who saved it today,
+     * an end user once a non-admin authoring path exists. A scheduled run
+     * re-resolves this id to a live end-user principal at fire time and runs the
+     * prompt on that user's behalf (the governor sees it as `endUser`), so a tool
+     * declaring `operatesOnUserOwnedObjects` scopes to the owner rather than
+     * being denied. Absent on prompts saved before ownership existed: those run
+     * with no principal, exactly as an unattended system query does.
+     */
+    ownerUserId?: string;
+    /**
+     * Denormalized owner label (email or name) captured at save time for the
+     * admin list view, so rendering the owner needs no per-row account lookup.
+     * Display-only and best-effort — it can go stale if the account's email
+     * changes; `ownerUserId` is the authoritative key and is always re-resolved
+     * fresh at fire time.
+     */
+    ownerLabel?: string;
     /** ISO timestamp of when the prompt was saved. */
     createdAt: string;
     /** ISO timestamp of last update. */

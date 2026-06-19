@@ -29,8 +29,9 @@
 // recommends and is portable across cron-parser versions.
 import cronParser from 'cron-parser';
 const { parseExpression } = cronParser;
-import type { IAiQueryOptions, ISystemLogService } from '@/types';
+import type { IAiQueryOptions, IToolEndUserPrincipal, ISystemLogService } from '@/types';
 import type { SavedPromptsService } from './saved-prompts.service.js';
+import type { EndUserResolver } from './end-user-resolver.js';
 
 /**
  * Minimum contract the runner needs from an AI provider. Declared here rather
@@ -64,11 +65,16 @@ export type ScheduledPromptProviderResolver = (providerId?: string) => ISchedule
  * @param logger - Logger for warnings and error context.
  * @param resolveProvider - Maps a prompt's optional `providerId` to the provider
  *        that should run it (pinned provider, or the active one when unpinned).
+ * @param resolveEndUser - Maps a prompt's recorded `ownerUserId` to a live
+ *        end-user principal at fire time. Omitted (or returning null) means the
+ *        run carries no principal; a prompt that records an owner the resolver
+ *        cannot resolve is failed closed rather than run under ambient authority.
  */
 export async function runScheduledPrompts(
     savedPrompts: SavedPromptsService,
     logger: ISystemLogService,
-    resolveProvider: ScheduledPromptProviderResolver
+    resolveProvider: ScheduledPromptProviderResolver,
+    resolveEndUser?: EndUserResolver
 ): Promise<void> {
     const scheduled = await savedPrompts.listScheduled();
 
@@ -159,17 +165,46 @@ export async function runScheduledPrompts(
             continue;
         }
 
+        // Resolve the owner principal for a prompt that records one. The run
+        // executes on the owner's behalf, so a tool declaring
+        // operatesOnUserOwnedObjects scopes to the owner instead of being denied.
+        // Re-resolved live every fire — never a snapshot — so a revoked group or
+        // a deleted account takes effect on the very next run. Fail closed: an
+        // owner the resolver cannot resolve records a failed run rather than
+        // executing under no/stale authority (the run is already claimed, so this
+        // never double-fires). A prompt with no owner runs with no principal,
+        // exactly as an unattended system query does.
+        let endUser: IToolEndUserPrincipal | undefined;
+        if (p.ownerUserId) {
+            const principal = resolveEndUser ? await resolveEndUser(p.ownerUserId) : null;
+            if (!principal) {
+                const reason = `Prompt owner "${p.ownerUserId}" could not be resolved (account deleted, or identity service unavailable)`;
+                logger.warn({ promptId: p.id, name: p.name, ownerUserId: p.ownerUserId }, `Scheduled prompt skipped: ${reason}`);
+                try {
+                    const { disabled } = await savedPrompts.recordRunFailure(p.id, claimedAt, reason);
+                    if (disabled) {
+                        logger.error({ promptId: p.id, name: p.name }, 'Scheduled prompt auto-paused after consecutive failures');
+                    }
+                } catch (writeErr) {
+                    logger.warn({ err: writeErr, promptId: p.id, name: p.name }, 'Failed to persist scheduled-prompt owner-unresolved error');
+                }
+                continue;
+            }
+            endUser = principal;
+        }
+
         try {
             logger.info(
-                { promptId: p.id, name: p.name, cron: p.cron, providerId: p.providerId, model: p.model },
+                { promptId: p.id, name: p.name, cron: p.cron, providerId: p.providerId, model: p.model, ownerUserId: p.ownerUserId },
                 'Running scheduled prompt'
             );
             // Autonomous run → programmatic mode. The provider derives
             // triggerPath: 'programmatic' / actor: system from this, so the
             // governor's external-tool default-deny applies (no human present).
-            // `model` is the optional per-query override (undefined → provider's
-            // configured default).
-            await provider.query({ prompt: p.prompt, model: p.model, mode: 'programmatic' });
+            // `endUser`, when the prompt records an owner, is the live principal
+            // the run acts on behalf of. `model` is the optional per-query
+            // override (undefined → provider's configured default).
+            await provider.query({ prompt: p.prompt, model: p.model, mode: 'programmatic', endUser });
             // Success ends any failure streak so intermittent errors never
             // accumulate toward the auto-pause threshold. Best-effort.
             try {

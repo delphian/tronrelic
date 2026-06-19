@@ -33,6 +33,7 @@ import type { AiQueryHistoryService } from '../services/ai-query-history.service
 import type { CurationService } from '../services/curation-service.js';
 import type { SavedPromptsService } from '../services/saved-prompts.service.js';
 import { SavedPromptValidationError } from '../services/saved-prompts.service.js';
+import type { EndUserResolver } from '../services/end-user-resolver.js';
 import type { PromptVariableRegistry } from '../services/prompt-variable-registry.js';
 import { PromptVariableValidationError } from '../services/prompt-variable-registry.js';
 import { WebSocketService } from '../../../services/websocket.service.js';
@@ -131,6 +132,7 @@ export class AiToolsController {
      * @param history - Core query-history store (for the Query tab).
      * @param savedPrompts - Saved prompt templates + cron scheduling (Query tab).
      * @param promptVariables - Prompt variable registry (Registry tab Variables section + trifecta secret-leg feed).
+     * @param resolveEndUser - Maps a Better Auth user id to the live end-user principal the governor scopes user-owned-object tools to (interactive query attribution + prompt-owner labelling).
      */
     constructor(
         private readonly registry: AiToolRegistry,
@@ -142,7 +144,8 @@ export class AiToolsController {
         private readonly curation: CurationService,
         private readonly history: AiQueryHistoryService,
         private readonly savedPrompts: SavedPromptsService,
-        private readonly promptVariables: PromptVariableRegistry
+        private readonly promptVariables: PromptVariableRegistry,
+        private readonly resolveEndUser: EndUserResolver
     ) {}
 
     /** GET /tools — registry with capability, provider, and enabled state. */
@@ -338,6 +341,16 @@ export class AiToolsController {
             messages = body.messages as IAiConversationMessage[];
         }
 
+        // The admin driving this query is its end-user principal: on the
+        // interactive path the operator queries on their own behalf. requireAdmin
+        // set req.userId on the session path (undefined for a service-token call,
+        // which then carries no principal). Forwarded to the provider as
+        // `endUser` so a tool declaring operatesOnUserOwnedObjects scopes to the
+        // admin's own objects rather than being denied; the principal's groups,
+        // email, and wallet are resolved live from the accounts directory.
+        const callerId = actorId(req);
+        const endUser = (callerId ? await this.resolveEndUser(callerId) : null) ?? undefined;
+
         const stream = body.stream !== false; // default true
 
         if (stream) {
@@ -361,7 +374,7 @@ export class AiToolsController {
             // promise settles.
             provider
                 .queryStream(
-                    { prompt, queryId, model, messages, conversationId, mode: 'stream' },
+                    { prompt, queryId, model, messages, conversationId, mode: 'stream', endUser },
                     (chunk: IAiStreamChunk) => {
                         WebSocketService.getInstance().emitToSocket(socketId, QUERY_STREAM_EVENT, chunk);
                     }
@@ -402,7 +415,7 @@ export class AiToolsController {
         // Non-streaming path: await the result and surface it directly.
         const createdAt = new Date().toISOString();
         try {
-            const result = await provider.query({ prompt, model, messages, conversationId, mode: 'programmatic' });
+            const result = await provider.query({ prompt, model, messages, conversationId, mode: 'programmatic', endUser });
             await this.history.append(
                 this.buildRecord('programmatic', prompt, conversationId, createdAt, randomUUID(), result, null)
             );
@@ -536,13 +549,29 @@ export class AiToolsController {
                     model: model as string | null | undefined
                 });
             } else {
+                // Stamp ownership from the saving admin. requireAdmin set
+                // req.userId on the session path; a service-token save has none,
+                // leaving the prompt unowned (it then runs scheduled with no
+                // principal). The label is a best-effort display convenience —
+                // a lookup failure must never fail the save.
+                const ownerUserId = actorId(req);
+                let ownerLabel: string | undefined;
+                if (ownerUserId) {
+                    try {
+                        ownerLabel = (await this.resolveEndUser(ownerUserId))?.email ?? undefined;
+                    } catch {
+                        ownerLabel = undefined;
+                    }
+                }
                 await this.savedPrompts.create({
                     name: name as string,
                     prompt: prompt as string,
                     cron: (cron as string | null | undefined) ?? undefined,
                     scheduleEnabled: scheduleEnabled as boolean | undefined,
                     providerId: typeof providerId === 'string' ? providerId : undefined,
-                    model: typeof model === 'string' ? model : undefined
+                    model: typeof model === 'string' ? model : undefined,
+                    ownerUserId,
+                    ownerLabel
                 });
             }
             res.json({ prompts: await this.savedPrompts.list() });

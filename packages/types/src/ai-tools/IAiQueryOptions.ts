@@ -7,6 +7,7 @@
  */
 
 import type { IAiConversationMessage } from './IAiConversationMessage.js';
+import type { IToolEndUserPrincipal } from './IToolInvocationContext.js';
 
 /**
  * Options for an AI query submitted through {@link IAiProvider.query} or
@@ -101,4 +102,18 @@ export interface IAiQueryOptions {
      * When omitted, the query runs silently with no WebSocket output.
      */
     queryId?: string;
+
+    /**
+     * The end user this query runs on behalf of. Set by trusted server code that
+     * has already resolved a real principal — the admin query route (from the
+     * request session) or the scheduled-prompts runner (from a saved prompt's
+     * owner, re-resolved at fire time). The provider forwards it to the governor
+     * as the invocation's `endUser`, which is what unlocks tools declaring
+     * `operatesOnUserOwnedObjects`; absent, such tools are denied. Unlike the
+     * trigger path — deliberately kept off this contract so no caller can spoof
+     * `interactive` — `endUser` is a real field because core callers outside the
+     * provider must supply it, and the model never sets query options, so it is
+     * not a model-spoofable surface.
+     */
+    endUser?: IToolEndUserPrincipal;
 }
