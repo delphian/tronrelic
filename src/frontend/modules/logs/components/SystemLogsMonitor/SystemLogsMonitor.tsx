@@ -4,6 +4,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import type { LogLevel } from '@/types';
 import { Button } from '../../../../components/ui/Button';
+import { Select } from '../../../../components/ui/Select';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { Stack } from '../../../../components/layout';
@@ -402,7 +403,7 @@ export function SystemLogsMonitor() {
                     <label className={styles.filter_label} htmlFor="service-filter">
                         Service Filter:
                     </label>
-                    <select
+                    <Select
                         id="service-filter"
                         className={styles.filter_input}
                         value={serviceFilter}
@@ -419,14 +420,14 @@ export function SystemLogsMonitor() {
                                 {service} ({stats.byService[service].toLocaleString()})
                             </option>
                         ))}
-                    </select>
+                    </Select>
                 </div>
 
                 <div className={styles.filter_group}>
                     <label className={styles.filter_label} htmlFor="limit-filter">
                         Per Page:
                     </label>
-                    <select
+                    <Select
                         id="limit-filter"
                         className={styles.filter_select}
                         value={limit}
@@ -441,14 +442,14 @@ export function SystemLogsMonitor() {
                         <option value="25">25</option>
                         <option value="50">50</option>
                         <option value="100">100</option>
-                    </select>
+                    </Select>
                 </div>
 
                 <div className={styles.filter_group}>
                     <label className={styles.filter_label} htmlFor="polling-filter">
                         Polling:
                     </label>
-                    <select
+                    <Select
                         id="polling-filter"
                         className={styles.filter_select}
                         value={pollingInterval}
@@ -459,7 +460,7 @@ export function SystemLogsMonitor() {
                         <option value="10000">10s</option>
                         <option value="30000">30s</option>
                         <option value="60000">60s</option>
-                    </select>
+                    </Select>
                 </div>
 
                 <div className={styles.filter_group_right}>

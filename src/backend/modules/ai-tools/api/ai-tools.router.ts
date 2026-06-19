@@ -36,6 +36,11 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
     router.delete('/variables/:name', controller.deleteVariable);
     router.put('/variables/:name/classification', controller.classifyVariable);
 
+    router.get('/system-prompts', controller.getSystemPrompts);
+    router.put('/system-prompts/master', controller.setMasterSystemPrompt);
+    router.post('/system-prompts', controller.saveSystemPrompt);
+    router.delete('/system-prompts/:id', controller.deleteSystemPrompt);
+
     router.post('/query', controller.query);
     router.post('/query/:queryId/cancel', controller.cancelQuery);
     router.get('/query/history', controller.listQueryHistory);

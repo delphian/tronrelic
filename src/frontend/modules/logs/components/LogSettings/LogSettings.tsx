@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import type { LogLevelName } from '@/types';
 import { Button } from '../../../../components/ui/Button';
+import { Select } from '../../../../components/ui/Select';
 import styles from './LogSettings.module.scss';
 
 /**
@@ -167,7 +168,7 @@ export function LogSettings() {
                     <label htmlFor="log-level" className={styles.label}>
                         Log Level:
                     </label>
-                    <select
+                    <Select
                         id="log-level"
                         className={styles.select}
                         value={selectedLevel}
@@ -181,7 +182,7 @@ export function LogSettings() {
                         <option value="error">Error</option>
                         <option value="fatal">Fatal</option>
                         <option value="silent">Silent (Suppresses All Output)</option>
-                    </select>
+                    </Select>
                     <p className={styles.help_text}>
                         {selectedLevel === 'trace' && 'Most verbose level. Includes all internal debug traces.'}
                         {selectedLevel === 'debug' && 'Development debugging information. Useful for troubleshooting.'}

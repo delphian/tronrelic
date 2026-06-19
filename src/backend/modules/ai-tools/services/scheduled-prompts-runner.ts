@@ -51,6 +51,16 @@ export interface IScheduledPromptRunner {
 export type ScheduledPromptProviderResolver = (providerId?: string) => IScheduledPromptRunner | null;
 
 /**
+ * Composes the core-injected system prompt (always-on master + audience-scoped
+ * additional prompts) for a principal, already `{%name%}`-expanded. The module
+ * supplies `(principal) => systemPromptsService.compose(principal)`. Omitted in
+ * tests that do not exercise injection.
+ */
+export type ScheduledPromptSystemComposer = (
+    principal?: IToolEndUserPrincipal | null
+) => Promise<string>;
+
+/**
  * Fire all due scheduled prompts and persist updated run metadata.
  *
  * Fires at most once per prompt per tick: running the same prompt multiple
@@ -69,12 +79,17 @@ export type ScheduledPromptProviderResolver = (providerId?: string) => ISchedule
  *        end-user principal at fire time. Omitted (or returning null) means the
  *        run carries no principal; a prompt that records an owner the resolver
  *        cannot resolve is failed closed rather than run under ambient authority.
+ * @param composeSystemPrompt - Composes the core-injected system prompt for the
+ *        run's principal (master + audience-scoped prompts, variable-expanded).
+ *        Omitted means no core system prompt is injected; the provider still
+ *        applies its own configured system prompt.
  */
 export async function runScheduledPrompts(
     savedPrompts: SavedPromptsService,
     logger: ISystemLogService,
     resolveProvider: ScheduledPromptProviderResolver,
-    resolveEndUser?: EndUserResolver
+    resolveEndUser?: EndUserResolver,
+    composeSystemPrompt?: ScheduledPromptSystemComposer
 ): Promise<void> {
     const scheduled = await savedPrompts.listScheduled();
 
@@ -212,13 +227,31 @@ export async function runScheduledPrompts(
                 { promptId: p.id, name: p.name, cron: p.cron, providerId: p.providerId, model: p.model, ownerUserId: p.ownerUserId },
                 'Running scheduled prompt'
             );
+            // Compose the core-injected system prompt for this run's principal:
+            // the always-on master plus any audience-scoped prompts that match
+            // the owner. A composer failure must not abort the run — degrade to
+            // no injection (the provider still applies its own configured prompt)
+            // and let the query proceed, mirroring the controller's defensive
+            // compose. An unowned prompt composes against a null principal, so it
+            // receives only the (non-blank) master.
+            let injectedSystemPrompt: string | undefined;
+            if (composeSystemPrompt) {
+                try {
+                    injectedSystemPrompt = await composeSystemPrompt(endUser ?? null);
+                } catch (composeErr) {
+                    logger.warn(
+                        { err: composeErr, promptId: p.id, name: p.name },
+                        'Failed to compose injected system prompt for scheduled run; proceeding without it'
+                    );
+                }
+            }
             // Autonomous run → programmatic mode. The provider derives
             // triggerPath: 'programmatic' / actor: system from this, so the
             // governor's external-tool default-deny applies (no human present).
             // `endUser`, when the prompt records an owner, is the live principal
             // the run acts on behalf of. `model` is the optional per-query
             // override (undefined → provider's configured default).
-            await provider.query({ prompt: p.prompt, model: p.model, mode: 'programmatic', endUser });
+            await provider.query({ prompt: p.prompt, model: p.model, mode: 'programmatic', endUser, injectedSystemPrompt });
             // Success ends any failure streak so intermittent errors never
             // accumulate toward the auto-pause threshold. Best-effort.
             try {

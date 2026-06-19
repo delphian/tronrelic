@@ -18,6 +18,7 @@ import { CapabilityBadges } from '../components/CapabilityBadges';
 import { ProviderPanel } from '../components/ProviderPanel';
 import { CollapsibleSection } from '../components/CollapsibleSection';
 import { VariablesSection } from './VariablesSection';
+import { SystemPromptsSection } from './SystemPromptsSection';
 import styles from '../page.module.scss';
 
 /**
@@ -117,6 +118,7 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
                     )}
             </CollapsibleSection>
             <VariablesSection onChanged={onChanged} />
+            <SystemPromptsSection />
         </Stack>
     );
 }

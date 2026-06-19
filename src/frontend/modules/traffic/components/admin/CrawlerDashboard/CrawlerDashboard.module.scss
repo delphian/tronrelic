@@ -102,22 +102,6 @@
     font-size: var(--font-size-body-sm);
 }
 
-.class_select {
-    background: var(--input-background);
-    border: var(--input-border);
-    border-radius: var(--input-border-radius);
-    color: var(--color-text);
-    font-size: var(--font-size-body-sm);
-    padding: var(--input-padding-sm);
-    transition: var(--input-transition);
-}
-
-.class_select:focus-visible {
-    outline: none;
-    border-color: var(--input-border-focus);
-    box-shadow: var(--input-shadow-focus);
-}
-
 .panel_loading,
 .panel_empty {
     font-size: var(--font-size-body-sm);

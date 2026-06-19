@@ -58,6 +58,7 @@ import { Button } from '../../../../components/ui/Button';
 import { IconButton } from '../../../../components/ui/IconButton';
 import { Input } from '../../../../components/ui/Input';
 import { Switch } from '../../../../components/ui/Switch';
+import { Select } from '../../../../components/ui/Select';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { ConfirmDialog } from '../../../../components/ui/ConfirmDialog';
@@ -1098,9 +1099,8 @@ function InstanceConfigField({
         return (
             <div className={styles.field}>
                 <label htmlFor={fieldId}>{field.label}{marker}</label>
-                <select
+                <Select
                     id={fieldId}
-                    className={styles.select}
                     value={value !== undefined && value !== null ? String(value) : ''}
                     onChange={(e) => {
                         const selected = e.target.value;
@@ -1115,7 +1115,7 @@ function InstanceConfigField({
                         const optionValue = String(option);
                         return <option key={optionValue} value={optionValue}>{optionValue}</option>;
                     })}
-                </select>
+                </Select>
                 {field.description && <span id={hintId} className={styles.field_hint}>{field.description}</span>}
             </div>
         );
@@ -1431,9 +1431,8 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
         <form className={styles.form} onSubmit={handleSubmit}>
             <div className={styles.field}>
                 <label htmlFor="wp-type">Widget type</label>
-                <select
+                <Select
                     id="wp-type"
-                    className={styles.select}
                     value={typeId}
                     onChange={(e) => setTypeId(e.target.value)}
                     disabled={mode === 'edit' || saving}
@@ -1447,7 +1446,7 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
                             ))}
                         </optgroup>
                     ))}
-                </select>
+                </Select>
                 {mode === 'edit' && (
                     <span className={styles.field_hint}>
                         Type is fixed for existing placements — create a new placement to use a different type.
@@ -1457,9 +1456,8 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
 
             <div className={styles.field}>
                 <label htmlFor="wp-zone">Zone</label>
-                <select
+                <Select
                     id="wp-zone"
-                    className={styles.select}
                     value={zoneId}
                     onChange={(e) => setZoneId(e.target.value)}
                     disabled={saving}
@@ -1473,7 +1471,7 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
                             ))}
                         </optgroup>
                     ))}
-                </select>
+                </Select>
             </div>
 
             <div className={styles.field}>

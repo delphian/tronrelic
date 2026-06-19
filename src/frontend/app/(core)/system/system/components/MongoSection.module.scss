@@ -179,27 +179,6 @@
     flex-wrap: wrap;
 }
 
-.select {
-    padding: var(--input-padding-sm);
-    background: var(--input-background);
-    border: var(--input-border);
-    border-radius: var(--input-border-radius);
-    color: var(--color-text);
-    font-size: var(--font-size-caption);
-    cursor: pointer;
-    transition: var(--input-transition);
-}
-
-.select:hover {
-    border-color: var(--input-border-focus);
-}
-
-.select:focus {
-    outline: none;
-    border-color: var(--input-border-focus);
-    box-shadow: var(--input-shadow-focus);
-}
-
 .history_table_wrap {
     overflow-x: auto;
 }

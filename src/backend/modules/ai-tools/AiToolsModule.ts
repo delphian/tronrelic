@@ -46,6 +46,7 @@ import { CurationQueue } from './services/curation-queue.js';
 import { CurationService } from './services/curation-service.js';
 import { SavedPromptsService } from './services/saved-prompts.service.js';
 import { PromptVariableRegistry } from './services/prompt-variable-registry.js';
+import { SystemPromptsService } from './services/system-prompts.service.js';
 import { registerBuiltinVariables } from './variables/index.js';
 import { runScheduledPrompts } from './services/scheduled-prompts-runner.js';
 import { createAccountEndUserResolver, type EndUserResolver } from './services/end-user-resolver.js';
@@ -156,6 +157,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private queryHistory!: AiQueryHistoryService;
     private savedPrompts!: SavedPromptsService;
     private promptVariables!: PromptVariableRegistry;
+    private systemPrompts!: SystemPromptsService;
     private resolveEndUser!: EndUserResolver;
     private controller!: AiToolsController;
 
@@ -228,6 +230,15 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.promptVariables = new PromptVariableRegistry(this.logger, this.database);
         await this.promptVariables.load();
 
+        // Core-owned system prompts (always-on master + audience-scoped
+        // additional prompts) composed into every query's injected system
+        // prompt. Internal to the module — consumed only by the query controller
+        // and the scheduled-prompts runner, so it is not published on the
+        // service registry. Depends on the prompt-variable registry to expand
+        // `{%name%}` tokens in the composed prompt.
+        this.systemPrompts = new SystemPromptsService(this.database, this.promptVariables);
+        await this.systemPrompts.ensureIndexes();
+
         // Register the core-owned built-in dynamic variables. Lifted out of the
         // trp-ai-assistant plugin so the variables exist for whichever AI provider
         // is installed (or none) and the lethal-trifecta detector always sees them.
@@ -252,7 +263,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             () => this.serviceRegistry.get<IAccountDirectoryService>('accounts')
         );
 
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation, this.queryHistory, this.savedPrompts, this.promptVariables, this.resolveEndUser);
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser);
 
         this.logger.info('ai-tools module initialized');
     }
@@ -331,7 +342,8 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
                         (providerId) => providerId
                             ? this.providerRegistry.getProvider(providerId)
                             : this.providerRegistry.getActive(),
-                        this.resolveEndUser
+                        this.resolveEndUser,
+                        (principal) => this.systemPrompts.compose(principal)
                     );
                 } catch (error) {
                     this.logger.error({ error, job: SCHEDULED_PROMPTS_JOB }, 'Scheduled prompts job failed');

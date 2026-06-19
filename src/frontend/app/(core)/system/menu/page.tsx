@@ -17,12 +17,12 @@ import { Button } from '../../../../components/ui/Button';
 import { IconButton } from '../../../../components/ui/IconButton';
 import { Input } from '../../../../components/ui/Input';
 import { Switch } from '../../../../components/ui/Switch';
+import { Select } from '../../../../components/ui/Select';
 import { Tbody, Td, Th, Thead, Tr, Table } from '../../../../components/ui/Table';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { ConfirmDialog } from '../../../../components/ui/ConfirmDialog';
 import { LazyIconPickerModal } from '../../../../components/ui/IconPickerModal';
-import { cn } from '../../../../lib/cn';
 
 import styles from './menu.module.scss';
 
@@ -499,7 +499,7 @@ export default function MenuAdminPage() {
                     <div className={styles.toolbar}>
                         <div className={styles.toolbar_group}>
                             <span className={styles.toolbar_label}>Namespace</span>
-                            <select
+                            <Select
                                 className={styles.select}
                                 value={activeNamespace}
                                 onChange={(e) => setActiveNamespace(e.target.value)}
@@ -514,7 +514,7 @@ export default function MenuAdminPage() {
                                         {ns}
                                     </option>
                                 ))}
-                            </select>
+                            </Select>
                             <IconButton
                                 size="sm"
                                 variant="primary"
@@ -762,9 +762,9 @@ function ConfigTab({ config, saving, onChange, onSave, onReset }: ConfigTabProps
                 {(config.icons?.enabled ?? true) && (
                     <div className={styles.field}>
                         <label htmlFor="iconPosition">Position</label>
-                        <select
+                        <Select
                             id="iconPosition"
-                            className={cn(styles.select, styles.select_full)}
+                            className={styles.select_full}
                             value={config.icons?.position ?? 'left'}
                             onChange={(e) =>
                                 onChange({
@@ -779,7 +779,7 @@ function ConfigTab({ config, saving, onChange, onSave, onReset }: ConfigTabProps
                             <option value="left">Left</option>
                             <option value="right">Right</option>
                             <option value="top">Top</option>
-                        </select>
+                        </Select>
                     </div>
                 )}
             </ConfigGroup>
@@ -788,9 +788,9 @@ function ConfigTab({ config, saving, onChange, onSave, onReset }: ConfigTabProps
                 <div className={styles.field_row}>
                     <div className={styles.field}>
                         <label htmlFor="orientation">Orientation</label>
-                        <select
+                        <Select
                             id="orientation"
-                            className={cn(styles.select, styles.select_full)}
+                            className={styles.select_full}
                             value={config.layout?.orientation ?? 'horizontal'}
                             onChange={(e) =>
                                 onChange({
@@ -804,7 +804,7 @@ function ConfigTab({ config, saving, onChange, onSave, onReset }: ConfigTabProps
                         >
                             <option value="horizontal">Horizontal</option>
                             <option value="vertical">Vertical</option>
-                        </select>
+                        </Select>
                     </div>
                     <div className={styles.field}>
                         <label htmlFor="maxItems">Max items</label>
@@ -1034,9 +1034,9 @@ function MenuNodeForm({ mode, initial, availableParents, availableGroups, onSubm
 
             <div className={styles.field}>
                 <label htmlFor="mn-parent">Parent</label>
-                <select
+                <Select
                     id="mn-parent"
-                    className={cn(styles.select, styles.select_full)}
+                    className={styles.select_full}
                     value={data.parent ?? ''}
                     onChange={(e) => setData({ ...data, parent: e.target.value || null })}
                     disabled={saving}
@@ -1047,7 +1047,7 @@ function MenuNodeForm({ mode, initial, availableParents, availableGroups, onSubm
                             {p.label}
                         </option>
                     ))}
-                </select>
+                </Select>
             </div>
 
             <fieldset className={styles.field} disabled={saving}>

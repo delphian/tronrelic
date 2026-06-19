@@ -36,6 +36,8 @@ import { SavedPromptValidationError } from '../services/saved-prompts.service.js
 import type { EndUserResolver } from '../services/end-user-resolver.js';
 import type { PromptVariableRegistry } from '../services/prompt-variable-registry.js';
 import { PromptVariableValidationError } from '../services/prompt-variable-registry.js';
+import type { SystemPromptsService } from '../services/system-prompts.service.js';
+import { SystemPromptValidationError } from '../services/system-prompts.service.js';
 import { WebSocketService } from '../../../services/websocket.service.js';
 import { detectTrifecta } from '../services/trifecta-detector.js';
 
@@ -132,6 +134,7 @@ export class AiToolsController {
      * @param history - Core query-history store (for the Query tab).
      * @param savedPrompts - Saved prompt templates + cron scheduling (Query tab).
      * @param promptVariables - Prompt variable registry (Registry tab Variables section + trifecta secret-leg feed).
+     * @param systemPrompts - Core system-prompts service (Registry tab System Prompts section + per-query injection composition).
      * @param resolveEndUser - Maps a Better Auth user id to the live end-user principal the governor scopes user-owned-object tools to (interactive query attribution + prompt-owner labelling).
      */
     constructor(
@@ -145,6 +148,7 @@ export class AiToolsController {
         private readonly history: AiQueryHistoryService,
         private readonly savedPrompts: SavedPromptsService,
         private readonly promptVariables: PromptVariableRegistry,
+        private readonly systemPrompts: SystemPromptsService,
         private readonly resolveEndUser: EndUserResolver
     ) {}
 
@@ -295,6 +299,97 @@ export class AiToolsController {
         res.status(500).json({ error: fallback });
     }
 
+    /** GET /system-prompts — the master prompt plus every additional prompt. */
+    getSystemPrompts = async (_req: Request, res: Response): Promise<void> => {
+        try {
+            const [master, additional] = await Promise.all([
+                this.systemPrompts.getMaster(),
+                this.systemPrompts.list()
+            ]);
+            res.json({ master, additional });
+        } catch {
+            res.status(500).json({ error: 'Failed to load system prompts.' });
+        }
+    };
+
+    /** PUT /system-prompts/master — replace the always-on master prompt (may be blank). */
+    setMasterSystemPrompt = async (req: Request, res: Response): Promise<void> => {
+        const content = (req.body as { content?: unknown })?.content;
+        if (typeof content !== 'string') {
+            res.status(400).json({ error: 'Body must include a string "content".' });
+            return;
+        }
+        try {
+            await this.systemPrompts.setMaster(content);
+            res.json({ master: await this.systemPrompts.getMaster() });
+        } catch (error: unknown) {
+            this.sendSystemPromptError(res, error, 'Failed to save master system prompt.');
+        }
+    };
+
+    /**
+     * POST /system-prompts — create (no `id`) or update (with `id`) an additional
+     * audience-scoped prompt. Responds with the full refreshed `{ master,
+     * additional }` so the client's shared state stays current in one round-trip.
+     */
+    saveSystemPrompt = async (req: Request, res: Response): Promise<void> => {
+        const { id, name, content, userIds, groups, enabled, order } = (req.body ?? {}) as {
+            id?: unknown;
+            name?: unknown;
+            content?: unknown;
+            userIds?: unknown;
+            groups?: unknown;
+            enabled?: unknown;
+            order?: unknown;
+        };
+        try {
+            const hasId = typeof id === 'string' && id.trim().length > 0;
+            if (hasId) {
+                await this.systemPrompts.updateAdditional(id as string, { name, content, userIds, groups, enabled, order });
+            } else {
+                await this.systemPrompts.createAdditional({ name: name as string, content: content as string, userIds, groups, enabled, order });
+            }
+            const [master, additional] = await Promise.all([
+                this.systemPrompts.getMaster(),
+                this.systemPrompts.list()
+            ]);
+            res.json({ master, additional });
+        } catch (error: unknown) {
+            this.sendSystemPromptError(res, error, 'Failed to save system prompt.');
+        }
+    };
+
+    /** DELETE /system-prompts/:id — delete an additional prompt by id. */
+    deleteSystemPrompt = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const removed = await this.systemPrompts.deleteAdditional(req.params.id);
+            if (!removed) {
+                res.status(404).json({ error: 'System prompt not found.' });
+                return;
+            }
+            res.json({ success: true });
+        } catch (error: unknown) {
+            this.sendSystemPromptError(res, error, 'Failed to delete system prompt.');
+        }
+    };
+
+    /**
+     * Map a system-prompt failure to a response: a caller-actionable
+     * {@link SystemPromptValidationError} carries its own status code (400/404);
+     * anything else is a 500 with a generic message.
+     *
+     * @param res - The response.
+     * @param error - The thrown error.
+     * @param fallback - Generic message for an unexpected (500) failure.
+     */
+    private sendSystemPromptError(res: Response, error: unknown, fallback: string): void {
+        if (error instanceof SystemPromptValidationError) {
+            res.status(error.statusCode).json({ error: error.message });
+            return;
+        }
+        res.status(500).json({ error: fallback });
+    }
+
     /**
      * POST /query — submit an AI query against the active provider.
      *
@@ -351,6 +446,19 @@ export class AiToolsController {
         const callerId = actorId(req);
         const endUser = (callerId ? await this.resolveEndUser(callerId) : null) ?? undefined;
 
+        // Compose the core-injected system prompt for this principal: the
+        // always-on master plus any audience-scoped prompts whose userIds/groups
+        // match the admin. Already {%name%}-expanded by core, the provider injects
+        // it after its security clause and before its own config.systemPrompt. A
+        // compose failure must not 500 the whole query — degrade to no injection
+        // and let the query run with the provider's own prompt.
+        let injectedSystemPrompt: string | undefined;
+        try {
+            injectedSystemPrompt = await this.systemPrompts.compose(endUser ?? null);
+        } catch {
+            injectedSystemPrompt = undefined;
+        }
+
         const stream = body.stream !== false; // default true
 
         if (stream) {
@@ -374,7 +482,7 @@ export class AiToolsController {
             // promise settles.
             provider
                 .queryStream(
-                    { prompt, queryId, model, messages, conversationId, mode: 'stream', endUser },
+                    { prompt, queryId, model, messages, conversationId, mode: 'stream', endUser, injectedSystemPrompt },
                     (chunk: IAiStreamChunk) => {
                         WebSocketService.getInstance().emitToSocket(socketId, QUERY_STREAM_EVENT, chunk);
                     }
@@ -415,7 +523,7 @@ export class AiToolsController {
         // Non-streaming path: await the result and surface it directly.
         const createdAt = new Date().toISOString();
         try {
-            const result = await provider.query({ prompt, model, messages, conversationId, mode: 'programmatic', endUser });
+            const result = await provider.query({ prompt, model, messages, conversationId, mode: 'programmatic', endUser, injectedSystemPrompt });
             await this.history.append(
                 this.buildRecord('programmatic', prompt, conversationId, createdAt, randomUUID(), result, null)
             );
