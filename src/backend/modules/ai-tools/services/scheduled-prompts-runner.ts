@@ -6,15 +6,23 @@
  * run. Extracted from the module so the logic can be unit-tested against mock
  * services without booting the application.
  *
- * Execution is provider-neutral: the module's scheduler handler resolves the
- * active provider from the core `'ai-providers'` registry (`getActive()`) and
- * passes it in. A scheduled run is autonomous — there is no human present — so
- * it fires through the public `query({ mode: 'programmatic' })` path, which the
- * provider attributes as `triggerPath: 'programmatic'` / `actor: system`. The
- * governor's external-tool default-deny keys on `triggerPath !== 'interactive'`,
- * so unattended runs get the same protection a dedicated `'scheduled'` path
- * would; the public contract deliberately carries no trigger field, which keeps
- * any caller from claiming `interactive` to dodge that default-deny.
+ * Execution is provider-neutral and per-prompt: the module's scheduler handler
+ * passes a resolver that maps a prompt's optional `providerId` to an executable
+ * provider from the core `'ai-providers'` registry — a pinned prompt routes to
+ * its specific provider (`getProvider(id)`) even when that is not the active
+ * one, and an unpinned prompt falls back to the active provider (`getActive()`).
+ * This is why a saved prompt records both `providerId` and `model`: models span
+ * providers, so the model alone cannot say which transport to run on. A prompt
+ * whose pinned provider is not installed is recorded as a failed run (surfacing
+ * the reason and accumulating toward auto-pause), never silently skipped.
+ *
+ * A scheduled run is autonomous — there is no human present — so it fires
+ * through the public `query({ mode: 'programmatic' })` path, which the provider
+ * attributes as `triggerPath: 'programmatic'` / `actor: system`. The governor's
+ * external-tool default-deny keys on `triggerPath !== 'interactive'`, so
+ * unattended runs get the same protection a dedicated `'scheduled'` path would;
+ * the public contract deliberately carries no trigger field, which keeps any
+ * caller from claiming `interactive` to dodge that default-deny.
  */
 // cron-parser v4 is a CommonJS module whose named exports Node 20's ESM loader
 // cannot synthesize; default-import + destructure is the pattern Node itself
@@ -25,13 +33,21 @@ import type { IAiQueryOptions, ISystemLogService } from '@/types';
 import type { SavedPromptsService } from './saved-prompts.service.js';
 
 /**
- * Minimum contract the runner needs from the active AI provider. Declared here
- * rather than importing the full `IAiProvider` so tests can pass a plain mock
- * with a single `query` method. `IAiProvider` satisfies it structurally.
+ * Minimum contract the runner needs from an AI provider. Declared here rather
+ * than importing the full `IAiProvider` so tests can pass a plain mock with a
+ * single `query` method. `IAiProvider` satisfies it structurally.
  */
 export interface IScheduledPromptRunner {
     query(options: IAiQueryOptions): Promise<unknown>;
 }
+
+/**
+ * Resolves a prompt's optional `providerId` to an executable provider. The
+ * module supplies `(id) => id ? registry.getProvider(id) : registry.getActive()`.
+ * Returns `null` when the pinned provider is not installed (or, for an unpinned
+ * prompt, when no provider is active), which the runner records as a failed run.
+ */
+export type ScheduledPromptProviderResolver = (providerId?: string) => IScheduledPromptRunner | null;
 
 /**
  * Fire all due scheduled prompts and persist updated run metadata.
@@ -46,12 +62,13 @@ export interface IScheduledPromptRunner {
  *
  * @param savedPrompts - Service owning the prompts collection.
  * @param logger - Logger for warnings and error context.
- * @param provider - Active AI provider used to execute each due prompt.
+ * @param resolveProvider - Maps a prompt's optional `providerId` to the provider
+ *        that should run it (pinned provider, or the active one when unpinned).
  */
 export async function runScheduledPrompts(
     savedPrompts: SavedPromptsService,
     logger: ISystemLogService,
-    provider: IScheduledPromptRunner
+    resolveProvider: ScheduledPromptProviderResolver
 ): Promise<void> {
     const scheduled = await savedPrompts.listScheduled();
 
@@ -120,15 +137,39 @@ export async function runScheduledPrompts(
             continue;
         }
 
+        // Resolve the provider this prompt should run on. A pinned prompt routes
+        // to its own provider even when inactive; an unpinned one uses the active
+        // provider. A null result (pinned provider not installed, or no active
+        // provider) is recorded as a failed run so the admin sees why it didn't
+        // fire — the run is already claimed, so this never double-fires.
+        const provider = resolveProvider(p.providerId);
+        if (!provider) {
+            const reason = p.providerId
+                ? `AI provider "${p.providerId}" is not installed or enabled`
+                : 'No active AI provider is installed';
+            logger.warn({ promptId: p.id, name: p.name, providerId: p.providerId }, `Scheduled prompt skipped: ${reason}`);
+            try {
+                const { disabled } = await savedPrompts.recordRunFailure(p.id, claimedAt, reason);
+                if (disabled) {
+                    logger.error({ promptId: p.id, name: p.name }, 'Scheduled prompt auto-paused after consecutive failures');
+                }
+            } catch (writeErr) {
+                logger.warn({ err: writeErr, promptId: p.id, name: p.name }, 'Failed to persist scheduled-prompt provider-unavailable error');
+            }
+            continue;
+        }
+
         try {
             logger.info(
-                { promptId: p.id, name: p.name, cron: p.cron },
+                { promptId: p.id, name: p.name, cron: p.cron, providerId: p.providerId, model: p.model },
                 'Running scheduled prompt'
             );
             // Autonomous run → programmatic mode. The provider derives
             // triggerPath: 'programmatic' / actor: system from this, so the
             // governor's external-tool default-deny applies (no human present).
-            await provider.query({ prompt: p.prompt, mode: 'programmatic' });
+            // `model` is the optional per-query override (undefined → provider's
+            // configured default).
+            await provider.query({ prompt: p.prompt, model: p.model, mode: 'programmatic' });
             // Success ends any failure streak so intermittent errors never
             // accumulate toward the auto-pause threshold. Best-effort.
             try {

@@ -102,6 +102,17 @@
     flex-wrap: wrap;
 }
 
+/* Spinner for inline busy icon buttons (e.g. saving a policy override). */
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+}
+
 /* Empty / loading placeholder text. */
 .placeholder {
     padding: var(--padding-lg);

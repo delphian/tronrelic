@@ -12,6 +12,7 @@ import { RefreshCw } from 'lucide-react';
 import type { IToolInvocationRecord, ToolInvocationStatus, ToolTriggerPath } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Button } from '../../../../../components/ui/Button';
+import { Select } from '../../../../../components/ui/Select';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
@@ -74,19 +75,19 @@ export function ActivityTab() {
     return (
         <Stack gap="md">
             <div className={styles.filters}>
-                <select className={styles.filter_select} value={status} onChange={(e) => setStatus(e.target.value as ToolInvocationStatus | '')} aria-label="Filter by status">
+                <Select value={status} onChange={(e) => setStatus(e.target.value as ToolInvocationStatus | '')} aria-label="Filter by status">
                     <option value="">All statuses</option>
                     <option value="ok">ok</option>
                     <option value="denied">denied</option>
                     <option value="pending-approval">pending-approval</option>
                     <option value="error">error</option>
-                </select>
-                <select className={styles.filter_select} value={triggerPath} onChange={(e) => setTriggerPath(e.target.value as ToolTriggerPath | '')} aria-label="Filter by trigger path">
+                </Select>
+                <Select value={triggerPath} onChange={(e) => setTriggerPath(e.target.value as ToolTriggerPath | '')} aria-label="Filter by trigger path">
                     <option value="">All triggers</option>
                     <option value="interactive">interactive</option>
                     <option value="scheduled">scheduled</option>
                     <option value="programmatic">programmatic</option>
-                </select>
+                </Select>
                 <Button variant="ghost" size="sm" onClick={() => { void load(); }}>
                     <RefreshCw size={16} /> Refresh
                 </Button>

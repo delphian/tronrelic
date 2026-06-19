@@ -25,6 +25,7 @@ import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IModelInfo
 import { Stack } from '../../../../../components/layout';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
+import { Select } from '../../../../../components/ui/Select';
 import { Badge } from '../../../../../components/ui/Badge';
 import { IconButton } from '../../../../../components/ui/IconButton';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
@@ -78,6 +79,13 @@ interface ChatTurn {
     error?: string | null;
     model?: string;
     usage?: IAiStreamChunk['usage'] | null;
+    /**
+     * Provider-estimated USD cost of this turn, captured from the terminal
+     * `done` chunk (or a reopened history record). `null`/absent when the
+     * provider could not price it; the provider owns the rate card, so core
+     * only displays the number it is handed.
+     */
+    costUsd?: number | null;
 }
 
 /** A run of consecutive history records sharing one `conversationId`. */
@@ -166,6 +174,32 @@ function groupConversations(records: IAiQueryRecord[]): ConversationGroup[] {
         }
     }
     return order.map(id => byId.get(id) as ConversationGroup);
+}
+
+/**
+ * Format a provider-estimated USD cost for display, with precision that stays
+ * useful at the sub-cent scale of a single turn while staying readable at the
+ * dollar scale of a whole conversation. Mirrors the provider's own formatting so
+ * the core Query tab reads identically to the plugin's query tool. The provider
+ * computes the figure (it owns the rate card); core only renders it.
+ *
+ * @param amount - Cost in USD, or null/undefined when the turn was not priced.
+ * @returns A display string (e.g. '$0.0042', '<$0.0001', '$1.27'), or '—'.
+ */
+function formatUsd(amount: number | null | undefined): string {
+    if (amount === null || amount === undefined || Number.isNaN(amount)) {
+        return '—';
+    }
+    if (amount <= 0) {
+        return '$0.00';
+    }
+    if (amount < 0.0001) {
+        return '<$0.0001';
+    }
+    if (amount < 1) {
+        return `$${amount.toFixed(4)}`;
+    }
+    return `$${amount.toFixed(2)}`;
 }
 
 /**
@@ -272,7 +306,7 @@ export function QueryTab() {
             updateTurn(turnId, turn => ({ content: turn.content + text }));
         } else if (chunk.type === 'done') {
             setStreaming(false);
-            updateTurn(turnId, { pending: false, usage: chunk.usage ?? null });
+            updateTurn(turnId, { pending: false, usage: chunk.usage ?? null, costUsd: chunk.costUsd ?? null });
             streamingTurnIdRef.current = null;
             activeQueryIdRef.current = null;
         } else if (chunk.type === 'error') {
@@ -498,6 +532,7 @@ export function QueryTab() {
                     content: record.responseText ?? '',
                     model: record.model,
                     usage: record.usage,
+                    costUsd: record.costUsd ?? null,
                     error: record.responseText ? null : (record.errorMessage ?? 'No response recorded')
                 });
             }
@@ -532,6 +567,20 @@ export function QueryTab() {
         () => new Map(models.map(model => [model.id, model.display_name])),
         [models]
     );
+    // Running conversation cost: sum every priced turn. `null` when not a single
+    // turn could be priced, so the header hides the figure rather than showing
+    // a misleading $0.00 (mirrors the provider's own sum-or-hide behavior).
+    const conversationCost = useMemo(() => {
+        let total = 0;
+        let priced = false;
+        for (const turn of messages) {
+            if (typeof turn.costUsd === 'number') {
+                total += turn.costUsd;
+                priced = true;
+            }
+        }
+        return priced ? total : null;
+    }, [messages]);
 
     return (
         <div className={styles.query}>
@@ -576,6 +625,14 @@ export function QueryTab() {
                     <div className={styles.chat_header}>
                         <Bot size={16} className={styles.chat_header_icon} />
                         <span className={styles.chat_header_label}>Conversation</span>
+                        {conversationCost != null && (
+                            <span
+                                className={styles.conversation_cost}
+                                title="Estimated total cost of this conversation, summed across turns at the provider's per-model rates."
+                            >
+                                ≈ {formatUsd(conversationCost)}
+                            </span>
+                        )}
                         {streaming && (
                             <span className={styles.streaming_indicator}>
                                 <span className={styles.streaming_dot} aria-hidden="true" />
@@ -660,6 +717,9 @@ export function QueryTab() {
                                                     {turn.model && (
                                                         <span> · {modelLabel.get(turn.model) ?? turn.model}</span>
                                                     )}
+                                                    {turn.costUsd != null && (
+                                                        <span className={styles.turn_cost}> · ≈ {formatUsd(turn.costUsd)}</span>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -690,7 +750,7 @@ export function QueryTab() {
                         />
                         <div className={styles.composer_toolbar}>
                             {models.length > 0 && (
-                                <select
+                                <Select
                                     value={modelOverride}
                                     onChange={(e) => setModelOverride(e.target.value)}
                                     className={styles.model_select}
@@ -701,7 +761,7 @@ export function QueryTab() {
                                     {models.map(model => (
                                         <option key={model.id} value={model.id}>{model.display_name}</option>
                                     ))}
-                                </select>
+                                </Select>
                             )}
                             <div className={styles.composer_send}>
                                 {streaming ? (

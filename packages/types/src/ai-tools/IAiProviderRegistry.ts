@@ -75,4 +75,18 @@ export interface IAiProviderRegistry {
      * @returns The active provider's executable instance, or `null`.
      */
     getActive(): IAiProvider | null;
+
+    /**
+     * The executable instance of a specific registered provider by id, or `null`
+     * when no provider with that id is installed. Unlike {@link getActive}, this
+     * resolves a provider even when it is not the active transport — used to run
+     * a saved prompt pinned to a particular provider/model regardless of which
+     * provider is currently active. Returns `null` for an unknown id rather than
+     * falling back to the active provider, so the caller decides whether to
+     * substitute the active one or surface "that provider is not installed".
+     *
+     * @param id - The provider plugin id.
+     * @returns The provider's executable instance, or `null`.
+     */
+    getProvider(id: string): IAiProvider | null;
 }

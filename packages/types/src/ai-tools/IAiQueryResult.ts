@@ -47,4 +47,12 @@ export interface IAiQueryResult {
          */
         cacheReadInputTokens?: number;
     };
+
+    /**
+     * Estimated USD cost of this query, when the provider can price it. Computed
+     * by the provider from its own per-model rates so core stays vendor-neutral
+     * and only forwards the figure. `null` when the reported usage has no
+     * matching rate; omitted by a provider that does not price queries.
+     */
+    costUsd?: number | null;
 }

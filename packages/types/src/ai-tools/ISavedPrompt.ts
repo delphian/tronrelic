@@ -20,6 +20,23 @@ export interface ISavedPrompt {
     name: string;
     /** The prompt text, potentially including {%variable%} patterns. */
     prompt: string;
+    /**
+     * Optional AI provider this prompt targets, by provider plugin id (e.g.
+     * `'ai-assistant'`). When set, a scheduled run executes against this specific
+     * provider — resolved from the core `'ai-providers'` registry by id — rather
+     * than whatever provider is active at run time, so a prompt pinned to a
+     * model keeps running on that model's provider even after the active
+     * transport changes. Absent means "use the active provider". Models can span
+     * multiple providers, so the provider must be recorded alongside the model.
+     */
+    providerId?: string;
+    /**
+     * Optional model id this prompt runs on, passed to the provider as the
+     * per-query model override. Belongs to `providerId`'s catalog (the editor's
+     * picker lists models grouped by provider). Absent means the provider's
+     * configured default model.
+     */
+    model?: string;
     /** ISO timestamp of when the prompt was saved. */
     createdAt: string;
     /** ISO timestamp of last update. */

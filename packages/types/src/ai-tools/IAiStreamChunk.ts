@@ -36,4 +36,14 @@ export interface IAiStreamChunk {
         cacheCreationInputTokens?: number;
         cacheReadInputTokens?: number;
     };
+
+    /**
+     * Estimated USD cost of the query, present on the terminal 'done' chunk
+     * alongside `usage`. The provider computes it from its own per-model rate
+     * card and forwards the number, so core stays vendor-neutral and any
+     * surface (the Query tab) can show cost without knowing how a vendor prices.
+     * `null` when the provider cannot price the reported usage (no matching
+     * rate); omitted entirely by a provider that does not price queries.
+     */
+    costUsd?: number | null;
 }

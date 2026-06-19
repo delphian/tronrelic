@@ -274,6 +274,18 @@
     color: var(--color-text-muted);
 }
 
+/* Model picker fills the field column (class lands on the <Select> wrapper). */
+.model_select {
+    width: 100%;
+}
+
+/* Helper text under a field, explaining when/why it applies. */
+.field_hint {
+    margin: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
 .text_input,
 .cron_input,
 .textarea {

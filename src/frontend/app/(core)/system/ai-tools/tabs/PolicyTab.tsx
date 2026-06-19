@@ -9,10 +9,12 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
+import { Save, RotateCcw, Loader2 } from 'lucide-react';
 import type { IAiToolInfo, IToolPolicy } from '@/types';
 import { Stack } from '../../../../../components/layout';
-import { Button } from '../../../../../components/ui/Button';
 import { Input } from '../../../../../components/ui/Input';
+import { Select } from '../../../../../components/ui/Select';
+import { IconButton } from '../../../../../components/ui/IconButton';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { useToast } from '../../../../../components/ui/ToastProvider';
@@ -93,6 +95,12 @@ function PolicyRow({ tool, override, usage, defaults, onSaved }: {
     // (from GET /policy), not a re-derivation here.
     const approvalDefaultLabel = defaults ? `Default (${defaults.requireApproval ? 'On' : 'Off'})` : 'Default';
     const unattendedDefaultLabel = defaults ? `Default (${defaults.allowUnattended ? 'On' : 'Off'})` : 'Default';
+    // Curation has no per-tool entry in GET /policy `defaults` because the
+    // governor's derived default for any curation-capable tool is always
+    // `require`. Label the inherited option with that resolved value so the
+    // curation dropdown reads the same way as the approval/unattended ones,
+    // rather than the opaque bare "Default".
+    const curationDefaultLabel = 'Default (Require)';
 
     // Pending edits relative to the saved override. Save stays disabled until a
     // field actually changes, so a long tool list doesn't present a column of
@@ -163,8 +171,8 @@ function PolicyRow({ tool, override, usage, defaults, onSaved }: {
                 {usage ? `${usage.invocations} calls · ${usage.denied} denied · ${usage.needsApproval} held` : 'no activity'}
             </Td>
             <Td>
-                <select
-                    className={`${styles.filter_select} ${styles.cell_control}`}
+                <Select
+                    className={styles.cell_control}
                     value={requireApproval}
                     onChange={(e) => setRequireApproval(e.target.value as TriState)}
                     aria-label={`Require approval for ${tool.name}`}
@@ -172,11 +180,11 @@ function PolicyRow({ tool, override, usage, defaults, onSaved }: {
                     <option value="inherit">{approvalDefaultLabel}</option>
                     <option value="on">On</option>
                     <option value="off">Off</option>
-                </select>
+                </Select>
             </Td>
             <Td>
-                <select
-                    className={`${styles.filter_select} ${styles.cell_control}`}
+                <Select
+                    className={styles.cell_control}
                     value={allowUnattended}
                     onChange={(e) => setAllowUnattended(e.target.value as TriState)}
                     aria-label={`Allow unattended runs for ${tool.name}`}
@@ -184,20 +192,20 @@ function PolicyRow({ tool, override, usage, defaults, onSaved }: {
                     <option value="inherit">{unattendedDefaultLabel}</option>
                     <option value="on">On</option>
                     <option value="off">Off</option>
-                </select>
+                </Select>
             </Td>
             <Td>
                 {curationCapable ? (
-                    <select
-                        className={`${styles.filter_select} ${styles.cell_control}`}
+                    <Select
+                        className={styles.cell_control}
                         value={curation}
                         onChange={(e) => setCuration(e.target.value as CurationMode)}
                         aria-label={`Curation handling for ${tool.name}`}
                     >
-                        <option value="inherit">Default</option>
+                        <option value="inherit">{curationDefaultLabel}</option>
                         <option value="require">Require</option>
                         <option value="auto-approve">Auto-approve</option>
-                    </select>
+                    </Select>
                 ) : (
                     <span className="text-subtle">—</span>
                 )}
@@ -210,8 +218,26 @@ function PolicyRow({ tool, override, usage, defaults, onSaved }: {
             </Td>
             <Td>
                 <div className={styles.row_actions}>
-                    <Button variant="primary" size="sm" loading={busy} disabled={busy || !dirty} onClick={() => { void save(); }}>Save</Button>
-                    <Button variant="ghost" size="sm" disabled={busy || !hasOverride} onClick={() => { void clear(); }}>Clear</Button>
+                    <IconButton
+                        variant="success"
+                        size="sm"
+                        disabled={busy || !dirty}
+                        onClick={() => { void save(); }}
+                        aria-label={`Save override for ${tool.name}`}
+                        title="Save override"
+                    >
+                        {busy ? <Loader2 size={16} className={styles.spin} /> : <Save size={16} />}
+                    </IconButton>
+                    <IconButton
+                        variant="danger"
+                        size="sm"
+                        disabled={busy || !hasOverride}
+                        onClick={() => { void clear(); }}
+                        aria-label={`Clear override for ${tool.name}`}
+                        title="Clear override (revert to class defaults)"
+                    >
+                        <RotateCcw size={16} />
+                    </IconButton>
                 </div>
             </Td>
         </Tr>
@@ -276,11 +302,11 @@ export function PolicyTab() {
                 re-arms the lethal-trifecta banner for that tool. Tools that don&apos;t self-curate show “—”.
             </p>
             <div className="table-scroll">
-                <Table stickyHeader>
+                <Table>
                     <Thead>
                         <Tr>
                             <Th width="shrink" title="Registered tool name; the “override” badge marks a custom policy.">Tool</Th>
-                            <Th width="shrink" title="Calls, denials, and held counts since the last server start.">Usage</Th>
+                            <Th width="shrink" title="Calls, denials, and held counts from the audit trail over the last 90 days.">Usage</Th>
                             <Th title="Hold every call for human approval before it runs. On = held; Off = runs without approval.">Require approval</Th>
                             <Th title="Whether the tool may run on autonomous (scheduled / programmatic) paths. On = allowed; Off = blocked.">Allow unattended</Th>
                             <Th title="How a self-curating tool releases effects: require review, or auto-approve.">Curation</Th>

@@ -506,6 +506,34 @@ export async function getQueryModels(): Promise<IModelInfo[]> {
     return data.models;
 }
 
+/** One registered AI provider plus its model catalog, for the model picker. */
+export interface IAiProviderModels {
+    /** Provider plugin id (stored on a saved prompt's `providerId`). */
+    id: string;
+    /** Human-readable provider/vendor name for the picker's group label. */
+    label: string;
+    /** Whether this is the active transport. */
+    active: boolean;
+    /** Models this provider exposes; empty when its catalog could not be loaded. */
+    models: IModelInfo[];
+}
+
+/**
+ * List every registered AI provider with its model catalog, for the
+ * cross-provider saved-prompt model picker. Unlike {@link getQueryModels} (active
+ * provider only), this spans all providers so a prompt can pin a model on a
+ * non-active provider. Resolves to an empty array when none are installed.
+ *
+ * @returns Each provider with its models.
+ */
+export async function getQueryProviders(): Promise<IAiProviderModels[]> {
+    const data = await parse<{ providers: IAiProviderModels[] }>(
+        await fetch(`${BASE}/query/providers`),
+        'load query providers'
+    );
+    return data.providers;
+}
+
 /** Body for {@link saveSavedPrompt}. Omit `id` to create; supply it to update. */
 export interface ISavePromptRequest {
     id?: string;
@@ -514,6 +542,10 @@ export interface ISavePromptRequest {
     /** Cron expression; `''`/`null` clears the schedule. Omit to leave unchanged. */
     cron?: string | null;
     scheduleEnabled?: boolean;
+    /** Provider plugin id the prompt targets; `''`/`null` clears the pin. Omit to leave unchanged. */
+    providerId?: string | null;
+    /** Model id the prompt runs on; `''`/`null` clears the pin. Omit to leave unchanged. */
+    model?: string | null;
 }
 
 /**

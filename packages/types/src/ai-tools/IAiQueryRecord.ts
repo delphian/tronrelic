@@ -38,6 +38,14 @@ export interface IAiQueryRecord {
         cacheReadInputTokens?: number;
     };
 
+    /**
+     * Estimated USD cost of this turn at the time it ran, when the provider
+     * priced it. Persisted so a reopened conversation shows the same cost the
+     * live stream did, rather than re-deriving it against rates that may have
+     * changed since. `null`/absent when the turn could not be priced.
+     */
+    costUsd?: number | null;
+
     /** Failure reason when the query failed, else null. */
     errorMessage: string | null;
 
