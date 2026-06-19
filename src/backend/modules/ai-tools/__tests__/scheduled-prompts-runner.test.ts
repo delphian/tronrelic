@@ -349,6 +349,25 @@ describe('runScheduledPrompts', () => {
         expect(reason).toContain('gone');
     });
 
+    it('fails closed (and never escapes the loop) when the owner resolver throws', async () => {
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({ id: 'thrower', cron: '* * * * *', lastRunAt: minutesAgo(5), ownerUserId: 'u1' }),
+            makePrompt({ id: 'after', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'run' })
+        ]);
+        // Transient identity/DB failure surfaces as a rejection, not a null.
+        const resolveEndUser = vi.fn(async () => { throw new Error('identity service unavailable'); });
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, resolveEndUser);
+
+        // The throwing prompt is recorded as a failed run, treated exactly like a
+        // null principal — never executed under no/stale authority.
+        expect(savedPrompts.recordRunFailure).toHaveBeenCalledTimes(1);
+        expect(savedPrompts.recordRunFailure.mock.calls[0][0]).toBe('thrower');
+        // The exception did not abort the tick: the next due prompt still ran.
+        expect(provider.query).toHaveBeenCalledTimes(1);
+        expect(provider.query).toHaveBeenCalledWith({ prompt: 'run', mode: 'programmatic' });
+    });
+
     it('fails closed for an owned prompt when no resolver is supplied', async () => {
         const savedPrompts = createMockSavedPrompts([
             makePrompt({ id: 'owned-no-resolver', cron: '* * * * *', lastRunAt: minutesAgo(5), ownerUserId: 'u1' })
