@@ -16,13 +16,19 @@
 
 import type { Express } from 'express';
 import type {
+    IBlockchainObserverService,
+    IBlockchainService,
+    ICacheService,
+    IChainParametersService,
     IDatabaseService,
     IHookRegistry,
     IMenuService,
     IModule,
     IModuleMetadata,
     ISchedulerService,
-    IServiceRegistry
+    IServiceRegistry,
+    ISystemConfigService,
+    IUsdtParametersService
 } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { getRedisClient } from '../../loaders/redis.js';
@@ -39,6 +45,7 @@ import { CurationQueue } from './services/curation-queue.js';
 import { CurationService } from './services/curation-service.js';
 import { SavedPromptsService } from './services/saved-prompts.service.js';
 import { PromptVariableRegistry } from './services/prompt-variable-registry.js';
+import { registerBuiltinVariables } from './variables/index.js';
 import { runScheduledPrompts } from './services/scheduled-prompts-runner.js';
 import { AiToolsController } from './api/ai-tools.controller.js';
 import { createAiToolsAdminRouter } from './api/ai-tools.router.js';
@@ -85,8 +92,23 @@ export interface IAiToolsModuleDependencies {
     serviceRegistry: IServiceRegistry;
     /** Hook registry the governor invokes the `ai.toolInvoke`/`ai.toolInvoked` seams through. */
     hookRegistry: IHookRegistry;
-    /** Menu service for registering the `/system/ai-tools` admin nav item. */
+    /**
+     * Menu service for registering the `/system/ai-tools` admin nav item, and the
+     * data source for the built-in `site-info` prompt variable.
+     */
     menuService: IMenuService;
+    /** Redis-backed cache; data source for the built-in `cache-keys` prompt variable. */
+    cacheService: ICacheService;
+    /** Block sync reads for the built-in blockchain prompt variables. */
+    blockchainService: IBlockchainService;
+    /** Observer processing stats for the built-in `observer-stats` prompt variable. */
+    observerRegistry: IBlockchainObserverService;
+    /** TRON chain parameters for the built-in `chain-params` prompt variable. */
+    chainParameters: IChainParametersService;
+    /** USDT transfer energy costs for the built-in `chain-params` prompt variable. */
+    usdtParameters: IUsdtParametersService;
+    /** Runtime site config for the built-in `site-info` prompt variable. */
+    systemConfig: ISystemConfigService;
     /** Express app the admin router mounts onto. */
     app: Express;
     /**
@@ -112,6 +134,12 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private serviceRegistry!: IServiceRegistry;
     private hookRegistry!: IHookRegistry;
     private menuService!: IMenuService;
+    private cacheService!: ICacheService;
+    private blockchainService!: IBlockchainService;
+    private observerRegistry!: IBlockchainObserverService;
+    private chainParameters!: IChainParametersService;
+    private usdtParameters!: IUsdtParametersService;
+    private systemConfig!: ISystemConfigService;
     private app!: Express;
     private scheduler: ISchedulerService | null = null;
 
@@ -143,6 +171,12 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.serviceRegistry = dependencies.serviceRegistry;
         this.hookRegistry = dependencies.hookRegistry;
         this.menuService = dependencies.menuService;
+        this.cacheService = dependencies.cacheService;
+        this.blockchainService = dependencies.blockchainService;
+        this.observerRegistry = dependencies.observerRegistry;
+        this.chainParameters = dependencies.chainParameters;
+        this.usdtParameters = dependencies.usdtParameters;
+        this.systemConfig = dependencies.systemConfig;
         this.app = dependencies.app;
         this.scheduler = dependencies.scheduler ?? null;
 
@@ -190,6 +224,21 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
 
         this.promptVariables = new PromptVariableRegistry(this.logger, this.database);
         await this.promptVariables.load();
+
+        // Register the core-owned built-in dynamic variables. Lifted out of the
+        // trp-ai-assistant plugin so the variables exist for whichever AI provider
+        // is installed (or none) and the lethal-trifecta detector always sees them.
+        // The resolvers read these injected services lazily at expansion time.
+        registerBuiltinVariables(this.promptVariables, {
+            blockchainService: this.blockchainService,
+            chainParameters: this.chainParameters,
+            usdtParameters: this.usdtParameters,
+            observerRegistry: this.observerRegistry,
+            systemLog: this.logger,
+            systemConfig: this.systemConfig,
+            menuService: this.menuService,
+            cache: this.cacheService
+        });
 
         this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation, this.queryHistory, this.savedPrompts, this.promptVariables);
 

@@ -39,6 +39,7 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 | `services/curation-service.ts` | `'curation'` → `ICurationService`: type registry + hold/approve/reject/edit orchestration |
 | `services/ai-provider-registry.ts` | `'ai-providers'` → `IAiProviderRegistry`: provider metadata + executable instance; `getActive()` |
 | `services/prompt-variable-registry.ts` | `'prompt-variables'` → `IPromptVariableRegistry`: code-registered dynamic variables + DB-persisted static variables (`module_ai-tools_variables`), classification, `{%name%}` expansion, secret-name feed for the trifecta detector |
+| `variables/` | Core-owned built-in `dynamic` variables (Blockchain & Network, System Health, Site & Content, Database Access), registered into the registry at module init. Resolvers read injected core services; `types.ts` declares that dependency surface |
 | `services/ai-query-history.service.ts` | `module_ai-tools_query_history` writes/queries for the Query tab (`IAiQueryRecord`) |
 | `services/saved-prompts.service.ts` | `module_ai-tools_prompts` CRUD + cron validation + scheduler bookkeeping (`ISavedPrompt`); atomic field-level writes; failure-streak auto-pause |
 | `services/scheduled-prompts-runner.ts` | Per-tick cron evaluator: fires due prompts via `getActive().query({ mode: 'programmatic' })`, claim-before-fire to avoid double-firing |
@@ -92,7 +93,14 @@ The central queue of effects held for human review across content types. Provide
 
 ### `'prompt-variables'` → `IPromptVariableRegistry`
 
-The single registry of prompt variables — the `{%name%}` tokens an AI provider expands into a prompt. Holds two kinds behind one service (the Menu module's dual-backing pattern): `dynamic` variables a provider plugin or core module registers in code (`registerVariable`, classify-only) and `static` variables an admin authors and persists (`createStatic`/`updateStatic`/`deleteStatic`, full CRUD). The AI provider consumes `expandAll`/`expandWithMetadata` at request-build time, so a prompt expands admin-authored statics alongside built-ins. `classify()` sets a variable's sensitivity — a static stores it on the document, a dynamic persists an admin override over its code-declared default. `getSecretVariableNames()` feeds the trifecta detector. A new static defaults to `secret` (fail-safe), and a static that shadows a registered dynamic name is rejected. The `trp-ai-assistant` plugin registers its built-in dynamic variables here via the service watch and was the prior owner of this registry.
+The single registry of prompt variables — the `{%name%}` tokens an AI provider expands into a prompt. Holds two kinds behind one service (the Menu module's dual-backing pattern): `dynamic` variables a provider plugin or core module registers in code (`registerVariable`, classify-only) and `static` variables an admin authors and persists (`createStatic`/`updateStatic`/`deleteStatic`, full CRUD). The AI provider consumes `expandAll`/`expandWithMetadata` at request-build time, so a prompt expands admin-authored statics alongside built-ins. `classify()` sets a variable's sensitivity — a static stores it on the document, a dynamic persists an admin override over its code-declared default. `getSecretVariableNames()` feeds the trifecta detector. A new static defaults to `secret` (fail-safe), and a static that shadows a registered dynamic name is rejected. This module registers a core-owned set of **built-in dynamic variables** (`variables/`) at init; the installed AI provider and other plugins register their own the same way through the service watch. The module owns the registry — it and the built-in set were lifted out of the `trp-ai-assistant` plugin.
+
+| Category | Built-in dynamic variables |
+|---|---|
+| Blockchain & Network | `system-status`, `chain-params`, `tx-activity`, `tx-types`, `tx-week` |
+| System Health | `observer-stats`, `log-summary`, `server-info` |
+| Site & Content | `site-info` |
+| Database Access | `cache-keys` |
 
 ## Admin REST API
 
@@ -149,7 +157,7 @@ Declared in `src/backend/hooks/registry.ts`. `ai.toolInvoke` (series, `IAiToolIn
 
 ## Lifecycle Obligations
 
-`init()` constructs the registry, policy engine, audit store, approval queue, curation queue + service, governor, provider registry, query-history service, saved-prompts service, and prompt-variable registry; loads persisted tool-states, policy overrides, and prompt-variable statics + classifications; ensures every collection's indexes (the collections are new, so index creation here is correct rather than a migration — including `module_ai-tools_query_history`, `module_ai-tools_prompts`, and `module_ai-tools_variables`); and injects the curation binding resolver into the policy engine (`policy.setCurationResolver(curation.hasType)`). `run()` mounts the admin router, registers `'ai-tools'` / `'ai-tool-governor'` / `'ai-providers'` / `'curation'` / `'prompt-variables'`, wires the governor's and curation service's broadcast sinks to `WebSocketService`, registers the daily `ai-tools:prune-audit` retention job and the 2-minute `ai-tools:run-scheduled-prompts` job (both only when a scheduler is injected), and registers the `/system/ai-tools` admin nav item under the System container. Errors in either phase fail the boot — there is no degraded mode.
+`init()` constructs the registry, policy engine, audit store, approval queue, curation queue + service, governor, provider registry, query-history service, saved-prompts service, and prompt-variable registry (into which it registers the core-owned built-in dynamic variables); loads persisted tool-states, policy overrides, and prompt-variable statics + classifications; ensures every collection's indexes (the collections are new, so index creation here is correct rather than a migration — including `module_ai-tools_query_history`, `module_ai-tools_prompts`, and `module_ai-tools_variables`); and injects the curation binding resolver into the policy engine (`policy.setCurationResolver(curation.hasType)`). `run()` mounts the admin router, registers `'ai-tools'` / `'ai-tool-governor'` / `'ai-providers'` / `'curation'` / `'prompt-variables'`, wires the governor's and curation service's broadcast sinks to `WebSocketService`, registers the daily `ai-tools:prune-audit` retention job and the 2-minute `ai-tools:run-scheduled-prompts` job (both only when a scheduler is injected), and registers the `/system/ai-tools` admin nav item under the System container. Errors in either phase fail the boot — there is no degraded mode.
 
 ## Related
 

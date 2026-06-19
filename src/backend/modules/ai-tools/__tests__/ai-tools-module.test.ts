@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { HookAbortError, UNTRUSTED_CONTENT_NOTICE } from '@/types';
-import type { IAiTool, IAiToolCapability, IAiToolInfo, ICurationType, IHookRegistry, IMenuService, ISchedulerService, ISystemLogService, IToolInvocationContext } from '@/types';
+import type { IAiTool, IAiToolCapability, IAiToolInfo, IBlockchainObserverService, IBlockchainService, ICacheService, IChainParametersService, ICurationType, IHookRegistry, IMenuService, ISchedulerService, ISystemConfigService, ISystemLogService, IToolInvocationContext, IUsdtParametersService } from '@/types';
 import { AiToolsModule, AUDIT_PRUNE_JOB, CurationQueue, CurationService, ToolApprovalQueue, detectTrifecta, lintToolCapability } from '../index.js';
 import { ToolPolicyEngine } from '../services/tool-policy-engine.js';
 import { runWithCurationAutoApprove, shouldAutoApproveCuration } from '../services/curation-auto-approve-context.js';
@@ -46,6 +46,26 @@ function createMockHookRegistry(): IHookRegistry {
         snapshot: vi.fn(() => ({ tracks: [] })),
         invoke: vi.fn(async () => undefined)
     } as unknown as IHookRegistry;
+}
+
+/**
+ * Stub the core services the module injects solely to back the built-in prompt
+ * variables. Those resolvers run lazily at variable-expansion time, never during
+ * the module lifecycle these tests exercise, so empty typed stubs satisfy the
+ * dependency surface without being invoked.
+ */
+function builtinVariableDeps(): Pick<
+    Parameters<AiToolsModule['init']>[0],
+    'cacheService' | 'blockchainService' | 'observerRegistry' | 'chainParameters' | 'usdtParameters' | 'systemConfig'
+> {
+    return {
+        cacheService: { keys: vi.fn(async () => [] as string[]) } as unknown as ICacheService,
+        blockchainService: {} as unknown as IBlockchainService,
+        observerRegistry: {} as unknown as IBlockchainObserverService,
+        chainParameters: {} as unknown as IChainParametersService,
+        usdtParameters: {} as unknown as IUsdtParametersService,
+        systemConfig: {} as unknown as ISystemConfigService
+    };
 }
 
 /** A strictly read-only tool with a spy handler. */
@@ -171,7 +191,8 @@ describe('AiToolsModule', () => {
             serviceRegistry: mockRegistry,
             hookRegistry: mockHooks,
             menuService: createMockMenuService(),
-            app: mockApp as never
+            app: mockApp as never,
+            ...builtinVariableDeps()
         });
     });
 
@@ -206,7 +227,8 @@ describe('AiToolsModule', () => {
                 hookRegistry: createMockHookRegistry(),
                 menuService: createMockMenuService(),
                 app: { use: vi.fn() } as never,
-                scheduler
+                scheduler,
+                ...builtinVariableDeps()
             });
             await scheduledModule.run();
 

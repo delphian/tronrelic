@@ -65,10 +65,10 @@
     /* Resting height so the panel does not grow as the conversation fills — the
        transcript scrolls within. It is a min-height, not a fixed height, so
        dragging the composer textarea taller grows the card to contain it rather
-       than collapsing the transcript or clipping the toolbar. resize: vertical
-       additionally lets the admin drag the whole card taller. */
+       than collapsing the transcript or clipping the toolbar. The card itself is
+       not user-resizable: only the embedded textarea carries `resize`, and the
+       card expands to follow it. */
     min-height: var(--query-chat-height-sm);
-    resize: vertical;
 }
 
 @container ai-query (min-width: #{$breakpoint-mobile-md}) {
