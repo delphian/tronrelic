@@ -41,6 +41,7 @@ import { SystemConfigService } from './services/system-config/index.js';
 import { CacheService } from './services/cache.service.js';
 import { ChainParametersFetcher } from './modules/chain-parameters/chain-parameters-fetcher.js';
 import { ChainParametersService } from './modules/chain-parameters/chain-parameters.service.js';
+import { BlockchainService } from './modules/blockchain/blockchain.service.js';
 import { TransactionDetailService } from './modules/blockchain/transaction-detail.service.js';
 import { registerTransactionAiTools } from './modules/blockchain/transaction-ai-tools.js';
 import { TronGridClient } from './modules/blockchain/tron-grid.client.js';
@@ -342,7 +343,19 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await identityModule.init(sharedDeps);
     await trafficModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
     await toolsModule.init(sharedDeps);
-    await aiToolsModule.init({ ...sharedDeps, scheduler: schedulerService });
+    // The ai-tools module owns the built-in dynamic prompt variables (lifted out
+    // of trp-ai-assistant), so it needs the core services those resolvers read.
+    // All are singletons wired by initializeCoreServices() above; the resolvers
+    // call them lazily at variable-expansion time.
+    await aiToolsModule.init({
+        ...sharedDeps,
+        scheduler: schedulerService,
+        blockchainService: BlockchainService.getInstance(),
+        observerRegistry: BlockchainObserverService.getInstance(),
+        chainParameters: ChainParametersService.getInstance(),
+        usdtParameters: UsdtParametersService.getInstance(),
+        systemConfig: SystemConfigService.getInstance()
+    });
 
     return {
         app,

@@ -25,9 +25,9 @@ type LegTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 /** One trifecta leg: its label and the enabled tools that contribute it. */
 function Leg({ label, tools, tone }: { label: string; tools: string[]; tone: LegTone }) {
     return (
-        <div>
+        <div className={styles.trifecta_leg}>
             <div className={styles.trifecta_leg_label}>{label}</div>
-            <span className={styles.badges}>
+            <span className={styles.trifecta_leg_badges}>
                 {tools.length === 0
                     ? <span className="text-subtle">none</span>
                     : tools.map(name => <Badge key={name} tone={tone}>{name}</Badge>)}

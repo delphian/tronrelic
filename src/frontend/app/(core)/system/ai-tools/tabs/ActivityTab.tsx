@@ -105,7 +105,7 @@ export function ActivityTab() {
                         <Table>
                             <Thead>
                                 <Tr>
-                                    <Th width="shrink">Time</Th>
+                                    <Th width="shrink" className={styles.col_time}>Time</Th>
                                     <Th>Tool</Th>
                                     <Th width="shrink">AI Provider</Th>
                                     <Th width="shrink">Actor</Th>
@@ -117,7 +117,7 @@ export function ActivityTab() {
                             <Tbody>
                                 {items.map(record => (
                                     <Tr key={record.id} hasError={record.status === 'error'}>
-                                        <Td muted><ClientTime date={record.createdAt} format="datetime" /></Td>
+                                        <Td muted className={styles.col_time}><ClientTime date={record.createdAt} format="datetime" /></Td>
                                         <Td>
                                             <div className={styles.tool_name}>{record.toolName}</div>
                                             {record.error && <div className={styles.mono}>{record.error}</div>}

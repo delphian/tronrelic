@@ -77,6 +77,20 @@
     gap: var(--gap-xs);
 }
 
+/* Activity feed Time column: keep a full datetime on one line so it never wraps
+   mid-value. Below the dashboard's mobile breakpoint, allow wrapping so the
+   narrow table can reclaim the width. Scoped here rather than on the shared
+   Table `.th_shrink` so only this column widens. */
+.col_time {
+    white-space: nowrap;
+}
+
+@container ai-tools-dashboard (max-width: #{$breakpoint-mobile-lg}) {
+    .col_time {
+        white-space: normal;
+    }
+}
+
 /* Filter bar above the activity feed. */
 .filters {
     display: flex;
@@ -129,11 +143,31 @@
     margin-top: var(--gap-sm);
 }
 
+/* One leg: the category label stacked above its contributing-tool chips, with a
+   small vertical gap separating the label from the listing beneath it. */
+.trifecta_leg {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
 .trifecta_leg_label {
     font-size: var(--font-size-caption);
     text-transform: uppercase;
     letter-spacing: var(--letter-spacing-wide);
     color: var(--color-text-subtle);
+}
+
+/* Contributing-tool chips under a leg. The badge font already sits at the
+   smallest label token, so the listing reads as secondary detail by shrinking
+   the bubble — tighter padding, gap, and radius than a default Badge. */
+.trifecta_leg_badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-2xs);
+    --badge-padding: var(--padding-2xs) var(--padding-xs);
+    --badge-gap: var(--gap-2xs);
+    --badge-border-radius: var(--radius-sm);
 }
 
 /* Provider panel rows. */

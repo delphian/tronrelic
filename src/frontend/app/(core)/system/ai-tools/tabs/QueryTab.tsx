@@ -614,13 +614,6 @@ export function QueryTab() {
 
             {view === 'chat' ? (
                 <>
-                <SavedPromptsPanel
-                    prompts={savedPrompts}
-                    onPromptsChange={setSavedPrompts}
-                    currentPromptText={input}
-                    onLoadPromptText={(text) => { setInput(text); textareaRef.current?.focus(); }}
-                    onError={setError}
-                />
                 <Card className={styles.chat_card}>
                     <div className={styles.chat_header}>
                         <Bot size={16} className={styles.chat_header_icon} />
@@ -788,6 +781,13 @@ export function QueryTab() {
                         </div>
                     </div>
                 </Card>
+                <SavedPromptsPanel
+                    prompts={savedPrompts}
+                    onPromptsChange={setSavedPrompts}
+                    currentPromptText={input}
+                    onLoadPromptText={(text) => { setInput(text); textareaRef.current?.focus(); }}
+                    onError={setError}
+                />
                 </>
             ) : (
                 <Stack gap="md">
