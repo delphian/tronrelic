@@ -25,27 +25,11 @@
     color: var(--color-text-subtle);
 }
 
+/* Shared <Input> supplies width, padding, border, radius, background,
+ * focus ring, and disabled styling via the input tokens. Only the
+ * monospace face (so the URL reads as a literal) is layered on here. */
 .input {
-    width: 100%;
-    padding: var(--input-padding);
-    background: var(--input-background);
-    border: var(--input-border);
-    border-radius: var(--input-border-radius);
-    color: var(--color-text);
-    font-size: var(--input-font-size);
     font-family: var(--font-mono);
-    transition: var(--input-transition);
-}
-
-.input:focus {
-    outline: none;
-    border-color: var(--input-border-focus);
-    box-shadow: var(--input-shadow-focus);
-}
-
-.input:disabled {
-    opacity: var(--button-disabled-opacity);
-    cursor: not-allowed;
 }
 
 .actions {

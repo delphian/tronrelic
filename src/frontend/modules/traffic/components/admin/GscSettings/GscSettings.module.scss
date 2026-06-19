@@ -110,41 +110,11 @@
     text-decoration: underline;
 }
 
+/* Slim override: the shared <Textarea> owns sizing/border/focus; this only
+ * supplies the JSON-key field's monospace font and taller default height. */
 .textarea {
-    width: 100%;
     min-height: 120px;
-    padding: var(--input-padding);
     font-family: var(--font-mono);
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text);
-    background: var(--color-surface);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    resize: vertical;
-}
-
-.textarea:focus-visible {
-    outline: var(--focus-outline-width) solid var(--color-focus);
-    outline-offset: var(--focus-outline-offset);
-    box-shadow: var(--focus-shadow);
-    border-color: var(--color-primary);
-}
-
-.input {
-    width: 100%;
-    padding: var(--input-padding);
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text);
-    background: var(--color-surface);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-}
-
-.input:focus-visible {
-    outline: var(--focus-outline-width) solid var(--color-focus);
-    outline-offset: var(--focus-outline-offset);
-    box-shadow: var(--focus-shadow);
-    border-color: var(--color-primary);
 }
 
 .actions {

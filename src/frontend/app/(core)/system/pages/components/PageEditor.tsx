@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
+import { Textarea } from '../../../../../components/ui/Textarea';
 import { Save, X, Eye } from 'lucide-react';
 import type { IPage } from '@/types';
 import styles from './PageEditor.module.css';
@@ -190,7 +191,7 @@ export function PageEditor({ page, onSave, onCancel }: PageEditorProps) {
                 {/* Markdown Editor */}
                 <Card padding="md" className={styles.pane}>
                     <h3 className={styles.pane_title}>Markdown Editor</h3>
-                    <textarea
+                    <Textarea
                         className={styles.textarea}
                         value={content}
                         onChange={e => setContent(e.target.value)}

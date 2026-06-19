@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
+import { Textarea } from '../../../../../components/ui/Textarea';
 import { Save } from 'lucide-react';
 import type { IPageSettings } from '@/types';
 import styles from './SettingsTab.module.css';
@@ -116,7 +117,7 @@ export function SettingsTab() {
                             Route patterns that custom pages cannot use (one per line).
                             Prevents conflicts with system routes.
                         </p>
-                        <textarea
+                        <Textarea
                             id="blacklisted-routes"
                             className={styles.textarea}
                             value={blacklistedRoutes}

@@ -3,13 +3,14 @@
 /**
  * @fileoverview /system/ai-tools — the AI tool governance dashboard.
  *
- * Six tabs (Query — the default — then Registry, Activity, Approvals, Curation,
- * Policy) plus a lethal-trifecta banner and a live pending-approval count on the
- * Approvals tab. Admin-gated by
- * the /system layout; like the other system pages it is a client component that
- * fetches over the cookie-authenticated admin API. Governed events arrive as
- * WebSocket refetch signals — the data itself always comes from the gated REST
- * feed, never a global broadcast.
+ * Five tabs (Query — the default — then Registry, Activity, Approvals,
+ * Curation) plus a lethal-trifecta banner and a live pending-approval count on
+ * the Approvals tab. Per-tool policy editing is not its own tab — each Registry
+ * tool row expands to its policy editor — so this shell carries no Policy tab.
+ * Admin-gated by the /system layout; like the other system pages it is a client
+ * component that fetches over the cookie-authenticated admin API. Governed
+ * events arrive as WebSocket refetch signals — the data itself always comes from
+ * the gated REST feed, never a global broadcast.
  */
 
 import { useEffect, useState, useCallback } from 'react';
@@ -23,20 +24,18 @@ import { RegistryTab } from './tabs/RegistryTab';
 import { ActivityTab } from './tabs/ActivityTab';
 import { ApprovalsTab } from './tabs/ApprovalsTab';
 import { CurationTab } from './tabs/CurationTab';
-import { PolicyTab } from './tabs/PolicyTab';
 import { QueryTab } from './tabs/QueryTab';
 import styles from './page.module.scss';
 
 /** The dashboard tabs. */
-type TabId = 'registry' | 'query' | 'activity' | 'approvals' | 'curation' | 'policy';
+type TabId = 'registry' | 'query' | 'activity' | 'approvals' | 'curation';
 
 const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
     { id: 'query', label: 'Query' },
     { id: 'registry', label: 'Registry' },
     { id: 'activity', label: 'Activity' },
     { id: 'approvals', label: 'Approvals' },
-    { id: 'curation', label: 'Curation' },
-    { id: 'policy', label: 'Policy' }
+    { id: 'curation', label: 'Curation' }
 ];
 
 /**
@@ -95,7 +94,7 @@ export default function AiToolsAdminPage() {
 
     return (
         <Page>
-            <PageHeader title="AI Tools" subtitle="Govern every tool an AI agent can invoke — registry, activity, approvals, and policy." />
+            <PageHeader title="AI Tools" subtitle="Govern every tool an AI agent can invoke — registry, activity, approvals, and per-tool policy." />
             <div className={styles.container}>
                 {trifecta && <TrifectaPanel status={trifecta} />}
 
@@ -125,7 +124,6 @@ export default function AiToolsAdminPage() {
                     {activeTab === 'activity' && <ActivityTab />}
                     {activeTab === 'approvals' && <ApprovalsTab onChanged={refreshPending} />}
                     {activeTab === 'curation' && <CurationTab onChanged={refreshPendingCuration} />}
-                    {activeTab === 'policy' && <PolicyTab />}
                 </div>
             </div>
         </Page>

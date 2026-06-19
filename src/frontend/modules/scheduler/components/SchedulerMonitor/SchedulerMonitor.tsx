@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, AlertCircle } from 'lucide-react';
 import { Page, Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
+import { Input } from '../../../../components/ui/Input';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { ClientTime } from '../../../../components/ui/ClientTime';
 import { getSchedulerStatus, getSchedulerHealth, updateSchedulerJob } from '../../api';
@@ -109,7 +110,7 @@ function JobRow({ job, onToggleEnabled, onScheduleChange, isLoading, loadingJobN
                     </div>
                 </Td>
                 <Td className={styles.cell_schedule}>
-                    <input
+                    <Input
                         type="text"
                         defaultValue={job.schedule}
                         onBlur={(e) => {

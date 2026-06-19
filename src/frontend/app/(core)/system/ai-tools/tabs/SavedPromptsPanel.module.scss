@@ -80,26 +80,11 @@
     flex-wrap: wrap;
 }
 
+/* Layout-only on top of the shared <Input> primitive: stretch to fill the save
+ * row and allow the flex item to shrink below its content width. */
 .name_input {
     flex: 1 1 auto;
     min-width: 0;
-    padding: var(--input-padding-sm);
-    background: var(--input-background);
-    border: var(--input-border);
-    border-radius: var(--input-border-radius);
-    color: var(--color-text);
-    font-size: var(--font-size-body-sm);
-    font-family: inherit;
-
-    &:focus-visible {
-        outline: none;
-        border-color: var(--input-border-focus);
-        box-shadow: var(--input-shadow-focus);
-    }
-
-    &::placeholder {
-        color: var(--color-text-muted);
-    }
 }
 
 /*
@@ -286,36 +271,15 @@
     color: var(--color-text-subtle);
 }
 
-.text_input,
-.cron_input,
+/* Layout-only extras on top of the shared <Textarea> primitive: a taller resting
+ * height and relaxed line spacing for prompt-body editing. */
 .textarea {
-    width: 100%;
-    padding: var(--input-padding);
-    background: var(--input-background);
-    border: var(--input-border);
-    border-radius: var(--input-border-radius);
-    color: var(--color-text);
-    font-size: var(--font-size-body-sm);
-    font-family: inherit;
-    transition: var(--input-transition);
-
-    &:focus-visible {
-        outline: none;
-        border-color: var(--input-border-focus);
-        box-shadow: var(--input-shadow-focus);
-    }
-
-    &::placeholder {
-        color: var(--color-text-muted);
-    }
-}
-
-.textarea {
-    resize: vertical;
     min-height: 8rem;
     line-height: var(--line-height-relaxed);
 }
 
+/* The cron field keeps a monospace face for the expression and reddens its border
+ * on an invalid value — neither is carried by the shared <Input> primitive. */
 .cron_input {
     font-family: var(--font-mono);
 

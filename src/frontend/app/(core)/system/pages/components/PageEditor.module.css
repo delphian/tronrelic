@@ -55,25 +55,14 @@
     color: var(--color-text);
 }
 
+/* Shared <Textarea> supplies width, padding, border, radius, background,
+ * focus ring, and placeholder color via the input tokens. This class keeps
+ * only the pane-fill layout (flex/min-height) and the monospace face the
+ * markdown editor still needs. */
 .textarea {
     flex: 1;
-    width: 100%;
     min-height: 500px;
-    padding: var(--spacing-5);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    color: var(--color-text);
     font-family: 'Monaco', 'Courier New', monospace;
-    font-size: var(--font-size-sm);
-    line-height: 1.6;
-    resize: vertical;
-    transition: border-color var(--transition-base);
-}
-
-.textarea:focus {
-    outline: none;
-    border-color: var(--color-primary);
 }
 
 .preview {

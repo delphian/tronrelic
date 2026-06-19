@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Users as UsersIcon } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
+import { Input } from '../../../../../components/ui/Input';
 import { Badge } from '../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { useModal } from '../../../../../components/ui/ModalProvider';
@@ -170,7 +171,7 @@ export function UsersMonitor() {
 
             <div className={styles.controls}>
                 <div className={styles.search_box}>
-                    <input
+                    <Input
                         type="text"
                         className={styles.search_input}
                         placeholder="Search by email or name…"

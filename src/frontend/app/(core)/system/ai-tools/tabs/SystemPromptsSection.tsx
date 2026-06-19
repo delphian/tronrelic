@@ -20,6 +20,8 @@ import type { IUserGroup } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Button } from '../../../../../components/ui/Button';
+import { Input } from '../../../../../components/ui/Input';
+import { Textarea } from '../../../../../components/ui/Textarea';
 import { Switch } from '../../../../../components/ui/Switch';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { useToast } from '../../../../../components/ui/ToastProvider';
@@ -270,8 +272,7 @@ export function SystemPromptsSection() {
                 <div className={styles.section_body}>
                     <Stack gap="sm">
                         <strong>Master prompt</strong>
-                        <textarea
-                            className={styles.curation_textarea}
+                        <Textarea
                             placeholder="Always-injected system prompt (may be left blank)"
                             value={master}
                             onChange={e => setMaster(e.target.value)}
@@ -292,15 +293,13 @@ export function SystemPromptsSection() {
                             <div className={styles.section_body}>
                                 <Stack gap="sm">
                                     <strong>{editingId ? `Edit ${form.name || 'prompt'}` : 'New system prompt'}</strong>
-                                    <input
-                                        className={styles.filter_select}
+                                    <Input
                                         placeholder="name (admin label)"
                                         value={form.name}
                                         onChange={e => setForm({ ...form, name: e.target.value })}
                                         aria-label="Prompt name"
                                     />
-                                    <textarea
-                                        className={styles.curation_textarea}
+                                    <Textarea
                                         placeholder="prompt body (supports {%name%} variables)"
                                         value={form.content}
                                         onChange={e => setForm({ ...form, content: e.target.value })}
@@ -310,8 +309,7 @@ export function SystemPromptsSection() {
 
                                     <span className={styles.field_label}>Target user ids (any of)</span>
                                     <Stack gap="sm" direction="horizontal">
-                                        <input
-                                            className={styles.filter_select}
+                                        <Input
                                             placeholder="Better Auth user id"
                                             value={userIdDraft}
                                             onChange={e => setUserIdDraft(e.target.value)}
@@ -359,8 +357,7 @@ export function SystemPromptsSection() {
                                         )}
 
                                     <span className={styles.field_label}>Order</span>
-                                    <input
-                                        className={styles.filter_select}
+                                    <Input
                                         type="number"
                                         value={form.order}
                                         onChange={e => setForm({ ...form, order: Number(e.target.value) || 0 })}

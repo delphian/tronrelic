@@ -15,6 +15,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Check, X, Pencil } from 'lucide-react';
 import { Stack } from '../../../../../components/layout';
 import { Button } from '../../../../../components/ui/Button';
+import { Textarea } from '../../../../../components/ui/Textarea';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
@@ -59,8 +60,7 @@ function CurationEditForm({ initialBody, onCancel, onSave }: {
 
     return (
         <Stack gap="md">
-            <textarea
-                className={styles.curation_textarea}
+            <Textarea
                 value={body}
                 onChange={event => setBody(event.target.value)}
                 rows={5}

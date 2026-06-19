@@ -19,6 +19,8 @@ import type { AiToolSensitivity, IPromptVariableInfo } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Button } from '../../../../../components/ui/Button';
+import { Input } from '../../../../../components/ui/Input';
+import { Textarea } from '../../../../../components/ui/Textarea';
 import { Select } from '../../../../../components/ui/Select';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { useToast } from '../../../../../components/ui/ToastProvider';
@@ -176,30 +178,26 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
                                 <Stack gap="sm">
                                     <strong>{editingName ? `Edit ${editingName}` : 'New custom variable'}</strong>
                                     {!editingName && (
-                                        <input
-                                            className={styles.filter_select}
+                                        <Input
                                             placeholder="name (lowercase-kebab, used as {%name%})"
                                             value={form.name}
                                             onChange={e => setForm({ ...form, name: e.target.value })}
                                             aria-label="Variable name"
                                         />
                                     )}
-                                    <input
-                                        className={styles.filter_select}
+                                    <Input
                                         placeholder="category"
                                         value={form.category}
                                         onChange={e => setForm({ ...form, category: e.target.value })}
                                         aria-label="Variable category"
                                     />
-                                    <input
-                                        className={styles.filter_select}
+                                    <Input
                                         placeholder="description"
                                         value={form.description}
                                         onChange={e => setForm({ ...form, description: e.target.value })}
                                         aria-label="Variable description"
                                     />
-                                    <textarea
-                                        className={styles.curation_textarea}
+                                    <Textarea
                                         placeholder="content (the text spliced into the prompt)"
                                         value={form.content}
                                         onChange={e => setForm({ ...form, content: e.target.value })}

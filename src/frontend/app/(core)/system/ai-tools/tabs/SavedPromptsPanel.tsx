@@ -31,6 +31,7 @@ import {
 import type { ISavedPrompt } from '@/types';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
+import { Input } from '../../../../../components/ui/Input';
 import { IconButton } from '../../../../../components/ui/IconButton';
 import { useModal } from '../../../../../components/ui/ModalProvider';
 import { listSavedPrompts, saveSavedPrompt, deleteSavedPrompt } from '../../../../../modules/ai-tools';
@@ -318,7 +319,7 @@ export function SavedPromptsPanel({
             {open && (
                 <div className={styles.panel_body}>
                     <div className={styles.save_row}>
-                        <input
+                        <Input
                             type="text"
                             value={saveName}
                             onChange={(e) => setSaveName(e.target.value)}

@@ -16,6 +16,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Save, Clock, AlertCircle, CheckCircle } from 'lucide-react';
 import type { ISavedPrompt } from '@/types';
 import { Button } from '../../../../../components/ui/Button';
+import { Input } from '../../../../../components/ui/Input';
+import { Textarea } from '../../../../../components/ui/Textarea';
 import { Select } from '../../../../../components/ui/Select';
 import { Switch } from '../../../../../components/ui/Switch';
 import { saveSavedPrompt, getQueryProviders, type IAiProviderModels } from '../../../../../modules/ai-tools';
@@ -156,15 +158,14 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
             <div className={styles.edit_section}>
                 <p className={styles.section_label}>Prompt</p>
                 <label className={styles.field_label} htmlFor={`prompt-name-${prompt.id}`}>Name</label>
-                <input
+                <Input
                     id={`prompt-name-${prompt.id}`}
                     type="text"
                     value={nameDraft}
                     onChange={(e) => setNameDraft(e.target.value)}
-                    className={styles.text_input}
                 />
                 <label className={styles.field_label} htmlFor={`prompt-body-${prompt.id}`}>Prompt text</label>
-                <textarea
+                <Textarea
                     id={`prompt-body-${prompt.id}`}
                     value={bodyDraft}
                     onChange={(e) => setBodyDraft(e.target.value)}
@@ -213,7 +214,7 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
                 <label className={styles.field_label} htmlFor={`schedule-cron-${prompt.id}`}>
                     Cron expression (UTC)
                 </label>
-                <input
+                <Input
                     id={`schedule-cron-${prompt.id}`}
                     type="text"
                     value={scheduleDraft.cron}

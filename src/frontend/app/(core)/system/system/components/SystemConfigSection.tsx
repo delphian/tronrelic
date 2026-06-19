@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Save, AlertCircle } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
+import { Input } from '../../../../../components/ui/Input';
 import { Stack } from '../../../../../components/layout';
 import { useToast } from '../../../../../components/ui/ToastProvider/ToastProvider';
 import styles from './SystemConfigSection.module.scss';
@@ -102,7 +103,7 @@ export function SystemConfigSection() {
             )}
             <label className={styles.field}>
                 <span className={styles.field_label}>Site URL</span>
-                <input
+                <Input
                     type="url"
                     value={siteUrl}
                     onChange={(event) => setSiteUrl(event.target.value)}

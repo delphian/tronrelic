@@ -3,10 +3,11 @@
 /**
  * @fileoverview Renders an AI tool's capability classification as a row of
  * tone-coded badges (side effect, reversibility, spend, sensitivity,
- * untrusted-content, self-curated review). Shared by the Registry, Activity,
- * and Policy tabs so the risk class reads consistently everywhere. These badges
- * show what the tool *declares*; the effective approval/unattended gates the
- * governor derives from that declaration live on the Policy tab.
+ * untrusted-content, self-curated review). Shared by the Registry and Activity
+ * tabs so the risk class reads consistently everywhere. These badges show what
+ * the tool *declares*; the effective approval/unattended gates the governor
+ * derives from that declaration are editable in each tool's Registry policy
+ * editor (the row's expander).
  */
 
 import type { IAiToolCapability } from '@/types';

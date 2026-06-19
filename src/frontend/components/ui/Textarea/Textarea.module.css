@@ -1,0 +1,43 @@
+/**
+ * Textarea Component CSS Module
+ *
+ * Scoped styles for the Textarea component. Reuses the shared input tokens so
+ * multiline fields match the Input and Select primitives instead of the browser
+ * default. Vertical-only resize keeps admin form layouts from breaking sideways.
+ */
+
+.textarea {
+    width: 100%;
+    border-radius: var(--input-border-radius);
+    background: var(--input-background);
+    border: var(--input-border);
+    color: inherit;
+    padding: var(--input-padding);
+    font-family: inherit;
+    font-size: var(--input-font-size);
+    line-height: var(--line-height-normal);
+    transition: var(--input-transition);
+    resize: vertical;
+}
+
+.textarea::placeholder {
+    color: var(--color-text-muted);
+}
+
+/* Keyboard-only focus ring (mouse clicks should not leave a lingering ring). */
+.textarea:focus-visible {
+    outline: none;
+    border-color: var(--input-border-focus);
+    box-shadow: var(--input-shadow-focus);
+}
+
+.textarea:disabled {
+    opacity: var(--opacity-55);
+    cursor: not-allowed;
+}
+
+/* Variant: Ghost — transparent for darker surfaces / inline contexts. */
+.textarea--ghost {
+    background: var(--input-ghost-background);
+    border-color: var(--input-ghost-border);
+}
