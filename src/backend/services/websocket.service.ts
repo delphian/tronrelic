@@ -335,6 +335,13 @@ export class WebSocketService implements IWebSocketService {
         // carry only a timestamp or count, never governed data.
         this.io.emit(event.event, event.payload);
         break;
+      case 'toast':
+        // Site-wide toast broadcast from the core `send-toast` AI tool. Every
+        // connected browser surfaces it via CoreToastHandler. The payload
+        // carries only display fields (tone/title/description/duration) — never
+        // governed data — so a global broadcast is safe.
+        this.io.emit(event.event, event.payload);
+        break;
       default:
         logger.warn({ event }, 'Unknown socket event');
     }

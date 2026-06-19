@@ -4,6 +4,7 @@ import { useMemo, type ReactNode } from 'react';
 import { Provider } from 'react-redux';
 import { createStore } from '../store';
 import { SocketBridge } from '../components/socket/SocketBridge';
+import { CoreToastHandler } from '../components/socket/CoreToastHandler';
 import { ToastProvider } from '../components/ui/ToastProvider';
 import { ModalProvider } from '../components/ui/ModalProvider';
 import { PluginLoader } from '../components/plugins/PluginLoader';
@@ -39,6 +40,7 @@ export function Providers({ children, ssrSession }: ProvidersProps) {
                 <ModalProvider>
                     <FrontendPluginContextProvider>
                         <SocketBridge />
+                        <CoreToastHandler />
                         <SessionProvider initialSession={ssrSession ?? null}>
                             <PluginLoader />
                             <PageViewTracker />

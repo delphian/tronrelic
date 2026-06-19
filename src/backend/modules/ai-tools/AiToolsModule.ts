@@ -17,6 +17,7 @@
 import type { Express } from 'express';
 import type {
     IAccountDirectoryService,
+    IAiTool,
     IBlockchainObserverService,
     IBlockchainService,
     ICacheService,
@@ -254,6 +255,12 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             cache: this.cacheService
         });
 
+        // Register the core-owned built-in tools. `send-toast` was lifted out of
+        // the trp-ai-assistant plugin so the site-wide announcement capability is
+        // provider-neutral — it exists for whichever AI provider is installed, or
+        // none, and survives a provider swap.
+        this.registerBuiltinTools();
+
         // Resolve a Better Auth user id to a live end-user principal via the
         // identity module's 'accounts' service, read lazily so the boot-order
         // race (identity registers 'accounts' in its own run()) and operator
@@ -266,6 +273,82 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser);
 
         this.logger.info('ai-tools module initialized');
+    }
+
+    /**
+     * Register the core-owned built-in AI tools on the registry.
+     *
+     * Today this is `send-toast`: a site-wide UI announcement broadcast. It is
+     * classified external / reversible / public, so the registry's
+     * capability-driven default-deny ships it disabled until an operator opts in,
+     * and the governor rate-governs it like any other external tool. Lifted from
+     * the trp-ai-assistant plugin so the capability is provider-neutral — it does
+     * not vanish when the Anthropic transport is swapped for another provider.
+     * The handler broadcasts on the global `'toast'` WebSocket event, surfaced in
+     * every browser by the core `CoreToastHandler` component; `WebSocketService`
+     * is resolved lazily at call time and its emit is a no-op when WebSockets are
+     * disabled, so registration never depends on socket availability.
+     */
+    private registerBuiltinTools(): void {
+        const sendToast: IAiTool = {
+            name: 'send-toast',
+            description:
+                'Broadcast a system-wide toast notification to EVERY connected browser session — all users, ' +
+                'not just the person who sent this query. This is a public site-wide announcement mechanism. ' +
+                'Never use this to answer the user\'s question, relay query findings, or communicate normal responses — ' +
+                'write those as regular text in the conversation instead. ' +
+                'Appropriate uses: site restarts, maintenance windows, critical system alerts, or global status changes ' +
+                'that every visitor should see regardless of who they are or what page they are on. ' +
+                'Toasts appear as small pop-ups in the bottom-right corner and auto-dismiss after a few seconds. ' +
+                'Keep title under 60 characters and description under 120. ' +
+                'Do NOT call this tool multiple times in rapid succession.',
+            inputSchema: {
+                type: 'object',
+                description: 'Toast notification content and presentation options',
+                properties: {
+                    title: { type: 'string', description: 'Short toast title, under 60 characters (required)' },
+                    description: { type: 'string', description: 'Optional longer description, under 120 characters' },
+                    tone: { type: 'string', enum: ['info', 'success', 'warning', 'danger'], description: 'Visual tone. Use info for neutral, success for confirmations, warning for caution, danger for errors. Defaults to info.' },
+                    duration: { type: 'number', description: 'Auto-dismiss duration in milliseconds. Defaults to 6000. Use 0 for persistent toasts that require manual dismissal.' }
+                },
+                required: ['title'],
+                additionalProperties: false
+            },
+            capability: { sideEffect: 'external', reversible: true, sensitivity: 'public' },
+            handler: async (input) => {
+                // Re-validate model input: the schema is a hint, not a guarantee.
+                const payload = input as {
+                    tone?: 'info' | 'success' | 'warning' | 'danger';
+                    title?: unknown;
+                    description?: unknown;
+                    duration?: unknown;
+                };
+                const title = typeof payload.title === 'string' ? payload.title.trim() : '';
+                if (!title) {
+                    return { success: false, error: 'title is required and must be a non-empty string' };
+                }
+                const tone = payload.tone && ['info', 'success', 'warning', 'danger'].includes(payload.tone)
+                    ? payload.tone
+                    : 'info';
+                const duration = typeof payload.duration === 'number' && Number.isFinite(payload.duration) && payload.duration >= 0
+                    ? payload.duration
+                    : 6000;
+
+                WebSocketService.getInstance().emit({
+                    event: 'toast',
+                    payload: {
+                        tone,
+                        title,
+                        description: typeof payload.description === 'string' ? payload.description : undefined,
+                        duration
+                    }
+                });
+
+                return { success: true, sent: true };
+            }
+        };
+
+        this.registry.registerTool(sendToast, 'core');
     }
 
     /**
