@@ -17,7 +17,7 @@
  * those defaults.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Save, RotateCcw } from 'lucide-react';
 import type { IAiToolInfo, IToolPolicy } from '@/types';
 import { Input } from '../../../../../components/ui/Input';
@@ -125,6 +125,45 @@ export function ToolPolicyEditor({ tool, override, usage, defaults, onChanged }:
         costCeiling !== (override?.costCeilingUsd !== undefined ? String(override.costCeilingUsd) : '') ||
         curation !== curationFrom(override?.curation);
 
+    // A number field is acceptable only when blank (blank inherits the class
+    // default) or a finite value >= 0 — exactly the accept-condition `save()`
+    // applies before writing it. Checking the same condition here, and gating
+    // Save on it below, keeps a value that would otherwise be silently dropped
+    // (e.g. a typed/pasted `-5`, which `<input type="number" min={0}>` renders
+    // but does not block) from producing a misleading "saved" toast.
+    const numberFieldValid = (raw: string): boolean => {
+        if (raw.trim() === '') {
+            return true;
+        }
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) && parsed >= 0;
+    };
+    const numbersValid = numberFieldValid(rateMax) && numberFieldValid(costCeiling);
+
+    // Re-seed the form when the override prop changes out from under an *idle*
+    // editor — but never while the admin has pending edits. The parent refetches
+    // every tool's policy on any save/clear/toggle (handlePolicyChanged → load),
+    // so each reload hands this editor a fresh `override` object identity even
+    // when its value is unchanged; gating on `!dirty` keeps that churn from
+    // clobbering half-typed values here. The post-Clear reset is handled
+    // explicitly in `clear()` rather than here, because immediately after a
+    // clear the form reads as dirty (its forced values vs the now-absent
+    // override), so this guard would (correctly) decline to touch it.
+    useEffect(() => {
+        if (dirty) {
+            return;
+        }
+        setRequireApproval(triFrom(override?.requireApproval));
+        setAllowUnattended(triFrom(override?.allowUnattended));
+        setRateMax(override?.rateLimit ? String(override.rateLimit.max) : '');
+        setCostCeiling(override?.costCeilingUsd !== undefined ? String(override.costCeilingUsd) : '');
+        setCuration(curationFrom(override?.curation));
+        // `dirty` derives from `override` plus the field state; listing `override`
+        // is sufficient to re-run on a prop change, and the guard re-reads the
+        // latest `dirty` each run.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [override]);
+
     const save = useCallback(async () => {
         // Only write a tri-state field when the admin forced it. Leaving it out
         // lets the governor keep the capability-class default rather than pinning
@@ -163,6 +202,16 @@ export function ToolPolicyEditor({ tool, override, usage, defaults, onChanged }:
         setBusy(true);
         try {
             await clearPolicy(tool.name);
+            // Reset the form to the inherited defaults now. The override prop will
+            // follow via onChanged → reload, but resetting here is what disarms the
+            // stale forced values (and the re-armed Save button), since right after
+            // a clear the form would otherwise read as dirty against the now-absent
+            // override and the `!dirty`-gated sync effect would decline to touch it.
+            setRequireApproval('inherit');
+            setAllowUnattended('inherit');
+            setRateMax('');
+            setCostCeiling('');
+            setCuration('inherit');
             push({ tone: 'info', title: `Override cleared for ${tool.name}` });
             onChanged();
         } catch (err) {
@@ -229,7 +278,7 @@ export function ToolPolicyEditor({ tool, override, usage, defaults, onChanged }:
                         placeholder="default"
                         className={styles.cell_control}
                     />
-                    <span className={styles.policy_field_help}>Max invocations per minute; blank inherits the class default.</span>
+                    <span className={styles.policy_field_help}>Max invocations per minute; blank inherits the class default. Negative values block Save.</span>
                 </label>
                 <label className={styles.policy_field}>
                     <span className={styles.policy_field_label}>Cost ceiling (USD)</span>
@@ -242,7 +291,7 @@ export function ToolPolicyEditor({ tool, override, usage, defaults, onChanged }:
                         placeholder="none"
                         className={styles.cell_control}
                     />
-                    <span className={styles.policy_field_help}>Max spend per rolling 24 h; blank means no cap.</span>
+                    <span className={styles.policy_field_help}>Max spend per rolling 24 h; blank means no cap. Negative values block Save.</span>
                 </label>
             </div>
             <div className={styles.policy_footer}>
@@ -255,7 +304,7 @@ export function ToolPolicyEditor({ tool, override, usage, defaults, onChanged }:
                         size="sm"
                         icon={<Save size={16} />}
                         loading={busy}
-                        disabled={busy || !dirty}
+                        disabled={busy || !dirty || !numbersValid}
                         onClick={() => { void save(); }}
                     >
                         Save override
