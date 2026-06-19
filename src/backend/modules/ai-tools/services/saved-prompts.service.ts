@@ -69,6 +69,14 @@ export interface ISavedPromptCreate {
     providerId?: string;
     /** Optional model id the prompt runs on, within `providerId`'s catalog. */
     model?: string;
+    /**
+     * Better Auth user id of the owner — the admin saving the prompt. Captured
+     * once at create and never rewritten by an update: it is whose behalf a
+     * scheduled run executes on, re-resolved to a live principal at fire time.
+     */
+    ownerUserId?: string;
+    /** Denormalized owner label (email/name) for the admin list view, display-only. */
+    ownerLabel?: string;
 }
 
 /**
@@ -209,6 +217,20 @@ export class SavedPromptsService {
         }
         if (model) {
             created.model = model;
+        }
+
+        // Ownership is captured at create and immutable thereafter (no field on
+        // ISavedPromptUpdate): it records whose behalf a scheduled run acts on,
+        // re-resolved to a live principal at fire time. A service-token save
+        // carries no user, so an unowned prompt simply runs with no principal —
+        // exactly as an unattended system query does.
+        const ownerUserId = typeof input.ownerUserId === 'string' ? input.ownerUserId.trim() : '';
+        const ownerLabel = typeof input.ownerLabel === 'string' ? input.ownerLabel.trim() : '';
+        if (ownerUserId) {
+            created.ownerUserId = ownerUserId;
+        }
+        if (ownerLabel) {
+            created.ownerLabel = ownerLabel;
         }
 
         const collection = this.database.getCollection<ISavedPrompt>(COLLECTION);

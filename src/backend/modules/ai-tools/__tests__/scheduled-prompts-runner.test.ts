@@ -313,4 +313,63 @@ describe('runScheduledPrompts', () => {
         expect(savedPrompts.recordRunResult).toHaveBeenCalledTimes(1);
         expect(savedPrompts.recordRunResult.mock.calls[0][0]).toBe('due');
     });
+
+    it('re-resolves a prompt owner at fire time and forwards it as the endUser principal', async () => {
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({ id: 'owned', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'run', ownerUserId: 'u1' })
+        ]);
+        const resolveEndUser = vi.fn(async (userId: string) => ({ userId, groups: ['admin'], email: 'a@b.co' }));
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, resolveEndUser);
+
+        expect(resolveEndUser).toHaveBeenCalledWith('u1');
+        // The run executes on the owner's behalf — endUser carries the live
+        // principal so a user-owned-object tool scopes to that owner.
+        expect(provider.query).toHaveBeenCalledWith({
+            prompt: 'run',
+            mode: 'programmatic',
+            endUser: { userId: 'u1', groups: ['admin'], email: 'a@b.co' }
+        });
+        expect(savedPrompts.recordRunFailure).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when an owned prompt\'s owner cannot be resolved', async () => {
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({ id: 'orphan-owner', cron: '* * * * *', lastRunAt: minutesAgo(5), ownerUserId: 'gone' })
+        ]);
+        // Deleted / unresolvable owner.
+        const resolveEndUser = vi.fn(async () => null);
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, resolveEndUser);
+
+        // Never executes under no/stale authority; records the failed run instead.
+        expect(provider.query).not.toHaveBeenCalled();
+        expect(savedPrompts.recordRunFailure).toHaveBeenCalledTimes(1);
+        const [, , reason] = savedPrompts.recordRunFailure.mock.calls[0];
+        expect(reason).toContain('gone');
+    });
+
+    it('fails closed for an owned prompt when no resolver is supplied', async () => {
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({ id: 'owned-no-resolver', cron: '* * * * *', lastRunAt: minutesAgo(5), ownerUserId: 'u1' })
+        ]);
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+
+        expect(provider.query).not.toHaveBeenCalled();
+        expect(savedPrompts.recordRunFailure).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs an unowned prompt with no principal and never consults the resolver', async () => {
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({ id: 'unowned', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'run' })
+        ]);
+        const resolveEndUser = vi.fn(async () => ({ userId: 'x', groups: [] }));
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, resolveEndUser);
+
+        expect(resolveEndUser).not.toHaveBeenCalled();
+        // No ownerUserId → endUser stays undefined (omitted by the matcher).
+        expect(provider.query).toHaveBeenCalledWith({ prompt: 'run', mode: 'programmatic' });
+    });
 });

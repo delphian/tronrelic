@@ -259,6 +259,16 @@ describe('SavedPromptsService', () => {
             expect(created.scheduleAnchorAt).toBe(created.createdAt);
         });
 
+        it('persists ownerUserId and ownerLabel when supplied, omits them when absent', async () => {
+            const owned = await service.create({ name: 'Owned', prompt: 'p', ownerUserId: 'u1', ownerLabel: 'a@b.co' });
+            expect(owned.ownerUserId).toBe('u1');
+            expect(owned.ownerLabel).toBe('a@b.co');
+
+            const unowned = await service.create({ name: 'Unowned', prompt: 'p' });
+            expect(unowned.ownerUserId).toBeUndefined();
+            expect(unowned.ownerLabel).toBeUndefined();
+        });
+
         it('maps a duplicate-key insert error to DuplicatePromptNameError (create race)', async () => {
             await service.create({ name: 'First', prompt: 'p' });
             const collection = database._collections.get('module_ai-tools_prompts')!;

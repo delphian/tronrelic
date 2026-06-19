@@ -16,6 +16,7 @@
 
 import type { Express } from 'express';
 import type {
+    IAccountDirectoryService,
     IBlockchainObserverService,
     IBlockchainService,
     ICacheService,
@@ -47,6 +48,7 @@ import { SavedPromptsService } from './services/saved-prompts.service.js';
 import { PromptVariableRegistry } from './services/prompt-variable-registry.js';
 import { registerBuiltinVariables } from './variables/index.js';
 import { runScheduledPrompts } from './services/scheduled-prompts-runner.js';
+import { createAccountEndUserResolver, type EndUserResolver } from './services/end-user-resolver.js';
 import { AiToolsController } from './api/ai-tools.controller.js';
 import { createAiToolsAdminRouter } from './api/ai-tools.router.js';
 
@@ -154,6 +156,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private queryHistory!: AiQueryHistoryService;
     private savedPrompts!: SavedPromptsService;
     private promptVariables!: PromptVariableRegistry;
+    private resolveEndUser!: EndUserResolver;
     private controller!: AiToolsController;
 
     private readonly logger = logger.child({ module: 'ai-tools' });
@@ -240,7 +243,16 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             cache: this.cacheService
         });
 
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation, this.queryHistory, this.savedPrompts, this.promptVariables);
+        // Resolve a Better Auth user id to a live end-user principal via the
+        // identity module's 'accounts' service, read lazily so the boot-order
+        // race (identity registers 'accounts' in its own run()) and operator
+        // churn are both tolerated. Drives interactive-query attribution and
+        // scheduled-prompt on-behalf-of execution.
+        this.resolveEndUser = createAccountEndUserResolver(
+            () => this.serviceRegistry.get<IAccountDirectoryService>('accounts')
+        );
+
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation, this.queryHistory, this.savedPrompts, this.promptVariables, this.resolveEndUser);
 
         this.logger.info('ai-tools module initialized');
     }
@@ -318,7 +330,8 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
                         this.logger,
                         (providerId) => providerId
                             ? this.providerRegistry.getProvider(providerId)
-                            : this.providerRegistry.getActive()
+                            : this.providerRegistry.getActive(),
+                        this.resolveEndUser
                     );
                 } catch (error) {
                     this.logger.error({ error, job: SCHEDULED_PROMPTS_JOB }, 'Scheduled prompts job failed');

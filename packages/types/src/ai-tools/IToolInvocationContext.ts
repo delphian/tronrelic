@@ -28,17 +28,20 @@ export interface IToolInvocationActor {
  * The end user a query runs *on behalf of* — distinct from the {@link
  * IToolInvocationActor} driving it. The actor is the operator or process at the
  * controls (an admin, the scheduler); the principal is whose data and
- * permissions a tool must scope to. They coincide only by accident — an admin
- * querying their own account — and must not be conflated: running a
- * user-scoped tool with the actor's ambient authority instead of the
- * principal's is the confused-deputy failure (BOLA).
+ * permissions a tool must scope to. They coincide on the interactive admin path
+ * (an admin querying their own account is both) and diverge on a scheduled run,
+ * where the scheduler is the actor and the saved prompt's owner is the
+ * principal. Conflating them — running a user-scoped tool with the actor's
+ * ambient authority instead of the principal's — is the confused-deputy failure
+ * (BOLA).
  *
- * Absent today: every path is admin-only, so no end user sits behind a query
- * and this is never populated. It exists so the seam is in place before a
- * non-admin path is ever added — a tool that declares
+ * Populated on any path that carries a known user: the interactive admin query
+ * (resolved from the request session) and a scheduled saved prompt that records
+ * an owner (re-resolved to a live principal at fire time). A purely
+ * programmatic call from code leaves it unset. A tool that declares
  * `operatesOnUserOwnedObjects` is denied outright while this is absent (see
- * {@link IAiToolCapability}), so a user-scoped tool can never silently run
- * under ambient server authority.
+ * {@link IAiToolCapability}), so a user-scoped tool can never silently run under
+ * ambient server authority.
  */
 export interface IToolEndUserPrincipal {
     /** Better Auth user id whose context the tool must execute in. */
@@ -46,6 +49,19 @@ export interface IToolEndUserPrincipal {
 
     /** Group memberships of the principal, for tools that scope by group. */
     groups?: string[];
+
+    /**
+     * Account email of the principal, when resolved. A convenience for tools
+     * that address or notify the user by email without a second lookup; never a
+     * substitute for `userId` as the authorization key.
+     */
+    email?: string;
+
+    /**
+     * Primary linked wallet address of the principal, when one exists. For
+     * wallet-scoped tools; absent when the account has linked no wallet.
+     */
+    primaryWallet?: string;
 }
 
 /**
@@ -74,11 +90,13 @@ export interface IToolInvocationContext {
     callerPluginId?: string;
 
     /**
-     * The end user the query runs on behalf of, when one is known. Supplied
-     * only by a non-admin-facing path; admin, scheduled, and programmatic runs
-     * leave it unset. A tool that declares `operatesOnUserOwnedObjects` is
-     * denied when this is absent, so a user-scoped tool cannot run under the
-     * actor's ambient authority. See {@link IToolEndUserPrincipal}.
+     * The end user the query runs on behalf of, when one is known — the
+     * interactive admin (resolved from the request session) or the owner of a
+     * scheduled saved prompt (re-resolved at fire time). A purely programmatic
+     * call from code leaves it unset. A tool that declares
+     * `operatesOnUserOwnedObjects` is denied when this is absent, so a
+     * user-scoped tool cannot run under the actor's ambient authority. See
+     * {@link IToolEndUserPrincipal}.
      */
     endUser?: IToolEndUserPrincipal;
 }
