@@ -176,7 +176,21 @@ export async function runScheduledPrompts(
         // exactly as an unattended system query does.
         let endUser: IToolEndUserPrincipal | undefined;
         if (p.ownerUserId) {
-            const principal = resolveEndUser ? await resolveEndUser(p.ownerUserId) : null;
+            // A throw here (transient DB error, identity service down) must fail
+            // exactly like a null principal — record the failed run and move on —
+            // never escape the loop. The run is already claimed, so an unguarded
+            // rejection would abort every remaining prompt this tick AND leave this
+            // one with an advanced lastRunAt but no recorded failure, defeating the
+            // per-prompt isolation and fail-closed guarantee this branch exists for.
+            let principal: IToolEndUserPrincipal | null = null;
+            try {
+                principal = resolveEndUser ? await resolveEndUser(p.ownerUserId) : null;
+            } catch (resolveErr) {
+                logger.error(
+                    { err: resolveErr, promptId: p.id, name: p.name, ownerUserId: p.ownerUserId },
+                    'Scheduled prompt owner resolution threw; failing closed'
+                );
+            }
             if (!principal) {
                 const reason = `Prompt owner "${p.ownerUserId}" could not be resolved (account deleted, or identity service unavailable)`;
                 logger.warn({ promptId: p.id, name: p.name, ownerUserId: p.ownerUserId }, `Scheduled prompt skipped: ${reason}`);
