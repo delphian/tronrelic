@@ -103,6 +103,13 @@
     gap: var(--gap-sm);
 }
 
+/* Running conversation cost estimate beside the "Conversation" label. */
+.conversation_cost {
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+}
+
 .streaming_indicator {
     display: flex;
     align-items: center;
@@ -231,6 +238,12 @@
     gap: var(--gap-xs);
     font-size: var(--font-size-caption);
     color: var(--color-text-muted);
+}
+
+/* Per-turn estimated cost — slightly emphasized within the muted usage line. */
+.turn_cost {
+    color: var(--color-text);
+    font-weight: var(--font-weight-medium);
 }
 
 .turn_error {
@@ -442,24 +455,11 @@
     }
 }
 
-/* Per-query model override dropdown, matched to the dashboard filter selects. */
+/* Per-query model override dropdown. Theming comes from the shared <Select>
+ * primitive; this only caps the width in the composer toolbar (the class lands
+ * on the Select wrapper). */
 .model_select {
-    background: var(--input-background);
-    color: var(--color-text);
-    border: var(--input-border);
-    border-radius: var(--input-border-radius);
-    padding: var(--input-padding-sm);
-    font-size: var(--font-size-body-sm);
     max-width: var(--max-width-xs);
-
-    &:focus-visible {
-        @include focus-outline;
-    }
-
-    option {
-        background: var(--color-surface-accent);
-        color: var(--color-text);
-    }
 }
 
 /*

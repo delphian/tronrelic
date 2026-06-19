@@ -40,6 +40,7 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
     router.post('/query/:queryId/cancel', controller.cancelQuery);
     router.get('/query/history', controller.listQueryHistory);
     router.get('/query/models', controller.listQueryModels);
+    router.get('/query/providers', controller.listQueryProviders);
     router.get('/query/conversations/:conversationId', controller.getConversationHistory);
 
     router.get('/query/prompts', controller.listPrompts);

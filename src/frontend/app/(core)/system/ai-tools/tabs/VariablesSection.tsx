@@ -19,6 +19,7 @@ import type { AiToolSensitivity, IPromptVariableInfo } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Button } from '../../../../../components/ui/Button';
+import { Select } from '../../../../../components/ui/Select';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { useToast } from '../../../../../components/ui/ToastProvider';
 import {
@@ -205,14 +206,13 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
                                         aria-label="Variable content"
                                         rows={4}
                                     />
-                                    <select
-                                        className={styles.filter_select}
+                                    <Select
                                         value={form.sensitivity}
                                         onChange={e => setForm({ ...form, sensitivity: e.target.value as AiToolSensitivity })}
                                         aria-label="Variable sensitivity"
                                     >
                                         {SENSITIVITIES.map(s => <option key={s} value={s}>{s}</option>)}
-                                    </select>
+                                    </Select>
                                     <Stack gap="sm" direction="horizontal">
                                         <Button variant="primary" size="sm" onClick={() => void handleSubmit()} disabled={saving}>
                                             {saving ? 'Saving…' : editingName ? 'Save changes' : 'Create variable'}
@@ -259,15 +259,14 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
                                                 </Badge>
                                             </Td>
                                             <Td>
-                                                <select
-                                                    className={styles.filter_select}
+                                                <Select
                                                     value={variable.sensitivity}
                                                     onChange={e => void handleClassify(variable.name, e.target.value as AiToolSensitivity)}
                                                     disabled={busyName === variable.name}
                                                     aria-label={`Classify ${variable.name}`}
                                                 >
                                                     {SENSITIVITIES.map(s => <option key={s} value={s}>{s}</option>)}
-                                                </select>
+                                                </Select>
                                             </Td>
                                             <Td>
                                                 {variable.editable && (

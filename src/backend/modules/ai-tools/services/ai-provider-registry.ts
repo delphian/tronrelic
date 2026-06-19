@@ -66,4 +66,9 @@ export class AiProviderRegistry implements IAiProviderRegistry {
         }
         return null;
     }
+
+    /** @inheritdoc */
+    getProvider(id: string): IAiProvider | null {
+        return this.providers.get(id)?.instance ?? null;
+    }
 }

@@ -253,14 +253,24 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
                     );
                     return;
                 }
-                const provider = this.providerRegistry.getActive();
-                if (!provider) {
+                // Cheap no-op when nothing is installed at all. A prompt may pin a
+                // specific (possibly inactive) provider, so don't gate on an
+                // *active* provider — only on there being no provider registered
+                // whatsoever. The resolver below routes each prompt per its
+                // providerId, falling back to the active provider when unpinned.
+                if (this.providerRegistry.listProviders().length === 0) {
                     return;
                 }
                 promptTickInFlight = true;
                 promptTickStartedAt = Date.now();
                 try {
-                    await runScheduledPrompts(this.savedPrompts, this.logger, provider);
+                    await runScheduledPrompts(
+                        this.savedPrompts,
+                        this.logger,
+                        (providerId) => providerId
+                            ? this.providerRegistry.getProvider(providerId)
+                            : this.providerRegistry.getActive()
+                    );
                 } catch (error) {
                     this.logger.error({ error, job: SCHEDULED_PROMPTS_JOB }, 'Scheduled prompts job failed');
                     throw error;

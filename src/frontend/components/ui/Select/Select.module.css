@@ -1,0 +1,72 @@
+/**
+ * Select Component CSS Module
+ *
+ * Scoped styles for the Select component. Restyles the native `<select>` with
+ * the shared input tokens and a chevron overlay so dropdowns match the Input
+ * primitive instead of rendering as the browser default. `appearance: none`
+ * drops the native arrow; the chevron is a non-interactive overlay.
+ */
+
+.wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    /* Intrinsic by default (filter bars); consumers pass width:100% for cells. */
+    width: auto;
+    max-width: 100%;
+}
+
+.select {
+    width: 100%;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    border-radius: var(--input-border-radius);
+    background: var(--input-background);
+    border: var(--input-border);
+    color: var(--color-text);
+    /* Comfortable padding matching Input; extra right room clears the chevron. */
+    padding: var(--input-padding);
+    padding-right: var(--padding-xl);
+    font-size: var(--input-font-size);
+    line-height: var(--line-height-normal);
+    transition: var(--input-transition);
+    cursor: pointer;
+}
+
+/* Keyboard-only focus ring (mouse clicks should not leave a lingering ring). */
+.select:focus-visible {
+    outline: none;
+    border-color: var(--input-border-focus);
+    box-shadow: var(--input-shadow-focus);
+}
+
+.select:disabled {
+    opacity: var(--opacity-55);
+    cursor: not-allowed;
+}
+
+/*
+ * The option list is OS-rendered; color-scheme: dark (set globally in
+ * primitives.scss) already paints it dark. These keep the values legible in
+ * browsers that honor option styling without fighting the native popup.
+ */
+.select option,
+.select optgroup {
+    color: var(--color-text);
+    background: var(--color-surface-accent);
+}
+
+/* Chevron overlay — non-interactive so clicks fall through to the select. */
+.chevron {
+    position: absolute;
+    right: var(--gap-md);
+    pointer-events: none;
+    color: var(--color-text-muted);
+}
+
+/* Variant: Ghost — transparent for darker surfaces / inline contexts. */
+.select--ghost {
+    background: var(--input-ghost-background);
+    border-color: var(--input-ghost-border);
+}

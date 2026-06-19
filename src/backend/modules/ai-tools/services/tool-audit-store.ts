@@ -43,6 +43,21 @@ export interface IToolInvocationPage {
 }
 
 /**
+ * Per-tool usage tally derived from the persistent audit trail. Matches the
+ * shape the Policy tab renders. `rateLimited` is not separable from the audit
+ * (a rate-limit denial is recorded with `status: 'denied'`, not its own status),
+ * so it is always 0 here — kept for shape compatibility with the live
+ * policy-engine counters.
+ */
+export interface IToolUsageTally {
+    invocations: number;
+    allowed: number;
+    denied: number;
+    rateLimited: number;
+    needsApproval: number;
+}
+
+/**
  * Persists and queries {@link IToolInvocationRecord} documents.
  */
 export class ToolAuditStore {
@@ -136,6 +151,53 @@ export class ToolAuditStore {
      */
     async getById(id: string): Promise<IToolInvocationRecord | null> {
         return this.database.findOne<IToolInvocationRecord>(COLLECTION, { id });
+    }
+
+    /**
+     * Aggregate per-tool usage tallies from the persistent invocation trail.
+     *
+     * The Policy tab's "Usage" column previously read the policy engine's
+     * in-memory counters, which reset to empty on every server restart — so a
+     * freshly-restarted process showed "no activity" for every tool regardless
+     * of history. This counts the durable audit records instead, grouped by tool
+     * and status, so the column reflects real cumulative activity across the
+     * retention window (90 days) and survives restarts. A single grouped
+     * aggregation keeps it to one round-trip regardless of tool count.
+     *
+     * @returns Tally per tool name; tools with no recorded calls are absent.
+     */
+    async aggregateUsage(): Promise<Record<string, IToolUsageTally>> {
+        const collection = this.database.getCollection<IToolInvocationRecord>(COLLECTION);
+        const rows = await collection
+            .aggregate<{ _id: { tool: string; status: ToolInvocationStatus }; count: number }>([
+                { $group: { _id: { tool: '$toolName', status: '$status' }, count: { $sum: 1 } } }
+            ])
+            .toArray();
+
+        const out: Record<string, IToolUsageTally> = {};
+        for (const row of rows) {
+            const tool = row._id?.tool;
+            if (!tool) {
+                continue;
+            }
+            const tally = (out[tool] ??= { invocations: 0, allowed: 0, denied: 0, rateLimited: 0, needsApproval: 0 });
+            tally.invocations += row.count;
+            switch (row._id.status) {
+                case 'ok':
+                    tally.allowed += row.count;
+                    break;
+                case 'denied':
+                    tally.denied += row.count;
+                    break;
+                case 'pending-approval':
+                    tally.needsApproval += row.count;
+                    break;
+                default:
+                    // 'error' contributes to the invocation total only.
+                    break;
+            }
+        }
+        return out;
     }
 
     /**

@@ -65,17 +65,25 @@ export interface ISavedPromptCreate {
     prompt: string;
     cron?: string | null;
     scheduleEnabled?: boolean;
+    /** Optional provider plugin id this prompt targets (with `model`). */
+    providerId?: string;
+    /** Optional model id the prompt runs on, within `providerId`'s catalog. */
+    model?: string;
 }
 
 /**
  * Input shape for update operations. All fields optional — omitted fields
- * preserve their existing values. `cron: null` or `''` clears the schedule.
+ * preserve their existing values. `cron: null` or `''` clears the schedule;
+ * `providerId`/`model` set to `null` or `''` clear the model pin (the prompt
+ * reverts to running on the active provider's default model).
  */
 export interface ISavedPromptUpdate {
     name?: string;
     prompt?: string;
     cron?: string | null;
     scheduleEnabled?: boolean;
+    providerId?: string | null;
+    model?: string | null;
 }
 
 /**
@@ -191,6 +199,18 @@ export class SavedPromptsService {
             created.scheduleAnchorAt = now;
         }
 
+        // A model pin is optional and provider-scoped: both fields travel
+        // together so a scheduled run can route to the right provider even when
+        // it is not the active one. Attach only when both are real strings.
+        const providerId = typeof input.providerId === 'string' ? input.providerId.trim() : '';
+        const model = typeof input.model === 'string' ? input.model.trim() : '';
+        if (providerId) {
+            created.providerId = providerId;
+        }
+        if (model) {
+            created.model = model;
+        }
+
         const collection = this.database.getCollection<ISavedPrompt>(COLLECTION);
         // The unique-name index is the real guard; assertNameUnique above is a
         // fast path. Two concurrent creates of the same name both pass the
@@ -280,12 +300,43 @@ export class SavedPromptsService {
             }
         }
 
+        // Model pin: a non-empty string sets the field; null or '' clears it via
+        // `$unset` (the prompt reverts to the active provider's default model).
+        // Unlike cron, absence and cleared carry no distinct meaning, so unset is
+        // cleaner than persisting an empty value. providerId and model are
+        // independent fields but the editor always sends both together.
+        const unsetFields: Record<string, ''> = {};
+        if (input.providerId !== undefined) {
+            const trimmed = typeof input.providerId === 'string' ? input.providerId.trim() : '';
+            if (trimmed) {
+                setFields.providerId = trimmed;
+            } else {
+                unsetFields.providerId = '';
+            }
+        }
+        if (input.model !== undefined) {
+            const trimmed = typeof input.model === 'string' ? input.model.trim() : '';
+            if (trimmed) {
+                setFields.model = trimmed;
+            } else {
+                unsetFields.model = '';
+            }
+        }
+
         const collection = this.database.getCollection<ISavedPrompt>(COLLECTION);
 
         // Single atomic operation: update + return the post-image in one
         // round-trip. Removes both the previous extra read AND a tiny race
         // window where a concurrent write could have landed between the
         // updateOne and the re-fetch.
+        // Combine the field writes with any model-pin clears into one atomic
+        // update document. `$unset` is only included when there is something to
+        // clear, since Mongo rejects an empty `$unset`.
+        const updateDoc: Record<string, unknown> = { $set: setFields };
+        if (Object.keys(unsetFields).length > 0) {
+            updateDoc.$unset = unsetFields;
+        }
+
         let updated: ISavedPrompt | null;
         try {
             updated = await collection.findOneAndUpdate(
@@ -293,7 +344,7 @@ export class SavedPromptsService {
                 // Mongo operator object — equality-by-id on an admin route,
                 // never injectable.
                 { id: String(id) },
-                { $set: setFields },
+                updateDoc,
                 { returnDocument: 'after' }
             ) as ISavedPrompt | null;
         } catch (error: unknown) {

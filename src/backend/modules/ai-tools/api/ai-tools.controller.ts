@@ -16,6 +16,7 @@ import type {
     IAiQueryResult,
     IAiStreamChunk,
     IAiToolInfo,
+    IModelInfo,
     ICurationItem,
     IStaticPromptVariable,
     IToolPolicy,
@@ -469,6 +470,34 @@ export class AiToolsController {
         }
     };
 
+    /**
+     * GET /query/providers — every registered AI provider with its model
+     * catalog, for the cross-provider saved-prompt model picker. Unlike
+     * `/query/models` (active provider only), this enumerates all registered
+     * providers so a prompt can be pinned to a model on a non-active provider.
+     * Each provider's `listModels()` is guarded independently: a vendor-API
+     * failure on one provider yields an empty model list for that provider
+     * rather than failing the whole response, and the providers are resolved in
+     * parallel so one slow vendor does not serialize the rest.
+     */
+    listQueryProviders = async (_req: Request, res: Response): Promise<void> => {
+        const providers = await Promise.all(
+            this.providers.listProviders().map(async (info) => {
+                let models: IModelInfo[] = [];
+                try {
+                    const instance = this.providers.getProvider(info.id);
+                    if (instance) {
+                        models = await instance.listModels();
+                    }
+                } catch {
+                    models = [];
+                }
+                return { id: info.id, label: info.label, active: info.active, models };
+            })
+        );
+        res.json({ providers });
+    };
+
     /** GET /query/prompts — saved prompt templates, newest-updated first. */
     listPrompts = async (_req: Request, res: Response): Promise<void> => {
         try {
@@ -486,12 +515,14 @@ export class AiToolsController {
      * client's shared state stays current without a second round-trip.
      */
     savePrompt = async (req: Request, res: Response): Promise<void> => {
-        const { id, name, prompt, cron, scheduleEnabled } = (req.body ?? {}) as {
+        const { id, name, prompt, cron, scheduleEnabled, providerId, model } = (req.body ?? {}) as {
             id?: unknown;
             name?: unknown;
             prompt?: unknown;
             cron?: unknown;
             scheduleEnabled?: unknown;
+            providerId?: unknown;
+            model?: unknown;
         };
         try {
             const hasId = typeof id === 'string' && id.trim().length > 0;
@@ -500,14 +531,18 @@ export class AiToolsController {
                     name: name as string | undefined,
                     prompt: prompt as string | undefined,
                     cron: cron as string | null | undefined,
-                    scheduleEnabled: scheduleEnabled as boolean | undefined
+                    scheduleEnabled: scheduleEnabled as boolean | undefined,
+                    providerId: providerId as string | null | undefined,
+                    model: model as string | null | undefined
                 });
             } else {
                 await this.savedPrompts.create({
                     name: name as string,
                     prompt: prompt as string,
                     cron: (cron as string | null | undefined) ?? undefined,
-                    scheduleEnabled: scheduleEnabled as boolean | undefined
+                    scheduleEnabled: scheduleEnabled as boolean | undefined,
+                    providerId: typeof providerId === 'string' ? providerId : undefined,
+                    model: typeof model === 'string' ? model : undefined
                 });
             }
             res.json({ prompts: await this.savedPrompts.list() });
@@ -566,6 +601,9 @@ export class AiToolsController {
             responseText: result?.responseText ?? null,
             model: result?.model ?? fallbackModel ?? 'unknown',
             usage: result?.usage ?? { inputTokens: 0, outputTokens: 0 },
+            // Provider-computed estimated cost, persisted so reopened
+            // conversations show the same figure the live stream did.
+            costUsd: result?.costUsd ?? null,
             errorMessage,
             status: result ? 'completed' : 'failed',
             createdAt,
@@ -664,7 +702,18 @@ export class AiToolsController {
                 allowUnattended: base.allowUnattended ?? false
             };
         }
-        res.json({ overrides: this.policy.getOverrides(), usage: this.policy.snapshot(), defaults });
+        // Usage comes from the durable audit trail, not the policy engine's
+        // in-memory counters — those reset on restart and left every tool reading
+        // "no activity". Aggregating the persisted invocations keeps the column
+        // accurate across restarts. It is non-critical: a failure here must not
+        // block the policy editor, so fall back to empty tallies.
+        let usage: Record<string, unknown> = {};
+        try {
+            usage = await this.audit.aggregateUsage();
+        } catch {
+            usage = {};
+        }
+        res.json({ overrides: this.policy.getOverrides(), usage, defaults });
     };
 
     /** PUT /policy/:name — set a per-tool policy override. */
