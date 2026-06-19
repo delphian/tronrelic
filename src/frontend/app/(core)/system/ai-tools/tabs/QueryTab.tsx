@@ -26,6 +26,7 @@ import { Stack } from '../../../../../components/layout';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
 import { Select } from '../../../../../components/ui/Select';
+import { Textarea } from '../../../../../components/ui/Textarea';
 import { Badge } from '../../../../../components/ui/Badge';
 import { IconButton } from '../../../../../components/ui/IconButton';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
@@ -730,7 +731,7 @@ export function QueryTab() {
                     </div>
 
                     <div className={styles.composer}>
-                        <textarea
+                        <Textarea
                             ref={textareaRef}
                             value={input}
                             onChange={(e) => setInput(e.target.value)}

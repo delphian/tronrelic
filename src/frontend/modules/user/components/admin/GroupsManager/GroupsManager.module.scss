@@ -119,33 +119,6 @@
     color: var(--color-text);
 }
 
-.field input,
-.field textarea {
-    width: 100%;
-    padding: var(--input-padding);
-    font-size: var(--font-size-body);
-    color: var(--color-text);
-    background: var(--color-surface);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
-
-    &:focus {
-        outline: none;
-        border-color: var(--color-primary);
-    }
-
-    &:disabled {
-        background: var(--color-surface-muted);
-        color: var(--color-text-muted);
-        cursor: not-allowed;
-    }
-}
-
-.field textarea {
-    resize: vertical;
-    font-family: inherit;
-}
-
 .field_error {
     font-size: var(--font-size-caption);
     color: var(--color-danger);

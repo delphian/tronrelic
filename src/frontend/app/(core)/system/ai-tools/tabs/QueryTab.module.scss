@@ -408,33 +408,12 @@
     flex-shrink: 0;
 }
 
+/* Layout-only: the shared <Textarea> owns padding, border, background, font,
+   resize, focus ring, and disabled/placeholder styling. Only the composer's
+   scroll behavior and min-height remain bespoke. */
 .composer_input {
-    width: 100%;
-    padding: var(--input-padding);
-    background: var(--input-background);
-    border: var(--input-border);
-    border-radius: var(--input-border-radius);
-    color: var(--color-text);
-    font-size: var(--font-size-body-sm);
-    font-family: inherit;
-    resize: vertical;
     overflow-y: auto;
     min-height: var(--query-composer-min-height);
-    transition: var(--input-transition);
-
-    &:focus-visible {
-        outline: none;
-        border-color: var(--input-border-focus);
-        box-shadow: var(--input-shadow-focus);
-    }
-
-    &::placeholder {
-        color: var(--color-text-muted);
-    }
-
-    &:disabled {
-        opacity: var(--opacity-60);
-    }
 }
 
 .composer_toolbar {

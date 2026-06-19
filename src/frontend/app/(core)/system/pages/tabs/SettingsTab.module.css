@@ -39,23 +39,11 @@
     line-height: 1.5;
 }
 
+/* Shared <Textarea> supplies width, padding, border, radius, background,
+ * focus ring, and placeholder color via the input tokens. Only the
+ * monospace face (so regex patterns align) is layered on here. */
 .textarea {
-    width: 100%;
-    padding: var(--spacing-5);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    color: var(--color-text);
     font-family: 'Monaco', 'Courier New', monospace;
-    font-size: var(--font-size-sm);
-    line-height: 1.6;
-    resize: vertical;
-    transition: border-color var(--transition-base);
-}
-
-.textarea:focus {
-    outline: none;
-    border-color: var(--color-primary);
 }
 
 .code_input {

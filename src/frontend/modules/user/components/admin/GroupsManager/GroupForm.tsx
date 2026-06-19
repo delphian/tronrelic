@@ -10,6 +10,8 @@
 
 import { useState } from 'react';
 import { Button } from '../../../../../components/ui/Button';
+import { Input } from '../../../../../components/ui/Input';
+import { Textarea } from '../../../../../components/ui/Textarea';
 import styles from './GroupsManager.module.scss';
 
 export interface GroupFormValues {
@@ -63,7 +65,7 @@ export function GroupForm({ mode, initial, onCancel, onSubmit }: Props) {
         <form onSubmit={handleSubmit} className={styles.form}>
             <label className={styles.field}>
                 <span className={styles.field_label}>ID (slug)</span>
-                <input
+                <Input
                     type="text"
                     value={id}
                     disabled={mode === 'edit'}
@@ -82,7 +84,7 @@ export function GroupForm({ mode, initial, onCancel, onSubmit }: Props) {
 
             <label className={styles.field}>
                 <span className={styles.field_label}>Name</span>
-                <input
+                <Input
                     type="text"
                     value={name}
                     onChange={e => setName(e.target.value)}
@@ -93,7 +95,7 @@ export function GroupForm({ mode, initial, onCancel, onSubmit }: Props) {
 
             <label className={styles.field}>
                 <span className={styles.field_label}>Description</span>
-                <textarea
+                <Textarea
                     value={description}
                     onChange={e => setDescription(e.target.value)}
                     placeholder="Optional. Describe what this group is for."

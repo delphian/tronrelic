@@ -57,6 +57,7 @@ import { Badge } from '../../../../components/ui/Badge';
 import { Button } from '../../../../components/ui/Button';
 import { IconButton } from '../../../../components/ui/IconButton';
 import { Input } from '../../../../components/ui/Input';
+import { Textarea } from '../../../../components/ui/Textarea';
 import { Switch } from '../../../../components/ui/Switch';
 import { Select } from '../../../../components/ui/Select';
 import { useModal } from '../../../../components/ui/ModalProvider';
@@ -1579,7 +1580,7 @@ function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: Plac
 
                 {rawMode ? (
                     <>
-                        <textarea
+                        <Textarea
                             id="wp-instance-config"
                             className={styles.textarea}
                             rows={6}

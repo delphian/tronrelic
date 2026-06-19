@@ -11,6 +11,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { isAxiosError } from 'axios';
 import { Button } from '../../../../../components/ui/Button';
+import { Input } from '../../../../../components/ui/Input';
+import { Textarea } from '../../../../../components/ui/Textarea';
 import { Card } from '../../../../../components/ui/Card';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Stack } from '../../../../../components/layout';
@@ -249,10 +251,9 @@ export function GscSettings() {
                                 <label className={styles.label} htmlFor="gsc-site-url">
                                     Site URL
                                 </label>
-                                <input
+                                <Input
                                     id="gsc-site-url"
                                     type="text"
-                                    className={styles.input}
                                     value={siteUrl}
                                     onChange={e => setSiteUrl(e.target.value)}
                                     placeholder="sc-domain:example.com or https://example.com"
@@ -270,7 +271,7 @@ export function GscSettings() {
                                 <label className={styles.label} htmlFor="gsc-credentials">
                                     Service Account JSON Key
                                 </label>
-                                <textarea
+                                <Textarea
                                     id="gsc-credentials"
                                     className={styles.textarea}
                                     value={serviceAccountJson}

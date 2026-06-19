@@ -331,7 +331,13 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             Button,
             IconButton,
             Switch,
-            Input,
+            // forwardRef gives Input a ForwardRefExoticComponent type whose static
+            // `propTypes` field trips TypeScript's invariant check against the
+            // narrowed IUIComponents.Input contract (native `value` is wider than
+            // the contract's `string`). The runtime component accepts every prop
+            // the contract advertises, so the cast is sound and contains a TS-only
+            // metadata quirk without widening the published plugin contract.
+            Input: Input as IUIComponents['Input'],
             ClientTime,
             Tooltip,
             IconPickerModal,
@@ -429,7 +435,10 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         Button,
         IconButton,
         Switch,
-        Input,
+        // See FrontendPluginContextProvider above: forwardRef's static propTypes
+        // trips the invariant check against the narrowed contract; the runtime
+        // component is fully compatible, so the cast is sound.
+        Input: Input as IUIComponents['Input'],
         ClientTime,
         Tooltip,
         IconPickerModal,

@@ -99,15 +99,6 @@
     align-items: center;
 }
 
-.filter_select {
-    background: var(--input-background);
-    color: var(--color-text);
-    border: var(--input-border);
-    border-radius: var(--input-border-radius);
-    padding: var(--input-padding-sm);
-    font-size: var(--font-size-body-sm);
-}
-
 /* Inline row actions (approve/reject, edit/clear). */
 .row_actions {
     display: flex;
@@ -218,19 +209,6 @@
     color: var(--color-text-subtle);
 }
 
-/* Inline editor textarea in the curation edit modal. */
-.curation_textarea {
-    width: 100%;
-    resize: vertical;
-    background: var(--input-background);
-    color: var(--color-text);
-    border: var(--input-border);
-    border-radius: var(--input-border-radius);
-    padding: var(--input-padding);
-    font-size: var(--font-size-body);
-    font-family: inherit;
-}
-
 /* Monospace digest / args preview. */
 .mono {
     font-family: var(--font-mono, monospace);
@@ -250,19 +228,98 @@
     white-space: nowrap;
 }
 
-/* Keep the usage tally on one line so its column hugs the content. */
-.usage_cell {
-    white-space: nowrap;
-}
-
 /*
- * Policy controls (tri-state selects, numeric inputs) fill their column without
- * forcing it wider than the header — min-width:0 lets the cell shrink to the
- * header label while width:100% spreads the control across it.
+ * Policy controls (tri-state selects, numeric inputs) fill their field without
+ * forcing it wider — min-width:0 lets the field shrink while width:100% spreads
+ * the control across it.
  */
 .cell_control {
     width: 100%;
     min-width: 0;
+}
+
+/* Chevron toggle in the Tools row that discloses the inline policy editor.
+ * Bare (borderless) so it reads as an affordance on the row, not a button
+ * competing with the enable switch. */
+.expand_button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--icon-button-bare-padding-md);
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-muted);
+    border-radius: var(--icon-button-bare-border-radius);
+    transition: color var(--transition-base);
+}
+
+.expand_button:hover {
+    color: var(--color-text);
+}
+
+/* Inline per-tool policy editor revealed under an expanded Tools row. Declares a
+ * container so the field grid reflows to the editor's own width, not the
+ * viewport — correct inside the slideout/modal contexts this dashboard renders
+ * in. */
+.tool_policy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    container-type: inline-size;
+    container-name: tool-policy;
+}
+
+.policy_help {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.policy_grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--gap-md);
+}
+
+@container tool-policy (min-width: #{$breakpoint-mobile-md}) {
+    .policy_grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@container tool-policy (min-width: #{$breakpoint-mobile-lg}) {
+    .policy_grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+/* One labelled control: label above the control above a one-line helper. */
+.policy_field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.policy_field_label {
+    font-size: var(--font-size-caption);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text-subtle);
+}
+
+.policy_field_help {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+/* Usage tally on the left, Save / Clear on the right; wraps when narrow. */
+.policy_footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    flex-wrap: wrap;
 }
 
 /* Collapsible Registry section (Tools / Variables): bordered surface whose

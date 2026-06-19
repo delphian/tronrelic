@@ -1,5 +1,6 @@
 'use client';
 
+import { forwardRef } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import { cn } from '../../../lib/cn';
 import styles from './Input.module.css';
@@ -39,6 +40,12 @@ const variantClass: Record<NonNullable<InputProps['variant']>, string> = {
  * with darker surfaces or overlay contexts where standard input styling would
  * create visual separation.
  *
+ * Wrapped in `forwardRef` so callers that imperatively focus or measure the
+ * field can attach a ref to the underlying `<input>`. This keeps Input
+ * symmetric with the Textarea primitive, which needs ref forwarding for focus
+ * management — without it, ref-dependent consumers could not adopt the shared
+ * primitive and would stay bespoke.
+ *
  * @example
  * ```tsx
  * <Input
@@ -59,8 +66,11 @@ const variantClass: Record<NonNullable<InputProps['variant']>, string> = {
  * ```
  *
  * @param props - Input component properties including variant and standard input attributes
+ * @param ref - Forwarded ref to the underlying `<input>` for imperative focus/measure.
  * @returns A styled input element with consistent focus behavior
  */
-export function Input({ className, variant = 'default', ...props }: InputProps) {
-    return <input className={cn(variantClass[variant], className)} {...props} />;
-}
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+    function Input({ className, variant = 'default', ...props }, ref) {
+        return <input ref={ref} className={cn(variantClass[variant], className)} {...props} />;
+    }
+);

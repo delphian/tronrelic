@@ -16,17 +16,7 @@
 - Do not 'bypass' issues, always design code and fix bugs with best practice solutions.
 - Use 4 spaces for tabs, not 2.
 
-## Documentation Rules
-- Annotate **every** function, method, and class with a top-level JSDoc block before shipping the change—this includes inner helpers, React hooks, callbacks passed to lifecycle hooks, and any closures declared inside a component. If code adds a new function, it must arrive documented in the same diff; do not wait for reviewers to ask.
-- Lead with the **why**: start each doc comment by explaining the purpose or risk addressed, then describe **how** the code achieves it in plain English. Only add code examples when they clarify usage.
-- Use `@param` for every parameter and describe why the caller supplies it (not just its type). Use `@returns` to state what the function produces and why a caller needs it.
-- Keep parameter/return descriptions focused on intent and behaviour rather than repeating type information verbatim.
 ## TypeScript Naming Conventions
-
-### Interfaces
-- Prefix all interfaces with `I` (e.g., `IPluginContext`, `IObserverRegistry`, `IWebSocketService`)
-- This applies to all interfaces consistently, including data structures, service contracts, and type definitions
-- Concrete class implementations should not have the `I` prefix (e.g., `class ObserverRegistry implements IObserverRegistry`)
 
 ### File Names
 - File names must match their primary export exactly, including capitalization
@@ -37,8 +27,7 @@
 - Do not use suffixes like `.interface.ts` or `.type.ts` - the file name itself should match the export
 
 ## Package Architecture
-- All packages should use workspace imports (e.g., `@/types`, `@tronrelic/plugins`) instead of relative paths
-- Frontend and backend both import from workspace packages using the same pattern
+- Frontend and backend both import core types from the workspace package using the same pattern
 - Type packages (`@/types`) must have `"composite": true` in tsconfig for project references
 - Packages that are imported by other workspaces need project references in consuming workspace tsconfigs
 - Plugin types should use direct component types, not async loaders (e.g., `component?: ComponentType<any>`)
@@ -52,10 +41,6 @@
 - **Framework independence**: Types must not depend on external libraries (except React types for UI components)
 - **Organized structure**: Group related types in folders (e.g., `observer/`, `plugin/`, `transaction/`)
 - **One type per file**: Each file exports exactly one interface, type, or utility matching its filename
-
-**When to use @/types vs @tronrelic/shared:**
-- `@/types` - Core interfaces, blockchain models, observer patterns, plugin definitions (framework-independent)
-- `@tronrelic/shared` - Runtime data structures for Socket.IO events, API responses, legacy compatibility
 
 **Migration strategy**: As new blockchain models are created or existing models are refactored, move them to `@/types` to centralize shared type definitions and reduce duplication between frontend and backend.
 

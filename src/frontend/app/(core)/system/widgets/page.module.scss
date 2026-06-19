@@ -255,23 +255,11 @@
     gap: var(--gap-md);
 }
 
+/* Shared <Textarea> supplies background, border, radius, padding, resize,
+ * focus ring, and placeholder color via the input tokens. Only the
+ * monospace face the raw-JSON editor needs is layered on here. */
 .textarea {
-    background: var(--input-background);
-    border: var(--input-border);
-    border-radius: var(--input-border-radius);
-    padding: var(--input-padding);
-    color: var(--color-text);
-    font-size: var(--font-size-body-sm);
     font-family: var(--font-mono);
-    line-height: var(--line-height-normal);
-    resize: vertical;
-    transition: var(--input-transition);
-}
-
-.textarea:focus-visible {
-    outline: none;
-    border-color: var(--input-border-focus);
-    box-shadow: var(--input-shadow-focus);
 }
 
 .routes_chips {
