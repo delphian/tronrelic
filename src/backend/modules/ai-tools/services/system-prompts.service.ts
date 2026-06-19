@@ -109,6 +109,30 @@ export class SystemPromptNotFoundError extends SystemPromptValidationError {
  */
 export class SystemPromptsService {
     /**
+     * In-process cache of the master body — one of the two reads {@link compose}
+     * performs on every AI query (the other being {@link cachedAdditional}).
+     * `null` means "not yet loaded"; a never-set master caches as `''`. Refreshed
+     * by {@link setMaster}, so a cached read is never stale relative to a write
+     * through this instance.
+     */
+    private cachedMaster: string | null = null;
+
+    /**
+     * In-process cache of the additional-prompt list (already sorted and
+     * `_id`-stripped). `null` means "not yet loaded"; a loaded-but-empty
+     * collection caches as `[]`. Invalidated by {@link createAdditional},
+     * {@link updateAdditional}, and {@link deleteAdditional}.
+     *
+     * Invalidation rather than a TTL is deliberate: the prompts are a
+     * governance/safety surface where an admin edit must take effect immediately,
+     * so any staleness window is unacceptable. The cache is per-process — a
+     * multi-instance backend would not see another instance's edit until its own
+     * next mutation, acceptable because the admin UI and the scheduled-prompts
+     * runner share this process.
+     */
+    private cachedAdditional: ISystemPromptDoc[] | null = null;
+
+    /**
      * @param database - Core database for the master KV value and the prompts collection.
      * @param promptVariables - Registry used to expand `{%name%}` tokens in the composed prompt.
      */
@@ -134,8 +158,12 @@ export class SystemPromptsService {
      * @returns The master content, or `''` when never set.
      */
     async getMaster(): Promise<string> {
+        if (this.cachedMaster !== null) {
+            return this.cachedMaster;
+        }
         const value = await this.database.get<IMasterValue>(MASTER_KEY);
-        return typeof value?.content === 'string' ? value.content : '';
+        this.cachedMaster = typeof value?.content === 'string' ? value.content : '';
+        return this.cachedMaster;
     }
 
     /**
@@ -150,6 +178,10 @@ export class SystemPromptsService {
             throw new SystemPromptValidationError('content must be a string');
         }
         await this.database.set<IMasterValue>(MASTER_KEY, { content });
+        // Refresh rather than null the cache: the next read serves the value just
+        // written, and getMaster returns the raw stored content (untrimmed), which
+        // is exactly `content`.
+        this.cachedMaster = content;
     }
 
     /**
@@ -158,9 +190,15 @@ export class SystemPromptsService {
      * @returns All additional prompts.
      */
     async list(): Promise<ISystemPromptDoc[]> {
+        if (this.cachedAdditional !== null) {
+            // Hand back a shallow copy so a caller mutating the array cannot
+            // corrupt the cached order or membership.
+            return this.cachedAdditional.map(doc => ({ ...doc }));
+        }
         const collection = this.database.getCollection<ISystemPromptDoc>(COLLECTION);
         const docs = await collection.find({}).sort({ order: 1, createdAt: 1 }).toArray();
-        return docs.map(stripMongoId);
+        this.cachedAdditional = docs.map(stripMongoId);
+        return this.cachedAdditional.map(doc => ({ ...doc }));
     }
 
     /**
@@ -195,6 +233,8 @@ export class SystemPromptsService {
 
         const collection = this.database.getCollection<ISystemPromptDoc>(COLLECTION);
         await collection.insertOne({ ...created });
+        // Invalidate so the next list() re-reads in correct sort order.
+        this.cachedAdditional = null;
         return created;
     }
 
@@ -251,6 +291,8 @@ export class SystemPromptsService {
             // Disappeared mid-update — caller raced a delete.
             throw new SystemPromptNotFoundError();
         }
+        // Invalidate so the next list() reflects the edited fields and order.
+        this.cachedAdditional = null;
         return stripMongoId(updated as unknown as Record<string, unknown>);
     }
 
@@ -263,6 +305,8 @@ export class SystemPromptsService {
     async deleteAdditional(id: string): Promise<boolean> {
         const collection = this.database.getCollection<ISystemPromptDoc>(COLLECTION);
         const result = await collection.deleteOne({ id: String(id) });
+        // Invalidate so a deleted prompt stops being composed.
+        this.cachedAdditional = null;
         return (result?.deletedCount ?? 0) > 0;
     }
 

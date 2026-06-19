@@ -67,6 +67,11 @@ export function SystemPromptsSection() {
     const [saving, setSaving] = useState(false);
     const { push } = useToast();
 
+    /**
+     * Load the master prompt, the additional prompts, and the group list that
+     * backs the audience-target picker. Memoized so the mount effect runs it once;
+     * also re-run after a delete to refresh the table.
+     */
     const load = useCallback(async () => {
         try {
             const [prompts, userGroups] = await Promise.all([getSystemPrompts(), listUserGroups()]);
@@ -83,6 +88,11 @@ export function SystemPromptsSection() {
 
     useEffect(() => { void load(); }, [load]);
 
+    /**
+     * Persist the master prompt and reflect the server-normalized value back into
+     * state, toasting the outcome. A blank master is valid — it disables the
+     * always-on contribution without removing the concept.
+     */
     const handleSaveMaster = useCallback(async () => {
         setSavingMaster(true);
         try {
@@ -96,6 +106,7 @@ export function SystemPromptsSection() {
         }
     }, [master, push]);
 
+    /** Open a blank create form, clearing any prior edit target and draft state. */
     const openCreate = useCallback(() => {
         setEditingId(null);
         setForm(EMPTY_FORM);
@@ -103,6 +114,12 @@ export function SystemPromptsSection() {
         setFormOpen(true);
     }, []);
 
+    /**
+     * Open the form pre-filled from an existing prompt. Array fields are copied so
+     * in-form edits don't mutate the loaded row before the user saves.
+     *
+     * @param prompt - The prompt to edit.
+     */
     const openEdit = useCallback((prompt: ISystemPromptView) => {
         setEditingId(prompt.id);
         setForm({
@@ -117,6 +134,7 @@ export function SystemPromptsSection() {
         setFormOpen(true);
     }, []);
 
+    /** Close the form and reset all create/edit draft state. */
     const closeForm = useCallback(() => {
         setFormOpen(false);
         setEditingId(null);
@@ -124,18 +142,32 @@ export function SystemPromptsSection() {
         setUserIdDraft('');
     }, []);
 
+    /**
+     * Append the drafted user id to the form's any-of target list, ignoring blanks
+     * and duplicates, then clear the draft input.
+     */
     const addUserId = useCallback(() => {
         const id = userIdDraft.trim();
-        if (id && !form.userIds.includes(id)) {
-            setForm(current => ({ ...current, userIds: [...current.userIds, id] }));
+        if (id) {
+            setForm(current => current.userIds.includes(id) ? current : { ...current, userIds: [...current.userIds, id] });
         }
         setUserIdDraft('');
-    }, [userIdDraft, form.userIds]);
+    }, [userIdDraft]);
 
+    /**
+     * Drop a user id from the form's any-of target list.
+     *
+     * @param id - The user id to remove.
+     */
     const removeUserId = useCallback((id: string) => {
         setForm(current => ({ ...current, userIds: current.userIds.filter(existing => existing !== id) }));
     }, []);
 
+    /**
+     * Toggle membership of a group in the form's all-of target list.
+     *
+     * @param groupId - The group id to add or remove.
+     */
     const toggleGroup = useCallback((groupId: string) => {
         setForm(current => ({
             ...current,
@@ -145,6 +177,11 @@ export function SystemPromptsSection() {
         }));
     }, []);
 
+    /**
+     * Create or update the additional prompt from the form (an editing id present
+     * means update), refresh the section from the returned snapshot, and close the
+     * form on success; toast the error otherwise.
+     */
     const handleSubmit = useCallback(async () => {
         setSaving(true);
         try {
@@ -167,6 +204,13 @@ export function SystemPromptsSection() {
         }
     }, [editingId, form, closeForm, push]);
 
+    /**
+     * Flip a prompt's enabled flag inline from the table without opening the form,
+     * refreshing the list from the returned snapshot.
+     *
+     * @param id - The prompt id.
+     * @param enabled - The new enabled state.
+     */
     const handleToggleEnabled = useCallback(async (id: string, enabled: boolean) => {
         setBusyId(id);
         try {
@@ -179,6 +223,11 @@ export function SystemPromptsSection() {
         }
     }, [push]);
 
+    /**
+     * Delete a prompt, then reload the section so the table reflects the removal.
+     *
+     * @param id - The prompt id to delete.
+     */
     const handleDelete = useCallback(async (id: string) => {
         setBusyId(id);
         try {
@@ -314,7 +363,7 @@ export function SystemPromptsSection() {
                                         className={styles.filter_select}
                                         type="number"
                                         value={form.order}
-                                        onChange={e => setForm({ ...form, order: Number(e.target.value) })}
+                                        onChange={e => setForm({ ...form, order: Number(e.target.value) || 0 })}
                                         aria-label="Injection order"
                                     />
 
