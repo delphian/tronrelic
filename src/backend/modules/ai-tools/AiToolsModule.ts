@@ -339,7 +339,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
                     payload: {
                         tone,
                         title,
-                        description: typeof payload.description === 'string' ? payload.description : undefined,
+                        description: typeof payload.description === 'string' ? payload.description.trim() || undefined : undefined,
                         duration
                     }
                 });
