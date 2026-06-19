@@ -11,6 +11,7 @@ import {
 import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
+import { Select } from '../../../../../components/ui/Select';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { formatBytes } from '../../../../../lib/format';
 import { StatStrip } from './StatStrip';
@@ -377,7 +378,7 @@ function Migrations() {
                 <header className={styles.history_header}>
                     <h5 className={styles.subblock_title}>History</h5>
                     <div className={styles.filters}>
-                        <select
+                        <Select
                             value={statusFilter}
                             onChange={(e) => setStatusFilter(e.target.value as 'all' | 'completed' | 'failed')}
                             className={styles.select}
@@ -386,8 +387,8 @@ function Migrations() {
                             <option value="all">All Status</option>
                             <option value="completed">Completed</option>
                             <option value="failed">Failed</option>
-                        </select>
-                        <select
+                        </Select>
+                        <Select
                             value={sourceFilter}
                             onChange={(e) => setSourceFilter(e.target.value)}
                             className={styles.select}
@@ -399,7 +400,7 @@ function Migrations() {
                                     {source}
                                 </option>
                             ))}
-                        </select>
+                        </Select>
                     </div>
                 </header>
                 <div className={styles.history_table_wrap}>

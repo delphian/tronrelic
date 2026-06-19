@@ -36,34 +36,14 @@
     color: var(--color-text-muted);
 }
 
-/* Native select styled to match Input. */
+/* Width modifiers forwarded to the shared <Select> wrapper; appearance, focus,
+ * and disabled styling are owned by the Select component. */
 .select {
-    padding: var(--input-padding-sm);
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text);
-    background: var(--input-background);
-    border: var(--input-border);
-    border-radius: var(--input-border-radius);
-    transition: var(--input-transition);
-    cursor: pointer;
     min-width: 12rem;
 }
 
 .select_full {
     width: 100%;
-    padding: var(--input-padding);
-    font-size: var(--font-size-body);
-}
-
-.select:focus {
-    outline: none;
-    border-color: var(--input-border-focus);
-    box-shadow: var(--input-shadow-focus);
-}
-
-.select:disabled {
-    opacity: var(--opacity-60);
-    cursor: not-allowed;
 }
 
 /* Items section header — count + create button. */

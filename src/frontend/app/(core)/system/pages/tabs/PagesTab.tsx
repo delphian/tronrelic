@@ -6,6 +6,7 @@ import { Badge } from '../../../../../components/ui/Badge';
 import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
 import { Input } from '../../../../../components/ui/Input';
+import { Select } from '../../../../../components/ui/Select';
 import { Plus, Edit, Trash2, Eye, EyeOff, Search } from 'lucide-react';
 import type { IPage } from '@/types';
 import styles from './PagesTab.module.css';
@@ -188,15 +189,15 @@ export function PagesTab() {
                         />
                         <Search size={20} className={styles.search_icon} />
                     </div>
-                    <select
+                    <Select
                         value={publishedFilter}
                         onChange={e => setPublishedFilter(e.target.value as typeof publishedFilter)}
-                        className={styles.filter_select}
+                        aria-label="Filter pages by published status"
                     >
                         <option value="all">All Pages</option>
                         <option value="published">Published Only</option>
                         <option value="drafts">Drafts Only</option>
-                    </select>
+                    </Select>
                     <Button
                         variant="primary"
                         size="md"

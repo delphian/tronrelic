@@ -148,6 +148,27 @@ describe('runScheduledPrompts', () => {
         expect(err).toBeNull();
     });
 
+    it('forwards the composed system prompt as injectedSystemPrompt', async () => {
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({
+                id: 'due',
+                cron: '* * * * *',
+                scheduleEnabled: true,
+                lastRunAt: minutesAgo(5),
+                prompt: 'run me'
+            })
+        ]);
+        // No owner on the prompt → composed against a null principal (master-only).
+        const composeSystemPrompt = vi.fn(async () => 'INJECTED');
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, undefined, composeSystemPrompt);
+
+        expect(composeSystemPrompt).toHaveBeenCalledTimes(1);
+        expect(provider.query).toHaveBeenCalledWith(
+            expect.objectContaining({ prompt: 'run me', mode: 'programmatic', injectedSystemPrompt: 'INJECTED' })
+        );
+    });
+
     it('does not fire when the cron next-time is still in the future', async () => {
         const tenSecondsAgo = new Date(Date.now() - 10_000).toISOString();
         const savedPrompts = createMockSavedPrompts([

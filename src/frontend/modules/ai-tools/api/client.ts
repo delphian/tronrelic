@@ -25,6 +25,7 @@ import type {
     IStaticPromptVariableInput,
     IStaticPromptVariableUpdate,
     ISavedPrompt,
+    IUserGroup,
     ToolInvocationStatus,
     ToolTriggerPath
 } from '@/types';
@@ -582,4 +583,104 @@ export async function saveSavedPrompt(request: ISavePromptRequest): Promise<ISav
  */
 export async function deleteSavedPrompt(id: string): Promise<void> {
     await parse(await fetch(`${BASE}/query/prompts/${encodeURIComponent(id)}`, { method: 'DELETE' }), 'delete prompt');
+}
+
+/**
+ * One core-managed additional (audience-scoped) system prompt, as returned by
+ * `GET /system-prompts`. Mirrors the backend `ISystemPromptDoc` using
+ * platform-owned primitives so the frontend stays decoupled from core internals.
+ * `userIds` is any-of and `groups` is all-of; the two filters combine with OR.
+ */
+export interface ISystemPromptView {
+    id: string;
+    name: string;
+    content: string;
+    userIds: string[];
+    groups: string[];
+    enabled: boolean;
+    order: number;
+    createdAt: string;
+    updatedAt: string;
+}
+
+/** The master prompt plus every additional prompt, as returned by `GET /system-prompts`. */
+export interface ISystemPromptsResponse {
+    master: string;
+    additional: ISystemPromptView[];
+}
+
+/** Body for {@link saveSystemPrompt}. Omit `id` to create; supply it to update. */
+export interface ISaveSystemPromptRequest {
+    id?: string;
+    name?: string;
+    content?: string;
+    /** Better Auth user ids this prompt targets (any-of). */
+    userIds?: string[];
+    /** Group ids this prompt targets (all-of). */
+    groups?: string[];
+    enabled?: boolean;
+    order?: number;
+}
+
+/**
+ * Fetch the master system prompt plus every additional audience-scoped prompt.
+ *
+ * @returns The master content and the additional-prompt list.
+ */
+export async function getSystemPrompts(): Promise<ISystemPromptsResponse> {
+    return parse<ISystemPromptsResponse>(await fetch(`${BASE}/system-prompts`), 'load system prompts');
+}
+
+/**
+ * Replace the always-on master system prompt. A blank string is valid — it
+ * silences the master's contribution without deleting the concept.
+ *
+ * @param content - The new master body.
+ * @returns The stored master content.
+ */
+export async function setMasterSystemPrompt(content: string): Promise<string> {
+    const data = await parse<{ master: string }>(await fetch(`${BASE}/system-prompts/master`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+    }), 'save master system prompt');
+    return data.master;
+}
+
+/**
+ * Create (no `id`) or update (with `id`) an additional system prompt. Returns the
+ * full refreshed `{ master, additional }` so the caller replaces its shared state
+ * in one step.
+ *
+ * @param request - The prompt fields to persist.
+ * @returns The refreshed master and additional-prompt list.
+ */
+export async function saveSystemPrompt(request: ISaveSystemPromptRequest): Promise<ISystemPromptsResponse> {
+    return parse<ISystemPromptsResponse>(await fetch(`${BASE}/system-prompts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request)
+    }), 'save system prompt');
+}
+
+/**
+ * Delete an additional system prompt by id.
+ *
+ * @param id - The prompt id.
+ * @returns Resolves when deleted.
+ */
+export async function deleteSystemPrompt(id: string): Promise<void> {
+    await parse(await fetch(`${BASE}/system-prompts/${encodeURIComponent(id)}`, { method: 'DELETE' }), 'delete system prompt');
+}
+
+/**
+ * List admin-defined user groups, for the audience editor's group picker. Reads
+ * the identity module's admin endpoint (a different base than the AI-tools
+ * routes); same-origin so the admin session cookie authorizes it.
+ *
+ * @returns The defined user groups.
+ */
+export async function listUserGroups(): Promise<IUserGroup[]> {
+    const data = await parse<{ groups: IUserGroup[] }>(await fetch('/api/admin/users/groups'), 'load user groups');
+    return data.groups;
 }

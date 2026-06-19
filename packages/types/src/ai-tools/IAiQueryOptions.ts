@@ -116,4 +116,22 @@ export interface IAiQueryOptions {
      * not a model-spoofable surface.
      */
     endUser?: IToolEndUserPrincipal;
+
+    /**
+     * Core-composed system prompt — the always-on master prompt plus every
+     * audience-scoped prompt that matches `endUser` — already `{%variable%}`-
+     * expanded by core's prompt-variable registry. Set ONLY by trusted core call
+     * sites that originate a query (the admin query route and the
+     * scheduled-prompts runner); the model never sets query options, so this is
+     * not a spoofable surface.
+     *
+     * The provider injects it verbatim (no re-expansion) AFTER its always-on
+     * security clause and BEFORE its own `config.systemPrompt`, giving the final
+     * `system` order: security clause → core injected → provider config. It
+     * coexists with `systemPrompt`/`config.systemPrompt` rather than replacing
+     * either, so core-owned and provider-owned system prompts both apply.
+     * Provider-neutral: core expands its own part, so any provider transport can
+     * inject it without re-implementing variable expansion.
+     */
+    injectedSystemPrompt?: string;
 }

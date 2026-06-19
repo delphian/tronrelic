@@ -25,6 +25,7 @@ import { Bot, Route } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
 import { Card } from '../../../../../components/ui/Card';
+import { Select } from '../../../../../components/ui/Select';
 import { adminGetBotTrend, adminGetBotPaths } from '../../../api';
 import type { IBotClassDailyPoint, ITrafficBucket } from '../../../api';
 import styles from './CrawlerDashboard.module.scss';
@@ -213,8 +214,7 @@ export function CrawlerDashboard() {
                     <h3 className={styles.panel_title}>Paths fetched by bot class</h3>
                     <label className={styles.class_select_label}>
                         <span className="text-muted">Class</span>
-                        <select
-                            className={styles.class_select}
+                        <Select
                             value={pathBotClass}
                             onChange={e => setPathBotClass(e.target.value)}
                             aria-label="Bot class"
@@ -222,7 +222,7 @@ export function CrawlerDashboard() {
                             {PATH_BOT_CLASSES.map(cls => (
                                 <option key={cls.key} value={cls.key}>{cls.label}</option>
                             ))}
-                        </select>
+                        </Select>
                     </label>
                 </div>
                 {pathsError ? (

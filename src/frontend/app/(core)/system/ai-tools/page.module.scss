@@ -307,6 +307,67 @@
     border-top: var(--border-width-thin) solid var(--color-border);
 }
 
+/* System Prompts: small field label above an input group in the create/edit form. */
+.field_label {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+}
+
+/* System Prompts: removable user-id chip row (form) and read-only audience row (table). */
+.audience_chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+    align-items: center;
+}
+
+.audience_chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: var(--padding-2xs) var(--padding-xs);
+    border-radius: var(--radius-sm);
+    border: var(--chip-border);
+    background: var(--color-surface-muted);
+    font-size: var(--font-size-caption);
+    color: var(--color-text);
+}
+
+.audience_chip_remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-muted);
+    transition: color var(--transition-base);
+}
+
+.audience_chip_remove:hover {
+    color: var(--color-danger);
+}
+
+/* System Prompts: scrollable group checkbox list in the create/edit form. */
+.group_checks {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    max-height: 14rem;
+    overflow-y: auto;
+}
+
+.check_label {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    cursor: pointer;
+}
+
 @container (min-width: #{$breakpoint-mobile-lg}) {
     .trifecta_legs {
         grid-template-columns: repeat(3, minmax(0, 1fr));

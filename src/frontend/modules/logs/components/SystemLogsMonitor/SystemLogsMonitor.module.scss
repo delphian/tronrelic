@@ -108,18 +108,8 @@ fieldset.filter_group {
     user-select: none;
 }
 
-.filter_input,
-.filter_select {
-    padding: var(--spacing-4) var(--spacing-5);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-background);
-    color: var(--color-text);
-    font-size: var(--font-size-sm);
-    min-height: var(--button-height-md);
-    box-sizing: border-box;
-}
-
+/* Width modifiers forwarded to the shared <Select> wrapper; appearance, focus,
+ * and disabled styling are owned by the Select component. */
 .filter_input {
     width: 100%;
     max-width: 300px;
