@@ -456,6 +456,15 @@ async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<v
     BlockchainObserverService.initialize(logger.child({ module: 'blockchain-observer' }));
     SystemConfigService.initialize(logger.child({ module: 'system-config' }), coreDatabase);
 
+    // Inject the database before any BlockchainService.getInstance(). The ai-tools
+    // module resolves the singleton during bootstrapInit() to back its built-in
+    // blockchain prompt variables — earlier than the scheduler core-jobs and plugin
+    // loader that otherwise perform this injection. The constructor calls
+    // getDatabase() immediately, so without this the first getInstance() throws and
+    // the app never boots. setDependencies is idempotent (registerModel is a
+    // Map.set), so the later calls remain harmless.
+    BlockchainService.setDependencies(coreDatabase);
+
     // Chain parameters: inject database, fetch from TronGrid first (populates DB), then warm cache
     ChainParametersService.setDependencies(coreDatabase);
     const chainParamsFetcher = new ChainParametersFetcher(axios, logger, coreDatabase);
