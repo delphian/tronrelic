@@ -28,7 +28,7 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 
 | File | Responsibility |
 |------|----------------|
-| `AiToolsModule.ts` | Two-phase lifecycle; constructs services, mounts the admin router, publishes `'ai-tools'` + `'ai-tool-governor'` |
+| `AiToolsModule.ts` | Two-phase lifecycle; constructs services, mounts the admin router, publishes `'ai-tools'` + `'ai-tool-governor'`; registers the core built-in `send-toast` tool (external/reversible/public, ships disabled) via `registerBuiltinTools()` — a site-wide UI announcement broadcast on the global `'toast'` WebSocket event, provider-neutral so it survives a provider swap |
 | `services/ai-tool-registry.ts` | `IAiToolRegistry`: registration, enabled-state (capability-driven default-deny), declarations for a provider |
 | `services/ai-tool-governor.ts` | `IAiToolGovernor`: the invoke pipeline + approve/reject |
 | `services/tool-policy-engine.ts` | Capability-classed defaults, admin overrides, fixed-window rate limiter, autonomous default-deny, curation mode (`require`/`auto-approve`) + egress-gating predicate |
