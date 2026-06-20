@@ -108,22 +108,37 @@ export class PreferencesController {
     /**
      * Validate the `overrides` payload into a strict category→channel→boolean
      * map. Rejects (returns null) on any non-boolean leaf or non-object level so
-     * model-free client input cannot smuggle unexpected types into storage.
+     * model-free client input cannot smuggle unexpected types into storage, and
+     * rejects any `categoryId`/`channelId` that is not a registered,
+     * user-configurable pairing — otherwise an authenticated user could bloat
+     * their single preferences document with arbitrary keys toward MongoDB's
+     * document-size limit (a storage-exhaustion DoS). The allow-list mirrors the
+     * catalog `getPreferences` returns, so writable keys equal readable keys.
      *
      * @param raw - The untrusted `overrides` value from the request body.
-     * @returns A clean overrides map, or null when the shape is invalid.
+     * @returns A clean overrides map, or null when the shape or a key is invalid.
      */
     private validateOverrides(raw: unknown): Record<string, Record<string, boolean>> | null {
         if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
             return null;
         }
+        const validCategories = new Set(
+            this.notifications.listCategories().filter((c) => c.userConfigurable !== false).map((c) => c.id)
+        );
+        const validChannels = new Set(this.notifications.listChannels().map((c) => c.id));
         const result: Record<string, Record<string, boolean>> = {};
         for (const [categoryId, channelMap] of Object.entries(raw as Record<string, unknown>)) {
+            if (!validCategories.has(categoryId)) {
+                return null;
+            }
             if (typeof channelMap !== 'object' || channelMap === null || Array.isArray(channelMap)) {
                 return null;
             }
             const clean: Record<string, boolean> = {};
             for (const [channelId, enabled] of Object.entries(channelMap as Record<string, unknown>)) {
+                if (!validChannels.has(channelId)) {
+                    return null;
+                }
                 if (typeof enabled !== 'boolean') {
                     return null;
                 }

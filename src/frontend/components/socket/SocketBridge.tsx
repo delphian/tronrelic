@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import type { Socket } from 'socket.io-client';
 import { getSocket, disconnectSocket, WEBSOCKET_DEFER_TIMEOUT_MS } from '../../lib/socketClient';
+import { useSession } from '../../modules/user/lib/auth-client';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { prependMemo } from '../../store/slices/memoSlice';
 import { blockReceived } from '../../features/blockchain/slice';
@@ -49,6 +50,14 @@ export function SocketBridge() {
   const connectionStatus = useAppSelector(state => state.realtime.connection.status);
   const commentThreads = useAppSelector(state => state.realtime.subscriptions.commentThreads);
 
+  // Better Auth identity, read straight from BA's client store. SocketBridge
+  // mounts as a sibling above SessionProvider, so it cannot use the
+  // SessionProvider context — but `useSession` is BA's own reactive hook and
+  // works anywhere under the providers. Only the stable user id matters here.
+  const { data: sessionData } = useSession();
+  const sessionUserId = sessionData?.user?.id ?? null;
+  const establishedUserIdRef = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
     desiredRef.current = desired ?? null;
   }, [desired]);
@@ -56,6 +65,38 @@ export function SocketBridge() {
   useEffect(() => {
     commentThreadsRef.current = commentThreads;
   }, [commentThreads]);
+
+  // Re-handshake the socket whenever the authenticated identity changes after
+  // the initial load. A Socket.IO handshake captures its auth cookie once, at
+  // connect time, and never refreshes it — so a long-lived socket keeps the
+  // identity rooms (`user:${id}`/`group:${id}`) it joined when it first
+  // connected. Without this, after sign-out a tab would stay in its old user
+  // room and keep receiving that account's targeted/admin notifications, and
+  // after sign-in it would never join the new room. Forcing disconnect+connect
+  // makes the server treat the reconnect as a fresh connection: the old socket
+  // leaves its rooms on disconnect, and the new handshake re-resolves identity
+  // rooms from the current cookie. Handlers stay attached to the same client
+  // instance and `handleConnect` re-subscribes from `desiredRef`, so app
+  // subscriptions survive (a full effect teardown would clear them). The first
+  // observed id is recorded without reconnecting — the initial handshake
+  // already carries the right cookie — and a socket that has not connected yet
+  // is left alone, since its first handshake will use the current cookie.
+  useEffect(() => {
+    if (establishedUserIdRef.current === undefined) {
+      establishedUserIdRef.current = sessionUserId;
+      return;
+    }
+    if (establishedUserIdRef.current === sessionUserId) {
+      return;
+    }
+    establishedUserIdRef.current = sessionUserId;
+
+    const socket = socketRef.current;
+    if (socket && socket.connected) {
+      socket.disconnect();
+      socket.connect();
+    }
+  }, [sessionUserId]);
 
   useEffect(() => {
     const socket = getSocket();

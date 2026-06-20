@@ -33,6 +33,7 @@ export class AuditService {
     async ensureIndexes(): Promise<void> {
         await this.database.createIndex(AUDIT_COLLECTION, { createdAt: -1 }, { name: 'createdAt_desc' });
         await this.database.createIndex(AUDIT_COLLECTION, { categoryId: 1, createdAt: -1 }, { name: 'category_createdAt' });
+        await this.database.createIndex(AUDIT_COLLECTION, { source: 1, createdAt: -1 }, { name: 'source_createdAt' });
         await this.database.createIndex(
             AUDIT_COLLECTION,
             { createdAt: 1 },

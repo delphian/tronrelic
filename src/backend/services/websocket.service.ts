@@ -388,10 +388,14 @@ export class WebSocketService implements IWebSocketService {
         // One generic case serves every category forever (categories are data,
         // not new event cases); empty rooms means fully suppressed, a safe
         // no-op. The payload carries only display fields, never governed data.
-        if (Array.isArray(event.rooms)) {
-          for (const room of event.rooms) {
-            this.io.to(room).emit(event.event, event.payload);
-          }
+        if (Array.isArray(event.rooms) && event.rooms.length > 0) {
+          // Pass the whole room array to `to()` so Socket.IO encodes one packet
+          // and dedupes recipients across rooms in a single broadcast, rather
+          // than issuing one broadcast per room. The `length > 0` guard is
+          // load-bearing: `io.to([])` produces an empty room set, which the
+          // adapter treats as "broadcast to everyone" — an empty recipient list
+          // must stay a no-op (fully-suppressed notification).
+          this.io.to(event.rooms).emit(event.event, event.payload);
         }
         break;
       default:
