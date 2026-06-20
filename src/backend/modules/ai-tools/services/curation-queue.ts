@@ -42,6 +42,7 @@ export class CurationQueue {
         await this.database.createIndex(COLLECTION, { id: 1 }, { unique: true });
         await this.database.createIndex(COLLECTION, { status: 1, createdAt: -1 });
         await this.database.createIndex(COLLECTION, { typeId: 1, status: 1 });
+        await this.database.createIndex(COLLECTION, { status: 1, decidedAt: -1 });
     }
 
     /**
@@ -89,6 +90,26 @@ export class CurationQueue {
      */
     async countPending(): Promise<number> {
         return this.database.count(COLLECTION, { status: 'pending' });
+    }
+
+    /**
+     * List decided envelopes (approved or rejected), most-recently-decided first,
+     * for the curation history view. The records were never discarded — a decision
+     * mutates an item in place rather than deleting it (see `resolve`) — so this is
+     * the audit half of the queue: who decided what, and when. Sorted by `decidedAt`
+     * so the freshest decisions lead, backed by the `{ status, decidedAt }` index.
+     *
+     * @param limit - Maximum envelopes to return (default 100, capped at 500).
+     * @returns The decided envelopes, newest decision first.
+     */
+    async listHistory(limit = 100): Promise<ICurationItem[]> {
+        const capped = Math.min(Math.max(1, limit), 500);
+        const collection = this.database.getCollection<ICurationItem>(COLLECTION);
+        return collection
+            .find({ status: { $in: ['approved', 'rejected'] } })
+            .sort({ decidedAt: -1 })
+            .limit(capped)
+            .toArray();
     }
 
     /**

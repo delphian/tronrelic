@@ -139,6 +139,7 @@ All under `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`).
 | GET | `/policy` | Per-tool overrides + usage tallies |
 | PUT/DELETE | `/policy/:name` | Set / clear a per-tool override |
 | GET | `/curations` · `/curations/count` | Pending curation queue + count (Curation tab + badge) |
+| GET | `/curations/history` | Decided items (approved/rejected), newest decision first (Curation tab → History) |
 | PATCH | `/curations/:id` | Apply an operator inline edit (`{ body }`) via the type's `applyEdit` |
 | POST | `/curations/:id/approve` · `/curations/:id/reject` | Decide a held item (404 not-pending · 409 owner-unavailable) |
 
