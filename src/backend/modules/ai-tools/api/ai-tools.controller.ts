@@ -885,6 +885,12 @@ export class AiToolsController {
         res.json({ count: await this.curation.countPending() });
     };
 
+    /** GET /curations/history — decided items (approved/rejected), most recent decision first. */
+    listCurationHistory = async (_req: Request, res: Response): Promise<void> => {
+        const items = await this.curation.listHistory();
+        res.json({ curations: items.map(serializeCurationItem) });
+    };
+
     /** POST /curations/:id/approve — approve a held item and commit it via its type. */
     approveCuration = async (req: Request, res: Response): Promise<void> => {
         await this.decideCuration(req, res, 'approve');

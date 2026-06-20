@@ -6,6 +6,9 @@
  * preview (title, body, media, fields); approving commits the effect through its
  * owning plugin, rejecting discards it. An item whose owning plugin is disabled
  * returns a 409 the toast surfaces, since it cannot be decided until re-enabled.
+ * A Pending/History toggle switches between the live queue and the read-only
+ * audit of past decisions — decisions never delete a record, so history is just
+ * the decided items, rendered from their frozen snapshot with no actions.
  * Refetches on the `ai-tools:curations-changed` signal and reports the new count
  * up via `onChanged` so the header badge stays live. Like the sibling tabs this
  * is an admin client surface, not an SSR-first public component.
@@ -22,7 +25,7 @@ import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { useToast } from '../../../../../components/ui/ToastProvider';
 import { useModal } from '../../../../../components/ui/ModalProvider';
 import { getSocket } from '../../../../../lib/socketClient';
-import { listCurations, approveCuration, rejectCuration, editCuration, type ICurationItemView } from '../../../../../modules/ai-tools';
+import { listCurations, listCurationHistory, approveCuration, rejectCuration, editCuration, type ICurationItemView } from '../../../../../modules/ai-tools';
 import styles from '../page.module.scss';
 
 /** Truncate body text for the inline preview cell. */
@@ -109,6 +112,27 @@ function CurationPreview({ preview }: { preview: ICurationItemView['preview'] })
 }
 
 /**
+ * Render a decided item's outcome for the history view: the terminal status as a
+ * toned badge, when it was decided, and the deciding curator's Better Auth id.
+ * Read-only by design — a history row offers no actions because its effect already
+ * committed or was discarded, and the record exists only as an audit trail.
+ *
+ * @param props.item - The decided curation envelope (status is approved/rejected).
+ * @returns The decision cell content.
+ */
+function CurationDecision({ item }: { item: ICurationItemView }) {
+    return (
+        <div className={styles.curation_preview}>
+            <Badge tone={item.status === 'approved' ? 'success' : 'danger'}>{item.status}</Badge>
+            {item.decidedAt && (
+                <div className={styles.tool_desc}><ClientTime date={item.decidedAt} format="datetime" /></div>
+            )}
+            {item.decidedBy && <div className={styles.tool_desc}>by {item.decidedBy}</div>}
+        </div>
+    );
+}
+
+/**
  * Curation tab content.
  *
  * @param props.onChanged - Called after load/approve/reject so the page header
@@ -116,6 +140,7 @@ function CurationPreview({ preview }: { preview: ICurationItemView['preview'] })
  * @returns The tab.
  */
 export function CurationTab({ onChanged }: { onChanged: () => void }) {
+    const [view, setView] = useState<'pending' | 'history'>('pending');
     const [items, setItems] = useState<ICurationItemView[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -125,16 +150,19 @@ export function CurationTab({ onChanged }: { onChanged: () => void }) {
 
     const load = useCallback(async () => {
         try {
-            setItems(await listCurations());
+            setItems(await (view === 'pending' ? listCurations() : listCurationHistory()));
             setError(null);
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to load curation queue');
+            setError(err instanceof Error ? err.message : `Failed to load curation ${view}`);
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [view]);
 
-    useEffect(() => { void load(); }, [load]);
+    // Switching views is a user action, so a brief loading state is acceptable here
+    // (admin surface, not SSR-first primary content); reset it so the prior view's
+    // rows don't linger under the new view's header while the fetch is in flight.
+    useEffect(() => { setLoading(true); void load(); }, [load]);
 
     useEffect(() => {
         const socket = getSocket();
@@ -185,63 +213,71 @@ export function CurationTab({ onChanged }: { onChanged: () => void }) {
         });
     }, [open, close, load, onChanged, push]);
 
-    if (loading) {
-        return <div className={styles.placeholder}>Loading curation queue…</div>;
-    }
+    const isHistory = view === 'history';
 
     return (
         <Stack gap="md">
+            <div className={styles.row_actions} role="group" aria-label="Curation view">
+                <Button variant={isHistory ? 'ghost' : 'primary'} size="sm" onClick={() => setView('pending')}>Pending</Button>
+                <Button variant={isHistory ? 'primary' : 'ghost'} size="sm" onClick={() => setView('history')}>History</Button>
+            </div>
             {error && <div className="alert" role="alert">{error}</div>}
             <p className="text-muted" style={{ margin: 0, fontSize: 'var(--font-size-body-sm)' }}>
-                Effects held for human review across every content type. Approving commits the effect through its owning
-                plugin; rejecting discards it. An item whose owning plugin is disabled cannot be decided until it is
-                re-enabled.
+                {isHistory
+                    ? 'Past curation decisions, most recent first. Records persist after a decision; each row shows its frozen preview, the outcome, and who decided.'
+                    : 'Effects held for human review across every content type. Approving commits the effect through its owning plugin; rejecting discards it. An item whose owning plugin is disabled cannot be decided until it is re-enabled.'}
             </p>
-            {items.length === 0
-                ? <div className={styles.placeholder}>Nothing is awaiting curation.</div>
-                : (
-                    <div className="table-scroll">
-                        <Table>
-                            <Thead>
-                                <Tr>
-                                    <Th width="shrink">Held</Th>
-                                    <Th width="shrink">Type</Th>
-                                    <Th>Preview</Th>
-                                    <Th width="shrink">Decision</Th>
-                                </Tr>
-                            </Thead>
-                            <Tbody>
-                                {items.map(item => (
-                                    <Tr key={item.id}>
-                                        <Td muted><ClientTime date={item.createdAt} format="datetime" /></Td>
-                                        <Td>
-                                            <div className={styles.tool_name}>{item.preview.title ?? item.typeId}</div>
-                                            <div className={styles.tool_desc}>
-                                                {item.providerId}{item.source ? ` · ${item.source}` : ''}
-                                            </div>
-                                        </Td>
-                                        <Td><CurationPreview preview={item.preview} /></Td>
-                                        <Td>
-                                            <div className={styles.row_actions}>
-                                                <Button variant="primary" size="sm" loading={busyId === item.id} disabled={busyId !== null && busyId !== item.id} onClick={() => { void resolve(item.id, 'approve'); }}>
-                                                    <Check size={16} /> Approve
-                                                </Button>
-                                                {item.preview.editable && (
-                                                    <Button variant="secondary" size="sm" disabled={busyId !== null} onClick={() => openEditor(item)}>
-                                                        <Pencil size={16} /> Edit
-                                                    </Button>
-                                                )}
-                                                <Button variant="danger" size="sm" disabled={busyId !== null && busyId !== item.id} onClick={() => { void resolve(item.id, 'reject'); }}>
-                                                    <X size={16} /> Reject
-                                                </Button>
-                                            </div>
-                                        </Td>
+            {loading
+                ? <div className={styles.placeholder}>Loading…</div>
+                : items.length === 0
+                    ? <div className={styles.placeholder}>{isHistory ? 'No curation decisions yet.' : 'Nothing is awaiting curation.'}</div>
+                    : (
+                        <div className="table-scroll">
+                            <Table>
+                                <Thead>
+                                    <Tr>
+                                        <Th width="shrink">Held</Th>
+                                        <Th width="shrink">Type</Th>
+                                        <Th>Preview</Th>
+                                        <Th width="shrink">Decision</Th>
                                     </Tr>
-                                ))}
-                            </Tbody>
-                        </Table>
-                    </div>
-                )}
+                                </Thead>
+                                <Tbody>
+                                    {items.map(item => (
+                                        <Tr key={item.id}>
+                                            <Td muted><ClientTime date={item.createdAt} format="datetime" /></Td>
+                                            <Td>
+                                                <div className={styles.tool_name}>{item.preview.title ?? item.typeId}</div>
+                                                <div className={styles.tool_desc}>
+                                                    {item.providerId}{item.source ? ` · ${item.source}` : ''}
+                                                </div>
+                                            </Td>
+                                            <Td><CurationPreview preview={item.preview} /></Td>
+                                            <Td>
+                                                {isHistory
+                                                    ? <CurationDecision item={item} />
+                                                    : (
+                                                        <div className={styles.row_actions}>
+                                                            <Button variant="primary" size="sm" loading={busyId === item.id} disabled={busyId !== null && busyId !== item.id} onClick={() => { void resolve(item.id, 'approve'); }}>
+                                                                <Check size={16} /> Approve
+                                                            </Button>
+                                                            {item.preview.editable && (
+                                                                <Button variant="secondary" size="sm" disabled={busyId !== null} onClick={() => openEditor(item)}>
+                                                                    <Pencil size={16} /> Edit
+                                                                </Button>
+                                                            )}
+                                                            <Button variant="danger" size="sm" disabled={busyId !== null && busyId !== item.id} onClick={() => { void resolve(item.id, 'reject'); }}>
+                                                                <X size={16} /> Reject
+                                                            </Button>
+                                                        </div>
+                                                    )}
+                                            </Td>
+                                        </Tr>
+                                    ))}
+                                </Tbody>
+                            </Table>
+                        </div>
+                    )}
         </Stack>
     );
 }

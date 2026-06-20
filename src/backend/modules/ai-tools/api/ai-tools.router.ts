@@ -66,6 +66,7 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
 
     router.get('/curations', controller.listCurations);
     router.get('/curations/count', controller.getCurationsCount);
+    router.get('/curations/history', controller.listCurationHistory);
     router.patch('/curations/:id', controller.editCuration);
     router.post('/curations/:id/approve', controller.approveCuration);
     router.post('/curations/:id/reject', controller.rejectCuration);

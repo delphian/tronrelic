@@ -196,6 +196,20 @@ export class CurationService implements ICurationService {
     }
 
     /**
+     * List decided envelopes (approved/rejected) newest-first for the history view.
+     * Unlike `listPending`, these are returned with their cached preview rather than
+     * a live `describe()`: history records what was decided at decision time, so the
+     * snapshot frozen into the envelope is the faithful view — re-deriving from the
+     * owner's current record could misrepresent a past decision.
+     *
+     * @param limit - Maximum envelopes to return.
+     * @returns The decided envelopes.
+     */
+    async listHistory(limit?: number): Promise<ICurationItem[]> {
+        return this.queue.listHistory(limit);
+    }
+
+    /**
      * Fetch one envelope by id, resolving a live preview while it is pending and
      * its owner is registered.
      *

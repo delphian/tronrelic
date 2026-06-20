@@ -12,6 +12,8 @@ Core owns only the **decision** (held → approved / rejected) and the **envelop
 
 A provider registers an `ICurationType` and producers call `hold()`; the admin surface lists and decides. Core records the decision first (the queue's atomic gate), then invokes the type's callback — so a callback failure leaves the item decided rather than re-opening a half-committed effect. A type whose plugin is disabled is unregistered, so its held items **block** on decision until the plugin returns; this is intentional, not data loss.
 
+A decision mutates an item in place rather than deleting it, so the queue doubles as an audit trail. The admin tab's **Pending** view is the live queue (`GET /curations`); its **History** view reads the decided items back (`GET /curations/history`), newest decision first, rendered read-only from each item's frozen `preview` snapshot — re-deriving a live `describe()` could misrepresent a past decision, so history keeps the snapshot it was decided on.
+
 ### The Type Contract
 
 A provider gives core the content-specific operations it cannot infer. Core stays payload-agnostic — it only ever sees the generic `ICurationPreview` (`title` / `body` / `media` / `fields` / `editable`).
@@ -55,7 +57,7 @@ The admin edits the neutral `body` text in a core modal; the write routes core �
 | Admin tab | `/system/ai-tools` → Curation |
 | WebSocket signal | `ai-tools:curations-changed` (refetch cue) |
 | Review bypass | `IToolPolicy.curation: 'require'` (default) \| `'auto-approve'` (interactive-only admin bypass) |
-| REST | `GET /curations`, `GET /curations/count`, `PATCH /curations/:id`, `POST /curations/:id/{approve,reject}` under `/api/admin/system/ai-tools` |
+| REST | `GET /curations`, `GET /curations/count`, `GET /curations/history` (decided audit), `PATCH /curations/:id`, `POST /curations/:id/{approve,reject}` under `/api/admin/system/ai-tools` |
 | Types | `@delphian/tronrelic-types` → `ICurationType`, `ICurationItem`, `ICurationPreview`, `ICurationService`, `ICurationEditPatch` |
 
 ## Example

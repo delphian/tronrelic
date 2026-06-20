@@ -321,6 +321,18 @@ export async function listCurations(): Promise<ICurationItemView[]> {
 }
 
 /**
+ * List decided curation items (approved/rejected), most-recently-decided first.
+ * The pending queue answers "what needs me now?"; this answers "what was decided,
+ * when, and by whom?" — the records persist after a decision, this surfaces them.
+ *
+ * @returns The decided curation envelopes, newest decision first.
+ */
+export async function listCurationHistory(): Promise<ICurationItemView[]> {
+    const data = await parse<{ curations: ICurationItemView[] }>(await fetch(`${BASE}/curations/history`), 'load curation history');
+    return data.curations;
+}
+
+/**
  * Fetch the count of pending curation items, for the header badge.
  *
  * @returns The pending count.
