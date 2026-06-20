@@ -182,6 +182,36 @@ export interface WidgetsPlacementsUpdatePayload {
   };
 }
 
+/**
+ * Identity-targeted notification surfaced as a toast in the recipient's
+ * browser. Emitted by the notifications module's toast channel to the resolved
+ * `user:${userId}` rooms, so per-user silencing — enforced server-side by
+ * omitting silenced recipients from the room set — is honored before the event
+ * ever reaches the wire. The payload carries only display fields and an id;
+ * never governed data.
+ */
+export interface NotificationSocketPayload {
+  event: 'notification';
+  payload: {
+    /** Audit id of the blast, used as the client-side notification id. */
+    id: string;
+    /** Category that produced the notification. */
+    categoryId: string;
+    /** Category label snapshot for labeling without a category lookup. */
+    categoryLabel: string;
+    /** Severity driving the toast tone. */
+    severity: 'info' | 'success' | 'warning' | 'error';
+    /** Short headline. */
+    title: string;
+    /** Optional longer body. */
+    body?: string;
+    /** ISO timestamp of when the notification was produced. */
+    createdAt: string;
+    /** Optional structured payload for richer client handling. */
+    data?: Record<string, unknown>;
+  };
+}
+
 export type TronRelicSocketEvent =
   | TransactionAlertPayload
   | BlockNotificationPayload
@@ -191,4 +221,5 @@ export type TronRelicSocketEvent =
   | UserUpdatePayload
   | MenuUpdatePayload
   | MenuNamespaceConfigUpdatePayload
-  | WidgetsPlacementsUpdatePayload;
+  | WidgetsPlacementsUpdatePayload
+  | NotificationSocketPayload;

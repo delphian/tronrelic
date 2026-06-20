@@ -1,10 +1,9 @@
 import { Router } from 'express';
-import type { IDatabaseService, IServiceRegistry } from '@/types';
+import type { IDatabaseService } from '@/types';
 import { blockchainRouter } from './blockchain.router.js';
 import { accountsRouter } from './accounts.router.js';
 import { transactionsRouter } from './transactions.router.js';
 import { transactionRouter } from './transaction.router.js';
-import { notificationsRouter } from './notifications.router.js';
 import { inflowsRouter } from './inflows.router.js';
 import { outflowsRouter } from './outflows.router.js';
 import { dashboardRouter } from './dashboard.router.js';
@@ -27,12 +26,9 @@ import { PluginApiService } from '../../services/plugin-api.service.js';
  * instance with a unified model registry.
  *
  * @param database - Shared database service instance from bootstrap
- * @param serviceRegistry - Shared service registry; passed to routers that
- *   resolve late-bound services at request time (e.g. notifications resolves
- *   `'wallets'` to verify wallet ownership).
  * @returns Express router with all API routes mounted
  */
-export function createApiRouter(database: IDatabaseService, serviceRegistry: IServiceRegistry) {
+export function createApiRouter(database: IDatabaseService) {
   const router = Router();
 
   // Routers without database dependency
@@ -49,7 +45,6 @@ export function createApiRouter(database: IDatabaseService, serviceRegistry: ISe
   router.use('/transaction', transactionRouter(database));
   router.use('/inflows', inflowsRouter(database));
   router.use('/outflows', outflowsRouter(database));
-  router.use('/notifications', notificationsRouter(database, serviceRegistry));
   // Tools routes mounted by ToolsModule via IoC pattern
   router.use('/live', liveRouter(database));
   router.use('/tokens', tokensRouter(database));

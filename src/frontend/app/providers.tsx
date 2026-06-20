@@ -5,6 +5,7 @@ import { Provider } from 'react-redux';
 import { createStore } from '../store';
 import { SocketBridge } from '../components/socket/SocketBridge';
 import { CoreToastHandler } from '../components/socket/CoreToastHandler';
+import { NotificationHandler } from '../components/socket/NotificationHandler';
 import { ToastProvider } from '../components/ui/ToastProvider';
 import { ModalProvider } from '../components/ui/ModalProvider';
 import { PluginLoader } from '../components/plugins/PluginLoader';
@@ -41,6 +42,10 @@ export function Providers({ children, ssrSession }: ProvidersProps) {
                     <FrontendPluginContextProvider>
                         <SocketBridge />
                         <CoreToastHandler />
+                        {/* Per-user notification toasts (identity-room targeted),
+                            sibling to the global CoreToastHandler. Mounted before
+                            the session provider so the listener is always live. */}
+                        <NotificationHandler />
                         <SessionProvider initialSession={ssrSession ?? null}>
                             <PluginLoader />
                             <PageViewTracker />

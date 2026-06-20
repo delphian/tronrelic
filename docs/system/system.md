@@ -82,6 +82,10 @@ The contract and governance for tools a model can invoke during an AI query. Cor
 
 One core admin surface (`/system/ai-tools` → Curation, in the AI Tools module) for every effect held for human review before it takes hold. Plugins register a content type (preview / approve / reject / optional edit); core owns the decision and a pointer-plus-preview envelope while the type owns the payload and what approval does. It also hardens a tool's `forcesCuratorReview` into a verifiable `curationTypeId` binding the governor checks live. See [system-curation.md](./system-curation.md).
 
+### Notifications
+
+Category-based notification dispatch behind one published service — `INotificationService`, registry name `'notifications'`. Any module or plugin declares a notification category and fires; the module resolves the audience (groups/users) to recipients, enforces admin policy and per-user opt-outs, delivers across pluggable channels (toast today; email/push later), and audits every blast. Delivery is identity-targeted over WebSocket `user:${id}` rooms so per-user silencing is enforced server-side. The first consumer is the AI scheduler, which toasts admins when a cron prompt runs. See [system-notifications.md](./system-notifications.md) and [Notifications Module README](../../src/backend/modules/notifications/README.md).
+
 ### Logging
 
 Pino-based logger with MongoDB persistence for historical queries. See [system-logging.md](./system-logging.md) and [Logs Module README](../../src/backend/modules/logs/README.md).
@@ -120,6 +124,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [system-hooks.md](./system-hooks.md) | Declared seams, four archetypes, plugin facade, introspection, admin UI |
 | [system-ai-tools.md](./system-ai-tools.md) | AI tool contract, capability classes, accountability and security requirements |
 | [system-curation.md](./system-curation.md) | Central curation queue, the type contract, the verifiable `curationTypeId` binding |
+| [system-notifications.md](./system-notifications.md) | Notification dispatch, the resolution pipeline, channels, per-user opt-outs, audit |
 | [system-logging.md](./system-logging.md) | Pino, MongoDB persistence, log queries |
 | [Menu Module README](../../src/backend/modules/menu/README.md) | Menu service, plugin integration, WebSocket events |
 | [Pages Module README](../../src/backend/modules/pages/README.md) | Markdown CMS, storage providers, file uploads |
@@ -129,6 +134,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [Widgets Module README](../../src/backend/modules/widgets/README.md) | `IWidgetsService`, zones, placements, widget-types, SSR router integration |
 | [Logs Module README](../../src/backend/modules/logs/README.md) | `SystemLogService` singleton, `system_logs` persistence, metadata sanitizer |
 | [AI Tools Module README](../../src/backend/modules/ai-tools/README.md) | Tool registry, governor, policy, invocation audit, human-approval queue |
+| [Notifications Module README](../../src/backend/modules/notifications/README.md) | `INotificationService`, dispatch pipeline, preferences, policy, audit, channels |
 | [system-testing.md](./system-testing.md) | Vitest, Mongoose mocks, fixtures |
 
 ## Related

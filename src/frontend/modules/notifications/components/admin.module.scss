@@ -1,0 +1,106 @@
+/**
+ * Shared styles for the admin notification tabs (Categories, Channels,
+ * History). Row list with a primary text block and a trailing control/meta
+ * column; reflows to a stack at narrow container widths. Structure only —
+ * surfaces and text inherit design tokens.
+ */
+
+@use '../../../app/breakpoints' as *;
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    container-type: inline-size;
+    container-name: notification-admin;
+}
+
+.row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    padding: var(--padding-md);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+}
+
+.row_main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+}
+
+.row_title {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.row_desc {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    word-break: break-word;
+}
+
+.badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+    margin-top: var(--gap-2xs);
+}
+
+.toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.history_head {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+.history_meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--gap-2xs);
+    white-space: nowrap;
+}
+
+.help {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    margin: 0;
+}
+
+.error {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-danger);
+    margin: 0;
+}
+
+.placeholder {
+    padding: var(--padding-lg);
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+@container notification-admin (max-width: #{$breakpoint-mobile-md}) {
+    .row {
+        flex-direction: column;
+    }
+
+    .history_meta {
+        align-items: flex-start;
+    }
+}
