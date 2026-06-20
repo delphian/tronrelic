@@ -126,6 +126,27 @@
     font-size: var(--font-size-body-sm);
 }
 
+/* Trifecta banner disclosure toggle: the icon + headline row doubles as the
+   expand/collapse control, so it resets the button chrome and lets the trailing
+   chevron drift to the right edge to signal the row is interactive. */
+.trifecta_toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    width: 100%;
+    padding: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    color: var(--color-text);
+}
+
+.trifecta_toggle_chevron {
+    margin-left: auto;
+    color: var(--color-text-muted);
+}
+
 /* Trifecta banner contributing-tool lists. */
 .trifecta_legs {
     display: grid;

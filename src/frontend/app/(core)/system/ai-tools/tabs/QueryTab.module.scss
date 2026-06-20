@@ -131,11 +131,15 @@
     50% { opacity: var(--opacity-35); }
 }
 
-/* Scrolling transcript region. Keeps a min-height floor so dragging the
-   composer taller shrinks it only to that floor, then grows the card — the
-   transcript never collapses to zero. */
+/* Scrolling transcript region. Flex-basis is 0 (not auto) so the transcript's
+   intrinsic contribution to the card height is only its min-height floor, not
+   the conversation's content height — the card holds at its resting height and
+   the transcript scrolls as turns accumulate. (With basis auto, content height
+   drives the card taller and overflow never engages.) The min-height floor also
+   bounds the shrink: dragging the composer taller reduces the transcript only
+   to that floor, then grows the card. */
 .transcript {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-height: var(--query-transcript-min-height);
     overflow-y: auto;
     display: flex;
@@ -468,9 +472,14 @@
     color: var(--color-text-muted);
 }
 
+/* The list is a three-track grid — prompt (flexible) | cost | action — so the
+ * cost and "Open in chat" columns align across every row like a table while
+ * each takes only the width its content needs. Each row is a subgrid spanning
+ * all three tracks, which keeps the per-row card border/background while
+ * inheriting the shared column edges. */
 .history_list {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 1fr auto auto;
     gap: var(--gap-sm);
     list-style: none;
     margin: 0;
@@ -478,22 +487,39 @@
 }
 
 .history_item {
-    display: flex;
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
     align-items: center;
     gap: var(--gap-sm);
     padding: var(--padding-sm);
     border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-sm);
     background: var(--color-surface-muted);
-    flex-wrap: wrap;
 }
 
 .history_item_main {
-    flex: 1 1 auto;
     min-width: 0;
     display: flex;
     flex-direction: column;
     gap: var(--gap-2xs);
+}
+
+/* Cost column — right-aligned and nowrap so figures form a clean rule against
+ * the action column; tabular numerals keep digits in vertical register. */
+.history_item_cost {
+    justify-self: end;
+    white-space: nowrap;
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-medium);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted);
+}
+
+/* Action column — hold the button at its intrinsic width so it never stretches. */
+.history_item_action {
+    justify-self: end;
+    white-space: nowrap;
 }
 
 .history_item_prompt {

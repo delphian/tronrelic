@@ -10,9 +10,15 @@
  * — a caution, not an all-clear), and `lethal` (all three present with an open,
  * autonomously closable channel). It names the contributing tools so an operator
  * can break the chain by disabling one leg.
+ *
+ * The amber/red states open collapsed — only the severity icon and headline show
+ * until an operator expands the card — so the dashboard stays scannable and the
+ * full explanation plus contributing-tool list appear on demand rather than
+ * dominating the page whenever a trifecta is present.
  */
 
-import { AlertTriangle, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, ChevronDown, ChevronRight, ShieldAlert, ShieldCheck } from 'lucide-react';
 import type { ITrifectaStatus } from '@/types';
 import { Card } from '../../../../../components/ui/Card';
 import { Badge } from '../../../../../components/ui/Badge';
@@ -42,10 +48,18 @@ function Leg({ label, tools, tone }: { label: string; tools: string[]; tone: Leg
  * with the exfiltration leg split into open (danger) and curator-gated (warning)
  * channels so the operator sees why a state is amber rather than red.
  *
+ * The amber/red card opens collapsed: a single toggle button shows only the
+ * severity icon and headline, keeping the dashboard scannable, and the full
+ * explanation plus contributing-tool legs render only once the operator expands
+ * it. Disclosure is client-only UI state, so no SSR hydration is involved and
+ * the deterministic collapsed default produces matching server/client markup.
+ *
  * @param props.status - The current trifecta status over the enabled set.
  * @returns The banner.
  */
 export function TrifectaPanel({ status }: { status: ITrifectaStatus }) {
+    const [expanded, setExpanded] = useState(false);
+
     if (status.severity === 'safe') {
         return (
             <div className="text-muted" style={{ display: 'flex', alignItems: 'center', gap: 'var(--gap-sm)', fontSize: 'var(--font-size-body-sm)' }}>
@@ -60,35 +74,46 @@ export function TrifectaPanel({ status }: { status: ITrifectaStatus }) {
         ? { color: 'var(--color-warning)', text: 'var(--color-warning-text)', border: 'var(--color-warning-alpha-40)', tone: 'warning' as const }
         : { color: 'var(--color-danger)', text: 'var(--color-danger-text)', border: 'var(--color-danger-alpha-50)', tone: 'danger' as const };
     const Icon = supervised ? ShieldAlert : AlertTriangle;
+    const Chevron = expanded ? ChevronDown : ChevronRight;
 
     return (
         <Card tone="accent" style={{ borderColor: accent.border }}>
             <Stack gap="sm">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--gap-sm)' }}>
+                <button
+                    type="button"
+                    className={styles.trifecta_toggle}
+                    onClick={() => setExpanded(current => !current)}
+                    aria-expanded={expanded}
+                >
                     <Icon size={18} style={{ color: accent.color }} />
                     <strong style={{ color: accent.text }}>
                         {supervised ? 'Trifecta present — exfiltration is curator-gated' : 'Lethal trifecta present'}
                     </strong>
-                </div>
-                <p className="text-muted" style={{ margin: 0, fontSize: 'var(--font-size-body-sm)' }}>
-                    {supervised
-                        ? 'All three capabilities are enabled, but every off-platform channel forces curator review — injected text cannot exfiltrate autonomously, since a human releases each outbound effect. Residual risk remains: a reviewer must read the raw payload to catch a disguised one, so keep the review queue focused enough that approvals stay meaningful.'
-                        : 'The enabled tools combine all three legs with an open off-platform channel, so prompt-injected text could read a secret and exfiltrate it in one turn. Disable one leg below to break the chain.'}
-                </p>
-                <div className={styles.trifecta_legs}>
-                    <Leg label="Private data" tools={[...status.privateData, ...status.privateDataVariables]} tone={accent.tone} />
-                    <Leg label="Untrusted content" tools={status.untrustedContent} tone={accent.tone} />
-                    {(status.exfiltrationOpen.length > 0 || status.exfiltrationGated.length > 0) && (
-                        <Stack gap="sm">
-                            {status.exfiltrationOpen.length > 0 && (
-                                <Leg label="Exfiltration (open)" tools={status.exfiltrationOpen} tone="danger" />
+                    <Chevron size={18} className={styles.trifecta_toggle_chevron} />
+                </button>
+                {expanded && (
+                    <>
+                        <p className="text-muted" style={{ margin: 0, fontSize: 'var(--font-size-body-sm)' }}>
+                            {supervised
+                                ? 'All three capabilities are enabled, but every off-platform channel forces curator review — injected text cannot exfiltrate autonomously, since a human releases each outbound effect. Residual risk remains: a reviewer must read the raw payload to catch a disguised one, so keep the review queue focused enough that approvals stay meaningful.'
+                                : 'The enabled tools combine all three legs with an open off-platform channel, so prompt-injected text could read a secret and exfiltrate it in one turn. Disable one leg below to break the chain.'}
+                        </p>
+                        <div className={styles.trifecta_legs}>
+                            <Leg label="Private data" tools={[...status.privateData, ...status.privateDataVariables]} tone={accent.tone} />
+                            <Leg label="Untrusted content" tools={status.untrustedContent} tone={accent.tone} />
+                            {(status.exfiltrationOpen.length > 0 || status.exfiltrationGated.length > 0) && (
+                                <Stack gap="sm">
+                                    {status.exfiltrationOpen.length > 0 && (
+                                        <Leg label="Exfiltration (open)" tools={status.exfiltrationOpen} tone="danger" />
+                                    )}
+                                    {status.exfiltrationGated.length > 0 && (
+                                        <Leg label="Exfiltration (curator-gated)" tools={status.exfiltrationGated} tone="warning" />
+                                    )}
+                                </Stack>
                             )}
-                            {status.exfiltrationGated.length > 0 && (
-                                <Leg label="Exfiltration (curator-gated)" tools={status.exfiltrationGated} tone="warning" />
-                            )}
-                        </Stack>
-                    )}
-                </div>
+                        </div>
+                    </>
+                )}
             </Stack>
         </Card>
     );

@@ -6,7 +6,7 @@
  * slideout/modal contexts), not the viewport.
  */
 
-@use '../../../breakpoints' as *;
+@use '../../../../breakpoints' as *;
 
 /* The wrapper declares the query container; the inner grid responds to it. A
  * container query (not a media query) so the layout answers to the section's

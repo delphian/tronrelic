@@ -260,12 +260,14 @@ export function SavedPromptsPanel({
                             >
                                 {sp.name}
                             </button>
-                            <div className={styles.row_meta}>
-                                {renderScheduleChip(sp)}
-                                {sp.lastRunAt && <span>Last run {formatRelativeTime(sp.lastRunAt)}</span>}
-                            </div>
+                            {sp.lastRunAt && (
+                                <div className={styles.row_meta}>
+                                    <span>Last run {formatRelativeTime(sp.lastRunAt)}</span>
+                                </div>
+                            )}
                         </div>
                         <div className={styles.row_actions}>
+                            {renderScheduleChip(sp)}
                             <IconButton
                                 variant="primary"
                                 size="sm"
