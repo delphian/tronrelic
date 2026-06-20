@@ -167,10 +167,10 @@ export function ScreenSettingsSection() {
                                 value={config.offenderThreshold}
                                 onChange={e => setConfig(current => current && { ...current, offenderThreshold: Number(e.target.value) || 0 })}
                                 onBlur={e => {
-                                    const next = Math.max(0, Math.trunc(Number(e.target.value) || 0));
-                                    if (next !== config.offenderThreshold) {
-                                        void save({ offenderThreshold: next });
-                                    }
+                                    // Persist on every blur: onChange has already written the
+                                    // typed value into `config`, so a draft-vs-config comparison
+                                    // here is always false and would silently drop the save.
+                                    void save({ offenderThreshold: Math.max(0, Math.trunc(Number(e.target.value) || 0)) });
                                 }}
                                 disabled={saving}
                                 aria-label="Offender throttle threshold"
