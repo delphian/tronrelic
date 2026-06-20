@@ -354,7 +354,21 @@ export class CurationService implements ICurationService {
                 );
                 result = null;
             } else {
-                const resolved = await this.queue.resolve(id, status, decidedBy);
+                // Snapshot what the curator actually saw. The pending queue shows
+                // a live `describe()` (withLivePreview), but the cached preview on
+                // the envelope is the hold-time value unless an inline edit
+                // refreshed it. Re-derive here so the terminal write freezes the
+                // decision-time view as faithful audit history; fall back to the
+                // cached snapshot if `describe()` fails. Passing it into `resolve()`
+                // keeps the preview inside the same atomic status gate, so only the
+                // winning transition persists it.
+                let decisionPreview = existing.preview;
+                try {
+                    decisionPreview = await entry.type.describe(existing.ref);
+                } catch (error) {
+                    this.logger.warn({ error, id }, 'Decision-time preview resolution failed; recording cached snapshot in history');
+                }
+                const resolved = await this.queue.resolve(id, status, decidedBy, decisionPreview);
                 if (resolved) {
                     // The decision is recorded; broadcast it before committing so
                     // the queue badge updates regardless of the commit outcome.

@@ -162,7 +162,26 @@ export function CurationTab({ onChanged }: { onChanged: () => void }) {
     // Switching views is a user action, so a brief loading state is acceptable here
     // (admin surface, not SSR-first primary content); reset it so the prior view's
     // rows don't linger under the new view's header while the fetch is in flight.
-    useEffect(() => { setLoading(true); void load(); }, [load]);
+    // A `cancelled` flag discards a slower earlier fetch that resolves after the
+    // user has already toggled to the other view, so its stale rows can't overwrite
+    // the current view's state (matches the menu/page.tsx load guard).
+    useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
+        (async () => {
+            try {
+                const next = await (view === 'pending' ? listCurations() : listCurationHistory());
+                if (cancelled) return;
+                setItems(next);
+                setError(null);
+            } catch (err) {
+                if (!cancelled) setError(err instanceof Error ? err.message : `Failed to load curation ${view}`);
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [view]);
 
     useEffect(() => {
         const socket = getSocket();
