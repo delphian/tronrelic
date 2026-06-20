@@ -30,6 +30,9 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
     router.get('/trifecta', controller.getTrifecta);
     router.get('/providers', controller.listProviders);
 
+    router.get('/screen-config', controller.getScreenConfig);
+    router.put('/screen-config', controller.setScreenConfig);
+
     router.get('/variables', controller.listVariables);
     router.post('/variables', controller.createVariable);
     router.patch('/variables/:name', controller.updateVariable);

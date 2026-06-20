@@ -1,0 +1,33 @@
+/**
+ * Styles for the Screen Settings section of the Registry tab. The shared
+ * page.module.scss already supplies the field/label/help tokens this section
+ * reuses; this module only owns the section-local responsive grid so the four
+ * controls reflow to the section's own width (it renders inside the dashboard's
+ * slideout/modal contexts), not the viewport.
+ */
+
+@use '../../../breakpoints' as *;
+
+/* The wrapper declares the query container; the inner grid responds to it. A
+ * container query (not a media query) so the layout answers to the section's
+ * width — correct inside the constrained slideout/modal contexts this dashboard
+ * renders in — and the container-type lives on a separate element from the grid
+ * it sizes, since an element cannot query its own width. */
+.controls {
+    container-type: inline-size;
+    container-name: screen-settings;
+}
+
+/* Four labelled controls in a single column, widening to two once the section
+ * itself has room. */
+.grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--gap-md);
+}
+
+@container screen-settings (min-width: #{$breakpoint-mobile-md}) {
+    .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

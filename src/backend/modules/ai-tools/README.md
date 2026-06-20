@@ -10,10 +10,10 @@ Provider-agnostic governance for AI tools — the registry every tool registers 
 | Module class | `src/backend/modules/ai-tools/AiToolsModule.ts` |
 | Service registry names | `'ai-tools'` → `IAiToolRegistry`, `'ai-tool-governor'` → `IAiToolGovernor`, `'ai-providers'` → `IAiProviderRegistry`, `'curation'` → `ICurationService`, `'prompt-variables'` → `IPromptVariableRegistry` |
 | Admin API base | `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`) |
-| Admin dashboard | `/system/ai-tools` (Registry · Query · Activity · Approvals · Curation · Policy tabs + trifecta banner + provider panel). The Registry tab has collapsible Tools, Variables, and System Prompts sections |
-| Types package | `@delphian/tronrelic-types` → `IAiTool`, `IAiToolCapability`, `IAiToolRegistry`, `IAiToolGovernor`, `IAiProvider`, `IAiProviderRegistry`, `IAiQueryOptions` (incl. `injectedSystemPrompt`), `IAiStreamChunk`, `IAiQueryRecord`, `AiQueryMode`, `ISavedPrompt`, `ITrifectaStatus`, `IToolInvocation{Context,Result,Record}`, `IToolPolicy`, `IAiToolInvokeContext`, `IPromptVariable{Definition,Info,Registry}`, `IStaticPromptVariable` |
+| Admin dashboard | `/system/ai-tools` (Registry · Query · Activity · Approvals · Curation · Policy tabs + trifecta banner + provider panel). The Registry tab has collapsible Tools, Variables, System Prompts, and Screen Settings sections |
+| Types package | `@delphian/tronrelic-types` → `IAiTool`, `IAiToolCapability`, `IAiToolRegistry`, `IAiToolGovernor`, `IAiProvider`, `IAiProviderRegistry`, `IAiQueryOptions` (incl. `injectedSystemPrompt`), `IAiStreamChunk`, `IAiQueryRecord`, `AiQueryMode`, `ISavedPrompt`, `ITrifectaStatus`, `IToolInvocation{Context,Result,Record}`, `IToolPolicy`, `IAiToolInvokeContext`, `IPromptVariable{Definition,Info,Registry}`, `IStaticPromptVariable`, `IUntrustedScreenConfig`, `IContentScreenVerdict` |
 | Owned collections | `module_ai-tools_invocations`, `module_ai-tools_approvals`, `module_ai-tools_curations`, `module_ai-tools_query_history`, `module_ai-tools_prompts`, `module_ai-tools_variables`, `module_ai-tools_system-prompts` |
-| KV keys (core `_kv`) | `ai-tools:tool-states`, `ai-tools:policy-overrides`, `ai-tools:variable-classifications`, `ai-tools:system-prompt-master` |
+| KV keys (core `_kv`) | `ai-tools:tool-states`, `ai-tools:policy-overrides`, `ai-tools:variable-classifications`, `ai-tools:system-prompt-master`, `ai-tools:screen-config` |
 | Hook seams | `ai.toolInvoke` (series, veto/hold), `ai.toolInvoked` (observer, audit fan-out) |
 | WebSocket signals | `ai-tools:activity`, `ai-tools:approvals-changed`, `ai-tools:curations-changed` (timestamp-only refetch cues; data stays behind the gated REST feed); `ai-tools:query-stream` (`IAiStreamChunk`, **global broadcast** keyed by `queryId` — client filters) |
 | Scheduler jobs | `ai-tools:prune-audit` (daily 04:00) — range-deletes `module_ai-tools_invocations` past the 90-day window. `ai-tools:run-scheduled-prompts` (every 2 min) — fires cron-scheduled saved prompts against the active provider. Both registered only when a scheduler is injected |
@@ -38,6 +38,7 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 | `services/curation-queue.ts` | `module_ai-tools_curations` — persist/list/decide/edit held envelopes |
 | `services/curation-service.ts` | `'curation'` → `ICurationService`: type registry + hold/approve/reject/edit orchestration |
 | `services/ai-provider-registry.ts` | `'ai-providers'` → `IAiProviderRegistry`: provider metadata + executable instance; `getActive()` |
+| `services/screen-config.service.ts` | `IUntrustedScreenConfig` persisted in core `_kv` (`ai-tools:screen-config`): the untrusted-content screen's master switch, posture, fail mode, offender threshold; read by the governor (every screen decision) and the policy engine (offender threshold) |
 | `services/prompt-variable-registry.ts` | `'prompt-variables'` → `IPromptVariableRegistry`: code-registered dynamic variables + DB-persisted static variables (`module_ai-tools_variables`), classification, `{%name%}` expansion, secret-name feed for the trifecta detector |
 | `variables/` | Core-owned built-in `dynamic` variables (Blockchain & Network, System Health, Site & Content, Database Access), registered into the registry at module init. Resolvers read injected core services; `types.ts` declares that dependency surface |
 | `services/ai-query-history.service.ts` | `module_ai-tools_query_history` writes/queries for the Query tab (`IAiQueryRecord`) |
@@ -51,6 +52,8 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 `governor.invoke(name, input, ctx)` runs, in order: resolve the tool → enabled-check → validate `input` against the tool's schema → `ai.toolInvoke` seam (a handler throws `HookAbortError` to veto or hold) → policy check → execute the handler under a 30s wall-clock budget → wrap the result for provenance → write an `IToolInvocationRecord` → `ai.toolInvoked` seam. It fails safe: an internal fault denies rather than running an ungoverned handler, and a handler fault is caught, audited, and returned to the model as a reason. The result is `{ status: 'ok' | 'denied' | 'pending-approval' | 'error', content, error?, recordId }`.
 
 **Provenance wrap:** when the tool declares `surfacesUntrustedContent`, a successful result's `content` is the `{ untrustedContentNotice, data }` envelope from `wrapUntrustedToolResult` (`@delphian/tronrelic-types`) — the attacker-influenceable payload labeled as data so the provider forwards it JSON-escaped, never as raw text the model could read as instructions. The audit `resultDigest` records the raw value; only what the model sees is wrapped. Because this lives in the governor, no provider transport can bypass it.
+
+**Untrusted-content screen (active):** the wrap is passive; on top of it the governor runs an optional screen on a `surfacesUntrustedContent` result before forwarding. Per `ScreenConfigService`, when enabled (and, under `trifecta` posture, only when `isEgressReachable()` reports an open egress) it calls the active provider's `screenUntrustedContent(text)` — the provider's cheapest model, in an isolated tool-less call — and **withholds** a flagged result from the model (`{ contentWithheld: true, reason }`), recording the verdict on `IToolInvocationRecord.screen` and an offender hit via `policy.recordScreenHit()`. When the screen can't run (no provider screen, or it throws) the configured `onFailure` decides: `open` forwards the wrapped result, `closed` withholds. A flagged-offender tool is throttled by `ToolPolicyEngine` once it crosses `offenderThreshold`. The model choice is the provider's; whether/when to screen is core config.
 
 ## Capability Classification & Default State
 
@@ -113,6 +116,8 @@ All under `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`).
 | PATCH | `/tools/:name` | Toggle enabled (`{ enabled }`) |
 | GET | `/trifecta` | Lethal-trifecta status: `severity` (`safe`/`supervised`/`lethal`) + `present` (= lethal) + tool names per leg, egress split `exfiltrationOpen`/`exfiltrationGated` |
 | GET | `/providers` | Installed AI provider plugins (Provider panel) |
+| GET | `/screen-config` | Untrusted-content screen policy (`enabled`, `postureMode`, `onFailure`, `offenderThreshold`) |
+| PUT | `/screen-config` | Update the screen policy (partial body; each field validated, 400 on bad input) |
 | GET | `/variables` | Every prompt variable (dynamic + static) with kind, effective sensitivity, editability, size |
 | POST | `/variables` | Create an admin-authored static variable (400 invalid · 409 duplicate/shadows a dynamic) |
 | PATCH | `/variables/:name` | Edit a static variable's mutable fields (404 unknown) |

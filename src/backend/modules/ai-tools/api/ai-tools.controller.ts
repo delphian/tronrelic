@@ -20,6 +20,7 @@ import type {
     ICurationItem,
     IStaticPromptVariable,
     IToolPolicy,
+    IUntrustedScreenConfig,
     ToolInvocationStatus,
     ToolTriggerPath
 } from '@/types';
@@ -38,6 +39,7 @@ import type { PromptVariableRegistry } from '../services/prompt-variable-registr
 import { PromptVariableValidationError } from '../services/prompt-variable-registry.js';
 import type { SystemPromptsService } from '../services/system-prompts.service.js';
 import { SystemPromptValidationError } from '../services/system-prompts.service.js';
+import type { ScreenConfigService } from '../services/screen-config.service.js';
 import { WebSocketService } from '../../../services/websocket.service.js';
 import { detectTrifecta } from '../services/trifecta-detector.js';
 
@@ -149,7 +151,8 @@ export class AiToolsController {
         private readonly savedPrompts: SavedPromptsService,
         private readonly promptVariables: PromptVariableRegistry,
         private readonly systemPrompts: SystemPromptsService,
-        private readonly resolveEndUser: EndUserResolver
+        private readonly resolveEndUser: EndUserResolver,
+        private readonly screenConfig: ScreenConfigService
     ) {}
 
     /** GET /tools — registry with capability, provider, and enabled state. */
@@ -209,6 +212,60 @@ export class AiToolsController {
     /** GET /providers — installed AI provider plugins for the Provider panel. */
     listProviders = async (_req: Request, res: Response): Promise<void> => {
         res.json({ providers: this.providers.listProviders() });
+    };
+
+    /** GET /screen-config — the untrusted-content output screen policy. */
+    getScreenConfig = async (_req: Request, res: Response): Promise<void> => {
+        res.json(this.screenConfig.get());
+    };
+
+    /**
+     * PUT /screen-config — update the untrusted-content output screen policy.
+     *
+     * Accepts a partial body; each field is validated and unknown/ill-typed
+     * fields are rejected with 400 rather than silently dropped (the service also
+     * normalizes, but a 400 tells the admin their input was wrong instead of
+     * appearing to accept it). Returns the full effective config after the patch.
+     */
+    setScreenConfig = async (req: Request, res: Response): Promise<void> => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const patch: Partial<IUntrustedScreenConfig> = {};
+        let error: string | null = null;
+
+        if (body.enabled !== undefined) {
+            if (typeof body.enabled !== 'boolean') {
+                error = '"enabled" must be a boolean.';
+            } else {
+                patch.enabled = body.enabled;
+            }
+        }
+        if (error === null && body.postureMode !== undefined) {
+            if (body.postureMode !== 'always' && body.postureMode !== 'trifecta') {
+                error = '"postureMode" must be "always" or "trifecta".';
+            } else {
+                patch.postureMode = body.postureMode;
+            }
+        }
+        if (error === null && body.onFailure !== undefined) {
+            if (body.onFailure !== 'open' && body.onFailure !== 'closed') {
+                error = '"onFailure" must be "open" or "closed".';
+            } else {
+                patch.onFailure = body.onFailure;
+            }
+        }
+        if (error === null && body.offenderThreshold !== undefined) {
+            if (typeof body.offenderThreshold !== 'number' || !Number.isFinite(body.offenderThreshold) || body.offenderThreshold < 0) {
+                error = '"offenderThreshold" must be a non-negative number.';
+            } else {
+                patch.offenderThreshold = body.offenderThreshold;
+            }
+        }
+        if (error !== null) {
+            res.status(400).json({ error });
+            return;
+        }
+        const updated = await this.screenConfig.update(patch);
+        res.json(updated);
     };
 
     /** GET /variables — every prompt variable (dynamic + static) with classification and size. */

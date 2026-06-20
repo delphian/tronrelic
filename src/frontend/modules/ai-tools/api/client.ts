@@ -10,6 +10,7 @@
 import type {
     IAiToolInfo,
     IAiToolCapability,
+    IUntrustedScreenConfig,
     AiToolSensitivity,
     ICurationPreview,
     ITrifectaStatus,
@@ -683,6 +684,34 @@ export async function saveSystemPrompt(request: ISaveSystemPromptRequest): Promi
  */
 export async function deleteSystemPrompt(id: string): Promise<void> {
     await parse(await fetch(`${BASE}/system-prompts/${encodeURIComponent(id)}`, { method: 'DELETE' }), 'delete system prompt');
+}
+
+/**
+ * Fetch the untrusted-content output screen policy — the master switch, when the
+ * screen runs, how it fails, and the offender throttle threshold. The section
+ * editor seeds its controls from this effective config.
+ *
+ * @returns The current screen policy.
+ */
+export async function getScreenConfig(): Promise<IUntrustedScreenConfig> {
+    return parse<IUntrustedScreenConfig>(await fetch(`${BASE}/screen-config`), 'load screen config');
+}
+
+/**
+ * Apply a partial update to the untrusted-content output screen policy and return
+ * the full effective config the backend validated and stored. Sending only the
+ * changed field keeps each control's save independent — a bad value 400s without
+ * disturbing the others.
+ *
+ * @param patch - The subset of fields to change.
+ * @returns The full effective config after the update.
+ */
+export async function setScreenConfig(patch: Partial<IUntrustedScreenConfig>): Promise<IUntrustedScreenConfig> {
+    return parse<IUntrustedScreenConfig>(await fetch(`${BASE}/screen-config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch)
+    }), 'save screen config');
 }
 
 /**

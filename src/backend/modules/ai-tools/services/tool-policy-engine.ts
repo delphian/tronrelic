@@ -31,7 +31,8 @@ import type {
     ISystemLogService,
     IToolInvocationContext,
     IToolPolicy,
-    IToolPolicyDecision
+    IToolPolicyDecision,
+    IUntrustedScreenConfig
 } from '@/types';
 
 /** Core `_kv` key (manually namespaced) for per-tool policy overrides. */
@@ -52,6 +53,14 @@ const GLOBAL_RATE = { max: 240, windowMs: 60_000 };
 
 /** Fixed window over which a tool's spend accumulates against its cost ceiling. */
 const COST_WINDOW_MS = 86_400_000;
+
+/**
+ * Window over which untrusted-content screen flags from one tool accumulate
+ * toward the offender throttle. One minute matches the rate window: a tool that
+ * keeps returning attacker-influenced content gets throttled within the minute,
+ * then self-heals at expiry so a transient burst does not ban it permanently.
+ */
+const SCREEN_HIT_WINDOW_MS = 60_000;
 
 /**
  * Absorbs binary-float error when deriving the call cap from a dollar ceiling so
@@ -75,6 +84,24 @@ const GLOBAL_KEY = '__global__';
 export interface IRateLimitRedis {
     incr(key: string): Promise<number>;
     expire(key: string, seconds: number, mode?: 'NX'): Promise<unknown>;
+    /**
+     * Read a counter without incrementing it — used by the screen-offender gate,
+     * which must check the current flag count before a call runs (the rate/cost
+     * gates only ever increment-then-compare). Optional so the structural type
+     * still matches a minimal fake; ioredis satisfies it. Absent or throwing
+     * falls back to the in-memory window peek.
+     */
+    get?(key: string): Promise<string | null>;
+}
+
+/**
+ * The slice of the screen config the policy engine reads — only the offender
+ * threshold gates a call. Structural so the engine never imports
+ * `ScreenConfigService` (avoids a service-to-service import cycle); the concrete
+ * service satisfies it.
+ */
+export interface IScreenThresholdSource {
+    get(): IUntrustedScreenConfig;
 }
 
 /** In-memory fixed-window counter (fallback when Redis is absent or down). */
@@ -106,11 +133,15 @@ export class ToolPolicyEngine {
      * @param database - Core database for persisting admin policy overrides.
      * @param redis - Optional Redis client backing the rate/cost counters. When
      *          omitted, counters are process-local and reset on restart.
+     * @param screenConfig - Optional source of the untrusted-content screen
+     *          policy; only the offender threshold is read, to gate a tool that
+     *          keeps returning screen-flagged content. Omitted → no screen throttle.
      */
     constructor(
         private readonly logger: ISystemLogService,
         private readonly database: IDatabaseService,
-        private readonly redis?: IRateLimitRedis
+        private readonly redis?: IRateLimitRedis,
+        private readonly screenConfig?: IScreenThresholdSource
     ) {}
 
     /**
@@ -324,6 +355,14 @@ export class ToolPolicyEngine {
                 verdict: 'deny',
                 reason: 'External tools are barred from autonomous (scheduled/programmatic) runs unless explicitly authorized.'
             };
+        } else if (await this.isScreenThrottled(tool.name)) {
+            // A tool that has repeatedly returned untrusted content the output
+            // screen flagged is throttled for the rest of its window — an
+            // injected source that keeps trying is cut off rather than re-screened
+            // on every call. Checked before approval/rate so a throttled tool
+            // never even parks an approval. Zero threshold disables this.
+            counters.denied++;
+            decision = { verdict: 'deny', reason: `"${tool.name}" returned repeated untrusted-content screen hits and is temporarily throttled.` };
         } else if (policy.requireApproval) {
             counters.needsApproval++;
             decision = { verdict: 'needs-approval', reason: 'This tool requires human approval before it runs.' };
@@ -365,6 +404,63 @@ export class ToolPolicyEngine {
             return true;
         }
         return this.admitCostCall(tool.name, costCap);
+    }
+
+    /**
+     * Record that the untrusted-content output screen flagged a result from this
+     * tool. Increments the tool's screen-offender window through the same
+     * cross-instance counter the rate limiter uses, so once the count crosses the
+     * configured threshold {@link check} throttles further calls. Called by the
+     * governor after a flagged verdict.
+     *
+     * @param name - The tool whose result was flagged.
+     * @returns The offender count after this hit, for logging/tests.
+     */
+    async recordScreenHit(name: string): Promise<number> {
+        return this.hit(`scr:${name}`, SCREEN_HIT_WINDOW_MS);
+    }
+
+    /**
+     * Whether a tool is currently throttled for repeated screen hits. Reads the
+     * offender counter without incrementing it (a gate, not a charge) and
+     * compares against the admin-configured threshold; a threshold of zero (or no
+     * screen config wired) disables throttling entirely.
+     *
+     * @param name - The tool being gated.
+     * @returns True when the tool's offender count has reached the threshold.
+     */
+    private async isScreenThrottled(name: string): Promise<boolean> {
+        const threshold = this.screenConfig?.get().offenderThreshold ?? 0;
+        if (threshold <= 0) {
+            return false;
+        }
+        const count = await this.peek(`scr:${name}`);
+        return count >= threshold;
+    }
+
+    /**
+     * Read a fixed-window counter's current value without incrementing it. Uses
+     * Redis `GET` when available so the offender gate sees the same cross-instance
+     * count the hits accumulate into; falls back to the in-memory window (treating
+     * an expired window as zero) when Redis is absent, lacks `get`, or throws.
+     *
+     * @param key - Logical counter key (prefixed for Redis).
+     * @returns The counter's current value, or 0 when unset or expired.
+     */
+    private async peek(key: string): Promise<number> {
+        if (this.redis?.get) {
+            try {
+                const raw = await this.redis.get(RL_PREFIX + key);
+                return raw ? Number(raw) || 0 : 0;
+            } catch (error) {
+                this.logger.warn({ error, key }, 'AI tool rate store: Redis peek failed, falling back to in-memory counter');
+            }
+        }
+        const window = this.memWindows.get(key);
+        if (window && Date.now() - window.windowStart < SCREEN_HIT_WINDOW_MS) {
+            return window.count;
+        }
+        return 0;
     }
 
     /**

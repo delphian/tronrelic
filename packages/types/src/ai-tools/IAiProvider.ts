@@ -19,6 +19,7 @@ import type { IAiQueryResult } from './IAiQueryResult.js';
 import type { IAiStreamChunk } from './IAiStreamChunk.js';
 import type { IModelInfo } from './IModelInfo.js';
 import type { IAiToolInfo } from './IAiToolRegistry.js';
+import type { IContentScreenVerdict } from './IContentScreenVerdict.js';
 
 /**
  * Execution contract every AI provider plugin implements and registers on the
@@ -115,4 +116,28 @@ export interface IAiProvider {
      * @returns Capability-classified info for each enabled server-side tool.
      */
     listActiveServerTools(): Promise<IAiToolInfo[]>;
+
+    /**
+     * Screen one untrusted tool result with the provider's cheapest, fastest
+     * model before the main model is allowed to act on it. The provider owns the
+     * model choice (Haiku for Anthropic, a mini tier for another vendor) so core
+     * never names a vendor model — that is what keeps the screen provider-neutral.
+     *
+     * The call MUST be isolated: no tools, no template variables, no conversation
+     * history — only the supplied text and a classifier instruction. That
+     * isolation is the security property: the screener cannot act, so injected
+     * text in `text` can mislead the verdict but can never trigger a tool or
+     * exfiltrate. Throw to signal the screen could not run; the governor maps a
+     * throw to its configured fail-open/closed behaviour.
+     *
+     * Optional: a provider that omits this makes the governor treat the screen as
+     * unavailable and apply the same fail-open/closed policy. The active provider
+     * may also gate the feature behind its own config (e.g. a screen-model
+     * setting); when disabled there it should still implement the method and
+     * either screen with a default model or throw to defer to core's policy.
+     *
+     * @param text - The untrusted, attacker-influenceable tool output to classify.
+     * @returns A provider-neutral verdict the governor uses to forward or withhold.
+     */
+    screenUntrustedContent?(text: string): Promise<IContentScreenVerdict>;
 }
