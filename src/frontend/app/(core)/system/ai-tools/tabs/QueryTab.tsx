@@ -835,7 +835,8 @@ export function QueryTab() {
                                         </div>
                                         <span
                                             className={styles.history_item_cost}
-                                            title="Estimated total cost of this conversation, summed across turns at the provider's per-model rates."
+                                            title="Estimated cost across this conversation's recently-loaded turns, at the provider's per-model rates. Open the conversation to see every turn."
+                                            aria-label={group.costUsd !== null ? `Estimated cost across loaded turns: ${formatUsd(group.costUsd)}` : 'Cost not available'}
                                         >
                                             {formatUsd(group.costUsd)}
                                         </span>
