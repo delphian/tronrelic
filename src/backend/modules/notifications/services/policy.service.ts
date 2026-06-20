@@ -45,11 +45,17 @@ export class PolicyService {
      * @returns The updated policy.
      */
     async setChannel(channelId: string, enabled: boolean): Promise<INotificationPolicy> {
+        // Read-modify-write the whole channels map rather than a dotted `$set`
+        // field path: a channel id containing `.` would otherwise be expanded
+        // into nested Mongo fields, while every read treats the id as a flat
+        // literal key. Storing the map keeps the literal-key contract intact.
+        const current = await this.get();
+        const channels = { ...current.channels, [channelId]: enabled };
         await this.database
             .getCollection<INotificationPolicyDocument>(POLICY_COLLECTION)
             .updateOne(
                 { _id: POLICY_DOC_ID },
-                { $set: { [`channels.${channelId}`]: enabled, updatedAt: new Date() } },
+                { $set: { channels, updatedAt: new Date() } },
                 { upsert: true }
             );
         this.logger.info({ channelId, enabled }, 'Notification channel policy updated');
@@ -64,11 +70,19 @@ export class PolicyService {
      * @returns The updated policy.
      */
     async setCategory(categoryId: string, enabled: boolean): Promise<INotificationPolicy> {
+        // Read-modify-write the whole categories map rather than a dotted `$set`
+        // field path. A category id containing `.` (the built-in
+        // `ai-tools.scheduled-prompt-run`) would otherwise be expanded into
+        // nested Mongo fields, while dispatch and the admin read path check the
+        // flat literal key `categories[categoryId]` — the disable would silently
+        // never take effect. Storing the map keeps the literal-key contract.
+        const current = await this.get();
+        const categories = { ...current.categories, [categoryId]: enabled };
         await this.database
             .getCollection<INotificationPolicyDocument>(POLICY_COLLECTION)
             .updateOne(
                 { _id: POLICY_DOC_ID },
-                { $set: { [`categories.${categoryId}`]: enabled, updatedAt: new Date() } },
+                { $set: { categories, updatedAt: new Date() } },
                 { upsert: true }
             );
         this.logger.info({ categoryId, enabled }, 'Notification category policy updated');
