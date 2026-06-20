@@ -139,7 +139,8 @@ export class CurationQueue {
     async resolve(
         id: string,
         status: Exclude<CurationItemStatus, 'pending'>,
-        decidedBy?: string
+        decidedBy?: string,
+        preview?: ICurationPreview
     ): Promise<ICurationItem | null> {
         const existing = await this.database.findOne<ICurationItem>(COLLECTION, { id, status: 'pending' });
         let resolved: ICurationItem | null = null;
@@ -149,9 +150,16 @@ export class CurationQueue {
             if (decidedBy !== undefined) {
                 setFields.decidedBy = decidedBy;
             }
+            // Freeze the decision-time preview into the same atomic update as the
+            // status transition, so history shows exactly what the curator decided
+            // on and only the winning transition persists it. The service supplies
+            // it (the queue has no type registry); absent, the cached snapshot stands.
+            if (preview !== undefined) {
+                setFields.preview = preview;
+            }
             const modified = await this.database.updateMany(COLLECTION, { id, status: 'pending' }, { $set: setFields });
             if (modified > 0) {
-                resolved = { ...existing, status, decidedAt, decidedBy };
+                resolved = { ...existing, status, decidedAt, decidedBy, preview: preview ?? existing.preview };
                 this.logger.info({ id, status, decidedBy }, `Curation item ${status}: ${existing.typeId}`);
             }
         }
