@@ -14,6 +14,13 @@ export { AI_TOOL_NAME_PATTERN } from './IAiTool.js';
 export type { IUntrustedToolResult } from './untrusted-content.js';
 export { UNTRUSTED_CONTENT_NOTICE, UNTRUSTED_CONTENT_SYSTEM_CLAUSE, wrapUntrustedToolResult } from './untrusted-content.js';
 export type { IAiToolCapability, AiToolSideEffect, AiToolSensitivity } from './IAiToolCapability.js';
+export type { IContentScreenVerdict } from './IContentScreenVerdict.js';
+export type {
+    IUntrustedScreenConfig,
+    UntrustedScreenPostureMode,
+    UntrustedScreenFailureMode
+} from './IUntrustedScreenConfig.js';
+export { DEFAULT_UNTRUSTED_SCREEN_CONFIG } from './IUntrustedScreenConfig.js';
 export type { IToolPolicy, IToolPolicyDecision, ToolPolicyVerdict } from './IToolPolicy.js';
 export type { IToolInvocationContext, IToolInvocationActor, IToolEndUserPrincipal, ToolTriggerPath } from './IToolInvocationContext.js';
 export type { IToolInvocationResult, ToolInvocationStatus } from './IToolInvocationResult.js';

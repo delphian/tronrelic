@@ -18,6 +18,7 @@ import type {
     IAiTool,
     IAiToolCapability,
     IAiToolGovernor,
+    IContentScreenVerdict,
     IHookRegistry,
     ISystemLogService,
     IServerToolInvocation,
@@ -25,6 +26,7 @@ import type {
     IToolInvocationContext,
     IToolInvocationRecord,
     IToolInvocationResult,
+    IUntrustedScreenConfig,
     ToolInvocationStatus
 } from '@/types';
 import { isHookAbortError, wrapUntrustedToolResult } from '@/types';
@@ -34,6 +36,46 @@ import type { AiToolRegistry } from './ai-tool-registry.js';
 import type { ToolPolicyEngine } from './tool-policy-engine.js';
 import type { ToolAuditStore } from './tool-audit-store.js';
 import type { ToolApprovalQueue, IToolApprovalRequest } from './tool-approval-queue.js';
+import type { ScreenConfigService } from './screen-config.service.js';
+import type { AiProviderRegistry } from './ai-provider-registry.js';
+
+/**
+ * Optional dependencies that enable the untrusted-content output screen. Absent
+ * in unit tests and during a pre-provider boot, in which case the governor skips
+ * screening entirely (it behaves exactly as before this layer was added). When
+ * present, the governor screens a `surfacesUntrustedContent` result through the
+ * active provider's cheap model before forwarding it to the model.
+ */
+export interface IGovernorScreenDeps {
+    /** The admin-tunable screen policy (master switch, posture, failure mode). */
+    config: ScreenConfigService;
+
+    /** Provider registry; the active provider supplies the cheap screening model. */
+    providers: AiProviderRegistry;
+
+    /**
+     * Whether an external egress sink is currently enabled — the `trifecta`
+     * posture screens only when this is true (no sink → nothing to exfiltrate to
+     * → screening defends an unreachable path). Async so the module can fold in
+     * the provider's server tools without blocking construction.
+     */
+    isEgressReachable: () => boolean | Promise<boolean>;
+}
+
+/** Neutral marker forwarded to the model in place of a withheld untrusted result. */
+const WITHHELD_CONTENT_DEFAULT_REASON = 'Untrusted content was withheld by the output screen.';
+
+/**
+ * Render a handler result as the text the screen classifies. A string passes
+ * through; anything else is JSON-encoded so structured output is screened in
+ * full rather than as `[object Object]`.
+ *
+ * @param result - The handler's raw return value.
+ * @returns A string representation for the screen.
+ */
+function resultToText(result: unknown): string {
+    return typeof result === 'string' ? result : JSON.stringify(result ?? '');
+}
 
 /** Wall-clock budget for a single handler before the governor stops awaiting it. */
 const HANDLER_TIMEOUT_MS = 30_000;
@@ -168,6 +210,9 @@ export class AiToolGovernor implements IAiToolGovernor {
      * @param audit - The invocation audit store.
      * @param approvals - The human-approval queue.
      * @param hookRegistry - Hook registry for the pre/post tool seams.
+     * @param screen - Optional untrusted-content screen dependencies. Omitted in
+     *   tests and pre-provider boots, in which case screening is a no-op and
+     *   results flow exactly as they did before the screen existed.
      */
     constructor(
         private readonly logger: ISystemLogService,
@@ -175,7 +220,8 @@ export class AiToolGovernor implements IAiToolGovernor {
         private readonly policy: ToolPolicyEngine,
         private readonly audit: ToolAuditStore,
         private readonly approvals: ToolApprovalQueue,
-        private readonly hookRegistry: IHookRegistry
+        private readonly hookRegistry: IHookRegistry,
+        private readonly screen?: IGovernorScreenDeps
     ) {}
 
     /** Optional sink for refetch signals over WebSocket; wired by the module. */
@@ -326,6 +372,7 @@ export class AiToolGovernor implements IAiToolGovernor {
         let content: unknown;
         let error: string | undefined;
         let resultDigest: string | undefined;
+        let screenOutcome: { flagged: boolean; reason?: string } | undefined;
 
         try {
             // Carry the auto-approve decision across the handler call so any
@@ -340,14 +387,32 @@ export class AiToolGovernor implements IAiToolGovernor {
             // handler can rely on it; other tools receive `undefined` and ignore it.
             const result = await runWithCurationAutoApprove(autoApprove, () => this.runWithTimeout(tool, input, ctx.endUser));
             status = 'ok';
-            // Provenance separation: a tool that surfaces attacker-influenceable
-            // text is wrapped here, in the provider-neutral chokepoint, so every
-            // provider transport receives already-labeled data and physically
-            // cannot forward the raw payload to the model. Keyed off the declared
-            // capability core already owns — not provider cooperation. Only the
-            // handler's own output is untrusted; the digest records the raw value.
-            content = cap.surfacesUntrustedContent === true ? wrapUntrustedToolResult(result) : result;
+            // The digest records the raw value regardless of what the model sees,
+            // so the audit trail is complete even when the screen withholds.
             resultDigest = digestResult(result);
+            if (cap.surfacesUntrustedContent === true) {
+                // Active output screen: classify attacker-influenceable text with
+                // the provider's cheap model before the main model can act on it.
+                // A no-op when the screen is disabled, unconfigured, or posture-
+                // gated off (see screenUntrusted).
+                const screened = await this.screenUntrusted(tool, result);
+                screenOutcome = screened.screen;
+                if (screened.withhold) {
+                    // The screen judged the result hostile (or failed closed): the
+                    // model must never see it. Replace the body with a neutral
+                    // marker; the raw value is already digested into the record.
+                    content = { contentWithheld: true, reason: screened.screen?.reason ?? WITHHELD_CONTENT_DEFAULT_REASON };
+                } else {
+                    // Forwarded — still provenance-wrapped so the model receives
+                    // labeled, JSON-escaped data, never raw untrusted text. This
+                    // wrap lives in the provider-neutral chokepoint, keyed off the
+                    // declared capability core already owns, so every transport
+                    // physically cannot forward the raw payload.
+                    content = wrapUntrustedToolResult(result);
+                }
+            } else {
+                content = result;
+            }
         } catch (caught: unknown) {
             status = 'error';
             error = caught instanceof Error ? caught.message : String(caught);
@@ -355,7 +420,7 @@ export class AiToolGovernor implements IAiToolGovernor {
             this.logger.error({ tool: tool.name, error }, `AI tool handler failed: ${tool.name}`);
         }
 
-        const record = this.buildRecord(tool.name, providerId, cap, ctx, input, status, { resultDigest, error, durationMs: Date.now() - startedAt });
+        const record = this.buildRecord(tool.name, providerId, cap, ctx, input, status, { resultDigest, error, durationMs: Date.now() - startedAt, screen: screenOutcome });
         await this.audit.record(record);
         await this.notifyInvoked(record);
 
@@ -384,6 +449,93 @@ export class AiToolGovernor implements IAiToolGovernor {
                 clearTimeout(timer);
             }
         }
+    }
+
+    /**
+     * Screen an untrusted tool result before the model is allowed to act on it.
+     * Active defense-in-depth beneath the provenance wrap and the trifecta /
+     * approval controls: the provider's cheap model classifies the result in
+     * isolation, and a flagged result is withheld from the model entirely.
+     *
+     * Every gate is configuration, never hard-coded — the master switch, the
+     * posture mode, and the failure mode all come from the admin-tuned config:
+     *  - screen disabled, or no screen deps wired → no-op, forward as before;
+     *  - `trifecta` posture and no egress sink enabled → skip (nothing to
+     *    exfiltrate to, so the screen would defend an unreachable path);
+     *  - no provider screen available, or the screen throws → honour `onFailure`
+     *    (`open` forwards, `closed` withholds);
+     *  - a flagged verdict → record an offender hit and withhold.
+     *
+     * @param tool - The tool whose untrusted result is being screened.
+     * @param result - The handler's raw return value.
+     * @returns The screen outcome (for the audit record) and whether to withhold.
+     */
+    private async screenUntrusted(tool: IAiTool, result: unknown): Promise<{ screen?: { flagged: boolean; reason?: string }; withhold: boolean }> {
+        const deps = this.screen;
+        if (!deps) {
+            return { withhold: false };
+        }
+        const cfg = deps.config.get();
+        if (!cfg.enabled) {
+            return { withhold: false };
+        }
+        if (cfg.postureMode === 'trifecta') {
+            let armed: boolean;
+            try {
+                armed = await deps.isEgressReachable();
+            } catch (error) {
+                // The posture probe failed — never skip the screen because we
+                // could not measure posture. Fail safe toward screening.
+                this.logger.warn({ tool: tool.name, error }, 'Egress-posture probe failed; screening untrusted result regardless');
+                armed = true;
+            }
+            if (!armed) {
+                return { withhold: false };
+            }
+        }
+        const provider = deps.providers.getActive();
+        const screenFn = provider && typeof provider.screenUntrustedContent === 'function'
+            ? provider.screenUntrustedContent.bind(provider)
+            : undefined;
+        if (!screenFn) {
+            return this.onScreenUnavailable(tool, cfg, 'no provider screen available');
+        }
+        let verdict: IContentScreenVerdict;
+        try {
+            verdict = await screenFn(resultToText(result));
+        } catch (error) {
+            this.logger.warn({ tool: tool.name, error }, 'Untrusted-content screen failed to produce a verdict');
+            return this.onScreenUnavailable(tool, cfg, 'screen error');
+        }
+        if (verdict.flagged) {
+            // Count this against the tool's offender window; the policy engine
+            // throttles the tool once it crosses the configured threshold.
+            await this.policy.recordScreenHit(tool.name);
+            this.logger.warn({ tool: tool.name, reason: verdict.reason }, 'Untrusted-content screen flagged a tool result; withholding from the model');
+            return { screen: { flagged: true, reason: verdict.reason }, withhold: true };
+        }
+        return { screen: { flagged: false, reason: verdict.reason }, withhold: false };
+    }
+
+    /**
+     * Resolve what to do when the screen cannot produce a verdict (no provider
+     * screen, or the screen threw), per the admin-configured failure mode.
+     * `open` forwards the result — defense-in-depth degrades gracefully because
+     * the governor's other controls still hold, and failing closed would deny
+     * legitimate reads on a transient outage. `closed` withholds it.
+     *
+     * @param tool - The tool whose result could not be screened.
+     * @param cfg - The effective screen config carrying the failure mode.
+     * @param why - Short reason the screen was unavailable, for logs and audit.
+     * @returns The outcome and whether to withhold.
+     */
+    private onScreenUnavailable(tool: IAiTool, cfg: IUntrustedScreenConfig, why: string): { screen: { flagged: boolean; reason?: string }; withhold: boolean } {
+        if (cfg.onFailure === 'closed') {
+            this.logger.warn({ tool: tool.name, why }, 'Untrusted-content screen unavailable; failing closed (withholding result)');
+            return { screen: { flagged: false, reason: `Screen unavailable (${why}); withheld by fail-closed policy.` }, withhold: true };
+        }
+        this.logger.warn({ tool: tool.name, why }, 'Untrusted-content screen unavailable; failing open (forwarding result)');
+        return { screen: { flagged: false, reason: `Screen unavailable (${why}); forwarded by fail-open policy.` }, withhold: false };
     }
 
     /**
@@ -450,7 +602,7 @@ export class AiToolGovernor implements IAiToolGovernor {
         ctx: IToolInvocationContext,
         input: Record<string, unknown>,
         status: ToolInvocationStatus,
-        extra: { resultDigest?: string; error?: string; durationMs?: number }
+        extra: { resultDigest?: string; error?: string; durationMs?: number; screen?: { flagged: boolean; reason?: string } }
     ): IToolInvocationRecord {
         const record: IToolInvocationRecord = {
             id: crypto.randomUUID(),
@@ -484,6 +636,9 @@ export class AiToolGovernor implements IAiToolGovernor {
         }
         if (extra.error !== undefined) {
             record.error = extra.error;
+        }
+        if (extra.screen !== undefined) {
+            record.screen = extra.screen;
         }
         return record;
     }

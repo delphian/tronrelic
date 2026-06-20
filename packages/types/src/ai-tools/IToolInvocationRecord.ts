@@ -65,6 +65,21 @@ export interface IToolInvocationRecord {
     /** Cost of the invocation in USD, for money-spending tools. */
     costUsd?: number;
 
+    /**
+     * Outcome of the untrusted-content output screen, when the result was
+     * screened. Present only for a tool that surfaces untrusted content while the
+     * screen was enabled and reached (a provider screen ran, or the screen failed
+     * and the governor acted on it). `flagged` true means the result was withheld
+     * from the model; `reason` carries the classifier's rationale for review.
+     */
+    screen?: {
+        /** Whether the screen judged the content to carry injection/exfiltration. */
+        flagged: boolean;
+
+        /** Classifier rationale, or the reason the screen could not run. */
+        reason?: string;
+    };
+
     /** Handler wall-clock duration in milliseconds. */
     durationMs: number;
 

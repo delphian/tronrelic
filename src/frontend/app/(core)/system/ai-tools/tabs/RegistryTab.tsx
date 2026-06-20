@@ -22,6 +22,7 @@ import { CollapsibleSection } from '../components/CollapsibleSection';
 import { RegistryToolRow } from '../components/RegistryToolRow';
 import { VariablesSection } from './VariablesSection';
 import { SystemPromptsSection } from './SystemPromptsSection';
+import { ScreenSettingsSection } from './ScreenSettingsSection';
 import styles from '../page.module.scss';
 
 /** Total column count of the Tools table — used so an expanded editor cell spans it. */
@@ -150,6 +151,7 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
             </CollapsibleSection>
             <VariablesSection onChanged={onChanged} />
             <SystemPromptsSection />
+            <ScreenSettingsSection />
         </Stack>
     );
 }

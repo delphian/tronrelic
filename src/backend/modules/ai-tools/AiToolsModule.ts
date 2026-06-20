@@ -42,6 +42,7 @@ import { ToolAuditStore } from './services/tool-audit-store.js';
 import { ToolApprovalQueue } from './services/tool-approval-queue.js';
 import { AiToolGovernor } from './services/ai-tool-governor.js';
 import { AiProviderRegistry } from './services/ai-provider-registry.js';
+import { ScreenConfigService } from './services/screen-config.service.js';
 import { AiQueryHistoryService } from './services/ai-query-history.service.js';
 import { CurationQueue } from './services/curation-queue.js';
 import { CurationService } from './services/curation-service.js';
@@ -155,6 +156,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private curation!: CurationService;
     private governor!: AiToolGovernor;
     private providerRegistry!: AiProviderRegistry;
+    private screenConfig!: ScreenConfigService;
     private queryHistory!: AiQueryHistoryService;
     private savedPrompts!: SavedPromptsService;
     private promptVariables!: PromptVariableRegistry;
@@ -200,7 +202,17 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             this.logger.warn({ error }, 'Redis unavailable at init; AI tool rate/cost limits will be per-instance in-memory');
         }
 
-        this.policy = new ToolPolicyEngine(this.logger, this.database, rateLimitRedis);
+        // The provider-neutral, _kv-backed untrusted-content screen policy. Loaded
+        // before the policy engine and governor because both read it — the policy
+        // engine for the offender threshold, the governor on every screen decision.
+        this.screenConfig = new ScreenConfigService(this.logger, this.database);
+        await this.screenConfig.load();
+
+        // Constructed here (ahead of the governor) so the governor's screen deps
+        // can hold it; it stays empty until a provider plugin registers at runtime.
+        this.providerRegistry = new AiProviderRegistry(this.logger);
+
+        this.policy = new ToolPolicyEngine(this.logger, this.database, rateLimitRedis, this.screenConfig);
         await this.policy.loadOverrides();
 
         this.audit = new ToolAuditStore(this.logger, this.database);
@@ -219,8 +231,11 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         // disabled — verification rather than the honour-system boolean alone.
         this.policy.setCurationResolver((typeId) => this.curation.hasType(typeId));
 
-        this.governor = new AiToolGovernor(this.logger, this.registry, this.policy, this.audit, this.approvals, this.hookRegistry);
-        this.providerRegistry = new AiProviderRegistry(this.logger);
+        this.governor = new AiToolGovernor(this.logger, this.registry, this.policy, this.audit, this.approvals, this.hookRegistry, {
+            config: this.screenConfig,
+            providers: this.providerRegistry,
+            isEgressReachable: () => this.isEgressReachable()
+        });
 
         this.queryHistory = new AiQueryHistoryService(this.logger, this.database);
         await this.queryHistory.ensureIndexes();
@@ -270,7 +285,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             () => this.serviceRegistry.get<IAccountDirectoryService>('accounts')
         );
 
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser);
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig);
 
         this.logger.info('ai-tools module initialized');
     }
@@ -459,6 +474,40 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     }
 
     /**
+     * Whether an external egress sink is currently reachable — the signal the
+     * governor's `trifecta`-posture screen gates on. True when any enabled
+     * registry tool is `external` (a governed sink the model can drive) or the
+     * active provider exposes a server-side tool (Anthropic's `web_fetch` — an
+     * un-governed egress). When neither exists, injected instructions have
+     * nowhere to send data, so the screen can safely skip the result.
+     *
+     * Mirrors the egress half of the lethal-trifecta detector deliberately: the
+     * screen defends exactly the configurations the trifecta banner calls armed.
+     * A provider read that throws degrades to "registry-only" rather than
+     * forcing the screen off — fail safe toward screening.
+     *
+     * @returns True when an exfiltration channel is enabled.
+     */
+    private async isEgressReachable(): Promise<boolean> {
+        const externalEnabled = this.registry.getEnabledTools().some(t => t.capability?.sideEffect === 'external');
+        if (externalEnabled) {
+            return true;
+        }
+        const provider = this.providerRegistry.getActive();
+        if (provider && typeof provider.listActiveServerTools === 'function') {
+            try {
+                const serverTools = await provider.listActiveServerTools();
+                if (serverTools.length > 0) {
+                    return true;
+                }
+            } catch (error) {
+                this.logger.warn({ error }, 'Egress-posture probe: provider server-tool lookup failed; treating as registry-only');
+            }
+        }
+        return false;
+    }
+
+    /**
      * The tool governor, for tests and in-process consumers.
      *
      * @returns The governor instance.
@@ -469,6 +518,35 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             throw new Error('AiToolsModule not initialized - call init() first');
         }
         return this.governor;
+    }
+
+    /**
+     * The provider registry, for tests and in-process consumers — e.g. a test
+     * that installs a fake active provider to exercise the untrusted-content
+     * screen path the governor routes through it.
+     *
+     * @returns The provider registry instance.
+     * @throws If called before `init()`.
+     */
+    getProviderRegistry(): AiProviderRegistry {
+        if (!this.providerRegistry) {
+            throw new Error('AiToolsModule not initialized - call init() first');
+        }
+        return this.providerRegistry;
+    }
+
+    /**
+     * The untrusted-content screen config service, for tests and in-process
+     * consumers that need to toggle the screen's master switch or posture.
+     *
+     * @returns The screen config service instance.
+     * @throws If called before `init()`.
+     */
+    getScreenConfig(): ScreenConfigService {
+        if (!this.screenConfig) {
+            throw new Error('AiToolsModule not initialized - call init() first');
+        }
+        return this.screenConfig;
     }
 
     /**
