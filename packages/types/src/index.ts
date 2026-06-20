@@ -43,6 +43,26 @@ export type { IPage, IPageSettings, IPageService, IMarkdownService, IFrontmatter
 export type { IStorageProvider, IStorageObjectStat, IFileService, IFileRecord, IFileSource, IFileUploadOptions, IFileListFilter, IVariantOptions, IFileVariant, IFilesSettings, IFilesSettingsService } from './files/index.js';
 export { FILE_SOURCE_KINDS, FileValidationError, FileSizeExceededError } from './files/index.js';
 export type { IModule, IModuleMetadata } from './module/index.js';
+export type {
+    NotificationSeverity,
+    NotificationDisposer,
+    INotificationAudience,
+    INotificationCategory,
+    INotificationRecipient,
+    IRenderedNotification,
+    IChannelDeliveryResult,
+    INotificationChannel,
+    INotificationRequest,
+    INotificationChannelTally,
+    INotificationReceipt,
+    INotificationChannelInfo,
+    INotificationService,
+    INotificationPreferences,
+    INotificationPreferenceUpdate,
+    INotificationPolicy,
+    INotificationAuditRecord,
+    INotificationAuditQuery
+} from './notifications/index.js';
 export type { IWalletService, ILinkedWallet, WalletAction, IWalletChallenge, IWalletMutationInput, IAccountDirectoryService, IAccountSummary, IListAccountsOptions, IListAccountsResult } from './identity/index.js';
 export type { IUserGroup, ICreateUserGroupInput, IUpdateUserGroupInput, IUserGroupService } from './user/index.js';
 export type { ITronGridService, ITronGridAccountResponse, ITronGridAccountPermission } from './tron-grid/index.js';

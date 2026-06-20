@@ -15,7 +15,7 @@ import { normalizeContractType, resolveOwnerAddress, resolveRecipient, resolveAm
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { getRedisClient } from '../../loaders/redis.js';
-import { NotificationService } from '../../services/notification.service.js';
+import { WebSocketService } from '../../services/websocket.service.js';
 import { AlertService } from '../../services/alert.service.js';
 import { PriceService } from '../../services/price.service.js';
 import { AddressInsightService } from '../../services/address-insight.service.js';
@@ -90,7 +90,7 @@ export class BlockchainService implements IBlockchainService {
     private readonly redis: RedisClient;
     private readonly queue: QueueService<BlockSyncJob>;
     private readonly tronClient = TronGridClient.getInstance();
-    private readonly notifications: NotificationService;
+    private readonly websocket = WebSocketService.getInstance();
     private readonly lockToken = randomUUID();
     private readonly alerts: AlertService;
     private readonly priceService = PriceService.getInstance();
@@ -108,7 +108,6 @@ export class BlockchainService implements IBlockchainService {
     private constructor() {
         const database = BlockchainService.getDatabase();
         this.redis = getRedisClient();
-        this.notifications = new NotificationService(database);
         this.alerts = new AlertService(database, this.tronClient);
         this.queue = new QueueService<BlockSyncJob>(
             'block-sync',
@@ -1417,7 +1416,7 @@ export class BlockchainService implements IBlockchainService {
     ) {
         const blockTimestamp = new Date(block.block_header.raw_data.timestamp);
 
-        await this.notifications.broadcast({
+        this.websocket.emit({
             event: 'block:new',
             payload: {
                 blockNumber,

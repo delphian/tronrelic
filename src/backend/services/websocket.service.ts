@@ -69,6 +69,15 @@ export class WebSocketService implements IWebSocketService {
   private handleConnection(socket: Socket) {
     logger.info({ socketId: socket.id }, 'Client connected');
 
+    // Identity rooms. The handshake middleware already resolved the Better
+    // Auth session onto `socket.data.authSession`; join the socket to a room
+    // keyed by its user id and one per group so the notifications module can
+    // fan out to a specific person or group without the client subscribing.
+    // Per-user silencing is enforced upstream by emitting only to the
+    // `user:${id}` rooms of recipients who have not opted out — so identity
+    // delivery never depends on the client asking for it.
+    this.joinIdentityRooms(socket);
+
     socket.on('subscribe', (pluginIdOrPayload: string | SocketSubscriptions, roomNameOrPayload?: string | any, optionalPayload?: any) => {
       this.handleSubscription(socket, pluginIdOrPayload, roomNameOrPayload, optionalPayload);
     });
@@ -80,6 +89,36 @@ export class WebSocketService implements IWebSocketService {
     socket.on('disconnect', reason => {
       logger.info({ socketId: socket.id, reason }, 'Client disconnected');
     });
+  }
+
+  /**
+   * Join a freshly connected socket to its identity rooms.
+   *
+   * Reads the augmented session stashed during the handshake. A logged-in
+   * socket joins `user:${userId}` (for person-targeted delivery) and
+   * `group:${groupId}` for each group (for future group-wide broadcasts).
+   * Anonymous sockets (`authSession === null`) join nothing — they are never
+   * a notification target. Kept defensive: a malformed session degrades to no
+   * rooms rather than throwing inside the connection handler.
+   *
+   * @param socket - The connecting socket carrying `data.authSession`.
+   */
+  private joinIdentityRooms(socket: Socket): void {
+    const session = (socket.data as { authSession?: { user?: { id?: string }; groups?: string[] } | null }).authSession;
+    const userId = session?.user?.id;
+    if (!userId) {
+      return;
+    }
+
+    socket.join(`user:${userId}`);
+    if (Array.isArray(session?.groups)) {
+      for (const groupId of session!.groups) {
+        if (typeof groupId === 'string' && groupId) {
+          socket.join(`group:${groupId}`);
+        }
+      }
+    }
+    logger.debug({ socketId: socket.id, userId }, 'Joined identity rooms');
   }
 
   /**
@@ -342,6 +381,19 @@ export class WebSocketService implements IWebSocketService {
         // governed data — so a global broadcast is safe.
         this.io.emit(event.event, event.payload);
         break;
+      case 'notification':
+        // Identity-targeted notification fan-out from the notifications module.
+        // `event.rooms` is the resolved set of `user:${id}` rooms — already
+        // filtered by the dispatch pipeline so silenced recipients are absent.
+        // One generic case serves every category forever (categories are data,
+        // not new event cases); empty rooms means fully suppressed, a safe
+        // no-op. The payload carries only display fields, never governed data.
+        if (Array.isArray(event.rooms)) {
+          for (const room of event.rooms) {
+            this.io.to(room).emit(event.event, event.payload);
+          }
+        }
+        break;
       default:
         logger.warn({ event }, 'Unknown socket event');
     }
@@ -367,22 +419,6 @@ export class WebSocketService implements IWebSocketService {
     }
 
     this.io.to(socketId).emit(event, payload);
-  }
-
-  public emitToWallet(wallet: string, event: any) {
-    if (!this.io) {
-      logger.warn('Attempted to emit wallet notification without WebSocket initialization');
-      return;
-    }
-
-    const walletId = wallet.trim();
-    if (!walletId) {
-      logger.warn({ event: event.event }, 'Cannot emit wallet notification without wallet id');
-      return;
-    }
-
-    const room = `notifications:${walletId}`;
-    this.io.to(room).emit(event.event, event.payload);
   }
 
 }

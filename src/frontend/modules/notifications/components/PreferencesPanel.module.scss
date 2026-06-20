@@ -1,0 +1,86 @@
+/**
+ * Styles for the per-user notification preferences matrix. Structure only —
+ * surfaces and controls inherit design tokens. Adapts to its container so it
+ * renders correctly as both an admin tab and a standalone account page.
+ */
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    container-type: inline-size;
+    container-name: notification-prefs;
+}
+
+.mute_row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap-sm);
+    padding: var(--padding-md);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    cursor: pointer;
+}
+
+.mute_row > span {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.mute_title {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.category {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    padding: var(--padding-md);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    margin: 0;
+}
+
+.category_legend {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    padding: 0;
+}
+
+.channels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-md);
+}
+
+.channel_row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    cursor: pointer;
+}
+
+.help {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    margin: 0;
+}
+
+.error {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-danger);
+    margin: 0;
+}
+
+.placeholder {
+    padding: var(--padding-lg);
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}

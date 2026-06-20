@@ -36,6 +36,7 @@ import { IdentityModule } from './modules/identity/index.js';
 import { TrafficModule } from './modules/traffic/index.js';
 import { ToolsModule } from './modules/tools/index.js';
 import { AiToolsModule } from './modules/ai-tools/index.js';
+import { NotificationsModule } from './modules/notifications/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
 import { CacheService } from './services/cache.service.js';
@@ -229,6 +230,7 @@ interface BootstrapContext {
         identity: IdentityModule;
         traffic: TrafficModule;
         tools: ToolsModule;
+        notifications: NotificationsModule;
         aiTools: AiToolsModule;
         scheduler: SchedulerModule;
     };
@@ -286,10 +288,9 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // later in init() and resolved lazily per request.
     const serviceRegistry = new ServiceRegistry(logger);
 
-    // Mount API routes now that coreDatabase and the service registry exist.
-    // Routers receive the shared database instance via dependency injection;
-    // those needing late-bound services also receive the registry.
-    app.use('/api', createApiRouter(coreDatabase, serviceRegistry));
+    // Mount API routes now that coreDatabase exists. Routers receive the shared
+    // database instance via dependency injection.
+    app.use('/api', createApiRouter(coreDatabase));
 
     await initializeCoreServices(coreDatabase);
 
@@ -332,6 +333,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const identityModule = new IdentityModule();
     const trafficModule = new TrafficModule();
     const toolsModule = new ToolsModule();
+    const notificationsModule = new NotificationsModule();
     const aiToolsModule = new AiToolsModule();
     const schedulerModule = new SchedulerModule();
 
@@ -343,6 +345,11 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await identityModule.init(sharedDeps);
     await trafficModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
     await toolsModule.init(sharedDeps);
+    // Notifications module: builds the category/channel registries, preference,
+    // policy, and audit stores. Inits before ai-tools so its run() (which
+    // publishes `'notifications'`) precedes ai-tools' run() that registers a
+    // category and fires scheduled-prompt notifications through it.
+    await notificationsModule.init(sharedDeps);
     // The ai-tools module owns the built-in dynamic prompt variables (lifted out
     // of trp-ai-assistant), so it needs the core services those resolvers read.
     // All are singletons wired by initializeCoreServices() above; the resolvers
@@ -375,6 +382,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             identity: identityModule,
             traffic: trafficModule,
             tools: toolsModule,
+            notifications: notificationsModule,
             aiTools: aiToolsModule,
             scheduler: schedulerModule,
         },
@@ -411,6 +419,11 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     await modules.traffic.run();
     await modules.identity.run();
     await modules.tools.run();
+    // Notifications runs after identity (so `'user-groups'` is published for
+    // audience resolution) and before ai-tools (which registers a category and
+    // fires scheduled-prompt run notifications through the `'notifications'`
+    // service published here).
+    await modules.notifications.run();
     await modules.aiTools.run();
     await modules.scheduler.run();
 

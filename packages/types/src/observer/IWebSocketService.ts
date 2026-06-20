@@ -15,14 +15,4 @@ export interface IWebSocketService {
      * @param event - The socket event containing type and payload data
      */
     emit(event: any): void;
-
-    /**
-     * Emit an event to a specific wallet's notification room.
-     *
-     * Sends a targeted notification to clients subscribed to updates for a specific wallet address.
-     *
-     * @param wallet - The wallet address to send the notification to
-     * @param event - The socket event containing type and payload data
-     */
-    emitToWallet(wallet: string, event: any): void;
 }

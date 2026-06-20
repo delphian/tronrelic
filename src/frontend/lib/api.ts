@@ -1,5 +1,4 @@
 import axios from 'axios';
-import type { NotificationChannel } from '@/shared';
 import { getServerSideApiUrl } from './api-url';
 
 export const apiClient = axios.create({
@@ -105,17 +104,6 @@ export async function getChatIgnoreList(wallet: string): Promise<string[]> {
   });
   const { ignoreList } = response.data as { success: boolean; ignoreList: string[] };
   return ignoreList;
-}
-
-export async function getNotificationPreferences(wallet: string) {
-  const response = await apiClient.get('/notifications/preferences', {
-    params: { wallet }
-  });
-  return (response.data as { success: boolean; preferences: NotificationPreferences }).preferences;
-}
-
-export async function updateNotificationPreferences(payload: NotificationPreferencesRequest) {
-  await apiClient.post('/notifications/preferences', payload);
 }
 
 export interface TimeseriesPoint {
@@ -322,21 +310,5 @@ export interface AttachmentRequestPayload {
   size: number;
   message: string;
   signature: string;
-}
-
-export interface NotificationPreferences {
-  wallet: string;
-  channels: NotificationChannel[];
-  thresholds: Record<string, number>;
-  preferences: Record<string, unknown>;
-  throttleOverrides: Partial<Record<NotificationChannel, number>>;
-}
-
-export interface NotificationPreferencesRequest {
-  wallet: string;
-  channels?: NotificationChannel[];
-  thresholds?: Record<string, number>;
-  preferences?: Record<string, unknown>;
-  throttleOverrides?: Partial<Record<NotificationChannel, number>>;
 }
 

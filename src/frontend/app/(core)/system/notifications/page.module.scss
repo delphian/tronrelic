@@ -1,0 +1,48 @@
+/**
+ * Styles for the /system/notifications admin page. Tab row plus the small
+ * layout helpers the tabs share; visual surfaces come from the tab components'
+ * own modules. Structure only — all values are design tokens.
+ */
+
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+    container-type: inline-size;
+    container-name: notifications-page;
+}
+
+.tabs {
+    display: flex;
+    gap: var(--gap-sm);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    flex-wrap: wrap;
+}
+
+.tab,
+.tab__active {
+    padding: var(--gap-sm) var(--gap-md);
+    background: none;
+    border: none;
+    border-bottom: var(--border-width-medium) solid transparent;
+    cursor: pointer;
+    font-size: var(--font-size-body-lg);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+    transition: color var(--transition-base), border-color var(--transition-base);
+}
+
+.tab:hover {
+    color: var(--color-text);
+}
+
+.tab__active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+}
+
+.content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}

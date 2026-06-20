@@ -27,11 +27,13 @@ import type {
     IMenuService,
     IModule,
     IModuleMetadata,
+    INotificationService,
     ISchedulerService,
     IServiceRegistry,
     ISystemConfigService,
     IUsdtParametersService
 } from '@/types';
+import { ADMIN_GROUP_ID } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { getRedisClient } from '../../loaders/redis.js';
 import { WebSocketService } from '../../services/websocket.service.js';
@@ -50,7 +52,7 @@ import { SavedPromptsService } from './services/saved-prompts.service.js';
 import { PromptVariableRegistry } from './services/prompt-variable-registry.js';
 import { SystemPromptsService } from './services/system-prompts.service.js';
 import { registerBuiltinVariables } from './variables/index.js';
-import { runScheduledPrompts } from './services/scheduled-prompts-runner.js';
+import { runScheduledPrompts, type ScheduledPromptNotifier } from './services/scheduled-prompts-runner.js';
 import { createAccountEndUserResolver, type EndUserResolver } from './services/end-user-resolver.js';
 import { AiToolsController } from './api/ai-tools.controller.js';
 import { createAiToolsAdminRouter } from './api/ai-tools.router.js';
@@ -78,6 +80,21 @@ const AUDIT_PRUNE_SCHEDULE = '0 4 * * *';
 
 /** Scheduler job that fires cron-scheduled saved prompts on the master tick. */
 export const SCHEDULED_PROMPTS_JOB = 'ai-tools:run-scheduled-prompts';
+
+/**
+ * Notification category id for scheduled-prompt run outcomes. Registered on the
+ * `'notifications'` service in run(); every cron-prompt run fans a toast to
+ * admins through it, and any admin can silence it from their preferences.
+ */
+const SCHEDULED_PROMPT_NOTIFY_CATEGORY = 'ai-tools.scheduled-prompt-run';
+
+/**
+ * Service-registry name of the notifications service this module fires through.
+ * Held as a local literal rather than imported from the notifications module so
+ * ai-tools stays decoupled from that module's source — the only contract
+ * between them is the registry name and the `INotificationService` interface.
+ */
+const NOTIFICATIONS_SERVICE = 'notifications';
 
 /**
  * Every 2 minutes (at :00 seconds). The single master tick all scheduled
@@ -394,6 +411,56 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.serviceRegistry.register(CURATION_SERVICE, this.curation);
         this.serviceRegistry.register(PROMPT_VARIABLES_SERVICE, this.promptVariables);
 
+        // Declare the scheduled-prompt-run notification category on the
+        // notifications service (published by the notifications module, which
+        // runs before this one). Audience is the admin group, toast-only,
+        // default-on, and user-silenceable — so every admin sees a toast when a
+        // cron prompt runs, but any admin can opt out, and an admin can disable
+        // the category for everyone from /system/notifications.
+        const notifications = this.serviceRegistry.get<INotificationService>(NOTIFICATIONS_SERVICE);
+        if (notifications) {
+            notifications.registerCategory({
+                id: SCHEDULED_PROMPT_NOTIFY_CATEGORY,
+                label: 'Scheduled AI prompt runs',
+                description: 'Fires when a cron-scheduled AI prompt finishes — success or failure.',
+                source: this.metadata.id,
+                defaultAudience: { groups: [ADMIN_GROUP_ID] },
+                supportedChannels: ['toast'],
+                channelDefaults: { toast: true },
+                userConfigurable: true,
+                adminConfigurable: true,
+                mutable: true
+            });
+        } else {
+            this.logger.warn('notifications service unavailable; scheduled-prompt run notifications disabled');
+        }
+
+        // Fans each scheduled-prompt run outcome to admins. Resolves the
+        // notifications service per call (it never unregisters at runtime, but a
+        // lazy lookup keeps this robust) and swallows dispatch errors so a
+        // notification fault never disturbs the cron loop.
+        const notifyScheduledRun: ScheduledPromptNotifier = (run) => {
+            const svc = this.serviceRegistry.get<INotificationService>(NOTIFICATIONS_SERVICE);
+            if (!svc) {
+                return;
+            }
+            const ok = run.status === 'success';
+            void svc
+                .notify({
+                    category: SCHEDULED_PROMPT_NOTIFY_CATEGORY,
+                    title: ok ? `Scheduled prompt ran: ${run.name}` : `Scheduled prompt failed: ${run.name}`,
+                    body: ok
+                        ? undefined
+                        : run.disabled
+                            ? `${run.error ?? 'Unknown error'} — auto-paused after repeated failures`
+                            : run.error,
+                    severity: ok ? 'success' : 'error',
+                    firedBy: run.promptId,
+                    data: { promptId: run.promptId, disabled: run.disabled ?? false }
+                })
+                .catch((error) => this.logger.warn({ error, promptId: run.promptId }, 'Failed to dispatch scheduled-prompt notification'));
+        };
+
         // Daily audit retention sweep. A Mongo TTL index can't enforce this —
         // `createdAt` is an ISO string, not a Date — so retention is a scheduled
         // range delete. SchedulerService supports late registration; the
@@ -441,7 +508,8 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
                             ? this.providerRegistry.getProvider(providerId)
                             : this.providerRegistry.getActive(),
                         this.resolveEndUser,
-                        (principal) => this.systemPrompts.compose(principal)
+                        (principal) => this.systemPrompts.compose(principal),
+                        notifyScheduledRun
                     );
                 } catch (error) {
                     this.logger.error({ error, job: SCHEDULED_PROMPTS_JOB }, 'Scheduled prompts job failed');

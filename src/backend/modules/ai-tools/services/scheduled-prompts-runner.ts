@@ -61,6 +61,33 @@ export type ScheduledPromptSystemComposer = (
 ) => Promise<string>;
 
 /**
+ * Outcome of one scheduled prompt run, handed to the optional notifier so the
+ * module can fan a notification to admins. Carries only what a notification
+ * needs — the prompt's identity, whether it succeeded, the error text on
+ * failure, and whether the failure auto-paused the schedule.
+ */
+export interface IScheduledPromptRunNotification {
+    /** Saved-prompt id that ran. */
+    promptId: string;
+    /** Saved-prompt name, for the notification title. */
+    name: string;
+    /** Whether the run's query succeeded or threw. */
+    status: 'success' | 'error';
+    /** Error message when `status` is `'error'`. */
+    error?: string;
+    /** Whether the failure tripped the consecutive-failure auto-pause. */
+    disabled?: boolean;
+}
+
+/**
+ * Fired after a prompt actually runs (its query returns or throws). Omitted in
+ * tests and in deployments without a notifications service. Best-effort: the
+ * runner ignores anything the notifier does, so a notifier fault never disturbs
+ * the run loop.
+ */
+export type ScheduledPromptNotifier = (run: IScheduledPromptRunNotification) => void;
+
+/**
  * Fire all due scheduled prompts and persist updated run metadata.
  *
  * Fires at most once per prompt per tick: running the same prompt multiple
@@ -83,13 +110,17 @@ export type ScheduledPromptSystemComposer = (
  *        run's principal (master + audience-scoped prompts, variable-expanded).
  *        Omitted means no core system prompt is injected; the provider still
  *        applies its own configured system prompt.
+ * @param notify - Optional callback fired after a prompt actually runs (success
+ *        or failure), so the module can dispatch a run notification to admins.
+ *        Best-effort and isolated from the run loop.
  */
 export async function runScheduledPrompts(
     savedPrompts: SavedPromptsService,
     logger: ISystemLogService,
     resolveProvider: ScheduledPromptProviderResolver,
     resolveEndUser?: EndUserResolver,
-    composeSystemPrompt?: ScheduledPromptSystemComposer
+    composeSystemPrompt?: ScheduledPromptSystemComposer,
+    notify?: ScheduledPromptNotifier
 ): Promise<void> {
     const scheduled = await savedPrompts.listScheduled();
 
@@ -262,6 +293,13 @@ export async function runScheduledPrompts(
                     'Failed to reset scheduled-prompt failure streak'
                 );
             }
+            // Tell admins the run finished. Wrapped so a notifier fault cannot
+            // disturb the run loop or mask the successful query.
+            try {
+                notify?.({ promptId: p.id, name: p.name, status: 'success' });
+            } catch (notifyErr) {
+                logger.warn({ err: notifyErr, promptId: p.id }, 'Scheduled-prompt success notification failed');
+            }
         } catch (err) {
             const lastRunError = err instanceof Error ? err.message : String(err);
             logger.error(
@@ -272,8 +310,10 @@ export async function runScheduledPrompts(
             // here only loses the error banner, never duplicates. Consecutive
             // failures accumulate and eventually auto-pause the schedule so a
             // broken prompt stops refailing every tick.
+            let autoDisabled = false;
             try {
                 const { disabled } = await savedPrompts.recordRunFailure(p.id, claimedAt, lastRunError);
+                autoDisabled = disabled;
                 if (disabled) {
                     logger.error(
                         { promptId: p.id, name: p.name },
@@ -285,6 +325,11 @@ export async function runScheduledPrompts(
                     { err: writeErr, promptId: p.id, name: p.name },
                     'Failed to persist scheduled-prompt run error'
                 );
+            }
+            try {
+                notify?.({ promptId: p.id, name: p.name, status: 'error', error: lastRunError, disabled: autoDisabled });
+            } catch (notifyErr) {
+                logger.warn({ err: notifyErr, promptId: p.id }, 'Scheduled-prompt failure notification failed');
             }
         }
     }
