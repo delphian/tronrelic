@@ -95,6 +95,13 @@ interface ConversationGroup {
     turns: number;
     firstPrompt: string;
     lastAt: string;
+    /**
+     * Estimated total USD cost of the conversation, summed across every priced
+     * turn at the rates captured when each turn ran. `null` when not a single
+     * turn could be priced, so the row shows a dash rather than a misleading
+     * $0.00 — mirrors the live transcript's sum-or-hide behavior.
+     */
+    costUsd: number | null;
 }
 
 /**
@@ -163,15 +170,22 @@ function groupConversations(records: IAiQueryRecord[]): ConversationGroup[] {
         if (!id) {
             continue;
         }
+        // Add this turn's priced cost, treating an unpriced turn as a no-op so
+        // a partially-priced conversation still surfaces the sum of what could
+        // be priced rather than collapsing to null.
+        const turnCost = typeof record.costUsd === 'number' ? record.costUsd : null;
         const existing = byId.get(id);
         if (existing) {
             existing.turns += 1;
+            if (turnCost !== null) {
+                existing.costUsd = (existing.costUsd ?? 0) + turnCost;
+            }
             // Records arrive newest-first, so an earlier record carries the
             // older prompt — keep it as the conversation's opening line.
             existing.firstPrompt = record.prompt;
         } else {
             order.push(id);
-            byId.set(id, { conversationId: id, turns: 1, firstPrompt: record.prompt, lastAt: record.createdAt });
+            byId.set(id, { conversationId: id, turns: 1, firstPrompt: record.prompt, lastAt: record.createdAt, costUsd: turnCost });
         }
     }
     return order.map(id => byId.get(id) as ConversationGroup);
@@ -819,9 +833,16 @@ export function QueryTab() {
                                                 <span>· {group.turns} turn{group.turns === 1 ? '' : 's'}</span>
                                             </span>
                                         </div>
+                                        <span
+                                            className={styles.history_item_cost}
+                                            title="Estimated total cost of this conversation, summed across turns at the provider's per-model rates."
+                                        >
+                                            {formatUsd(group.costUsd)}
+                                        </span>
                                         <Button
                                             variant="secondary"
                                             size="sm"
+                                            className={styles.history_item_action}
                                             onClick={() => { void openConversation(group.conversationId); }}
                                             aria-label={`Open conversation starting "${group.firstPrompt}" in chat`}
                                         >
