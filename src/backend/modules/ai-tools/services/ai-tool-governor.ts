@@ -395,7 +395,7 @@ export class AiToolGovernor implements IAiToolGovernor {
                 // the provider's cheap model before the main model can act on it.
                 // A no-op when the screen is disabled, unconfigured, or posture-
                 // gated off (see screenUntrusted).
-                const screened = await this.screenUntrusted(tool, result);
+                const screened = await this.screenUntrusted(tool, result, ctx.aiProviderId);
                 screenOutcome = screened.screen;
                 if (screened.withhold) {
                     // The screen judged the result hostile (or failed closed): the
@@ -468,9 +468,14 @@ export class AiToolGovernor implements IAiToolGovernor {
      *
      * @param tool - The tool whose untrusted result is being screened.
      * @param result - The handler's raw return value.
+     * @param providerId - Manifest id of the provider actually running the query
+     *   (from the invocation context). The screen runs on this provider's cheap
+     *   model, not the globally-active one, so a scheduled prompt pinned to a
+     *   non-active provider is still screened by the provider that produced the
+     *   result; falls back to the active provider when the pinned one is absent.
      * @returns The screen outcome (for the audit record) and whether to withhold.
      */
-    private async screenUntrusted(tool: IAiTool, result: unknown): Promise<{ screen?: { flagged: boolean; reason?: string }; withhold: boolean }> {
+    private async screenUntrusted(tool: IAiTool, result: unknown, providerId: string): Promise<{ screen?: { flagged: boolean; reason?: string }; withhold: boolean }> {
         const deps = this.screen;
         if (!deps) {
             return { withhold: false };
@@ -493,7 +498,7 @@ export class AiToolGovernor implements IAiToolGovernor {
                 return { withhold: false };
             }
         }
-        const provider = deps.providers.getActive();
+        const provider = deps.providers.getProvider(providerId) ?? deps.providers.getActive();
         const screenFn = provider && typeof provider.screenUntrustedContent === 'function'
             ? provider.screenUntrustedContent.bind(provider)
             : undefined;
@@ -503,6 +508,13 @@ export class AiToolGovernor implements IAiToolGovernor {
         let verdict: IContentScreenVerdict;
         try {
             verdict = await screenFn(resultToText(result));
+            // The screen is a pluggable provider hook; the type contract does not
+            // bind a misbehaving implementation at runtime. A null/malformed
+            // verdict must degrade through onFailure, never crash the invocation
+            // past the admin-configured fail-open/closed policy with a TypeError.
+            if (!verdict || typeof verdict.flagged !== 'boolean') {
+                throw new Error('Provider returned an invalid or empty content-screen verdict.');
+            }
         } catch (error) {
             this.logger.warn({ tool: tool.name, error }, 'Untrusted-content screen failed to produce a verdict');
             return this.onScreenUnavailable(tool, cfg, 'screen error');
