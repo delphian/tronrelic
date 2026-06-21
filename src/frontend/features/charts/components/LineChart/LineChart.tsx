@@ -126,11 +126,14 @@ const MARGIN = { top: 24, right: 32, bottom: 36, left: 64 };
  * the real container. The server cannot measure layout, so SSR and the first
  * client render both use this fixed value — keeping the two renders byte-identical
  * (no hydration mismatch). Paired with a fixed pixel height and
- * `preserveAspectRatio="none"` on the SVG, the later measured correction only
- * rescales the viewBox horizontally; it never resizes the chart's box, which is
- * what previously produced the visible post-hydration "load". 640 sits near the
- * geometric mean of a narrow widget column and a full-width page, bounding the
- * brief pre-measurement horizontal text distortion in either context.
+ * `preserveAspectRatio="xMinYMid meet"` on the SVG, the later measured correction
+ * only widens the viewBox horizontally; it never resizes the chart's box, which is
+ * what previously produced the visible post-hydration "load". `meet` scales the
+ * content uniformly and left-anchors it, so before measurement the chart renders
+ * undistorted at its natural width with transient empty space on the right rather
+ * than stretching text and lines to fill. 640 sits near the geometric mean of a
+ * narrow widget column and a full-width page, bounding that transient gap in either
+ * context.
  */
 const SSR_DEFAULT_WIDTH = 640;
 
@@ -466,19 +469,21 @@ export function LineChart({
     return (
         <figure ref={containerRef} className={cn(styles.chart, className)}>
             {/*
-              * Render at a fixed pixel height with a width-stretched viewBox so the
+              * Render at a fixed pixel height with a uniformly-scaled viewBox so the
               * chart occupies its final box during SSR. Height no longer derives from
               * the pre-measurement viewBox aspect ratio (CSS `height: auto`), which
               * made the server paint the chart short and then grow it to full height
               * after the ResizeObserver fired — the visible "loading" jump. With
-              * `preserveAspectRatio="none"` the viewBox fills the fixed box; once the
-              * observer matches the viewBox width to the rendered width the mapping is
-              * 1:1, so this changes only the brief pre-measurement frame.
+              * `preserveAspectRatio="xMinYMid meet"` the viewBox scales uniformly and
+              * left-anchors inside the fixed box; once the observer matches the viewBox
+              * width to the rendered width the mapping is 1:1, so before measurement the
+              * content is undistorted (transient empty space on the right) rather than
+              * horizontally stretched.
               */}
             <svg
                 viewBox={`0 0 ${width} ${chartHeight}`}
                 height={chartHeight}
-                preserveAspectRatio="none"
+                preserveAspectRatio="xMinYMid meet"
                 role="img"
                 onMouseMove={handlePointerMove}
                 onMouseLeave={handlePointerLeave}
