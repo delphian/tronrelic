@@ -16,13 +16,24 @@
  *
  * SSR + Live Updates: this is a pure presentational component whose
  * entire output derives from the SSR `data` prop — no client fetch, no
- * local state, no loading flash — so it renders fully on the server and
- * needs no `'use client'` directive or hydration guard. The content is
- * route-independent and never changes after render, so there is no live
- * update to subscribe to.
+ * local state, no loading flash. The content is route-independent and
+ * never changes after render, so there is no live update to subscribe to.
+ *
+ * The `'use client'` directive is mandatory despite that — not optional.
+ * Every widget is rendered through `WidgetWithContext`, a client component
+ * that receives the resolved component as a `Component` prop. React can
+ * only serialize a *client component reference* across that server→client
+ * boundary; a plain (non-`'use client'`) function is unserializable and
+ * throws "Functions cannot be passed directly to Client Components",
+ * crashing the SSR render of whatever zone the widget sits in (fatal for
+ * the root-layout `footer` zone, which renders on every route). Marking it
+ * a client component still SSRs the markup — App Router renders client
+ * components on the server — so the no-flash behavior is preserved.
  *
  * @module frontend/components/widgets/RawHtmlWidget
  */
+
+'use client';
 
 import type { IWidgetComponentProps } from '@/types';
 
