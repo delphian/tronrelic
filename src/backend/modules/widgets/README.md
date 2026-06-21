@@ -141,6 +141,8 @@ The platform ships its own zones and widget types, registered by `WidgetsModule.
 
 **Zones** live in `zones/descriptors.ts`. The `footer` zone (`host: 'site'`) renders in the root layout below `<main>` inside a semantic `<footer>` and reaches every route — the home for site-wide footer content. Adding a zone requires a matching `<WidgetZone>` call site in a layout; descriptor and render site move together.
 
+Each descriptor carries an optional `order` (`IZoneDescriptor.order`) that sets where the zone appears within its host track in the `/system/widgets` editor — lower sorts first, so `footer` (order `90`) follows `ticker-after` (order `10`) rather than leading the site track alphabetically. `snapshot()` sorts by `order` then id; zones omitting it sort after explicitly-ordered ones. This orders the *zones* in the editor, distinct from the placement `order` that sorts widgets within a zone.
+
 **Widget types** live in `widget-types/core-widget-types.ts`. The only one today is `core:raw-html` — an operator-authored block of raw HTML or plain text. Its `defaultDataFetcher` reads `content` and `mode` straight from the placement's `instanceConfig` (validated against the type's `configSchema`), so the payload is route-independent. `mode: 'html'` injects raw markup verbatim; `mode: 'text'` escapes it. The content is admin-authored and trusted — consistent with head-fragment injection, themes, and pages markdown.
 
 A core widget type needs a matching frontend renderer keyed by its `typeId` in `components/widgets/widgets.core.ts`. That hand-written registry is merged ahead of the generator-owned `widgets.generated.ts` by `components/widgets/getWidgetComponent.ts`, so core components resolve without the plugin-registry generator touching them.

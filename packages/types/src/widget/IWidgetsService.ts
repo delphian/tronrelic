@@ -91,6 +91,13 @@ export interface IRegisterZoneInput {
     host: ZoneHost;
     /** Layout hint for the zone container. Defaults to `'vertical'`. */
     layout?: ZoneLayout;
+    /**
+     * Display order of this zone within its host track in the
+     * `/system/widgets` placement editor. Lower sorts first; omit to
+     * sort after explicitly-ordered zones by id. Orders the zones in the
+     * editor, not the placements within a zone.
+     */
+    order?: number;
 }
 
 /**

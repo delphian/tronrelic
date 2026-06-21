@@ -62,10 +62,13 @@ init: async (context: IPluginContext) => {
         label: 'My plugin sidebar',
         description: 'Right rail on the My Plugin page.',
         host: 'plugin',
-        layout: 'vertical'
+        layout: 'vertical',
+        order: 10
     }, myManifest.id);
 }
 ```
+
+The optional `order` controls where the zone sits **within its host track in the `/system/widgets` editor** — lower sorts first, so a zone meant to sit low on the page declares a higher value. This orders the zones in the operator's catalog; it is unrelated to the placement `order` that orders widgets *within* a zone (see [Ordering](#ordering)). Omit it and the zone sorts after every explicitly-ordered zone in its track, by id.
 
 ## Registering a Type Without a Default Placement
 

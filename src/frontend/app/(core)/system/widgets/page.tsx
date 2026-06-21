@@ -237,9 +237,11 @@ export default function WidgetsAdminPage() {
     const [error, setError] = useState<string | null>(null);
     const [busyId, setBusyId] = useState<string | null>(null);
 
-    // URL-centric editing. Zones stay hidden until the operator picks a
-    // page URL; only then are that URL's widgets shown. `selectedRoute`
-    // is null before any selection. `customRoutes` holds URLs the
+    // URL-centric editing. `selectedRoute` is null before any selection;
+    // in that state the editor shows every zone with only its global
+    // (no-route-filter) placements so site-wide widgets stay manageable
+    // without first picking a page. Selecting a URL narrows each zone to
+    // the placements that resolve on it. `customRoutes` holds URLs the
     // operator typed in the new-URL box that no placement targets yet, so
     // they remain selectable until a widget is placed on them.
     const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
@@ -522,18 +524,24 @@ export default function WidgetsAdminPage() {
     }, [placements, customRoutes]);
 
     /**
-     * Group placements by zone for rendering, scoped to the selected
-     * URL. Returns empty until a URL is selected so no widgets show
-     * before the operator picks a page. Once selected, each zone lists
-     * only the placements whose route filter matches that URL (exact,
-     * glob, or global). Empty zones still render so operators see the
-     * full target set for the page.
+     * Group placements by zone for rendering. With a URL selected, each
+     * zone lists the placements whose route filter matches that URL
+     * (exact, glob, or global). With no URL selected the editor shows the
+     * unfiltered catalog: every zone with only its *global* placements —
+     * those carrying no route filter (`routes: []`) — so an operator can
+     * see and manage site-wide widgets without first picking a page.
+     * Route-scoped placements stay hidden in that mode because they
+     * belong to a specific URL. Empty zones still render so operators see
+     * the full target set.
      */
     const grouped = useMemo(() => {
-        if (!zones || selectedRoute === null) return [] as Array<{ trackId: string; trackLabel: string; rows: Array<{ zoneId: string; zoneLabel: string; placements: IPlacement[] }> }>;
+        if (!zones) return [] as Array<{ trackId: string; trackLabel: string; rows: Array<{ zoneId: string; zoneLabel: string; placements: IPlacement[] }> }>;
         const byZone = new Map<string, IPlacement[]>();
         for (const placement of placements) {
-            if (!placementMatchesRoute(placement.routes, selectedRoute)) continue;
+            const matches = selectedRoute === null
+                ? placement.routes.length === 0
+                : placementMatchesRoute(placement.routes, selectedRoute);
+            if (!matches) continue;
             const bucket = byZone.get(placement.zoneId) ?? [];
             bucket.push(placement);
             byZone.set(placement.zoneId, bucket);
@@ -684,7 +692,7 @@ export default function WidgetsAdminPage() {
                             variant="primary"
                             icon={<Plus size={16} />}
                             onClick={() => openPlacementModal('create', undefined, selectedRoute ?? undefined)}
-                            disabled={!zones || !types || selectedRoute === null}
+                            disabled={!zones || !types}
                         >
                             Place widget
                         </Button>
@@ -701,7 +709,7 @@ export default function WidgetsAdminPage() {
                                     value={selectedRoute ?? ''}
                                     onChange={(e) => setSelectedRoute(e.target.value === '' ? null : e.target.value)}
                                 >
-                                    <option value="">Select a page URL&hellip;</option>
+                                    <option value="">All pages (no route filter)</option>
                                     {routeOptions.map(route => (
                                         <option key={route} value={route}>{route}</option>
                                     ))}
@@ -744,11 +752,12 @@ export default function WidgetsAdminPage() {
 
                     {!loading && zones && selectedRoute === null && (
                         <p className={`text-muted ${styles.route_gate}`}>
-                            Select a page URL above — or add a new one — to view and manage its widgets.
+                            Showing site-wide widgets (no route filter). Select a page URL above — or add a
+                            new one — to view and manage that page&rsquo;s widgets.
                         </p>
                     )}
 
-                    {!loading && zones && selectedRoute !== null && (
+                    {!loading && zones && (
                         <DndContext
                             sensors={sensors}
                             collisionDetection={closestCorners}

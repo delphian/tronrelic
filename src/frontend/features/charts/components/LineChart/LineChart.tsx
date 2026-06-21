@@ -122,6 +122,19 @@ const DEFAULT_COLORS = ['#7C9BFF', '#5CE1E6', '#FF9F6E', '#F06EF0'];
 const MARGIN = { top: 24, right: 32, bottom: 36, left: 64 };
 
 /**
+ * Width, in viewBox units, the chart assumes before its ResizeObserver measures
+ * the real container. The server cannot measure layout, so SSR and the first
+ * client render both use this fixed value — keeping the two renders byte-identical
+ * (no hydration mismatch). Paired with a fixed pixel height and
+ * `preserveAspectRatio="none"` on the SVG, the later measured correction only
+ * rescales the viewBox horizontally; it never resizes the chart's box, which is
+ * what previously produced the visible post-hydration "load". 640 sits near the
+ * geometric mean of a narrow widget column and a full-width page, bounding the
+ * brief pre-measurement horizontal text distortion in either context.
+ */
+const SSR_DEFAULT_WIDTH = 640;
+
+/**
  * Converts date string to Date object, handling various formats.
  *
  * Properly handles ISO 8601 timestamps with timezone information from the backend API.
@@ -182,7 +195,7 @@ export function LineChart({
     yAxisMax: fixedYMax
 }: LineChartProps) {
     const containerRef = useRef<HTMLElement | null>(null);
-    const [containerWidth, setContainerWidth] = useState(860);
+    const [containerWidth, setContainerWidth] = useState(SSR_DEFAULT_WIDTH);
     const [tooltip, setTooltip] = useState<TooltipState | null>(null);
     const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
 
@@ -452,8 +465,20 @@ export function LineChart({
 
     return (
         <figure ref={containerRef} className={cn(styles.chart, className)}>
+            {/*
+              * Render at a fixed pixel height with a width-stretched viewBox so the
+              * chart occupies its final box during SSR. Height no longer derives from
+              * the pre-measurement viewBox aspect ratio (CSS `height: auto`), which
+              * made the server paint the chart short and then grow it to full height
+              * after the ResizeObserver fired — the visible "loading" jump. With
+              * `preserveAspectRatio="none"` the viewBox fills the fixed box; once the
+              * observer matches the viewBox width to the rendered width the mapping is
+              * 1:1, so this changes only the brief pre-measurement frame.
+              */}
             <svg
                 viewBox={`0 0 ${width} ${chartHeight}`}
+                height={chartHeight}
+                preserveAspectRatio="none"
                 role="img"
                 onMouseMove={handlePointerMove}
                 onMouseLeave={handlePointerLeave}

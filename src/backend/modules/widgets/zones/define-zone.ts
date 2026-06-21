@@ -46,7 +46,8 @@ export function defineZone(options: IDefineZoneOptions): IZoneDescriptor {
         label: options.label,
         description: options.description,
         host: options.host,
-        layout: options.layout ?? 'vertical'
+        layout: options.layout ?? 'vertical',
+        order: options.order
     });
 
     KNOWN_ZONES.set(options.id, descriptor);

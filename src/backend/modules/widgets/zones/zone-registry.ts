@@ -200,13 +200,19 @@ export class ZoneRegistry implements IZoneRegistry {
      * Produce the introspection snapshot consumed by the admin endpoint.
      *
      * Groups every registered zone by host so the placement editor
-     * renders the catalog without re-grouping. Empty hosts appear in
-     * the snapshot to keep the timeline shape stable across deployments.
+     * renders the catalog without re-grouping. Within a host track zones
+     * sort by their descriptor `order` (lower first) so the editor lists
+     * them in page top-to-bottom order — e.g. the site footer, declared
+     * with a higher order, follows the block-ticker zone rather than
+     * leading the track alphabetically. Zones omitting `order` sort after
+     * explicitly-ordered ones, with id as the stable tie-breaker so the
+     * timeline shape stays deterministic across deployments. Empty hosts
+     * still appear to keep the track shape stable.
      *
      * @returns Structured payload ready for JSON serialization.
      */
     snapshot(): IZoneSnapshot {
-        const byHost: Map<ZoneHost, IZoneSnapshotRecord[]> = new Map();
+        const byHost: Map<ZoneHost, IRegisteredZone[]> = new Map();
         for (const track of HOST_TRACKS) {
             byHost.set(track.id, []);
         }
@@ -214,17 +220,35 @@ export class ZoneRegistry implements IZoneRegistry {
         for (const entry of this.zones.values()) {
             const bucket = byHost.get(entry.descriptor.host);
             if (!bucket) continue;
-            bucket.push(toSnapshotRecord(entry));
+            bucket.push(entry);
         }
 
         const tracks = HOST_TRACKS.map(track => ({
             id: track.id,
             label: track.label,
-            zones: (byHost.get(track.id) ?? []).sort((a, b) => a.id.localeCompare(b.id))
+            zones: (byHost.get(track.id) ?? [])
+                .sort((a, b) => zoneOrder(a) - zoneOrder(b) || a.descriptor.id.localeCompare(b.descriptor.id))
+                .map(toSnapshotRecord)
         }));
 
         return { tracks };
     }
+}
+
+/**
+ * Resolve a registered zone's sort weight for the admin snapshot.
+ *
+ * Zones declare an optional `order` to control where they sit within
+ * their host track; the snapshot sorts ascending so lower renders first.
+ * Zones that omit it fall to the end of the track (a large sentinel)
+ * rather than the front, so an unordered plugin zone never jumps ahead
+ * of a deliberately-placed core zone — id breaks the remaining ties.
+ *
+ * @param entry - Internal registered-zone record.
+ * @returns Numeric sort weight; `Number.MAX_SAFE_INTEGER` when unset.
+ */
+function zoneOrder(entry: IRegisteredZone): number {
+    return typeof entry.descriptor.order === 'number' ? entry.descriptor.order : Number.MAX_SAFE_INTEGER;
 }
 
 /**

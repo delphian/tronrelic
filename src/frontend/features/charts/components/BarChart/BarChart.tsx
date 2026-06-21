@@ -179,6 +179,20 @@ interface TooltipState {
 const TOOLTIP_EDGE_GUTTER = 8;
 
 /**
+ * Width, in viewBox units, assumed before the ResizeObserver measures the real
+ * container. The server cannot measure layout, so SSR and the first client render
+ * use this fixed value — keeping the two byte-identical (no hydration mismatch).
+ * Paired with a fixed pixel height and `preserveAspectRatio="none"` on the SVG,
+ * the later measured correction only rescales the viewBox horizontally; it never
+ * resizes the chart's box, which is what previously produced the visible
+ * post-hydration "load". 640 sits near the geometric mean of a narrow widget
+ * column and a full-width page, bounding the brief pre-measurement horizontal
+ * distortion in either context — far better than the old per-mode `minWidth`
+ * default (80 in widget mode stretched a typical column ~4.5x for that frame).
+ */
+const SSR_DEFAULT_WIDTH = 640;
+
+/**
  * Converts a date string to a Date object, handling ISO 8601 timestamps.
  *
  * Mirrors LineChart's parser so both charts interpret backend UTC timestamps
@@ -265,7 +279,7 @@ export function BarChart({
     const resolvedShowLegend = showLegend ?? chrome.showLegend;
 
     const [container, setContainer] = useState<HTMLElement | null>(null);
-    const [containerWidth, setContainerWidth] = useState(chrome.minWidth);
+    const [containerWidth, setContainerWidth] = useState(Math.max(SSR_DEFAULT_WIDTH, chrome.minWidth));
     const [tooltip, setTooltip] = useState<TooltipState | null>(null);
     const [tooltipNode, setTooltipNode] = useState<HTMLDivElement | null>(null);
     const [tooltipWidth, setTooltipWidth] = useState(0);
@@ -577,8 +591,20 @@ export function BarChart({
 
     return (
         <figure ref={setContainer} className={cn(styles.chart, isWidget && styles['chart--widget'], className)}>
+            {/*
+              * Render at a fixed pixel height with a width-stretched viewBox so the
+              * chart occupies its final box during SSR. Height no longer derives from
+              * the pre-measurement viewBox aspect ratio (CSS `height: auto`), which
+              * made the server paint the chart at the wrong height and grow it after
+              * the ResizeObserver fired — the visible "loading" jump. With
+              * `preserveAspectRatio="none"` the viewBox fills the fixed box; once the
+              * observer matches the viewBox width to the rendered width the mapping is
+              * 1:1, so this changes only the brief pre-measurement frame.
+              */}
             <svg
                 viewBox={`0 0 ${width} ${chartHeight}`}
+                height={chartHeight}
+                preserveAspectRatio="none"
                 role="img"
                 aria-label={ariaLabel}
                 onPointerMove={chrome.interactive ? handlePointerMove : undefined}
