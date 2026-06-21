@@ -31,7 +31,7 @@ const LAYOUT_PRESETS = ['row-left', 'row-center', 'row-between', 'row-right', 'r
  * @returns The validated config, or `{ error }` describing the first failure.
  */
 function validateLayoutBody(body: unknown): { config?: IZoneLayoutConfig; error?: string } {
-    if (typeof body !== 'object' || body === null) {
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
         return { error: 'Body must be a layout config object.' };
     }
     const b = body as Record<string, unknown>;

@@ -13,7 +13,7 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 | WebSocket event | `widgets:placements-update` (also fired on zone-layout change — no separate event) |
 | Types package | `@delphian/tronrelic-types` — `IWidgetsService`, `IRegisterWidgetTypeInput`, `IRegisterZoneInput`, `IRegisterWidgetInput`, `IWidgetPlacement`, `IPlacementInput`, `IPlacementPatch`, `IPlacementListFilter`, `IWidgetType`, `IWidgetPlacementContext`, `IZoneDescriptor`, `IZoneSnapshot`, `IZoneLayoutConfig`, `IWidgetTypeSnapshot` |
 | Storage | `module_widgets_placements`, `module_widgets_zone_layouts` (MongoDB) |
-| Migration | `module:widgets:001_create_widget_placements` (placements collection + 4 indexes). The zone-layouts collection needs no migration — `ZoneLayoutService.load()` creates its unique index idempotently at boot. |
+| Migration | `module:widgets:001_create_widget_placements` (placements collection + 4 indexes); `module:widgets:002_seed_block_ticker_placement` (idempotent seed of one operator-source `core:block-ticker` placement in `ticker-after`, guarded on absence so it runs once and never fights an operator edit). The zone-layouts collection needs no migration — `ZoneLayoutService.load()` creates its unique index idempotently at boot. |
 | System menu node | "Widgets" under the System container — seeded by `WidgetsModule.run()` |
 
 ## Source Map
@@ -151,7 +151,7 @@ Indexes (migration 001): `(typeId, pluginId)` sparse unique for plugin-row atomi
 
 ## Core Catalog
 
-The platform ships its own zones and widget types, registered by `WidgetsModule.run()` as `'core'`-owned through the same public service plugins use — `registerZone` for zones, `registerType` for types. Core types use `registerType` (not `registerWidget`, which is plugin-only and creates a plugin-source placement); operators then place them from `/system/widgets` as `operator`-source rows.
+The platform ships its own zones and widget types, registered by `WidgetsModule.run()` as `'core'`-owned through the same public service plugins use — `registerZone` for zones, `registerType` for types. Core types use `registerType` (not `registerWidget`, which is plugin-only and creates a plugin-source placement); operators then place them from `/system/widgets` as `operator`-source rows. The one exception is `core:block-ticker`: because it was historically rendered unconditionally in the root layout, migration `002_seed_block_ticker_placement` seeds one operator-source placement in `ticker-after` so the site-wide ticker renders by default — operators remain free to move, reconfigure, or delete it.
 
 **Zones** live in `zones/descriptors.ts`. The `Site Header` zone (id `ticker-after`, `host: 'site'`) renders directly below the main nav and is where the block ticker now lives; the `footer` zone (`host: 'site'`) renders below `<main>` inside a semantic `<footer>`. Both reach every route. Adding a zone requires a matching `<WidgetZone>` call site in a layout; descriptor and render site move together.
 
