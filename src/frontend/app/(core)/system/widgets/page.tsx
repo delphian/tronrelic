@@ -1028,15 +1028,19 @@ function primaryType(schema: JSONSchema7): string | undefined {
 /**
  * Map a property schema to the editor control it renders as. Enums take
  * precedence over the raw string type so a constrained string becomes a
- * select rather than a free-text input.
+ * select rather than a free-text input; arrays render as a repeatable row
+ * editor regardless of their item shape.
  *
  * @param schema - Property schema
  * @returns The control kind to render
  */
-function fieldControlType(schema: JSONSchema7): 'boolean' | 'enum' | 'number' | 'text' {
+function fieldControlType(schema: JSONSchema7): 'boolean' | 'enum' | 'number' | 'text' | 'array' {
     const type = primaryType(schema);
     if (type === 'boolean') {
         return 'boolean';
+    }
+    if (type === 'array') {
+        return 'array';
     }
     if (Array.isArray(schema.enum) && schema.enum.length > 0) {
         return 'enum';
@@ -1071,14 +1075,59 @@ function findConfigSchema(snapshot: IWidgetTypeSnapshot | null, typeId: string):
 }
 
 /**
+ * Resolve an array property's item shape for the array editor: the item
+ * sub-schema, whether each item is a scalar or an object, and (for object
+ * items) the scalar fields each row exposes. A tuple `items` array or a
+ * boolean `items` shorthand yields an empty object schema and scalar kind;
+ * {@link isRepresentableArray} rejects those upstream so the editor never
+ * renders them, but the fallback keeps this helper total for callers.
+ *
+ * @param schema - The array property's own schema
+ * @returns The item kind, the item sub-schema, and object-item sub-fields
+ */
+function describeArrayItems(schema: JSONSchema7): {
+    kind: 'scalar' | 'object';
+    itemSchema: JSONSchema7;
+    fields: ConfigFieldDescriptor[];
+} {
+    const items = schema.items;
+    const itemSchema: JSONSchema7 =
+        items && typeof items === 'object' && !Array.isArray(items) ? items : {};
+    const kind = primaryType(itemSchema) === 'object' ? 'object' : 'scalar';
+    const fields = kind === 'object' ? extractConfigFields(itemSchema) : [];
+    return { kind, itemSchema, fields };
+}
+
+/**
+ * Whether an array property can be edited through the structured form. It
+ * is representable when its `items` is a single schema (not a tuple or the
+ * boolean shorthand) whose item is either a scalar control or an object
+ * exposing at least one representable scalar field. Arrays of arrays, or
+ * object items with nothing the form can render, stay raw-JSON-only — the
+ * reason a required-array type like `core:world-clocks` was previously
+ * unconfigurable through the default form.
+ *
+ * @param schema - The array property's own schema
+ * @returns True when the array editor can round-trip the property
+ */
+function isRepresentableArray(schema: JSONSchema7): boolean {
+    const items = schema.items;
+    if (!items || typeof items !== 'object' || Array.isArray(items)) {
+        return false;
+    }
+    const { kind, fields } = describeArrayItems(schema);
+    return kind === 'object' ? fields.length > 0 : true;
+}
+
+/**
  * Flatten a widget type's `configSchema` into the ordered list of
- * editable fields the form renders. Only top-level properties the form
- * can represent as a scalar control — boolean, enum, number, or string —
- * are surfaced. Boolean sub-schemas (JSON Schema's `true`/`false`
- * shorthand) carry no metadata, and `object`/`array` properties cannot
- * round-trip through a scalar input, so both are skipped and remain
- * editable only through the raw-JSON editor. Property insertion order is
- * preserved.
+ * editable fields the form renders. Top-level scalar controls — boolean,
+ * enum, number, string — are surfaced, plus arrays the row editor can
+ * represent (see {@link isRepresentableArray}). Boolean sub-schemas (JSON
+ * Schema's `true`/`false` shorthand) carry no metadata, plain `object`
+ * properties cannot round-trip, and unrepresentable arrays are skipped and
+ * remain editable only through the raw-JSON editor. Property insertion
+ * order is preserved.
  *
  * @param schema - The widget type's instanceConfig schema, if any
  * @returns Ordered field descriptors (empty when no schema fields apply)
@@ -1094,7 +1143,10 @@ function extractConfigFields(schema: JSONSchema7 | undefined): ConfigFieldDescri
             continue;
         }
         const propertyType = primaryType(definition);
-        if (propertyType === 'object' || propertyType === 'array') {
+        if (propertyType === 'object') {
+            continue;
+        }
+        if (propertyType === 'array' && !isRepresentableArray(definition)) {
             continue;
         }
         fields.push({
@@ -1127,7 +1179,15 @@ function coerceInitialConfig(
         const provided = existing ? existing[field.key] : undefined;
         const fallback = field.schema.default;
         const control = fieldControlType(field.schema);
-        if (control === 'boolean') {
+        if (control === 'array') {
+            // Arrays are held as the raw array; the row editor coerces each
+            // item on render and buildArrayConfig validates them on save.
+            value[field.key] = Array.isArray(provided)
+                ? provided
+                : Array.isArray(fallback)
+                    ? fallback
+                    : [];
+        } else if (control === 'boolean') {
             value[field.key] = Boolean(provided ?? fallback ?? false);
         } else if (control === 'number') {
             const candidate = provided ?? fallback;
@@ -1141,14 +1201,108 @@ function coerceInitialConfig(
 }
 
 /**
+ * Validate and coerce one scalar working value against its schema, applying
+ * the same AJV subset the form enforces inline — required presence,
+ * number/integer typing, and min/max range. Shared by the top-level field
+ * loop and scalar array items so both report failures identically. Booleans
+ * always yield a value; an optional empty yields `{}` (omit); a required
+ * empty or a typing/range violation yields `{ error }`.
+ *
+ * @param schema - The scalar property schema
+ * @param raw - The current working value
+ * @param label - Human label used in error messages
+ * @param required - Whether an empty value is an error rather than an omit
+ * @returns A value to emit, an empty object to omit, or an error to surface
+ */
+function coerceScalarValue(
+    schema: JSONSchema7,
+    raw: unknown,
+    label: string,
+    required: boolean
+): { value?: unknown; error?: string } {
+    const control = fieldControlType(schema);
+    if (control === 'boolean') {
+        return { value: Boolean(raw) };
+    }
+    const isEmpty = raw === undefined || raw === null || raw === '';
+    if (isEmpty) {
+        return required ? { error: `${label} is required.` } : {};
+    }
+    if (control === 'number') {
+        const num = Number(raw);
+        if (Number.isNaN(num)) {
+            return { error: `${label} must be a number.` };
+        }
+        if (primaryType(schema) === 'integer' && !Number.isInteger(num)) {
+            return { error: `${label} must be a whole number.` };
+        }
+        if (typeof schema.minimum === 'number' && num < schema.minimum) {
+            return { error: `${label} must be at least ${schema.minimum}.` };
+        }
+        if (typeof schema.maximum === 'number' && num > schema.maximum) {
+            return { error: `${label} must be at most ${schema.maximum}.` };
+        }
+        return { value: num };
+    }
+    return { value: raw };
+}
+
+/**
+ * Build and validate one array field's items. Object items recurse through
+ * {@link buildStructuredConfig} so each row's required scalar sub-fields are
+ * checked; scalar items coerce individually and drop blank optional rows.
+ * Enforces the array's own `minItems` (defaulting to 1 for a required array)
+ * so an empty required array fails inline rather than at the server's AJV.
+ *
+ * @param field - The array field descriptor
+ * @param raw - The current working value (expected to be an array)
+ * @returns The built item array, or an error message to display
+ */
+function buildArrayConfig(
+    field: ConfigFieldDescriptor,
+    raw: unknown
+): { value?: unknown[]; error?: string } {
+    const items = Array.isArray(raw) ? raw : [];
+    const { kind, itemSchema, fields: itemFields } = describeArrayItems(field.schema);
+    const built: unknown[] = [];
+    for (let index = 0; index < items.length; index++) {
+        if (kind === 'object') {
+            const source = items[index] && typeof items[index] === 'object'
+                ? (items[index] as Record<string, unknown>)
+                : {};
+            const res = buildStructuredConfig(itemFields, source);
+            if (res.error) {
+                return { error: `${field.label} #${index + 1}: ${res.error}` };
+            }
+            built.push(res.value ?? {});
+        } else {
+            const res = coerceScalarValue(itemSchema, items[index], `${field.label} #${index + 1}`, false);
+            if (res.error) {
+                return { error: res.error };
+            }
+            if ('value' in res) {
+                built.push(res.value);
+            }
+        }
+    }
+    const minItems = typeof field.schema.minItems === 'number'
+        ? field.schema.minItems
+        : field.required ? 1 : 0;
+    if (built.length < minItems) {
+        return { error: `${field.label} requires at least ${minItems} ${minItems === 1 ? 'entry' : 'entries'}.` };
+    }
+    return { value: built };
+}
+
+/**
  * Serialize the form's working values into the instanceConfig object to
  * persist, applying a subset of the server's AJV constraints — required
- * presence, number/integer typing, and min/max range — so the common
- * failures surface inline before the request. The server's AJV remains
- * authoritative for everything else (string `minLength`/`pattern`, enum
- * membership, and so on). Booleans are always emitted; optional empty
- * strings/numbers are omitted; required empties, non-numbers,
- * non-integers, and out-of-range values error.
+ * presence, number/integer typing, min/max range, and array `minItems` — so
+ * the common failures surface inline before the request. The server's AJV
+ * remains authoritative for everything else (string `minLength`/`pattern`,
+ * enum membership, and so on). Booleans are always emitted; optional empty
+ * scalars and empty optional arrays are omitted; required empties,
+ * typing/range violations, and short required arrays error.
  *
  * @param fields - Field descriptors for the active schema
  * @param value - Current working values
@@ -1162,34 +1316,26 @@ function buildStructuredConfig(
     for (const field of fields) {
         const control = fieldControlType(field.schema);
         const raw = value[field.key];
-        if (control === 'boolean') {
-            result[field.key] = Boolean(raw);
-            continue;
-        }
-        const isEmpty = raw === undefined || raw === null || raw === '';
-        if (isEmpty) {
-            if (field.required) {
-                return { error: `${field.label} is required.` };
+        if (control === 'array') {
+            const built = buildArrayConfig(field, raw);
+            if (built.error) {
+                return { error: built.error };
+            }
+            const arr = built.value ?? [];
+            // Emit a required array (already guaranteed non-short above) and
+            // any non-empty optional array; omit an empty optional array so
+            // it falls through to the type's own default.
+            if (field.required || arr.length > 0) {
+                result[field.key] = arr;
             }
             continue;
         }
-        if (control === 'number') {
-            const num = Number(raw);
-            if (Number.isNaN(num)) {
-                return { error: `${field.label} must be a number.` };
-            }
-            if (primaryType(field.schema) === 'integer' && !Number.isInteger(num)) {
-                return { error: `${field.label} must be a whole number.` };
-            }
-            if (typeof field.schema.minimum === 'number' && num < field.schema.minimum) {
-                return { error: `${field.label} must be at least ${field.schema.minimum}.` };
-            }
-            if (typeof field.schema.maximum === 'number' && num > field.schema.maximum) {
-                return { error: `${field.label} must be at most ${field.schema.maximum}.` };
-            }
-            result[field.key] = num;
-        } else {
-            result[field.key] = raw;
+        const res = coerceScalarValue(field.schema, raw, field.label, field.required);
+        if (res.error) {
+            return { error: res.error };
+        }
+        if ('value' in res) {
+            result[field.key] = res.value;
         }
     }
     return { value: result };
@@ -1216,6 +1362,16 @@ function InstanceConfigField({
     onChange: (next: unknown) => void;
 }) {
     const control = fieldControlType(field.schema);
+    if (control === 'array') {
+        return (
+            <InstanceConfigArrayField
+                field={field}
+                value={value}
+                disabled={disabled}
+                onChange={onChange}
+            />
+        );
+    }
     const fieldId = `wp-cfg-${field.key}`;
     const hintId = field.description ? `${fieldId}-hint` : undefined;
     const marker = field.required ? <span className={styles.config_required} aria-hidden> *</span> : null;
@@ -1315,6 +1471,141 @@ function InstanceConfigField({
                 aria-describedby={hintId}
             />
             {field.description && <span id={hintId} className={styles.field_hint}>{field.description}</span>}
+        </div>
+    );
+}
+
+/**
+ * Derive a singular noun from a field label for per-row labels and the
+ * add-row button ("Zones" → "Zone"). A naive trailing-`s` strip — adequate
+ * for the operator-facing labels widget schemas use and far cheaper than a
+ * pluralization library; falls back to the label unchanged when stripping
+ * would leave nothing.
+ *
+ * @param label - The array field's plural label
+ * @returns A best-effort singular form
+ */
+function singularizeLabel(label: string): string {
+    return label.length > 1 && label.endsWith('s') ? label.slice(0, -1) : label;
+}
+
+/**
+ * Renders an array instanceConfig field as an editable list of rows so a
+ * widget type whose schema requires an array (e.g. `core:world-clocks`
+ * `zones`) is configurable through the structured form instead of only the
+ * raw-JSON escape hatch. Each row is either a group of scalar sub-fields
+ * (object items) or a single scalar control (scalar items); both reuse
+ * {@link InstanceConfigField} so rendering and validation stay consistent
+ * with top-level fields. Operators add and remove rows; the parent holds the
+ * array in working state and {@link buildArrayConfig} validates it on save.
+ *
+ * @param props - The array field descriptor, current value, change handler, and disabled flag
+ */
+function InstanceConfigArrayField({
+    field,
+    value,
+    disabled,
+    onChange
+}: {
+    field: ConfigFieldDescriptor;
+    value: unknown;
+    disabled: boolean;
+    onChange: (next: unknown) => void;
+}) {
+    const items = Array.isArray(value) ? value : [];
+    const { kind, itemSchema, fields: itemFields } = describeArrayItems(field.schema);
+    const marker = field.required ? <span className={styles.config_required} aria-hidden> *</span> : null;
+    const singular = singularizeLabel(field.label);
+
+    /**
+     * Replace one row immutably and lift the new array to the parent.
+     *
+     * @param index - Row position to replace
+     * @param nextItem - The row's new value
+     */
+    const updateItem = (index: number, nextItem: unknown) => {
+        const next = items.slice();
+        next[index] = nextItem;
+        onChange(next);
+    };
+
+    /**
+     * Drop one row and lift the shortened array to the parent.
+     *
+     * @param index - Row position to remove
+     */
+    const removeItem = (index: number) => {
+        onChange(items.filter((_, i) => i !== index));
+    };
+
+    /**
+     * Append a blank row seeded from the item shape — object items get their
+     * scalar defaults, scalar items get the item schema default or an empty
+     * string — so a fresh row renders editable controls rather than nothing.
+     */
+    const addItem = () => {
+        const blank = kind === 'object'
+            ? coerceInitialConfig(itemFields, undefined)
+            : itemSchema.default ?? '';
+        onChange([...items, blank]);
+    };
+
+    return (
+        <div className={styles.field}>
+            <span className={styles.field_label}>{field.label}{marker}</span>
+            {field.description && <span className={styles.field_hint}>{field.description}</span>}
+            <div className={styles.config_array}>
+                {items.length === 0 && (
+                    <span className={styles.field_hint}>No entries yet.</span>
+                )}
+                {items.map((item, index) => (
+                    <div key={index} className={styles.config_array_item}>
+                        <div className={styles.config_array_fields}>
+                            {kind === 'object'
+                                ? itemFields.map(sub => (
+                                    <InstanceConfigField
+                                        key={sub.key}
+                                        field={sub}
+                                        value={item && typeof item === 'object'
+                                            ? (item as Record<string, unknown>)[sub.key]
+                                            : undefined}
+                                        disabled={disabled}
+                                        onChange={(next) => updateItem(index, {
+                                            ...(item && typeof item === 'object' ? item as Record<string, unknown> : {}),
+                                            [sub.key]: next
+                                        })}
+                                    />
+                                ))
+                                : (
+                                    <InstanceConfigField
+                                        field={{ key: `${field.key}_item`, schema: itemSchema, required: false, label: `${singular} ${index + 1}` }}
+                                        value={item}
+                                        disabled={disabled}
+                                        onChange={(next) => updateItem(index, next)}
+                                    />
+                                )}
+                        </div>
+                        <IconButton
+                            size="sm"
+                            variant="danger"
+                            aria-label={`Remove ${singular} ${index + 1}`}
+                            onClick={() => removeItem(index)}
+                            disabled={disabled}
+                        >
+                            <Trash2 size={14} />
+                        </IconButton>
+                    </div>
+                ))}
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    onClick={addItem}
+                    disabled={disabled}
+                >
+                    <Plus size={14} /> Add {singular.toLowerCase()}
+                </Button>
+            </div>
         </div>
     );
 }
