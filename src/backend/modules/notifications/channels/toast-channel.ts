@@ -64,7 +64,12 @@ export class ToastChannel implements INotificationChannel {
                 severity: message.severity,
                 // Flatten the descriptor onto the established wire shape so the
                 // client `NotificationHandler` is unchanged by the content-type model.
-                title: message.content.title,
+                // A descriptor may legitimately carry `body` with no `title`
+                // (IContentDescriptor.title is optional); since the client drops any
+                // notification without a title, fall back to the category label so a
+                // body-only notification still surfaces instead of being silently
+                // counted as delivered while the user sees nothing.
+                title: message.content.title ?? message.categoryLabel,
                 body: message.content.body,
                 createdAt: message.createdAt.toISOString(),
                 data: message.data

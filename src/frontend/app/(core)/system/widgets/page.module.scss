@@ -384,6 +384,36 @@
     color: var(--color-danger-text);
 }
 
+/* Repeatable array field: a column of item rows plus an add-row button. */
+.config_array {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+/* One array row: its field(s) take the remaining width, the remove button
+ * sits at the top-right so it stays aligned with the first field even when an
+ * object item stacks several sub-fields. */
+.config_array_item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap-sm);
+    padding: var(--padding-sm);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+}
+
+/* The editable fields within a row — for object items this stacks the
+ * sub-fields; for scalar items it holds the single control. */
+.config_array_fields {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
 .form_footer {
     display: flex;
     justify-content: flex-end;
