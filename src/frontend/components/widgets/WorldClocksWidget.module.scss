@@ -1,24 +1,25 @@
 /**
  * Scoped styles for the world-clocks widget.
  *
- * A flag + time row that must stay compact and survive any host width —
- * it ships in site-wide zones (ticker, footer) where the available space
- * is unknown — so it wraps with flexbox and tightens its gap via a
- * container query rather than a viewport media query.
+ * A compact flag + time row that ships in site-wide zones (ticker, footer)
+ * where the available width is unknown. Wrap, horizontal alignment, and gap
+ * are operator-controlled per placement: the component sets the
+ * `--world-clocks-*` custom properties from the SSR `instanceConfig`, and the
+ * rules below consume them with fallbacks matching the schema defaults
+ * (single non-wrapping, left-aligned row at the medium token gap). Because
+ * spacing is now an explicit operator choice, there is no responsive gap
+ * override — honouring the chosen value beats silently retightening it.
  */
-
-@use '../../app/breakpoints' as *;
 
 .clocks {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: var(--world-clocks-wrap, nowrap);
+    justify-content: var(--world-clocks-justify, flex-start);
     align-items: center;
-    gap: var(--gap-md);
+    gap: var(--world-clocks-gap, var(--gap-md));
     margin: 0;
     padding: 0;
     list-style: none;
-    container-type: inline-size;
-    container-name: world-clocks;
 }
 
 .clock {

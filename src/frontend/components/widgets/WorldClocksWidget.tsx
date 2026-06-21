@@ -2,8 +2,14 @@
  * @fileoverview Core "world clocks" widget renderer.
  *
  * Renders the operator-configured clock row carried by the
- * `core:world-clocks` widget type: a compact, horizontally-wrapping
- * sequence of country flag + live local time, one cell per time zone.
+ * `core:world-clocks` widget type: a compact, horizontal sequence of
+ * country flag + live local time, one cell per time zone. The row's
+ * wrap, horizontal alignment, and spacing are operator-set via the
+ * placement's `instanceConfig` and applied as inline CSS custom
+ * properties (see {@link WorldClocksWidget}); they default to a single
+ * non-wrapping, left-aligned row because the widget is a flex child of
+ * its zone, whose min-content width would otherwise collapse a wrapping
+ * row to one clock and stack the rest vertically.
  *
  * SSR + Live Updates: the flags and structure derive entirely from the
  * SSR `data` prop and render on the server with no hydration risk. The
@@ -28,7 +34,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { ComponentType, SVGProps } from 'react';
+import type { ComponentType, CSSProperties, SVGProps } from 'react';
 import * as FlagComponents from 'country-flag-icons/react/3x2';
 import type { IWidgetComponentProps } from '@/types';
 import styles from './WorldClocksWidget.module.scss';
@@ -72,6 +78,12 @@ interface IWorldClocksData {
     zones?: IWorldClockZone[];
     /** Render 12-hour (AM/PM) time when true, otherwise 24-hour. */
     hour12?: boolean;
+    /** `flex-wrap` for the row: keep one line (`nowrap`) or reflow (`wrap`). */
+    wrap?: 'nowrap' | 'wrap';
+    /** `justify-content` distributing the clocks across the widget width. */
+    justify?: 'flex-start' | 'center' | 'flex-end' | 'space-between';
+    /** Token gap size between clocks (`sm`/`md`/`lg` → `--gap-*`). */
+    gap?: 'sm' | 'md' | 'lg';
 }
 
 /**
@@ -155,17 +167,35 @@ function ClockCell({
 }
 
 /**
- * World-clocks widget: a compact, wrapping row of country flag + live
- * local time per operator-configured time zone. See the file overview for
- * the SSR + Live Updates and flag-source rationale.
+ * World-clocks widget: a compact row of country flag + live local time per
+ * operator-configured time zone, with operator-controlled wrap, alignment,
+ * and spacing applied as inline custom properties. See the file overview
+ * for the SSR + Live Updates, layout-default, and flag-source rationale.
  *
  * @param props - Widget component props; only the SSR `data` is consumed
  *   (the row needs no plugin context, route, or live socket).
  * @returns The clock row, or null when no zones are configured.
  */
 export function WorldClocksWidget({ data }: IWidgetComponentProps) {
-    const { zones = [], hour12 = false } = (data ?? {}) as IWorldClocksData;
+    const {
+        zones = [],
+        hour12 = false,
+        wrap = 'nowrap',
+        justify = 'flex-start',
+        gap = 'md'
+    } = (data ?? {}) as IWorldClocksData;
     const [now, setNow] = useState<Date | null>(null);
+
+    // Operator layout choices ride to the SCSS via custom properties rather
+    // than conditional class names: the values come straight from the SSR
+    // `data` prop, so the inline style is identical on server and client and
+    // adds no hydration risk, while the stylesheet keeps the design-token gap
+    // and sensible fallbacks. `gap` maps to a `--gap-*` token, never a raw size.
+    const layoutStyle = {
+        '--world-clocks-wrap': wrap,
+        '--world-clocks-justify': justify,
+        '--world-clocks-gap': `var(--gap-${gap})`
+    } as CSSProperties;
 
     useEffect(() => {
         // Mount gate: set the first time only after hydration, then align
@@ -193,7 +223,7 @@ export function WorldClocksWidget({ data }: IWidgetComponentProps) {
     }
 
     return (
-        <ul className={styles.clocks} aria-label="World clocks">
+        <ul className={styles.clocks} style={layoutStyle} aria-label="World clocks">
             {zones.map((zone, index) => (
                 <ClockCell
                     key={`${zone.timeZone}-${index}`}
