@@ -16,6 +16,8 @@
 
 import { randomUUID } from 'node:crypto';
 import type {
+    ContentTypeDisposer,
+    IContentRegistry,
     ICurationEditPatch,
     ICurationHoldInput,
     ICurationItem,
@@ -28,10 +30,16 @@ import type {
 import { shouldAutoApproveCuration } from './curation-auto-approve-context.js';
 import type { CurationQueue } from './curation-queue.js';
 
-/** A registered type with the id of the provider that owns it. */
+/**
+ * A registered type with the id of the provider that owns it, plus the disposer
+ * that removes this type's content facet from the central content registry —
+ * held so unregister (or a replacing re-registration) drops the shared-registry
+ * mirror in lockstep with the local map, preventing drift.
+ */
 interface IRegisteredType {
     type: ICurationType;
     providerId: string;
+    contentDisposer: ContentTypeDisposer;
 }
 
 /** Broadcast sink for dashboard refetch signals (a no-op until wired). */
@@ -57,10 +65,15 @@ export class CurationService implements ICurationService {
     /**
      * @param logger - Module-scoped logger.
      * @param queue - Persistent store of curation envelopes.
+     * @param contentRegistry - The central content-type registry. Curation
+     *        mirrors every registered type's content facet into it (a curation
+     *        type *is* an `IContentType`) so other pipelines discover the same
+     *        content types; curation keeps its own map for the binding verbs.
      */
     constructor(
         private readonly logger: ISystemLogService,
-        private readonly queue: CurationQueue
+        private readonly queue: CurationQueue,
+        private readonly contentRegistry: IContentRegistry
     ) {}
 
     /**
@@ -81,7 +94,12 @@ export class CurationService implements ICurationService {
      * @param providerId - Id of the registering plugin or module.
      */
     registerType(type: ICurationType, providerId: string): void {
-        this.types.set(type.typeId, { type, providerId });
+        // A replacing registration must dispose the prior content-registry
+        // mirror before installing the new one, so the shared registry never
+        // accumulates a stale facet for the same id.
+        this.types.get(type.typeId)?.contentDisposer();
+        const contentDisposer = this.contentRegistry.register(type, providerId);
+        this.types.set(type.typeId, { type, providerId, contentDisposer });
         this.logger.info({ typeId: type.typeId, providerId }, 'Curation type registered');
     }
 
@@ -93,6 +111,9 @@ export class CurationService implements ICurationService {
      * @returns True if a type was removed.
      */
     unregisterType(typeId: string): boolean {
+        // Drop the content-registry mirror in lockstep with the local entry so a
+        // disabled provider's content facet does not linger for other pipelines.
+        this.types.get(typeId)?.contentDisposer();
         const removed = this.types.delete(typeId);
         if (removed) {
             this.logger.info({ typeId }, 'Curation type unregistered');
@@ -297,7 +318,7 @@ export class CurationService implements ICurationService {
                 // pending_approval) for complete safety.
                 const latest = await this.queue.get(id);
                 if (latest && latest.status === 'pending') {
-                    await entry.type.applyEdit(latest, patch);
+                    await entry.type.applyEdit(latest.ref, patch);
                     // The edit already landed in the provider's record; a failure
                     // to re-derive the preview must not report the edit as failed.
                     // Fall back to patching the cached body so the snapshot still

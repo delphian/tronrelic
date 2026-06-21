@@ -16,6 +16,9 @@ import type {
     INotificationChannelTally,
     IRenderedNotification,
     INotificationPolicy,
+    NotificationContentFeature,
+    IContentRegistry,
+    IContentDescriptor,
     ISystemLogService
 } from '@/types';
 import type { CategoryRegistry } from './category-registry.js';
@@ -33,7 +36,8 @@ import type { INotificationPreferencesDocument, INotificationAuditDocument } fro
 export class DispatchService {
     /**
      * @param categories - Category registry (descriptors + defaults).
-     * @param channels - Channel registry (transports).
+     * @param channels - Channel registry (transports + capabilities).
+     * @param content - Central content-type registry; resolves a request's typeId into a descriptor via `describe(ref)`.
      * @param preferences - Per-user preference store.
      * @param policy - Admin policy store.
      * @param audit - Audit store.
@@ -43,6 +47,7 @@ export class DispatchService {
     constructor(
         private readonly categories: CategoryRegistry,
         private readonly channels: ChannelRegistry,
+        private readonly content: IContentRegistry,
         private readonly preferences: PreferenceService,
         private readonly policy: PolicyService,
         private readonly audit: AuditService,
@@ -51,17 +56,27 @@ export class DispatchService {
     ) {}
 
     /**
-     * Resolve, gate, deliver, and audit a notification.
+     * Resolve content, gate, deliver, and audit a notification. The request
+     * names a content type and an opaque ref; this resolves the type through the
+     * content registry, renders the descriptor, and routes to the channels whose
+     * capabilities can render it.
      *
-     * @param request - Category id, content, and optional audience override.
+     * @param request - Category id, content type id + ref, and optional audience override.
      * @returns A receipt with the audit id and delivered/suppressed counts.
-     * @throws If the category is not registered (a programming error in the source).
+     * @throws If the category or the content type is not registered (a programming error in the source).
      */
     async notify(request: INotificationRequest): Promise<INotificationReceipt> {
         const category = this.categories.get(request.category);
         if (!category) {
             throw new Error(`Cannot notify: category "${request.category}" is not registered`);
         }
+
+        const contentType = this.content.get(request.typeId);
+        if (!contentType) {
+            throw new Error(`Cannot notify: content type "${request.typeId}" is not registered`);
+        }
+        const descriptor = await contentType.describe(request.ref);
+        const requiredFeatures = this.featuresOf(descriptor);
 
         const audience = request.audienceOverride ?? category.defaultAudience;
         const recipientIds = await this.recipients.resolve(audience);
@@ -74,8 +89,7 @@ export class DispatchService {
             categoryId: category.id,
             categoryLabel: category.label,
             severity,
-            title: request.title,
-            body: request.body,
+            content: descriptor,
             data: request.data,
             createdAt
         };
@@ -86,18 +100,21 @@ export class DispatchService {
         const categoryEnabled = this.policy.isCategoryEnabled(policySnapshot, category.id);
         const tallies: INotificationChannelTally[] = [];
 
-        // Iterate every channel the category declares so the audit shows what was
-        // suppressed, not just what was delivered. A channel is a delivery
-        // candidate only when the category is policy-enabled, the channel is
-        // policy-enabled, and the channel is registered.
-        for (const channelId of category.supportedChannels) {
-            const channel = this.channels.get(channelId);
-            const channelEnabled =
-                categoryEnabled &&
-                this.policy.isChannelEnabled(policySnapshot, channelId) &&
-                channel !== undefined;
+        // Candidate channels are the registered channels that can render every
+        // feature the resolved descriptor carries — capability routing replaces
+        // the category naming its channels. A channel that cannot render the
+        // content is not a candidate (and not a suppression); a candidate that is
+        // policy-disabled or fully opted-out is tallied as suppressed so the audit
+        // shows what was withheld, not only what was delivered.
+        for (const info of this.channels.list()) {
+            const channel = this.channels.get(info.id);
+            if (!channel || !this.channelCanRender(channel.accepts, requiredFeatures)) {
+                continue;
+            }
+            const channelId = channel.id;
+            const channelEnabled = categoryEnabled && this.policy.isChannelEnabled(policySnapshot, channelId);
 
-            if (!channelEnabled || !channel) {
+            if (!channelEnabled) {
                 tallies.push({ channelId, delivered: 0, suppressed: recipientIds.length });
                 continue;
             }
@@ -129,8 +146,8 @@ export class DispatchService {
             categoryLabel: category.label,
             source: category.source,
             severity,
-            title: request.title,
-            body: request.body,
+            title: descriptor.title ?? '',
+            body: descriptor.body,
             audience,
             recipientCount: recipientIds.length,
             suppressedCount: suppressedTotal,
@@ -141,7 +158,7 @@ export class DispatchService {
         await this.audit.record(auditDoc);
 
         this.logger.info(
-            { categoryId: category.id, recipients: recipientIds.length, delivered, suppressed: suppressedTotal },
+            { categoryId: category.id, typeId: request.typeId, recipients: recipientIds.length, delivered, suppressed: suppressedTotal },
             'Notification dispatched'
         );
 
@@ -152,6 +169,36 @@ export class DispatchService {
             suppressed: suppressedTotal,
             channels: tallies
         };
+    }
+
+    /**
+     * The features a descriptor actually carries, so dispatch can match them
+     * against each channel's `accepts`. A field counts only when populated — an
+     * empty body or empty media array is not a feature the channel must support.
+     *
+     * @param descriptor - The resolved content descriptor.
+     * @returns The present renderable features.
+     */
+    private featuresOf(descriptor: IContentDescriptor): NotificationContentFeature[] {
+        const features: NotificationContentFeature[] = [];
+        if (descriptor.title) features.push('title');
+        if (descriptor.body) features.push('body');
+        if (descriptor.media && descriptor.media.length > 0) features.push('media');
+        if (descriptor.fields && descriptor.fields.length > 0) features.push('fields');
+        return features;
+    }
+
+    /**
+     * Whether a channel can render every feature the content carries. A channel
+     * with no matching capability for a required feature is excluded from
+     * delivery rather than handed content it would drop or mangle.
+     *
+     * @param accepts - The channel's declared renderable features.
+     * @param required - The features the descriptor carries.
+     * @returns True when `accepts` covers every required feature.
+     */
+    private channelCanRender(accepts: NotificationContentFeature[], required: NotificationContentFeature[]): boolean {
+        return required.every((feature) => accepts.includes(feature));
     }
 
     /**

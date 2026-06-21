@@ -16,6 +16,7 @@ import { ScreenConfigService } from '../services/screen-config.service.js';
 import { runWithCurationAutoApprove, shouldAutoApproveCuration } from '../services/curation-auto-approve-context.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
+import { ContentRegistry, CONTENT_TYPES_SERVICE } from '../../../services/content-registry.js';
 
 /** Minimal menu service whose `create` records the admin nav registration. */
 function createMockMenuService(): IMenuService {
@@ -185,7 +186,7 @@ describe('AiToolsModule', () => {
     beforeEach(async () => {
         module = new AiToolsModule();
         mockApp = { use: vi.fn() };
-        mockRegistry = createMockServiceRegistry();
+        mockRegistry = createMockServiceRegistry({ [CONTENT_TYPES_SERVICE]: new ContentRegistry(createMockLogger()) });
         mockHooks = createMockHookRegistry();
         await module.init({
             database: createMockDatabaseService(),
@@ -224,7 +225,7 @@ describe('AiToolsModule', () => {
             const scheduledModule = new AiToolsModule();
             await scheduledModule.init({
                 database: createMockDatabaseService(),
-                serviceRegistry: createMockServiceRegistry(),
+                serviceRegistry: createMockServiceRegistry({ [CONTENT_TYPES_SERVICE]: new ContentRegistry(createMockLogger()) }),
                 hookRegistry: createMockHookRegistry(),
                 menuService: createMockMenuService(),
                 app: { use: vi.fn() } as never,
@@ -944,7 +945,7 @@ describe('CurationService', () => {
     function makeService(): CurationService {
         const logger = createMockLogger();
         const queue = new CurationQueue(logger, createMockDatabaseService());
-        return new CurationService(logger, queue);
+        return new CurationService(logger, queue, new ContentRegistry(logger));
     }
 
     it('registers types and reports them', () => {
@@ -1075,7 +1076,7 @@ describe('CurationService', () => {
         let stored = 'original';
         const type = spyCurationType({
             describe: vi.fn(async () => ({ body: stored, editable: true })),
-            applyEdit: vi.fn(async (_item, patch) => { if (typeof patch.body === 'string') stored = patch.body; })
+            applyEdit: vi.fn(async (_ref, patch) => { if (typeof patch.body === 'string') stored = patch.body; })
         });
         service.registerType(type, 'x-poster');
         const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
@@ -1083,7 +1084,8 @@ describe('CurationService', () => {
 
         const updated = await service.edit(held.id, { body: 'edited' }, 'admin-1');
 
-        expect(type.applyEdit).toHaveBeenCalledWith(expect.objectContaining({ id: held.id }), { body: 'edited' });
+        // applyEdit now receives the opaque ref (content self-mutation), not the curation envelope.
+        expect(type.applyEdit).toHaveBeenCalledWith(expect.objectContaining({ postId: 'p1' }), { body: 'edited' });
         expect(updated?.preview.body).toBe('edited');
         // The cached snapshot is refreshed too, so the disabled-owner fallback is current.
         expect((await service.get(held.id))?.preview.body).toBe('edited');

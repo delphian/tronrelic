@@ -28,6 +28,43 @@
     margin: 0;
 }
 
+.filter_bar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    flex-wrap: wrap;
+}
+
+.filter_field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: var(--max-width-xs);
+    flex: 1 1 var(--max-width-xs);
+}
+
+.filter_label {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.new_route_group {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+.new_route_group > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.route_gate {
+    margin: 0;
+}
+
 .track {
     display: flex;
     flex-direction: column;

@@ -176,6 +176,54 @@ function lookupZone(snapshot: IZoneSnapshot | null, zoneId: string): { label: st
 }
 
 /**
+ * Mirror of the backend `routeMatches` grammar
+ * (`backend/modules/widgets/placements/route-matcher.ts`) so the editor
+ * can filter placements to a chosen URL exactly the way SSR resolution
+ * does. Kept in lockstep with the server: empty `routes` matches every
+ * path; otherwise an entry matches as an exact path, a single-segment
+ * glob (`/u/*`), or a deep glob (`/u/**`).
+ *
+ * @param routes - Placement's route filter.
+ * @param route - Selected URL path to test against.
+ * @returns True when the placement should appear on the selected URL.
+ */
+function placementMatchesRoute(routes: ReadonlyArray<string>, route: string): boolean {
+    if (routes.length === 0) return true;
+    for (const pattern of routes) {
+        if (pattern === route) return true;
+        if (pattern.endsWith('/**')) {
+            const prefix = pattern.slice(0, -3);
+            if (prefix.length === 0 ? route.startsWith('/') : route.startsWith(`${prefix}/`)) return true;
+        } else if (pattern.endsWith('/*')) {
+            const prefix = pattern.slice(0, -2);
+            if (route.startsWith(`${prefix}/`)) {
+                const remainder = route.slice(prefix.length + 1);
+                if (remainder.length > 0 && remainder.indexOf('/') === -1) return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Light client-side validation for the new-URL input, mirroring the
+ * server's `normaliseRoutePattern` rules the admin API enforces: must be
+ * a non-empty, whitespace-free path starting with `/`. Returns the
+ * trimmed value, or null when invalid, so the editor can reject a bad
+ * URL before it ever reaches a placement write.
+ *
+ * @param value - Raw text from the new-URL field.
+ * @returns Normalised path, or null when invalid.
+ */
+function normaliseRouteInput(value: string): string | null {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) return null;
+    if (!trimmed.startsWith('/')) return null;
+    if (/\s/.test(trimmed)) return null;
+    return trimmed;
+}
+
+/**
  * Top-level admin page rendering the placement editor.
  */
 export default function WidgetsAdminPage() {
@@ -188,6 +236,15 @@ export default function WidgetsAdminPage() {
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
     const [busyId, setBusyId] = useState<string | null>(null);
+
+    // URL-centric editing. Zones stay hidden until the operator picks a
+    // page URL; only then are that URL's widgets shown. `selectedRoute`
+    // is null before any selection. `customRoutes` holds URLs the
+    // operator typed in the new-URL box that no placement targets yet, so
+    // they remain selectable until a widget is placed on them.
+    const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
+    const [newRouteDraft, setNewRouteDraft] = useState<string>('');
+    const [customRoutes, setCustomRoutes] = useState<string[]>([]);
 
     const notifyError = useCallback(
         (title: string, err: unknown) => {
@@ -450,13 +507,33 @@ export default function WidgetsAdminPage() {
     );
 
     /**
-     * Group placements by zone for rendering. Zones with no
-     * placements still render so operators can see they exist.
+     * Distinct page URLs operators can filter by — every route already
+     * assigned to a placement, plus any the operator typed in the
+     * new-URL box. Empty `routes` (global placements) contribute no URL
+     * since they target every path; they surface under whichever URL is
+     * selected via the route matcher. Sorted for a stable dropdown.
+     */
+    const routeOptions = useMemo(() => {
+        const set = new Set<string>(customRoutes);
+        for (const placement of placements) {
+            for (const route of placement.routes) set.add(route);
+        }
+        return Array.from(set).sort((a, b) => a.localeCompare(b));
+    }, [placements, customRoutes]);
+
+    /**
+     * Group placements by zone for rendering, scoped to the selected
+     * URL. Returns empty until a URL is selected so no widgets show
+     * before the operator picks a page. Once selected, each zone lists
+     * only the placements whose route filter matches that URL (exact,
+     * glob, or global). Empty zones still render so operators see the
+     * full target set for the page.
      */
     const grouped = useMemo(() => {
-        if (!zones) return [] as Array<{ trackId: string; trackLabel: string; rows: Array<{ zoneId: string; zoneLabel: string; placements: IPlacement[] }> }>;
+        if (!zones || selectedRoute === null) return [] as Array<{ trackId: string; trackLabel: string; rows: Array<{ zoneId: string; zoneLabel: string; placements: IPlacement[] }> }>;
         const byZone = new Map<string, IPlacement[]>();
         for (const placement of placements) {
+            if (!placementMatchesRoute(placement.routes, selectedRoute)) continue;
             const bucket = byZone.get(placement.zoneId) ?? [];
             bucket.push(placement);
             byZone.set(placement.zoneId, bucket);
@@ -473,13 +550,34 @@ export default function WidgetsAdminPage() {
                 placements: byZone.get(zone.id) ?? []
             }))
         }));
-    }, [zones, placements]);
+    }, [zones, placements, selectedRoute]);
+
+    /**
+     * Commit the new-URL field: validate it, register it as a selectable
+     * URL, and switch the editor to it so the operator can immediately
+     * place widgets on that page. Invalid input raises a toast rather
+     * than silently failing.
+     */
+    const saveNewRoute = useCallback(() => {
+        const normalised = normaliseRouteInput(newRouteDraft);
+        if (!normalised) {
+            pushToast({
+                tone: 'danger',
+                title: 'Invalid URL',
+                description: 'Enter a root-relative path beginning with “/”, e.g. /markets.'
+            });
+            return;
+        }
+        setCustomRoutes(prev => (prev.includes(normalised) ? prev : [...prev, normalised]));
+        setSelectedRoute(normalised);
+        setNewRouteDraft('');
+    }, [newRouteDraft, pushToast]);
 
     /**
      * Open the create/edit form modal.
      */
     const openPlacementModal = useCallback(
-        (mode: 'create' | 'edit', initial?: IPlacement) => {
+        (mode: 'create' | 'edit', initial?: IPlacement, defaultRoute?: string) => {
             const id = openModal({
                 title: mode === 'create' ? 'Place widget' : 'Edit widget',
                 size: 'md',
@@ -487,6 +585,7 @@ export default function WidgetsAdminPage() {
                     <PlacementForm
                         mode={mode}
                         initial={initial}
+                        defaultRoutes={defaultRoute ? [defaultRoute] : undefined}
                         types={types}
                         zones={zones}
                         onCancel={() => closeModal(id)}
@@ -584,12 +683,54 @@ export default function WidgetsAdminPage() {
                         <Button
                             variant="primary"
                             icon={<Plus size={16} />}
-                            onClick={() => openPlacementModal('create')}
-                            disabled={!zones || !types}
+                            onClick={() => openPlacementModal('create', undefined, selectedRoute ?? undefined)}
+                            disabled={!zones || !types || selectedRoute === null}
                         >
                             Place widget
                         </Button>
                     </div>
+
+                    {!loading && (
+                        <div className={styles.filter_bar}>
+                            <div className={styles.filter_field}>
+                                <label className={styles.filter_label} htmlFor="wp-route-filter">
+                                    Page URL
+                                </label>
+                                <Select
+                                    id="wp-route-filter"
+                                    value={selectedRoute ?? ''}
+                                    onChange={(e) => setSelectedRoute(e.target.value === '' ? null : e.target.value)}
+                                >
+                                    <option value="">Select a page URL&hellip;</option>
+                                    {routeOptions.map(route => (
+                                        <option key={route} value={route}>{route}</option>
+                                    ))}
+                                </Select>
+                            </div>
+                            <div className={styles.new_route_group}>
+                                <div className={styles.filter_field}>
+                                    <label className={styles.filter_label} htmlFor="wp-route-new">
+                                        New page URL
+                                    </label>
+                                    <Input
+                                        id="wp-route-new"
+                                        type="text"
+                                        placeholder="/markets"
+                                        value={newRouteDraft}
+                                        onChange={(e) => setNewRouteDraft(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); saveNewRoute(); } }}
+                                    />
+                                </div>
+                                <Button
+                                    variant="secondary"
+                                    onClick={saveNewRoute}
+                                    disabled={newRouteDraft.trim().length === 0}
+                                >
+                                    Save
+                                </Button>
+                            </div>
+                        </div>
+                    )}
 
                     {error && <div className="alert" role="alert">{error}</div>}
 
@@ -597,11 +738,17 @@ export default function WidgetsAdminPage() {
                         <p className="text-muted">Loading placement editor&hellip;</p>
                     )}
 
-                    {!loading && grouped.length === 0 && (
+                    {!loading && !zones && (
                         <p className="text-muted">No zones declared.</p>
                     )}
 
-                    {!loading && (
+                    {!loading && zones && selectedRoute === null && (
+                        <p className={`text-muted ${styles.route_gate}`}>
+                            Select a page URL above — or add a new one — to view and manage its widgets.
+                        </p>
+                    )}
+
+                    {!loading && zones && selectedRoute !== null && (
                         <DndContext
                             sensors={sensors}
                             collisionDetection={closestCorners}
@@ -1179,16 +1326,23 @@ function InstanceConfigField({
 interface PlacementFormProps {
     mode: 'create' | 'edit';
     initial?: IPlacement;
+    /**
+     * Routes to pre-fill in create mode — the URL the operator has the
+     * editor scoped to, so a widget placed from that view targets the
+     * page they were looking at. Ignored in edit mode (the placement's
+     * own routes win).
+     */
+    defaultRoutes?: string[];
     types: IWidgetTypeSnapshot | null;
     zones: IZoneSnapshot | null;
     onSubmit: (data: IPlacementCreate | IPlacementPatch) => Promise<void>;
     onCancel: () => void;
 }
 
-function PlacementForm({ mode, initial, types, zones, onSubmit, onCancel }: PlacementFormProps) {
+function PlacementForm({ mode, initial, defaultRoutes, types, zones, onSubmit, onCancel }: PlacementFormProps) {
     const [typeId, setTypeId] = useState<string>(initial?.typeId ?? '');
     const [zoneId, setZoneId] = useState<string>(initial?.zoneId ?? '');
-    const [routes, setRoutes] = useState<string[]>(initial?.routes ?? []);
+    const [routes, setRoutes] = useState<string[]>(initial?.routes ?? defaultRoutes ?? []);
     const [routeDraft, setRouteDraft] = useState<string>('');
     const [order, setOrder] = useState<number>(initial?.order ?? 100);
     const [title, setTitle] = useState<string>(initial?.title ?? '');

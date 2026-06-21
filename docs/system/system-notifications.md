@@ -12,9 +12,9 @@ Backwards compatibility with the wallet-keyed `NotificationService` is explicitl
 
 ## How It Works
 
-A **source** registers a **category** (a named notification type it owns) on the notifications service, then calls `notify()` whenever the event occurs. The service resolves the category's **audience** to a recipient set, intersects the category's supported **channels** with each recipient's **preferences** and the admin **policy**, delivers through each surviving channel's transport, and writes one **audit** record describing what was sent and what was suppressed.
+A **source** registers a **category** (a named notification type it owns) on the notifications service, then calls `notify({ category, typeId, ref })` whenever the event occurs. The content arrives by reference — a [content type](./system-content-types.md) id plus an opaque `ref`, exactly as a curation effect is held. The service resolves the **audience** to a recipient set, resolves the request's **content type** into a descriptor via `describe(ref)`, routes to the **channels** whose declared capabilities can render that descriptor's features, applies each recipient's **preferences** and the admin **policy**, delivers through each surviving channel's transport, and writes one **audit** record describing what was sent and what was suppressed.
 
-The deciding split: a category's *existence and supported channels* are code (registered at boot, like the `HOOKS` registry); its *enabled state, per-user opt-outs, and audit history* are data (persisted). A category vanishing because a plugin is disabled must not corrupt history — so audit records snapshot the category label and audience at send time rather than referencing live state.
+The deciding split: a category's *existence* is code (registered at boot, like the `HOOKS` registry); its *enabled state, per-user opt-outs, and audit history* are data (persisted). A category no longer names its channels — which channels reach a recipient is *derived* at dispatch from the content's features matched against each channel's `accepts`. A category vanishing because a plugin is disabled must not corrupt history — so audit records snapshot the category label and audience at send time rather than referencing live state.
 
 ### Module, not plugin
 
@@ -26,8 +26,8 @@ It still publishes its produce-and-fire service on the **service registry** (`IS
 
 | Concept | Owner | Persisted? | Purpose |
 |---------|-------|-----------|---------|
-| Category | Source (plugin/module) | No (code) | A named notification type: id, label, audience, supported channels, defaults |
-| Channel | Channel provider | No (code) | A delivery transport: `toast` now; `email`, `push` later |
+| Category | Source (plugin/module) | No (code) | A named notification type: id, label, audience, per-channel defaults |
+| Channel | Channel provider | No (code) | A delivery transport that declares the content features it `accepts`: `toast` now; `email`, `push` later |
 | Audience | Category / call site | Snapshot in audit | Who to reach: groups, user ids, wallets |
 | Preference | User | Yes | Per-user opt-out of a (category, channel) pair, plus a global mute |
 | Policy | Admin | Yes | Global enable/disable of a channel or a category |
@@ -52,13 +52,12 @@ Everything else is internal to the module and reached only through its own admin
 
 ### The resolution pipeline
 
-`DispatchService.notify()` is the heart. For a request it resolves the audience to user ids, then for each (recipient, channel) applies an ordered gate — the first failing gate suppresses that channel for that recipient, and the reason is counted in the audit:
+`DispatchService.notify()` is the heart. For a request it resolves the audience to user ids and resolves the content type into a descriptor (`describe(ref)`), then computes the features the descriptor carries. The **candidate channels** are the registered channels whose `accepts` covers every one of those features — a channel that cannot render the content is not a candidate at all (and not a suppression). For each (recipient, candidate channel) it applies an ordered gate — the first failing gate suppresses that channel for that recipient, and the reason is counted in the audit:
 
 1. Category is registered **and** admin policy has not disabled it.
-2. Channel is registered **and** admin policy has not disabled it globally.
-3. Channel is in the category's `supportedChannels`.
-4. The user has not opted out of this (category, channel) — default taken from the category's `channelDefaults`.
-5. The user's global mute is off (skipped for categories flagged non-mutable, e.g. security-critical).
+2. Channel's admin policy has not disabled it globally.
+3. The user has not opted out of this (category, channel) — default taken from the category's `channelDefaults`.
+4. The user's global mute is off (skipped for categories flagged non-mutable, e.g. security-critical).
 
 Surviving (recipient, channel) pairs are grouped per channel and handed to that channel's transport. The audit row records delivered counts and suppressed counts per channel, so the history tab can show "fired to 5 admins; 2 had it silenced; toast delivered to 3."
 
@@ -70,19 +69,18 @@ A channel is a transport behind one interface, so adding email or push later is 
 interface INotificationChannel {
     id: string;          // 'toast', later 'email', 'push'
     label: string;
-    deliver(recipients: IResolvedRecipient[], message: IRenderedNotification): Promise<IChannelDeliveryResult>;
+    accepts: NotificationContentFeature[];   // 'title' | 'body' | 'media' | 'fields' it can render
+    deliver(recipients: INotificationRecipient[], message: IRenderedNotification): Promise<IChannelDeliveryResult>;
 }
 ```
 
+`message.content` is the resolved `IContentDescriptor`; the surrounding fields are the envelope (id, severity, category label, timing). The toast channel `accepts` `['title', 'body']` and flattens the descriptor onto the existing `notification` wire payload, so the client handler is unchanged by the content-type model.
+
 The **toast** channel (the only one shipping now) maps each recipient to their identity room and emits a single websocket event. Future channels resolve the recipient's address for their medium (email address, push token) and apply their own throttle — `NOTIFICATION_EMAIL_THROTTLE_MS` already exists for exactly this.
 
-### Websocket changes
+### Websocket delivery
 
-Two small core changes make identity-targeted delivery possible:
-
-First, on the handshake the socket already carries `socket.data.authSession` with the user's id and groups (`websocket.service.ts`). Auto-join each socket to `user:${userId}` and a room per group (`group:admin`, …) at connection. That comment in the service already anticipates this room-gating.
-
-Second, add **one** case to the `emit()` switch — `notification` — carrying `{ message, rooms }`. One case serves every category forever, which is the explicit fix for the switch-drops-unknown-events trap: categories are data, not new event cases. The raw `toast` event stays as the dumb primitive; `notification` is the governed one the toast channel emits.
+Identity-targeted delivery rests on two core mechanisms. On the handshake the socket carries `socket.data.authSession` with the user's id and groups (`websocket.service.ts`), and each socket is auto-joined to `user:${userId}` and a room per group (`group:admin`, …) at connection. The `emit()` switch carries a single `notification` case — `{ message, rooms }` — that serves every category: categories are data, not new event cases, which is the fix for the switch-drops-unknown-events trap. The raw `toast` event stays the dumb primitive; `notification` is the governed event the toast channel emits.
 
 Delivery honors per-user silence by emitting to the resolved `user:${id}` rooms, not by blasting `group:admin` — because a group blast cannot exclude the users who opted out, and a client-side toast suppressor would still pay bandwidth and break cross-device consistency. Recipient resolution is server-side; that is where enforcement belongs.
 
@@ -96,45 +94,22 @@ Three module collections (modules are not auto-prefixed like plugins; use the mo
 | `module_notifications_policy` | singleton | `{ channels: { [id]: { enabled } }, categories: { [id]: { enabled } } }` |
 | `module_notifications_audit` | `_id` | One blast: category id + **label snapshot**, source, severity, title/body, audience snapshot, per-channel delivered/suppressed counts, `firedBy`, `createdAt` |
 
-Indexes (including the 90-day audit TTL on `createdAt`) are created in the module's `init()` via `database.createIndex` — the collections are new, so there is no production data to migrate.
+Indexes (including the 90-day audit TTL on `createdAt`, `AUDIT_RETENTION_DAYS` in `config.ts` — deliberately not an env var, to avoid the prod-wiring surface a new variable demands) are created in the module's `init()` via `database.createIndex`. The system delivers ephemeral toasts plus this admin audit log — not a per-user inbox with unread counts; the category/preference/audit model stays forward-compatible with adding one (fan-out-on-write) later.
 
 ### Admin and user surfaces
 
-Admins get `/system/notifications` with three tabs: **Categories** (enable/disable each, see its source, supported channels, and defaults), **Channels** (globally enable/disable a transport), and **History** (the audit feed, filterable by category, source, and time). Each tab is backed by an admin-gated REST route under the module.
+Admins get `/system/notifications` with three tabs: **Categories** (enable/disable each, see its source and per-channel defaults), **Channels** (globally enable/disable a transport), and **History** (the audit feed, filterable by category, source, and time). Each tab is backed by an admin-gated REST route under the module.
 
-Users get a notifications-preferences panel (placement TBD — likely the account/settings area) listing every user-configurable category with a per-channel toggle and a global mute. It writes `module_notifications_preferences`; the pipeline reads it at dispatch.
+Users get a preferences panel at `/account/notifications` (any logged-in user), mirrored as a **My Preferences** tab on `/system/notifications` for admins — one shared `PreferencesPanel` listing every user-configurable category with a per-channel toggle and a global mute. It writes `module_notifications_preferences`; the pipeline reads it at dispatch.
 
-### First slice: cron AI prompt runs
+### First consumer: cron AI prompt runs
 
-The concrete driver. The `ai-tools` module resolves `'notifications'` via the registry in `run()`, registers a category `ai-tools.scheduled-prompt-run` (audience `{ groups: ['admin'] }`, supported channels `['toast']`, default on, user-configurable), and calls `notify()` at the end of each run in `scheduled-prompts-runner.ts` with the prompt title and success/error. Admins see a toast; any admin can silence it from their preferences panel; an admin can disable the whole category for everyone from `/system/notifications`.
-
-## Implementation Plan
-
-Phases are ordered so the first slice (admin toasts) goes live at Phase 3, then preferences, policy, and audit complete the required controls. Channels beyond toast are the only deferred work.
-
-| Phase | Scope | Outcome |
-|-------|-------|---------|
-| 1 | Types: add `INotificationService`, `INotificationCategory`, `INotificationChannel`, `INotificationRequest`/`Receipt`, audience/preference/audit types to `@delphian/tronrelic-types`. Follow the [add-export procedure]: re-export from root `index.ts`, bump version, sync each consuming workspace's installed copy. | Shared contract available to core and plugins |
-| 2 | Websocket: auto-join `user:`/`group:` identity rooms on handshake; add the single `notification` case to `emit()`. | Identity-targeted delivery primitive |
-| 3 | Module scaffold: category + channel registries, toast channel, `DispatchService` (audience → channels → deliver, no prefs yet), publish `INotificationService` on the registry. Wire `ai-tools` cron to register the category and fire. | **Admins receive toasts on cron prompt runs** |
-| 4 | `PreferenceService` + enforcement gates 4–5 + user preferences panel. | Users opt out of specific notifications |
-| 5 | `PolicyService` + enforcement gates 1–2 + admin Categories/Channels tabs. | Admins disable channels and categories |
-| 6 | `AuditService` write-on-dispatch + admin History tab. | Admins audit every blast |
-| Future | Email/push channels — proven by the channel abstraction, no pipeline changes. | Multi-channel delivery |
-
-## Decisions Made
-
-**User preferences page placement.** Both: a dedicated `/account/notifications` page for any logged-in user, and a "My Preferences" tab on `/system/notifications` for admins — sharing one `PreferencesPanel` component.
-
-**Audit retention.** A 90-day TTL index on `createdAt` (`AUDIT_RETENTION_DAYS` in `config.ts`). No env var, to avoid the prod-wiring surface a new variable demands.
-
-**Durable inbox.** Out of scope. Shipped: ephemeral toasts plus the admin audit log — not a per-user notification center with unread counts. The category/preference/audit model stays forward-compatible with adding a per-user inbox (fan-out-on-write) later.
-
-**Legacy wallet-keyed `NotificationService`.** Left running in parallel (it powers `transaction:large` wallet alerts). This module supersedes it for new work; re-expressing the wallet/threshold path as categories is deferred.
+The concrete driver. The `ai-tools` module resolves `'notifications'` via the registry in `run()`, registers a category `ai-tools.scheduled-prompt-run` (audience `{ groups: ['admin'] }`, `channelDefaults: { toast: true }`, user-configurable) plus an `ai-tools:scheduled-prompt-run` content type whose `describe(ref)` echoes the run's title/body, and calls `notify({ category, typeId, ref })` after each run with the prompt outcome. Admins see a toast; any admin can silence it from their preferences panel; an admin can disable the whole category for everyone from `/system/notifications`.
 
 ## Further Reading
 
 **Related infrastructure:**
+- [system-content-types.md](./system-content-types.md) — the central content registry `notify()` resolves through, and the channel-capability vocabulary that routes delivery
 - [system-hooks.md](./system-hooks.md) — the declared-registry pattern this mirrors (categories ≈ hook descriptors; the registry refuses unknown entries)
 - [plugins-service-registry.md](../plugins/plugins-service-registry.md) — how plugins consume `'notifications'` via `context.services.watch()`
 - [modules-architecture.md](./modules/modules-architecture.md) — module lifecycle, DI, and publishing a module service onto the registry

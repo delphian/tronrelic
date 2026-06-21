@@ -17,7 +17,7 @@
 .container {
     display: flex;
     align-items: center;
-    gap: var(--spacing-10);
+    gap: var(--gap-md);
     padding: var(--padding-xs) var(--container-padding-desktop);
     width: min($breakpoint-tablet, 100%);
     margin: 0 auto;
@@ -34,13 +34,17 @@
 .item {
     display: flex;
     align-items: center;
-    gap: var(--spacing-4);
+    gap: var(--gap-xs);
     white-space: nowrap;
 }
 
-.label {
+.icon {
     color: var(--color-text-subtle);
-    font-weight: var(--font-weight-medium);
+    flex-shrink: 0;
+}
+
+.icon--primary {
+    color: var(--color-secondary);
 }
 
 .value {
@@ -53,9 +57,28 @@
     color: var(--color-secondary);
 }
 
+/*
+ * Visually-hidden label: the icon carries the meaning sighted users read, but
+ * a bare number ("412") is meaningless to a screen reader. This keeps the
+ * original wording in the accessibility tree without occupying layout space.
+ */
+.sr_only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Height tracks the text line (em) so the divider scales with the ticker font
+   instead of needing a per-breakpoint pixel override. */
 .separator {
     width: var(--border-width-thin);
-    height: var(--spacing-7);
+    height: 1em;
     background: var(--color-primary-alpha-18);
 }
 
@@ -63,7 +86,7 @@
 @media (max-width: $breakpoint-tablet) {
     .container {
         padding: var(--padding-xs) var(--container-padding-tablet);
-        gap: var(--spacing-7);
+        gap: var(--gap-sm);
     }
 }
 
@@ -71,10 +94,6 @@
 @media (max-width: 640px) {
     .container {
         padding: var(--padding-xs) var(--container-padding-mobile);
-        gap: var(--spacing-5);
-    }
-
-    .separator {
-        height: var(--spacing-6);
+        gap: var(--gap-xs);
     }
 }

@@ -7,8 +7,15 @@
  * provider concern and is not represented here.
  */
 
-/** How a recorded query was executed. */
-export type AiQueryMode = 'stream' | 'programmatic';
+/**
+ * How a recorded query was executed. `stream` and `programmatic` are the two
+ * interactive shapes an admin drives from the Query tab. `scheduled` marks an
+ * autonomous cron run of a saved prompt: the runner still executes it on the
+ * provider's `programmatic` transport (so the governor's external-tool
+ * default-deny applies), but the history row is tagged `scheduled` so an
+ * operator can tell an unattended run apart from one they typed themselves.
+ */
+export type AiQueryMode = 'stream' | 'programmatic' | 'scheduled';
 
 /**
  * One stored query turn. Turns sharing a `conversationId` form one multi-turn

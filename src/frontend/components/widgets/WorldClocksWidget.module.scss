@@ -1,0 +1,52 @@
+/**
+ * Scoped styles for the world-clocks widget.
+ *
+ * A flag + time row that must stay compact and survive any host width —
+ * it ships in site-wide zones (ticker, footer) where the available space
+ * is unknown — so it wraps with flexbox and tightens its gap via a
+ * container query rather than a viewport media query.
+ */
+
+@use '../../app/breakpoints' as *;
+
+.clocks {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-md);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    container-type: inline-size;
+    container-name: world-clocks;
+}
+
+.clock {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-body-sm);
+}
+
+.flag {
+    /* Track the adjacent time text so the flag scales with the row. */
+    height: 1.1em;
+    width: auto;
+    flex-shrink: 0;
+    display: block;
+    border-radius: var(--radius-xs);
+}
+
+.time {
+    font-weight: var(--font-weight-medium);
+    /* Fixed-width digits so the minute rollover doesn't shift the row. */
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text);
+    white-space: nowrap;
+}
+
+@container world-clocks (max-width: #{$breakpoint-mobile-md}) {
+    .clocks {
+        gap: var(--gap-sm);
+    }
+}

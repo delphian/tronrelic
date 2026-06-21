@@ -22,6 +22,7 @@ import type {
     IBlockchainService,
     ICacheService,
     IChainParametersService,
+    IContentRegistry,
     IDatabaseService,
     IHookRegistry,
     IMenuService,
@@ -48,6 +49,7 @@ import { ScreenConfigService } from './services/screen-config.service.js';
 import { AiQueryHistoryService } from './services/ai-query-history.service.js';
 import { CurationQueue } from './services/curation-queue.js';
 import { CurationService } from './services/curation-service.js';
+import { CONTENT_TYPES_SERVICE } from '../../services/content-registry.js';
 import { SavedPromptsService } from './services/saved-prompts.service.js';
 import { PromptVariableRegistry } from './services/prompt-variable-registry.js';
 import { SystemPromptsService } from './services/system-prompts.service.js';
@@ -87,6 +89,14 @@ export const SCHEDULED_PROMPTS_JOB = 'ai-tools:run-scheduled-prompts';
  * admins through it, and any admin can silence it from their preferences.
  */
 const SCHEDULED_PROMPT_NOTIFY_CATEGORY = 'ai-tools.scheduled-prompt-run';
+
+/**
+ * Content type id this module registers on the central content registry for the
+ * scheduled-prompt notification. `notify()` carries the run's title/body by
+ * reference under this type; its `describe(ref)` echoes them into a descriptor —
+ * the notification path consumes the same content registry as curation.
+ */
+const SCHEDULED_PROMPT_CONTENT_TYPE = 'ai-tools:scheduled-prompt-run';
 
 /**
  * Service-registry name of the notifications service this module fires through.
@@ -240,7 +250,15 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
 
         this.curationQueue = new CurationQueue(this.logger, this.database);
         await this.curationQueue.ensureIndexes();
-        this.curation = new CurationService(this.logger, this.curationQueue);
+        // Resolve the central content-type registry (published at bootstrap, so
+        // it is always present by module-init time). Curation mirrors each
+        // registered type's content facet into it so other pipelines —
+        // notifications next — discover the same content types.
+        const contentRegistry = this.serviceRegistry.get<IContentRegistry>(CONTENT_TYPES_SERVICE);
+        if (!contentRegistry) {
+            throw new Error("AiToolsModule requires the 'content-types' registry to be published before init");
+        }
+        this.curation = new CurationService(this.logger, this.curationQueue, contentRegistry);
 
         // Verify a tool's `curationTypeId` binding against the live curation
         // registry. A declared binding relaxes the tool's gates only while its
@@ -419,13 +437,27 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         // the category for everyone from /system/notifications.
         const notifications = this.serviceRegistry.get<INotificationService>(NOTIFICATIONS_SERVICE);
         if (notifications) {
+            // Register the content type the notification renders through, on the
+            // same central registry curation publishes into. `describe(ref)`
+            // echoes the title/body the notify() call carries by reference — the
+            // notification path is content-registry-symmetric with curation.
+            this.serviceRegistry.get<IContentRegistry>(CONTENT_TYPES_SERVICE)?.register(
+                {
+                    typeId: SCHEDULED_PROMPT_CONTENT_TYPE,
+                    label: 'Scheduled AI prompt run',
+                    describe: (ref) => ({
+                        title: typeof ref.title === 'string' ? ref.title : undefined,
+                        body: typeof ref.body === 'string' ? ref.body : undefined
+                    })
+                },
+                this.metadata.id
+            );
             notifications.registerCategory({
                 id: SCHEDULED_PROMPT_NOTIFY_CATEGORY,
                 label: 'Scheduled AI prompt runs',
                 description: 'Fires when a cron-scheduled AI prompt finishes — success or failure.',
                 source: this.metadata.id,
                 defaultAudience: { groups: [ADMIN_GROUP_ID] },
-                supportedChannels: ['toast'],
                 channelDefaults: { toast: true },
                 userConfigurable: true,
                 adminConfigurable: true,
@@ -448,12 +480,15 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             void svc
                 .notify({
                     category: SCHEDULED_PROMPT_NOTIFY_CATEGORY,
-                    title: ok ? `Scheduled prompt ran: ${run.name}` : `Scheduled prompt failed: ${run.name}`,
-                    body: ok
-                        ? undefined
-                        : run.disabled
-                            ? `${run.error ?? 'Unknown error'} — auto-paused after repeated failures`
-                            : run.error,
+                    typeId: SCHEDULED_PROMPT_CONTENT_TYPE,
+                    ref: {
+                        title: ok ? `Scheduled prompt ran: ${run.name}` : `Scheduled prompt failed: ${run.name}`,
+                        body: ok
+                            ? undefined
+                            : run.disabled
+                                ? `${run.error ?? 'Unknown error'} — auto-paused after repeated failures`
+                                : run.error
+                    },
                     severity: ok ? 'success' : 'error',
                     firedBy: run.promptId,
                     data: { promptId: run.promptId, disabled: run.disabled ?? false }
@@ -509,7 +544,8 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
                             : this.providerRegistry.getActive(),
                         this.resolveEndUser,
                         (principal) => this.systemPrompts.compose(principal),
-                        notifyScheduledRun
+                        notifyScheduledRun,
+                        (record) => this.queryHistory.append(record)
                     );
                 } catch (error) {
                     this.logger.error({ error, job: SCHEDULED_PROMPTS_JOB }, 'Scheduled prompts job failed');

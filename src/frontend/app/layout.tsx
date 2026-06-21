@@ -352,6 +352,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           <main>
             {children}
           </main>
+          <footer>
+            <WidgetZone name="footer" widgets={tickerWidgets} route={pathname} params={{}} />
+          </footer>
         </Providers>
       </body>
     </html>

@@ -142,7 +142,6 @@ export function PreferencesPanel(): React.ReactElement {
                     <p className={styles.help}>{category.description}</p>
                     <div className={styles.channels}>
                         {channels
-                            .filter((ch) => category.supportedChannels.includes(ch.id))
                             .map((ch) => (
                                 <label key={ch.id} className={styles.channel_row}>
                                     <input

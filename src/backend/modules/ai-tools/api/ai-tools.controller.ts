@@ -12,8 +12,6 @@ import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
 import type {
     IAiConversationMessage,
-    IAiQueryRecord,
-    IAiQueryResult,
     IAiStreamChunk,
     IAiToolInfo,
     IModelInfo,
@@ -31,6 +29,7 @@ import type { ToolApprovalQueue } from '../services/tool-approval-queue.js';
 import type { AiToolGovernor } from '../services/ai-tool-governor.js';
 import type { AiProviderRegistry } from '../services/ai-provider-registry.js';
 import type { AiQueryHistoryService } from '../services/ai-query-history.service.js';
+import { buildAiQueryRecord } from '../services/ai-query-history.service.js';
 import type { CurationService } from '../services/curation-service.js';
 import type { SavedPromptsService } from '../services/saved-prompts.service.js';
 import { SavedPromptValidationError } from '../services/saved-prompts.service.js';
@@ -546,7 +545,7 @@ export class AiToolsController {
                 )
                 .then((result) => {
                     void this.history.append(
-                        this.buildRecord('stream', prompt, conversationId, createdAt, queryId, result, null)
+                        buildAiQueryRecord('stream', prompt, conversationId, createdAt, queryId, result, null)
                     );
                 })
                 .catch((error: unknown) => {
@@ -560,7 +559,7 @@ export class AiToolsController {
                     };
                     WebSocketService.getInstance().emitToSocket(socketId, QUERY_STREAM_EVENT, errorChunk);
                     void this.history.append(
-                        this.buildRecord(
+                        buildAiQueryRecord(
                             'stream',
                             prompt,
                             conversationId,
@@ -582,12 +581,12 @@ export class AiToolsController {
         try {
             const result = await provider.query({ prompt, model, messages, conversationId, mode: 'programmatic', endUser, injectedSystemPrompt });
             await this.history.append(
-                this.buildRecord('programmatic', prompt, conversationId, createdAt, randomUUID(), result, null)
+                buildAiQueryRecord('programmatic', prompt, conversationId, createdAt, randomUUID(), result, null)
             );
             res.json({ result });
         } catch (error: unknown) {
             await this.history.append(
-                this.buildRecord(
+                buildAiQueryRecord(
                     'programmatic',
                     prompt,
                     conversationId,
@@ -762,49 +761,6 @@ export class AiToolsController {
             res.status(500).json({ error: 'Failed to delete prompt.' });
         }
     };
-
-    /**
-     * Build a query-history record from a settled query. On success `result`
-     * carries the model and usage; on failure `errorMessage` is set and the
-     * caller's requested `model` (if any) stands in for the unknown one.
-     *
-     * @param mode - Execution mode the record is tagged with.
-     * @param prompt - The user's prompt for this turn.
-     * @param conversationId - Optional grouping id for multi-turn chat.
-     * @param createdAt - ISO timestamp captured when the query started.
-     * @param id - Record id (the streaming `queryId`, or a fresh uuid).
-     * @param result - The successful result, or null on failure.
-     * @param errorMessage - The failure reason, or null on success.
-     * @param fallbackModel - Model to record when there is no result.
-     * @returns A fully-built {@link IAiQueryRecord}.
-     */
-    private buildRecord(
-        mode: IAiQueryRecord['mode'],
-        prompt: string,
-        conversationId: string | undefined,
-        createdAt: string,
-        id: string,
-        result: IAiQueryResult | null,
-        errorMessage: string | null,
-        fallbackModel?: string
-    ): IAiQueryRecord {
-        return {
-            id,
-            mode,
-            prompt,
-            responseText: result?.responseText ?? null,
-            model: result?.model ?? fallbackModel ?? 'unknown',
-            usage: result?.usage ?? { inputTokens: 0, outputTokens: 0 },
-            // Provider-computed estimated cost, persisted so reopened
-            // conversations show the same figure the live stream did.
-            costUsd: result?.costUsd ?? null,
-            errorMessage,
-            status: result ? 'completed' : 'failed',
-            createdAt,
-            completedAt: new Date().toISOString(),
-            ...(conversationId ? { conversationId } : {})
-        };
-    }
 
     /** GET /activity — paged invocation audit feed with filters. */
     listActivity = async (req: Request, res: Response): Promise<void> => {

@@ -22,6 +22,7 @@ import type {
 } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
+import { ContentRegistry, CONTENT_TYPES_SERVICE } from '../../../services/content-registry.js';
 import { NotificationsModule } from '../index.js';
 import { NotificationService } from '../services/notification.service.js';
 import { CategoryRegistry } from '../services/category-registry.js';
@@ -49,6 +50,7 @@ function recordingChannel(): { channel: INotificationChannel; calls: Array<{ rec
     const channel: INotificationChannel = {
         id: 'toast',
         label: 'Toast',
+        accepts: ['title', 'body'],
         deliver: async (recipients: INotificationRecipient[], message: IRenderedNotification) => {
             calls.push({ recipients: recipients.map((r) => r.userId), message });
             return { delivered: recipients.length };
@@ -71,7 +73,6 @@ const TEST_CATEGORY: INotificationCategory = {
     description: 'A category for tests.',
     source: 'test',
     defaultAudience: { groups: [ADMIN_GROUP_ID] },
-    supportedChannels: ['toast'],
     channelDefaults: { toast: true },
     userConfigurable: true,
     mutable: true
@@ -84,6 +85,7 @@ describe('Notifications dispatch pipeline', () => {
     let preferences: PreferenceService;
     let policy: PolicyService;
     let audit: AuditService;
+    let content: ContentRegistry;
     let dispatch: DispatchService;
     let calls: Array<{ recipients: string[]; message: IRenderedNotification }>;
 
@@ -95,8 +97,20 @@ describe('Notifications dispatch pipeline', () => {
         preferences = new PreferenceService(db, logger);
         policy = new PolicyService(db, logger);
         audit = new AuditService(db, logger);
+        content = new ContentRegistry(logger);
+        // Echo the title/body the notify() call carries by reference — the same
+        // describe-from-ref shape every content type uses.
+        content.register({
+            typeId: 'test.content',
+            label: 'Test content',
+            describe: (ref) => ({
+                title: typeof ref.title === 'string' ? ref.title : undefined,
+                body: typeof ref.body === 'string' ? ref.body : undefined,
+                media: Array.isArray(ref.media) ? ref.media : undefined
+            })
+        }, 'test');
         const resolver = new RecipientResolver(() => fakeUserGroups(), logger);
-        dispatch = new DispatchService(categories, channels, preferences, policy, audit, resolver, logger);
+        dispatch = new DispatchService(categories, channels, content, preferences, policy, audit, resolver, logger);
 
         const rec = recordingChannel();
         calls = rec.calls;
@@ -105,7 +119,7 @@ describe('Notifications dispatch pipeline', () => {
     });
 
     it('delivers to every audience member by default', async () => {
-        const receipt = await dispatch.notify({ category: 'test.cat', title: 'Hello' });
+        const receipt = await dispatch.notify({ category: 'test.cat', typeId: 'test.content', ref: { title: 'Hello' } });
 
         expect(receipt.recipientCount).toBe(2);
         expect(receipt.delivered).toBe(2);
@@ -117,7 +131,7 @@ describe('Notifications dispatch pipeline', () => {
     it('suppresses a recipient who opted out of the pairing', async () => {
         await preferences.update('admin2', { overrides: { 'test.cat': { toast: false } } });
 
-        const receipt = await dispatch.notify({ category: 'test.cat', title: 'Hello' });
+        const receipt = await dispatch.notify({ category: 'test.cat', typeId: 'test.content', ref: { title: 'Hello' } });
 
         expect(receipt.delivered).toBe(1);
         expect(receipt.suppressed).toBe(1);
@@ -127,7 +141,7 @@ describe('Notifications dispatch pipeline', () => {
     it('suppresses a recipient who muted everything', async () => {
         await preferences.update('admin1', { mutedAll: true });
 
-        const receipt = await dispatch.notify({ category: 'test.cat', title: 'Hello' });
+        const receipt = await dispatch.notify({ category: 'test.cat', typeId: 'test.content', ref: { title: 'Hello' } });
 
         expect(receipt.delivered).toBe(1);
         expect(calls[0].recipients).toEqual(['admin2']);
@@ -144,7 +158,7 @@ describe('Notifications dispatch pipeline', () => {
             updatedAt: new Date()
         });
 
-        const receipt = await dispatch.notify({ category: 'test.cat', title: 'Hello' });
+        const receipt = await dispatch.notify({ category: 'test.cat', typeId: 'test.content', ref: { title: 'Hello' } });
 
         expect(receipt.delivered).toBe(0);
         expect(receipt.suppressed).toBe(2);
@@ -153,7 +167,7 @@ describe('Notifications dispatch pipeline', () => {
 
     it('records an audit row with delivered and suppressed counts', async () => {
         await preferences.update('admin2', { overrides: { 'test.cat': { toast: false } } });
-        await dispatch.notify({ category: 'test.cat', title: 'Hello', firedBy: 'prompt-1' });
+        await dispatch.notify({ category: 'test.cat', typeId: 'test.content', ref: { title: 'Hello' }, firedBy: 'prompt-1' });
 
         const rows = db.getCollectionData(AUDIT_COLLECTION);
         expect(rows).toHaveLength(1);
@@ -169,7 +183,30 @@ describe('Notifications dispatch pipeline', () => {
     });
 
     it('throws when firing an unregistered category', async () => {
-        await expect(dispatch.notify({ category: 'does.not.exist', title: 'x' })).rejects.toThrow(/not registered/);
+        await expect(
+            dispatch.notify({ category: 'does.not.exist', typeId: 'test.content', ref: { title: 'x' } })
+        ).rejects.toThrow(/not registered/);
+    });
+
+    it('throws when firing an unregistered content type', async () => {
+        await expect(
+            dispatch.notify({ category: 'test.cat', typeId: 'no.such.type', ref: {} })
+        ).rejects.toThrow(/content type "no.such.type" is not registered/);
+    });
+
+    it('skips a channel that cannot render the content (capability routing)', async () => {
+        // A media-only descriptor; the toast channel accepts only title/body, so
+        // it is not a delivery candidate and is absent from the tally entirely —
+        // not a suppression, a non-match.
+        const receipt = await dispatch.notify({
+            category: 'test.cat',
+            typeId: 'test.content',
+            ref: { media: [{ url: 'https://cdn/x.png', kind: 'image' }] }
+        });
+
+        expect(receipt.delivered).toBe(0);
+        expect(receipt.channels).toHaveLength(0);
+        expect(calls).toHaveLength(0);
     });
 });
 
@@ -184,7 +221,7 @@ describe('NotificationsModule lifecycle', () => {
         db = createMockDatabaseService();
         app = { use: vi.fn() };
         menuService = { create: vi.fn(async () => undefined) };
-        registry = createMockServiceRegistry();
+        registry = createMockServiceRegistry({ [CONTENT_TYPES_SERVICE]: new ContentRegistry(silentLogger()) });
     });
 
     /** Build the dependency bundle the module's init expects. */

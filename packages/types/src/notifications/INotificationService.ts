@@ -7,20 +7,33 @@
  * `services.watch(...)`. A *source* (any module or plugin) declares the
  * notification categories it owns, then calls {@link INotificationService.notify}
  * whenever the underlying event occurs. The service resolves the audience to a
- * recipient set, intersects each category's supported channels with per-user
- * preferences and admin policy, delivers through each surviving channel, and
- * records an audit row.
+ * recipient set, resolves the request's content type into a descriptor, routes
+ * to the channels whose capabilities can render it, applies per-user preferences
+ * and admin policy, delivers through each surviving channel, and records an
+ * audit row.
  *
  * Keeping the contract and its DTOs in `@/types` lets sources depend on the
  * abstraction without reaching into the notifications module's source, exactly
  * as plugins consume `'wallets'` or `'menu'`.
  */
 
+import type { IContentDescriptor } from '../content/IContentDescriptor.js';
+
 /**
  * Visual severity of a notification. Maps to a toast tone on the client and to
  * styling/urgency on any future channel (email subject prefix, push priority).
  */
 export type NotificationSeverity = 'info' | 'success' | 'warning' | 'error';
+
+/**
+ * A renderable feature of a content descriptor. A channel declares the set it
+ * can render (`accepts`); dispatch routes a notification only to channels whose
+ * `accepts` covers every feature the resolved descriptor actually carries, so a
+ * text-only channel is skipped for a notification that needs inline media rather
+ * than mangling it. This is the capability vocabulary that replaced a category
+ * naming its channels — routing is now derived, not declared by the originator.
+ */
+export type NotificationContentFeature = 'title' | 'body' | 'media' | 'fields';
 
 /**
  * Disposer returned by {@link INotificationService.registerCategory} and
@@ -45,9 +58,12 @@ export interface INotificationAudience {
 }
 
 /**
- * A notification type owned by a source (module or plugin). Its *existence* and
- * *supported channels* are code, declared once at boot like a hook descriptor;
- * its admin enable-state and per-user opt-outs are data persisted elsewhere.
+ * A notification type owned by a source (module or plugin). Its *existence* is
+ * code, declared once at boot like a hook descriptor; its admin enable-state and
+ * per-user opt-outs are data persisted elsewhere. A category carries audience
+ * and policy only — it no longer names channels. Which channels a notification
+ * reaches is derived at dispatch from the resolved content descriptor's features
+ * matched against each channel's `accepts` (see {@link NotificationContentFeature}).
  */
 export interface INotificationCategory {
     /** Stable id, namespaced by source (e.g. `'ai-tools.scheduled-prompt-run'`). */
@@ -60,9 +76,7 @@ export interface INotificationCategory {
     source: string;
     /** Default recipients when a `notify()` call does not override the audience. */
     defaultAudience: INotificationAudience;
-    /** Channel ids this category may use (e.g. `['toast']`). A channel absent here is never used even if a user opted into it. */
-    supportedChannels: string[];
-    /** Per-channel default opt-in state for users who have not set a preference. */
+    /** Per-channel default opt-in state for users who have not set a preference, keyed by channel id. A channel with no entry defaults to opted-out. */
     channelDefaults: Record<string, boolean>;
     /** Whether users may opt out of this category. Defaults to true; set false for security-critical notices. */
     userConfigurable?: boolean;
@@ -85,8 +99,12 @@ export interface INotificationRecipient {
 
 /**
  * The rendered, channel-agnostic message a transport delivers. Produced once
- * per `notify()` call from the request plus the category, then passed to every
- * surviving channel so each renders consistent content.
+ * per `notify()` call by resolving the request's content type through the
+ * central content registry and calling its `describe(ref)`, then passed to every
+ * surviving channel so each renders consistent content. The renderable content
+ * lives in `content` (the shared {@link IContentDescriptor}); the surrounding
+ * fields are the notification envelope (identity, severity, timing) the channel
+ * frames it with.
  */
 export interface IRenderedNotification {
     /** Audit id of this blast — also used as the client-side notification id. */
@@ -97,10 +115,8 @@ export interface IRenderedNotification {
     categoryLabel: string;
     /** Severity driving tone/urgency. */
     severity: NotificationSeverity;
-    /** Short headline. */
-    title: string;
-    /** Optional longer body. */
-    body?: string;
+    /** The resolved, channel-agnostic content (title/body/media/fields) a channel renders. */
+    content: IContentDescriptor;
     /** Optional structured payload for richer client handling or a future inbox. */
     data?: Record<string, unknown>;
     /** When the notification was produced. */
@@ -130,26 +146,37 @@ export interface INotificationChannel {
     /** Human-readable label for preference/admin UIs. */
     label: string;
     /**
+     * The content features this channel can render. Dispatch delivers to the
+     * channel only when this set covers every feature the resolved descriptor
+     * carries, so the channel never receives content it cannot represent. A
+     * toast accepts `['title', 'body']`; a future rich channel might add
+     * `'media'` and `'fields'`.
+     */
+    accepts: NotificationContentFeature[];
+    /**
      * Deliver a rendered notification to the resolved recipients.
      *
      * @param recipients - Recipients that passed policy + preference gating for this channel.
-     * @param message - The rendered, channel-agnostic notification content.
+     * @param message - The rendered notification: envelope plus the content descriptor.
      * @returns Delivery counts for the audit record.
      */
     deliver(recipients: INotificationRecipient[], message: IRenderedNotification): Promise<IChannelDeliveryResult>;
 }
 
 /**
- * A request to fire a notification. The category supplies defaults; the call
- * supplies the dynamic content and may narrow the audience.
+ * A request to fire a notification. The category supplies audience and policy;
+ * the content arrives by reference — a registered content type id plus an opaque
+ * `ref` the type resolves through `describe()` — exactly as a curation effect is
+ * held. The originator names what to render, not how or where; dispatch resolves
+ * the descriptor and routes by channel capability.
  */
 export interface INotificationRequest {
     /** Id of a registered category. Unknown categories are rejected. */
     category: string;
-    /** Short headline. */
-    title: string;
-    /** Optional longer body. */
-    body?: string;
+    /** Id of a content type registered on the central content registry. Unknown types are rejected. */
+    typeId: string;
+    /** Opaque pointer the content type resolves into a descriptor via `describe(ref)`. */
+    ref: Record<string, unknown>;
     /** Severity; defaults to `'info'`. */
     severity?: NotificationSeverity;
     /** Optional structured payload carried to the client and audit. */

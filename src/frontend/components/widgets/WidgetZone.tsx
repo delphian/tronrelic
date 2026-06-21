@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react';
 import Link from 'next/link';
 import type { WidgetData } from './types';
-import { getWidgetComponent } from './widgets.generated';
+import { getWidgetComponent } from './getWidgetComponent';
 import { WidgetWithContext } from './WidgetWithContext';
 
 /**

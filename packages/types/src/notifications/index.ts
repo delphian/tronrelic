@@ -6,6 +6,7 @@
 
 export type {
     NotificationSeverity,
+    NotificationContentFeature,
     NotificationDisposer,
     INotificationAudience,
     INotificationCategory,

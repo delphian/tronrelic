@@ -29,7 +29,8 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 | `widget-types/define-widget-type.ts` | Descriptor mint — runtime registry refuses unminted descriptors |
 | `zones/zone-registry.ts` | Internal zone registry — instantiated by `WidgetsModule.init()` |
 | `zones/define-zone.ts` | Zone descriptor mint |
-| `zones/descriptors.ts` | Core zone descriptors as plain `IRegisterZoneInput[]`; `WidgetsModule.run()` iterates and registers them via the public service |
+| `zones/descriptors.ts` | Core zone descriptors as plain `IRegisterZoneInput[]` (includes the `footer` zone); `WidgetsModule.run()` iterates and registers them via the public service |
+| `widget-types/core-widget-types.ts` | Core widget-type catalog as plain `IRegisterWidgetTypeInput[]` (the `core:raw-html` block); `WidgetsModule.run()` registers each as `'core'`-owned. Frontend renderer lives in `components/widgets/widgets.core.ts` |
 | `api/zones.controller.ts` / `zones.routes.ts` | Read-only zone snapshot adapter over `IWidgetsService.listZones()` |
 | `api/widget-types.controller.ts` / `widget-types.routes.ts` | Read-only widget-type snapshot adapter over `IWidgetsService.listTypes()` |
 | `api/placements.controller.ts` / `placements.routes.ts` | Placement CRUD + restore-defaults adapter over `IWidgetsService` |
@@ -133,6 +134,16 @@ Indexes (migration 001): `(typeId, pluginId)` sparse unique for plugin-row atomi
 **Operator create/edit/delete** — flows through the admin REST endpoints, which adapt to `IWidgetsService` methods. Operator-source rows go in with `source: 'operator'` and no `pluginId`. Plugin-source rows can be patched (order, routes, title, titleUrl, instanceConfig, enabled) but not deleted via the API.
 
 **Restore-defaults** — only valid on plugin-source rows. The service looks up cached registration args by `(pluginId, typeId)` and applies them atomically via `placementService.restoreToPluginDefaults(id, defaults)`; the row's id and `createdAt` survive. Cache misses (plugin never registered this process) throw with a message that translates to HTTP 409 — re-enable the plugin to repopulate.
+
+## Core Catalog
+
+The platform ships its own zones and widget types, registered by `WidgetsModule.run()` as `'core'`-owned through the same public service plugins use — `registerZone` for zones, `registerType` for types. Core types use `registerType` (not `registerWidget`, which is plugin-only and creates a plugin-source placement); operators then place them from `/system/widgets` as `operator`-source rows.
+
+**Zones** live in `zones/descriptors.ts`. The `footer` zone (`host: 'site'`) renders in the root layout below `<main>` inside a semantic `<footer>` and reaches every route — the home for site-wide footer content. Adding a zone requires a matching `<WidgetZone>` call site in a layout; descriptor and render site move together.
+
+**Widget types** live in `widget-types/core-widget-types.ts`. The only one today is `core:raw-html` — an operator-authored block of raw HTML or plain text. Its `defaultDataFetcher` reads `content` and `mode` straight from the placement's `instanceConfig` (validated against the type's `configSchema`), so the payload is route-independent. `mode: 'html'` injects raw markup verbatim; `mode: 'text'` escapes it. The content is admin-authored and trusted — consistent with head-fragment injection, themes, and pages markdown.
+
+A core widget type needs a matching frontend renderer keyed by its `typeId` in `components/widgets/widgets.core.ts`. That hand-written registry is merged ahead of the generator-owned `widgets.generated.ts` by `components/widgets/getWidgetComponent.ts`, so core components resolve without the plugin-registry generator touching them.
 
 ## SSR Resolution
 
