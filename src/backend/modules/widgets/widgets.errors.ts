@@ -60,6 +60,20 @@ export class WidgetTypeOwnerConflictError extends WidgetsServiceError {
 }
 
 /**
+ * Thrown when a placement's `parentId` does not name a valid layout-group
+ * container. Covers every way the one-level nesting contract can be
+ * broken: the parent row does not exist, the parent is not a
+ * `core:layout-group`, the parent is itself nested (which would make the
+ * tree two levels deep), or the placement being nested is itself a layout
+ * group. HTTP maps this to 400.
+ */
+export class InvalidParentPlacementError extends WidgetsServiceError {
+    constructor(message: string) {
+        super(message);
+    }
+}
+
+/**
  * Thrown when the controller attempts to DELETE a plugin-source
  * placement. The supported reversals are disable and restore-defaults;
  * deletion would silently re-appear on the next plugin enable.

@@ -42,6 +42,15 @@ export interface IWidgetPlacement {
     readonly typeId: string;
     /** Zone id this placement targets. */
     readonly zoneId: string;
+    /**
+     * Optional parent placement id. When set, this placement is a child
+     * of a `core:layout-group` container in the same zone rather than a
+     * direct child of the zone, and the resolver nests it under that
+     * container at SSR. Nesting is capped at one level: a container never
+     * carries a `parentId`, and a child's parent is always a top-level
+     * layout group. Absent for ordinary, directly-zoned placements.
+     */
+    readonly parentId?: string;
     /** Route filter — empty array matches every route. */
     readonly routes: ReadonlyArray<string>;
     /** Sort order within the zone (lower renders first). */
@@ -82,6 +91,14 @@ export interface IWidgetPlacement {
 export interface IPlacementInput {
     typeId: string;
     zoneId: string;
+    /**
+     * Optional parent placement id. When set, the placement is created
+     * as a child of the named `core:layout-group` container; the service
+     * forces its `zoneId` to the parent's zone and clears its `routes`
+     * (the container governs route visibility). See
+     * {@link IWidgetPlacement.parentId} for the one-level nesting rule.
+     */
+    parentId?: string;
     routes: string[];
     order?: number;
     title?: string;

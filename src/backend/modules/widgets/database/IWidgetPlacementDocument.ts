@@ -32,6 +32,14 @@ export interface IWidgetPlacementDocument {
     typeId: string;
     /** Zone id this placement targets. */
     zoneId: string;
+    /**
+     * Parent container placement id when this row nests inside a
+     * `core:layout-group`. Stored as an `ObjectId` so it references
+     * another row's `_id` natively; `toPublic` exposes it as the hex
+     * string `parentId`. Absent for directly-zoned placements. Nesting is
+     * capped at one level — a container never carries a `parentId`.
+     */
+    parentId?: ObjectId;
     /** Route filter — empty array matches every route. */
     routes: string[];
     /** Sort order within the zone (lower renders first). */

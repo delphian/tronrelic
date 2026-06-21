@@ -444,6 +444,7 @@ describe('PlacementResolver', () => {
         id: overrides.id ?? 'placement-1',
         typeId: overrides.typeId ?? 'plugin:type',
         zoneId: overrides.zoneId ?? 'main-after',
+        parentId: overrides.parentId,
         routes: overrides.routes ?? [],
         order: overrides.order ?? 10,
         title: overrides.title,
@@ -476,7 +477,8 @@ describe('PlacementResolver', () => {
             delete: vi.fn(),
             findById: vi.fn(),
             list: vi.fn(),
-            restoreToPluginDefaults: vi.fn()
+            restoreToPluginDefaults: vi.fn(),
+            detachChildrenOf: vi.fn(async () => 0)
         };
         resolver = new PlacementResolver(placementService, typeRegistry, logger);
     });
@@ -630,6 +632,38 @@ describe('PlacementResolver', () => {
         expect(result.map(r => r.id)).toEqual(['t2', 't3', 't1']);
         expect(result.map(r => r.zone)).toEqual(['main-after', 'main-after', 'main-before']);
         expect(result.map(r => r.order)).toEqual([5, 100, 50]);
+    });
+
+    it('nests children under their layout-group container, sorted by child order', async () => {
+        (typeRegistry as any).__types.set('core:layout-group', buildType('core:layout-group', async () => ({ flexDirection: 'row' })));
+        (typeRegistry as any).__types.set('child:type', buildType('child:type', async () => 'kid'));
+        (placementService.findByRoute as ReturnType<typeof vi.fn>).mockResolvedValue([
+            buildPlacement({ id: 'group-1', typeId: 'core:layout-group', source: 'operator', order: 10 }),
+            buildPlacement({ id: 'child-b', typeId: 'child:type', source: 'operator', parentId: 'group-1', order: 20 }),
+            buildPlacement({ id: 'child-a', typeId: 'child:type', source: 'operator', parentId: 'group-1', order: 5 })
+        ]);
+
+        const result = await resolver.resolveForRoute('/', {});
+
+        // Only the container is top-level; its children are nested and
+        // ordered by their own `order`, not their fetch order.
+        expect(result).toHaveLength(1);
+        expect(result[0].id).toBe('core:layout-group');
+        expect(result[0].children?.map(c => c.order)).toEqual([5, 20]);
+        expect(result[0].data).toEqual({ flexDirection: 'row' });
+    });
+
+    it('drops an orphan child whose container did not resolve', async () => {
+        // The container's type is unregistered, so it is skipped; its
+        // child must be dropped rather than promoted to top-level.
+        (typeRegistry as any).__types.set('child:type', buildType('child:type', async () => 'kid'));
+        (placementService.findByRoute as ReturnType<typeof vi.fn>).mockResolvedValue([
+            buildPlacement({ id: 'group-gone', typeId: 'core:layout-group', source: 'operator' }),
+            buildPlacement({ id: 'child-x', typeId: 'child:type', source: 'operator', parentId: 'group-gone' })
+        ]);
+
+        const result = await resolver.resolveForRoute('/', {});
+        expect(result).toEqual([]);
     });
 });
 

@@ -41,6 +41,12 @@ import type {
     IWidgetPlacementContext,
     IServiceRegistry,
     IBlockchainService,
+    IZoneLayoutConfig,
+    ZoneFlexDirection,
+    ZoneJustifyContent,
+    ZoneAlignItems,
+    ZoneFlexWrap,
+    ZoneGapSize,
     WidgetDataFetcher
 } from '@/types';
 
@@ -305,6 +311,152 @@ export const WORLD_CLOCKS_CONFIG_SCHEMA: JSONSchema7 = {
 };
 
 /**
+ * Widget-type id for the layout-group container. Namespaced under
+ * `core:` so it never collides with a plugin-declared id. Unlike every
+ * other widget type, this one has no frontend renderer in
+ * `widgets.core.ts`: a layout group has no UI of its own — it is a
+ * structural flex container the `WidgetZone` renderer special-cases,
+ * drawing its nested children rather than looking up a component. The
+ * backend still registers it as a normal type so operators can place it
+ * and so the placement admin API validates its `instanceConfig`.
+ */
+export const LAYOUT_GROUP_TYPE_ID = 'core:layout-group';
+
+/**
+ * Flexbox default a layout group renders with before any operator
+ * tuning — a stacked column, matching the historical look of an
+ * untouched zone. The group fetcher fills any unset field from this so a
+ * freshly-created container with empty config still has a complete,
+ * renderable layout.
+ */
+const DEFAULT_GROUP_LAYOUT: IZoneLayoutConfig = {
+    preset: 'column',
+    flexDirection: 'column',
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
+    flexWrap: 'nowrap',
+    gap: 'md'
+};
+
+/**
+ * Resolve the layout-group SSR payload from the placement's instance
+ * config.
+ *
+ * A layout group ships no data of its own — its `instanceConfig` *is* an
+ * {@link IZoneLayoutConfig}, and the fetcher's only job is to echo that
+ * config (normalized to enum-valid values) as the widget `data` the
+ * frontend reads to style the nested flex container. Normalizing here —
+ * rather than trusting the stored blob — means a legacy or hand-edited
+ * placement degrades to the column default instead of emitting an
+ * invalid `flex-direction`. The children themselves are attached by the
+ * resolver from `parentId`, not by this fetcher.
+ *
+ * @param _route - Unused; group layout is route-independent.
+ * @param _params - Unused; group layout is route-independent.
+ * @param placement - Placement context carrying the operator config.
+ * @returns The normalized flexbox layout for the frontend container.
+ */
+async function fetchLayoutGroupData(
+    _route: string,
+    _params: Record<string, string>,
+    placement?: IWidgetPlacementContext
+): Promise<IZoneLayoutConfig> {
+    const config = placement?.instanceConfig ?? {};
+
+    const flexDirection: ZoneFlexDirection =
+        config.flexDirection === 'row' ||
+        config.flexDirection === 'row-reverse' ||
+        config.flexDirection === 'column-reverse'
+            ? config.flexDirection
+            : DEFAULT_GROUP_LAYOUT.flexDirection;
+
+    const justifyContent: ZoneJustifyContent =
+        config.justifyContent === 'center' ||
+        config.justifyContent === 'flex-end' ||
+        config.justifyContent === 'space-between' ||
+        config.justifyContent === 'space-around' ||
+        config.justifyContent === 'space-evenly'
+            ? config.justifyContent
+            : DEFAULT_GROUP_LAYOUT.justifyContent;
+
+    const alignItems: ZoneAlignItems =
+        config.alignItems === 'flex-start' ||
+        config.alignItems === 'center' ||
+        config.alignItems === 'flex-end' ||
+        config.alignItems === 'baseline'
+            ? config.alignItems
+            : DEFAULT_GROUP_LAYOUT.alignItems;
+
+    const flexWrap: ZoneFlexWrap = config.flexWrap === 'wrap' ? 'wrap' : 'nowrap';
+
+    const gap: ZoneGapSize =
+        config.gap === 'none' || config.gap === 'sm' || config.gap === 'lg'
+            ? config.gap
+            : DEFAULT_GROUP_LAYOUT.gap;
+
+    return { flexDirection, justifyContent, alignItems, flexWrap, gap };
+}
+
+/**
+ * JSON Schema (Draft 7) for the layout-group placement's
+ * `instanceConfig`.
+ *
+ * Mirrors the `IZoneLayoutConfig` flex fields the per-zone layout editor
+ * already produces, so the admin UI can reuse that same control to edit
+ * a container. Every field is optional with an enum and default —
+ * `additionalProperties: false` keeps the shape tight while letting an
+ * operator save a bare container that falls back to the column default.
+ * `preset` is accepted (UI sugar) but the renderer ignores it.
+ */
+export const LAYOUT_GROUP_CONFIG_SCHEMA: JSONSchema7 = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+        preset: {
+            type: 'string',
+            enum: ['row-left', 'row-center', 'row-between', 'row-right', 'row-wrap', 'column', 'custom'],
+            title: 'Layout preset',
+            description: 'One-click arrangement the editor last applied; the renderer ignores it and uses the explicit flex fields.'
+        },
+        flexDirection: {
+            type: 'string',
+            enum: ['row', 'row-reverse', 'column', 'column-reverse'],
+            default: 'column',
+            title: 'Direction',
+            description: 'Main-axis orientation of the grouped widgets.'
+        },
+        justifyContent: {
+            type: 'string',
+            enum: ['flex-start', 'center', 'flex-end', 'space-between', 'space-around', 'space-evenly'],
+            default: 'flex-start',
+            title: 'Justify',
+            description: 'Distribution of widgets along the main axis.'
+        },
+        alignItems: {
+            type: 'string',
+            enum: ['stretch', 'flex-start', 'center', 'flex-end', 'baseline'],
+            default: 'stretch',
+            title: 'Align',
+            description: 'Alignment of widgets along the cross axis.'
+        },
+        flexWrap: {
+            type: 'string',
+            enum: ['nowrap', 'wrap'],
+            default: 'nowrap',
+            title: 'Wrap',
+            description: "'wrap' lets the grouped widgets reflow onto multiple lines."
+        },
+        gap: {
+            type: 'string',
+            enum: ['none', 'sm', 'md', 'lg'],
+            default: 'md',
+            title: 'Gap',
+            description: 'Spacing between grouped widgets, mapped to the --gap-* tokens.'
+        }
+    }
+};
+
+/**
  * Widget-type id for the real-time blockchain status ticker. Namespaced
  * under `core:` so it never collides with a plugin-declared id; the
  * frontend component registry (`widgets.core.ts`) keys its renderer on
@@ -449,6 +601,15 @@ export function buildCoreWidgetTypeDescriptors(
             category: 'Content',
             defaultDataFetcher: fetchWorldClocksData,
             configSchema: WORLD_CLOCKS_CONFIG_SCHEMA
+        },
+        {
+            id: LAYOUT_GROUP_TYPE_ID,
+            label: 'Layout group',
+            description:
+                'Structural container that arranges the widgets dropped into it with their own flexbox layout — group a row of widgets inside a column zone, or vice versa.',
+            category: 'Layout',
+            defaultDataFetcher: fetchLayoutGroupData,
+            configSchema: LAYOUT_GROUP_CONFIG_SCHEMA
         },
         {
             id: BLOCK_TICKER_TYPE_ID,

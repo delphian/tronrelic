@@ -27,6 +27,7 @@ import type {
 } from '@/types';
 import { normaliseRoutePattern } from '../placements/route-matcher.js';
 import {
+    InvalidParentPlacementError,
     MissingPluginDefaultsError,
     PluginPlacementDeletionForbiddenError,
     RestoreDefaultsOnOperatorRowError,
@@ -90,6 +91,14 @@ const INTERNAL_PATH_PATTERN = /^\/(?![/\\])(?!.*\/\/)(?!.*\.\.)[^\s\\]*$/;
  * reach the Mongo query.
  */
 const ZONE_ID_PATTERN = /^[a-z][a-z0-9_:-]{0,63}$/;
+
+/**
+ * Format gate for a placement id used as a `parentId`. Placement ids are
+ * stringified Mongo ObjectIds — exactly 24 hex characters. Rejecting any
+ * other shape at the boundary keeps malformed input out of the service's
+ * `ObjectId.isValid` path and out of the Mongo query.
+ */
+const OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/;
 
 /**
  * Format gate for plugin ids. Same shape as a zone id minus the
@@ -273,7 +282,11 @@ export class PlacementsController {
             const placement = await this.widgets.createPlacement(parsed.input);
             res.status(201).json({ success: true, placement });
         } catch (err) {
-            if (err instanceof UnknownWidgetTypeError || err instanceof UnknownZoneError) {
+            if (
+                err instanceof UnknownWidgetTypeError ||
+                err instanceof UnknownZoneError ||
+                err instanceof InvalidParentPlacementError
+            ) {
                 res.status(400).json({ success: false, error: err.message });
                 return;
             }
@@ -326,7 +339,7 @@ export class PlacementsController {
             }
             res.json({ success: true, placement });
         } catch (err) {
-            if (err instanceof UnknownZoneError) {
+            if (err instanceof UnknownZoneError || err instanceof InvalidParentPlacementError) {
                 res.status(400).json({ success: false, error: err.message });
                 return;
             }
@@ -382,7 +395,7 @@ export class PlacementsController {
     };
 
     private parseCreateBody(body: unknown):
-        | { input: { typeId: string; zoneId: string; routes: string[]; order?: number; title?: string; titleUrl?: string; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
+        | { input: { typeId: string; zoneId: string; parentId?: string; routes: string[]; order?: number; title?: string; titleUrl?: string; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
         | { error: string } {
         if (!body || typeof body !== 'object') {
             return { error: 'Request body must be an object' };
@@ -402,6 +415,9 @@ export class PlacementsController {
         if (!this.widgets.hasZone(b.zoneId)) {
             return { error: `Unknown zone id: '${b.zoneId}'` };
         }
+
+        const parentIdResult = this.parseParentId(b.parentId);
+        if ('error' in parentIdResult) return parentIdResult;
 
         const routesResult = this.parseRoutes(b.routes);
         if ('error' in routesResult) return routesResult;
@@ -424,6 +440,7 @@ export class PlacementsController {
             input: {
                 typeId: b.typeId,
                 zoneId: b.zoneId,
+                parentId: parentIdResult.parentId,
                 routes: routesResult.routes,
                 order: orderResult.order,
                 title: titleResult.title,
@@ -441,7 +458,7 @@ export class PlacementsController {
             return { error: 'Request body must be an object' };
         }
         const b = body as Record<string, unknown>;
-        const patch: { zoneId?: string; routes?: string[]; order?: number; title?: string | null; titleUrl?: string | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } = {};
+        const patch: { zoneId?: string; parentId?: string | null; routes?: string[]; order?: number; title?: string | null; titleUrl?: string | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } = {};
 
         if (b.zoneId !== undefined) {
             if (typeof b.zoneId !== 'string' || b.zoneId.length === 0) {
@@ -451,6 +468,20 @@ export class PlacementsController {
                 return { error: `Unknown zone id: '${b.zoneId}'` };
             }
             patch.zoneId = b.zoneId;
+        }
+
+        if (b.parentId !== undefined) {
+            if (b.parentId === null) {
+                // Explicit detach.
+                patch.parentId = null;
+            } else {
+                const result = this.parseParentId(b.parentId);
+                if ('error' in result) return result;
+                if (result.parentId === undefined) {
+                    return { error: 'parentId must be a 24-character hex id or null' };
+                }
+                patch.parentId = result.parentId;
+            }
         }
 
         if (b.routes !== undefined) {
@@ -499,6 +530,25 @@ export class PlacementsController {
         }
 
         return { patch };
+    }
+
+    /**
+     * Validate an optional `parentId`. Accepts a 24-hex ObjectId string
+     * (nest under that container) or absence (no nesting). `null` is
+     * handled by the patch caller as an explicit detach and never reaches
+     * here. The deeper one-level-nesting contract (parent is a layout
+     * group, parent is top-level) is enforced by the service, which can
+     * read the parent row; the controller only gates the wire shape.
+     *
+     * @param value - Raw `parentId` from the request body.
+     * @returns The validated id (or undefined when absent), or an error.
+     */
+    private parseParentId(value: unknown): { parentId?: string } | { error: string } {
+        if (value === undefined) return { parentId: undefined };
+        if (typeof value !== 'string' || !OBJECT_ID_PATTERN.test(value)) {
+            return { error: 'parentId must be a 24-character hex placement id' };
+        }
+        return { parentId: value };
     }
 
     private parseRoutes(value: unknown): { routes: string[] } | { error: string } {

@@ -21,6 +21,16 @@ const DEFAULT_LAYOUT: IZoneLayoutConfig = {
 };
 
 /**
+ * Widget-type id of the structural layout-group container. Mirrors the
+ * backend `LAYOUT_GROUP_TYPE_ID`. A widget with this id has no React
+ * component in the registry; the renderer special-cases it, drawing its
+ * `children` inside a nested flex container instead of looking up a
+ * component. Keeping the literal here avoids a frontend import of backend
+ * module code.
+ */
+const LAYOUT_GROUP_TYPE_ID = 'core:layout-group';
+
+/**
  * Map a token gap size to the CSS value the container's `gap` resolves
  * to. Sizes map to the `--gap-*` design tokens (never a raw length) so
  * zone spacing stays on the token scale; `none` is a literal `0`.
@@ -122,6 +132,83 @@ function WidgetRenderer({ widget, route, params }: WidgetRendererProps) {
 }
 
 /**
+ * Render a layout-group container: a nested flex box whose arrangement
+ * comes from the group's own resolved layout, holding the widgets an
+ * operator dropped into it.
+ *
+ * A layout group is structural, not a widget component — it has no entry
+ * in the component registry. Its flex config rides in `widget.data` (the
+ * backend echoes the group's `instanceConfig` as an `IZoneLayoutConfig`),
+ * and its `children` are the nested placements the resolver attached.
+ * Renders nothing when the group is empty so a stray container never
+ * leaves an empty box on the page.
+ *
+ * @param widget - The layout-group widget carrying `data` (its layout)
+ *   and `children` (the nested widgets).
+ * @param route - Current URL path, forwarded to each child.
+ * @param params - Route params, forwarded to each child.
+ */
+function LayoutGroupContainer({ widget, route, params }: WidgetRendererProps) {
+    const children = widget.children ?? [];
+    if (children.length === 0) {
+        return null;
+    }
+
+    const layout = (widget.data as IZoneLayoutConfig | null) ?? DEFAULT_LAYOUT;
+
+    return (
+        <div
+            className={styles.group}
+            style={zoneStyle(layout)}
+            data-widget-group={widget.id}
+        >
+            {children.map(child => (
+                <WidgetItem key={child.id} widget={child} route={route} params={params} />
+            ))}
+        </div>
+    );
+}
+
+/**
+ * Render one placed widget as a flex item: an optional operator heading
+ * (optionally linked) above the widget body. The body is either the
+ * nested layout-group container (when the item is a `core:layout-group`)
+ * or the widget's registered component via `WidgetRenderer`.
+ *
+ * Shared by the zone's top-level items and a layout group's children so
+ * both levels render identically — heading, min-width shrink, and data
+ * attributes stay in one place.
+ *
+ * @param widget - The widget data to render as an item.
+ * @param route - Current URL path passed through to the renderer.
+ * @param params - Route params passed through to the renderer.
+ */
+function WidgetItem({ widget, route, params }: WidgetRendererProps) {
+    return (
+        <div
+            className={styles.item}
+            data-widget-id={widget.id}
+            data-plugin-id={widget.pluginId}
+        >
+            {widget.title && (
+                <h2 className={styles.item_title}>
+                    {widget.titleUrl ? (
+                        <Link href={widget.titleUrl}>{widget.title}</Link>
+                    ) : (
+                        widget.title
+                    )}
+                </h2>
+            )}
+            {widget.id === LAYOUT_GROUP_TYPE_ID ? (
+                <LayoutGroupContainer widget={widget} route={route} params={params} />
+            ) : (
+                <WidgetRenderer widget={widget} route={route} params={params} />
+            )}
+        </div>
+    );
+}
+
+/**
  * Widget zone component for rendering plugin widgets with SSR support.
  *
  * This is a server component that renders plugin widgets during SSR.
@@ -190,23 +277,7 @@ export function WidgetZone({
             style={zoneStyle(effectiveLayout)}
         >
             {zoneWidgets.map(widget => (
-                <div
-                    key={widget.id}
-                    className={styles.item}
-                    data-widget-id={widget.id}
-                    data-plugin-id={widget.pluginId}
-                >
-                    {widget.title && (
-                        <h2 className={styles.item_title}>
-                            {widget.titleUrl ? (
-                                <Link href={widget.titleUrl}>{widget.title}</Link>
-                            ) : (
-                                widget.title
-                            )}
-                        </h2>
-                    )}
-                    <WidgetRenderer widget={widget} route={route} params={params} />
-                </div>
+                <WidgetItem key={widget.id} widget={widget} route={route} params={params} />
             ))}
         </div>
     );

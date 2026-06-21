@@ -275,6 +275,24 @@
     gap: var(--gap-xs);
 }
 
+/* Children of a layout-group container, indented under its bubble with a
+ * left rule so the nesting reads at a glance. Non-draggable in this
+ * iteration — order and container assignment are edited from the modal. */
+.bubble_children {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    margin: var(--gap-2xs) 0 var(--gap-xs) var(--gap-lg);
+    padding-left: var(--gap-md);
+    border-left: var(--border-width-medium) solid var(--color-border-strong);
+}
+
+.bubble_children_empty {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    font-style: italic;
+}
+
 /* ------------------------------------------------------------------ */
 /* Placement form                                                      */
 /* ------------------------------------------------------------------ */

@@ -294,6 +294,13 @@ export class PlacementService implements IPlacementService {
             createdAt: now,
             updatedAt: now
         };
+        // Nest under a container when a valid parent id is supplied. The
+        // service layer (WidgetsService) has already enforced that the
+        // parent is a top-level layout group in the same zone; here we
+        // only translate the hex string into the stored ObjectId.
+        if (input.parentId !== undefined && ObjectId.isValid(input.parentId)) {
+            doc.parentId = new ObjectId(input.parentId);
+        }
         if (input.title !== undefined) doc.title = input.title;
         if (input.titleUrl !== undefined) doc.titleUrl = input.titleUrl;
         if (input.instanceConfig !== undefined) doc.instanceConfig = input.instanceConfig;
@@ -317,6 +324,13 @@ export class PlacementService implements IPlacementService {
         const setOps: Partial<IWidgetPlacementDocument> = { updatedAt: new Date() };
         const unsetOps: Record<string, ''> = {};
         if (patch.zoneId !== undefined) setOps.zoneId = patch.zoneId;
+        if (patch.parentId === null) {
+            // Explicit detach — drop the parent link so the placement
+            // falls back to a direct child of its zone.
+            unsetOps.parentId = '';
+        } else if (patch.parentId !== undefined && ObjectId.isValid(patch.parentId)) {
+            setOps.parentId = new ObjectId(patch.parentId);
+        }
         if (patch.routes !== undefined) setOps.routes = [...patch.routes];
         if (patch.order !== undefined) setOps.order = patch.order;
         if (patch.title === null) {
@@ -432,6 +446,19 @@ export class PlacementService implements IPlacementService {
         return publicShape;
     }
 
+    async detachChildrenOf(parentId: string): Promise<number> {
+        if (!ObjectId.isValid(parentId)) return 0;
+        const collection = this.database.getCollection<IWidgetPlacementDocument>(WIDGET_PLACEMENT_COLLECTION);
+        // Relocate every child back to the zone by clearing its parent
+        // link. Used when a container is deleted so operator-configured
+        // children survive rather than cascade-deleting with the parent.
+        const result = await collection.updateMany(
+            { parentId: new ObjectId(parentId) },
+            { $unset: { parentId: '' }, $set: { updatedAt: new Date() } }
+        );
+        return result.modifiedCount ?? 0;
+    }
+
     async findById(id: string): Promise<IWidgetPlacement | null> {
         if (!ObjectId.isValid(id)) return null;
         const collection = this.database.getCollection<IWidgetPlacementDocument>(WIDGET_PLACEMENT_COLLECTION);
@@ -464,6 +491,7 @@ function toPublic(doc: IWidgetPlacementDocument): IWidgetPlacement {
         id: doc._id.toHexString(),
         typeId: doc.typeId,
         zoneId: doc.zoneId,
+        parentId: doc.parentId ? doc.parentId.toHexString() : undefined,
         routes: doc.routes,
         order: doc.order,
         title: doc.title,

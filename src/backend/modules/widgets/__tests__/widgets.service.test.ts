@@ -562,6 +562,80 @@ describe('WidgetsService.deletePlacement', () => {
     });
 });
 
+describe('WidgetsService nesting (layout groups)', () => {
+    /**
+     * Wire a service with two zones, the layout-group container type, a
+     * leaf widget type, and one container placement so child tests have a
+     * valid parent to nest under.
+     */
+    async function setupWithContainer() {
+        const ctx = buildWidgetsService();
+        ctx.widgets.registerZone({ id: 'main-after', label: 'm', description: 'm', host: 'core' }, 'core');
+        ctx.widgets.registerZone({ id: 'footer', label: 'f', description: 'f', host: 'core' }, 'core');
+        ctx.widgets.registerType({
+            id: 'core:layout-group', label: 'LG', description: 'LG', defaultDataFetcher: async () => ({})
+        }, 'core');
+        ctx.widgets.registerType({
+            id: 't', label: 'T', description: 'T', defaultDataFetcher: async () => ({})
+        }, 'p');
+        const container = await ctx.widgets.createPlacement({
+            typeId: 'core:layout-group', zoneId: 'main-after', routes: []
+        });
+        return { ...ctx, container };
+    }
+
+    it('forces a child into the parent zone and clears its routes', async () => {
+        const { widgets, container } = await setupWithContainer();
+        const child = await widgets.createPlacement({
+            typeId: 't', zoneId: 'footer', parentId: container.id, routes: ['/markets']
+        });
+        expect(child.parentId).toBe(container.id);
+        // Parent's zone wins over the operator-sent zone…
+        expect(child.zoneId).toBe('main-after');
+        // …and the container governs route visibility, so the child's own
+        // route filter is cleared.
+        expect(child.routes).toEqual([]);
+    });
+
+    it('rejects a parent that is not a layout group', async () => {
+        const { widgets } = await setupWithContainer();
+        const plain = await widgets.createPlacement({ typeId: 't', zoneId: 'main-after', routes: [] });
+        await expect(widgets.createPlacement({
+            typeId: 't', zoneId: 'main-after', parentId: plain.id, routes: []
+        })).rejects.toThrow(/not a layout group/);
+    });
+
+    it('rejects a non-existent parent', async () => {
+        const { widgets } = await setupWithContainer();
+        await expect(widgets.createPlacement({
+            typeId: 't', zoneId: 'main-after', parentId: '507f1f77bcf86cd799439011', routes: []
+        })).rejects.toThrow(/does not exist/);
+    });
+
+    it('refuses to nest a layout group inside another container', async () => {
+        const { widgets, container } = await setupWithContainer();
+        await expect(widgets.createPlacement({
+            typeId: 'core:layout-group', zoneId: 'main-after', parentId: container.id, routes: []
+        })).rejects.toThrow(/cannot be nested/);
+    });
+
+    it('detaches children back to the zone when their container is deleted', async () => {
+        const { widgets, container } = await setupWithContainer();
+        const child = await widgets.createPlacement({
+            typeId: 't', zoneId: 'main-after', parentId: container.id, routes: []
+        });
+
+        const removed = await widgets.deletePlacement(container.id);
+        expect(removed).toBe(true);
+
+        // The child survives the container's deletion, relocated to the
+        // zone with its parent link cleared.
+        const survivor = await widgets.findPlacementById(child.id);
+        expect(survivor).not.toBeNull();
+        expect(survivor?.parentId).toBeUndefined();
+    });
+});
+
 describe('WidgetsService.fetchWidgetsForRoute', () => {
     it('resolves placements through the SSR resolver, applying route filters', async () => {
         const { widgets } = buildWidgetsService();

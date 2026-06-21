@@ -24,6 +24,7 @@
  */
 
 import {
+    Fragment,
     useCallback,
     useEffect,
     useMemo,
@@ -82,6 +83,11 @@ interface IPlacement {
     id: string;
     typeId: string;
     zoneId: string;
+    /**
+     * Parent container placement id when this row is nested inside a
+     * `core:layout-group`. Absent for directly-zoned placements.
+     */
+    parentId?: string;
     routes: string[];
     order: number;
     title?: string;
@@ -101,6 +107,11 @@ interface IPlacement {
  */
 interface IPlacementPatch {
     zoneId?: string;
+    /**
+     * Reparent the placement: a container id nests it, `null` detaches it
+     * back to the zone, omission leaves it unchanged.
+     */
+    parentId?: string | null | undefined;
     routes?: string[];
     order?: number;
     title?: string | null | undefined;
@@ -116,6 +127,8 @@ interface IPlacementPatch {
 interface IPlacementCreate {
     typeId: string;
     zoneId: string;
+    /** Optional container placement id to nest the new widget inside. */
+    parentId?: string;
     routes: string[];
     order?: number;
     title?: string;
@@ -123,6 +136,14 @@ interface IPlacementCreate {
     instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }
+
+/**
+ * Widget-type id of the structural layout-group container. Placements of
+ * this type hold other widgets (via their `parentId`) and are edited with
+ * the same flexbox config the per-zone layout control produces. Mirrors
+ * the backend `LAYOUT_GROUP_TYPE_ID`.
+ */
+const LAYOUT_GROUP_TYPE_ID = 'core:layout-group';
 
 /**
  * Translate a placement source into a Badge tone.
@@ -814,6 +835,7 @@ export default function WidgetsAdminPage() {
                         defaultRoutes={defaultRoute ? [defaultRoute] : undefined}
                         types={types}
                         zones={zones}
+                        placements={placements}
                         onCancel={() => closeModal(id)}
                         onSubmit={async (data) => {
                             try {
@@ -843,6 +865,7 @@ export default function WidgetsAdminPage() {
             notifySuccess,
             openModal,
             patchPlacement,
+            placements,
             types,
             zones
         ]
@@ -1048,7 +1071,26 @@ function ZoneSection({
 }: ZoneSectionProps) {
     const zoneInfo = lookupZone(zones, zoneId);
     const { setNodeRef, isOver } = useDroppable({ id: zoneId, data: { zoneId } });
-    const itemIds = useMemo(() => placements.map(p => p.id), [placements]);
+
+    // Split the zone's placements into the top-level rows (drawn in the
+    // sortable list) and the children nested inside layout-group
+    // containers. Only top-level rows participate in drag-reorder; a
+    // child's container and order are edited from the modal instead.
+    const topLevel = useMemo(() => placements.filter(p => !p.parentId), [placements]);
+    const childrenByParent = useMemo(() => {
+        const map = new Map<string, IPlacement[]>();
+        for (const p of placements) {
+            if (!p.parentId) continue;
+            const bucket = map.get(p.parentId) ?? [];
+            bucket.push(p);
+            map.set(p.parentId, bucket);
+        }
+        for (const bucket of map.values()) {
+            bucket.sort((a, b) => a.order - b.order);
+        }
+        return map;
+    }, [placements]);
+    const itemIds = useMemo(() => topLevel.map(p => p.id), [topLevel]);
 
     return (
         <section className={cn(styles.zone, isOver && styles['zone--drop-target'])}>
@@ -1072,23 +1114,52 @@ function ZoneSection({
 
             <SortableContext id={zoneId} items={itemIds} strategy={verticalListSortingStrategy}>
                 <div ref={setNodeRef} className={styles.bubbles}>
-                    {placements.length === 0 ? (
+                    {topLevel.length === 0 ? (
                         <p className={styles.zone_empty}>
                             No placements in this zone — drag a widget here to place it.
                         </p>
                     ) : (
-                        placements.map(placement => (
-                            <PlacementBubble
-                                key={placement.id}
-                                placement={placement}
-                                typeInfo={lookupType(types, placement.typeId)}
-                                busy={busyId === placement.id}
-                                onToggleEnabled={onToggleEnabled}
-                                onEdit={onEdit}
-                                onDelete={onDelete}
-                                onRestore={onRestore}
-                            />
-                        ))
+                        topLevel.map(placement => {
+                            const isContainer = placement.typeId === LAYOUT_GROUP_TYPE_ID;
+                            const kids = isContainer
+                                ? childrenByParent.get(placement.id) ?? []
+                                : [];
+                            return (
+                                <Fragment key={placement.id}>
+                                    <PlacementBubble
+                                        placement={placement}
+                                        typeInfo={lookupType(types, placement.typeId)}
+                                        busy={busyId === placement.id}
+                                        onToggleEnabled={onToggleEnabled}
+                                        onEdit={onEdit}
+                                        onDelete={onDelete}
+                                        onRestore={onRestore}
+                                    />
+                                    {isContainer && (
+                                        <div className={styles.bubble_children}>
+                                            {kids.length === 0 ? (
+                                                <span className={styles.bubble_children_empty}>
+                                                    Empty group — edit a widget and set its container to this group.
+                                                </span>
+                                            ) : (
+                                                kids.map(child => (
+                                                    <ChildPlacementRow
+                                                        key={child.id}
+                                                        placement={child}
+                                                        typeInfo={lookupType(types, child.typeId)}
+                                                        busy={busyId === child.id}
+                                                        onToggleEnabled={onToggleEnabled}
+                                                        onEdit={onEdit}
+                                                        onDelete={onDelete}
+                                                        onRestore={onRestore}
+                                                    />
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
+                                </Fragment>
+                            );
+                        })
                     )}
                 </div>
             </SortableContext>
@@ -1173,6 +1244,89 @@ function PlacementBubble({
                             <code key={r} className={styles.route_chip}>{r}</code>
                         ))}
                 </div>
+            </div>
+            <div className={styles.bubble_actions}>
+                <Switch
+                    size="sm"
+                    on={placement.enabled}
+                    onChange={(next) => onToggleEnabled(placement, next)}
+                    disabled={busy}
+                    aria-label={`${placement.enabled ? 'Disable' : 'Enable'} placement ${label}`}
+                />
+                <IconButton
+                    size="sm"
+                    variant="primary"
+                    aria-label={`Edit ${label}`}
+                    onClick={() => onEdit(placement)}
+                >
+                    <Pencil size={14} />
+                </IconButton>
+                {placement.source === 'plugin' ? (
+                    <IconButton
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Restore plugin defaults for ${label}`}
+                        onClick={() => onRestore(placement)}
+                        disabled={busy}
+                    >
+                        <RefreshCw size={14} />
+                    </IconButton>
+                ) : (
+                    <IconButton
+                        size="sm"
+                        variant="danger"
+                        aria-label={`Delete ${label}`}
+                        onClick={() => onDelete(placement)}
+                    >
+                        <Trash2 size={14} />
+                    </IconButton>
+                )}
+            </div>
+        </div>
+    );
+}
+
+/**
+ * Compact, non-draggable row for a widget nested inside a layout-group
+ * container. It mirrors `PlacementBubble`'s actions (enable switch, edit,
+ * delete / restore) but omits the drag grip: a child's render order and
+ * its container assignment are edited from the modal, not by dragging,
+ * so the nesting display stays out of the zone's sortable list. The "edit"
+ * modal is where an operator detaches the widget (set container to "None")
+ * or moves it to a different group.
+ *
+ * @param placement - The nested child placement to render.
+ * @param typeInfo - Resolved widget-type label/owner for display.
+ * @param busy - Whether a mutation for this row is in flight.
+ * @param onToggleEnabled - Enable/disable handler.
+ * @param onEdit - Opens the edit modal.
+ * @param onDelete - Deletes an operator-source child.
+ * @param onRestore - Restores a plugin-source child's defaults.
+ */
+function ChildPlacementRow({
+    placement,
+    typeInfo,
+    busy,
+    onToggleEnabled,
+    onEdit,
+    onDelete,
+    onRestore
+}: PlacementBubbleProps) {
+    const label = placement.title ?? typeInfo?.label ?? placement.typeId;
+
+    return (
+        <div className={styles.bubble}>
+            <span className={styles.bubble_handle} aria-hidden />
+            <div className={styles.bubble_main}>
+                <div className={styles.bubble_top}>
+                    <span className={styles.widget_label}>{label}</span>
+                    <Badge tone={sourceTone(placement.source)}>
+                        {placement.source === 'plugin'
+                            ? `plugin: ${placement.pluginId ?? '?'}`
+                            : 'operator'}
+                    </Badge>
+                </div>
+                <span className={styles.widget_meta}>{placement.typeId}</span>
             </div>
             <div className={styles.bubble_actions}>
                 <Switch
@@ -1866,13 +2020,19 @@ interface PlacementFormProps {
     defaultRoutes?: string[];
     types: IWidgetTypeSnapshot | null;
     zones: IZoneSnapshot | null;
+    /**
+     * Every loaded placement, so the form can offer the layout-group
+     * containers in the selected zone as parent options.
+     */
+    placements: IPlacement[];
     onSubmit: (data: IPlacementCreate | IPlacementPatch) => Promise<void>;
     onCancel: () => void;
 }
 
-function PlacementForm({ mode, initial, defaultRoutes, types, zones, onSubmit, onCancel }: PlacementFormProps) {
+function PlacementForm({ mode, initial, defaultRoutes, types, zones, placements, onSubmit, onCancel }: PlacementFormProps) {
     const [typeId, setTypeId] = useState<string>(initial?.typeId ?? '');
     const [zoneId, setZoneId] = useState<string>(initial?.zoneId ?? '');
+    const [parentId, setParentId] = useState<string>(initial?.parentId ?? '');
     const [routes, setRoutes] = useState<string[]>(initial?.routes ?? defaultRoutes ?? []);
     const [routeDraft, setRouteDraft] = useState<string>('');
     const [order, setOrder] = useState<number>(initial?.order ?? 100);
@@ -1890,6 +2050,29 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, onSubmit, o
     const selectedSchema = useMemo(() => findConfigSchema(types, typeId), [types, typeId]);
     const configFields = useMemo(() => extractConfigFields(selectedSchema), [selectedSchema]);
     const hasSchemaFields = configFields.length > 0;
+
+    // A layout group cannot itself be nested; the Container picker is
+    // hidden for it. For every other type, offer the layout-group
+    // containers that live in the selected zone as parent options. The
+    // row being edited is excluded so it can never parent itself.
+    const isLayoutGroup = typeId === LAYOUT_GROUP_TYPE_ID;
+    const containers = useMemo(
+        () => placements.filter(p =>
+            p.typeId === LAYOUT_GROUP_TYPE_ID &&
+            !p.parentId &&
+            p.id !== initial?.id &&
+            p.zoneId === zoneId
+        ),
+        [placements, initial?.id, zoneId]
+    );
+
+    // Drop a stale parent selection when the operator switches to a zone
+    // (or a type) where the chosen container is no longer valid.
+    useEffect(() => {
+        if (parentId && !containers.some(c => c.id === parentId)) {
+            setParentId('');
+        }
+    }, [containers, parentId]);
 
     const [configValue, setConfigValue] = useState<Record<string, unknown>>(
         () => coerceInitialConfig(configFields, initial?.instanceConfig as Record<string, unknown> | undefined)
@@ -2056,9 +2239,14 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, onSubmit, o
             setSaving(true);
             try {
                 if (mode === 'create') {
+                    // Only nest non-group widgets; a layout group is always
+                    // top-level. The backend forces the child's zone and
+                    // clears its routes when a parent is supplied.
+                    const effectiveParent = !isLayoutGroup && parentId.length > 0 ? parentId : undefined;
                     const payload: IPlacementCreate = {
                         typeId,
                         zoneId,
+                        parentId: effectiveParent,
                         routes,
                         order,
                         title: title.trim().length > 0 ? title.trim() : undefined,
@@ -2093,8 +2281,22 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, onSubmit, o
                             : hadInitialTitleUrl
                                 ? null
                                 : undefined;
+                    // Container reassignment, three-state like title:
+                    //   - a selected container → attach (string)
+                    //   - cleared after having had one → null (detach)
+                    //   - never had one and none selected → omit
+                    // A layout group is never nested, so it always omits.
+                    const hadInitialParent = typeof initial?.parentId === 'string';
+                    const parentIdPatch: string | null | undefined = isLayoutGroup
+                        ? undefined
+                        : parentId.length > 0
+                            ? parentId
+                            : hadInitialParent
+                                ? null
+                                : undefined;
                     const payload: IPlacementPatch = {
                         zoneId,
+                        parentId: parentIdPatch,
                         routes,
                         order,
                         title: titlePatch,
@@ -2108,7 +2310,7 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, onSubmit, o
                 setSaving(false);
             }
         },
-        [configFields, configValue, enabled, initial?.title, initial?.titleUrl, mode, onSubmit, order, rawMode, rawText, routes, title, titleUrl, typeId, zoneId]
+        [configFields, configValue, enabled, initial?.title, initial?.titleUrl, initial?.parentId, isLayoutGroup, mode, onSubmit, order, parentId, rawMode, rawText, routes, title, titleUrl, typeId, zoneId]
     );
 
     const canSubmit = typeId.length > 0 && zoneId.length > 0;
@@ -2159,6 +2361,29 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, onSubmit, o
                     ))}
                 </Select>
             </div>
+
+            {!isLayoutGroup && containers.length > 0 && (
+                <div className={styles.field}>
+                    <label htmlFor="wp-parent">Container</label>
+                    <Select
+                        id="wp-parent"
+                        value={parentId}
+                        onChange={(e) => setParentId(e.target.value)}
+                        disabled={saving}
+                    >
+                        <option value="">None — place directly in the zone</option>
+                        {containers.map(c => (
+                            <option key={c.id} value={c.id}>
+                                {c.title ?? 'Layout group'} (…{c.id.slice(-6)})
+                            </option>
+                        ))}
+                    </Select>
+                    <span className={styles.field_hint}>
+                        Nest this widget inside a layout group in this zone. The group controls its own
+                        row/column arrangement, and its route filter governs visibility.
+                    </span>
+                </div>
+            )}
 
             <div className={styles.field}>
                 <label htmlFor="wp-routes">Routes</label>
