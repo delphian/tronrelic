@@ -44,6 +44,12 @@ export interface ChartSeries {
 interface LineChartProps {
     /** Array of data series to plot */
     series: ChartSeries[];
+    /**
+     * Optional heading rendered above the chart. Lets a caller (e.g. a widget
+     * surfacing an operator-set graph title) label the chart without wrapping it
+     * in its own header. Omitted renders no title element.
+     */
+    title?: string;
     /** Chart height in pixels (default: 320) */
     height?: number;
     /** Custom formatter for Y-axis labels */
@@ -185,6 +191,7 @@ function toDate(value: string) {
  */
 export function LineChart({
     series,
+    title,
     height = 320,
     yAxisFormatter = value => value.toLocaleString(),
     xAxisFormatter = value => value.toLocaleDateString(),
@@ -391,7 +398,12 @@ export function LineChart({
     }, [series, height, containerWidth, fixedMinDate, fixedMaxDate, fixedYMin, fixedYMax, hiddenSeries]);
 
     if (!chartData) {
-        return <div className={cn(styles.chart, className)}>{emptyLabel}</div>;
+        return (
+            <div className={cn(styles.chart, className)}>
+                {title ? <h3 className={styles.chart__title}>{title}</h3> : null}
+                {emptyLabel}
+            </div>
+        );
     }
 
     const { width, height: chartHeight, normalizedSeries, yTicks, xTicks, domainPoints, zeroLineY } = chartData;
@@ -468,6 +480,7 @@ export function LineChart({
 
     return (
         <figure ref={containerRef} className={cn(styles.chart, className)}>
+            {title ? <h3 className={styles.chart__title}>{title}</h3> : null}
             {/*
               * Render at a fixed pixel height with a uniformly-scaled viewBox so the
               * chart occupies its final box during SSR. Height no longer derives from
