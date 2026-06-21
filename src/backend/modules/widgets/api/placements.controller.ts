@@ -56,6 +56,18 @@ interface IInstanceConfigFieldError {
 const MAX_ORDER = 10_000;
 
 /**
+ * Bounds on a placement's `layoutWeight` (relative row width). The value
+ * is a flex-grow weight, so the absolute number only matters relative to
+ * its siblings — `1`/`2`/`3` already expresses every common split. Capping
+ * at 12 keeps the value a small integer (a sane ratio, not an accidental
+ * 9999) while leaving room for finer ratios than the admin UI's preset
+ * buttons offer; the floor of 1 forbids `0` (which would collapse the item
+ * to zero width) and negatives.
+ */
+const MIN_LAYOUT_WEIGHT = 1;
+const MAX_LAYOUT_WEIGHT = 12;
+
+/**
  * Upper bound on a placement `title` override length. Matches the
  * column budget of the rendered card heading.
  */
@@ -395,7 +407,7 @@ export class PlacementsController {
     };
 
     private parseCreateBody(body: unknown):
-        | { input: { typeId: string; zoneId: string; parentId?: string; routes: string[]; order?: number; title?: string; titleUrl?: string; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
+        | { input: { typeId: string; zoneId: string; parentId?: string; routes: string[]; order?: number; layoutWeight?: number; title?: string; titleUrl?: string; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
         | { error: string } {
         if (!body || typeof body !== 'object') {
             return { error: 'Request body must be an object' };
@@ -425,6 +437,9 @@ export class PlacementsController {
         const orderResult = this.parseOrder(b.order);
         if ('error' in orderResult) return orderResult;
 
+        const layoutWeightResult = this.parseLayoutWeight(b.layoutWeight);
+        if ('error' in layoutWeightResult) return layoutWeightResult;
+
         const titleResult = this.parseTitle(b.title);
         if ('error' in titleResult) return titleResult;
 
@@ -443,6 +458,7 @@ export class PlacementsController {
                 parentId: parentIdResult.parentId,
                 routes: routesResult.routes,
                 order: orderResult.order,
+                layoutWeight: layoutWeightResult.layoutWeight,
                 title: titleResult.title,
                 titleUrl: titleUrlResult.titleUrl,
                 instanceConfig: instanceConfigResult.instanceConfig,
@@ -452,13 +468,13 @@ export class PlacementsController {
     }
 
     private parsePatchBody(body: unknown):
-        | { patch: { zoneId?: string; routes?: string[]; order?: number; title?: string | null; titleUrl?: string | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
+        | { patch: { zoneId?: string; routes?: string[]; order?: number; layoutWeight?: number | null; title?: string | null; titleUrl?: string | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
         | { error: string } {
         if (!body || typeof body !== 'object') {
             return { error: 'Request body must be an object' };
         }
         const b = body as Record<string, unknown>;
-        const patch: { zoneId?: string; parentId?: string | null; routes?: string[]; order?: number; title?: string | null; titleUrl?: string | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } = {};
+        const patch: { zoneId?: string; parentId?: string | null; routes?: string[]; order?: number; layoutWeight?: number | null; title?: string | null; titleUrl?: string | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } = {};
 
         if (b.zoneId !== undefined) {
             if (typeof b.zoneId !== 'string' || b.zoneId.length === 0) {
@@ -494,6 +510,17 @@ export class PlacementsController {
             const result = this.parseOrder(b.order);
             if ('error' in result) return result;
             if (result.order !== undefined) patch.order = result.order;
+        }
+
+        if (b.layoutWeight !== undefined) {
+            if (b.layoutWeight === null) {
+                // Explicit clear back to auto width.
+                patch.layoutWeight = null;
+            } else {
+                const result = this.parseLayoutWeight(b.layoutWeight);
+                if ('error' in result) return result;
+                if (result.layoutWeight !== undefined) patch.layoutWeight = result.layoutWeight;
+            }
         }
 
         if (b.title !== undefined) {
@@ -581,6 +608,32 @@ export class PlacementsController {
             return { error: `order must be between 0 and ${MAX_ORDER}` };
         }
         return { order: value };
+    }
+
+    /**
+     * Validate an optional `layoutWeight` (relative row width). Accepts a
+     * small positive integer in `[MIN_LAYOUT_WEIGHT, MAX_LAYOUT_WEIGHT]`
+     * (nest under that width ratio) or absence (auto width). `null` is the
+     * patch caller's explicit-clear signal and is handled there, never
+     * reaching here. Bounding at the boundary keeps an out-of-range or
+     * fractional weight out of the stored document and the inline CSS the
+     * renderer emits.
+     *
+     * @param value - Raw `layoutWeight` from the request body.
+     * @returns The validated weight (or undefined when absent), or an error.
+     */
+    private parseLayoutWeight(value: unknown): { layoutWeight?: number } | { error: string } {
+        if (value === undefined) return { layoutWeight: undefined };
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+            return { error: 'layoutWeight must be a finite number' };
+        }
+        if (!Number.isInteger(value)) {
+            return { error: 'layoutWeight must be an integer' };
+        }
+        if (value < MIN_LAYOUT_WEIGHT || value > MAX_LAYOUT_WEIGHT) {
+            return { error: `layoutWeight must be between ${MIN_LAYOUT_WEIGHT} and ${MAX_LAYOUT_WEIGHT}` };
+        }
+        return { layoutWeight: value };
     }
 
     private parseTitle(value: unknown): { title?: string } | { error: string } {

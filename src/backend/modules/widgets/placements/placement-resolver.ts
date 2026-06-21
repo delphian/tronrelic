@@ -217,6 +217,10 @@ export class PlacementResolver {
                 zone: placement.zoneId,
                 pluginId: owner,
                 order: placement.order,
+                // Carry the placement's relative row width through to the
+                // renderer so it can size this flex item; absent leaves it
+                // auto-width as before.
+                layoutWeight: placement.layoutWeight,
                 title: placement.title,
                 titleUrl: placement.titleUrl,
                 data,

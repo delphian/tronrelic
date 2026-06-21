@@ -16,6 +16,7 @@
 
 import type { ObjectId } from 'mongodb';
 import type {
+    IZoneLayoutConfig,
     ZoneFlexDirection,
     ZoneJustifyContent,
     ZoneAlignItems,
@@ -45,6 +46,14 @@ export interface IZoneLayoutDocument {
     flexWrap: ZoneFlexWrap;
     /** Inter-item gap as a token size. */
     gap: ZoneGapSize;
+    /**
+     * Container width below which the zone collapses to a stacked column.
+     * Absent or `'never'` means the zone never collapses — the behaviour
+     * for every zone configured before this field existed. Typed off
+     * `IZoneLayoutConfig` so the document and the public config never
+     * drift.
+     */
+    collapseBelow?: IZoneLayoutConfig['collapseBelow'];
     updatedAt: Date;
 }
 

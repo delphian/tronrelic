@@ -60,7 +60,7 @@ All endpoints require admin auth (cookie path: verified wallet + admin group; se
 | Method | Path | Body | Returns | Notes |
 |---|---|---|---|---|
 | GET | `/api/admin/system/zones` | — | `IZoneSnapshot` — tracks (one per host) → zones, each carrying its effective `layoutConfig` | |
-| PATCH | `/api/admin/system/zones/:zoneId/layout` | `IZoneLayoutConfig` | `{ success, layoutConfig }` | 404 unknown zone; 400 off-enum flex value. Persists the operator's flexbox override |
+| PATCH | `/api/admin/system/zones/:zoneId/layout` | `IZoneLayoutConfig` | `{ success, layoutConfig }` | 404 unknown zone; 400 off-enum flex value. Persists the operator's flexbox override, including the optional `collapseBelow` breakpoint |
 
 ### Widget Types — read-only
 
@@ -75,7 +75,7 @@ All endpoints require admin auth (cookie path: verified wallet + admin group; se
 | GET | `/api/admin/system/widgets/placements` | — | `{ success, placements: IWidgetPlacement[] }` | Query: `zoneId?`, `pluginId?`, `source?` (`plugin`\|`operator`), `enabledOnly?` |
 | GET | `/api/admin/system/widgets/placements/:id` | — | `{ success, placement }` or 404 | |
 | POST | `/api/admin/system/widgets/placements` | `IPlacementInput` | `{ success, placement }` 201 | Always `source: 'operator'`; rejects unknown `typeId`/`zoneId`. Optional `parentId` nests the row in a layout group (400 if the parent isn't a top-level `core:layout-group`); a nested row's `zoneId` is forced to the parent's zone and its `routes` cleared |
-| PATCH | `/api/admin/system/widgets/placements/:id` | `IPlacementPatch` | `{ success, placement }` or 404 | Operator-editable on every row, including plugin-source. `title: null` / `titleUrl: null` clears that field; `titleUrl` must be a root-relative internal path. `parentId` is three-state like `title` — a 24-hex id attaches (forcing zone + clearing routes), `null` detaches to the zone, omission leaves nesting unchanged |
+| PATCH | `/api/admin/system/widgets/placements/:id` | `IPlacementPatch` | `{ success, placement }` or 404 | Operator-editable on every row, including plugin-source. `title: null` / `titleUrl: null` clears that field; `titleUrl` must be a root-relative internal path. `parentId` is three-state like `title` — a 24-hex id attaches (forcing zone + clearing routes), `null` detaches to the zone, omission leaves nesting unchanged. `layoutWeight` is three-state too — an integer 1–12 sets the row's relative width, `null` clears it to auto, omission leaves it unchanged |
 | DELETE | `/api/admin/system/widgets/placements/:id` | — | 204 / 400 / 404 | 400 on plugin-source rows (use disable or restore-defaults). Deleting a `core:layout-group` container detaches its children back to the zone (clears their `parentId`) rather than cascade-deleting them |
 | POST | `/api/admin/system/widgets/placements/:id/restore-defaults` | — | `{ success, placement }` | 400 on operator rows; 409 when plugin has not registered in this process |
 
@@ -119,6 +119,7 @@ The placement service emits via a callback `WidgetsModule.init()` wires to `WebS
 | `parentId` | ObjectId? | Set only on a child nested in a `core:layout-group`; references the container row's `_id`. Exposed publicly as the hex string `parentId`. Sparse-indexed (migration 003) |
 | `routes` | string[] | Route filter — empty matches every route |
 | `order` | number | Sort key within zone (lower renders first); plugin default `100` |
+| `layoutWeight` | number? | Relative row width as a flex weight (`flex-grow` against a zero basis) when the container lays out in a row; absent means auto width. Bounded 1–12 at the admin boundary. Cleared on restore-defaults alongside `parentId` |
 | `title` | string? | Operator override of widget heading |
 | `titleUrl` | string? | Operator-only root-relative URL that links the heading; only renders when `title` is set |
 | `instanceConfig` | object? | Per-instance config; the type's data fetcher consumes it |
@@ -138,6 +139,7 @@ Indexes (migration 001): `(typeId, pluginId)` sparse unique for plugin-row atomi
 | `preset` | string? | Last-selected named preset, or `custom` when hand-tuned |
 | `flexDirection` / `justifyContent` / `alignItems` / `flexWrap` | string | Flex container properties |
 | `gap` | string | Token gap size (`none`/`sm`/`md`/`lg` → `--gap-*`) |
+| `collapseBelow` | string? | Container width below which the zone collapses to a stacked column (`never`/`mobile-sm`/`mobile-md`/`mobile-lg`/`tablet`/`desktop`). Absent/`never` keeps the row at every width |
 | `updatedAt` | Date | |
 
 ## Lifecycle Semantics
@@ -169,6 +171,10 @@ An operator can group widgets inside a zone by placing a `core:layout-group` con
 A child points at its container through the placement `parentId`. `WidgetsService` enforces the contract on create/attach — the parent must exist, be a `core:layout-group`, and be top-level; a layout group can never itself be nested — and forces the child into the parent's zone with an empty route filter so the container alone governs where the group renders (`InvalidParentPlacementError` → HTTP 400 otherwise). Deleting a container calls `IPlacementService.detachChildrenOf`, relocating its children back to the zone (`$unset parentId`) so operator-configured widgets survive.
 
 The container's `instanceConfig` *is* an `IZoneLayoutConfig`; its data fetcher echoes the normalized config as the widget `data`, and `WidgetZone` styles the nested flex container from it. At SSR, `PlacementResolver` fetches placements flat, then assembles a two-level tree: each child is nested under its container's `IWidgetData.children` (sorted by the child's `order`), only top-level items are returned, and a child whose container did not resolve (disabled / route-filtered / failed) is dropped as an orphan — the same silent-skip discipline as an unregistered type.
+
+**Per-child relative width.** Each child carries an optional `layoutWeight` (a placement field, sibling of `order` — *not* `instanceConfig`). The renderer applies it as a `flex-grow` weight against a zero basis, so children with weights `2` and `1` split a row two-thirds / one-third regardless of content. Absent means auto width — unchanged from before the field existed. Operators set it from the per-row width dropdown under the group (and on top-level zone rows), since width is a property of how the container arranges its children, not of any one widget type.
+
+**Responsive collapse.** A row layout (zone or group) can collapse to a stacked column below a chosen breakpoint via `IZoneLayoutConfig.collapseBelow`. The mechanism is a container query, not a viewport media query: a flex container cannot query its own width, so `WidgetZone` wraps each container in a layout-neutral element that establishes `container-type: inline-size`, and the inner flex container carries a `.collapse_*` class whose `@container` rule flips it to a column and resets weighted children to natural width once the wrapper is narrower than the breakpoint. Measuring the container's own width means a group nested in a narrow sidebar collapses independently of one spanning the page. `never` (the default) never collapses.
 
 **Per-zone flexbox layout.** Every zone renders as a CSS flex container; placed widgets are flex items. The arrangement (direction, justify, align, wrap, gap) is an `IZoneLayoutConfig` an operator sets per zone from `/system/widgets` and the `WidgetZone` renderer applies via inline CSS custom properties (gap maps to `--gap-*` tokens). Overrides persist in `module_widgets_zone_layouts`; a zone with no row uses a default derived from its descriptor's coarse `layout` hint (`vertical` → stacked column, so untouched zones look unchanged). `WidgetsService.listZones()` merges the override (else the default) into each zone's `layoutConfig`, and `/api/widgets` returns a `zoneId → layoutConfig` map so SSR applies layout without a second call.
 

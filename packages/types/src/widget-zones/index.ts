@@ -32,5 +32,6 @@ export type {
     ZoneAlignItems,
     ZoneFlexWrap,
     ZoneGapSize,
-    ZoneLayoutPreset
+    ZoneLayoutPreset,
+    ZoneCollapseBreakpoint
 } from './IZoneLayoutConfig.js';

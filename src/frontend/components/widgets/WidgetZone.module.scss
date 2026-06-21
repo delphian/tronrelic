@@ -7,7 +7,41 @@
  * token-backed fallbacks. Keeping the values in custom properties lets the
  * same static rule render a stacked column, a centered row, or a wrapping
  * grid depending on the operator's choice — no per-layout class needed.
+ *
+ * Responsive collapse is container-query driven: a flex container cannot
+ * query its own width, so each container is wrapped in a layout-neutral
+ * element (`.zone_container` / `.group_container`) that establishes the
+ * `container-type`. The inner flex container then carries a `.collapse_*`
+ * class whose `@container` rule flips it to a column below the chosen
+ * breakpoint. Both wrappers share the `widget-layout` container name; a
+ * `@container widget-layout (...)` query resolves to the *nearest* such
+ * ancestor, so a group nested in a zone collapses against the group's own
+ * width while the zone collapses against the zone's — no per-level naming
+ * needed.
  */
+
+@use '../../app/breakpoints' as *;
+
+/**
+ * Container-query context for a zone. Layout-neutral (full-width block) so
+ * wrapping the flex container changes nothing visually; its only job is to
+ * give the inner `.zone` an ancestor whose inline width `@container` rules
+ * can measure.
+ */
+.zone_container {
+    display: block;
+    width: 100%;
+    container-type: inline-size;
+    container-name: widget-layout;
+}
+
+/** Container-query context for a layout group — see `.zone_container`. */
+.group_container {
+    display: block;
+    width: 100%;
+    container-type: inline-size;
+    container-name: widget-layout;
+}
 
 .zone {
     display: flex;
@@ -39,6 +73,73 @@
     // widget (e.g. the block ticker) in a row layout reflows instead of
     // forcing the container to overflow.
     min-width: 0;
+}
+
+// A weighted item takes a relative share of a row. The weight rides in the
+// `--item-grow` custom property (set inline by the renderer) and feeds
+// `flex-grow`; the zero basis makes sibling weights pure ratios (a `2` and
+// a `1` split two-thirds / one-third regardless of content). Kept in this
+// class — never inline `flex` — so the collapse rules below can override it.
+.item_weighted {
+    flex: var(--item-grow, 1) 1 0;
+}
+
+// Responsive collapse. Each class flips the inner flex container to a
+// column once its wrapper is narrower than the named breakpoint, and resets
+// its own *direct* weighted children (the child combinator keeps a zone's
+// collapse from reaching into a nested group's children) to natural,
+// full-width stacking — `flex: 0 0 auto` undoes the zero-basis grow that
+// only makes sense on a row's main axis. The breakpoint variable must be
+// interpolated (`#{…}`) inside `@container` or Sass silently drops the
+// condition.
+.collapse_mobile_sm {
+    @container widget-layout (max-width: #{$breakpoint-mobile-sm}) {
+        flex-direction: column;
+
+        > .item_weighted {
+            flex: 0 0 auto;
+        }
+    }
+}
+
+.collapse_mobile_md {
+    @container widget-layout (max-width: #{$breakpoint-mobile-md}) {
+        flex-direction: column;
+
+        > .item_weighted {
+            flex: 0 0 auto;
+        }
+    }
+}
+
+.collapse_mobile_lg {
+    @container widget-layout (max-width: #{$breakpoint-mobile-lg}) {
+        flex-direction: column;
+
+        > .item_weighted {
+            flex: 0 0 auto;
+        }
+    }
+}
+
+.collapse_tablet {
+    @container widget-layout (max-width: #{$breakpoint-tablet}) {
+        flex-direction: column;
+
+        > .item_weighted {
+            flex: 0 0 auto;
+        }
+    }
+}
+
+.collapse_desktop {
+    @container widget-layout (max-width: #{$breakpoint-desktop}) {
+        flex-direction: column;
+
+        > .item_weighted {
+            flex: 0 0 auto;
+        }
+    }
 }
 
 .item_title {

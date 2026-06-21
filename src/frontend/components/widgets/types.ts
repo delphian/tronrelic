@@ -26,6 +26,15 @@ export interface WidgetData {
     order: number;
 
     /**
+     * Relative horizontal width of this item when its container lays out
+     * in a row, carried from the resolved placement. The renderer applies
+     * it as a `flex-grow` weight (against a zero basis) so sibling weights
+     * become width ratios; absent means auto width — the historical
+     * behaviour.
+     */
+    layoutWeight?: number;
+
+    /**
      * Optional display title.
      */
     title?: string;

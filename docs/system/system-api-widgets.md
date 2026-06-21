@@ -21,7 +21,7 @@ The placements controller validates inputs against the live `IZoneRegistry` and 
 | GET | `/api/admin/system/zones` | — | `IZoneSnapshot` |
 | PATCH | `/api/admin/system/zones/:zoneId/layout` | `IZoneLayoutConfig` | `{ success, layoutConfig }` |
 
-GET is the tracks-grouped catalogue of every registered zone with host (`site` / `core` / `plugin` / `admin`), registration metadata, and each zone's effective `layoutConfig` (the operator override, else a default derived from the descriptor's coarse `layout` hint). PATCH persists an operator's flexbox layout for a zone — `404` on an unknown zone, `400` on an off-enum flex value — and fires `widgets:placements-update` so admin UIs refetch.
+GET is the tracks-grouped catalogue of every registered zone with host (`site` / `core` / `plugin` / `admin`), registration metadata, and each zone's effective `layoutConfig` (the operator override, else a default derived from the descriptor's coarse `layout` hint). PATCH persists an operator's flexbox layout for a zone — `404` on an unknown zone, `400` on an off-enum flex value — and fires `widgets:placements-update` so admin UIs refetch. `IZoneLayoutConfig` also carries an optional `collapseBelow` breakpoint (`never` / `mobile-sm` / `mobile-md` / `mobile-lg` / `tablet` / `desktop`); off-enum values are dropped, an absent value means the row never collapses.
 
 ### Widget Types — read-only introspection
 
@@ -60,6 +60,7 @@ The placements controller refuses input on any of:
 - `zoneId` not registered in `IZoneRegistry`.
 - `routes` entry that doesn't start with `/`, contains whitespace, or carries a glob marker outside the trailing segment.
 - `order` outside `[0, 10000]`, non-integer, or non-finite.
+- `layoutWeight` outside `[1, 12]`, non-integer, or non-finite. Sets the row's relative width (a `flex-grow` weight) when its container lays out in a row; pass `layoutWeight: null` on PATCH to clear it back to auto width (`$unset`).
 - `title` empty after trim, or longer than 80 characters. Pass `title: null` on PATCH to clear an existing override (`$unset`).
 - `titleUrl` not a root-relative internal path (must start with a single `/`; protocol-relative, absolute, or scheme URLs are rejected), or longer than 512 characters. Pass `titleUrl: null` on PATCH to clear the heading link (`$unset`).
 - `instanceConfig` not a plain object.

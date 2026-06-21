@@ -301,6 +301,7 @@ export class PlacementService implements IPlacementService {
         if (input.parentId !== undefined && ObjectId.isValid(input.parentId)) {
             doc.parentId = new ObjectId(input.parentId);
         }
+        if (input.layoutWeight !== undefined) doc.layoutWeight = input.layoutWeight;
         if (input.title !== undefined) doc.title = input.title;
         if (input.titleUrl !== undefined) doc.titleUrl = input.titleUrl;
         if (input.instanceConfig !== undefined) doc.instanceConfig = input.instanceConfig;
@@ -333,6 +334,13 @@ export class PlacementService implements IPlacementService {
         }
         if (patch.routes !== undefined) setOps.routes = [...patch.routes];
         if (patch.order !== undefined) setOps.order = patch.order;
+        if (patch.layoutWeight === null) {
+            // Explicit clear — drop the weight so the item falls back to
+            // auto (content-driven) width.
+            unsetOps.layoutWeight = '';
+        } else if (patch.layoutWeight !== undefined) {
+            setOps.layoutWeight = patch.layoutWeight;
+        }
         if (patch.title === null) {
             // Explicit unset signal — drop the title field so the
             // placement falls back to the widget-type label.
@@ -423,11 +431,14 @@ export class PlacementService implements IPlacementService {
         // Plugin registration defaults never nest a widget, so a faithful
         // restore must drop any operator-applied `parentId` — otherwise the
         // UI reports "defaults restored" while the resolver still renders
-        // the widget inside the old container. Also `$unset` the optional
+        // the widget inside the old container. `layoutWeight` is dropped for
+        // the same reason: it is a row-layout property of the container the
+        // widget was nested in, meaningless once the row falls back to a
+        // plain top-level plugin placement. Also `$unset` the optional
         // title field when the plugin never set one so the restored row
         // matches a fresh plugin registration exactly, not "plugin defaults
         // plus operator title".
-        const unsetOps: Record<string, ''> = { parentId: '' };
+        const unsetOps: Record<string, ''> = { parentId: '', layoutWeight: '' };
         if (defaults.title !== undefined) {
             setOps.title = defaults.title;
         } else {
@@ -498,6 +509,7 @@ function toPublic(doc: IWidgetPlacementDocument): IWidgetPlacement {
         parentId: doc.parentId ? doc.parentId.toHexString() : undefined,
         routes: doc.routes,
         order: doc.order,
+        layoutWeight: doc.layoutWeight,
         title: doc.title,
         titleUrl: doc.titleUrl,
         instanceConfig: doc.instanceConfig,

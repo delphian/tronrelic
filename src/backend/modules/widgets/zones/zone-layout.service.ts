@@ -189,6 +189,9 @@ export class ZoneLayoutService {
         if (config.preset !== undefined) {
             setOps.preset = config.preset;
         }
+        if (config.collapseBelow !== undefined) {
+            setOps.collapseBelow = config.collapseBelow;
+        }
 
         await collection.updateOne(
             { zoneId },
@@ -202,7 +205,8 @@ export class ZoneLayoutService {
             justifyContent: config.justifyContent,
             alignItems: config.alignItems,
             flexWrap: config.flexWrap,
-            gap: config.gap
+            gap: config.gap,
+            collapseBelow: config.collapseBelow
         };
         this.cache.set(zoneId, stored);
 
@@ -244,6 +248,7 @@ function toConfig(doc: IZoneLayoutDocument): IZoneLayoutConfig {
         justifyContent: doc.justifyContent,
         alignItems: doc.alignItems,
         flexWrap: doc.flexWrap,
-        gap: doc.gap
+        gap: doc.gap,
+        collapseBelow: doc.collapseBelow
     };
 }

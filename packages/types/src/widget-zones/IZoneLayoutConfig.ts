@@ -43,6 +43,32 @@ export type ZoneFlexWrap = 'nowrap' | 'wrap';
 export type ZoneGapSize = 'none' | 'sm' | 'md' | 'lg';
 
 /**
+ * Width threshold at which a row layout collapses to a single stacked
+ * column.
+ *
+ * Side-by-side widgets work on a wide host but crush on a narrow one, so
+ * an operator picks the container width below which the flex container
+ * flips to a column and each weighted child takes the full width. The
+ * values name the platform breakpoints (`mobile-sm` 360px … `desktop`
+ * 1200px) so the renderer can map each to a `@container` query against a
+ * `_breakpoints` variable rather than a hand-typed pixel value; `'never'`
+ * (the default when the field is unset) keeps the row at every width,
+ * preserving the historical behaviour for layouts created before this
+ * field existed.
+ *
+ * The threshold is measured against the *container's own* width — the
+ * zone or layout group — not the viewport, so a group nested in a narrow
+ * sidebar collapses independently of one spanning the full page.
+ */
+export type ZoneCollapseBreakpoint =
+    | 'never'
+    | 'mobile-sm'
+    | 'mobile-md'
+    | 'mobile-lg'
+    | 'tablet'
+    | 'desktop';
+
+/**
  * Named popular layout the admin UI offers as a one-click preset. Each
  * preset sets the four flex properties; `'custom'` marks a config the
  * operator hand-tuned past any preset so the UI shows the granular
@@ -77,4 +103,12 @@ export interface IZoneLayoutConfig {
     flexWrap: ZoneFlexWrap;
     /** Inter-item gap as a token size. */
     gap: ZoneGapSize;
+    /**
+     * Container width below which the layout collapses to a single
+     * stacked column (and weighted children reset to full width). Optional
+     * — absent or `'never'` means the row never collapses, the behaviour
+     * for every layout created before this field existed. See
+     * {@link ZoneCollapseBreakpoint}.
+     */
+    collapseBelow?: ZoneCollapseBreakpoint;
 }

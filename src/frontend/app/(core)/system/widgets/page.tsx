@@ -90,6 +90,12 @@ interface IPlacement {
     parentId?: string;
     routes: string[];
     order: number;
+    /**
+     * Relative row width as a flex weight when the container lays out in a
+     * row. Absent means auto (content) width. Edited via the per-row width
+     * control on a layout group's children (and top-level zone rows).
+     */
+    layoutWeight?: number;
     title?: string;
     titleUrl?: string;
     instanceConfig?: Record<string, unknown>;
@@ -114,6 +120,12 @@ interface IPlacementPatch {
     parentId?: string | null | undefined;
     routes?: string[];
     order?: number;
+    /**
+     * Set the relative row width, or clear it back to auto with `null`.
+     * Omission leaves it unchanged — the same three-state convention as
+     * `title`.
+     */
+    layoutWeight?: number | null | undefined;
     title?: string | null | undefined;
     titleUrl?: string | null | undefined;
     instanceConfig?: Record<string, unknown>;
@@ -287,6 +299,37 @@ const WRAP_OPTIONS = ['nowrap', 'wrap'] as const;
 const GAP_OPTIONS = ['none', 'sm', 'md', 'lg'] as const;
 
 /**
+ * Collapse-breakpoint dropdown options. The value is the
+ * `ZoneCollapseBreakpoint` stored on the layout; the label spells out the
+ * pixel width so an operator picks a threshold without memorising the
+ * breakpoint names. `'never'` is first (the default) so an untouched
+ * control reads "Never (stay a row)".
+ */
+const COLLAPSE_OPTIONS: ReadonlyArray<{ value: NonNullable<IZoneLayoutConfig['collapseBelow']>; label: string }> = [
+    { value: 'never', label: 'Never (stay a row)' },
+    { value: 'mobile-sm', label: 'Below 360px (mobile S)' },
+    { value: 'mobile-md', label: 'Below 480px (mobile M)' },
+    { value: 'mobile-lg', label: 'Below 768px (mobile L)' },
+    { value: 'tablet', label: 'Below 1024px (tablet)' },
+    { value: 'desktop', label: 'Below 1200px (desktop)' }
+];
+
+/**
+ * Per-row relative-width options. The empty value clears `layoutWeight`
+ * back to auto (content) width; the numbered values set the flex weight so
+ * two rows at `2×` and `1×` split a row two-thirds / one-third. Kept short
+ * (1×–4×) because finer ratios are rarely useful and the raw weight is
+ * still editable via the modal's JSON for power users.
+ */
+const WIDTH_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+    { value: '', label: 'Auto' },
+    { value: '1', label: '1×' },
+    { value: '2', label: '2×' },
+    { value: '3', label: '3×' },
+    { value: '4', label: '4×' }
+];
+
+/**
  * Per-zone flexbox controls: a preset dropdown that sets the common
  * arrangements in one click, plus granular dropdowns (direction,
  * justify, align, wrap, gap) for fine-tuning. Selecting a preset applies
@@ -404,6 +447,17 @@ function ZoneLayoutControls({
                     disabled={disabled}
                 >
                     {GAP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </Select>
+            </div>
+            <div className={styles.zone_layout_field}>
+                <label className={styles.filter_label} htmlFor={`zl-collapse-${zoneId}`}>Collapse</label>
+                <Select
+                    id={`zl-collapse-${zoneId}`}
+                    value={layout.collapseBelow ?? 'never'}
+                    onChange={(e) => applyGranular({ collapseBelow: e.target.value as IZoneLayoutConfig['collapseBelow'] }, true)}
+                    disabled={disabled}
+                >
+                    {COLLAPSE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </Select>
             </div>
         </div>
@@ -1077,6 +1131,7 @@ export default function WidgetsAdminPage() {
                                                 onEdit={(p) => openPlacementModal('edit', p)}
                                                 onDelete={openDeleteModal}
                                                 onRestore={(p) => restoreDefaults(p.id)}
+                                                onSetWidth={(p, weight) => togglePlacement(p.id, { layoutWeight: weight })}
                                                 onLayoutChange={setZoneLayout}
                                             />
                                         ))}
@@ -1107,6 +1162,7 @@ interface ZoneSectionProps {
     onEdit: (placement: IPlacement) => void;
     onDelete: (placement: IPlacement) => void;
     onRestore: (placement: IPlacement) => void;
+    onSetWidth: (placement: IPlacement, weight: number | null) => void;
     onLayoutChange: (zoneId: string, config: IZoneLayoutConfig) => void;
 }
 
@@ -1122,6 +1178,7 @@ function ZoneSection({
     onEdit,
     onDelete,
     onRestore,
+    onSetWidth,
     onLayoutChange
 }: ZoneSectionProps) {
     const zoneInfo = lookupZone(zones, zoneId);
@@ -1189,6 +1246,7 @@ function ZoneSection({
                                         onEdit={onEdit}
                                         onDelete={onDelete}
                                         onRestore={onRestore}
+                                        onSetWidth={onSetWidth}
                                     />
                                     {isContainer && (
                                         <GroupDropArea
@@ -1201,6 +1259,7 @@ function ZoneSection({
                                             onEdit={onEdit}
                                             onDelete={onDelete}
                                             onRestore={onRestore}
+                                            onSetWidth={onSetWidth}
                                         />
                                     )}
                                 </Fragment>
@@ -1225,6 +1284,52 @@ interface PlacementBubbleProps {
     onEdit: (placement: IPlacement) => void;
     onDelete: (placement: IPlacement) => void;
     onRestore: (placement: IPlacement) => void;
+    /**
+     * Set this row's relative width (a flex weight) or clear it to auto
+     * with `null`. Drives the inline width dropdown so an operator tunes
+     * side-by-side widths without opening the modal.
+     */
+    onSetWidth: (placement: IPlacement, weight: number | null) => void;
+}
+
+/**
+ * Inline relative-width dropdown for a placement row.
+ *
+ * Surfaces per-child width tuning on the row itself — the layout-group's
+ * own editing surface — so an operator builds a "two-thirds / one-third"
+ * row by setting each child's width here rather than hand-editing JSON.
+ * Selecting "Auto" clears the weight (`null`); a number sets the flex
+ * weight. Extracted so the top-level and nested rows share one control.
+ *
+ * @param placement - The row whose width this edits.
+ * @param disabled - Whether the control is inert (a write is in flight).
+ * @param onSetWidth - Persists the new weight (or `null` to clear).
+ */
+function WidthSelect({
+    placement,
+    disabled,
+    onSetWidth
+}: {
+    placement: IPlacement;
+    disabled: boolean;
+    onSetWidth: (placement: IPlacement, weight: number | null) => void;
+}) {
+    const value = placement.layoutWeight !== undefined ? String(placement.layoutWeight) : '';
+    return (
+        <Select
+            className={styles.width_select}
+            value={value}
+            disabled={disabled}
+            aria-label={`Relative width for ${placement.title ?? placement.typeId}`}
+            title="Relative width when this row sits in a side-by-side layout"
+            onChange={(e) => {
+                const raw = e.target.value;
+                onSetWidth(placement, raw === '' ? null : Number(raw));
+            }}
+        >
+            {WIDTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </Select>
+    );
 }
 
 /**
@@ -1241,7 +1346,8 @@ function PlacementBubble({
     onToggleEnabled,
     onEdit,
     onDelete,
-    onRestore
+    onRestore,
+    onSetWidth
 }: PlacementBubbleProps) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
         id: placement.id,
@@ -1292,6 +1398,7 @@ function PlacementBubble({
                 </div>
             </div>
             <div className={styles.bubble_actions}>
+                <WidthSelect placement={placement} disabled={busy} onSetWidth={onSetWidth} />
                 <Switch
                     size="sm"
                     on={placement.enabled}
@@ -1358,7 +1465,8 @@ function ChildPlacementRow({
     onToggleEnabled,
     onEdit,
     onDelete,
-    onRestore
+    onRestore,
+    onSetWidth
 }: PlacementBubbleProps) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
         id: placement.id,
@@ -1397,6 +1505,7 @@ function ChildPlacementRow({
                 <span className={styles.widget_meta}>{placement.typeId}</span>
             </div>
             <div className={styles.bubble_actions}>
+                <WidthSelect placement={placement} disabled={busy} onSetWidth={onSetWidth} />
                 <Switch
                     size="sm"
                     on={placement.enabled}
@@ -1447,6 +1556,7 @@ interface GroupDropAreaProps {
     onEdit: (placement: IPlacement) => void;
     onDelete: (placement: IPlacement) => void;
     onRestore: (placement: IPlacement) => void;
+    onSetWidth: (placement: IPlacement, weight: number | null) => void;
 }
 
 /**
@@ -1479,7 +1589,8 @@ function GroupDropArea({
     onToggleEnabled,
     onEdit,
     onDelete,
-    onRestore
+    onRestore,
+    onSetWidth
 }: GroupDropAreaProps) {
     const { setNodeRef, isOver } = useDroppable({
         id: `group:${containerId}`,
@@ -1508,6 +1619,7 @@ function GroupDropArea({
                             onEdit={onEdit}
                             onDelete={onDelete}
                             onRestore={onRestore}
+                            onSetWidth={onSetWidth}
                         />
                     ))
                 )}

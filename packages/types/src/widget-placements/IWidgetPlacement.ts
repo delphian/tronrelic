@@ -55,6 +55,19 @@ export interface IWidgetPlacement {
     readonly routes: ReadonlyArray<string>;
     /** Sort order within the zone (lower renders first). */
     readonly order: number;
+    /**
+     * Relative horizontal width of this placement when its container (zone
+     * or layout group) lays its items out in a row. Expressed as a flex
+     * *weight* — the renderer applies it as `flex-grow` against a zero
+     * basis, so children with weights `2` and `1` split the row two-thirds
+     * to one-third regardless of content width. Omitted means "auto": the
+     * item keeps its natural, content-driven width exactly as before this
+     * field existed. A layout property of the placement's participation in
+     * its container — a sibling of `order`, deliberately not part of
+     * `instanceConfig` (which is widget-type content the data fetcher
+     * reads). Bounded to a small integer at the admin boundary.
+     */
+    readonly layoutWeight?: number;
     /** Optional heading rendered above the widget. */
     readonly title?: string;
     /**
@@ -101,6 +114,11 @@ export interface IPlacementInput {
     parentId?: string;
     routes: string[];
     order?: number;
+    /**
+     * Relative row width as a flex weight. See
+     * {@link IWidgetPlacement.layoutWeight}. Omitted means auto width.
+     */
+    layoutWeight?: number;
     title?: string;
     /** Optional root-relative link target for the heading. See {@link IWidgetPlacement.titleUrl}. */
     titleUrl?: string;
