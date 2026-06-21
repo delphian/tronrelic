@@ -186,18 +186,28 @@ export class ZoneLayoutService {
             gap: config.gap,
             updatedAt: now
         };
+        // Optional fields use $set when present and $unset when omitted so a
+        // full-config write never leaves a stale breakpoint/preset behind:
+        // the persisted row, the returned config, and the in-memory cache
+        // stay identical, and a later load() cannot resurrect a value the
+        // caller dropped.
+        const unsetOps: Partial<Record<'preset' | 'collapseBelow', ''>> = {};
         if (config.preset !== undefined) {
             setOps.preset = config.preset;
+        } else {
+            unsetOps.preset = '';
         }
         if (config.collapseBelow !== undefined) {
             setOps.collapseBelow = config.collapseBelow;
+        } else {
+            unsetOps.collapseBelow = '';
         }
 
-        await collection.updateOne(
-            { zoneId },
-            { $set: setOps, $setOnInsert: { zoneId } },
-            { upsert: true }
-        );
+        const update: Record<string, unknown> = { $set: setOps, $setOnInsert: { zoneId } };
+        if (Object.keys(unsetOps).length > 0) {
+            update.$unset = unsetOps;
+        }
+        await collection.updateOne({ zoneId }, update, { upsert: true });
 
         const stored: IZoneLayoutConfig = {
             preset: config.preset,

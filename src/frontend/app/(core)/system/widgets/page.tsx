@@ -318,8 +318,7 @@ const COLLAPSE_OPTIONS: ReadonlyArray<{ value: NonNullable<IZoneLayoutConfig['co
  * Per-row relative-width options. The empty value clears `layoutWeight`
  * back to auto (content) width; the numbered values set the flex weight so
  * two rows at `2×` and `1×` split a row two-thirds / one-third. Kept short
- * (1×–4×) because finer ratios are rarely useful and the raw weight is
- * still editable via the modal's JSON for power users.
+ * (1×–4×) because finer ratios are rarely useful.
  */
 const WIDTH_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
     { value: '', label: 'Auto' },
@@ -1303,15 +1302,20 @@ interface PlacementBubbleProps {
  *
  * @param placement - The row whose width this edits.
  * @param disabled - Whether the control is inert (a write is in flight).
+ * @param label - Human-readable widget name for the control's accessible
+ *   name, so a screen reader announces "Relative width for Layout group"
+ *   rather than the raw typeId (`core:layout-group`).
  * @param onSetWidth - Persists the new weight (or `null` to clear).
  */
 function WidthSelect({
     placement,
     disabled,
+    label,
     onSetWidth
 }: {
     placement: IPlacement;
     disabled: boolean;
+    label: string;
     onSetWidth: (placement: IPlacement, weight: number | null) => void;
 }) {
     const value = placement.layoutWeight !== undefined ? String(placement.layoutWeight) : '';
@@ -1320,7 +1324,7 @@ function WidthSelect({
             className={styles.width_select}
             value={value}
             disabled={disabled}
-            aria-label={`Relative width for ${placement.title ?? placement.typeId}`}
+            aria-label={`Relative width for ${label}`}
             title="Relative width when this row sits in a side-by-side layout"
             onChange={(e) => {
                 const raw = e.target.value;
@@ -1398,7 +1402,7 @@ function PlacementBubble({
                 </div>
             </div>
             <div className={styles.bubble_actions}>
-                <WidthSelect placement={placement} disabled={busy} onSetWidth={onSetWidth} />
+                <WidthSelect placement={placement} disabled={busy} label={label} onSetWidth={onSetWidth} />
                 <Switch
                     size="sm"
                     on={placement.enabled}
@@ -1505,7 +1509,7 @@ function ChildPlacementRow({
                 <span className={styles.widget_meta}>{placement.typeId}</span>
             </div>
             <div className={styles.bubble_actions}>
-                <WidthSelect placement={placement} disabled={busy} onSetWidth={onSetWidth} />
+                <WidthSelect placement={placement} disabled={busy} label={label} onSetWidth={onSetWidth} />
                 <Switch
                     size="sm"
                     on={placement.enabled}

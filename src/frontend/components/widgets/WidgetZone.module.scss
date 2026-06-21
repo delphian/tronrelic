@@ -89,7 +89,12 @@
 // its own *direct* weighted children (the child combinator keeps a zone's
 // collapse from reaching into a nested group's children) to natural,
 // full-width stacking — `flex: 0 0 auto` undoes the zero-basis grow that
-// only makes sense on a row's main axis. The breakpoint variable must be
+// only makes sense on a row's main axis. `align-self: stretch` is the
+// load-bearing half: once the container is a column the cross axis is
+// horizontal, so item width is governed by alignment, not flex; without it a
+// row preset's `align-items: center` (or flex-start/flex-end) leaves the
+// collapsed weighted items at content width instead of spanning the column.
+// It is a no-op under the `stretch` default. The breakpoint variable must be
 // interpolated (`#{…}`) inside `@container` or Sass silently drops the
 // condition.
 .collapse_mobile_sm {
@@ -98,6 +103,7 @@
 
         > .item_weighted {
             flex: 0 0 auto;
+            align-self: stretch;
         }
     }
 }
@@ -108,6 +114,7 @@
 
         > .item_weighted {
             flex: 0 0 auto;
+            align-self: stretch;
         }
     }
 }
@@ -118,6 +125,7 @@
 
         > .item_weighted {
             flex: 0 0 auto;
+            align-self: stretch;
         }
     }
 }
@@ -128,6 +136,7 @@
 
         > .item_weighted {
             flex: 0 0 auto;
+            align-self: stretch;
         }
     }
 }
@@ -138,6 +147,7 @@
 
         > .item_weighted {
             flex: 0 0 auto;
+            align-self: stretch;
         }
     }
 }
