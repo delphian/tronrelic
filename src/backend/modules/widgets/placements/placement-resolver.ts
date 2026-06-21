@@ -78,11 +78,23 @@ export class PlacementResolver {
         const placements = await this.placementService.findByRoute(route);
         if (placements.length === 0) return [];
 
+        // A child whose container is not in the route result is an orphan
+        // the tree assembly below would drop anyway. Children are stored
+        // with `routes: []` (forced by WidgetsService), so a route-scoped
+        // container that is filtered out for this path still returns its
+        // children here. Skip those before fetching so an unrelated page
+        // never runs a hidden grouped widget's (possibly expensive or
+        // route-sensitive) data fetcher only to discard the result.
+        // Parents that ARE present but fail to resolve are still handled
+        // by the post-fetch orphan check below.
+        const presentIds = new Set(placements.map(p => p.id));
+        const fetchable = placements.filter(p => !p.parentId || presentIds.has(p.parentId));
+
         // Fetch every placement in parallel, pairing each successful
         // result with its source placement so the tree assembly below
         // can read `parentId` (which `IWidgetData` does not carry).
         const fetched = await Promise.all(
-            placements.map(async p => {
+            fetchable.map(async p => {
                 const widget = await this.fetchOne(p, route, params);
                 return widget ? { placement: p, widget } : null;
             })

@@ -184,6 +184,16 @@ function LayoutGroupContainer({ widget, route, params }: WidgetRendererProps) {
  * @param params - Route params passed through to the renderer.
  */
 function WidgetItem({ widget, route, params }: WidgetRendererProps) {
+    // An empty layout group renders nothing (its container returns null),
+    // so skip the wrapper and title entirely — otherwise the operator
+    // heading and the flex-gap slot of an empty item leave a stray
+    // artifact in the zone.
+    const isEmptyLayoutGroup =
+        widget.id === LAYOUT_GROUP_TYPE_ID && (widget.children?.length ?? 0) === 0;
+    if (isEmptyLayoutGroup) {
+        return null;
+    }
+
     return (
         <div
             className={styles.item}

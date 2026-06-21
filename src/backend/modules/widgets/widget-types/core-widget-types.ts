@@ -366,11 +366,13 @@ async function fetchLayoutGroupData(
     const flexDirection: ZoneFlexDirection =
         config.flexDirection === 'row' ||
         config.flexDirection === 'row-reverse' ||
+        config.flexDirection === 'column' ||
         config.flexDirection === 'column-reverse'
             ? config.flexDirection
             : DEFAULT_GROUP_LAYOUT.flexDirection;
 
     const justifyContent: ZoneJustifyContent =
+        config.justifyContent === 'flex-start' ||
         config.justifyContent === 'center' ||
         config.justifyContent === 'flex-end' ||
         config.justifyContent === 'space-between' ||
@@ -380,6 +382,7 @@ async function fetchLayoutGroupData(
             : DEFAULT_GROUP_LAYOUT.justifyContent;
 
     const alignItems: ZoneAlignItems =
+        config.alignItems === 'stretch' ||
         config.alignItems === 'flex-start' ||
         config.alignItems === 'center' ||
         config.alignItems === 'flex-end' ||
@@ -390,7 +393,7 @@ async function fetchLayoutGroupData(
     const flexWrap: ZoneFlexWrap = config.flexWrap === 'wrap' ? 'wrap' : 'nowrap';
 
     const gap: ZoneGapSize =
-        config.gap === 'none' || config.gap === 'sm' || config.gap === 'lg'
+        config.gap === 'none' || config.gap === 'sm' || config.gap === 'md' || config.gap === 'lg'
             ? config.gap
             : DEFAULT_GROUP_LAYOUT.gap;
 

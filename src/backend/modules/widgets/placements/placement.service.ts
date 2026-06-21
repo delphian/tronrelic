@@ -420,10 +420,14 @@ export class PlacementService implements IPlacementService {
             updatedAt: now
         };
 
-        // `$unset` the optional title field when the plugin never set
-        // one so the restored row matches a fresh plugin registration
-        // exactly, not "plugin defaults plus operator title".
-        const unsetOps: Record<string, ''> = {};
+        // Plugin registration defaults never nest a widget, so a faithful
+        // restore must drop any operator-applied `parentId` — otherwise the
+        // UI reports "defaults restored" while the resolver still renders
+        // the widget inside the old container. Also `$unset` the optional
+        // title field when the plugin never set one so the restored row
+        // matches a fresh plugin registration exactly, not "plugin defaults
+        // plus operator title".
+        const unsetOps: Record<string, ''> = { parentId: '' };
         if (defaults.title !== undefined) {
             setOps.title = defaults.title;
         } else {
