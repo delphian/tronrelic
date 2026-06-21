@@ -160,6 +160,17 @@ export interface IWorldClocksWidgetData {
     zones: IWorldClockZone[];
     /** Whether the client renders 12-hour (AM/PM) time; otherwise 24-hour. */
     hour12: boolean;
+    /**
+     * Row wrap behaviour. `nowrap` keeps a single horizontal row (the
+     * widget is a flex child of its zone, whose min-content width would
+     * otherwise collapse it to one clock and stack the rest vertically);
+     * `wrap` lets the row reflow onto multiple lines on narrow hosts.
+     */
+    wrap: 'nowrap' | 'wrap';
+    /** `justify-content` distributing the clocks across the widget width. */
+    justify: 'flex-start' | 'center' | 'flex-end' | 'space-between';
+    /** Token gap size between clocks (`sm`/`md`/`lg` → `--gap-*`). */
+    gap: 'sm' | 'md' | 'lg';
 }
 
 /**
@@ -173,12 +184,15 @@ export interface IWorldClocksWidgetData {
  * coercing each zone's fields and dropping any entry missing a time zone
  * — so a malformed legacy placement degrades to fewer clocks rather than
  * throwing inside the resolver's round-trip. No time is computed here;
- * the component ticks it client-side.
+ * the component ticks it client-side. The layout fields (`wrap`,
+ * `justify`, `gap`) are likewise normalized to their enum defaults so a
+ * legacy placement saved before they existed renders as a single
+ * left-aligned row rather than an undefined layout.
  *
  * @param _route - Unused; the clock row is route-independent.
  * @param _params - Unused; the clock row is route-independent.
  * @param placement - Placement context carrying the operator config.
- * @returns The normalized zone list and hour-format flag for the component.
+ * @returns The normalized zone list, hour-format flag, and layout settings for the component.
  */
 async function fetchWorldClocksData(
     _route: string,
@@ -202,8 +216,16 @@ async function fetchWorldClocksData(
         .filter((zone) => zone.timeZone !== '');
 
     const hour12 = config.hour12 === true;
+    const wrap = config.wrap === 'wrap' ? 'wrap' : 'nowrap';
+    const justify =
+        config.justify === 'center' ||
+        config.justify === 'flex-end' ||
+        config.justify === 'space-between'
+            ? config.justify
+            : 'flex-start';
+    const gap = config.gap === 'sm' || config.gap === 'lg' ? config.gap : 'md';
 
-    return { zones, hour12 };
+    return { zones, hour12, wrap, justify, gap };
 }
 
 /**
@@ -255,6 +277,29 @@ export const WORLD_CLOCKS_CONFIG_SCHEMA: JSONSchema7 = {
             default: false,
             title: '12-hour clock',
             description: 'Show AM/PM time instead of 24-hour.'
+        },
+        wrap: {
+            type: 'string',
+            enum: ['nowrap', 'wrap'],
+            default: 'nowrap',
+            title: 'Row wrapping',
+            description:
+                "'nowrap' keeps every clock on a single horizontal row; 'wrap' lets the row reflow onto multiple lines when it does not fit the host width."
+        },
+        justify: {
+            type: 'string',
+            enum: ['flex-start', 'center', 'flex-end', 'space-between'],
+            default: 'flex-start',
+            title: 'Horizontal alignment',
+            description:
+                'How the clocks distribute across the widget width: packed to the start, centred, packed to the end, or spread edge to edge.'
+        },
+        gap: {
+            type: 'string',
+            enum: ['sm', 'md', 'lg'],
+            default: 'md',
+            title: 'Spacing',
+            description: 'Gap between adjacent clocks — small, medium, or large.'
         }
     }
 };
