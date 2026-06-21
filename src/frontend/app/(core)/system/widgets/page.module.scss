@@ -275,6 +275,13 @@
     gap: var(--gap-xs);
 }
 
+// Compact relative-width dropdown sitting inline in a row's action cluster.
+// The Select sizes intrinsically to its short labels (Auto / 1×–4×); the
+// smaller caption font keeps it from crowding the switch and icon buttons.
+.width_select {
+    font-size: var(--font-size-caption);
+}
+
 /* Children of a layout-group container, indented under its bubble with a
  * left rule so the nesting reads at a glance. Non-draggable in this
  * iteration — order and container assignment are edited from the modal. */

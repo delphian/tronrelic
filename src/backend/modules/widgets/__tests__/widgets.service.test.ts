@@ -700,15 +700,18 @@ describe('WidgetsService zone layout', () => {
             justifyContent: 'center',
             alignItems: 'center',
             flexWrap: 'nowrap',
-            gap: 'lg'
+            gap: 'lg',
+            collapseBelow: 'mobile-lg'
         });
         expect(stored.flexDirection).toBe('row');
+        expect(stored.collapseBelow).toBe('mobile-lg');
 
         const zone = findZone(widgets, 'main-after');
         expect(zone?.layoutConfig.flexDirection).toBe('row');
         expect(zone?.layoutConfig.justifyContent).toBe('center');
         expect(zone?.layoutConfig.gap).toBe('lg');
         expect(zone?.layoutConfig.preset).toBe('row-center');
+        expect(zone?.layoutConfig.collapseBelow).toBe('mobile-lg');
     });
 
     it('rejects a layout write for an unregistered zone', async () => {

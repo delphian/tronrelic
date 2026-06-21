@@ -4,6 +4,7 @@ import type { IZoneLayoutConfig, ZoneGapSize } from '@/types';
 import type { WidgetData } from './types';
 import { getWidgetComponent } from './getWidgetComponent';
 import { WidgetWithContext } from './WidgetWithContext';
+import { cn } from '../../lib/cn';
 import styles from './WidgetZone.module.scss';
 
 /**
@@ -72,6 +73,61 @@ function zoneStyle(layout: IZoneLayoutConfig): CSSProperties {
         '--zone-flex-wrap': layout.flexWrap,
         '--zone-gap': gapToCss(layout.gap)
     } as CSSProperties;
+}
+
+/**
+ * Map a layout's `collapseBelow` breakpoint to the modifier class that
+ * arms the matching `@container` rule on the flex container.
+ *
+ * A flex container cannot query its own width, so the wrapper element
+ * (`.zone_container` / `.group_container`) carries `container-type` and
+ * the inner flex container takes one of these classes; the colocated SCSS
+ * pairs each class with a `@container` block that flips the inner
+ * container to a column below the named breakpoint. Returning `undefined`
+ * for `'never'` (or an absent/unknown value) means no class is applied and
+ * the row never collapses — the historical behaviour preserved for layouts
+ * saved before the field existed.
+ *
+ * @param collapseBelow - The layout's chosen collapse breakpoint.
+ * @returns The modifier class name, or `undefined` to never collapse.
+ */
+function collapseClassFor(collapseBelow: IZoneLayoutConfig['collapseBelow']): string | undefined {
+    switch (collapseBelow) {
+        case 'mobile-sm':
+            return styles.collapse_mobile_sm;
+        case 'mobile-md':
+            return styles.collapse_mobile_md;
+        case 'mobile-lg':
+            return styles.collapse_mobile_lg;
+        case 'tablet':
+            return styles.collapse_tablet;
+        case 'desktop':
+            return styles.collapse_desktop;
+        case 'never':
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * Build the inline style that sets a flex item's relative row width.
+ *
+ * The width rides as the `--item-grow` custom property (consumed by the
+ * `.item_weighted` rule as a `flex-grow` weight against a zero basis)
+ * rather than an inline `flex`/`flex-basis` declaration. That distinction
+ * is load-bearing: the collapse `@container` rule resets weighted children
+ * to full width through a class selector, and an inline `flex` shorthand
+ * would outrank it and defeat the collapse. Returns `undefined` when the
+ * item carries no weight so an unweighted item stays exactly as before.
+ *
+ * @param layoutWeight - The placement's relative weight, if any.
+ * @returns A style object setting `--item-grow`, or `undefined`.
+ */
+function itemWeightStyle(layoutWeight: number | undefined): CSSProperties | undefined {
+    if (typeof layoutWeight !== 'number') {
+        return undefined;
+    }
+    return { '--item-grow': layoutWeight } as CSSProperties;
 }
 
 /**
@@ -156,15 +212,21 @@ function LayoutGroupContainer({ widget, route, params }: WidgetRendererProps) {
 
     const layout = (widget.data as IZoneLayoutConfig | null) ?? DEFAULT_LAYOUT;
 
+    // Outer wrapper carries the container-query context so the inner flex
+    // container can collapse based on its OWN width (an element cannot
+    // query itself). The inner `.group` keeps the flex styling and the
+    // `data-widget-group` hook exactly as before.
     return (
-        <div
-            className={styles.group}
-            style={zoneStyle(layout)}
-            data-widget-group={widget.id}
-        >
-            {children.map(child => (
-                <WidgetItem key={child.id} widget={child} route={route} params={params} />
-            ))}
+        <div className={styles.group_container}>
+            <div
+                className={cn(styles.group, collapseClassFor(layout.collapseBelow))}
+                style={zoneStyle(layout)}
+                data-widget-group={widget.id}
+            >
+                {children.map(child => (
+                    <WidgetItem key={child.id} widget={child} route={route} params={params} />
+                ))}
+            </div>
         </div>
     );
 }
@@ -194,9 +256,15 @@ function WidgetItem({ widget, route, params }: WidgetRendererProps) {
         return null;
     }
 
+    // A weighted item gets the `.item_weighted` class plus the `--item-grow`
+    // custom property the class consumes; an unweighted item renders exactly
+    // as before (auto width, no inline style).
+    const weightStyle = itemWeightStyle(widget.layoutWeight);
+
     return (
         <div
-            className={styles.item}
+            className={cn(styles.item, weightStyle && styles.item_weighted)}
+            style={weightStyle}
             data-widget-id={widget.id}
             data-plugin-id={widget.pluginId}
         >
@@ -280,15 +348,21 @@ export function WidgetZone({
 
     const effectiveLayout = layout ?? DEFAULT_LAYOUT;
 
+    // Outer wrapper carries the container-query context so the zone's flex
+    // container collapses based on its OWN rendered width (an element cannot
+    // query itself). The inner `.zone` keeps the flex styling and the
+    // `data-zone` hook unchanged.
     return (
-        <div
-            className={styles.zone}
-            data-zone={name}
-            style={zoneStyle(effectiveLayout)}
-        >
-            {zoneWidgets.map(widget => (
-                <WidgetItem key={widget.id} widget={widget} route={route} params={params} />
-            ))}
+        <div className={styles.zone_container}>
+            <div
+                className={cn(styles.zone, collapseClassFor(effectiveLayout.collapseBelow))}
+                data-zone={name}
+                style={zoneStyle(effectiveLayout)}
+            >
+                {zoneWidgets.map(widget => (
+                    <WidgetItem key={widget.id} widget={widget} route={route} params={params} />
+                ))}
+            </div>
         </div>
     );
 }

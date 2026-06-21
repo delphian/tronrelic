@@ -29,6 +29,16 @@ export interface IWidgetData {
     order: number;
 
     /**
+     * Relative horizontal width of this item when its container lays out
+     * in a row, carried verbatim from the resolved placement's
+     * `layoutWeight`. The `WidgetZone` renderer applies it as a
+     * `flex-grow` weight against a zero basis so sibling weights become
+     * width ratios. Absent means auto width — the historical behaviour for
+     * every placement created before the field existed.
+     */
+    layoutWeight?: number;
+
+    /**
      * Optional display title.
      */
     title?: string;

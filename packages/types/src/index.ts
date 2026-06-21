@@ -171,6 +171,7 @@ export type {
     ZoneFlexWrap,
     ZoneGapSize,
     ZoneLayoutPreset,
+    ZoneCollapseBreakpoint,
     // Internal — used only by widgets-module implementation. Consumers
     // (plugins, other modules) reach zone state through IWidgetsService.
     IZoneRegistry,

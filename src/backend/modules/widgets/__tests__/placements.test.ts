@@ -380,6 +380,22 @@ describe('PlacementService CRUD', () => {
         expect(cleared?.title).toBe('Operator Title');
     });
 
+    it('persists layoutWeight on create and clears it with layoutWeight: null', async () => {
+        const placement = await service.create({
+            typeId: 't',
+            zoneId: 'main-after',
+            routes: ['/'],
+            layoutWeight: 2
+        });
+        expect(placement.layoutWeight).toBe(2);
+
+        const updated = await service.update(placement.id, { layoutWeight: 3 });
+        expect(updated?.layoutWeight).toBe(3);
+
+        const cleared = await service.update(placement.id, { layoutWeight: null });
+        expect(cleared?.layoutWeight).toBeUndefined();
+    });
+
     it('update preserves untouched fields', async () => {
         const placement = await service.create({
             typeId: 't',

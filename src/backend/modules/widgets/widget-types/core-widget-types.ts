@@ -397,7 +397,21 @@ async function fetchLayoutGroupData(
             ? config.gap
             : DEFAULT_GROUP_LAYOUT.gap;
 
-    return { flexDirection, justifyContent, alignItems, flexWrap, gap };
+    // Collapse breakpoint is optional; normalize to a known value or omit
+    // it entirely (the renderer treats an absent value as 'never', so a
+    // legacy container with no collapse setting keeps its row at every
+    // width).
+    const collapseBelow: IZoneLayoutConfig['collapseBelow'] | undefined =
+        config.collapseBelow === 'mobile-sm' ||
+        config.collapseBelow === 'mobile-md' ||
+        config.collapseBelow === 'mobile-lg' ||
+        config.collapseBelow === 'tablet' ||
+        config.collapseBelow === 'desktop' ||
+        config.collapseBelow === 'never'
+            ? config.collapseBelow
+            : undefined;
+
+    return { flexDirection, justifyContent, alignItems, flexWrap, gap, collapseBelow };
 }
 
 /**
@@ -455,6 +469,14 @@ export const LAYOUT_GROUP_CONFIG_SCHEMA: JSONSchema7 = {
             default: 'md',
             title: 'Gap',
             description: 'Spacing between grouped widgets, mapped to the --gap-* tokens.'
+        },
+        collapseBelow: {
+            type: 'string',
+            enum: ['never', 'mobile-sm', 'mobile-md', 'mobile-lg', 'tablet', 'desktop'],
+            default: 'never',
+            title: 'Collapse below',
+            description:
+                'Stack the grouped widgets into a single column when the group is narrower than this breakpoint (measured against the group\'s own width, not the screen). Widths reset to full when collapsed. "never" keeps the row at every width.'
         }
     }
 };

@@ -59,6 +59,13 @@ export interface IPlacementPatch {
     parentId?: string | null;
     routes?: string[];
     order?: number;
+    /**
+     * Set the placement's relative row width as a flex weight, or clear it
+     * back to auto width with `null` (`$unset`). Omission leaves the
+     * current width unchanged — the same three-state convention as
+     * `title`/`titleUrl`. See {@link IWidgetPlacement.layoutWeight}.
+     */
+    layoutWeight?: number | null;
     title?: string | null;
     titleUrl?: string | null;
     instanceConfig?: Record<string, unknown>;

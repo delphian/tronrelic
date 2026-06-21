@@ -372,3 +372,65 @@ describe('PlacementsController titleUrl validation', () => {
         );
     });
 });
+
+describe('PlacementsController layoutWeight validation', () => {
+    let widgets: IWidgetsService;
+    let logger: ISystemLogService;
+    let controller: PlacementsController;
+    let res: ReturnType<typeof buildResponseStub>;
+
+    beforeEach(() => {
+        logger = buildLoggerStub();
+        res = buildResponseStub();
+    });
+
+    it.each([0, 13, 2.5, -1])('rejects an out-of-range or fractional layoutWeight: %s', async (layoutWeight) => {
+        widgets = buildWidgetsServiceStub({
+            createPlacement: vi.fn(async () => { throw new Error('should not reach service'); })
+        });
+        controller = new PlacementsController(widgets, logger);
+
+        const req = { body: { ...validCreateBody, layoutWeight } } as Request;
+
+        await controller.createPlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json.mock.calls[0][0].error).toMatch(/layoutWeight/);
+        expect(widgets.createPlacement).not.toHaveBeenCalled();
+    });
+
+    it('accepts an in-range layoutWeight and forwards it to the service', async () => {
+        widgets = buildWidgetsServiceStub({
+            createPlacement: vi.fn(async () => ({ id: 'new-id' } as IWidgetPlacement))
+        });
+        controller = new PlacementsController(widgets, logger);
+
+        const req = { body: { ...validCreateBody, layoutWeight: 2 } } as Request;
+
+        await controller.createPlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(widgets.createPlacement).toHaveBeenCalledWith(
+            expect.objectContaining({ layoutWeight: 2 })
+        );
+    });
+
+    it('forwards layoutWeight: null on patch as an explicit clear signal', async () => {
+        widgets = buildWidgetsServiceStub({
+            updatePlacement: vi.fn(async () => ({ id: 'p1' } as IWidgetPlacement))
+        });
+        controller = new PlacementsController(widgets, logger);
+
+        const req = {
+            params: { id: 'p1' },
+            body: { layoutWeight: null }
+        } as unknown as Request;
+
+        await controller.updatePlacement(req, res);
+
+        expect(widgets.updatePlacement).toHaveBeenCalledWith(
+            'p1',
+            expect.objectContaining({ layoutWeight: null })
+        );
+    });
+});

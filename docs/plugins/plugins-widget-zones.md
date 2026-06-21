@@ -34,7 +34,7 @@ Per request, the host layout reads the `x-pathname` middleware header and calls 
 
 ## Operator Editing
 
-`/system/widgets` is the placement editor. Each placement appears as a bubble in its zone; operators can toggle, edit, reorder (drag-and-drop, including cross-zone), restore plugin defaults, or delete operator-created rows. Mutations broadcast `widgets:placements-update` over WebSocket so every open admin tab refetches and public pages re-pull widget data. The full REST contract is in [system-api-widgets.md](../system/system-api-widgets.md).
+`/system/widgets` is the placement editor. Each placement appears as a bubble in its zone; operators can toggle, edit, reorder (drag-and-drop, including cross-zone), restore plugin defaults, or delete operator-created rows. A zone (or a `core:layout-group` nested in one) also exposes its flexbox arrangement, a per-row relative-width control, and a `collapseBelow` breakpoint that stacks a side-by-side row into a column on narrow containers — see the [Widgets Module README](../../src/backend/modules/widgets/README.md#single-level-grouping) for the per-child width and container-query collapse mechanism. Mutations broadcast `widgets:placements-update` over WebSocket so every open admin tab refetches and public pages re-pull widget data. The full REST contract is in [system-api-widgets.md](../system/system-api-widgets.md).
 
 ## Detail Documents
 

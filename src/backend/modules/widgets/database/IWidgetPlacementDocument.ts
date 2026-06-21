@@ -44,6 +44,13 @@ export interface IWidgetPlacementDocument {
     routes: string[];
     /** Sort order within the zone (lower renders first). */
     order: number;
+    /**
+     * Relative row width as a flex weight (see
+     * `IWidgetPlacement.layoutWeight`). Absent means auto width. Stored as
+     * a plain number; Mongoose tolerates the optional field with no
+     * migration since unset rows simply omit it.
+     */
+    layoutWeight?: number;
     /** Optional heading rendered above the widget. */
     title?: string;
     /** Optional root-relative URL linking the heading. Operator-only. */

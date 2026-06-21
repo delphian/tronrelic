@@ -19,6 +19,7 @@ const ALIGN_ITEMS = ['stretch', 'flex-start', 'center', 'flex-end', 'baseline'] 
 const FLEX_WRAPS = ['nowrap', 'wrap'] as const;
 const GAP_SIZES = ['none', 'sm', 'md', 'lg'] as const;
 const LAYOUT_PRESETS = ['row-left', 'row-center', 'row-between', 'row-right', 'row-wrap', 'column', 'custom'] as const;
+const COLLAPSE_BREAKPOINTS = ['never', 'mobile-sm', 'mobile-md', 'mobile-lg', 'tablet', 'desktop'] as const;
 
 /**
  * Validate and coerce an operator-supplied layout body into a typed
@@ -56,6 +57,12 @@ function validateLayoutBody(body: unknown): { config?: IZoneLayoutConfig; error?
     if (b.preset !== undefined) {
         const preset = check('preset', LAYOUT_PRESETS);
         if (preset) config.preset = preset;
+    }
+    // collapseBelow is optional; accept only a known breakpoint, else omit
+    // (an omitted/unknown value means the zone never collapses).
+    if (b.collapseBelow !== undefined) {
+        const collapseBelow = check('collapseBelow', COLLAPSE_BREAKPOINTS);
+        if (collapseBelow) config.collapseBelow = collapseBelow;
     }
     return { config };
 }
