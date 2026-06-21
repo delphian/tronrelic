@@ -226,7 +226,8 @@ export class WidgetsService implements IWidgetsService {
             label: input.label,
             description: input.description,
             host: input.host,
-            layout: input.layout
+            layout: input.layout,
+            order: input.order
         });
         return this.zones.register(ownerId, descriptor);
     }

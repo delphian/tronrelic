@@ -31,7 +31,8 @@ export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
         description:
             'Rendered in the root layout below the block ticker. Reaches every route the root layout serves.',
         host: 'site',
-        layout: 'vertical'
+        layout: 'vertical',
+        order: 10
     },
     {
         id: 'footer',
@@ -39,7 +40,8 @@ export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
         description:
             'Rendered in the root layout below the main content, inside a semantic <footer>. Reaches every route the root layout serves — the home for site-wide footer content (links, legal text, attribution).',
         host: 'site',
-        layout: 'vertical'
+        layout: 'vertical',
+        order: 90
     },
     {
         id: 'main-before',
@@ -47,7 +49,8 @@ export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
         description:
             'Above the primary page content inside the (core) route group. Front-of-house pages only.',
         host: 'core',
-        layout: 'vertical'
+        layout: 'vertical',
+        order: 10
     },
     {
         id: 'main-after',
@@ -55,7 +58,8 @@ export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
         description:
             'Below the primary page content inside the (core) route group. Common destination for feeds and related-content widgets.',
         host: 'core',
-        layout: 'vertical'
+        layout: 'vertical',
+        order: 20
     },
     {
         id: 'plugin-content:before',
@@ -63,7 +67,8 @@ export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
         description:
             'Above the rendered plugin page. Enables cross-plugin injection around plugin pages.',
         host: 'plugin',
-        layout: 'vertical'
+        layout: 'vertical',
+        order: 10
     },
     {
         id: 'plugin-content:after',
@@ -71,6 +76,7 @@ export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
         description:
             'Below the rendered plugin page. Enables cross-plugin injection around plugin pages.',
         host: 'plugin',
-        layout: 'vertical'
+        layout: 'vertical',
+        order: 20
     }
 ] as const;

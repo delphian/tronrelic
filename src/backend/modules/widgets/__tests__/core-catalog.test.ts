@@ -95,6 +95,18 @@ describe('Core zone catalog', () => {
         }
         expect(widgets.hasZone('footer')).toBe(true);
     });
+
+    it('orders site-track zones by descriptor order, not alphabetically', () => {
+        // Regression guard: the footer zone must follow the block-ticker
+        // zone in the editor (page top-to-bottom order). The previous
+        // alphabetical snapshot sort put 'footer' ahead of 'ticker-after'.
+        const { widgets } = buildWidgetsService();
+        for (const descriptor of CORE_ZONE_DESCRIPTORS) {
+            widgets.registerZone(descriptor, 'core');
+        }
+        const siteTrack = widgets.listZones().tracks.find(track => track.id === 'site');
+        expect(siteTrack?.zones.map(zone => zone.id)).toEqual(['ticker-after', 'footer']);
+    });
 });
 
 describe('Core widget-type catalog (raw-html)', () => {

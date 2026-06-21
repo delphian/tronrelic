@@ -65,6 +65,16 @@ export interface IZoneDescriptor {
     readonly host: ZoneHost;
     /** Visual layout hint. */
     readonly layout: ZoneLayout;
+    /**
+     * Display order of this zone within its host track in admin tooling
+     * (the `/system/widgets` placement editor). Lower sorts first, so a
+     * zone authored to sit at the bottom of the page — e.g. the site
+     * footer — declares a higher value than zones above it. This orders
+     * the *zones* in the editor, not the placements within a zone (that
+     * is the placement's own `order`). Optional: zones omitting it sort
+     * after all explicitly-ordered zones, by id.
+     */
+    readonly order?: number;
 }
 
 /**
@@ -85,6 +95,12 @@ export interface IDefineZoneOptions {
     host: ZoneHost;
     /** Visual layout hint. Defaults to `'vertical'` when omitted. */
     layout?: ZoneLayout;
+    /**
+     * Display order within the host track in admin tooling. Lower sorts
+     * first; omit to sort after explicitly-ordered zones by id. See
+     * {@link IZoneDescriptor.order}.
+     */
+    order?: number;
 }
 
 /**

@@ -19,7 +19,11 @@
 
 .chart svg {
     width: 100%;
-    height: auto;
+    /* Height is set explicitly per instance via the SVG `height` attribute rather
+       than derived from the viewBox aspect ratio. A measured width is unavailable
+       during SSR, so `height: auto` made the chart paint at the wrong height on the
+       server and jump to full height after hydration. A fixed pixel height keeps
+       the box stable across SSR and the post-measurement re-render. */
     display: block;
     /* Browsers clip the root <svg> to its viewBox by default; axis labels are
        anchored at the margins and would lose their outermost glyphs. Let them
