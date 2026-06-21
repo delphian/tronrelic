@@ -17,6 +17,15 @@
     margin: 0;
 }
 
+/* Optional caller-supplied chart heading (e.g. an operator-set graph title). */
+.chart__title {
+    margin: 0 0 var(--gap-sm);
+    color: var(--color-text);
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+}
+
 .chart svg {
     width: 100%;
     /* Height is set explicitly per instance via the SVG `height` attribute rather

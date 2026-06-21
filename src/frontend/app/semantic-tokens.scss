@@ -356,6 +356,7 @@
     --grid-gap-md: var(--spacing-10);           /* 1.5rem */
     --grid-gap-lg: var(--spacing-12);           /* 2rem */
     --grid-responsive-min: 280px;               /* auto-fit minmax floor for <Grid columns="responsive">; consumers override at their scope */
+    --stat-grid-min: 220px;                     /* auto-fit minmax floor for the .stat-grid utility */
     --grid-bg-image: none;
     --grid-bg-opacity: 0.08;
     --grid-bg-size: 140px;
@@ -399,6 +400,10 @@
     /* Input Group */
     --input-group-gap: var(--spacing-5);        /* 0.75rem */
 
+    /* Form Footer — trailing action row (e.g. Cancel / Save) */
+    --form-footer-gap: var(--spacing-5);        /* 0.75rem - gap between footer actions */
+    --form-footer-margin-top: var(--spacing-10);/* 1.5rem - separation from form body */
+
     /* ========================================================================
      * NAVIGATION COMPONENT TOKENS
      * ======================================================================== */
@@ -412,6 +417,10 @@
      * (e.g. brand-tinted) without touching every nav component. */
     --color-nav-tab-active-background: rgba(255, 255, 255, 0.1);
     --color-nav-tab-active-border: rgba(255, 255, 255, 0.2);
+
+    /* Navigation - Layout (responsive shell overrides in globals.scss) */
+    --nav-padding: var(--spacing-8) var(--spacing-10);  /* 1.1rem 1.5rem - condensed nav padding below desktop */
+    --nav-gap: var(--spacing-6);                        /* 0.85rem - stacked nav gap on mobile */
 
     /* ========================================================================
      * TABLE COMPONENT TOKENS
@@ -428,6 +437,7 @@
 
     /* Table - Cells */
     --table-cell-padding: var(--spacing-6) var(--spacing-8); /* 0.85rem 1.1rem */
+    --table-cell-padding-compact: var(--spacing-3) var(--spacing-4); /* 0.4rem 0.5rem - dense cells on narrow viewports */
     --table-cell-border: var(--border-width-thin) solid rgba(255, 255, 255, 0.05);
 
     /* Table - Row Hover */

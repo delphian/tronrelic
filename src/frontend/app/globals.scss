@@ -69,6 +69,57 @@ a:hover {
   color: var(--color-secondary);
 }
 
+/* Base heading typography
+ *
+ * Bare h1–h6 inherit the semantic heading scale so headings read consistently
+ * site-wide without each component restyling the tag. Spacing is owned by the
+ * layout primitives (Stack/Grid/Page gap), so margins are zeroed here rather
+ * than reintroduced — components that need heading spacing use a layout gap.
+ * Scoped component/module rules still override on specificity. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  /*
+   * Responsive heading multiplier. The size tokens stay immutable; only this
+   * factor shifts per breakpoint (1 desktop, 0.75 tablet, 0.5 mobile) in the
+   * @media blocks below, so headings shrink on smaller shells without any
+   * token redefinition. Theme overrides of the size tokens still apply.
+   */
+  --heading-scale: 1;
+  margin: 0;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  letter-spacing: var(--letter-spacing-tight);
+}
+
+h1 {
+  font-size: calc(var(--font-size-heading-xl) * var(--heading-scale));
+}
+
+h2 {
+  font-size: calc(var(--font-size-heading-lg) * var(--heading-scale));
+}
+
+h3 {
+  font-size: calc(var(--font-size-heading-md) * var(--heading-scale));
+}
+
+h4 {
+  font-size: calc(var(--font-size-heading-sm) * var(--heading-scale));
+}
+
+h5 {
+  font-size: calc(var(--font-size-body-lg) * var(--heading-scale));
+}
+
+h6 {
+  font-size: calc(var(--font-size-body) * var(--heading-scale));
+}
+
 main {
   flex: 1 1 0;
   min-height: 0;
@@ -105,7 +156,7 @@ main {
 }
 
 .table-row--flash {
-  animation: rowFlash 2.4s ease-out;
+  animation: rowFlash var(--duration-flash) ease-out;
 }
 
 /**
@@ -137,7 +188,7 @@ main {
   border-color: var(--color-success-alpha-45);
 
   svg {
-    animation: live-pulse 2s ease-in-out infinite;
+    animation: live-pulse var(--duration-pulse) ease-in-out infinite;
   }
 
   &:hover {
@@ -161,23 +212,23 @@ main {
 .stat-grid {
   display: grid;
   gap: var(--grid-gap-sm);
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(var(--stat-grid-min), 1fr));
 }
 
 .stat-card__label {
   color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-body-sm);
   letter-spacing: var(--letter-spacing-wide);
   text-transform: uppercase;
 }
 
 .stat-card__value {
-  font-size: var(--font-size-xl);
+  font-size: var(--font-size-heading-md);
   font-weight: var(--font-weight-bold);
 }
 
 .stat-card__delta {
-  font-size: var(--font-size-sm);
+  font-size: var(--font-size-body-sm);
   color: var(--color-text-muted);
 }
 
@@ -334,8 +385,8 @@ button:focus-visible {
 .form-footer {
   display: flex;
   justify-content: flex-end;
-  gap: var(--spacing-5);
-  margin-top: var(--spacing-10);
+  gap: var(--form-footer-gap);
+  margin-top: var(--form-footer-margin-top);
 }
 
 .table-scroll {
@@ -364,7 +415,7 @@ button:focus-visible {
 /* Tablet and below */
 @media (max-width: $breakpoint-desktop) {
   .layout-nav {
-    padding: var(--spacing-8) var(--spacing-10);
+    padding: var(--nav-padding);
   }
 
   main {
@@ -377,11 +428,33 @@ button:focus-visible {
   }
 }
 
+/* Tablet and below — shrink headings to 75% (placed before the mobile block so
+ * the mobile 50% override wins at narrower widths). */
+@media (max-width: $breakpoint-tablet) {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    --heading-scale: 0.75;
+  }
+}
+
 /* Mobile and below */
 @media (max-width: $breakpoint-mobile) {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    --heading-scale: 0.5;
+  }
+
   .layout-nav {
     flex-direction: column;
-    gap: var(--spacing-6);
+    gap: var(--nav-gap);
     align-items: flex-start;
   }
 
@@ -412,11 +485,12 @@ button:focus-visible {
   }
 
   /*
-   * Reduce table cell padding by 50% on mobile.
-   * Default: var(--spacing-6) var(--spacing-8) → Mobile: var(--spacing-3) var(--spacing-4)
+   * Dense table cells on narrow viewports. Select the compact token rather than
+   * redefining --table-cell-padding so the token's meaning stays constant.
    */
-  :root {
-    --table-cell-padding: var(--spacing-3) var(--spacing-4);
+  .table th,
+  .table td {
+    padding: var(--table-cell-padding-compact);
   }
 
   .input-group {

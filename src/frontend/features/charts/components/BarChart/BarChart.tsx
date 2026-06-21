@@ -54,6 +54,12 @@ type BarChartMode = 'normal' | 'widget';
 interface BarChartProps {
     /** Array of data series to plot as grouped columns */
     series: BarChartSeries[];
+    /**
+     * Optional heading rendered above the chart. Lets a caller (e.g. a widget
+     * surfacing an operator-set graph title) label the chart without wrapping it
+     * in its own header. Omitted renders no title element.
+     */
+    title?: string;
     /** Rendering density (default: 'normal') */
     mode?: BarChartMode;
     /** Chart height in pixels (default: 320 in normal mode, 120 in widget mode) */
@@ -261,6 +267,7 @@ function resolveColor(color: string | undefined, index: number) {
  */
 export function BarChart({
     series,
+    title,
     mode = 'normal',
     height: propHeight,
     yAxisFormatter = value => value.toLocaleString(),
@@ -503,7 +510,12 @@ export function BarChart({
     }, [series, hiddenSeries, containerWidth, height, chrome, fixedYMin, fixedYMax, seriesColors]);
 
     if (!chartData) {
-        return <div className={cn(styles.chart, className)}>{emptyLabel}</div>;
+        return (
+            <div className={cn(styles.chart, className)}>
+                {title ? <h3 className={styles.chart__title}>{title}</h3> : null}
+                {emptyLabel}
+            </div>
+        );
     }
 
     const { width, height: chartHeight, bars, categories, yTicks, xTicks, baselineY, seriesLookup } = chartData;
@@ -592,6 +604,7 @@ export function BarChart({
 
     return (
         <figure ref={setContainer} className={cn(styles.chart, isWidget && styles['chart--widget'], className)}>
+            {title ? <h3 className={styles.chart__title}>{title}</h3> : null}
             {/*
               * Render at a fixed pixel height with a uniformly-scaled viewBox so the
               * chart occupies its final box during SSR. Height no longer derives from
