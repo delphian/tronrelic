@@ -283,8 +283,18 @@
     flex-direction: column;
     gap: var(--gap-sm);
     margin: var(--gap-2xs) 0 var(--gap-xs) var(--gap-lg);
-    padding-left: var(--gap-md);
+    padding: var(--gap-2xs) 0 var(--gap-2xs) var(--gap-md);
     border-left: var(--border-width-medium) solid var(--color-border-strong);
+    border-radius: var(--radius-xs);
+    transition: background-color var(--transition-base), border-color var(--transition-base);
+}
+
+// Highlight the group region while a dragged widget hovers it, so the
+// operator can see they are about to nest into this container rather than
+// drop in the zone.
+.bubble_children--drop-target {
+    background: var(--color-primary-alpha-10);
+    border-left-color: var(--color-primary);
 }
 
 .bubble_children_empty {
