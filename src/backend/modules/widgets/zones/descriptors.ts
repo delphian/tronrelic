@@ -27,9 +27,9 @@ import type { IRegisterZoneInput } from '@/types';
 export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
     {
         id: 'ticker-after',
-        label: 'Below the block ticker',
+        label: 'Site Header',
         description:
-            'Rendered in the root layout below the block ticker. Reaches every route the root layout serves.',
+            'Rendered in the root layout directly below the main navigation, across every route the root layout serves. Home for the block ticker and other site-wide header widgets. (Zone id stays "ticker-after" so existing placements survive the rename.)',
         host: 'site',
         layout: 'vertical',
         order: 10

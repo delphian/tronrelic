@@ -308,6 +308,12 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // concrete classes.
     serviceRegistry.register('chain-parameters', ChainParametersService.getInstance());
 
+    // Publish the blockchain service so late-binding consumers can read
+    // the latest processed block without importing the concrete singleton.
+    // The core block-ticker widget's SSR data fetcher resolves this lazily
+    // per request; setDependencies already ran in initializeCoreServices.
+    serviceRegistry.register('blockchain', BlockchainService.getInstance());
+
     // Central content-type registry: one shared, process-lifetime home where
     // providers publish content types and pipelines (curation today,
     // notifications next) discover them. Constructed here as core infrastructure

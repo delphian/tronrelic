@@ -16,6 +16,7 @@
  */
 
 import type { IZoneDescriptor, IDefineZoneOptions, ZoneRegisterDisposer, ZoneHost } from './IZoneDescriptor.js';
+import type { IZoneLayoutConfig } from './IZoneLayoutConfig.js';
 
 /**
  * Introspection record for a single registered zone. Surfaced through
@@ -31,8 +32,16 @@ export interface IZoneSnapshotRecord {
     readonly description: string;
     /** Layout context. */
     readonly host: ZoneHost;
-    /** Visual layout hint. */
+    /** Visual layout hint (the coarse, code-declared default). */
     readonly layout: 'vertical' | 'horizontal' | 'grid';
+    /**
+     * Effective flexbox layout the zone container renders with. Always
+     * present: the operator's persisted override when one exists, else a
+     * default derived from {@link layout}. The SSR renderer and the admin
+     * editor both consume this; the renderer applies it to the flex
+     * container, the editor seeds its dropdowns from it.
+     */
+    readonly layoutConfig: IZoneLayoutConfig;
     /** Plugin id that declared the zone, or `'core'`. */
     readonly pluginId: string;
     /** ISO-8601 timestamp the zone was registered with the runtime. */

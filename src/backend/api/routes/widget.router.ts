@@ -1,4 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import type { IZoneLayoutConfig } from '@/types';
 import { WidgetsService } from '../../modules/widgets/widgets.service.js';
 import { logger } from '../../lib/logger.js';
 
@@ -36,7 +37,10 @@ export function widgetRouter(): Router {
      *       title: 'Widget Title',
      *       data: { ... }
      *     }
-     *   ]
+     *   ],
+     *   // Effective flexbox layout per zone id, so the SSR renderer can
+     *   // arrange each zone's widgets as flex items without a second call.
+     *   zones: { 'main-after': { flexDirection: 'column', ... } }
      * }
      */
     router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -72,9 +76,20 @@ export function widgetRouter(): Router {
             // Lazy lookup — the service singleton is configured by
             // `WidgetsModule.init()`, which runs before the HTTP server
             // accepts connections.
-            const widgets = await WidgetsService.getInstance().fetchWidgetsForRoute(route, params);
+            const service = WidgetsService.getInstance();
+            const widgets = await service.fetchWidgetsForRoute(route, params);
 
-            res.json({ widgets });
+            // Flatten the zone snapshot to a zoneId → layoutConfig map so
+            // the frontend can apply each zone's flexbox layout to its
+            // container without resolving the full snapshot client-side.
+            const zones: Record<string, IZoneLayoutConfig> = {};
+            for (const track of service.listZones().tracks) {
+                for (const zone of track.zones) {
+                    zones[zone.id] = zone.layoutConfig;
+                }
+            }
+
+            res.json({ widgets, zones });
         } catch (error) {
             logger.error('Error fetching widgets', {
                 error: error instanceof Error ? error.message : String(error),

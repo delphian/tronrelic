@@ -1,5 +1,18 @@
+import type { IZoneLayoutConfig } from '@/types';
 import type { WidgetData } from './types';
 import { getServerSideApiUrl } from '../../lib/api-url';
+
+/**
+ * SSR widget bundle: the resolved widgets for a route plus the effective
+ * flexbox layout for every zone, keyed by zone id. The layout map lets a
+ * `<WidgetZone>` arrange its widgets as flex items without a second
+ * request. Empty objects on fetch failure so callers render an empty,
+ * default-laid-out page rather than crashing.
+ */
+export interface IWidgetBundle {
+    widgets: WidgetData[];
+    zones: Record<string, IZoneLayoutConfig>;
+}
 
 /**
  * Fetch widgets for a specific route during SSR.
@@ -13,7 +26,7 @@ import { getServerSideApiUrl } from '../../lib/api-url';
  *
  * @param route - URL path to fetch widgets for (e.g., '/', '/u/TXyz...')
  * @param params - Optional route parameters (e.g., { address: 'TXyz...' })
- * @returns Array of widget data with pre-fetched content
+ * @returns The widget bundle: pre-fetched widgets plus each zone's layout
  *
  * @example
  * ```tsx
@@ -49,7 +62,7 @@ import { getServerSideApiUrl } from '../../lib/api-url';
 export async function fetchWidgetsForRoute(
     route: string,
     params: Record<string, string> = {}
-): Promise<WidgetData[]> {
+): Promise<IWidgetBundle> {
     try {
         const backendUrl = getServerSideApiUrl();
         let url = `${backendUrl}/api/widgets?route=${encodeURIComponent(route)}`;
@@ -67,13 +80,16 @@ export async function fetchWidgetsForRoute(
 
         if (!response.ok) {
             console.error('Failed to fetch widgets:', response.status);
-            return [];
+            return { widgets: [], zones: {} };
         }
 
         const data = await response.json();
-        return data.widgets || [];
+        return {
+            widgets: data.widgets || [],
+            zones: data.zones || {}
+        };
     } catch (error) {
         console.error('Error fetching widgets:', error);
-        return [];
+        return { widgets: [], zones: {} };
     }
 }

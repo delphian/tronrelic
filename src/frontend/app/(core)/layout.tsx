@@ -26,13 +26,13 @@ export default async function CoreLayout({ children }: { children: ReactNode }) 
     // have their own layouts that provide context-specific params
     const params: Record<string, string> = {};
 
-    const widgets = await fetchWidgetsForRoute(pathname, params);
+    const { widgets, zones } = await fetchWidgetsForRoute(pathname, params);
 
     return (
         <div className="core-layout">
-            <WidgetZone name="main-before" widgets={widgets} route={pathname} params={params} />
+            <WidgetZone name="main-before" widgets={widgets} layout={zones['main-before']} route={pathname} params={params} />
             {children}
-            <WidgetZone name="main-after" widgets={widgets} route={pathname} params={params} />
+            <WidgetZone name="main-after" widgets={widgets} layout={zones['main-after']} route={pathname} params={params} />
         </div>
     );
 }

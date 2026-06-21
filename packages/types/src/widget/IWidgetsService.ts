@@ -19,6 +19,7 @@
 import type { JSONSchema7 } from 'json-schema';
 import type { WidgetDataFetcher } from '../widget-types/IWidgetType.js';
 import type { IZoneSnapshot } from '../widget-zones/IZoneRegistry.js';
+import type { IZoneLayoutConfig } from '../widget-zones/IZoneLayoutConfig.js';
 import type { IWidgetTypeSnapshot } from '../widget-types/IWidgetTypeRegistry.js';
 import type { ZoneHost, ZoneLayout } from '../widget-zones/IZoneDescriptor.js';
 import type {
@@ -129,7 +130,13 @@ export interface IWidgetsService {
     // Discovery
     // ------------------------------------------------------------
 
-    /** Snapshot of every registered zone, grouped by host. */
+    /**
+     * Snapshot of every registered zone, grouped by host. Each zone
+     * record carries its effective `layoutConfig` — the operator's
+     * persisted flexbox override merged over the descriptor default — so
+     * the SSR router and the admin editor read layout from the same
+     * snapshot they already consume for zone discovery.
+     */
     listZones(): IZoneSnapshot;
 
     /** Snapshot of every registered widget type, grouped by owning plugin. */
@@ -235,6 +242,22 @@ export interface IWidgetsService {
      * never disposed, the call is a no-op.
      */
     unregisterAllForOwner(ownerId: string): Promise<void>;
+
+    // ------------------------------------------------------------
+    // Zone layout (operator surface)
+    // ------------------------------------------------------------
+
+    /**
+     * Persist an operator's flexbox layout override for a zone and return
+     * the stored config. The override survives restarts and is merged
+     * into {@link listZones} as the zone's effective `layoutConfig`. The
+     * zone must be registered.
+     *
+     * @param zoneId - Target zone id.
+     * @param config - Full flexbox layout to persist for the zone.
+     * @throws Error when `zoneId` is not a registered zone.
+     */
+    setZoneLayout(zoneId: string, config: IZoneLayoutConfig): Promise<IZoneLayoutConfig>;
 
     // ------------------------------------------------------------
     // Placement CRUD (operator surface)

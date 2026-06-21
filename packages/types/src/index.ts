@@ -164,6 +164,13 @@ export type {
     ZoneLayout,
     IZoneSnapshot,
     IZoneSnapshotRecord,
+    IZoneLayoutConfig,
+    ZoneFlexDirection,
+    ZoneJustifyContent,
+    ZoneAlignItems,
+    ZoneFlexWrap,
+    ZoneGapSize,
+    ZoneLayoutPreset,
     // Internal — used only by widgets-module implementation. Consumers
     // (plugins, other modules) reach zone state through IWidgetsService.
     IZoneRegistry,

@@ -1,0 +1,33 @@
+/**
+ * Widget zone container styling.
+ *
+ * A zone is a flex container whose arrangement is operator-configured at
+ * runtime: the component injects the flex properties as `--zone-*` custom
+ * properties (see WidgetZone.tsx) and these rules consume them with
+ * token-backed fallbacks. Keeping the values in custom properties lets the
+ * same static rule render a stacked column, a centered row, or a wrapping
+ * grid depending on the operator's choice — no per-layout class needed.
+ */
+
+.zone {
+    display: flex;
+    flex-direction: var(--zone-flex-direction, column);
+    justify-content: var(--zone-justify-content, flex-start);
+    align-items: var(--zone-align-items, stretch);
+    flex-wrap: var(--zone-flex-wrap, nowrap);
+    gap: var(--zone-gap, var(--gap-md));
+}
+
+.item {
+    // Allow flex items to shrink below their content width so a wide
+    // widget (e.g. the block ticker) in a row layout reflows instead of
+    // forcing the container to overflow.
+    min-width: 0;
+}
+
+.item_title {
+    margin: 0 0 var(--gap-sm);
+    font-size: var(--font-size-heading-md);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+}

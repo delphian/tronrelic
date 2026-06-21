@@ -20,6 +20,7 @@ import { ZoneRegistry } from '../zones/zone-registry.js';
 import { WidgetTypeRegistry } from '../widget-types/widget-type-registry.js';
 import { PlacementService } from '../placements/placement.service.js';
 import { PlacementResolver } from '../placements/placement-resolver.js';
+import { ZoneLayoutService } from '../zones/zone-layout.service.js';
 import { __resetKnownZonesForTests } from '../zones/define-zone.js';
 import { __resetKnownWidgetTypesForTests } from '../widget-types/define-widget-type.js';
 
@@ -67,8 +68,11 @@ function buildWidgetsService(): {
     const zones = new ZoneRegistry(logger);
     const types = new WidgetTypeRegistry(logger);
     const resolver = new PlacementResolver(placements, types, logger);
+    ZoneLayoutService.__resetForTests();
+    ZoneLayoutService.setDependencies(db, logger);
+    const zoneLayouts = ZoneLayoutService.getInstance();
     WidgetsService.__resetForTests();
-    WidgetsService.setDependencies(zones, types, placements, resolver, logger);
+    WidgetsService.setDependencies(zones, types, placements, resolver, zoneLayouts, logger);
     return { widgets: WidgetsService.getInstance(), zones, types, placements, logger };
 }
 
@@ -584,5 +588,65 @@ describe('WidgetsService.fetchWidgetsForRoute', () => {
 
         const markets = await widgets.fetchWidgetsForRoute('/markets');
         expect(markets.map(w => w.id)).toEqual(['p:markets']);
+    });
+});
+
+describe('WidgetsService zone layout', () => {
+    /**
+     * Resolve a single zone record from the snapshot by id, across all
+     * host tracks — the snapshot groups zones by host so a flat find is
+     * the cleanest way to assert on one zone's merged layout.
+     */
+    function findZone(widgets: WidgetsService, zoneId: string) {
+        return widgets.listZones().tracks.flatMap(t => t.zones).find(z => z.id === zoneId);
+    }
+
+    it('defaults a vertical zone to a stacked column layout when no override exists', () => {
+        const { widgets } = buildWidgetsService();
+        widgets.registerZone(
+            { id: 'main-after', label: 'After', description: 'd', host: 'core', layout: 'vertical' },
+            'core'
+        );
+
+        const zone = findZone(widgets, 'main-after');
+        expect(zone?.layoutConfig.flexDirection).toBe('column');
+        expect(zone?.layoutConfig.preset).toBe('column');
+    });
+
+    it('persists an operator override and merges it into the snapshot', async () => {
+        const { widgets } = buildWidgetsService();
+        widgets.registerZone(
+            { id: 'main-after', label: 'After', description: 'd', host: 'core', layout: 'vertical' },
+            'core'
+        );
+
+        const stored = await widgets.setZoneLayout('main-after', {
+            preset: 'row-center',
+            flexDirection: 'row',
+            justifyContent: 'center',
+            alignItems: 'center',
+            flexWrap: 'nowrap',
+            gap: 'lg'
+        });
+        expect(stored.flexDirection).toBe('row');
+
+        const zone = findZone(widgets, 'main-after');
+        expect(zone?.layoutConfig.flexDirection).toBe('row');
+        expect(zone?.layoutConfig.justifyContent).toBe('center');
+        expect(zone?.layoutConfig.gap).toBe('lg');
+        expect(zone?.layoutConfig.preset).toBe('row-center');
+    });
+
+    it('rejects a layout write for an unregistered zone', async () => {
+        const { widgets } = buildWidgetsService();
+        await expect(
+            widgets.setZoneLayout('no-such-zone', {
+                flexDirection: 'row',
+                justifyContent: 'flex-start',
+                alignItems: 'center',
+                flexWrap: 'nowrap',
+                gap: 'md'
+            })
+        ).rejects.toThrow();
     });
 });

@@ -26,6 +26,7 @@ import type {
     ISystemLogService
 } from '@/types';
 import { forgetZone, isKnownZone, listKnownZones } from './define-zone.js';
+import { defaultLayoutConfigFor } from './zone-layout.service.js';
 
 const RESERVED_PLUGIN_ID = 'core';
 
@@ -265,6 +266,11 @@ function toSnapshotRecord(entry: IRegisteredZone): IZoneSnapshotRecord {
         description: entry.descriptor.description,
         host: entry.descriptor.host,
         layout: entry.descriptor.layout,
+        // The descriptor-derived default. `WidgetsService.listZones()`
+        // replaces this with a persisted operator override when one
+        // exists, so the registry record carries the effective layout
+        // even before the layout store is consulted.
+        layoutConfig: defaultLayoutConfigFor(entry.descriptor.layout),
         pluginId: entry.pluginId,
         registeredAt: new Date(entry.registeredAt).toISOString(),
         source: entry.source

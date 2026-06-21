@@ -108,6 +108,28 @@
     flex-wrap: wrap;
 }
 
+/* Per-zone flexbox layout controls — a wrapping row of compact labeled
+   selects (preset + granular). Each field stays narrow so the whole row
+   fits several controls before wrapping on tight containers. */
+.zone_layout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
+    align-items: flex-end;
+    padding: var(--padding-xs) 0;
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.zone_layout_field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    // Share the row and wrap as space runs out; min-width:0 lets the
+    // selects shrink below content width instead of forcing overflow.
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 .zone_label {
     margin: 0;
     font-size: var(--font-size-body-lg);

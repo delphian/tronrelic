@@ -73,7 +73,7 @@ export async function PluginPageWithZones({ slug, initialData }: PluginPageWithZ
     const route = slug;
     const params: Record<string, string> = {};
 
-    const widgets = await fetchWidgetsForRoute(route, params);
+    const { widgets, zones } = await fetchWidgetsForRoute(route, params);
     const isResourceMarkets = slug === '/resource-markets';
 
     let seoContent: JSX.Element | null = null;
@@ -153,9 +153,9 @@ export async function PluginPageWithZones({ slug, initialData }: PluginPageWithZ
 
     return (
         <>
-            <WidgetZone name="plugin-content:before" widgets={widgets} route={route} params={params} />
+            <WidgetZone name="plugin-content:before" widgets={widgets} layout={zones['plugin-content:before']} route={route} params={params} />
             <PluginPageHandler slug={slug} initialData={initialData} />
-            <WidgetZone name="plugin-content:after" widgets={widgets} route={route} params={params} />
+            <WidgetZone name="plugin-content:after" widgets={widgets} layout={zones['plugin-content:after']} route={route} params={params} />
             {seoContent}
         </>
     );

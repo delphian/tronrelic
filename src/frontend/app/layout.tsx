@@ -7,10 +7,8 @@ import { buildMetadata, SITE_NAME } from '../lib/seo';
 import './globals.scss';
 import { Providers } from './providers';
 import { MainHeader } from '../components/layout/MainHeader';
-import { BlockTicker } from '../components/layout/BlockTicker';
 import { WidgetZone, fetchWidgetsForRoute } from '../components/widgets';
 import { getServerSession, type ISSRSession } from '../modules/user/lib/session-server';
-import type { BlockSummary } from '../features/blockchain/slice';
 
 /**
  * Head fragment shape served by the backend `ssr.headFragments` hook.
@@ -246,39 +244,6 @@ function renderHeadFragment(fragment: IHeadFragmentResponse): ReactElement {
 }
 
 /**
- * Fetch latest block for SSR to enable immediate ticker rendering.
- *
- * Fetches the most recent indexed block from the backend API. This data
- * is passed to BlockTicker to render immediately during SSR instead of
- * waiting for WebSocket connection after hydration.
- *
- * IMPORTANT: Uses internal Docker URL (SITE_BACKEND) for container-to-container
- * communication during SSR.
- *
- * @returns Block summary data or null if fetch fails
- */
-async function fetchInitialBlock(): Promise<BlockSummary | null> {
-    try {
-        const backendUrl = getServerSideApiUrl();
-        const response = await fetch(`${backendUrl}/api/blockchain/latest`, {
-            cache: 'no-store',
-            signal: AbortSignal.timeout(3000) // 3 second timeout
-        });
-
-        if (!response.ok) {
-            console.error('Failed to fetch initial block:', response.status);
-            return null;
-        }
-
-        const data = await response.json();
-        return (data.block as BlockSummary) || null;
-    } catch (error) {
-        console.error('Error fetching initial block:', error);
-        return null;
-    }
-}
-
-/**
  * Fetch the Better Auth session for SSR.
  *
  * Resolves the session by forwarding the inbound cookies to BA's
@@ -314,12 +279,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // via ssr.headFragments and stamps data-theme="active" via
   // ssr.htmlAttributes, so no separate fetchActiveThemes call or cookie
   // branch is needed in this layout.
-  const [runtimeConfig, headFragments, htmlAttributes, ssrSession, initialBlock, tickerWidgets] = await Promise.all([
+  const [runtimeConfig, headFragments, htmlAttributes, ssrSession, widgetBundle] = await Promise.all([
     getServerConfig(),
     fetchHeadFragments(pathname, cookieMap),
     fetchHtmlAttributes(pathname, cookieMap),
     fetchSSRSession(),
-    fetchInitialBlock(),
     fetchWidgetsForRoute(pathname, {})
   ]);
 
@@ -347,13 +311,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <body>
         <Providers ssrSession={ssrSession}>
           <MainHeader />
-          <BlockTicker initialBlock={initialBlock} />
-          <WidgetZone name="ticker-after" widgets={tickerWidgets} route={pathname} params={{}} />
+          <WidgetZone name="ticker-after" widgets={widgetBundle.widgets} layout={widgetBundle.zones['ticker-after']} route={pathname} params={{}} />
           <main>
             {children}
           </main>
           <footer>
-            <WidgetZone name="footer" widgets={tickerWidgets} route={pathname} params={{}} />
+            <WidgetZone name="footer" widgets={widgetBundle.widgets} layout={widgetBundle.zones['footer']} route={pathname} params={{}} />
           </footer>
         </Providers>
       </body>

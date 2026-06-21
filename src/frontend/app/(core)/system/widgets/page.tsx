@@ -49,7 +49,12 @@ import {
     verticalListSortingStrategy
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { IZoneSnapshot, IWidgetTypeSnapshot } from '@/types';
+import type {
+    IZoneSnapshot,
+    IWidgetTypeSnapshot,
+    IZoneLayoutConfig,
+    ZoneLayoutPreset
+} from '@/types';
 import type { JSONSchema7, JSONSchema7Definition } from 'json-schema';
 
 import { Page, PageHeader, Stack } from '../../../../components/layout';
@@ -221,6 +226,167 @@ function normaliseRouteInput(value: string): string | null {
     if (!trimmed.startsWith('/')) return null;
     if (/\s/.test(trimmed)) return null;
     return trimmed;
+}
+
+/* ------------------------------------------------------------------ */
+/* Zone flexbox layout controls                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Named popular layouts the preset dropdown offers, each mapping to the
+ * four flex properties (gap is chosen separately, so presets leave it
+ * untouched). `'custom'` is not in this map — it is the marker the UI
+ * shows when the operator hand-tunes a granular control past any preset.
+ */
+const LAYOUT_PRESETS: Record<Exclude<ZoneLayoutPreset, 'custom'>, Omit<IZoneLayoutConfig, 'gap' | 'preset'>> = {
+    'row-left': { flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center', flexWrap: 'nowrap' },
+    'row-center': { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', flexWrap: 'nowrap' },
+    'row-between': { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'nowrap' },
+    'row-right': { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'nowrap' },
+    'row-wrap': { flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'stretch', flexWrap: 'wrap' },
+    'column': { flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'stretch', flexWrap: 'nowrap' }
+};
+
+/** Preset dropdown options, in display order. */
+const PRESET_OPTIONS: ReadonlyArray<{ value: ZoneLayoutPreset; label: string }> = [
+    { value: 'row-left', label: 'Row — left' },
+    { value: 'row-center', label: 'Row — centered' },
+    { value: 'row-between', label: 'Row — space between' },
+    { value: 'row-right', label: 'Row — right' },
+    { value: 'row-wrap', label: 'Row — wrap' },
+    { value: 'column', label: 'Column (stacked)' },
+    { value: 'custom', label: 'Custom' }
+];
+
+/** Granular dropdown option lists, label → CSS value. */
+const DIRECTION_OPTIONS = ['row', 'row-reverse', 'column', 'column-reverse'] as const;
+const JUSTIFY_OPTIONS = ['flex-start', 'center', 'flex-end', 'space-between', 'space-around', 'space-evenly'] as const;
+const ALIGN_OPTIONS = ['stretch', 'flex-start', 'center', 'flex-end', 'baseline'] as const;
+const WRAP_OPTIONS = ['nowrap', 'wrap'] as const;
+const GAP_OPTIONS = ['none', 'sm', 'md', 'lg'] as const;
+
+/**
+ * Per-zone flexbox controls: a preset dropdown that sets the common
+ * arrangements in one click, plus granular dropdowns (direction,
+ * justify, align, wrap, gap) for fine-tuning. Selecting a preset applies
+ * its four flex fields and keeps the chosen gap; touching any granular
+ * flex field re-tags the config as `'custom'` so the preset dropdown
+ * reflects that the layout no longer matches a named preset. Gap is
+ * preset-independent, so changing it preserves the current preset label.
+ *
+ * @param props.zoneId - Zone these controls edit.
+ * @param props.layout - The zone's current effective layout.
+ * @param props.disabled - Whether the controls are inert (busy write).
+ * @param props.onChange - Persists the new config for the zone.
+ */
+function ZoneLayoutControls({
+    zoneId,
+    layout,
+    disabled,
+    onChange
+}: {
+    zoneId: string;
+    layout: IZoneLayoutConfig;
+    disabled: boolean;
+    onChange: (zoneId: string, config: IZoneLayoutConfig) => void;
+}) {
+    /**
+     * Apply a preset: spread its flex fields over the current config,
+     * keep the operator's gap, and stamp the preset name.
+     *
+     * @param preset - Selected preset value from the dropdown.
+     */
+    const applyPreset = (preset: ZoneLayoutPreset) => {
+        if (preset === 'custom') {
+            onChange(zoneId, { ...layout, preset: 'custom' });
+            return;
+        }
+        onChange(zoneId, { ...LAYOUT_PRESETS[preset], gap: layout.gap, preset });
+    };
+
+    /**
+     * Apply a granular flex change. Any granular edit re-tags the config
+     * as `'custom'` (the layout no longer matches a named preset). Gap is
+     * excluded — it does not belong to a preset — so a gap change keeps
+     * the current preset label.
+     *
+     * @param patch - The single field being changed.
+     * @param keepPreset - True only for the gap control.
+     */
+    const applyGranular = (patch: Partial<IZoneLayoutConfig>, keepPreset: boolean) => {
+        onChange(zoneId, { ...layout, ...patch, preset: keepPreset ? layout.preset : 'custom' });
+    };
+
+    return (
+        <div className={styles.zone_layout}>
+            <div className={styles.zone_layout_field}>
+                <label className={styles.filter_label} htmlFor={`zl-preset-${zoneId}`}>Layout</label>
+                <Select
+                    id={`zl-preset-${zoneId}`}
+                    value={layout.preset ?? 'custom'}
+                    onChange={(e) => applyPreset(e.target.value as ZoneLayoutPreset)}
+                    disabled={disabled}
+                >
+                    {PRESET_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </Select>
+            </div>
+            <div className={styles.zone_layout_field}>
+                <label className={styles.filter_label} htmlFor={`zl-dir-${zoneId}`}>Direction</label>
+                <Select
+                    id={`zl-dir-${zoneId}`}
+                    value={layout.flexDirection}
+                    onChange={(e) => applyGranular({ flexDirection: e.target.value as IZoneLayoutConfig['flexDirection'] }, false)}
+                    disabled={disabled}
+                >
+                    {DIRECTION_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </Select>
+            </div>
+            <div className={styles.zone_layout_field}>
+                <label className={styles.filter_label} htmlFor={`zl-justify-${zoneId}`}>Justify</label>
+                <Select
+                    id={`zl-justify-${zoneId}`}
+                    value={layout.justifyContent}
+                    onChange={(e) => applyGranular({ justifyContent: e.target.value as IZoneLayoutConfig['justifyContent'] }, false)}
+                    disabled={disabled}
+                >
+                    {JUSTIFY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </Select>
+            </div>
+            <div className={styles.zone_layout_field}>
+                <label className={styles.filter_label} htmlFor={`zl-align-${zoneId}`}>Align</label>
+                <Select
+                    id={`zl-align-${zoneId}`}
+                    value={layout.alignItems}
+                    onChange={(e) => applyGranular({ alignItems: e.target.value as IZoneLayoutConfig['alignItems'] }, false)}
+                    disabled={disabled}
+                >
+                    {ALIGN_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </Select>
+            </div>
+            <div className={styles.zone_layout_field}>
+                <label className={styles.filter_label} htmlFor={`zl-wrap-${zoneId}`}>Wrap</label>
+                <Select
+                    id={`zl-wrap-${zoneId}`}
+                    value={layout.flexWrap}
+                    onChange={(e) => applyGranular({ flexWrap: e.target.value as IZoneLayoutConfig['flexWrap'] }, false)}
+                    disabled={disabled}
+                >
+                    {WRAP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </Select>
+            </div>
+            <div className={styles.zone_layout_field}>
+                <label className={styles.filter_label} htmlFor={`zl-gap-${zoneId}`}>Gap</label>
+                <Select
+                    id={`zl-gap-${zoneId}`}
+                    value={layout.gap}
+                    onChange={(e) => applyGranular({ gap: e.target.value as IZoneLayoutConfig['gap'] }, true)}
+                    disabled={disabled}
+                >
+                    {GAP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </Select>
+            </div>
+        </div>
+    );
 }
 
 /**
@@ -416,6 +582,45 @@ export default function WidgetsAdminPage() {
         [notifyError, notifySuccess]
     );
 
+    /**
+     * Persist a zone's flexbox layout. Updates the local zone snapshot
+     * optimistically so the editor (and the live preview a refetch would
+     * bring) reflects the change immediately, then PATCHes the zone-layout
+     * endpoint. A failed write reverts by refetching the server truth.
+     */
+    const setZoneLayout = useCallback(
+        async (zoneId: string, config: IZoneLayoutConfig): Promise<void> => {
+            setZones(prev =>
+                prev
+                    ? {
+                        tracks: prev.tracks.map(track => ({
+                            ...track,
+                            zones: track.zones.map(zone =>
+                                zone.id === zoneId ? { ...zone, layoutConfig: config } : zone
+                            )
+                        }))
+                    }
+                    : prev
+            );
+            try {
+                const res = await fetch(`/api/admin/system/zones/${encodeURIComponent(zoneId)}/layout`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                if (!res.ok) {
+                    const body = await res.json().catch(() => ({}));
+                    throw new Error(body.error || `Layout update failed (${res.status})`);
+                }
+                notifySuccess('Zone layout updated');
+            } catch (err) {
+                notifyError('Could not update zone layout', err);
+                void fetchAll(false);
+            }
+        },
+        [notifyError, notifySuccess, fetchAll]
+    );
+
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -547,7 +752,7 @@ export default function WidgetsAdminPage() {
      * the full target set.
      */
     const grouped = useMemo(() => {
-        if (!zones) return [] as Array<{ trackId: string; trackLabel: string; rows: Array<{ zoneId: string; zoneLabel: string; placements: IPlacement[] }> }>;
+        if (!zones) return [] as Array<{ trackId: string; trackLabel: string; rows: Array<{ zoneId: string; zoneLabel: string; layoutConfig: IZoneLayoutConfig; placements: IPlacement[] }> }>;
         const byZone = new Map<string, IPlacement[]>();
         for (const placement of placements) {
             const matches = selectedRoute === null
@@ -567,6 +772,7 @@ export default function WidgetsAdminPage() {
             rows: track.zones.map(zone => ({
                 zoneId: zone.id,
                 zoneLabel: zone.label,
+                layoutConfig: zone.layoutConfig,
                 placements: byZone.get(zone.id) ?? []
             }))
         }));
@@ -784,6 +990,7 @@ export default function WidgetsAdminPage() {
                                                 key={zone.zoneId}
                                                 zoneId={zone.zoneId}
                                                 zoneLabel={zone.zoneLabel}
+                                                layoutConfig={zone.layoutConfig}
                                                 placements={zone.placements}
                                                 types={types}
                                                 zones={zones}
@@ -792,6 +999,7 @@ export default function WidgetsAdminPage() {
                                                 onEdit={(p) => openPlacementModal('edit', p)}
                                                 onDelete={openDeleteModal}
                                                 onRestore={(p) => restoreDefaults(p.id)}
+                                                onLayoutChange={setZoneLayout}
                                             />
                                         ))}
                                     </div>
@@ -812,6 +1020,7 @@ export default function WidgetsAdminPage() {
 interface ZoneSectionProps {
     zoneId: string;
     zoneLabel: string;
+    layoutConfig: IZoneLayoutConfig;
     placements: IPlacement[];
     types: IWidgetTypeSnapshot | null;
     zones: IZoneSnapshot | null;
@@ -820,11 +1029,13 @@ interface ZoneSectionProps {
     onEdit: (placement: IPlacement) => void;
     onDelete: (placement: IPlacement) => void;
     onRestore: (placement: IPlacement) => void;
+    onLayoutChange: (zoneId: string, config: IZoneLayoutConfig) => void;
 }
 
 function ZoneSection({
     zoneId,
     zoneLabel,
+    layoutConfig,
     placements,
     types,
     zones,
@@ -832,7 +1043,8 @@ function ZoneSection({
     onToggleEnabled,
     onEdit,
     onDelete,
-    onRestore
+    onRestore,
+    onLayoutChange
 }: ZoneSectionProps) {
     const zoneInfo = lookupZone(zones, zoneId);
     const { setNodeRef, isOver } = useDroppable({ id: zoneId, data: { zoneId } });
@@ -850,6 +1062,13 @@ function ZoneSection({
                     {placements.length} {placements.length === 1 ? 'placement' : 'placements'}
                 </span>
             </header>
+
+            <ZoneLayoutControls
+                zoneId={zoneId}
+                layout={layoutConfig}
+                disabled={busyId !== null}
+                onChange={onLayoutChange}
+            />
 
             <SortableContext id={zoneId} items={itemIds} strategy={verticalListSortingStrategy}>
                 <div ref={setNodeRef} className={styles.bubbles}>
