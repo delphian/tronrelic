@@ -11,6 +11,8 @@
  * override — honouring the chosen value beats silently retightening it.
  */
 
+@use '../../app/breakpoints' as *;
+
 .clocks {
     display: flex;
     flex-wrap: var(--world-clocks-wrap, nowrap);
