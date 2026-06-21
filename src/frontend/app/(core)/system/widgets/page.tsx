@@ -648,77 +648,124 @@ export default function WidgetsAdminPage() {
     );
 
     /**
-     * Persist a drag-end gesture. Within-zone drops reorder; cross-zone
-     * drops additionally rewrite the moved placement's zoneId. Both
-     * paths renumber positions sequentially (10, 20, 30…) and emit one
-     * PATCH per placement whose order or zone actually changed. The
-     * local placement list is updated optimistically so the bubble
-     * snaps into place before the network round-trip resolves; a
+     * Persist a drag-end gesture across three move types: reorder within a
+     * list, move between zones, and nest into / detach from a layout-group
+     * container. The drop target decides which: a container's children
+     * region (`containerId` in the drop data) nests the widget; a child
+     * row nests it into that child's container; a zone or a top-level item
+     * places it directly in the zone, detaching it if it was nested.
+     *
+     * Each affected list (the source and, on a cross-list move, the
+     * destination) is renumbered sequentially (10, 20, 30…). The moved row
+     * additionally gets a `parentId` patch when its container changed
+     * (a string attaches — the backend then forces its zone and clears its
+     * routes — `null` detaches) and a `zoneId` patch on a plain zone move.
+     * The list is updated optimistically so the row snaps into place; a
      * failed PATCH falls back to a refetch.
      */
     const handleDragEnd = useCallback(
         async (event: DragEndEvent): Promise<void> => {
             const { active, over } = event;
             if (!over) return;
-            const sourceZone = active.data.current?.zoneId as string | undefined;
-            const destZone = (over.data.current?.zoneId as string | undefined) ?? String(over.id);
-            if (!sourceZone || !destZone) return;
-            if (active.id === over.id && sourceZone === destZone) return;
+            const moved = placements.find(p => p.id === String(active.id));
+            if (!moved) return;
 
-            const sameZone = sourceZone === destZone;
-            // Reorder only the placements the current view actually shows.
-            // `grouped` renders global-only placements when no route is
-            // selected and route-matching placements otherwise; the drag
-            // renumber must use the identical predicate or it interleaves and
-            // PATCHes hidden placements (route-scoped rows in the unfiltered
-            // view, other-route rows in a filtered view) the operator never
-            // sees. The resolver only ever orders placements among those that
-            // match a given path, so renumbering the visible subset is safe.
+            const overData = over.data.current ?? {};
+
+            // Resolve the destination list. A container drop region and a
+            // child row both name a container; anything else (zone droppable
+            // or top-level item) targets a zone directly.
+            let destContainerId: string | null = null;
+            let destZone: string | undefined;
+            if (typeof overData.containerId === 'string') {
+                destContainerId = overData.containerId;
+                destZone = overData.zoneId as string | undefined;
+            } else if (typeof overData.parentId === 'string') {
+                destContainerId = overData.parentId;
+                destZone = overData.zoneId as string | undefined;
+            } else {
+                destZone = (overData.zoneId as string | undefined) ?? String(over.id);
+            }
+            if (!destZone) return;
+
+            // A layout group is always top-level — never nest one.
+            if (moved.typeId === LAYOUT_GROUP_TYPE_ID) destContainerId = null;
+            // Dropping a container onto its own children region is a no-op.
+            if (destContainerId === moved.id) return;
+
+            const sourceContainerId = moved.parentId ?? null;
+            const srcKey = sourceContainerId ? `c:${sourceContainerId}` : `z:${moved.zoneId}`;
+            const dstKey = destContainerId ? `c:${destContainerId}` : `z:${destZone}`;
+            const sameList = srcKey === dstKey;
+            if (active.id === over.id && sameList) return;
+
+            // The visible-subset predicate constrains only top-level zone
+            // lists — route-scoped rows the operator isn't viewing must not
+            // be renumbered. A container's children carry no route filter of
+            // their own, so a child list is always its full set.
             const visibleInView = (p: IPlacement): boolean =>
                 selectedRoute === null
                     ? p.routes.length === 0
                     : placementMatchesRoute(p.routes, selectedRoute);
-            const sourceList = placements
-                .filter(p => p.zoneId === sourceZone && visibleInView(p))
-                .sort((a, b) => a.order - b.order);
-            const moved = sourceList.find(p => p.id === active.id);
-            if (!moved) return;
+            const listFor = (containerId: string | null, zoneId: string): IPlacement[] =>
+                (containerId
+                    ? placements.filter(p => p.parentId === containerId)
+                    : placements.filter(p => !p.parentId && p.zoneId === zoneId && visibleInView(p))
+                ).sort((a, b) => a.order - b.order);
 
-            const sourceWithoutActive = sourceList.filter(p => p.id !== active.id);
-            const destListPrev = sameZone
-                ? sourceWithoutActive
-                : placements
-                    .filter(p => p.zoneId === destZone && visibleInView(p))
-                    .sort((a, b) => a.order - b.order);
+            const sourceList = listFor(sourceContainerId, moved.zoneId);
+            const sourceWithoutActive = sourceList.filter(p => p.id !== moved.id);
+            const destListPrev = sameList ? sourceWithoutActive : listFor(destContainerId, destZone);
 
-            const insertIdx =
-                over.id === destZone
-                    ? destListPrev.length
-                    : (() => {
-                        const target = destListPrev.findIndex(p => p.id === over.id);
-                        return target < 0 ? destListPrev.length : target;
-                    })();
+            const overIsArea =
+                typeof overData.containerId === 'string' || String(over.id) === destZone;
+            const insertIdx = overIsArea
+                ? destListPrev.length
+                : (() => {
+                    const target = destListPrev.findIndex(p => p.id === String(over.id));
+                    return target < 0 ? destListPrev.length : target;
+                })();
 
+            const movedNext: IPlacement = {
+                ...moved,
+                parentId: destContainerId ?? undefined,
+                zoneId: destZone
+            };
             const newDest = [
                 ...destListPrev.slice(0, insertIdx),
-                sameZone ? moved : { ...moved, zoneId: destZone },
+                movedNext,
                 ...destListPrev.slice(insertIdx)
             ];
-            const newSource = sameZone ? newDest : sourceWithoutActive;
+            const newSource = sameList ? newDest : sourceWithoutActive;
+
+            const parentChanged = (moved.parentId ?? null) !== destContainerId;
+            const zoneChanged = moved.zoneId !== destZone;
 
             interface IOp { id: string; patch: IPlacementPatch }
             const ops: IOp[] = [];
-            const collect = (list: IPlacement[], rewriteZoneFor?: string): void => {
-                list.forEach((p, idx) => {
+            newDest.forEach((p, idx) => {
+                const nextOrder = (idx + 1) * 10;
+                const patch: IPlacementPatch = {};
+                if (p.order !== nextOrder) patch.order = nextOrder;
+                if (p.id === moved.id) {
+                    if (parentChanged) {
+                        // Attach (string) or detach (null). On attach the
+                        // backend forces the child's zone and clears its
+                        // routes, so an explicit zoneId is unnecessary.
+                        patch.parentId = destContainerId;
+                    }
+                    if (destContainerId === null && zoneChanged) {
+                        patch.zoneId = destZone;
+                    }
+                }
+                if (Object.keys(patch).length > 0) ops.push({ id: p.id, patch });
+            });
+            if (!sameList) {
+                newSource.forEach((p, idx) => {
                     const nextOrder = (idx + 1) * 10;
-                    const patch: IPlacementPatch = {};
-                    if (p.order !== nextOrder) patch.order = nextOrder;
-                    if (rewriteZoneFor === p.id) patch.zoneId = destZone;
-                    if (Object.keys(patch).length > 0) ops.push({ id: p.id, patch });
+                    if (p.order !== nextOrder) ops.push({ id: p.id, patch: { order: nextOrder } });
                 });
-            };
-            collect(newSource);
-            if (!sameZone) collect(newDest, moved.id);
+            }
 
             if (ops.length === 0) return;
 
@@ -727,11 +774,19 @@ export default function WidgetsAdminPage() {
                 for (const op of ops) {
                     const existing = byId.get(op.id);
                     if (!existing) continue;
-                    byId.set(op.id, {
-                        ...existing,
-                        order: op.patch.order ?? existing.order,
-                        zoneId: op.patch.zoneId ?? existing.zoneId
-                    });
+                    const next: IPlacement = { ...existing };
+                    if (op.patch.order !== undefined) next.order = op.patch.order;
+                    if (op.patch.zoneId !== undefined) next.zoneId = op.patch.zoneId;
+                    if (op.patch.parentId !== undefined) {
+                        if (op.patch.parentId === null) {
+                            next.parentId = undefined;
+                        } else {
+                            next.parentId = op.patch.parentId;
+                            next.zoneId = destZone;
+                            next.routes = [];
+                        }
+                    }
+                    byId.set(op.id, next);
                 }
                 return Array.from(byId.values());
             });
@@ -739,7 +794,7 @@ export default function WidgetsAdminPage() {
             try {
                 await Promise.all(ops.map(op => patchPlacement(op.id, op.patch)));
             } catch (err) {
-                notifyError('Could not reorder placements', err);
+                notifyError('Could not move placement', err);
                 void fetchAll(false);
             }
         },
@@ -1136,26 +1191,17 @@ function ZoneSection({
                                         onRestore={onRestore}
                                     />
                                     {isContainer && (
-                                        <div className={styles.bubble_children}>
-                                            {kids.length === 0 ? (
-                                                <span className={styles.bubble_children_empty}>
-                                                    Empty group — edit a widget and set its container to this group.
-                                                </span>
-                                            ) : (
-                                                kids.map(child => (
-                                                    <ChildPlacementRow
-                                                        key={child.id}
-                                                        placement={child}
-                                                        typeInfo={lookupType(types, child.typeId)}
-                                                        busy={busyId === child.id}
-                                                        onToggleEnabled={onToggleEnabled}
-                                                        onEdit={onEdit}
-                                                        onDelete={onDelete}
-                                                        onRestore={onRestore}
-                                                    />
-                                                ))
-                                            )}
-                                        </div>
+                                        <GroupDropArea
+                                            containerId={placement.id}
+                                            zoneId={zoneId}
+                                            childPlacements={kids}
+                                            types={types}
+                                            busyId={busyId}
+                                            onToggleEnabled={onToggleEnabled}
+                                            onEdit={onEdit}
+                                            onDelete={onDelete}
+                                            onRestore={onRestore}
+                                        />
                                     )}
                                 </Fragment>
                             );
@@ -1287,13 +1333,15 @@ function PlacementBubble({
 }
 
 /**
- * Compact, non-draggable row for a widget nested inside a layout-group
- * container. It mirrors `PlacementBubble`'s actions (enable switch, edit,
- * delete / restore) but omits the drag grip: a child's render order and
- * its container assignment are edited from the modal, not by dragging,
- * so the nesting display stays out of the zone's sortable list. The "edit"
- * modal is where an operator detaches the widget (set container to "None")
- * or moves it to a different group.
+ * Sortable row for a widget nested inside a layout-group container.
+ *
+ * Mirrors `PlacementBubble`'s actions (enable switch, edit, delete /
+ * restore) and is draggable via its own grip: dragging a child reorders
+ * it within its group, moves it to another group, or — dropped on the
+ * zone background — detaches it back to the zone. Its `useSortable` data
+ * carries `parentId` so `handleDragEnd` knows which container it came
+ * from. The id lives in the container's own `SortableContext`, so it
+ * reorders independently of the zone's top-level list.
  *
  * @param placement - The nested child placement to render.
  * @param typeInfo - Resolved widget-type label/owner for display.
@@ -1312,11 +1360,31 @@ function ChildPlacementRow({
     onDelete,
     onRestore
 }: PlacementBubbleProps) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+        id: placement.id,
+        data: { zoneId: placement.zoneId, parentId: placement.parentId }
+    });
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition
+    };
     const label = placement.title ?? typeInfo?.label ?? placement.typeId;
 
     return (
-        <div className={styles.bubble}>
-            <span className={styles.bubble_handle} aria-hidden />
+        <div
+            ref={setNodeRef}
+            style={style}
+            className={cn(styles.bubble, isDragging && styles['bubble--dragging'])}
+        >
+            <button
+                type="button"
+                className={styles.bubble_handle}
+                aria-label={`Drag ${label} (reorder or move out of the group)`}
+                {...attributes}
+                {...listeners}
+            >
+                <GripVertical size={16} aria-hidden />
+            </button>
             <div className={styles.bubble_main}>
                 <div className={styles.bubble_top}>
                     <span className={styles.widget_label}>{label}</span>
@@ -1365,6 +1433,85 @@ function ChildPlacementRow({
                     </IconButton>
                 )}
             </div>
+        </div>
+    );
+}
+
+interface GroupDropAreaProps {
+    containerId: string;
+    zoneId: string;
+    childPlacements: IPlacement[];
+    types: IWidgetTypeSnapshot | null;
+    busyId: string | null;
+    onToggleEnabled: (placement: IPlacement, next: boolean) => void;
+    onEdit: (placement: IPlacement) => void;
+    onDelete: (placement: IPlacement) => void;
+    onRestore: (placement: IPlacement) => void;
+}
+
+/**
+ * Droppable, sortable region holding a layout-group container's children.
+ *
+ * The wrapper is a dnd-kit droppable keyed `group:<containerId>` (so a
+ * drop anywhere in the region — including an empty group — lands a widget
+ * in this container), and it hosts its own `SortableContext` over the
+ * child ids so children reorder independently of the zone's top-level
+ * list. `handleDragEnd` reads the droppable's `containerId` to attach the
+ * dragged widget. The region always renders for a container, even when
+ * empty, so there is a target to drop the first child into.
+ *
+ * @param containerId - The layout-group placement id this region nests under.
+ * @param zoneId - Zone the container lives in, forwarded as drop data.
+ * @param childPlacements - The container's children, pre-sorted by order.
+ * @param types - Type snapshot for resolving child labels.
+ * @param busyId - Placement id with an in-flight mutation, if any.
+ * @param onToggleEnabled - Enable/disable handler passed to each child.
+ * @param onEdit - Edit-modal opener passed to each child.
+ * @param onDelete - Delete handler passed to each child.
+ * @param onRestore - Restore-defaults handler passed to each child.
+ */
+function GroupDropArea({
+    containerId,
+    zoneId,
+    childPlacements,
+    types,
+    busyId,
+    onToggleEnabled,
+    onEdit,
+    onDelete,
+    onRestore
+}: GroupDropAreaProps) {
+    const { setNodeRef, isOver } = useDroppable({
+        id: `group:${containerId}`,
+        data: { containerId, zoneId }
+    });
+    const childIds = useMemo(() => childPlacements.map(c => c.id), [childPlacements]);
+
+    return (
+        <div
+            ref={setNodeRef}
+            className={cn(styles.bubble_children, isOver && styles['bubble_children--drop-target'])}
+        >
+            <SortableContext id={`group:${containerId}`} items={childIds} strategy={verticalListSortingStrategy}>
+                {childPlacements.length === 0 ? (
+                    <span className={styles.bubble_children_empty}>
+                        Empty group — drag a widget here to nest it.
+                    </span>
+                ) : (
+                    childPlacements.map(child => (
+                        <ChildPlacementRow
+                            key={child.id}
+                            placement={child}
+                            typeInfo={lookupType(types, child.typeId)}
+                            busy={busyId === child.id}
+                            onToggleEnabled={onToggleEnabled}
+                            onEdit={onEdit}
+                            onDelete={onDelete}
+                            onRestore={onRestore}
+                        />
+                    ))
+                )}
+            </SortableContext>
         </div>
     );
 }
