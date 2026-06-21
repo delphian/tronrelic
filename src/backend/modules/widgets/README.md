@@ -9,11 +9,11 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 | Module id | `widgets` |
 | Admin UI | `/system/widgets` |
 | Public service | `'widgets'` on the service registry (`IWidgetsService`) |
-| Backend API base | `/api/admin/system/widgets/placements`, `/api/admin/system/widget-types`, `/api/admin/system/zones`, plus SSR fetch at `/api/widgets` |
-| WebSocket event | `widgets:placements-update` |
-| Types package | `@delphian/tronrelic-types` — `IWidgetsService`, `IRegisterWidgetTypeInput`, `IRegisterZoneInput`, `IRegisterWidgetInput`, `IWidgetPlacement`, `IPlacementInput`, `IPlacementPatch`, `IPlacementListFilter`, `IWidgetType`, `IWidgetPlacementContext`, `IZoneDescriptor`, `IZoneSnapshot`, `IWidgetTypeSnapshot` |
-| Storage | `module_widgets_placements` (MongoDB) |
-| Migration | `module:widgets:001_create_placements_collection` (creates collection + 4 indexes) |
+| Backend API base | `/api/admin/system/widgets/placements`, `/api/admin/system/widget-types`, `/api/admin/system/zones` (now also `PATCH /:zoneId/layout`), plus SSR fetch at `/api/widgets` |
+| WebSocket event | `widgets:placements-update` (also fired on zone-layout change — no separate event) |
+| Types package | `@delphian/tronrelic-types` — `IWidgetsService`, `IRegisterWidgetTypeInput`, `IRegisterZoneInput`, `IRegisterWidgetInput`, `IWidgetPlacement`, `IPlacementInput`, `IPlacementPatch`, `IPlacementListFilter`, `IWidgetType`, `IWidgetPlacementContext`, `IZoneDescriptor`, `IZoneSnapshot`, `IZoneLayoutConfig`, `IWidgetTypeSnapshot` |
+| Storage | `module_widgets_placements`, `module_widgets_zone_layouts` (MongoDB) |
+| Migration | `module:widgets:001_create_widget_placements` (placements collection + 4 indexes). The zone-layouts collection needs no migration — `ZoneLayoutService.load()` creates its unique index idempotently at boot. |
 | System menu node | "Widgets" under the System container — seeded by `WidgetsModule.run()` |
 
 ## Source Map
@@ -27,10 +27,12 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 | `placements/route-matcher.ts` | `routeMatches` predicate, `normaliseRoutePattern` validator, `partitionRoutePatterns` for the admin path |
 | `widget-types/widget-type-registry.ts` | Internal widget-type registry — instantiated by `WidgetsModule.init()` |
 | `widget-types/define-widget-type.ts` | Descriptor mint — runtime registry refuses unminted descriptors |
-| `zones/zone-registry.ts` | Internal zone registry — instantiated by `WidgetsModule.init()` |
+| `zones/zone-registry.ts` | Internal zone registry — instantiated by `WidgetsModule.init()`; each snapshot record carries a descriptor-derived `layoutConfig` default |
+| `zones/zone-layout.service.ts` | Internal singleton storing operator flexbox overrides (`module_widgets_zone_layouts`); in-memory cache + `defaultLayoutConfigFor(hint)` |
 | `zones/define-zone.ts` | Zone descriptor mint |
-| `zones/descriptors.ts` | Core zone descriptors as plain `IRegisterZoneInput[]` (includes the `footer` zone); `WidgetsModule.run()` iterates and registers them via the public service |
-| `widget-types/core-widget-types.ts` | Core widget-type catalog as plain `IRegisterWidgetTypeInput[]` (the `core:raw-html` block); `WidgetsModule.run()` registers each as `'core'`-owned. Frontend renderer lives in `components/widgets/widgets.core.ts` |
+| `zones/descriptors.ts` | Core zone descriptors as plain `IRegisterZoneInput[]` (the `Site Header` zone — id `ticker-after` — and `footer`); `WidgetsModule.run()` iterates and registers them via the public service |
+| `widget-types/core-widget-types.ts` | Core widget-type catalog, built by `buildCoreWidgetTypeDescriptors(deps)` (`core:raw-html`, `core:world-clocks`, `core:block-ticker`); `WidgetsModule.run()` registers each as `'core'`-owned. Frontend renderers live in `components/widgets/widgets.core.ts` |
+| `database/IZoneLayoutDocument.ts` | `module_widgets_zone_layouts` document shape + collection constant |
 | `api/zones.controller.ts` / `zones.routes.ts` | Read-only zone snapshot adapter over `IWidgetsService.listZones()` |
 | `api/widget-types.controller.ts` / `widget-types.routes.ts` | Read-only widget-type snapshot adapter over `IWidgetsService.listTypes()` |
 | `api/placements.controller.ts` / `placements.routes.ts` | Placement CRUD + restore-defaults adapter over `IWidgetsService` |
@@ -53,11 +55,12 @@ Internal types (`IZoneRegistry`, `IWidgetTypeRegistry`, `IPlacementService`, `IP
 
 All endpoints require admin auth (cookie path: verified wallet + admin group; service-token path: `ADMIN_API_TOKEN` via `x-admin-token` or `Authorization: Bearer`). All three routers chain `createAdminRateLimiter` before `requireAdmin`.
 
-### Zones — read-only
+### Zones
 
-| Method | Path | Returns |
-|---|---|---|
-| GET | `/api/admin/system/zones` | `IZoneSnapshot` — tracks (one per host) → zones |
+| Method | Path | Body | Returns | Notes |
+|---|---|---|---|---|
+| GET | `/api/admin/system/zones` | — | `IZoneSnapshot` — tracks (one per host) → zones, each carrying its effective `layoutConfig` | |
+| PATCH | `/api/admin/system/zones/:zoneId/layout` | `IZoneLayoutConfig` | `{ success, layoutConfig }` | 404 unknown zone; 400 off-enum flex value. Persists the operator's flexbox override |
 
 ### Widget Types — read-only
 
@@ -80,7 +83,7 @@ All endpoints require admin auth (cookie path: verified wallet + admin group; se
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/api/widgets?route=<path>&params=<json>` | `{ widgets: IWidgetData[] }` — pre-fetched data ready for SSR embedding |
+| GET | `/api/widgets?route=<path>&params=<json>` | `{ widgets: IWidgetData[], zones: Record<string, IZoneLayoutConfig> }` — pre-fetched data plus each zone's effective flexbox layout, ready for SSR embedding |
 
 The pre-split admin read endpoints (`/api/widgets/all`, `/api/widgets/zones/:zone`) have been deleted. Admin reads happen on the admin namespace above.
 
@@ -102,7 +105,7 @@ Empty `routes: []` matches every route. Glob markers are only valid at the trail
 |---|---|---|---|
 | `widgets:placements-update` | server → all | `{ event: 'placement:created' \| 'placement:updated' \| 'placement:deleted' \| 'placement:restored', placementId, zoneId?, timestamp }` | All connected sockets — public pages must refetch widget data to pick up operator changes |
 
-The placement service emits via a callback `WidgetsModule.init()` wires to `WebSocketService.getInstance().emit(...)`. Broadcast failures are logged but do not roll back the mutation.
+The placement service emits via a callback `WidgetsModule.init()` wires to `WebSocketService.getInstance().emit(...)`. The zone-layout store reuses this same event (`placementId: ''`, `zoneId` set) on a layout write rather than introducing a new event — the admin editor refetches zones and placements together. Broadcast failures are logged but do not roll back the mutation.
 
 ## Storage Schema
 
@@ -125,6 +128,17 @@ The placement service emits via a callback `WidgetsModule.init()` wires to `WebS
 
 Indexes (migration 001): `(typeId, pluginId)` sparse unique for plugin-row atomicity; `(enabled, zoneId, order)` for SSR queries; `routes` multikey; `source`.
 
+`module_widgets_zone_layouts` collection (one row per zone with an operator override; zones with no row fall back to a descriptor-derived default):
+
+| Field | Type | Notes |
+|---|---|---|
+| `_id` | ObjectId | |
+| `zoneId` | string | Zone the override applies to. Unique index (created at boot by `ZoneLayoutService.load()`). |
+| `preset` | string? | Last-selected named preset, or `custom` when hand-tuned |
+| `flexDirection` / `justifyContent` / `alignItems` / `flexWrap` | string | Flex container properties |
+| `gap` | string | Token gap size (`none`/`sm`/`md`/`lg` → `--gap-*`) |
+| `updatedAt` | Date | |
+
 ## Lifecycle Semantics
 
 **Plugin enable** — Plugin code calls `widgets.registerWidget(input, pluginId)` during `init()`. The service caches the original args under `${pluginId}::${typeId}` (for restore-defaults), mints a type descriptor via `defineWidgetType` and stores it in the type registry, then calls `placementService.ensurePluginPlacement(...)` which upserts the row with `enabled: true` while preserving operator customisations on existing rows via `$setOnInsert`.
@@ -139,13 +153,15 @@ Indexes (migration 001): `(typeId, pluginId)` sparse unique for plugin-row atomi
 
 The platform ships its own zones and widget types, registered by `WidgetsModule.run()` as `'core'`-owned through the same public service plugins use — `registerZone` for zones, `registerType` for types. Core types use `registerType` (not `registerWidget`, which is plugin-only and creates a plugin-source placement); operators then place them from `/system/widgets` as `operator`-source rows.
 
-**Zones** live in `zones/descriptors.ts`. The `footer` zone (`host: 'site'`) renders in the root layout below `<main>` inside a semantic `<footer>` and reaches every route — the home for site-wide footer content. Adding a zone requires a matching `<WidgetZone>` call site in a layout; descriptor and render site move together.
+**Zones** live in `zones/descriptors.ts`. The `Site Header` zone (id `ticker-after`, `host: 'site'`) renders directly below the main nav and is where the block ticker now lives; the `footer` zone (`host: 'site'`) renders below `<main>` inside a semantic `<footer>`. Both reach every route. Adding a zone requires a matching `<WidgetZone>` call site in a layout; descriptor and render site move together.
 
 Each descriptor carries an optional `order` (`IZoneDescriptor.order`) that sets where the zone appears within its host track in the `/system/widgets` editor — lower sorts first, so `footer` (order `90`) follows `ticker-after` (order `10`) rather than leading the site track alphabetically. `snapshot()` sorts by `order` then id; zones omitting it sort after explicitly-ordered ones. This orders the *zones* in the editor, distinct from the placement `order` that sorts widgets within a zone.
 
-**Widget types** live in `widget-types/core-widget-types.ts`. The only one today is `core:raw-html` — an operator-authored block of raw HTML or plain text. Its `defaultDataFetcher` reads `content` and `mode` straight from the placement's `instanceConfig` (validated against the type's `configSchema`), so the payload is route-independent. `mode: 'html'` injects raw markup verbatim; `mode: 'text'` escapes it. The content is admin-authored and trusted — consistent with head-fragment injection, themes, and pages markdown.
+**Widget types** are built by `buildCoreWidgetTypeDescriptors(deps)` in `widget-types/core-widget-types.ts` — a factory, not a static array, because one fetcher needs a runtime dependency. Three ship today: `core:raw-html` (operator-authored HTML/text block, read from `instanceConfig`), `core:world-clocks` (configured time-zone row), and `core:block-ticker` (the real-time blockchain status row). The ticker fetcher resolves the `'blockchain'` service from the registry at fetch time and returns `{ block }` — the latest processed block, or `null` when none is indexed (wrapped, never bare-null, so the resolver keeps the placement and the component still mounts to receive live `block:new` updates). raw-html and world-clocks ignore `deps`.
 
 A core widget type needs a matching frontend renderer keyed by its `typeId` in `components/widgets/widgets.core.ts`. That hand-written registry is merged ahead of the generator-owned `widgets.generated.ts` by `components/widgets/getWidgetComponent.ts`, so core components resolve without the plugin-registry generator touching them.
+
+**Per-zone flexbox layout.** Every zone renders as a CSS flex container; placed widgets are flex items. The arrangement (direction, justify, align, wrap, gap) is an `IZoneLayoutConfig` an operator sets per zone from `/system/widgets` and the `WidgetZone` renderer applies via inline CSS custom properties (gap maps to `--gap-*` tokens). Overrides persist in `module_widgets_zone_layouts`; a zone with no row uses a default derived from its descriptor's coarse `layout` hint (`vertical` → stacked column, so untouched zones look unchanged). `WidgetsService.listZones()` merges the override (else the default) into each zone's `layoutConfig`, and `/api/widgets` returns a `zoneId → layoutConfig` map so SSR applies layout without a second call.
 
 ## SSR Resolution
 

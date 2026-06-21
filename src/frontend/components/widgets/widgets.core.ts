@@ -19,6 +19,7 @@
 import type { WidgetComponent } from '@/types';
 import { RawHtmlWidget } from './RawHtmlWidget';
 import { WorldClocksWidget } from './WorldClocksWidget';
+import { BlockTickerWidget } from './BlockTickerWidget';
 
 /**
  * Core widget components keyed by backend widget-type id. Mirrors the
@@ -28,5 +29,6 @@ import { WorldClocksWidget } from './WorldClocksWidget';
  */
 export const coreWidgetComponents: Record<string, WidgetComponent> = {
     'core:raw-html': RawHtmlWidget,
-    'core:world-clocks': WorldClocksWidget
+    'core:world-clocks': WorldClocksWidget,
+    'core:block-ticker': BlockTickerWidget
 };

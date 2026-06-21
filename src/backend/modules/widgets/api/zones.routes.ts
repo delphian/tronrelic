@@ -1,11 +1,11 @@
 /**
- * @fileoverview Router factory for the zone-introspection admin
- * endpoint.
+ * @fileoverview Router factory for the zone admin endpoints.
  *
- * Single read-only `GET /` route returning the registry snapshot.
- * Caller mounts the router under `/api/admin/system/zones` with the
- * `requireAdmin` middleware applied at mount time, so the router
- * itself stays unauthenticated.
+ * `GET /` returns the registry snapshot; `PATCH /:zoneId/layout` persists
+ * an operator's flexbox layout override for a zone. Caller mounts the
+ * router under `/api/admin/system/zones` with the `requireAdmin`
+ * middleware applied at mount time, so the router itself stays
+ * unauthenticated.
  *
  * @module backend/modules/widgets/api/zones.routes
  */
@@ -22,6 +22,7 @@ import type { ZonesController } from './zones.controller.js';
 export function createZonesAdminRouter(controller: ZonesController): Router {
     const router = Router();
     router.get('/', controller.getSnapshot);
+    router.patch('/:zoneId/layout', controller.setLayout);
 
     return router;
 }

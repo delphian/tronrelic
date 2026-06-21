@@ -24,7 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function HomePage(): Promise<JSX.Element> {
   // Fetch widgets for homepage - enables plugin widgets to render on the homepage
-  const widgets = await fetchWidgetsForRoute('/', {});
+  const { widgets, zones } = await fetchWidgetsForRoute('/', {});
 
   const faqSchema = {
     '@context': 'https://schema.org',
@@ -81,7 +81,7 @@ export default async function HomePage(): Promise<JSX.Element> {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
       />
       {/* Widget zone for plugin-injected content below main homepage content */}
-      <WidgetZone name="main-after" widgets={widgets} route="/" params={{}} />
+      <WidgetZone name="main-after" widgets={widgets} layout={zones['main-after']} route="/" params={{}} />
     </Page>
   );
 }

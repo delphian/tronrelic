@@ -17,18 +17,31 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ISystemLogService } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
+import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 import { WidgetsService } from '../widgets.service.js';
 import { ZoneRegistry } from '../zones/zone-registry.js';
 import { WidgetTypeRegistry } from '../widget-types/widget-type-registry.js';
 import { PlacementService } from '../placements/placement.service.js';
 import { PlacementResolver } from '../placements/placement-resolver.js';
+import { ZoneLayoutService } from '../zones/zone-layout.service.js';
 import { __resetKnownZonesForTests } from '../zones/define-zone.js';
 import { __resetKnownWidgetTypesForTests } from '../widget-types/define-widget-type.js';
 import { CORE_ZONE_DESCRIPTORS } from '../zones/descriptors.js';
 import {
-    CORE_WIDGET_TYPE_DESCRIPTORS,
+    buildCoreWidgetTypeDescriptors,
     RAW_HTML_TYPE_ID
 } from '../widget-types/core-widget-types.js';
+
+/**
+ * Core widget-type descriptors built over a mock service registry. The
+ * block-ticker fetcher resolves `'blockchain'` from the registry at fetch
+ * time; an empty mock registry returns undefined, which the fetcher
+ * handles by yielding `{ block: null }`. The raw-html assertions below
+ * never exercise the ticker, so the empty registry is sufficient.
+ */
+const coreWidgetTypeDescriptors = buildCoreWidgetTypeDescriptors({
+    serviceRegistry: createMockServiceRegistry()
+});
 
 /**
  * Minimal `ISystemLogService` stub — every method is a spy/no-op so the
@@ -71,8 +84,11 @@ function buildWidgetsService(): { widgets: WidgetsService } {
     const zones = new ZoneRegistry(logger);
     const types = new WidgetTypeRegistry(logger);
     const resolver = new PlacementResolver(placements, types, logger);
+    ZoneLayoutService.__resetForTests();
+    ZoneLayoutService.setDependencies(db, logger);
+    const zoneLayouts = ZoneLayoutService.getInstance();
     WidgetsService.__resetForTests();
-    WidgetsService.setDependencies(zones, types, placements, resolver, logger);
+    WidgetsService.setDependencies(zones, types, placements, resolver, zoneLayouts, logger);
     return { widgets: WidgetsService.getInstance() };
 }
 
@@ -112,7 +128,7 @@ describe('Core zone catalog', () => {
 describe('Core widget-type catalog (raw-html)', () => {
     it('registers as core-owned and exposes its config schema', () => {
         const { widgets } = buildWidgetsService();
-        for (const descriptor of CORE_WIDGET_TYPE_DESCRIPTORS) {
+        for (const descriptor of coreWidgetTypeDescriptors) {
             widgets.registerType(descriptor, 'core');
         }
 
@@ -132,7 +148,7 @@ describe('Core widget-type catalog (raw-html)', () => {
             CORE_ZONE_DESCRIPTORS.find(z => z.id === 'footer')!,
             'core'
         );
-        for (const descriptor of CORE_WIDGET_TYPE_DESCRIPTORS) {
+        for (const descriptor of coreWidgetTypeDescriptors) {
             widgets.registerType(descriptor, 'core');
         }
 

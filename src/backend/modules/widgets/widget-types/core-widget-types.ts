@@ -14,7 +14,17 @@
  * live time for a set of operator-configured time zones. Both read their
  * SSR payload straight from the placement's operator-editable
  * `instanceConfig`; their matching frontend components (`RawHtmlWidget`,
- * `WorldClocksWidget`) render it.
+ * `WorldClocksWidget`) render it. `core:block-ticker` is the real-time
+ * blockchain status row: its SSR payload is the latest processed block,
+ * read at fetch time from the `'blockchain'` service, after which the
+ * `BlockTickerWidget` component takes over live updates over WebSocket.
+ *
+ * Because the block-ticker fetcher needs a runtime dependency the other
+ * two do not, the catalog is a *factory* — `buildCoreWidgetTypeDescriptors`
+ * — rather than a static array. `WidgetsModule.run()` calls it with the
+ * service registry so the ticker fetcher can resolve `'blockchain'`
+ * lazily per request (sidestepping module init-order). raw-html and
+ * world-clocks ignore the dependency.
  *
  * Adding a new core type requires editing this file *and* registering a
  * matching frontend component in `widgets.core.ts` — the descriptor and
@@ -26,7 +36,13 @@
  */
 
 import type { JSONSchema7 } from 'json-schema';
-import type { IRegisterWidgetTypeInput, IWidgetPlacementContext } from '@/types';
+import type {
+    IRegisterWidgetTypeInput,
+    IWidgetPlacementContext,
+    IServiceRegistry,
+    IBlockchainService,
+    WidgetDataFetcher
+} from '@/types';
 
 /**
  * Widget-type id for the raw text/HTML block. Namespaced under `core:`
@@ -244,27 +260,158 @@ export const WORLD_CLOCKS_CONFIG_SCHEMA: JSONSchema7 = {
 };
 
 /**
- * Declared core widget types. Bundle of plain registration inputs —
- * descriptor minting happens inside `WidgetsService.registerType` when
- * `WidgetsModule.run()` iterates this list at bootstrap.
+ * Widget-type id for the real-time blockchain status ticker. Namespaced
+ * under `core:` so it never collides with a plugin-declared id; the
+ * frontend component registry (`widgets.core.ts`) keys its renderer on
+ * this same string.
  */
-export const CORE_WIDGET_TYPE_DESCRIPTORS: ReadonlyArray<IRegisterWidgetTypeInput> = [
-    {
-        id: RAW_HTML_TYPE_ID,
-        label: 'Raw text / HTML',
-        description:
-            'Operator-authored block of raw HTML or plain text. Drop links, legal text, attribution, or embeds into any zone without a plugin.',
-        category: 'Content',
-        defaultDataFetcher: fetchRawHtmlData,
-        configSchema: RAW_HTML_CONFIG_SCHEMA
-    },
-    {
-        id: WORLD_CLOCKS_TYPE_ID,
-        label: 'World clocks',
-        description:
-            'Compact row of country flags with live local time for a set of configured time zones.',
-        category: 'Content',
-        defaultDataFetcher: fetchWorldClocksData,
-        configSchema: WORLD_CLOCKS_CONFIG_SCHEMA
-    }
-] as const;
+export const BLOCK_TICKER_TYPE_ID = 'core:block-ticker';
+
+/**
+ * One block's stats in the ticker SSR payload. Mirrors the frontend
+ * `BlockStatSnapshot` so the payload casts cleanly into the
+ * `BlockTicker` component's `initialBlock` prop without a second shape.
+ */
+interface IBlockTickerStats {
+    transactions: number;
+    transfers: number;
+    contractCalls: number;
+    delegations: number;
+    stakes: number;
+    tokenCreations: number;
+    internalTransactions: number;
+    totalEnergyUsed: number;
+    totalEnergyCost: number;
+    totalBandwidthUsed: number;
+}
+
+/**
+ * SSR payload the block-ticker data fetcher returns and the frontend
+ * `BlockTickerWidget` consumes. The `block` is the latest processed block
+ * (or `null` when none has been indexed yet) — wrapped in an object,
+ * never returned bare, so the resolver always keeps the placement (a bare
+ * `null` would make the resolver drop the widget, and the component would
+ * never mount to receive the live `block:new` updates that fill an empty
+ * initial state).
+ */
+export interface IBlockTickerWidgetData {
+    /** Latest processed block summary, or null when none indexed yet. */
+    block: {
+        blockNumber: number;
+        timestamp: string;
+        transactionCount: number;
+        stats: IBlockTickerStats;
+    } | null;
+}
+
+/**
+ * Dependencies the core widget-type catalog needs to build its fetchers.
+ *
+ * Only the block-ticker fetcher consumes anything here — it resolves the
+ * blockchain service from the registry at fetch time. Passing the
+ * registry (rather than the service itself) keeps resolution lazy so the
+ * catalog builds regardless of module init order; `'blockchain'` is
+ * published during bootstrap and is always present by the time a page
+ * renders.
+ */
+export interface ICoreWidgetTypeDeps {
+    /** Service registry used to resolve `'blockchain'` lazily per request. */
+    serviceRegistry: IServiceRegistry;
+}
+
+/**
+ * Build the block-ticker SSR data fetcher bound to the service registry.
+ *
+ * Resolves `'blockchain'` and reads the latest processed block, mapping
+ * it to the serialisable {@link IBlockTickerWidgetData} the frontend
+ * component renders. Never throws and never returns bare null: on a
+ * missing service, an empty database, or any error it yields
+ * `{ block: null }` so the widget still mounts and hydrates to live
+ * updates. The fetcher ignores route/params — the ticker is global.
+ *
+ * @param deps - Carries the service registry for lazy `'blockchain'` lookup.
+ * @returns A {@link WidgetDataFetcher} producing the ticker's SSR payload.
+ */
+function buildBlockTickerFetcher(deps: ICoreWidgetTypeDeps): WidgetDataFetcher {
+    return async (): Promise<IBlockTickerWidgetData> => {
+        try {
+            const blockchain = deps.serviceRegistry.get<IBlockchainService>('blockchain');
+            const block = blockchain ? await blockchain.getLatestBlock() : null;
+            if (!block) {
+                return { block: null };
+            }
+
+            const timestamp =
+                block.timestamp instanceof Date
+                    ? block.timestamp.toISOString()
+                    : new Date(block.timestamp).toISOString();
+
+            return {
+                block: {
+                    blockNumber: block.blockNumber,
+                    timestamp,
+                    transactionCount: block.transactionCount,
+                    stats: {
+                        transactions: block.transactionCount,
+                        transfers: block.stats.transfers,
+                        contractCalls: block.stats.contractCalls,
+                        delegations: block.stats.delegations,
+                        stakes: block.stats.stakes,
+                        tokenCreations: block.stats.tokenCreations,
+                        internalTransactions: block.stats.internalTransactions,
+                        totalEnergyUsed: block.stats.totalEnergyUsed,
+                        totalEnergyCost: block.stats.totalEnergyCost,
+                        totalBandwidthUsed: block.stats.totalBandwidthUsed
+                    }
+                }
+            };
+        } catch {
+            return { block: null };
+        }
+    };
+}
+
+/**
+ * Build the core widget-type catalog as plain registration inputs.
+ *
+ * A factory rather than a constant because the block-ticker fetcher needs
+ * the service registry to read the latest block; raw-html and
+ * world-clocks ignore `deps`. Descriptor minting happens inside
+ * `WidgetsService.registerType` when `WidgetsModule.run()` iterates the
+ * returned list at bootstrap.
+ *
+ * @param deps - Runtime dependencies forwarded to fetchers that need them.
+ * @returns The ordered list of core widget-type registration inputs.
+ */
+export function buildCoreWidgetTypeDescriptors(
+    deps: ICoreWidgetTypeDeps
+): ReadonlyArray<IRegisterWidgetTypeInput> {
+    return [
+        {
+            id: RAW_HTML_TYPE_ID,
+            label: 'Raw text / HTML',
+            description:
+                'Operator-authored block of raw HTML or plain text. Drop links, legal text, attribution, or embeds into any zone without a plugin.',
+            category: 'Content',
+            defaultDataFetcher: fetchRawHtmlData,
+            configSchema: RAW_HTML_CONFIG_SCHEMA
+        },
+        {
+            id: WORLD_CLOCKS_TYPE_ID,
+            label: 'World clocks',
+            description:
+                'Compact row of country flags with live local time for a set of configured time zones.',
+            category: 'Content',
+            defaultDataFetcher: fetchWorldClocksData,
+            configSchema: WORLD_CLOCKS_CONFIG_SCHEMA
+        },
+        {
+            id: BLOCK_TICKER_TYPE_ID,
+            label: 'Block ticker',
+            description:
+                'Compact real-time row of latest-block metrics — block number, transactions, transfers, contracts, delegations, stakes, tokens, energy.',
+            category: 'Blockchain',
+            defaultDataFetcher: buildBlockTickerFetcher(deps)
+        }
+    ];
+}

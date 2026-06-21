@@ -43,9 +43,11 @@ import type {
     IPlacementPatch,
     IZoneRegistry,
     IWidgetTypeRegistry,
-    IPlacementService
+    IPlacementService,
+    IZoneLayoutConfig
 } from '@/types';
 import type { PlacementResolver } from './placements/placement-resolver.js';
+import { ZoneLayoutService } from './zones/zone-layout.service.js';
 import { defineZone } from './zones/define-zone.js';
 import { defineWidgetType } from './widget-types/define-widget-type.js';
 import {
@@ -103,6 +105,7 @@ export class WidgetsService implements IWidgetsService {
         private readonly widgetTypes: IWidgetTypeRegistry,
         private readonly placements: IPlacementService,
         private readonly resolver: PlacementResolver,
+        private readonly zoneLayouts: ZoneLayoutService,
         private readonly logger: ISystemLogService
     ) {}
 
@@ -115,6 +118,7 @@ export class WidgetsService implements IWidgetsService {
         widgetTypes: IWidgetTypeRegistry,
         placements: IPlacementService,
         resolver: PlacementResolver,
+        zoneLayouts: ZoneLayoutService,
         logger: ISystemLogService
     ): void {
         if (!WidgetsService.instance) {
@@ -123,6 +127,7 @@ export class WidgetsService implements IWidgetsService {
                 widgetTypes,
                 placements,
                 resolver,
+                zoneLayouts,
                 logger
             );
         }
@@ -153,7 +158,24 @@ export class WidgetsService implements IWidgetsService {
     // ------------------------------------------------------------
 
     listZones(): IZoneSnapshot {
-        return this.zones.snapshot();
+        // Merge each zone's effective layout into the registry snapshot:
+        // the operator override when one is persisted, else a default
+        // derived from the descriptor's coarse `layout` hint. Both the
+        // SSR router and the admin editor read layout from this one
+        // snapshot rather than a parallel lookup.
+        const snapshot = this.zones.snapshot();
+        return {
+            tracks: snapshot.tracks.map(track => ({
+                id: track.id,
+                label: track.label,
+                zones: track.zones.map(zone => ({
+                    ...zone,
+                    // Operator override when persisted, else the
+                    // descriptor-derived default the registry already set.
+                    layoutConfig: this.zoneLayouts.get(zone.id) ?? zone.layoutConfig
+                }))
+            }))
+        };
     }
 
     listTypes(): IWidgetTypeSnapshot {
@@ -364,6 +386,17 @@ export class WidgetsService implements IWidgetsService {
                 'Widget registrations disposed for owner'
             );
         }
+    }
+
+    // ------------------------------------------------------------
+    // Zone layout
+    // ------------------------------------------------------------
+
+    async setZoneLayout(zoneId: string, config: IZoneLayoutConfig): Promise<IZoneLayoutConfig> {
+        if (!this.zones.has(zoneId)) {
+            throw new UnknownZoneError(zoneId);
+        }
+        return this.zoneLayouts.set(zoneId, config);
     }
 
     // ------------------------------------------------------------

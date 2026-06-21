@@ -24,3 +24,13 @@ export type {
     IZoneSnapshot,
     IZoneSnapshotRecord
 } from './IZoneRegistry.js';
+
+export type {
+    IZoneLayoutConfig,
+    ZoneFlexDirection,
+    ZoneJustifyContent,
+    ZoneAlignItems,
+    ZoneFlexWrap,
+    ZoneGapSize,
+    ZoneLayoutPreset
+} from './IZoneLayoutConfig.js';

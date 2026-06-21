@@ -44,7 +44,7 @@ Navigation service that aggregates menu nodes from core and plugins. Supports DB
 
 ### Widgets
 
-Owns the widget subsystem behind one public service — `IWidgetsService`, registry name `'widgets'` — covering zone definitions, placement persistence, widget-type registration, and the `/system/widgets` admin UI. Plugins, modules, admin controllers, and the SSR router reach widgets only through this service; there is no other entry point. See [Widgets Module README](../../src/backend/modules/widgets/README.md) and [system-api-widgets.md](./system-api-widgets.md).
+Owns the widget subsystem behind one public service — `IWidgetsService`, registry name `'widgets'` — covering zone definitions, per-zone flexbox layout, placement persistence, widget-type registration (including the core `core:block-ticker`, `core:world-clocks`, and `core:raw-html` types), and the `/system/widgets` admin UI. Plugins, modules, admin controllers, and the SSR router reach widgets only through this service; there is no other entry point. See [Widgets Module README](../../src/backend/modules/widgets/README.md) and [system-api-widgets.md](./system-api-widgets.md).
 
 ### Migrations
 

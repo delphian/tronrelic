@@ -43,10 +43,11 @@ import { createWidgetTypesAdminRouter } from './api/widget-types.routes.js';
 import { PlacementService } from './placements/placement.service.js';
 import { PlacementResolver } from './placements/placement-resolver.js';
 import { ZoneRegistry } from './zones/zone-registry.js';
+import { ZoneLayoutService } from './zones/zone-layout.service.js';
 import { WidgetTypeRegistry } from './widget-types/widget-type-registry.js';
 import { WidgetsService } from './widgets.service.js';
 import { CORE_ZONE_DESCRIPTORS } from './zones/descriptors.js';
-import { CORE_WIDGET_TYPE_DESCRIPTORS } from './widget-types/core-widget-types.js';
+import { buildCoreWidgetTypeDescriptors } from './widget-types/core-widget-types.js';
 import { WebSocketService } from '../../services/websocket.service.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 
@@ -96,6 +97,7 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
     private menuService!: IMenuService;
     private app!: Express;
     private zoneRegistry!: ZoneRegistry;
+    private zoneLayoutService!: ZoneLayoutService;
     private widgetTypeRegistry!: WidgetTypeRegistry;
     private placementService!: PlacementService;
     private placementResolver!: PlacementResolver;
@@ -170,13 +172,36 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
             });
         });
 
-        // Singleton-backed unified widgets service. Composes the four
-        // internal collaborators behind one IWidgetsService surface.
+        // Zone-layout store: owns operator flexbox overrides per zone.
+        // Load warms the in-memory cache (and creates the unique index on
+        // first boot) so `WidgetsService.listZones()` can merge layout
+        // synchronously. Reuses the existing `widgets:placements-update`
+        // refetch signal so connected admin clients re-pull zones — no new
+        // WebSocket event is introduced.
+        ZoneLayoutService.setDependencies(this.database, this.logger);
+        this.zoneLayoutService = ZoneLayoutService.getInstance();
+        await this.zoneLayoutService.load();
+        this.zoneLayoutService.setBroadcast((zoneId) => {
+            const wsService = WebSocketService.getInstance();
+            wsService.emit({
+                event: 'widgets:placements-update',
+                payload: {
+                    event: 'placement:updated',
+                    placementId: '',
+                    zoneId,
+                    timestamp: new Date().toISOString()
+                }
+            });
+        });
+
+        // Singleton-backed unified widgets service. Composes the internal
+        // collaborators behind one IWidgetsService surface.
         WidgetsService.setDependencies(
             this.zoneRegistry,
             this.widgetTypeRegistry,
             this.placementService,
             this.placementResolver,
+            this.zoneLayoutService,
             this.logger
         );
         this.widgetsService = WidgetsService.getInstance();
@@ -220,15 +245,20 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
             'Core zone catalog registered'
         );
 
-        // Register the core widget-type catalog (e.g. the raw text/HTML
-        // block). Routed through the public service as 'core'-owned so
-        // operators can place these types from /system/widgets exactly
-        // like plugin-declared types.
-        for (const descriptor of CORE_WIDGET_TYPE_DESCRIPTORS) {
+        // Register the core widget-type catalog (raw text/HTML, world
+        // clocks, block ticker). Built via factory so the block-ticker
+        // fetcher can resolve the `'blockchain'` service from the registry
+        // at fetch time. Routed through the public service as 'core'-owned
+        // so operators place these types from /system/widgets exactly like
+        // plugin-declared types.
+        const coreWidgetTypeDescriptors = buildCoreWidgetTypeDescriptors({
+            serviceRegistry: this.serviceRegistry
+        });
+        for (const descriptor of coreWidgetTypeDescriptors) {
             this.widgetsService.registerType(descriptor, 'core');
         }
         this.logger.info(
-            { coreWidgetTypeCount: CORE_WIDGET_TYPE_DESCRIPTORS.length },
+            { coreWidgetTypeCount: coreWidgetTypeDescriptors.length },
             'Core widget-type catalog registered'
         );
 

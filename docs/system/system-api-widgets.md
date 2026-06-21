@@ -1,6 +1,6 @@
 # Widget Admin API
 
-Endpoints powering the `/system/widgets` operator UI. Three parallel namespaces under `/api/admin/system/` cover read-only zone and widget-type introspection plus full placement CRUD.
+Endpoints powering the `/system/widgets` operator UI. Three parallel namespaces under `/api/admin/system/` cover zone introspection plus per-zone flexbox layout, read-only widget-type introspection, and full placement CRUD.
 
 ## Why This Matters
 
@@ -14,13 +14,14 @@ The placements controller validates inputs against the live `IZoneRegistry` and 
 
 ## Endpoints
 
-### Zones — read-only introspection
+### Zones — introspection + layout
 
-| Method | Path | Returns |
-|---|---|---|
-| GET | `/api/admin/system/zones` | `IZoneSnapshot` |
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| GET | `/api/admin/system/zones` | — | `IZoneSnapshot` |
+| PATCH | `/api/admin/system/zones/:zoneId/layout` | `IZoneLayoutConfig` | `{ success, layoutConfig }` |
 
-Tracks-grouped catalogue of every registered zone with host (`site` / `core` / `plugin` / `admin`) and registration metadata.
+GET is the tracks-grouped catalogue of every registered zone with host (`site` / `core` / `plugin` / `admin`), registration metadata, and each zone's effective `layoutConfig` (the operator override, else a default derived from the descriptor's coarse `layout` hint). PATCH persists an operator's flexbox layout for a zone — `404` on an unknown zone, `400` on an off-enum flex value — and fires `widgets:placements-update` so admin UIs refetch.
 
 ### Widget Types — read-only introspection
 
