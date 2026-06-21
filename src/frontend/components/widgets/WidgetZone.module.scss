@@ -18,6 +18,22 @@
     gap: var(--zone-gap, var(--gap-md));
 }
 
+// A layout-group container nested inside a zone item. It is the same
+// flex container as a zone — driven by the same operator-chosen
+// `--zone-*` custom properties the component injects per group — so an
+// operator can arrange a row of widgets inside a column zone (or vice
+// versa). `width: 100%` lets it fill the zone item it lives in so its
+// own justify/align have the full width to work against.
+.group {
+    display: flex;
+    width: 100%;
+    flex-direction: var(--zone-flex-direction, column);
+    justify-content: var(--zone-justify-content, flex-start);
+    align-items: var(--zone-align-items, stretch);
+    flex-wrap: var(--zone-flex-wrap, nowrap);
+    gap: var(--zone-gap, var(--gap-md));
+}
+
 .item {
     // Allow flex items to shrink below their content width so a wide
     // widget (e.g. the block ticker) in a row layout reflows instead of

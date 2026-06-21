@@ -13,7 +13,7 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 | WebSocket event | `widgets:placements-update` (also fired on zone-layout change — no separate event) |
 | Types package | `@delphian/tronrelic-types` — `IWidgetsService`, `IRegisterWidgetTypeInput`, `IRegisterZoneInput`, `IRegisterWidgetInput`, `IWidgetPlacement`, `IPlacementInput`, `IPlacementPatch`, `IPlacementListFilter`, `IWidgetType`, `IWidgetPlacementContext`, `IZoneDescriptor`, `IZoneSnapshot`, `IZoneLayoutConfig`, `IWidgetTypeSnapshot` |
 | Storage | `module_widgets_placements`, `module_widgets_zone_layouts` (MongoDB) |
-| Migration | `module:widgets:001_create_widget_placements` (placements collection + 4 indexes); `module:widgets:002_seed_block_ticker_placement` (idempotent seed of one operator-source `core:block-ticker` placement in `ticker-after`, guarded on absence so it runs once and never fights an operator edit). The zone-layouts collection needs no migration — `ZoneLayoutService.load()` creates its unique index idempotently at boot. |
+| Migration | `module:widgets:001_create_widget_placements` (placements collection + 4 indexes); `module:widgets:002_seed_block_ticker_placement` (idempotent seed of one operator-source `core:block-ticker` placement in `ticker-after`, guarded on absence so it runs once and never fights an operator edit); `module:widgets:003_add_parent_id_index` (sparse `parentId` index for child grouping). The zone-layouts collection needs no migration — `ZoneLayoutService.load()` creates its unique index idempotently at boot. |
 | System menu node | "Widgets" under the System container — seeded by `WidgetsModule.run()` |
 
 ## Source Map
@@ -22,7 +22,7 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 |------|---------|
 | `WidgetsModule.ts` | `IModule` impl: wires registries, placement service, resolver, widgets service, mounts three admin routers, seeds menu entry |
 | `widgets.service.ts` | `WidgetsService` singleton implementing `IWidgetsService`. Composes the three internal collaborators behind one surface; published on the service registry |
-| `placements/placement.service.ts` | `IPlacementService` singleton (internal): CRUD, `ensurePluginPlacement`, `softDisableForPlugin`, `findByRoute`, `restoreToPluginDefaults`, broadcast hook |
+| `placements/placement.service.ts` | `IPlacementService` singleton (internal): CRUD, `ensurePluginPlacement`, `softDisableForPlugin`, `findByRoute`, `restoreToPluginDefaults`, `detachChildrenOf` (container-delete child relocation), broadcast hook |
 | `placements/placement-resolver.ts` | SSR-time join of placements ↔ widget-type descriptors with 5s timeout and JSON serialisability check |
 | `placements/route-matcher.ts` | `routeMatches` predicate, `normaliseRoutePattern` validator, `partitionRoutePatterns` for the admin path |
 | `widget-types/widget-type-registry.ts` | Internal widget-type registry — instantiated by `WidgetsModule.init()` |
@@ -74,9 +74,9 @@ All endpoints require admin auth (cookie path: verified wallet + admin group; se
 |---|---|---|---|---|
 | GET | `/api/admin/system/widgets/placements` | — | `{ success, placements: IWidgetPlacement[] }` | Query: `zoneId?`, `pluginId?`, `source?` (`plugin`\|`operator`), `enabledOnly?` |
 | GET | `/api/admin/system/widgets/placements/:id` | — | `{ success, placement }` or 404 | |
-| POST | `/api/admin/system/widgets/placements` | `IPlacementInput` | `{ success, placement }` 201 | Always `source: 'operator'`; rejects unknown `typeId`/`zoneId` |
-| PATCH | `/api/admin/system/widgets/placements/:id` | `IPlacementPatch` | `{ success, placement }` or 404 | Operator-editable on every row, including plugin-source. `title: null` / `titleUrl: null` clears that field; `titleUrl` must be a root-relative internal path |
-| DELETE | `/api/admin/system/widgets/placements/:id` | — | 204 / 400 / 404 | 400 on plugin-source rows (use disable or restore-defaults) |
+| POST | `/api/admin/system/widgets/placements` | `IPlacementInput` | `{ success, placement }` 201 | Always `source: 'operator'`; rejects unknown `typeId`/`zoneId`. Optional `parentId` nests the row in a layout group (400 if the parent isn't a top-level `core:layout-group`); a nested row's `zoneId` is forced to the parent's zone and its `routes` cleared |
+| PATCH | `/api/admin/system/widgets/placements/:id` | `IPlacementPatch` | `{ success, placement }` or 404 | Operator-editable on every row, including plugin-source. `title: null` / `titleUrl: null` clears that field; `titleUrl` must be a root-relative internal path. `parentId` is three-state like `title` — a 24-hex id attaches (forcing zone + clearing routes), `null` detaches to the zone, omission leaves nesting unchanged |
+| DELETE | `/api/admin/system/widgets/placements/:id` | — | 204 / 400 / 404 | 400 on plugin-source rows (use disable or restore-defaults). Deleting a `core:layout-group` container detaches its children back to the zone (clears their `parentId`) rather than cascade-deleting them |
 | POST | `/api/admin/system/widgets/placements/:id/restore-defaults` | — | `{ success, placement }` | 400 on operator rows; 409 when plugin has not registered in this process |
 
 ### SSR Fetch
@@ -116,6 +116,7 @@ The placement service emits via a callback `WidgetsModule.init()` wires to `WebS
 | `_id` | ObjectId | |
 | `typeId` | string | Widget-type id this placement renders |
 | `zoneId` | string | Zone id this placement targets |
+| `parentId` | ObjectId? | Set only on a child nested in a `core:layout-group`; references the container row's `_id`. Exposed publicly as the hex string `parentId`. Sparse-indexed (migration 003) |
 | `routes` | string[] | Route filter — empty matches every route |
 | `order` | number | Sort key within zone (lower renders first); plugin default `100` |
 | `title` | string? | Operator override of widget heading |
@@ -157,9 +158,17 @@ The platform ships its own zones and widget types, registered by `WidgetsModule.
 
 Each descriptor carries an optional `order` (`IZoneDescriptor.order`) that sets where the zone appears within its host track in the `/system/widgets` editor — lower sorts first, so `footer` (order `90`) follows `ticker-after` (order `10`) rather than leading the site track alphabetically. `snapshot()` sorts by `order` then id; zones omitting it sort after explicitly-ordered ones. This orders the *zones* in the editor, distinct from the placement `order` that sorts widgets within a zone.
 
-**Widget types** are built by `buildCoreWidgetTypeDescriptors(deps)` in `widget-types/core-widget-types.ts` — a factory, not a static array, because one fetcher needs a runtime dependency. Three ship today: `core:raw-html` (operator-authored HTML/text block, read from `instanceConfig`), `core:world-clocks` (configured time-zone row), and `core:block-ticker` (the real-time blockchain status row). The ticker fetcher resolves the `'blockchain'` service from the registry at fetch time and returns `{ block }` — the latest processed block, or `null` when none is indexed (wrapped, never bare-null, so the resolver keeps the placement and the component still mounts to receive live `block:new` updates). raw-html and world-clocks ignore `deps`.
+**Widget types** are built by `buildCoreWidgetTypeDescriptors(deps)` in `widget-types/core-widget-types.ts` — a factory, not a static array, because one fetcher needs a runtime dependency. Four ship today: `core:raw-html` (operator-authored HTML/text block, read from `instanceConfig`), `core:world-clocks` (configured time-zone row), `core:layout-group` (the structural container — see [Single-level grouping](#single-level-grouping)), and `core:block-ticker` (the real-time blockchain status row). The ticker fetcher resolves the `'blockchain'` service from the registry at fetch time and returns `{ block }` — the latest processed block, or `null` when none is indexed (wrapped, never bare-null, so the resolver keeps the placement and the component still mounts to receive live `block:new` updates). raw-html, world-clocks, and layout-group ignore `deps`.
 
-A core widget type needs a matching frontend renderer keyed by its `typeId` in `components/widgets/widgets.core.ts`. That hand-written registry is merged ahead of the generator-owned `widgets.generated.ts` by `components/widgets/getWidgetComponent.ts`, so core components resolve without the plugin-registry generator touching them.
+A core widget type needs a matching frontend renderer keyed by its `typeId` in `components/widgets/widgets.core.ts`. That hand-written registry is merged ahead of the generator-owned `widgets.generated.ts` by `components/widgets/getWidgetComponent.ts`, so core components resolve without the plugin-registry generator touching them. **`core:layout-group` is the one exception** — it has no registry entry because it has no UI of its own; `WidgetZone` special-cases its `typeId`, drawing its children inside a nested flex container.
+
+## Single-level grouping
+
+An operator can group widgets inside a zone by placing a `core:layout-group` container and nesting other widgets in it, giving that subset its own flexbox arrangement (a row of widgets inside a column zone, say) without a new zone or render site. Nesting is intentionally **one level deep**: a container is always top-level, and a child is always a leaf.
+
+A child points at its container through the placement `parentId`. `WidgetsService` enforces the contract on create/attach — the parent must exist, be a `core:layout-group`, and be top-level; a layout group can never itself be nested — and forces the child into the parent's zone with an empty route filter so the container alone governs where the group renders (`InvalidParentPlacementError` → HTTP 400 otherwise). Deleting a container calls `IPlacementService.detachChildrenOf`, relocating its children back to the zone (`$unset parentId`) so operator-configured widgets survive.
+
+The container's `instanceConfig` *is* an `IZoneLayoutConfig`; its data fetcher echoes the normalized config as the widget `data`, and `WidgetZone` styles the nested flex container from it. At SSR, `PlacementResolver` fetches placements flat, then assembles a two-level tree: each child is nested under its container's `IWidgetData.children` (sorted by the child's `order`), only top-level items are returned, and a child whose container did not resolve (disabled / route-filtered / failed) is dropped as an orphan — the same silent-skip discipline as an unregistered type.
 
 **Per-zone flexbox layout.** Every zone renders as a CSS flex container; placed widgets are flex items. The arrangement (direction, justify, align, wrap, gap) is an `IZoneLayoutConfig` an operator sets per zone from `/system/widgets` and the `WidgetZone` renderer applies via inline CSS custom properties (gap maps to `--gap-*` tokens). Overrides persist in `module_widgets_zone_layouts`; a zone with no row uses a default derived from its descriptor's coarse `layout` hint (`vertical` → stacked column, so untouched zones look unchanged). `WidgetsService.listZones()` merges the override (else the default) into each zone's `layoutConfig`, and `/api/widgets` returns a `zoneId → layoutConfig` map so SSR applies layout without a second call.
 

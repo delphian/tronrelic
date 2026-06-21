@@ -50,7 +50,9 @@ import type { PlacementResolver } from './placements/placement-resolver.js';
 import { ZoneLayoutService } from './zones/zone-layout.service.js';
 import { defineZone } from './zones/define-zone.js';
 import { defineWidgetType } from './widget-types/define-widget-type.js';
+import { LAYOUT_GROUP_TYPE_ID } from './widget-types/core-widget-types.js';
 import {
+    InvalidParentPlacementError,
     MissingPluginDefaultsError,
     PluginPlacementDeletionForbiddenError,
     RestoreDefaultsOnOperatorRowError,
@@ -420,6 +422,19 @@ export class WidgetsService implements IWidgetsService {
         if (!this.zones.has(input.zoneId)) {
             throw new UnknownZoneError(input.zoneId);
         }
+
+        // Nesting: when a parent is named, validate the one-level
+        // contract and force the child into the parent's zone with no
+        // route filter of its own (the container governs visibility).
+        if (input.parentId !== undefined) {
+            const parent = await this.resolveContainerParent(input.typeId, null, input.parentId);
+            return this.placements.create({
+                ...input,
+                zoneId: parent.zoneId,
+                routes: []
+            });
+        }
+
         return this.placements.create(input);
     }
 
@@ -430,6 +445,23 @@ export class WidgetsService implements IWidgetsService {
         if (patch.zoneId !== undefined && !this.zones.has(patch.zoneId)) {
             throw new UnknownZoneError(patch.zoneId);
         }
+
+        // Attaching to a container (parentId is a string): validate the
+        // one-level contract against the row being moved and force it
+        // into the parent's zone with an empty route filter. Detaching
+        // (`parentId: null`) needs no validation — it just clears the
+        // link — and omission leaves nesting untouched.
+        if (typeof patch.parentId === 'string') {
+            const existing = await this.placements.findById(id);
+            if (!existing) return null;
+            const parent = await this.resolveContainerParent(existing.typeId, id, patch.parentId);
+            return this.placements.update(id, {
+                ...patch,
+                zoneId: parent.zoneId,
+                routes: []
+            });
+        }
+
         return this.placements.update(id, patch);
     }
 
@@ -439,7 +471,59 @@ export class WidgetsService implements IWidgetsService {
         if (existing.source === 'plugin') {
             throw new PluginPlacementDeletionForbiddenError();
         }
+        // Deleting a container relocates its children back to the zone
+        // rather than cascade-deleting them, so operator-configured
+        // widgets survive the container's removal.
+        if (existing.typeId === LAYOUT_GROUP_TYPE_ID) {
+            await this.placements.detachChildrenOf(id);
+        }
         return this.placements.delete(id);
+    }
+
+    /**
+     * Validate the one-level nesting contract and return the resolved
+     * container row so the caller can adopt its zone.
+     *
+     * Throws {@link InvalidParentPlacementError} when any rule is broken:
+     * a layout group cannot itself be nested; a placement cannot be its
+     * own parent; the parent must exist, must be a `core:layout-group`,
+     * and must be top-level (no `parentId` of its own) so the tree never
+     * exceeds one level of depth.
+     *
+     * @param childTypeId - Widget-type id of the placement being nested.
+     * @param childId - Id of the placement being moved, or `null` on
+     *   create; used to reject self-parenting on update.
+     * @param parentId - Candidate container placement id.
+     * @returns The validated parent placement.
+     */
+    private async resolveContainerParent(
+        childTypeId: string,
+        childId: string | null,
+        parentId: string
+    ): Promise<IWidgetPlacement> {
+        if (childTypeId === LAYOUT_GROUP_TYPE_ID) {
+            throw new InvalidParentPlacementError(
+                'A layout group cannot be nested inside another container.'
+            );
+        }
+        if (childId !== null && childId === parentId) {
+            throw new InvalidParentPlacementError('A placement cannot be its own parent.');
+        }
+        const parent = await this.placements.findById(parentId);
+        if (!parent) {
+            throw new InvalidParentPlacementError(`Parent placement '${parentId}' does not exist.`);
+        }
+        if (parent.typeId !== LAYOUT_GROUP_TYPE_ID) {
+            throw new InvalidParentPlacementError(
+                `Parent placement '${parentId}' is not a layout group; only layout groups can contain widgets.`
+            );
+        }
+        if (parent.parentId) {
+            throw new InvalidParentPlacementError(
+                `Parent placement '${parentId}' is itself nested; nesting is limited to one level.`
+            );
+        }
+        return parent;
     }
 
     async restorePluginDefaults(id: string): Promise<IWidgetPlacement | null> {

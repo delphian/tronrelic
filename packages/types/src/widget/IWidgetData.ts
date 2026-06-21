@@ -60,4 +60,15 @@ export interface IWidgetData {
      * overrides) and the frontend renderer defaults it to `{}` on read.
      */
     instanceConfig?: Record<string, unknown>;
+
+    /**
+     * Child widgets nested inside this item, present only when `id` is a
+     * `core:layout-group` container. The resolver assembles them from
+     * placements whose `parentId` points at this container, sorted by
+     * their own `order`. The `WidgetZone` renderer draws them inside a
+     * nested flex container driven by this group's instance config.
+     * Nesting is one level deep, so a child never carries its own
+     * `children`. Absent for ordinary leaf widgets.
+     */
+    children?: IWidgetData[];
 }

@@ -48,6 +48,15 @@ export interface IPlacementListFilter {
  */
 export interface IPlacementPatch {
     zoneId?: string;
+    /**
+     * Reparent the placement. A string attaches it to that
+     * `core:layout-group` container (forcing its `zoneId` to the parent's
+     * zone and clearing `routes`); `null` detaches it back to the zone
+     * (`$unset`); omission leaves the current parent unchanged. Mirrors
+     * the three-state convention used by `title`/`titleUrl`. See
+     * {@link IWidgetPlacement.parentId} for the one-level nesting rule.
+     */
+    parentId?: string | null;
     routes?: string[];
     order?: number;
     title?: string | null;
@@ -172,4 +181,16 @@ export interface IPlacementService {
             title?: string;
         }
     ): Promise<IWidgetPlacement | null>;
+
+    /**
+     * Detach every child of a container placement, clearing their
+     * `parentId` so they fall back to direct children of the zone. Used
+     * when a `core:layout-group` container is deleted: rather than
+     * cascade-deleting its children (and losing operator config), the
+     * service relocates them to the zone at their existing order.
+     *
+     * @param parentId - The container placement id whose children detach.
+     * @returns Count of child placements detached.
+     */
+    detachChildrenOf(parentId: string): Promise<number>;
 }

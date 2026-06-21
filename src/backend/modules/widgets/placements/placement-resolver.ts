@@ -56,11 +56,20 @@ export class PlacementResolver {
      * whose `typeId` is not currently registered (e.g. plugin
      * disabled) are silently skipped.
      *
+     * Single-level grouping: a placement with a `parentId` is a child of
+     * a `core:layout-group` container. After the flat fetch this method
+     * assembles a two-level tree — each child is nested under its
+     * container's `IWidgetData.children` (sorted by the child's `order`)
+     * and only top-level items are returned. A child whose container did
+     * not resolve (disabled, route-filtered out, or failed) is dropped
+     * as an orphan, mirroring the silent-skip of an unregistered type.
+     *
      * @param route - Request path resolved by the host.
      * @param params - Route params extracted by the host (e.g.
      *   `{ address }` on `/u/[address]`). Forwarded to each widget
      *   type's data fetcher.
-     * @returns Widget data ready for the frontend, in render order.
+     * @returns Top-level widget data ready for the frontend, in render
+     *   order, with container children nested.
      */
     async resolveForRoute(
         route: string,
@@ -69,12 +78,56 @@ export class PlacementResolver {
         const placements = await this.placementService.findByRoute(route);
         if (placements.length === 0) return [];
 
-        const results = await Promise.all(
-            placements.map(p => this.fetchOne(p, route, params))
+        // Fetch every placement in parallel, pairing each successful
+        // result with its source placement so the tree assembly below
+        // can read `parentId` (which `IWidgetData` does not carry).
+        const fetched = await Promise.all(
+            placements.map(async p => {
+                const widget = await this.fetchOne(p, route, params);
+                return widget ? { placement: p, widget } : null;
+            })
+        );
+        const resolved = fetched.filter(
+            (r): r is { placement: IWidgetPlacement; widget: IWidgetData } => r !== null
         );
 
-        const filtered = results.filter((w): w is IWidgetData => w !== null);
-        filtered.sort((a, b) => {
+        // A child only renders when its container also resolved. Index
+        // by placement id so orphan children (parent disabled / filtered
+        // / failed) can be detected and dropped.
+        const resolvedIds = new Set(resolved.map(r => r.placement.id));
+        const childrenByParent = new Map<string, IWidgetData[]>();
+        const topLevel: IWidgetData[] = [];
+        let orphanCount = 0;
+
+        for (const { placement, widget } of resolved) {
+            const parentId = placement.parentId;
+            if (parentId) {
+                if (!resolvedIds.has(parentId)) {
+                    orphanCount += 1;
+                    continue;
+                }
+                const siblings = childrenByParent.get(parentId);
+                if (siblings) {
+                    siblings.push(widget);
+                } else {
+                    childrenByParent.set(parentId, [widget]);
+                }
+            } else {
+                topLevel.push(widget);
+            }
+        }
+
+        // Attach each container's children in their own `order`, then
+        // order the top-level items by `(zone, order)` as before.
+        for (const { placement, widget } of resolved) {
+            if (placement.parentId) continue;
+            const children = childrenByParent.get(placement.id);
+            if (children) {
+                children.sort((a, b) => a.order - b.order);
+                widget.children = children;
+            }
+        }
+        topLevel.sort((a, b) => {
             if (a.zone !== b.zone) return a.zone.localeCompare(b.zone);
             return a.order - b.order;
         });
@@ -83,13 +136,15 @@ export class PlacementResolver {
             {
                 route,
                 placementCount: placements.length,
-                successCount: filtered.length,
-                failedCount: placements.length - filtered.length
+                successCount: resolved.length,
+                topLevelCount: topLevel.length,
+                orphanCount,
+                failedCount: placements.length - resolved.length
             },
             'Resolved widgets for route'
         );
 
-        return filtered;
+        return topLevel;
     }
 
     /**

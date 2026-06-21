@@ -331,10 +331,19 @@ export function createMockDatabaseService(): IDatabaseService & {
                     checkInjectedError(name, 'updateMany');
                     let modifiedCount = 0;
 
+                    const updateFields = (update as any).$set || {};
+                    const unsetFields = (update as any).$unset || {};
+
                     for (let i = 0; i < data.length; i++) {
                         if (matchesFilter(data[i], filter)) {
-                            const updateFields = (update as any).$set || {};
+                            // Apply $set, then $unset — mirror updateOne so a
+                            // bulk relocation that clears a field (e.g.
+                            // detaching widget children by $unset-ing
+                            // parentId) behaves the same as the single-doc path.
                             data[i] = { ...data[i], ...updateFields };
+                            for (const key of Object.keys(unsetFields)) {
+                                delete (data[i] as any)[key];
+                            }
                             modifiedCount++;
                         }
                     }

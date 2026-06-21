@@ -52,4 +52,13 @@ export interface WidgetData {
      * Optional on the wire; the renderer defaults it to `{}` on read.
      */
     instanceConfig?: Record<string, unknown>;
+
+    /**
+     * Child widgets nested inside this item, present only when `id` is the
+     * `core:layout-group` container type. The resolver fills it from
+     * placements pointing at this container; `WidgetZone` draws them inside
+     * a nested flex container. One level deep — children carry no children
+     * of their own.
+     */
+    children?: WidgetData[];
 }

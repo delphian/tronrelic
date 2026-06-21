@@ -82,6 +82,17 @@ export function matchesFilter(doc: any, filter: Filter<any>): boolean {
             return doc._id.equals(value);
         }
 
+        // Handle ObjectId equality on any other field (e.g. a `parentId`
+        // reference between documents). Two ObjectId instances with the
+        // same hex are not `===`, so the simple-equality path below would
+        // never match — compare by value via `.equals`, falling back to a
+        // hex-string compare when the stored value is a plain string.
+        if (value instanceof ObjectId) {
+            const docValue = key.includes('.') ? getNestedValue(doc, key) : doc[key];
+            if (docValue instanceof ObjectId) return docValue.equals(value);
+            return docValue != null && String(docValue) === value.toHexString();
+        }
+
         // Handle RegExp (for MongoDB regex queries like { mimeType: /^image\// })
         if (value instanceof RegExp) {
             const docValue = getNestedValue(doc, key);
