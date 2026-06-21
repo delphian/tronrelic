@@ -11,7 +11,7 @@ Category-based notification dispatch: any source declares a category and fires; 
 | Admin page | `/system/notifications` (menu item `Notifications`, order 37, registered in `run()`) |
 | User page | `/account/notifications` (per-user opt-outs; any logged-in user) |
 | Service registry name | `'notifications'` → `INotificationService` |
-| Consumes from registry | `'user-groups'` (`IUserGroupService.getMembers`) for audience resolution |
+| Consumes from registry | `'user-groups'` (`IUserGroupService.getMembers`) for audience resolution; `'content-types'` (`IContentRegistry`) to resolve a request's content type into a descriptor |
 | Types package | `@delphian/tronrelic-types` → `INotificationService`, `INotificationCategory`, `INotificationChannel`, `INotificationRequest`/`Receipt`, `INotificationPreferences`, `INotificationPolicy`, `INotificationAuditRecord` |
 | Mounted routes | `/api/notifications/*` (login-gated), `/api/admin/system/notifications/*` (`requireAdmin`) |
 | Owned collections | `module_notifications_preferences`, `module_notifications_policy`, `module_notifications_audit` |
@@ -55,9 +55,15 @@ interface INotificationService {
 }
 ```
 
-A **source** declares a category at boot, then fires:
+A **source** declares a category and a content type at boot, then fires by reference. The content type registers on the central `'content-types'` registry (the same one curation uses); the category carries audience and policy only — it does not name channels.
 
 ```typescript
+services.get<IContentRegistry>('content-types')?.register({
+    typeId: 'my-plugin:thing',
+    label: 'Thing happened',
+    describe: (ref) => ({ title: 'It happened', body: String(ref.detail ?? '') })
+}, 'my-plugin');
+
 const notifications = services.get<INotificationService>('notifications');
 notifications?.registerCategory({
     id: 'my-plugin.thing-happened',
@@ -65,29 +71,27 @@ notifications?.registerCategory({
     description: 'Fires when the thing happens.',
     source: 'my-plugin',
     defaultAudience: { groups: [ADMIN_GROUP_ID] },
-    supportedChannels: ['toast'],
     channelDefaults: { toast: true },
     userConfigurable: true
 });
 // later, when the thing happens:
-await notifications?.notify({ category: 'my-plugin.thing-happened', title: 'It happened', severity: 'info' });
+await notifications?.notify({ category: 'my-plugin.thing-happened', typeId: 'my-plugin:thing', ref: { detail: '…' }, severity: 'info' });
 ```
 
 ## The Resolution Pipeline
 
-`DispatchService.notify()` resolves the audience to user ids, then applies an ordered gate per `(recipient, channel)` — the first failing gate suppresses that pairing, and the reason is counted in the audit:
+`DispatchService.notify()` resolves the audience to user ids and resolves the request's content type into a descriptor (`describe(ref)`). The **candidate channels** are the registered channels whose `accepts` covers every feature the descriptor carries — a channel that cannot render the content is not a candidate (and not a suppression). It then applies an ordered gate per `(recipient, candidate channel)` — the first failing gate suppresses that pairing, and the reason is counted in the audit:
 
 1. Admin policy has not disabled the **category**.
-2. Admin policy has not disabled the **channel**, and the channel is registered.
-3. The channel is in the category's `supportedChannels`.
-4. The user has not opted out of this `(category, channel)` — default from `channelDefaults`.
-5. The user's global mute is off (skipped when the category is `mutable: false`).
+2. Admin policy has not disabled the **channel**.
+3. The user has not opted out of this `(category, channel)` — default from `channelDefaults`.
+4. The user's global mute is off (skipped when the category is `mutable: false`).
 
 Surviving pairs are grouped per channel and delivered. Per-user silencing is honored by emitting only to the `user:${id}` rooms of survivors — never a group blast — so enforcement stays server-side. Each blast writes one audit row snapshotting the category label and audience, so history survives a plugin (and its category) being disabled.
 
 ## Channels
 
-A channel is a transport behind `INotificationChannel`. **Toast** is the only channel today; email and push are future implementations of the same interface — a new column in the preference matrix, not a new concept. The toast channel maps recipients to `user:${id}` socket rooms and emits the single `notification` event. A channel-provider plugin registers its transport via `registerChannel`.
+A channel is a transport behind `INotificationChannel` that declares the content features it `accepts` (`title`/`body`/`media`/`fields`); dispatch routes a notification only to channels whose `accepts` covers the resolved descriptor. **Toast** is the only channel today — it `accepts` `['title', 'body']`, maps recipients to `user:${id}` socket rooms, and emits the single `notification` event (flattening the descriptor onto the established wire payload, so the client handler is unchanged). Email and push are future channels of the same interface. A channel-provider plugin registers its transport via `registerChannel`.
 
 ## Storage
 
@@ -113,11 +117,12 @@ Indexes are created in `init()` (the collections are new — no production data 
 
 ## First Consumer
 
-The `ai-tools` module registers the `ai-tools.scheduled-prompt-run` category (audience: admin group, toast, default-on, user-silenceable) and fires it after every cron-scheduled prompt run — so admins see a toast when a scheduled AI prompt runs, any admin can opt out at `/account/notifications` or the My Preferences tab, and an admin can disable the whole category for everyone.
+The `ai-tools` module registers the `ai-tools.scheduled-prompt-run` category (audience: admin group, `channelDefaults: { toast: true }`, user-silenceable) plus an `ai-tools:scheduled-prompt-run` content type, and fires `notify({ category, typeId, ref })` after every cron-scheduled prompt run — so admins see a toast when a scheduled AI prompt runs, any admin can opt out at `/account/notifications` or the My Preferences tab, and an admin can disable the whole category for everyone.
 
 ## Related
 
 - [system-notifications.md](../../../../docs/system/system-notifications.md) — design rationale and the resolution pipeline in depth
+- [system-content-types.md](../../../../docs/system/system-content-types.md) — the central content registry `notify()` resolves through, and the channel-capability vocabulary
 - [Module Architecture](../../../../docs/system/modules/modules-architecture.md) — IModule contract, bootstrap order, service registry
 - [plugins-service-registry.md](../../../../docs/plugins/plugins-service-registry.md) — `watch()` vs `get()` for consuming `'notifications'`
 - [Identity Module README](../identity/README.md) — the `'user-groups'` service used for audience resolution

@@ -22,8 +22,10 @@ import type {
     IMenuService,
     IServiceRegistry,
     ISystemLogService,
+    IContentRegistry,
     IUserGroupService
 } from '@/types';
+import { CONTENT_TYPES_SERVICE } from '../../services/content-registry.js';
 import { logger } from '../../lib/logger.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
@@ -133,9 +135,18 @@ export class NotificationsModule implements IModule<INotificationsModuleDependen
             this.logger
         );
 
+        // The central content-type registry is published at bootstrap, so it is
+        // always present by module-init time. Dispatch resolves each request's
+        // content type through it — the same registry curation publishes into.
+        const contentRegistry = this.serviceRegistry.get<IContentRegistry>(CONTENT_TYPES_SERVICE);
+        if (!contentRegistry) {
+            throw new Error("NotificationsModule requires the 'content-types' registry to be published before init");
+        }
+
         this.dispatchService = new DispatchService(
             this.categoryRegistry,
             this.channelRegistry,
+            contentRegistry,
             this.preferenceService,
             this.policyService,
             this.auditService,

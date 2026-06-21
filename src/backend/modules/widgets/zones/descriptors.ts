@@ -34,6 +34,14 @@ export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
         layout: 'vertical'
     },
     {
+        id: 'footer',
+        label: 'Site footer',
+        description:
+            'Rendered in the root layout below the main content, inside a semantic <footer>. Reaches every route the root layout serves — the home for site-wide footer content (links, legal text, attribution).',
+        host: 'site',
+        layout: 'vertical'
+    },
+    {
         id: 'main-before',
         label: 'Above main content',
         description:

@@ -96,6 +96,13 @@ interface ConversationGroup {
     firstPrompt: string;
     lastAt: string;
     /**
+     * Execution mode of the group's latest turn, taken from the first record
+     * encountered (newest-first). Drives the `Scheduled` badge so an operator
+     * can tell an autonomous cron run apart from a query they typed — the only
+     * cross-mode distinction the grouped list surfaces.
+     */
+    mode: IAiQueryRecord['mode'];
+    /**
      * Estimated total USD cost of the conversation, summed across every priced
      * turn at the rates captured when each turn ran. `null` when not a single
      * turn could be priced, so the row shows a dash rather than a misleading
@@ -185,7 +192,7 @@ function groupConversations(records: IAiQueryRecord[]): ConversationGroup[] {
             existing.firstPrompt = record.prompt;
         } else {
             order.push(id);
-            byId.set(id, { conversationId: id, turns: 1, firstPrompt: record.prompt, lastAt: record.createdAt, costUsd: turnCost });
+            byId.set(id, { conversationId: id, turns: 1, firstPrompt: record.prompt, lastAt: record.createdAt, mode: record.mode, costUsd: turnCost });
         }
     }
     return order.map(id => byId.get(id) as ConversationGroup);
@@ -831,6 +838,7 @@ export function QueryTab() {
                                             <span className={styles.history_item_meta}>
                                                 <ClientTime date={group.lastAt} format="datetime" />
                                                 <span>· {group.turns} turn{group.turns === 1 ? '' : 's'}</span>
+                                                {group.mode === 'scheduled' && <Badge tone="info">Scheduled</Badge>}
                                             </span>
                                         </div>
                                         <span

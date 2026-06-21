@@ -12,7 +12,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runScheduledPrompts, type IScheduledPromptRunner } from '../services/scheduled-prompts-runner.js';
-import type { ISavedPrompt } from '@/types';
+import type { IAiQueryRecord, ISavedPrompt } from '@/types';
 
 /* ---------- mock factories ---------- */
 
@@ -411,5 +411,71 @@ describe('runScheduledPrompts', () => {
         expect(resolveEndUser).not.toHaveBeenCalled();
         // No ownerUserId → endUser stays undefined (omitted by the matcher).
         expect(provider.query).toHaveBeenCalledWith({ prompt: 'run', mode: 'programmatic' });
+    });
+
+    it('records a successful run in the query history tagged scheduled and visible (carries a conversationId)', async () => {
+        provider.query.mockResolvedValueOnce({ responseText: 'the answer', model: 'claude-x', usage: { inputTokens: 3, outputTokens: 7 } });
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({ id: 'logged', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'analyze' })
+        ]);
+        const recordQuery = vi.fn(async (_record: IAiQueryRecord) => {});
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, undefined, undefined, undefined, recordQuery);
+
+        expect(recordQuery).toHaveBeenCalledTimes(1);
+        const record = recordQuery.mock.calls[0]?.[0];
+        // Tagged scheduled so the Query tab can tell it from an interactive run,
+        // and carries a conversationId so the grouped history view surfaces it
+        // (records without one are skipped as hidden one-shots).
+        expect(record).toMatchObject({
+            mode: 'scheduled',
+            prompt: 'analyze',
+            responseText: 'the answer',
+            model: 'claude-x',
+            status: 'completed',
+            errorMessage: null,
+            conversationId: expect.any(String)
+        });
+    });
+
+    it('records a failed run in the query history with the error and a null response', async () => {
+        provider.query.mockRejectedValueOnce(new Error('Provider down'));
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({ id: 'logged-fail', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'analyze', model: 'pinned-model' })
+        ]);
+        const recordQuery = vi.fn(async (_record: IAiQueryRecord) => {});
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, undefined, undefined, undefined, recordQuery);
+
+        expect(recordQuery).toHaveBeenCalledTimes(1);
+        const record = recordQuery.mock.calls[0]?.[0];
+        expect(record).toMatchObject({
+            mode: 'scheduled',
+            prompt: 'analyze',
+            responseText: null,
+            // Falls back to the prompt's pinned model when the failed query
+            // yields no result to read the model from.
+            model: 'pinned-model',
+            status: 'failed',
+            errorMessage: 'Provider down'
+        });
+    });
+
+    it('does not let a history-recorder fault disturb the run or its failure bookkeeping', async () => {
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({ id: 'noisy', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'run' })
+        ]);
+        const recordQuery = vi.fn(async () => { throw new Error('history db down'); });
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, undefined, undefined, undefined, recordQuery);
+
+        // The query still ran and its success was committed; the recorder throw
+        // was swallowed and logged, never surfaced to the run loop.
+        expect(provider.query).toHaveBeenCalledTimes(1);
+        expect(savedPrompts.resetRunFailures).toHaveBeenCalledWith('noisy');
+        expect(logger.warn).toHaveBeenCalledWith(
+            expect.objectContaining({ promptId: 'noisy' }),
+            expect.stringContaining('query history')
+        );
     });
 });

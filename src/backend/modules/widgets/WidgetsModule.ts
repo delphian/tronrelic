@@ -46,6 +46,7 @@ import { ZoneRegistry } from './zones/zone-registry.js';
 import { WidgetTypeRegistry } from './widget-types/widget-type-registry.js';
 import { WidgetsService } from './widgets.service.js';
 import { CORE_ZONE_DESCRIPTORS } from './zones/descriptors.js';
+import { CORE_WIDGET_TYPE_DESCRIPTORS } from './widget-types/core-widget-types.js';
 import { WebSocketService } from '../../services/websocket.service.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 
@@ -217,6 +218,18 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
         this.logger.info(
             { coreZoneCount: CORE_ZONE_DESCRIPTORS.length },
             'Core zone catalog registered'
+        );
+
+        // Register the core widget-type catalog (e.g. the raw text/HTML
+        // block). Routed through the public service as 'core'-owned so
+        // operators can place these types from /system/widgets exactly
+        // like plugin-declared types.
+        for (const descriptor of CORE_WIDGET_TYPE_DESCRIPTORS) {
+            this.widgetsService.registerType(descriptor, 'core');
+        }
+        this.logger.info(
+            { coreWidgetTypeCount: CORE_WIDGET_TYPE_DESCRIPTORS.length },
+            'Core widget-type catalog registered'
         );
 
         const zonesRouter: Router = createZonesAdminRouter(this.zonesController);

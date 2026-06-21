@@ -1,0 +1,40 @@
+/*
+ * Styles for the centralized content-type registry admin view.
+ *
+ * Layout structure comes from the Page/PageHeader/Stack layout components; this
+ * module only styles the intro copy and the read-only registry table. All
+ * values reference design tokens so the surface themes with the rest of /system.
+ */
+
+.container {
+    width: 100%;
+}
+
+.intro {
+    color: var(--color-text-muted);
+    max-width: var(--max-width-prose);
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table th,
+.table td {
+    text-align: left;
+    padding: var(--padding-sm);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    vertical-align: middle;
+}
+
+.table th {
+    color: var(--color-text-muted);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-body-sm);
+}
+
+.type_id {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+}

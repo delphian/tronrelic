@@ -45,6 +45,7 @@ export { FILE_SOURCE_KINDS, FileValidationError, FileSizeExceededError } from '.
 export type { IModule, IModuleMetadata } from './module/index.js';
 export type {
     NotificationSeverity,
+    NotificationContentFeature,
     NotificationDisposer,
     INotificationAudience,
     INotificationCategory,
@@ -112,6 +113,15 @@ export type {
 } from './ai-tools/index.js';
 export { isPrivateIp, assertPublicHttpUrl } from './egress/index.js';
 export type { IEgressCheckResult, IEgressCheckOptions } from './egress/index.js';
+export type {
+    IContentDescriptor,
+    IContentDescriptorField,
+    IContentDescriptorMedia,
+    IContentType,
+    IContentRegistry,
+    IContentTypeInfo,
+    ContentTypeDisposer
+} from './content/index.js';
 export type {
     ICurationPreview,
     ICurationPreviewField,

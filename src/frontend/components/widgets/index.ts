@@ -12,5 +12,7 @@
 
 export { WidgetZone } from './WidgetZone';
 export { fetchWidgetsForRoute } from './fetchWidgetsForRoute';
-export { getWidgetComponent, widgetComponentRegistry } from './widgets.generated';
+export { getWidgetComponent } from './getWidgetComponent';
+export { widgetComponentRegistry } from './widgets.generated';
+export { coreWidgetComponents } from './widgets.core';
 export type { WidgetData } from './types';

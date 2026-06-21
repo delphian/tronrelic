@@ -11,18 +11,15 @@
 
 import type { ICurationItem } from './ICurationItem.js';
 import type { ICurationType, ICurationEditPatch } from './ICurationType.js';
+import type { IContentTypeInfo } from '../content/IContentRegistry.js';
 
-/** Summary of a registered curation type, for admin listing. */
-export interface ICurationTypeInfo {
-    /** Namespaced type id. */
-    typeId: string;
-
-    /** Human-readable label. */
-    label: string;
-
-    /** Id of the registering plugin or module. */
-    providerId: string;
-}
+/**
+ * Summary of a registered curation type, for admin listing. Curation adds no
+ * fields beyond the shared {@link IContentTypeInfo}, so it is retained as an
+ * alias — the curation registry and the central content registry describe a
+ * registered type identically.
+ */
+export type ICurationTypeInfo = IContentTypeInfo;
 
 /** What a producer passes to `hold()` to enqueue an effect for review. */
 export interface ICurationHoldInput {

@@ -27,11 +27,13 @@
 // cron-parser v4 is a CommonJS module whose named exports Node 20's ESM loader
 // cannot synthesize; default-import + destructure is the pattern Node itself
 // recommends and is portable across cron-parser versions.
+import { randomUUID } from 'node:crypto';
 import cronParser from 'cron-parser';
 const { parseExpression } = cronParser;
-import type { IAiQueryOptions, IToolEndUserPrincipal, ISystemLogService } from '@/types';
+import type { IAiQueryOptions, IAiQueryRecord, IAiQueryResult, IToolEndUserPrincipal, ISystemLogService } from '@/types';
 import type { SavedPromptsService } from './saved-prompts.service.js';
 import type { EndUserResolver } from './end-user-resolver.js';
+import { buildAiQueryRecord } from './ai-query-history.service.js';
 
 /**
  * Minimum contract the runner needs from an AI provider. Declared here rather
@@ -88,6 +90,17 @@ export interface IScheduledPromptRunNotification {
 export type ScheduledPromptNotifier = (run: IScheduledPromptRunNotification) => void;
 
 /**
+ * Persists one query-history record for a scheduled run, so an autonomous cron
+ * prompt shows up in the `/system/ai-tools` Query tab beside the interactive
+ * queries instead of being invisible there. The module supplies
+ * `(record) => queryHistory.append(record)`. Omitted in tests and in any
+ * deployment that does not record history; best-effort, so the runner guards
+ * the call and a persistence fault never disturbs the run loop or the
+ * failure-streak bookkeeping that gates auto-pause.
+ */
+export type ScheduledPromptQueryRecorder = (record: IAiQueryRecord) => void | Promise<void>;
+
+/**
  * Fire all due scheduled prompts and persist updated run metadata.
  *
  * Fires at most once per prompt per tick: running the same prompt multiple
@@ -113,6 +126,10 @@ export type ScheduledPromptNotifier = (run: IScheduledPromptRunNotification) => 
  * @param notify - Optional callback fired after a prompt actually runs (success
  *        or failure), so the module can dispatch a run notification to admins.
  *        Best-effort and isolated from the run loop.
+ * @param recordQuery - Optional callback that persists one query-history record
+ *        per run, so an autonomous prompt appears in the Query tab alongside
+ *        interactive queries. Best-effort and isolated from the run loop; a
+ *        persistence fault never disturbs the run or its failure bookkeeping.
  */
 export async function runScheduledPrompts(
     savedPrompts: SavedPromptsService,
@@ -120,7 +137,8 @@ export async function runScheduledPrompts(
     resolveProvider: ScheduledPromptProviderResolver,
     resolveEndUser?: EndUserResolver,
     composeSystemPrompt?: ScheduledPromptSystemComposer,
-    notify?: ScheduledPromptNotifier
+    notify?: ScheduledPromptNotifier,
+    recordQuery?: ScheduledPromptQueryRecorder
 ): Promise<void> {
     const scheduled = await savedPrompts.listScheduled();
 
@@ -253,6 +271,17 @@ export async function runScheduledPrompts(
             endUser = principal;
         }
 
+        // Identifiers for this run's Query-tab history record, captured before
+        // the query so both the success and failure branches share them. Each
+        // run gets its own conversationId because the History view only surfaces
+        // records that carry one (a record without it is a hidden one-shot) — a
+        // unique id makes the scheduled turn a reopenable one-turn conversation.
+        // `queryStartedAt` dates the row from the run's start, matching the
+        // interactive path, and stays in scope for the failure branch below.
+        const queryStartedAt = new Date().toISOString();
+        const historyId = randomUUID();
+        const historyConversationId = randomUUID();
+
         try {
             logger.info(
                 { promptId: p.id, name: p.name, cron: p.cron, providerId: p.providerId, model: p.model, ownerUserId: p.ownerUserId },
@@ -282,7 +311,24 @@ export async function runScheduledPrompts(
             // `endUser`, when the prompt records an owner, is the live principal
             // the run acts on behalf of. `model` is the optional per-query
             // override (undefined → provider's configured default).
-            await provider.query({ prompt: p.prompt, model: p.model, mode: 'programmatic', endUser, injectedSystemPrompt });
+            const result = (await provider.query({ prompt: p.prompt, model: p.model, mode: 'programmatic', endUser, injectedSystemPrompt })) as IAiQueryResult;
+            // Record the run in the core query history so it surfaces in the
+            // Query tab beside interactive queries. Tagged `scheduled` to mark
+            // it autonomous; the provider transport above stays `programmatic`,
+            // so this label never relaxes the governor's default-deny. Wrapped
+            // best-effort: a history fault must not fail an otherwise-good run.
+            if (recordQuery) {
+                try {
+                    await recordQuery(
+                        buildAiQueryRecord('scheduled', p.prompt, historyConversationId, queryStartedAt, historyId, result, null, p.model)
+                    );
+                } catch (historyErr) {
+                    logger.warn(
+                        { err: historyErr, promptId: p.id, name: p.name },
+                        'Failed to record scheduled-prompt query history'
+                    );
+                }
+            }
             // Success ends any failure streak so intermittent errors never
             // accumulate toward the auto-pause threshold. Best-effort.
             try {
@@ -330,6 +376,21 @@ export async function runScheduledPrompts(
                 notify?.({ promptId: p.id, name: p.name, status: 'error', error: lastRunError, disabled: autoDisabled });
             } catch (notifyErr) {
                 logger.warn({ err: notifyErr, promptId: p.id }, 'Scheduled-prompt failure notification failed');
+            }
+            // Record the failed run too, so a broken scheduled prompt is visible
+            // in the Query tab with its error rather than only on its saved-prompt
+            // banner. Best-effort, mirroring the success branch.
+            if (recordQuery) {
+                try {
+                    await recordQuery(
+                        buildAiQueryRecord('scheduled', p.prompt, historyConversationId, queryStartedAt, historyId, null, lastRunError, p.model)
+                    );
+                } catch (historyErr) {
+                    logger.warn(
+                        { err: historyErr, promptId: p.id, name: p.name },
+                        'Failed to record failed scheduled-prompt query history'
+                    );
+                }
             }
         }
     }

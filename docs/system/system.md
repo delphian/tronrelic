@@ -78,13 +78,17 @@ Typed extension points where core invites plugins into its own execution. Descri
 
 The contract and governance for tools a model can invoke during an AI query. Core owns the tool shape, the capability classes (read / write / external, sensitivity, reversibility), and the accountability and security every tool must meet — input validation, object authorization, rate/quota/cost limits, human approval for irreversible effects, and per-invocation audit — so every AI provider plugin and tool inherits the same guarantees. Provider-neutral: `trp-ai-assistant` is only the Anthropic transport. See [system-ai-tools.md](./system-ai-tools.md) and [AI Tools Module README](../../src/backend/modules/ai-tools/README.md).
 
+### Content Types
+
+The central registry of provider-owned content — the reusable noun the platform renders, holds, decides, or delivers without understanding its payload. A provider registers an `IContentType` (`typeId`, `label`, `describe(ref)` → a generic descriptor, optional `applyEdit`); pipelines bind their own verbs onto it. Constructed in bootstrap as a peer of the service and hook registries, published as `'content-types'` before module init, and introspected read-only at `/system/content-types`. Curation and notifications both consume it. See [system-content-types.md](./system-content-types.md).
+
 ### Curation
 
-One core admin surface (`/system/ai-tools` → Curation, in the AI Tools module) for every effect held for human review before it takes hold. Plugins register a content type (preview / approve / reject / optional edit); core owns the decision and a pointer-plus-preview envelope while the type owns the payload and what approval does. It also hardens a tool's `forcesCuratorReview` into a verifiable `curationTypeId` binding the governor checks live. See [system-curation.md](./system-curation.md).
+One core admin surface (`/system/ai-tools` → Curation, in the AI Tools module) for every effect held for human review before it takes hold. Plugins register an `ICurationType` — a [content type](./system-content-types.md) plus `onApprove`/`onReject` verbs; core owns the decision and a pointer-plus-preview envelope while the type owns the payload and what approval does. It also hardens a tool's `forcesCuratorReview` into a verifiable `curationTypeId` binding the governor checks live. See [system-curation.md](./system-curation.md).
 
 ### Notifications
 
-Category-based notification dispatch behind one published service — `INotificationService`, registry name `'notifications'`. Any module or plugin declares a notification category and fires; the module resolves the audience (groups/users) to recipients, enforces admin policy and per-user opt-outs, delivers across pluggable channels (toast today; email/push later), and audits every blast. Delivery is identity-targeted over WebSocket `user:${id}` rooms so per-user silencing is enforced server-side. The first consumer is the AI scheduler, which toasts admins when a cron prompt runs. See [system-notifications.md](./system-notifications.md) and [Notifications Module README](../../src/backend/modules/notifications/README.md).
+Category-based notification dispatch behind one published service — `INotificationService`, registry name `'notifications'`. Any module or plugin declares a category and a content type, then fires by reference (`notify({ category, typeId, ref })`); the module resolves the audience (groups/users) to recipients, resolves the content type into a descriptor, routes to the channels whose declared capabilities can render it, enforces admin policy and per-user opt-outs, and audits every blast. Delivery is identity-targeted over WebSocket `user:${id}` rooms so per-user silencing is enforced server-side. The first consumer is the AI scheduler, which toasts admins when a cron prompt runs. See [system-notifications.md](./system-notifications.md) and [Notifications Module README](../../src/backend/modules/notifications/README.md).
 
 ### Logging
 
@@ -122,6 +126,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [system-dashboard.md](./system-dashboard.md) | Dashboard tabs and controls |
 | [system-database-migrations.md](./system-database-migrations.md) | Migration discovery, transactions, REST API, admin UI |
 | [system-hooks.md](./system-hooks.md) | Declared seams, four archetypes, plugin facade, introspection, admin UI |
+| [system-content-types.md](./system-content-types.md) | The central content registry, the `IContentType`/`IContentDescriptor` contract, capability routing, `/system/content-types` |
 | [system-ai-tools.md](./system-ai-tools.md) | AI tool contract, capability classes, accountability and security requirements |
 | [system-curation.md](./system-curation.md) | Central curation queue, the type contract, the verifiable `curationTypeId` binding |
 | [system-notifications.md](./system-notifications.md) | Notification dispatch, the resolution pipeline, channels, per-user opt-outs, audit |

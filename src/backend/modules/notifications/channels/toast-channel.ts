@@ -9,7 +9,7 @@
  * are future channels implementing the same {@link INotificationChannel}.
  */
 
-import type { INotificationChannel, INotificationRecipient, IRenderedNotification, IChannelDeliveryResult } from '@/types';
+import type { INotificationChannel, INotificationRecipient, IRenderedNotification, IChannelDeliveryResult, NotificationContentFeature } from '@/types';
 import { TOAST_CHANNEL_ID, TOAST_CHANNEL_LABEL } from '../config.js';
 
 /**
@@ -27,6 +27,14 @@ export interface INotificationEmitter {
 export class ToastChannel implements INotificationChannel {
     readonly id = TOAST_CHANNEL_ID;
     readonly label = TOAST_CHANNEL_LABEL;
+
+    /**
+     * A toast frames a headline and an optional body. It cannot render inline
+     * media or a labelled-fields table, so dispatch skips a toast for any
+     * notification whose descriptor carries those — they belong to a richer
+     * future channel (email/push), not a transient toast.
+     */
+    readonly accepts: NotificationContentFeature[] = ['title', 'body'];
 
     /**
      * @param emitter - WebSocket emitter (the core `WebSocketService`).
@@ -54,8 +62,10 @@ export class ToastChannel implements INotificationChannel {
                 categoryId: message.categoryId,
                 categoryLabel: message.categoryLabel,
                 severity: message.severity,
-                title: message.title,
-                body: message.body,
+                // Flatten the descriptor onto the established wire shape so the
+                // client `NotificationHandler` is unchanged by the content-type model.
+                title: message.content.title,
+                body: message.content.body,
                 createdAt: message.createdAt.toISOString(),
                 data: message.data
             }

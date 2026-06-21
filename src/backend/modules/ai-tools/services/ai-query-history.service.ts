@@ -14,10 +14,62 @@
  * import.
  */
 
-import type { IAiQueryRecord, IDatabaseService, ISystemLogService } from '@/types';
+import type { AiQueryMode, IAiQueryRecord, IAiQueryResult, IDatabaseService, ISystemLogService } from '@/types';
 
 /** Physical collection name (modules prefix `module_<id>_` manually). */
 const COLLECTION = 'module_ai-tools_query_history';
+
+/**
+ * Build a query-history record from a settled query, shared by every code path
+ * that records one — the interactive controller (stream / programmatic) and the
+ * scheduled-prompts runner (scheduled). Centralised so the record shape stays
+ * identical across paths: drift between them would make the same query render
+ * differently depending on how it was launched. On success `result` carries the
+ * model, usage, and cost; on failure `errorMessage` is set and the caller's
+ * requested `fallbackModel` (if any) stands in for the unknown model.
+ *
+ * @param mode - Execution mode the record is tagged with (`stream` for the
+ *        admin stream path, `programmatic` for a non-streaming admin call,
+ *        `scheduled` for an autonomous cron run).
+ * @param prompt - The prompt for this turn, recorded verbatim.
+ * @param conversationId - Grouping id for the history view. The Query tab only
+ *        surfaces records that carry one, so a path that wants its run visible
+ *        (including a one-shot scheduled run) must pass a non-empty id.
+ * @param createdAt - ISO timestamp captured when the query started, so the row
+ *        dates from the run's start rather than its completion.
+ * @param id - Unique record id (the streaming `queryId`, or a fresh uuid).
+ * @param result - The successful result, or null when the query failed.
+ * @param errorMessage - The failure reason, or null on success.
+ * @param fallbackModel - Model to record when there is no result to read it from.
+ * @returns A fully-built {@link IAiQueryRecord} ready to hand to {@link AiQueryHistoryService.append}.
+ */
+export function buildAiQueryRecord(
+    mode: AiQueryMode,
+    prompt: string,
+    conversationId: string | undefined,
+    createdAt: string,
+    id: string,
+    result: IAiQueryResult | null,
+    errorMessage: string | null,
+    fallbackModel?: string
+): IAiQueryRecord {
+    return {
+        id,
+        mode,
+        prompt,
+        responseText: result?.responseText ?? null,
+        model: result?.model ?? fallbackModel ?? 'unknown',
+        usage: result?.usage ?? { inputTokens: 0, outputTokens: 0 },
+        // Provider-computed estimated cost, persisted so a reopened
+        // conversation shows the same figure the live run did.
+        costUsd: result?.costUsd ?? null,
+        errorMessage,
+        status: result ? 'completed' : 'failed',
+        createdAt,
+        completedAt: new Date().toISOString(),
+        ...(conversationId ? { conversationId } : {})
+    };
+}
 
 /** Pagination input for the history listing. */
 export interface IAiQueryHistoryQuery {

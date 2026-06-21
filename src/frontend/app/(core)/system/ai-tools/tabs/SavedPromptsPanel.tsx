@@ -35,7 +35,7 @@ import { Input } from '../../../../../components/ui/Input';
 import { IconButton } from '../../../../../components/ui/IconButton';
 import { useModal } from '../../../../../components/ui/ModalProvider';
 import { listSavedPrompts, saveSavedPrompt, deleteSavedPrompt } from '../../../../../modules/ai-tools';
-import { describeCron, formatRelativeTime } from './savedPromptCron';
+import { describeCron, formatRelativeTime, getMsUntilNextCron, formatTimeUntil } from './savedPromptCron';
 import { PromptEditModal } from './PromptEditModal';
 import styles from './SavedPromptsPanel.module.scss';
 
@@ -248,7 +248,14 @@ export function SavedPromptsPanel({
         }
         return (
             <ul className={styles.list}>
-                {prompts.map(sp => (
+                {prompts.map(sp => {
+                    // Next-run only applies to an active (non-paused) schedule with a
+                    // valid cron — a paused or cron-less prompt never fires, so promising
+                    // a "next run" there would mislead. getMsUntilNextCron returns null on
+                    // an unparseable expression, which also suppresses the line.
+                    const scheduleActive = !!sp.cron && sp.cron.trim().length > 0 && sp.scheduleEnabled !== false;
+                    const msUntilNextRun = scheduleActive ? getMsUntilNextCron(sp.cron as string, Date.now()) : null;
+                    return (
                     <li key={sp.id} className={`${styles.row} ${sp.lastRunError ? styles.row_error : ''}`}>
                         <div className={styles.row_main}>
                             <button
@@ -260,9 +267,16 @@ export function SavedPromptsPanel({
                             >
                                 {sp.name}
                             </button>
-                            {sp.lastRunAt && (
+                            {(sp.lastRunAt || msUntilNextRun !== null) && (
                                 <div className={styles.row_meta}>
-                                    <span>Last run {formatRelativeTime(sp.lastRunAt)}</span>
+                                    {/* A scheduled prompt that has yet to fire says so rather
+                                        than omitting the last-run line — the meta row only
+                                        renders here when a schedule is active, so the falsy
+                                        branch always means "scheduled, not yet run". */}
+                                    {sp.lastRunAt
+                                        ? <span>Last run {formatRelativeTime(sp.lastRunAt)}</span>
+                                        : <span>Never run yet</span>}
+                                    {msUntilNextRun !== null && <span>Next run {formatTimeUntil(msUntilNextRun)}</span>}
                                 </div>
                             )}
                         </div>
@@ -296,7 +310,8 @@ export function SavedPromptsPanel({
                             </IconButton>
                         </div>
                     </li>
-                ))}
+                    );
+                })}
             </ul>
         );
     }

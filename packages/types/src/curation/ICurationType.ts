@@ -1,55 +1,39 @@
 /**
  * @file ICurationType.ts
  *
- * The contract a provider registers with the curation service to make a content
- * type reviewable in the central queue. It is the three delegations core needs
- * to stay content-agnostic: how to *preview* an item, what to do on *approve*,
- * and what to do on *reject*. Editing is a frontend concern (an `EditorComponent`
- * registered separately) and writes through the provider's own routes, so it is
- * not part of this backend contract.
+ * The curation **binding**: the review verbs a provider adds onto a reusable
+ * {@link IContentType} to make its content reviewable in the central queue. The
+ * content half — `typeId`, `label`, `describe()` — is inherited from
+ * `IContentType` and is shared with every other pipeline; only `onApprove`,
+ * `onReject`, and the optional `applyEdit` are curation-specific, because only
+ * curation has an approve/reject lifecycle. A provider still passes one object
+ * to `registerType`; the registry separates the content facet from the binding.
+ *
+ * Editing routes through the provider's own record — core passes a neutral
+ * patch and the type owns the write — so `applyEdit` stays on the curation
+ * binding rather than the content type until a second pipeline needs content
+ * mutation.
  */
 
 import type { ICurationItem } from './ICurationItem.js';
-import type { ICurationPreview } from './ICurationPreview.js';
+import type { IContentType, IContentEditPatch } from '../content/IContentType.js';
 
 /**
- * A generic, payload-agnostic edit an operator applies to a held item before
- * deciding it. Core knows only these neutral fields; the owning type maps them
- * onto its own record. Today just the body text — the one field the preview
- * already exposes as editable — kept small and extensible.
+ * Retained alias of the platform-wide {@link IContentEditPatch}. Editing a held
+ * item is content self-mutation, so the patch shape is shared with every
+ * pipeline rather than owned by curation; the name is kept so existing curation
+ * code compiles unchanged.
  */
-export interface ICurationEditPatch {
-    /** Replacement body text for the held content. */
-    body?: string;
-}
+export type ICurationEditPatch = IContentEditPatch;
 
 /**
- * A reviewable content type. One provider may register several — a tweet, a
- * generated image — each with its own namespaced `typeId`.
+ * A reviewable content type: a content type plus the curation lifecycle verbs.
+ * One provider may register several — a tweet, a generated image — each with its
+ * own namespaced `typeId` inherited from {@link IContentType}. `describe` and
+ * `applyEdit` are inherited too — both operate on the originator's own record —
+ * leaving only the approve/reject decision semantics curation-specific.
  */
-export interface ICurationType {
-    /**
-     * Namespaced id `<provider>:<name>`, e.g. `x-poster:tweet`. The prefix
-     * mirrors plugin collection and WebSocket namespacing and is how an AI
-     * tool's `curationTypeId` binding is verified.
-     */
-    typeId: string;
-
-    /** Human-readable label for queue grouping and headings. */
-    label: string;
-
-    /**
-     * Flatten the record identified by `ref` into a content-agnostic preview
-     * core can render. Runs server-side and may resolve cross-plugin references
-     * (e.g. a file id to a public URL). Core calls this at hold time to cache a
-     * snapshot and again live while the type is registered, so it must be safe
-     * to call repeatedly and must not mutate the record.
-     *
-     * @param ref - The opaque pointer supplied when the item was held.
-     * @returns The preview descriptor, or a promise of it.
-     */
-    describe(ref: Record<string, unknown>): ICurationPreview | Promise<ICurationPreview>;
-
+export interface ICurationType extends IContentType {
     /**
      * Commit the held effect. Core records the approval first, then calls this;
      * the provider does whatever "approved" means for the type (release for
@@ -68,17 +52,4 @@ export interface ICurationType {
      * @param item - The decided envelope, including `ref` and metadata.
      */
     onReject(item: ICurationItem): void | Promise<void>;
-
-    /**
-     * Apply an operator's inline edit to the held content before a decision.
-     * Optional — a type that omits it is not editable and core surfaces no edit
-     * affordance. Core passes a generic, payload-agnostic patch; the type maps it
-     * onto its own record and enforces its own validation, throwing a descriptive
-     * Error the queue surfaces. Invoked only while the item is pending; core
-     * re-derives the cached preview from `describe()` afterward.
-     *
-     * @param item - The held envelope (its `ref` addresses the record).
-     * @param patch - The generic edit to apply.
-     */
-    applyEdit?(item: ICurationItem, patch: ICurationEditPatch): void | Promise<void>;
 }

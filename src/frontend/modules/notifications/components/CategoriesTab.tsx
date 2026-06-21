@@ -71,7 +71,7 @@ export function CategoriesTab(): React.ReactElement {
                         <div className={styles.row_desc}>{category.description}</div>
                         <div className={styles.badges}>
                             <Badge tone="neutral">{category.source}</Badge>
-                            {category.supportedChannels.map((ch) => (
+                            {Object.keys(category.channelDefaults).map((ch) => (
                                 <Badge key={ch} tone="info">{ch}</Badge>
                             ))}
                         </div>
