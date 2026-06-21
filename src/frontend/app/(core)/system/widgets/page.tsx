@@ -440,8 +440,20 @@ export default function WidgetsAdminPage() {
             if (active.id === over.id && sourceZone === destZone) return;
 
             const sameZone = sourceZone === destZone;
+            // Reorder only the placements the current view actually shows.
+            // `grouped` renders global-only placements when no route is
+            // selected and route-matching placements otherwise; the drag
+            // renumber must use the identical predicate or it interleaves and
+            // PATCHes hidden placements (route-scoped rows in the unfiltered
+            // view, other-route rows in a filtered view) the operator never
+            // sees. The resolver only ever orders placements among those that
+            // match a given path, so renumbering the visible subset is safe.
+            const visibleInView = (p: IPlacement): boolean =>
+                selectedRoute === null
+                    ? p.routes.length === 0
+                    : placementMatchesRoute(p.routes, selectedRoute);
             const sourceList = placements
-                .filter(p => p.zoneId === sourceZone)
+                .filter(p => p.zoneId === sourceZone && visibleInView(p))
                 .sort((a, b) => a.order - b.order);
             const moved = sourceList.find(p => p.id === active.id);
             if (!moved) return;
@@ -450,7 +462,7 @@ export default function WidgetsAdminPage() {
             const destListPrev = sameZone
                 ? sourceWithoutActive
                 : placements
-                    .filter(p => p.zoneId === destZone)
+                    .filter(p => p.zoneId === destZone && visibleInView(p))
                     .sort((a, b) => a.order - b.order);
 
             const insertIdx =
@@ -505,7 +517,7 @@ export default function WidgetsAdminPage() {
                 void fetchAll(false);
             }
         },
-        [placements, patchPlacement, notifyError, fetchAll]
+        [placements, selectedRoute, patchPlacement, notifyError, fetchAll]
     );
 
     /**
