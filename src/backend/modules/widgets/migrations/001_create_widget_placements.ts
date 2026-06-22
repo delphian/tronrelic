@@ -47,9 +47,16 @@ export const migration: IMigration = {
 
         // Upsert filter for `ensurePluginPlacement`: unique on
         // (typeId, pluginId) so the disable→enable cycle finds the
-        // existing row instead of creating a duplicate. Sparse so
-        // operator placements (which omit `pluginId`) are excluded
-        // from the unique constraint and can share a `typeId` freely.
+        // existing row instead of creating a duplicate.
+        //
+        // NOTE: this `sparse` option is mis-scoped and is corrected by
+        // migration 004. A *compound* sparse index still indexes a
+        // document that has at least one keyed field, so operator rows
+        // (which carry `typeId` but omit `pluginId`) are indexed with a
+        // null `pluginId` and a second operator placement of the same
+        // `typeId` collides. Migration 004 replaces this with a partial
+        // index scoped to `pluginId`-bearing rows. This call is left
+        // as-is so the historical migration record stays faithful.
         await context.database.createIndex(
             collection,
             { typeId: 1, pluginId: 1 },

@@ -50,8 +50,10 @@ export function NotificationHandler(): null {
 
         /**
          * Forward an incoming notification to the toast provider, mapping
-         * severity to tone and defaulting a generous dwell time since these are
-         * targeted (not broadcast) and worth reading.
+         * severity to tone. These toasts never auto-dismiss (`duration: 0`):
+         * they are identity-targeted, deliberately dispatched, and must persist
+         * until the recipient manually closes them so a notification is never
+         * missed by timing out while unattended.
          *
          * @param payload - Display fields from the backend.
          */
@@ -63,7 +65,7 @@ export function NotificationHandler(): null {
                 tone: SEVERITY_TONE[payload.severity] ?? 'info',
                 title: payload.title,
                 description: payload.body,
-                duration: 8000
+                duration: 0
             });
         };
 

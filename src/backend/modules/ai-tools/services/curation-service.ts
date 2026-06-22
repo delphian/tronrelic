@@ -45,6 +45,16 @@ interface IRegisteredType {
 /** Broadcast sink for dashboard refetch signals (a no-op until wired). */
 type BroadcastFn = (event: string, payload: unknown) => void;
 
+/**
+ * Listener invoked once per newly held item, immediately after it is persisted.
+ * It lets an external consumer (the module) fan an admin notification on each
+ * hold without the curation service taking a dependency on the notification
+ * service — the same decoupling {@link BroadcastFn} gives the dashboard signal.
+ * The registered type's label is passed alongside the item so the consumer need
+ * not reach back into the registry. Optional; until wired, holds raise nothing.
+ */
+type HoldListenerFn = (item: ICurationItem, typeLabel: string) => void;
+
 /** WebSocket event the dashboard listens on to refetch the queue. */
 export const CURATIONS_CHANGED_EVENT = 'ai-tools:curations-changed';
 
@@ -61,6 +71,7 @@ export const CURATION_AUTO_APPROVE_DECIDED_BY = 'system:policy-auto-approve';
 export class CurationService implements ICurationService {
     private readonly types = new Map<string, IRegisteredType>();
     private broadcast: BroadcastFn | null = null;
+    private holdListener: HoldListenerFn | null = null;
 
     /**
      * @param logger - Module-scoped logger.
@@ -84,6 +95,19 @@ export class CurationService implements ICurationService {
      */
     setBroadcast(fn: BroadcastFn): void {
         this.broadcast = fn;
+    }
+
+    /**
+     * Wire a listener fired once per new hold so the module can fan an admin
+     * notification. Kept separate from the broadcast sink because the two carry
+     * different intents: the broadcast is a fire-and-forget dashboard refetch
+     * nudge, while this delivers the held item itself for a targeted toast.
+     * Optional; until set, new holds raise no notification.
+     *
+     * @param fn - Listener invoked with the held item and its type's label.
+     */
+    setOnHold(fn: HoldListenerFn): void {
+        this.holdListener = fn;
     }
 
     /**
@@ -165,6 +189,10 @@ export class CurationService implements ICurationService {
      * owning type's `onApprove` before this returns. A bypass that fails to
      * commit propagates exactly as a manual approval's failure would.
      *
+     * The hold listener fires for every hold — before the auto-approve branch —
+     * so an admin is notified whenever anything enters the queue, regardless of
+     * whether a policy bypass then decides it immediately.
+     *
      * @param input - The type id, opaque ref, and optional attribution.
      * @returns The stored envelope — `approved` when auto-approved, else `pending`.
      * @throws When the type id is not registered.
@@ -187,6 +215,10 @@ export class CurationService implements ICurationService {
         };
         await this.queue.insert(item);
         await this.notifyChanged();
+        // Notify on every hold, before the auto-approve branch. The listener is a
+        // synchronous fire-and-forget sink the module owns; it must not throw, so
+        // a notification fault cannot derail the hold.
+        this.holdListener?.(item, entry.type.label);
         let result = item;
         if (shouldAutoApproveCuration()) {
             this.logger.info({ id: item.id, typeId: item.typeId }, 'Curation auto-approved by tool policy (interactive bypass)');

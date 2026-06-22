@@ -13,7 +13,7 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 | WebSocket event | `widgets:placements-update` (also fired on zone-layout change — no separate event) |
 | Types package | `@delphian/tronrelic-types` — `IWidgetsService`, `IRegisterWidgetTypeInput`, `IRegisterZoneInput`, `IRegisterWidgetInput`, `IWidgetPlacement`, `IPlacementInput`, `IPlacementPatch`, `IPlacementListFilter`, `IWidgetType`, `IWidgetPlacementContext`, `IZoneDescriptor`, `IZoneSnapshot`, `IZoneLayoutConfig`, `IWidgetTypeSnapshot` |
 | Storage | `module_widgets_placements`, `module_widgets_zone_layouts` (MongoDB) |
-| Migration | `module:widgets:001_create_widget_placements` (placements collection + 4 indexes); `module:widgets:002_seed_block_ticker_placement` (idempotent seed of one operator-source `core:block-ticker` placement in `ticker-after`, guarded on absence so it runs once and never fights an operator edit); `module:widgets:003_add_parent_id_index` (sparse `parentId` index for child grouping). The zone-layouts collection needs no migration — `ZoneLayoutService.load()` creates its unique index idempotently at boot. |
+| Migration | `module:widgets:001_create_widget_placements` (placements collection + 4 indexes); `module:widgets:002_seed_block_ticker_placement` (idempotent seed of one operator-source `core:block-ticker` placement in `ticker-after`, guarded on absence so it runs once and never fights an operator edit); `module:widgets:003_add_parent_id_index` (sparse `parentId` index for child grouping); `module:widgets:004_repair_plugin_placement_index` (drops the mis-scoped sparse unique `(typeId, pluginId)` index and recreates it partial — `partialFilterExpression: { pluginId: { $exists: true } }` — so operators can place a widget type more than once). The zone-layouts collection needs no migration — `ZoneLayoutService.load()` creates its unique index idempotently at boot. |
 | System menu node | "Widgets" under the System container — seeded by `WidgetsModule.run()` |
 
 ## Source Map
@@ -128,7 +128,7 @@ The placement service emits via a callback `WidgetsModule.init()` wires to `WebS
 | `pluginId` | string? | Set only when `source === 'plugin'` |
 | `createdAt` / `updatedAt` | Date | |
 
-Indexes (migration 001): `(typeId, pluginId)` sparse unique for plugin-row atomicity; `(enabled, zoneId, order)` for SSR queries; `routes` multikey; `source`.
+Indexes: `(typeId, pluginId)` unique for plugin-row atomicity — **partial**, `partialFilterExpression: { pluginId: { $exists: true } }` (migration 004; migration 001 created it `sparse`, which wrongly indexed pluginId-less operator rows and blocked a second operator placement of the same `typeId`); `(enabled, zoneId, order)` for SSR queries; `routes` multikey; `source` (all migration 001). Because the unique index covers only plugin rows, operator-source placements may repeat a `typeId` in any zone freely.
 
 `module_widgets_zone_layouts` collection (one row per zone with an operator override; zones with no row fall back to a descriptor-derived default):
 
