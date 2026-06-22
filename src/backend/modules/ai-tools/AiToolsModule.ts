@@ -99,6 +99,21 @@ const SCHEDULED_PROMPT_NOTIFY_CATEGORY = 'ai-tools.scheduled-prompt-run';
 const SCHEDULED_PROMPT_CONTENT_TYPE = 'ai-tools:scheduled-prompt-run';
 
 /**
+ * Notification category id for new curation holds. Registered on the
+ * `'notifications'` service in run(); every item held for review fans a toast to
+ * admins through it, and any admin can silence it from their preferences.
+ */
+const CURATION_HELD_NOTIFY_CATEGORY = 'ai-tools.curation-held';
+
+/**
+ * Content type id this module registers for the curation-held notification.
+ * `notify()` carries the held item's title/body by reference under this type;
+ * its `describe(ref)` echoes them into a descriptor — content-registry-symmetric
+ * with both the scheduled-prompt notification and curation itself.
+ */
+const CURATION_HELD_CONTENT_TYPE = 'ai-tools:curation-held';
+
+/**
  * Service-registry name of the notifications service this module fires through.
  * Held as a local literal rather than imported from the notifications module so
  * ai-tools stays decoupled from that module's source — the only contract
@@ -423,6 +438,31 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             WebSocketService.getInstance().emit({ event, payload });
         });
 
+        // Fan every new curation hold to admins as a toast. Resolves the
+        // notifications service per call (lazy, robust — it never unregisters at
+        // runtime) and swallows dispatch errors so a notification fault never
+        // disturbs a hold. Fires on every hold, including ones the governor then
+        // auto-approves. The category/content type are registered below.
+        this.curation.setOnHold((item, typeLabel) => {
+            const svc = this.serviceRegistry.get<INotificationService>(NOTIFICATIONS_SERVICE);
+            if (!svc) {
+                return;
+            }
+            void svc
+                .notify({
+                    category: CURATION_HELD_NOTIFY_CATEGORY,
+                    typeId: CURATION_HELD_CONTENT_TYPE,
+                    ref: {
+                        title: `New ${typeLabel} held for review`,
+                        body: item.preview.title ?? item.preview.body
+                    },
+                    severity: 'info',
+                    firedBy: item.source,
+                    data: { curationId: item.id, typeId: item.typeId }
+                })
+                .catch((error) => this.logger.warn({ error, curationId: item.id }, 'Failed to dispatch curation-hold notification'));
+        });
+
         this.serviceRegistry.register(AI_TOOLS_SERVICE, this.registry);
         this.serviceRegistry.register(AI_TOOL_GOVERNOR_SERVICE, this.governor);
         this.serviceRegistry.register(AI_PROVIDERS_SERVICE, this.providerRegistry);
@@ -463,8 +503,35 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
                 adminConfigurable: true,
                 mutable: true
             });
+
+            // Register the curation-held content type and its admin-targeted
+            // category, mirroring the scheduled-prompt wiring above. The
+            // descriptor carries only title/body, which is what the toast channel
+            // accepts — so a new hold routes to admins as a toast.
+            this.serviceRegistry.get<IContentRegistry>(CONTENT_TYPES_SERVICE)?.register(
+                {
+                    typeId: CURATION_HELD_CONTENT_TYPE,
+                    label: 'Curation item held for review',
+                    describe: (ref) => ({
+                        title: typeof ref.title === 'string' ? ref.title : undefined,
+                        body: typeof ref.body === 'string' ? ref.body : undefined
+                    })
+                },
+                this.metadata.id
+            );
+            notifications.registerCategory({
+                id: CURATION_HELD_NOTIFY_CATEGORY,
+                label: 'Curation items held for review',
+                description: 'Fires when an item is held in the curation queue for human review.',
+                source: this.metadata.id,
+                defaultAudience: { groups: [ADMIN_GROUP_ID] },
+                channelDefaults: { toast: true },
+                userConfigurable: true,
+                adminConfigurable: true,
+                mutable: true
+            });
         } else {
-            this.logger.warn('notifications service unavailable; scheduled-prompt run notifications disabled');
+            this.logger.warn('notifications service unavailable; scheduled-prompt and curation-hold notifications disabled');
         }
 
         // Fans each scheduled-prompt run outcome to admins. Resolves the
