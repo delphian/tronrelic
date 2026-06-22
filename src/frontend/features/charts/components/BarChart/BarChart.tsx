@@ -60,6 +60,14 @@ interface BarChartProps {
      * in its own header. Omitted renders no title element.
      */
     title?: string;
+    /**
+     * Optional controls rendered on the right of the chart's header row, sharing
+     * that row with the title. Lets a caller (e.g. a widget with resource/window
+     * toggles) place its controls on the same line as the title instead of
+     * stacking its own toolbar above the chart, which left the title beneath the
+     * toggles. Omitted renders no header actions.
+     */
+    actions?: ReactNode;
     /** Rendering density (default: 'normal') */
     mode?: BarChartMode;
     /** Chart height in pixels (default: 320 in normal mode, 120 in widget mode) */
@@ -268,6 +276,7 @@ function resolveColor(color: string | undefined, index: number) {
 export function BarChart({
     series,
     title,
+    actions,
     mode = 'normal',
     height: propHeight,
     yAxisFormatter = value => value.toLocaleString(),
@@ -509,10 +518,23 @@ export function BarChart({
         };
     }, [series, hiddenSeries, containerWidth, height, chrome, fixedYMin, fixedYMax, seriesColors]);
 
+    // Optional header row shared by the empty and populated renders: the
+    // operator-set title on the left, caller-supplied controls (e.g. a widget's
+    // resource/window toggles) on the right. Kept a direct child of the figure —
+    // outside the `.plot` positioning context — so a rendered header never
+    // offsets the tooltip's SVG-relative top. Renders nothing when neither is
+    // supplied so an untitled, control-less chart is unchanged.
+    const header = (title || actions) ? (
+        <div className={styles.chart__header}>
+            {title ? <h3 className={styles.chart__title}>{title}</h3> : null}
+            {actions ? <div className={styles.chart__actions}>{actions}</div> : null}
+        </div>
+    ) : null;
+
     if (!chartData) {
         return (
             <div className={cn(styles.chart, className)}>
-                {title ? <h3 className={styles.chart__title}>{title}</h3> : null}
+                {header}
                 {/*
                   * Reserve the chart's pixel height while empty so an async
                   * empty→populated transition does not shift surrounding layout (CLS).
@@ -613,11 +635,11 @@ export function BarChart({
 
     return (
         <figure ref={setContainer} className={cn(styles.chart, isWidget && styles['chart--widget'], className)}>
-            {title ? <h3 className={styles.chart__title}>{title}</h3> : null}
+            {header}
             {/*
               * Positioning context for the absolutely-positioned tooltip. The tooltip
               * uses `top: tooltipTopPx`, an SVG-derived Y coordinate that is only valid
-              * measured from the SVG's top edge. The optional title is kept a direct
+              * measured from the SVG's top edge. The optional header is kept a direct
               * child of the figure (outside this wrapper), so the wrapper begins exactly
               * where the SVG does — a rendered title cannot push the SVG down and shift
               * every tooltip upward by the heading's height. The legend stays outside the

@@ -288,6 +288,8 @@ export interface IChartComponents {
         }>;
         /** Optional heading rendered above the chart. Lets a caller (e.g. a widget surfacing an operator-set graph title) label the chart without wrapping it in its own header. Omitted renders no title element. */
         title?: string;
+        /** Optional controls rendered on the right of the chart's header row, sharing that row with the title. Lets a widget place its window/view toggles on the same line as the title instead of stacking a separate toolbar above the chart. Omitted renders no header actions. */
+        actions?: React.ReactNode;
         yAxisFormatter?: (value: number) => string;
         xAxisFormatter?: (value: Date) => string;
         /** Custom formatter for the tooltip's date heading; falls back to xAxisFormatter. Lets the axis keep compact relative labels while the tooltip shows an absolute localized date. */
@@ -326,6 +328,8 @@ export interface IChartComponents {
         }>;
         /** Optional heading rendered above the chart. Lets a caller (e.g. a widget surfacing an operator-set graph title) label the chart without wrapping it in its own header. Omitted renders no title element. */
         title?: string;
+        /** Optional controls rendered on the right of the chart's header row, sharing that row with the title. Lets a widget place its resource/window toggles on the same line as the title instead of stacking a separate toolbar above the chart. Omitted renders no header actions. */
+        actions?: React.ReactNode;
         /** Rendering density (default: 'normal') */
         mode?: 'normal' | 'widget';
         /** Chart height in pixels (default: 320 normal, 120 widget) */

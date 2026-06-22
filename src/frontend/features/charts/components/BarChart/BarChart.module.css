@@ -17,13 +17,37 @@
     margin: 0;
 }
 
-/* Optional caller-supplied chart heading (e.g. an operator-set graph title). */
+/* Optional header row: the caller-supplied title on the left and any header
+   actions on the right, sharing one line. The row owns the bottom gap to the
+   plot; it wraps so a narrow container drops the actions below the title rather
+   than overflowing. */
+.chart__header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
+    margin-bottom: var(--gap-sm);
+}
+
+/* Optional caller-supplied chart heading (e.g. an operator-set graph title). The
+   header row owns the spacing, so the heading itself carries no margin. */
 .chart__title {
-    margin: 0 0 var(--gap-sm);
+    margin: 0;
     color: var(--color-text);
     font-size: var(--font-size-heading-sm);
     font-weight: var(--font-weight-semibold);
     line-height: var(--line-height-tight);
+}
+
+/* Caller-supplied header controls. `margin-left: auto` anchors them to the right
+   edge whether or not a title is present, so a control-only header still aligns
+   its toggles right (matching the previous standalone toolbar). */
+.chart__actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
+    margin-left: auto;
 }
 
 /* Positioning context for the interactive tooltip. Wraps only the SVG and the

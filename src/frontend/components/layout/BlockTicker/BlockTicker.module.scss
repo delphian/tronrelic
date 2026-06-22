@@ -7,11 +7,21 @@
 
 @use '../../../app/breakpoints' as *;
 
+/*
+ * fit-content makes the bar — surface and top/bottom borders included — an
+ * intrinsically sized flex item rather than a full-width block. A widget
+ * zone/group can then center or left/right-align it via --zone-justify-content /
+ * --zone-align-items; a full-width root would fill the zone and leave that
+ * alignment config nothing to act on. No max-width cap here on purpose: the core
+ * layout group owns width constraints (per-row relative width / collapseBelow),
+ * so the bar shrinks to its metrics and the group decides any ceiling.
+ */
 .ticker {
     background: var(--color-surface);
     border-top: var(--border-width-thin) solid var(--color-border);
     border-bottom: var(--border-width-thin) solid var(--color-border);
     margin-top: var(--spacing-4);
+    width: fit-content;
 }
 
 .container {
@@ -19,16 +29,8 @@
     align-items: center;
     gap: var(--gap-md);
     padding: var(--padding-xs) var(--container-padding-desktop);
-    width: min($breakpoint-tablet, 100%);
-    margin: 0 auto;
     font-size: var(--font-size-caption);
     line-height: var(--line-height-tight);
-    overflow-x: auto;
-    scrollbar-width: none;
-}
-
-.container::-webkit-scrollbar {
-    display: none;
 }
 
 .item {

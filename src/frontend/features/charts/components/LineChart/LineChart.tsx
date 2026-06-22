@@ -50,6 +50,14 @@ interface LineChartProps {
      * in its own header. Omitted renders no title element.
      */
     title?: string;
+    /**
+     * Optional controls rendered on the right of the chart's header row, sharing
+     * that row with the title. Lets a caller (e.g. a widget with window/view
+     * toggles) place its controls on the same line as the title instead of
+     * stacking its own toolbar above the chart, which left the title beneath the
+     * toggles. Omitted renders no header actions.
+     */
+    actions?: ReactNode;
     /** Chart height in pixels (default: 320) */
     height?: number;
     /** Custom formatter for Y-axis labels */
@@ -192,6 +200,7 @@ function toDate(value: string) {
 export function LineChart({
     series,
     title,
+    actions,
     height = 320,
     yAxisFormatter = value => value.toLocaleString(),
     xAxisFormatter = value => value.toLocaleDateString(),
@@ -397,10 +406,23 @@ export function LineChart({
         };
     }, [series, height, containerWidth, fixedMinDate, fixedMaxDate, fixedYMin, fixedYMax, hiddenSeries]);
 
+    // Optional header row shared by the empty and populated renders: the
+    // operator-set title on the left, caller-supplied controls (e.g. a widget's
+    // window/view toggles) on the right. Kept a direct child of the figure —
+    // outside the `.plot` positioning context — so a rendered header never
+    // offsets the tooltip's SVG-relative `top`. Renders nothing when neither is
+    // supplied so an untitled, control-less chart is unchanged.
+    const header = (title || actions) ? (
+        <div className={styles.chart__header}>
+            {title ? <h3 className={styles.chart__title}>{title}</h3> : null}
+            {actions ? <div className={styles.chart__actions}>{actions}</div> : null}
+        </div>
+    ) : null;
+
     if (!chartData) {
         return (
             <div className={cn(styles.chart, className)}>
-                {title ? <h3 className={styles.chart__title}>{title}</h3> : null}
+                {header}
                 {/*
                   * Reserve the chart's pixel height while empty so an async
                   * empty→populated transition does not shift surrounding layout (CLS).
@@ -489,11 +511,11 @@ export function LineChart({
 
     return (
         <figure ref={containerRef} className={cn(styles.chart, className)}>
-            {title ? <h3 className={styles.chart__title}>{title}</h3> : null}
+            {header}
             {/*
               * Positioning context for the absolutely-positioned tooltip. The tooltip
               * uses `top: tooltip.y`, an SVG viewBox-unit Y coordinate that is only
-              * valid measured from the SVG's top edge. The optional title is kept a
+              * valid measured from the SVG's top edge. The optional header is kept a
               * direct child of the figure (outside this wrapper), so the wrapper begins
               * exactly where the SVG does — a rendered title cannot push the SVG down
               * and shift every tooltip upward by the heading's height. The legend is
