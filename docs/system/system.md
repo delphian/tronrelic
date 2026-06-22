@@ -84,7 +84,7 @@ The central registry of provider-owned content — the reusable noun the platfor
 
 ### Curation
 
-One core admin surface (`/system/ai-tools` → Curation, in the AI Tools module) for every effect held for human review before it takes hold. Plugins register an `ICurationType` — a [content type](./system-content-types.md) plus `onApprove`/`onReject` verbs; core owns the decision and a pointer-plus-preview envelope while the type owns the payload and what approval does. It also hardens a tool's `forcesCuratorReview` into a verifiable `curationTypeId` binding the governor checks live. See [system-curation.md](./system-curation.md).
+One core admin surface (`/system/curation`, owned by the Curation module) for every effect held for human review before it takes hold. Plugins register an `ICurationType` — a [content type](./system-content-types.md) plus `onApprove`/`onReject` verbs; core owns the decision and a pointer-plus-preview envelope while the type owns the payload and what approval does. It also hardens a tool's `forcesCuratorReview` into a verifiable `curationTypeId` binding the AI tool governor checks live against the published `'curation'` service. See [system-curation.md](./system-curation.md).
 
 ### Notifications
 
@@ -139,6 +139,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [Widgets Module README](../../src/backend/modules/widgets/README.md) | `IWidgetsService`, zones, placements, widget-types, SSR router integration |
 | [Logs Module README](../../src/backend/modules/logs/README.md) | `SystemLogService` singleton, `system_logs` persistence, metadata sanitizer |
 | [AI Tools Module README](../../src/backend/modules/ai-tools/README.md) | Tool registry, governor, policy, invocation audit, human-approval queue |
+| [Curation Module README](../../src/backend/modules/curation/README.md) | `ICurationService`, the held-item lifecycle, `/system/curation` admin surface |
 | [Notifications Module README](../../src/backend/modules/notifications/README.md) | `INotificationService`, dispatch pipeline, preferences, policy, audit, channels |
 | [system-testing.md](./system-testing.md) | Vitest, Mongoose mocks, fixtures |
 

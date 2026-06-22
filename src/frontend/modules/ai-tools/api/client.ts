@@ -12,7 +12,6 @@ import type {
     IAiToolCapability,
     IUntrustedScreenConfig,
     AiToolSensitivity,
-    ICurationPreview,
     ITrifectaStatus,
     IToolInvocationRecord,
     IToolInvocationContext,
@@ -73,25 +72,6 @@ export interface IActivityQuery {
     status?: ToolInvocationStatus;
     limit?: number;
     offset?: number;
-}
-
-/**
- * One held item in the central curation queue, as returned by `GET /curations`.
- * Mirrors the backend's serialized envelope (dates as ISO strings); `preview` is
- * the content-agnostic descriptor the queue renders, and `ref` is the owning
- * type's opaque pointer (used by an inline editor to address its own record).
- */
-export interface ICurationItemView {
-    id: string;
-    typeId: string;
-    providerId: string;
-    ref: Record<string, unknown>;
-    preview: ICurationPreview;
-    status: string;
-    source?: string;
-    createdAt: string;
-    decidedAt?: string;
-    decidedBy?: string;
 }
 
 /**
@@ -309,75 +289,6 @@ export async function approveInvocation(id: string): Promise<void> {
  */
 export async function rejectInvocation(id: string): Promise<void> {
     await parse(await fetch(`${BASE}/approvals/${encodeURIComponent(id)}/reject`, { method: 'POST' }), 'reject invocation');
-}
-
-/**
- * List pending items in the central curation queue, newest first.
- *
- * @returns The pending curation envelopes.
- */
-export async function listCurations(): Promise<ICurationItemView[]> {
-    const data = await parse<{ curations: ICurationItemView[] }>(await fetch(`${BASE}/curations`), 'load curation queue');
-    return data.curations;
-}
-
-/**
- * List decided curation items (approved/rejected), most-recently-decided first.
- * The pending queue answers "what needs me now?"; this answers "what was decided,
- * when, and by whom?" — the records persist after a decision, this surfaces them.
- *
- * @returns The decided curation envelopes, newest decision first.
- */
-export async function listCurationHistory(): Promise<ICurationItemView[]> {
-    const data = await parse<{ curations: ICurationItemView[] }>(await fetch(`${BASE}/curations/history`), 'load curation history');
-    return data.curations;
-}
-
-/**
- * Fetch the count of pending curation items, for the header badge.
- *
- * @returns The pending count.
- */
-export async function getCurationsCount(): Promise<number> {
-    const data = await parse<{ count: number }>(await fetch(`${BASE}/curations/count`), 'load curation count');
-    return data.count;
-}
-
-/**
- * Apply an inline edit to a held curation item before deciding it. The patch is
- * generic (today just `body`); the owning type maps it onto its record and
- * validates it, so a rejected edit surfaces as a thrown error here.
- *
- * @param id - The curation envelope id.
- * @param patch - The generic edit (e.g. replacement body text).
- * @returns Resolves when the edit is applied.
- */
-export async function editCuration(id: string, patch: { body: string }): Promise<void> {
-    await parse(await fetch(`${BASE}/curations/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch)
-    }), 'edit curation item');
-}
-
-/**
- * Approve a held curation item, committing it through its owning type.
- *
- * @param id - The curation envelope id.
- * @returns Resolves when the item resolves.
- */
-export async function approveCuration(id: string): Promise<void> {
-    await parse(await fetch(`${BASE}/curations/${encodeURIComponent(id)}/approve`, { method: 'POST' }), 'approve curation item');
-}
-
-/**
- * Reject a held curation item, discarding it through its owning type.
- *
- * @param id - The curation envelope id.
- * @returns Resolves when the item resolves.
- */
-export async function rejectCuration(id: string): Promise<void> {
-    await parse(await fetch(`${BASE}/curations/${encodeURIComponent(id)}/reject`, { method: 'POST' }), 'reject curation item');
 }
 
 /**

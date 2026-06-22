@@ -13,6 +13,12 @@
  * governor sets it, `hold()` reads it — without threading a flag through every
  * plugin's hold input or coupling the curation service to the policy engine.
  * Per-async-context isolation keeps concurrent invocations from cross-talking.
+ *
+ * Owned by the curation module (it is curation's notion of an ambient bypass).
+ * The AI tool governor imports {@link runWithCurationAutoApprove} from the
+ * curation module's public surface to wrap a governed handler call; the curation
+ * service reads {@link shouldAutoApproveCuration} inside `hold()`. This is the
+ * only runtime primitive shared across the curation/ai-tools module boundary.
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';

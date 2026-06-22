@@ -33,6 +33,8 @@ export interface ITronGridAccountResponse {
     owner_permission?: ITronGridAccountPermission;
 }
 
+import type { ITrc10 } from '../trc10/index.js';
+
 /**
  * TronGrid service interface for plugins.
  *
@@ -65,4 +67,33 @@ export interface ITronGridService {
      * @returns A new, fully independent TronWeb instance
      */
     createTronWeb(options?: { privateKey?: string; fullHost?: string }): any;
+
+    /**
+     * Resolve a TRC10 token to its source-agnostic on-chain record by token id.
+     *
+     * Why callers need it: a token page (or any consumer holding only the
+     * chain-assigned id) needs the canonical name, supply, precision, and
+     * tokenomics without learning the wire shape of the underlying provider.
+     * The implementation owns the source and the decoding; the caller depends
+     * only on {@link ITrc10}.
+     *
+     * @param tokenId - Chain-assigned numeric asset id, as a string.
+     * @returns The resolved token, or null when no asset carries that id.
+     */
+    getTrc10(tokenId: string): Promise<ITrc10 | null>;
+
+    /**
+     * Resolve the single TRC10 token issued by an account, by owner address.
+     *
+     * Why this exists separately from {@link ITronGridService.getTrc10}: when a
+     * creation is detected on-chain the chain-assigned token id is not yet known
+     * to the observer — but TRON permits exactly one asset issuance per account,
+     * so the owner address resolves the just-created token deterministically.
+     * This is also the basis for the "has this wallet already issued a token?"
+     * pre-flight check that guards user-initiated creation.
+     *
+     * @param ownerAddress - Base58 issuer address.
+     * @returns The account's token, or null when the account has issued none.
+     */
+    getTrc10ByOwner(ownerAddress: string): Promise<ITrc10 | null>;
 }

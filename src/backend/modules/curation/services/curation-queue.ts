@@ -3,10 +3,10 @@
  *
  * Persistent store for the central curation queue — the envelopes of effects
  * held for a human curator's decision. It is the storage half of the curation
- * subsystem: execution-free, like the approval queue it sits beside. It records
- * a held item and its decision; the owning curation type (not this store) owns
- * what "approved" does. Generalizes each plugin's private pending queue into one
- * core-owned collection so a single admin surface reviews every content type.
+ * subsystem: execution-free. It records a held item and its decision; the owning
+ * curation type (not this store) owns what "approved" does. Generalizes each
+ * plugin's private pending queue into one core-owned collection so a single
+ * admin surface reviews every content type.
  */
 
 import type {
@@ -18,7 +18,7 @@ import type {
 } from '@/types';
 
 /** Physical collection name (modules prefix `module_<id>_` manually). */
-const COLLECTION = 'module_ai-tools_curations';
+const COLLECTION = 'module_curation_curations';
 
 /**
  * Persistent store of curation envelopes awaiting or carrying a decision.
