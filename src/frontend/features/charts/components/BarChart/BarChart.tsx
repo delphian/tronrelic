@@ -513,7 +513,16 @@ export function BarChart({
         return (
             <div className={cn(styles.chart, className)}>
                 {title ? <h3 className={styles.chart__title}>{title}</h3> : null}
-                {emptyLabel}
+                {/*
+                  * Reserve the chart's pixel height while empty so an async
+                  * empty→populated transition does not shift surrounding layout (CLS).
+                  * The height is a data-driven dimension (the data-viz exception), so it
+                  * rides inline; the label's flex-centering lives in the module. Mirrors
+                  * the populated layout — title above, chart-area box below.
+                  */}
+                <div className={styles.chart__empty} style={{ minHeight: height }}>
+                    {emptyLabel}
+                </div>
             </div>
         );
     }
@@ -606,18 +615,28 @@ export function BarChart({
         <figure ref={setContainer} className={cn(styles.chart, isWidget && styles['chart--widget'], className)}>
             {title ? <h3 className={styles.chart__title}>{title}</h3> : null}
             {/*
-              * Render at a fixed pixel height with a uniformly-scaled viewBox so the
-              * chart occupies its final box during SSR. Height no longer derives from
-              * the pre-measurement viewBox aspect ratio (CSS `height: auto`), which
-              * made the server paint the chart at the wrong height and grow it after
-              * the ResizeObserver fired — the visible "loading" jump. With
-              * `preserveAspectRatio="xMinYMid meet"` the viewBox scales uniformly and
-              * left-anchors inside the fixed box; once the observer matches the viewBox
-              * width to the rendered width the mapping is 1:1, so before measurement the
-              * content is undistorted (transient empty space on the right) rather than
-              * horizontally stretched.
+              * Positioning context for the absolutely-positioned tooltip. The tooltip
+              * uses `top: tooltipTopPx`, an SVG-derived Y coordinate that is only valid
+              * measured from the SVG's top edge. The optional title is kept a direct
+              * child of the figure (outside this wrapper), so the wrapper begins exactly
+              * where the SVG does — a rendered title cannot push the SVG down and shift
+              * every tooltip upward by the heading's height. The legend stays outside the
+              * wrapper too so it is not captured by the positioning context.
               */}
-            <svg
+            <div className={styles.plot}>
+                {/*
+                  * Render at a fixed pixel height with a uniformly-scaled viewBox so the
+                  * chart occupies its final box during SSR. Height no longer derives from
+                  * the pre-measurement viewBox aspect ratio (CSS `height: auto`), which
+                  * made the server paint the chart at the wrong height and grow it after
+                  * the ResizeObserver fired — the visible "loading" jump. With
+                  * `preserveAspectRatio="xMinYMid meet"` the viewBox scales uniformly and
+                  * left-anchors inside the fixed box; once the observer matches the viewBox
+                  * width to the rendered width the mapping is 1:1, so before measurement the
+                  * content is undistorted (transient empty space on the right) rather than
+                  * horizontally stretched.
+                  */}
+                <svg
                 viewBox={`0 0 ${width} ${chartHeight}`}
                 height={chartHeight}
                 preserveAspectRatio="xMinYMid meet"
@@ -710,6 +729,7 @@ export function BarChart({
                     ))}
                 </div>
             )}
+            </div>
 
             {resolvedShowLegend && (
                 <figcaption className={styles.legend}>
