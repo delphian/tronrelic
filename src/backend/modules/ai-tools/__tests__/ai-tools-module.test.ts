@@ -10,10 +10,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { HookAbortError, UNTRUSTED_CONTENT_NOTICE } from '@/types';
 import type { IAiProvider, IAiProviderInfo, IAiTool, IAiToolCapability, IAiToolInfo, IBlockchainObserverService, IBlockchainService, ICacheService, IChainParametersService, IContentScreenVerdict, ICurationType, IHookRegistry, IMenuService, ISchedulerService, ISystemConfigService, ISystemLogService, IToolInvocationContext, IUsdtParametersService } from '@/types';
-import { AiToolsModule, AUDIT_PRUNE_JOB, CurationQueue, CurationService, ToolApprovalQueue, detectTrifecta, lintToolCapability } from '../index.js';
+import { AiToolsModule, AUDIT_PRUNE_JOB, ToolApprovalQueue, detectTrifecta, lintToolCapability } from '../index.js';
+import { CurationService, CurationQueue } from '../../curation/index.js';
 import { ToolPolicyEngine } from '../services/tool-policy-engine.js';
 import { ScreenConfigService } from '../services/screen-config.service.js';
-import { runWithCurationAutoApprove, shouldAutoApproveCuration } from '../services/curation-auto-approve-context.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 import { ContentRegistry, CONTENT_TYPES_SERVICE } from '../../../services/content-registry.js';
@@ -182,11 +182,18 @@ describe('AiToolsModule', () => {
     let mockApp: { use: ReturnType<typeof vi.fn> };
     let mockRegistry: ReturnType<typeof createMockServiceRegistry>;
     let mockHooks: IHookRegistry;
+    let curation: CurationService;
 
     beforeEach(async () => {
         module = new AiToolsModule();
         mockApp = { use: vi.fn() };
-        mockRegistry = createMockServiceRegistry({ [CONTENT_TYPES_SERVICE]: new ContentRegistry(createMockLogger()) });
+        const contentRegistry = new ContentRegistry(createMockLogger());
+        mockRegistry = createMockServiceRegistry({ [CONTENT_TYPES_SERVICE]: contentRegistry });
+        // Curation lives in its own module now. Register a real curation service on
+        // the shared registry so the governor's `watch('curation')` wires the
+        // binding resolver exactly as it does in bootstrap.
+        curation = new CurationService(createMockLogger(), new CurationQueue(createMockLogger(), createMockDatabaseService()), contentRegistry);
+        mockRegistry.register('curation', curation);
         mockHooks = createMockHookRegistry();
         await module.init({
             database: createMockDatabaseService(),
@@ -742,7 +749,7 @@ describe('AiToolsModule', () => {
 
             // Register the matching type: the binding resolves and the tool is
             // autonomous-safe (an unattended call can only draft into the queue).
-            module.getCuration().registerType(spyCurationType(), 'x-poster');
+            curation.registerType(spyCurationType(), 'x-poster');
             const permitted = await module.getGovernor().invoke('test-bound', {}, scheduledCtx);
             expect(permitted.status).toBe('ok');
             expect(handler).toHaveBeenCalledOnce();
@@ -752,7 +759,6 @@ describe('AiToolsModule', () => {
             const registry = module.getRegistry();
             registry.registerTool(boundCuratedTool('x-poster:tweet'), 'test');
             await registry.setEnabled('test-bound', true);
-            const curation = module.getCuration();
             curation.registerType(spyCurationType(), 'x-poster');
 
             expect((await module.getGovernor().invoke('test-bound', {}, scheduledCtx)).status).toBe('ok');
@@ -780,7 +786,6 @@ describe('AiToolsModule', () => {
         }
 
         it('releases a held effect without manual review on the interactive path when policy is auto-approve', async () => {
-            const curation = module.getCuration();
             const onApprove = vi.fn(async () => undefined);
             curation.registerType(spyCurationType({ onApprove }), 'x-poster');
             const registry = module.getRegistry();
@@ -800,34 +805,7 @@ describe('AiToolsModule', () => {
             expect(onApprove).toHaveBeenCalledOnce();
         });
 
-        it('clears the auto-approve scope once the governed execution settles, so a detached handler cannot auto-approve', async () => {
-            // Models the timeout race: the governed call (fn) settles while a
-            // handler continuation keeps running and only holds its effect
-            // afterward. The detached continuation shares the same async context,
-            // so it must observe the scope as no longer live.
-            let detachedSawAutoApprove: boolean | null = null;
-            let releaseDetached: (() => void) | null = null;
-            const detached = new Promise<void>((resolve) => { releaseDetached = resolve; });
-
-            await runWithCurationAutoApprove(true, async () => {
-                // Inside the live scope, auto-approve is in effect.
-                expect(shouldAutoApproveCuration()).toBe(true);
-                // A continuation that resolves only after fn returns — a handler
-                // that outran the governor's timeout.
-                void detached.then(() => { detachedSawAutoApprove = shouldAutoApproveCuration(); });
-                // fn settles now (as if runWithTimeout rejected on timeout).
-            });
-
-            // Now let the detached continuation run, after the governed call returned.
-            releaseDetached!();
-            await detached;
-            await Promise.resolve();
-
-            expect(detachedSawAutoApprove).toBe(false);
-        });
-
         it('ignores auto-approve on autonomous paths — the effect falls back to a manual hold', async () => {
-            const curation = module.getCuration();
             const onApprove = vi.fn(async () => undefined);
             curation.registerType(spyCurationType({ onApprove }), 'x-poster');
             const registry = module.getRegistry();
@@ -937,167 +915,6 @@ describe('capability lint (lintToolCapability)', () => {
         const findings = lintToolCapability(tool('Read the latest on-chain memo for an address.', undefined));
         expect(findings).toContainEqual({ severity: 'warn', message: expect.stringContaining('without a capability classification') });
         expect(findings).toContainEqual({ severity: 'warn', message: expect.stringContaining('surfacesUntrustedContent') });
-    });
-});
-
-describe('CurationService', () => {
-    /** Build a curation service over a fresh mock database. */
-    function makeService(): CurationService {
-        const logger = createMockLogger();
-        const queue = new CurationQueue(logger, createMockDatabaseService());
-        return new CurationService(logger, queue, new ContentRegistry(logger));
-    }
-
-    it('registers types and reports them', () => {
-        const service = makeService();
-        const type = spyCurationType();
-        service.registerType(type, 'x-poster');
-
-        expect(service.hasType('x-poster:tweet')).toBe(true);
-        expect(service.getType('x-poster:tweet')).toBe(type);
-        expect(service.listTypes()).toEqual([{ typeId: 'x-poster:tweet', label: 'Tweet', providerId: 'x-poster' }]);
-    });
-
-    it('holds an effect: caches the preview from describe() and stores it pending', async () => {
-        const service = makeService();
-        const type = spyCurationType();
-        service.registerType(type, 'x-poster');
-
-        const item = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' }, source: 'ai-tool:x-post-tweet' });
-
-        expect(item.status).toBe('pending');
-        expect(item.preview.body).toBe('draft p1');
-        expect(item.providerId).toBe('x-poster');
-        expect(item.source).toBe('ai-tool:x-post-tweet');
-        expect(type.describe).toHaveBeenCalledWith({ postId: 'p1' });
-        expect(await service.countPending()).toBe(1);
-    });
-
-    it('throws when holding for an unregistered type', async () => {
-        const service = makeService();
-        await expect(service.hold({ typeId: 'nope:thing', ref: {} })).rejects.toThrow(/nope:thing/);
-    });
-
-    it('approve records the decision then commits via onApprove', async () => {
-        const service = makeService();
-        const type = spyCurationType();
-        service.registerType(type, 'x-poster');
-        const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
-
-        const decided = await service.approve(held.id, 'admin-1');
-
-        expect(decided?.status).toBe('approved');
-        expect(decided?.decidedBy).toBe('admin-1');
-        expect(type.onApprove).toHaveBeenCalledOnce();
-        expect(type.onReject).not.toHaveBeenCalled();
-        expect(await service.countPending()).toBe(0);
-    });
-
-    it('reject records the decision then discards via onReject', async () => {
-        const service = makeService();
-        const type = spyCurationType();
-        service.registerType(type, 'x-poster');
-        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
-
-        const decided = await service.reject(held.id, 'admin-1');
-
-        expect(decided?.status).toBe('rejected');
-        expect(type.onReject).toHaveBeenCalledOnce();
-        expect(type.onApprove).not.toHaveBeenCalled();
-    });
-
-    it('blocks a decision when the owning type is unregistered, leaving the item pending', async () => {
-        const service = makeService();
-        const type = spyCurationType();
-        service.registerType(type, 'x-poster');
-        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
-
-        service.unregisterType('x-poster:tweet');
-        const decided = await service.approve(held.id, 'admin-1');
-
-        expect(decided).toBeNull();
-        expect(type.onApprove).not.toHaveBeenCalled();
-        expect(await service.countPending()).toBe(1); // not lost — waits for the owner to return
-    });
-
-    it('surfaces a failed commit to the caller while leaving the decision recorded', async () => {
-        const service = makeService();
-        const type = spyCurationType({ onApprove: vi.fn(async () => { throw new Error('publish failed'); }) });
-        service.registerType(type, 'x-poster');
-        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
-
-        // The commit failure propagates so the curator is not shown a false success...
-        await expect(service.approve(held.id, 'admin-1')).rejects.toThrow('publish failed');
-        // ...but the decision still stands — the item has left the pending queue.
-        expect(await service.countPending()).toBe(0);
-    });
-
-    it('resolves a live preview for pending items in listPending and get', async () => {
-        const service = makeService();
-        let stored = 'v1';
-        const type = spyCurationType({ describe: vi.fn(async () => ({ body: stored })) });
-        service.registerType(type, 'x-poster');
-        const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
-        expect(held.preview.body).toBe('v1');
-
-        // The provider's record changes out of band; the cached snapshot is stale.
-        stored = 'v2';
-        expect((await service.listPending())[0].preview.body).toBe('v2');
-        expect((await service.get(held.id))?.preview.body).toBe('v2');
-    });
-
-    it('edit falls back to the patched body when re-describe fails', async () => {
-        const service = makeService();
-        let calls = 0;
-        const type = spyCurationType({
-            describe: vi.fn(async () => {
-                calls += 1;
-                if (calls === 1) {
-                    return { body: 'original', editable: true }; // hold-time snapshot
-                }
-                throw new Error('describe boom'); // re-describe after the edit
-            }),
-            applyEdit: vi.fn(async () => undefined)
-        });
-        service.registerType(type, 'x-poster');
-        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
-
-        const updated = await service.edit(held.id, { body: 'edited' }, 'admin-1');
-
-        expect(type.applyEdit).toHaveBeenCalledOnce();
-        // The edit applied; a failed re-describe must not report failure — fall
-        // back to the patched body so the snapshot still advances.
-        expect(updated?.preview.body).toBe('edited');
-    });
-
-    it('edit applies the patch through the type, then re-derives and re-caches the preview', async () => {
-        const service = makeService();
-        // Simulate the owning plugin's record: applyEdit mutates it, describe reads it.
-        let stored = 'original';
-        const type = spyCurationType({
-            describe: vi.fn(async () => ({ body: stored, editable: true })),
-            applyEdit: vi.fn(async (_ref, patch) => { if (typeof patch.body === 'string') stored = patch.body; })
-        });
-        service.registerType(type, 'x-poster');
-        const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
-        expect(held.preview.body).toBe('original');
-
-        const updated = await service.edit(held.id, { body: 'edited' }, 'admin-1');
-
-        // applyEdit now receives the opaque ref (content self-mutation), not the curation envelope.
-        expect(type.applyEdit).toHaveBeenCalledWith(expect.objectContaining({ postId: 'p1' }), { body: 'edited' });
-        expect(updated?.preview.body).toBe('edited');
-        // The cached snapshot is refreshed too, so the disabled-owner fallback is current.
-        expect((await service.get(held.id))?.preview.body).toBe('edited');
-        expect(await service.countPending()).toBe(1); // edit does not decide the item
-    });
-
-    it('edit returns null for a type that is not editable', async () => {
-        const service = makeService();
-        service.registerType(spyCurationType(), 'x-poster'); // no applyEdit
-        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
-
-        expect(await service.edit(held.id, { body: 'x' })).toBeNull();
     });
 });
 

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * @fileoverview Curation tab — the central queue of effects held for human
+ * @fileoverview Curation queue — the central inbox of effects held for human
  * review across every content type. Each item renders from its content-agnostic
  * preview (title, body, media, fields); approving commits the effect through its
  * owning plugin, rejecting discards it. An item whose owning plugin is disabled
@@ -9,24 +9,24 @@
  * A Pending/History toggle switches between the live queue and the read-only
  * audit of past decisions — decisions never delete a record, so history is just
  * the decided items, rendered from their frozen snapshot with no actions.
- * Refetches on the `ai-tools:curations-changed` signal and reports the new count
- * up via `onChanged` so the header badge stays live. Like the sibling tabs this
- * is an admin client surface, not an SSR-first public component.
+ * Refetches on the `curation:changed` signal and reports the new count up via
+ * `onChanged` so the header badge stays live. Like the sibling system surfaces
+ * this is an admin client surface, not an SSR-first public component.
  */
 
 import { useEffect, useState, useCallback } from 'react';
 import { Check, X, Pencil } from 'lucide-react';
-import { Stack } from '../../../../../components/layout';
-import { Button } from '../../../../../components/ui/Button';
-import { Textarea } from '../../../../../components/ui/Textarea';
-import { Badge } from '../../../../../components/ui/Badge';
-import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
-import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { useToast } from '../../../../../components/ui/ToastProvider';
-import { useModal } from '../../../../../components/ui/ModalProvider';
-import { getSocket } from '../../../../../lib/socketClient';
-import { listCurations, listCurationHistory, approveCuration, rejectCuration, editCuration, type ICurationItemView } from '../../../../../modules/ai-tools';
-import styles from '../page.module.scss';
+import { Stack } from '../../../../components/layout';
+import { Button } from '../../../../components/ui/Button';
+import { Textarea } from '../../../../components/ui/Textarea';
+import { Badge } from '../../../../components/ui/Badge';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
+import { ClientTime } from '../../../../components/ui/ClientTime';
+import { useToast } from '../../../../components/ui/ToastProvider';
+import { useModal } from '../../../../components/ui/ModalProvider';
+import { getSocket } from '../../../../lib/socketClient';
+import { listCurations, listCurationHistory, approveCuration, rejectCuration, editCuration, type ICurationItemView } from '../../../../modules/curation';
+import styles from './page.module.scss';
 
 /** Truncate body text for the inline preview cell. */
 function truncate(text: string, max = 160): string {
@@ -133,13 +133,13 @@ function CurationDecision({ item }: { item: ICurationItemView }) {
 }
 
 /**
- * Curation tab content.
+ * Curation queue content.
  *
  * @param props.onChanged - Called after load/approve/reject so the page header
  *                          pending badge refreshes.
- * @returns The tab.
+ * @returns The queue.
  */
-export function CurationTab({ onChanged }: { onChanged: () => void }) {
+export function CurationQueue({ onChanged }: { onChanged: () => void }) {
     const [view, setView] = useState<'pending' | 'history'>('pending');
     const [items, setItems] = useState<ICurationItemView[]>([]);
     const [loading, setLoading] = useState(true);
@@ -186,8 +186,8 @@ export function CurationTab({ onChanged }: { onChanged: () => void }) {
     useEffect(() => {
         const socket = getSocket();
         const handler = () => { void load(); onChanged(); };
-        socket.on('ai-tools:curations-changed', handler);
-        return () => { socket.off('ai-tools:curations-changed', handler); };
+        socket.on('curation:changed', handler);
+        return () => { socket.off('curation:changed', handler); };
     }, [load, onChanged]);
 
     const resolve = useCallback(async (id: string, action: 'approve' | 'reject') => {

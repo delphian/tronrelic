@@ -23,6 +23,7 @@ import type {
     ICacheService,
     IChainParametersService,
     IContentRegistry,
+    ICurationService,
     IDatabaseService,
     IHookRegistry,
     IMenuService,
@@ -47,8 +48,6 @@ import { AiToolGovernor } from './services/ai-tool-governor.js';
 import { AiProviderRegistry } from './services/ai-provider-registry.js';
 import { ScreenConfigService } from './services/screen-config.service.js';
 import { AiQueryHistoryService } from './services/ai-query-history.service.js';
-import { CurationQueue } from './services/curation-queue.js';
-import { CurationService } from './services/curation-service.js';
 import { CONTENT_TYPES_SERVICE } from '../../services/content-registry.js';
 import { SavedPromptsService } from './services/saved-prompts.service.js';
 import { PromptVariableRegistry } from './services/prompt-variable-registry.js';
@@ -68,8 +67,15 @@ export const AI_TOOL_GOVERNOR_SERVICE = 'ai-tool-governor';
 /** Service-registry name for the installed-AI-provider registry. */
 export const AI_PROVIDERS_SERVICE = 'ai-providers';
 
-/** Service-registry name for the central curation queue. */
-export const CURATION_SERVICE = 'curation';
+/**
+ * Service-registry name of the central curation service (owned by the curation
+ * module). Held as a local literal — not imported from that module — so ai-tools
+ * stays decoupled from its source; the only contract between them is this name,
+ * the `ICurationService` interface, and `runWithCurationAutoApprove` (imported by
+ * the governor). The governor verifies a tool's `curationTypeId` binding against
+ * this service.
+ */
+const CURATION_SERVICE = 'curation';
 
 /** Service-registry name for the prompt-variable registry. */
 export const PROMPT_VARIABLES_SERVICE = 'prompt-variables';
@@ -97,21 +103,6 @@ const SCHEDULED_PROMPT_NOTIFY_CATEGORY = 'ai-tools.scheduled-prompt-run';
  * the notification path consumes the same content registry as curation.
  */
 const SCHEDULED_PROMPT_CONTENT_TYPE = 'ai-tools:scheduled-prompt-run';
-
-/**
- * Notification category id for new curation holds. Registered on the
- * `'notifications'` service in run(); every item held for review fans a toast to
- * admins through it, and any admin can silence it from their preferences.
- */
-const CURATION_HELD_NOTIFY_CATEGORY = 'ai-tools.curation-held';
-
-/**
- * Content type id this module registers for the curation-held notification.
- * `notify()` carries the held item's title/body by reference under this type;
- * its `describe(ref)` echoes them into a descriptor — content-registry-symmetric
- * with both the scheduled-prompt notification and curation itself.
- */
-const CURATION_HELD_CONTENT_TYPE = 'ai-tools:curation-held';
 
 /**
  * Service-registry name of the notifications service this module fires through.
@@ -194,8 +185,6 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private policy!: ToolPolicyEngine;
     private audit!: ToolAuditStore;
     private approvals!: ToolApprovalQueue;
-    private curationQueue!: CurationQueue;
-    private curation!: CurationService;
     private governor!: AiToolGovernor;
     private providerRegistry!: AiProviderRegistry;
     private screenConfig!: ScreenConfigService;
@@ -263,23 +252,16 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.approvals = new ToolApprovalQueue(this.logger, this.database);
         await this.approvals.ensureIndexes();
 
-        this.curationQueue = new CurationQueue(this.logger, this.database);
-        await this.curationQueue.ensureIndexes();
-        // Resolve the central content-type registry (published at bootstrap, so
-        // it is always present by module-init time). Curation mirrors each
-        // registered type's content facet into it so other pipelines —
-        // notifications next — discover the same content types.
-        const contentRegistry = this.serviceRegistry.get<IContentRegistry>(CONTENT_TYPES_SERVICE);
-        if (!contentRegistry) {
-            throw new Error("AiToolsModule requires the 'content-types' registry to be published before init");
-        }
-        this.curation = new CurationService(this.logger, this.curationQueue, contentRegistry);
-
-        // Verify a tool's `curationTypeId` binding against the live curation
-        // registry. A declared binding relaxes the tool's gates only while its
-        // owning type is registered, and re-tightens the moment that owner is
-        // disabled — verification rather than the honour-system boolean alone.
-        this.policy.setCurationResolver((typeId) => this.curation.hasType(typeId));
+        // The governor verifies a tool's `curationTypeId` binding against the
+        // central curation service, which lives in its own module and publishes
+        // 'curation' during its run(). Watch the registry so the resolver is
+        // wired the moment curation appears and re-tightened (deny-all) if it
+        // ever unregisters — order-independent and churn-safe. A declared binding
+        // thus relaxes a tool's gates only while its owning type is registered.
+        this.serviceRegistry.watch<ICurationService>(CURATION_SERVICE, {
+            onAvailable: (curation) => this.policy.setCurationResolver((typeId) => curation.hasType(typeId)),
+            onUnavailable: () => this.policy.setCurationResolver(() => false)
+        });
 
         this.governor = new AiToolGovernor(this.logger, this.registry, this.policy, this.audit, this.approvals, this.hookRegistry, {
             config: this.screenConfig,
@@ -335,7 +317,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             () => this.serviceRegistry.get<IAccountDirectoryService>('accounts')
         );
 
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.curation, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig);
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig);
 
         this.logger.info('ai-tools module initialized');
     }
@@ -432,41 +414,9 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             WebSocketService.getInstance().emit({ event, payload });
         });
 
-        // Curation decisions and new holds nudge the dashboard to refetch, the
-        // same lightweight signal the governor uses for approvals.
-        this.curation.setBroadcast((event, payload) => {
-            WebSocketService.getInstance().emit({ event, payload });
-        });
-
-        // Fan every new curation hold to admins as a toast. Resolves the
-        // notifications service per call (lazy, robust — it never unregisters at
-        // runtime) and swallows dispatch errors so a notification fault never
-        // disturbs a hold. Fires on every hold, including ones the governor then
-        // auto-approves. The category/content type are registered below.
-        this.curation.setOnHold((item, typeLabel) => {
-            const svc = this.serviceRegistry.get<INotificationService>(NOTIFICATIONS_SERVICE);
-            if (!svc) {
-                return;
-            }
-            void svc
-                .notify({
-                    category: CURATION_HELD_NOTIFY_CATEGORY,
-                    typeId: CURATION_HELD_CONTENT_TYPE,
-                    ref: {
-                        title: `New ${typeLabel} held for review`,
-                        body: item.preview.title ?? item.preview.body
-                    },
-                    severity: 'info',
-                    firedBy: item.source,
-                    data: { curationId: item.id, typeId: item.typeId }
-                })
-                .catch((error) => this.logger.warn({ error, curationId: item.id }, 'Failed to dispatch curation-hold notification'));
-        });
-
         this.serviceRegistry.register(AI_TOOLS_SERVICE, this.registry);
         this.serviceRegistry.register(AI_TOOL_GOVERNOR_SERVICE, this.governor);
         this.serviceRegistry.register(AI_PROVIDERS_SERVICE, this.providerRegistry);
-        this.serviceRegistry.register(CURATION_SERVICE, this.curation);
         this.serviceRegistry.register(PROMPT_VARIABLES_SERVICE, this.promptVariables);
 
         // Declare the scheduled-prompt-run notification category on the
@@ -503,35 +453,8 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
                 adminConfigurable: true,
                 mutable: true
             });
-
-            // Register the curation-held content type and its admin-targeted
-            // category, mirroring the scheduled-prompt wiring above. The
-            // descriptor carries only title/body, which is what the toast channel
-            // accepts — so a new hold routes to admins as a toast.
-            this.serviceRegistry.get<IContentRegistry>(CONTENT_TYPES_SERVICE)?.register(
-                {
-                    typeId: CURATION_HELD_CONTENT_TYPE,
-                    label: 'Curation item held for review',
-                    describe: (ref) => ({
-                        title: typeof ref.title === 'string' ? ref.title : undefined,
-                        body: typeof ref.body === 'string' ? ref.body : undefined
-                    })
-                },
-                this.metadata.id
-            );
-            notifications.registerCategory({
-                id: CURATION_HELD_NOTIFY_CATEGORY,
-                label: 'Curation items held for review',
-                description: 'Fires when an item is held in the curation queue for human review.',
-                source: this.metadata.id,
-                defaultAudience: { groups: [ADMIN_GROUP_ID] },
-                channelDefaults: { toast: true },
-                userConfigurable: true,
-                adminConfigurable: true,
-                mutable: true
-            });
         } else {
-            this.logger.warn('notifications service unavailable; scheduled-prompt and curation-hold notifications disabled');
+            this.logger.warn('notifications service unavailable; scheduled-prompt notifications disabled');
         }
 
         // Fans each scheduled-prompt run outcome to admins. Resolves the
@@ -639,7 +562,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         });
 
         this.logger.info(
-            { services: [AI_TOOLS_SERVICE, AI_TOOL_GOVERNOR_SERVICE, AI_PROVIDERS_SERVICE, CURATION_SERVICE, PROMPT_VARIABLES_SERVICE] },
+            { services: [AI_TOOLS_SERVICE, AI_TOOL_GOVERNOR_SERVICE, AI_PROVIDERS_SERVICE, PROMPT_VARIABLES_SERVICE] },
             'ai-tools module running (admin router mounted, services registered)'
         );
     }
@@ -731,19 +654,6 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             throw new Error('AiToolsModule not initialized - call init() first');
         }
         return this.registry;
-    }
-
-    /**
-     * The curation service, for tests and in-process consumers.
-     *
-     * @returns The curation service instance.
-     * @throws If called before `init()`.
-     */
-    getCuration(): CurationService {
-        if (!this.curation) {
-            throw new Error('AiToolsModule not initialized - call init() first');
-        }
-        return this.curation;
     }
 
     /**

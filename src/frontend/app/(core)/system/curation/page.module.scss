@@ -1,0 +1,83 @@
+/* Page-level vertical rhythm for the curation admin surface. */
+.container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+}
+
+/* Pending-count summary row above the queue. */
+.summary {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    font-size: var(--font-size-body-sm);
+}
+
+/* Type name + provider/source stack inside a table cell. */
+.tool_name {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.tool_desc {
+    margin-top: var(--gap-2xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    max-width: var(--max-width-prose);
+}
+
+/* Inline row actions (pending/history toggle, approve/edit/reject). */
+.row_actions {
+    display: flex;
+    gap: var(--gap-sm);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* Empty / loading placeholder text. */
+.placeholder {
+    padding: var(--padding-lg);
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+/* Curation queue preview cell: body text, media thumbnail, labelled fields. */
+.curation_preview {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    max-width: var(--max-width-prose);
+}
+
+.curation_body {
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.curation_thumb {
+    max-width: var(--avatar-size-lg);
+    max-height: var(--avatar-size-lg);
+    width: auto;
+    height: auto;
+    border-radius: var(--radius-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    object-fit: cover;
+}
+
+.curation_fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+}
+
+.curation_field {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.curation_field_label {
+    color: var(--color-text-subtle);
+}

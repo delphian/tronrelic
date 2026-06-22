@@ -31,7 +31,7 @@ import type {
 } from '@/types';
 import { isHookAbortError, wrapUntrustedToolResult } from '@/types';
 import { HOOKS } from '../../../hooks/registry.js';
-import { runWithCurationAutoApprove } from './curation-auto-approve-context.js';
+import { runWithCurationAutoApprove } from '../../curation/index.js';
 import type { AiToolRegistry } from './ai-tool-registry.js';
 import type { ToolPolicyEngine } from './tool-policy-engine.js';
 import type { ToolAuditStore } from './tool-audit-store.js';

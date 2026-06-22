@@ -38,6 +38,7 @@ import { IdentityModule } from './modules/identity/index.js';
 import { TrafficModule } from './modules/traffic/index.js';
 import { ToolsModule } from './modules/tools/index.js';
 import { AiToolsModule } from './modules/ai-tools/index.js';
+import { CurationModule } from './modules/curation/index.js';
 import { NotificationsModule } from './modules/notifications/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
@@ -234,6 +235,7 @@ interface BootstrapContext {
         traffic: TrafficModule;
         tools: ToolsModule;
         notifications: NotificationsModule;
+        curation: CurationModule;
         aiTools: AiToolsModule;
         scheduler: SchedulerModule;
     };
@@ -351,6 +353,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const trafficModule = new TrafficModule();
     const toolsModule = new ToolsModule();
     const notificationsModule = new NotificationsModule();
+    const curationModule = new CurationModule();
     const aiToolsModule = new AiToolsModule();
     const schedulerModule = new SchedulerModule();
 
@@ -367,6 +370,11 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // publishes `'notifications'`) precedes ai-tools' run() that registers a
     // category and fires scheduled-prompt notifications through it.
     await notificationsModule.init(sharedDeps);
+    // Curation owns the central human-review queue and publishes `'curation'`.
+    // Inits after notifications (its run() fires curation-hold toasts through the
+    // `'notifications'` service) and before ai-tools, whose governor watches
+    // `'curation'` to verify tool `curationTypeId` bindings.
+    await curationModule.init(sharedDeps);
     // The ai-tools module owns the built-in dynamic prompt variables (lifted out
     // of trp-ai-assistant), so it needs the core services those resolvers read.
     // All are singletons wired by initializeCoreServices() above; the resolvers
@@ -401,6 +409,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             traffic: trafficModule,
             tools: toolsModule,
             notifications: notificationsModule,
+            curation: curationModule,
             aiTools: aiToolsModule,
             scheduler: schedulerModule,
         },
@@ -442,6 +451,10 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     // fires scheduled-prompt run notifications through the `'notifications'`
     // service published here).
     await modules.notifications.run();
+    // Curation runs after notifications (so the `'notifications'` service exists
+    // for its curation-hold toast) and before ai-tools (so `'curation'` is
+    // published when the governor's registry watch wires the binding resolver).
+    await modules.curation.run();
     await modules.aiTools.run();
     await modules.scheduler.run();
 

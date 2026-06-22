@@ -4,6 +4,34 @@ import { env } from '../../config/env.js';
 import { blockchainConfig } from '../../config/blockchain.js';
 import { retry } from '../../lib/retry.js';
 import { logger } from '../../lib/logger.js';
+import type { ITrc10 } from '@/types';
+
+/**
+ * Raw TRC10 asset-issue record as TronGrid returns it from
+ * `/wallet/getassetissuebyid` and `/wallet/getassetissuebyaccount`.
+ *
+ * Text fields (`name`, `abbr`, `description`, `url`) arrive hex-encoded and the
+ * owner address arrives hex; the mapper to {@link ITrc10} owns all decoding so
+ * nothing outside this client sees the wire shape.
+ */
+interface TronGridAssetIssue {
+    id?: string | number;
+    owner_address?: string;
+    name?: string;
+    abbr?: string;
+    description?: string;
+    url?: string;
+    total_supply?: number;
+    precision?: number;
+    trx_num?: number;
+    num?: number;
+    start_time?: number;
+    end_time?: number;
+    frozen_supply?: Array<{ frozen_amount?: number; frozen_days?: number }>;
+    free_asset_net_limit?: number;
+    public_free_asset_net_limit?: number;
+    vote_score?: number;
+}
 
 const tronWeb = new TronWeb({
     fullHost: 'https://api.trongrid.io'
@@ -512,6 +540,141 @@ export class TronGridClient {
         } catch (error) {
             logger.error({ error, address }, 'Failed to fetch account');
             return null;
+        }
+    }
+
+    /**
+     * Resolve a TRC10 token to its source-agnostic record by chain-assigned id.
+     *
+     * Queries `/wallet/getassetissuebyid` and maps the raw asset to {@link ITrc10}.
+     * The hex form is requested deliberately so decoding is deterministic; the
+     * caller never sees the wire shape. Returns null on a malformed id, a miss,
+     * or a transport failure (logged) so callers branch on presence, not throws.
+     *
+     * @param tokenId - Chain-assigned numeric asset id, as a string.
+     * @returns The resolved token, or null when none carries that id.
+     */
+    async getTrc10(tokenId: string): Promise<ITrc10 | null> {
+        if (!tokenId || !/^\d+$/.test(String(tokenId))) {
+            return null;
+        }
+        try {
+            const raw = await retry(
+                () => this.post<TronGridAssetIssue>('/wallet/getassetissuebyid', { value: String(tokenId) }),
+                {
+                    ...blockchainConfig.retry,
+                    onRetry: (attempt, error) =>
+                        logger.warn({ attempt, error, tokenId }, 'Retrying TronGrid getAssetIssueById')
+                }
+            );
+            return TronGridClient.mapAssetIssueToTrc10(raw);
+        } catch (error) {
+            logger.error({ error, tokenId }, 'Failed to fetch TRC10 token by id');
+            return null;
+        }
+    }
+
+    /**
+     * Resolve the single TRC10 token issued by an account, by owner address.
+     *
+     * TRON permits exactly one asset issuance per account, so the owner resolves
+     * the token deterministically even when its id is not yet known — the case a
+     * creation observer faces, and the basis for the "already issued?" pre-flight
+     * check. Queries `/wallet/getassetissuebyaccount` (owner sent as hex for
+     * deterministic decoding) and returns the first asset mapped to {@link ITrc10}.
+     *
+     * @param ownerAddress - Base58 issuer address.
+     * @returns The account's token, or null when it has issued none.
+     */
+    async getTrc10ByOwner(ownerAddress: string): Promise<ITrc10 | null> {
+        if (!ownerAddress) {
+            return null;
+        }
+        let ownerHex: string;
+        try {
+            ownerHex = ownerAddress.startsWith('T') ? tronWeb.address.toHex(ownerAddress) : ownerAddress;
+        } catch (error) {
+            logger.warn({ error, ownerAddress }, 'Failed to convert owner address to hex');
+            return null;
+        }
+        try {
+            const response = await retry(
+                () => this.post<{ assetIssue?: TronGridAssetIssue[] }>('/wallet/getassetissuebyaccount', { address: ownerHex }),
+                {
+                    ...blockchainConfig.retry,
+                    onRetry: (attempt, error) =>
+                        logger.warn({ attempt, error, ownerAddress }, 'Retrying TronGrid getAssetIssueByAccount')
+                }
+            );
+            const first = response?.assetIssue?.[0];
+            return first ? TronGridClient.mapAssetIssueToTrc10(first) : null;
+        } catch (error) {
+            logger.error({ error, ownerAddress }, 'Failed to fetch TRC10 token by owner');
+            return null;
+        }
+    }
+
+    /**
+     * Map a raw TronGrid asset-issue record to the normalized {@link ITrc10}.
+     *
+     * Centralizes every decode (hex text → UTF-8, hex owner → Base58, SUN/epoch
+     * normalization) so the wire shape stays contained in this client. Returns
+     * null when the record lacks a token id, since an id-less record cannot be
+     * linked or looked up and is not worth surfacing.
+     *
+     * @param raw - The asset object straight from TronGrid.
+     * @returns A normalized token record, or null when it has no id.
+     */
+    private static mapAssetIssueToTrc10(raw: TronGridAssetIssue | null | undefined): ITrc10 | null {
+        if (!raw || raw.id === undefined || raw.id === null || String(raw.id).length === 0) {
+            return null;
+        }
+        return {
+            tokenId: String(raw.id),
+            ownerAddress: TronGridClient.toBase58Address(raw.owner_address) ?? '',
+            name: TronGridClient.hexToUtf8(raw.name),
+            abbreviation: TronGridClient.hexToUtf8(raw.abbr),
+            description: TronGridClient.hexToUtf8(raw.description),
+            url: TronGridClient.hexToUtf8(raw.url),
+            totalSupply: Number(raw.total_supply ?? 0),
+            precision: Number(raw.precision ?? 0),
+            icoNumTokens: Number(raw.num ?? 0),
+            icoTrxNum: Number(raw.trx_num ?? 0),
+            saleStart: Number(raw.start_time ?? 0),
+            saleEnd: Number(raw.end_time ?? 0),
+            frozenSupply: Array.isArray(raw.frozen_supply)
+                ? raw.frozen_supply.map(entry => ({
+                    frozenAmount: Number(entry.frozen_amount ?? 0),
+                    frozenDays: Number(entry.frozen_days ?? 0)
+                }))
+                : [],
+            freeAssetNetLimit: Number(raw.free_asset_net_limit ?? 0),
+            publicFreeAssetNetLimit: Number(raw.public_free_asset_net_limit ?? 0),
+            voteScore: Number(raw.vote_score ?? 0)
+        };
+    }
+
+    /**
+     * Decode a TronGrid hex-encoded text field to UTF-8.
+     *
+     * Asset name/abbr/description/url come back hex-encoded when queried without
+     * `visible`. The guard tolerates an already-decoded value (returned as-is)
+     * so a provider quirk can't crash the mapper.
+     *
+     * @param hex - Hex string from TronGrid, or undefined.
+     * @returns The decoded text, or '' when absent or undecodable.
+     */
+    private static hexToUtf8(hex?: string): string {
+        if (!hex) {
+            return '';
+        }
+        try {
+            if (/^[0-9a-fA-F]*$/.test(hex) && hex.length % 2 === 0) {
+                return Buffer.from(hex, 'hex').toString('utf8');
+            }
+            return hex;
+        } catch {
+            return '';
         }
     }
 

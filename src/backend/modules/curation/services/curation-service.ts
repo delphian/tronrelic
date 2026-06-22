@@ -56,7 +56,7 @@ type BroadcastFn = (event: string, payload: unknown) => void;
 type HoldListenerFn = (item: ICurationItem, typeLabel: string) => void;
 
 /** WebSocket event the dashboard listens on to refetch the queue. */
-export const CURATIONS_CHANGED_EVENT = 'ai-tools:curations-changed';
+export const CURATIONS_CHANGED_EVENT = 'curation:changed';
 
 /**
  * Decider recorded on an item the governor auto-approves via a tool's
