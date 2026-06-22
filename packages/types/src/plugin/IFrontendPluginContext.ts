@@ -286,6 +286,8 @@ export interface IChartComponents {
             /** Optional aggregate annotation rendered after the label in the legend only (not the tooltip). Lets the legend act as a complete key, e.g. a window total. */
             legendValue?: React.ReactNode;
         }>;
+        /** Optional heading rendered above the chart. Lets a caller (e.g. a widget surfacing an operator-set graph title) label the chart without wrapping it in its own header. Omitted renders no title element. */
+        title?: string;
         yAxisFormatter?: (value: number) => string;
         xAxisFormatter?: (value: Date) => string;
         /** Custom formatter for the tooltip's date heading; falls back to xAxisFormatter. Lets the axis keep compact relative labels while the tooltip shows an absolute localized date. */
@@ -322,6 +324,8 @@ export interface IChartComponents {
             /** Optional aggregate annotation rendered after the label in the legend only (not the tooltip or bar title). Lets the legend act as a complete key, e.g. a window total. */
             legendValue?: React.ReactNode;
         }>;
+        /** Optional heading rendered above the chart. Lets a caller (e.g. a widget surfacing an operator-set graph title) label the chart without wrapping it in its own header. Omitted renders no title element. */
+        title?: string;
         /** Rendering density (default: 'normal') */
         mode?: 'normal' | 'widget';
         /** Chart height in pixels (default: 320 normal, 120 widget) */
