@@ -24,6 +24,23 @@
     line-height: var(--line-height-tight);
 }
 
+/* Positioning context for the interactive tooltip. Wraps only the SVG and the
+   tooltip so the absolutely-positioned tooltip measures `top` from the SVG's top
+   edge — the optional title sits outside this wrapper and cannot offset it. */
+.plot {
+    position: relative;
+}
+
+/* Empty-state body. The inline min-height (the data-driven chart height) reserves
+   the chart-area box so an empty→populated transition does not shift layout; this
+   rule centers the placeholder label within that reserved box. */
+.chart__empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-muted);
+}
+
 .chart svg {
     width: 100%;
     /* Height is set explicitly per instance via the SVG `height` attribute rather
