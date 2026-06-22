@@ -216,9 +216,13 @@ export class CurationService implements ICurationService {
         await this.queue.insert(item);
         await this.notifyChanged();
         // Notify on every hold, before the auto-approve branch. The listener is a
-        // synchronous fire-and-forget sink the module owns; it must not throw, so
-        // a notification fault cannot derail the hold.
-        this.holdListener?.(item, entry.type.label);
+        // synchronous fire-and-forget sink the module owns; guard it so a faulty
+        // listener cannot derail the hold or its downstream auto-approve.
+        try {
+            this.holdListener?.(item, entry.type.label);
+        } catch (error) {
+            this.logger.warn({ error, id: item.id }, 'Curation hold listener failed');
+        }
         let result = item;
         if (shouldAutoApproveCuration()) {
             this.logger.info({ id: item.id, typeId: item.typeId }, 'Curation auto-approved by tool policy (interactive bypass)');
