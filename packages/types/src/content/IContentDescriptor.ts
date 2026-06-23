@@ -15,6 +15,8 @@
  * state) belong to the consuming pipeline's own envelope, never here.
  */
 
+import type { IContentFields } from './IContentFields.js';
+
 /**
  * A single labelled fact shown in a detail view (e.g. "Scheduled for" →
  * "2026-06-20 14:00"). Supplementary context, not the primary content.
@@ -62,6 +64,17 @@ export interface IContentDescriptor {
 
     /** Supplementary labelled facts shown in a detail view. */
     fields?: IContentDescriptorField[];
+
+    /**
+     * Governed, machine-readable enrichment a sink reads programmatically — the
+     * sanctioned escape hatch for data the four slots above cannot carry. Every
+     * key is declared in {@link IContentFields} and read via `readContentField`,
+     * so a sink reading an undeclared key fails the build. Distinct from the
+     * human-readable `fields` array: that renders in a detail view, this is data
+     * a sink consumes. Optional and additive — a consumer that ignores it is
+     * unaffected.
+     */
+    keyedFields?: IContentFields;
 
     /**
      * Whether the owning type offers an interactive editor for this instance.

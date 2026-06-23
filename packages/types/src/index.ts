@@ -123,6 +123,25 @@ export type {
     IContentTypeInfo,
     ContentTypeDisposer
 } from './content/index.js';
+export {
+    CONTENT_EGRESS_LEVELS,
+    CONTENT_AUDIENCE_LEVELS,
+    CONTENT_DESCRIPTOR_FEATURES,
+    readContentField
+} from './content/index.js';
+export type {
+    ContentEgress,
+    ContentAudience,
+    IContentClassification,
+    IContentSink,
+    IContentSinkInfo,
+    ContentDescriptorFeature,
+    ContentSinkDisposer,
+    IContentRouter,
+    IClassificationGate,
+    IContentRoutingPolicy,
+    IContentFields
+} from './content/index.js';
 export type {
     ICurationPreview,
     ICurationPreviewField,
