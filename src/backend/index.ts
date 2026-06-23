@@ -25,6 +25,9 @@ import { loadPlugins } from './loaders/plugins.js';
 import { ServiceRegistry } from './services/service-registry.js';
 import { ContentRegistry, CONTENT_TYPES_SERVICE } from './services/content-registry.js';
 import { ContentTypesController, createContentTypesAdminRouter } from './services/content-types-admin.js';
+import { ContentRouter, CONTENT_ROUTER_SERVICE } from './services/content-router.js';
+import { ClassificationGate, AllowAllRoutingPolicy } from './services/content-routing-gate.js';
+import { ContentRouterController, createContentRouterAdminRouter } from './services/content-router-admin.js';
 import { HookRegistry, HooksController, createHooksAdminRouter, SsrHeadFragmentsController, SsrHtmlAttributesController, createSsrRouter } from './hooks/index.js';
 import { requireAdmin } from './api/middleware/admin-auth.js';
 import { SchedulerModule } from './modules/scheduler/index.js';
@@ -54,7 +57,7 @@ import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters
 import { createApiRouter } from './api/routes/index.js';
 import { PluginManagerService } from './services/plugin-manager.service.js';
 import type { Express } from 'express';
-import type { IDatabaseService, IMenuService, IMenuNode, IPluginManifest, IServiceRegistry, IHookRegistry, IContentRegistry } from '@/types';
+import type { IDatabaseService, IMenuService, IMenuNode, IPluginManifest, IServiceRegistry, IHookRegistry, IContentRegistry, IContentRouter } from '@/types';
 import axios from 'axios';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -224,6 +227,7 @@ interface BootstrapContext {
     serviceRegistry: IServiceRegistry;
     hookRegistry: IHookRegistry;
     contentRegistry: IContentRegistry;
+    contentRouter: IContentRouter;
     modules: {
         database: DatabaseModule;
         clickhouse: ClickHouseModule;
@@ -324,6 +328,16 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const contentRegistry = new ContentRegistry(logger);
     serviceRegistry.register(CONTENT_TYPES_SERVICE, contentRegistry);
 
+    // Content router: the sink registry and structural Recipient List, a peer of
+    // the content-type and hook registries. The classification gate is injected
+    // so the deferred authorization pass swaps the policy without touching the
+    // router; this slice ships the allow-all stub. Published before any module
+    // init so a future sink family (curation, notifications, syndication) can
+    // resolve it when wiring its services — exactly as content-types shipped
+    // before its consumers.
+    const contentRouter = new ContentRouter(new ClassificationGate(new AllowAllRoutingPolicy()), logger);
+    serviceRegistry.register(CONTENT_ROUTER_SERVICE, contentRouter);
+
     // Transaction-detail lookup: a lazily-populated, permanent cache that fills
     // misses from the injected provider. Dependencies are injected here rather
     // than self-instantiated so the provider stays swappable.
@@ -398,6 +412,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         serviceRegistry,
         hookRegistry,
         contentRegistry,
+        contentRouter,
         modules: {
             database: databaseModule,
             clickhouse: clickHouseModule,
@@ -431,7 +446,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
  * @param ctx - Bootstrap context from init phase containing all components
  */
 async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
-    const { modules, menuService, hookRegistry, contentRegistry, serviceRegistry, app } = ctx;
+    const { modules, menuService, hookRegistry, contentRegistry, contentRouter, serviceRegistry, app } = ctx;
 
     await modules.database.run();
     await modules.clickhouse.run();
@@ -473,6 +488,14 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     const contentTypesController = new ContentTypesController(contentRegistry, serviceRegistry);
     app.use('/api/admin/system/content-types', requireAdmin, createContentTypesAdminRouter(contentTypesController));
     logger.info('Content-type introspection router mounted at /api/admin/system/content-types');
+
+    // Content-router introspection: the read-only view over the sink registry —
+    // every sink's accepts/reach, plus the gate's admitted set and structural
+    // candidates for an operator-supplied classification. The analog of the
+    // content-types and hooks timelines.
+    const contentRouterController = new ContentRouterController(contentRouter);
+    app.use('/api/admin/system/content-router', requireAdmin, createContentRouterAdminRouter(contentRouterController));
+    logger.info('Content-router introspection router mounted at /api/admin/system/content-router');
 
     // Mount the public SSR hook endpoints. The frontend SSR layer POSTs
     // to /api/ssr/* once per page render with the request context; each
@@ -552,6 +575,7 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
         { label: 'Overview', url: '/system/system', icon: 'SlidersHorizontal', order: 5 },
         { label: 'Hooks', url: '/system/hooks', icon: 'Network', order: 45 },
         { label: 'Content Types', url: '/system/content-types', icon: 'Boxes', order: 46 },
+        { label: 'Content Router', url: '/system/content-router', icon: 'Split', order: 47 },
         // Logs (30), Scheduler (35) registered by their modules
         // Pages (40) registered by PagesModule
         // Files (42) registered by trp-files plugin

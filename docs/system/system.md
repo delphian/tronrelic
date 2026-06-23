@@ -127,6 +127,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [system-database-migrations.md](./system-database-migrations.md) | Migration discovery, transactions, REST API, admin UI |
 | [system-hooks.md](./system-hooks.md) | Declared seams, four archetypes, plugin facade, introspection, admin UI |
 | [system-content-types.md](./system-content-types.md) | The central content registry, the `IContentType`/`IContentDescriptor` contract, capability routing, `/system/content-types` |
+| [system-content-routing.md](./system-content-routing.md) | Unifying router, a Recipient List — primitive, classification vocabulary, sink contract, and gate seam shipped (`'content-router'`); sink families, the classification/authorization/structural-routing split, potential-vs-mandated bindings, and durable multi-sink delivery still proposed |
 | [system-ai-tools.md](./system-ai-tools.md) | AI tool contract, capability classes, accountability and security requirements |
 | [system-curation.md](./system-curation.md) | Central curation queue, the type contract, the verifiable `curationTypeId` binding |
 | [system-notifications.md](./system-notifications.md) | Notification dispatch, the resolution pipeline, channels, per-user opt-outs, audit |
