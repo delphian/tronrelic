@@ -8,14 +8,25 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { ICurationType, IMenuService, ISystemLogService } from '@/types';
+import type {
+    ContentDescriptorFeature,
+    IContentClassification,
+    IContentSink,
+    ICurationItem,
+    ICurationType,
+    IMenuService,
+    ISystemLogService
+} from '@/types';
 import { CurationModule } from '../CurationModule.js';
 import { CurationService } from '../services/curation-service.js';
 import { CurationQueue } from '../services/curation-queue.js';
+import { CurationDestinationDefaults } from '../services/curation-destination-defaults.js';
 import { runWithCurationAutoApprove, shouldAutoApproveCuration } from '../services/curation-auto-approve-context.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 import { ContentRegistry, CONTENT_TYPES_SERVICE } from '../../../services/content-registry.js';
+import { ContentRouter, CONTENT_ROUTER_SERVICE } from '../../../services/content-router.js';
+import { ClassificationGate, AllowAllRoutingPolicy } from '../../../services/content-routing-gate.js';
 
 /** Minimal logger that swallows every level and returns itself for `child()`. */
 function createMockLogger(): ISystemLogService {
@@ -48,11 +59,16 @@ describe('CurationModule', () => {
     let mockApp: { use: ReturnType<typeof vi.fn> };
     let mockRegistry: ReturnType<typeof createMockServiceRegistry>;
     let mockMenu: IMenuService;
+    let contentRouter: ContentRouter;
 
     beforeEach(async () => {
         module = new CurationModule();
         mockApp = { use: vi.fn() };
-        mockRegistry = createMockServiceRegistry({ [CONTENT_TYPES_SERVICE]: new ContentRegistry(createMockLogger()) });
+        contentRouter = new ContentRouter(new ClassificationGate(new AllowAllRoutingPolicy()), createMockLogger());
+        mockRegistry = createMockServiceRegistry({
+            [CONTENT_TYPES_SERVICE]: new ContentRegistry(createMockLogger()),
+            [CONTENT_ROUTER_SERVICE]: contentRouter
+        });
         mockMenu = createMockMenuService();
         await module.init({
             database: createMockDatabaseService(),
@@ -81,6 +97,16 @@ describe('CurationModule', () => {
             expect(mockApp.use).toHaveBeenCalledWith('/api/admin/system/curation', expect.any(Function));
             expect(mockRegistry.get('curation')).toBeDefined();
             expect(mockMenu.create).toHaveBeenCalledWith(expect.objectContaining({ url: '/system/curation' }));
+        });
+
+        it('registers the curation gate sink on the content router during run()', async () => {
+            await module.run();
+
+            const gate = contentRouter.list().find((sink) => sink.id === 'curation:gate');
+            expect(gate).toBeDefined();
+            // A gate holds anything: empty accepts, narrowest reach.
+            expect(gate?.accepts).toEqual([]);
+            expect(gate?.reach).toEqual({ egress: 'internal', audience: 'admin' });
         });
 
         it('throws when run() is called before init()', async () => {
@@ -247,6 +273,162 @@ describe('CurationService', () => {
         const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
 
         expect(await service.edit(held.id, { body: 'x' })).toBeNull();
+    });
+});
+
+describe('CurationService destination selection', () => {
+    /** Build a publish-kind sink with a spy `deliver` for fan-out assertions. */
+    function makePublishSink(
+        id: string,
+        accepts: ContentDescriptorFeature[],
+        reach: IContentClassification,
+        deliver: IContentSink['deliver']
+    ): IContentSink {
+        return { id, kind: 'publish', accepts, reach, deliver };
+    }
+
+    /**
+     * Build a curation service wired with a real content router (seeded with the
+     * given sinks) and a real defaults store, both over one mock database.
+     */
+    function makeDestinationService(sinks: IContentSink[]): { service: CurationService } {
+        const logger = createMockLogger();
+        const db = createMockDatabaseService();
+        const queue = new CurationQueue(logger, db);
+        const router = new ContentRouter(new ClassificationGate(new AllowAllRoutingPolicy()), logger);
+        for (const sink of sinks) {
+            router.register(sink, 'core');
+        }
+        const defaults = new CurationDestinationDefaults(logger, db);
+        const service = new CurationService(logger, queue, new ContentRegistry(logger), router, defaults);
+        return { service };
+    }
+
+    /** A destinations-enabled type rendering a body; ceiling overridable per test. */
+    function postType(over: Partial<ICurationType> = {}): ICurationType {
+        return spyCurationType({
+            typeId: 'media:post',
+            label: 'Media Post',
+            publishesToDestinations: true,
+            describe: vi.fn(async () => ({ body: 'hello world' })),
+            ...over
+        });
+    }
+
+    it('lists eligible publish destinations for a destinations-enabled type', async () => {
+        const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn(async () => undefined));
+        const { service } = makeDestinationService([sink]);
+        service.registerType(postType(), 'media');
+        const held = await service.hold({ typeId: 'media:post', ref: {} });
+
+        const eligible = await service.listEligibleDestinations(held.id);
+        expect(eligible.map((d) => d.sinkId)).toEqual(['core:internal-publish']);
+        expect(eligible[0].defaultSelected).toBe(false);
+    });
+
+    it('lists no destinations for a type that does not publish to destinations', async () => {
+        const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
+        const { service } = makeDestinationService([sink]);
+        service.registerType(spyCurationType(), 'x-poster'); // no publishesToDestinations
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
+
+        expect(await service.listEligibleDestinations(held.id)).toEqual([]);
+    });
+
+    it('excludes a publish sink whose reach exceeds the type ceiling (gate bounds the picker)', async () => {
+        const external = makePublishSink('x:tweet', ['body'], { egress: 'external', audience: 'public' }, vi.fn());
+        const { service } = makeDestinationService([external]);
+        service.registerType(postType(), 'media'); // no classification → restrictive {internal,admin} ceiling
+        const held = await service.hold({ typeId: 'media:post', ref: {} });
+
+        expect(await service.listEligibleDestinations(held.id)).toEqual([]);
+    });
+
+    it('includes an external publish sink once the type raises its classification ceiling', async () => {
+        const external = makePublishSink('x:tweet', ['body'], { egress: 'external', audience: 'public' }, vi.fn());
+        const { service } = makeDestinationService([external]);
+        service.registerType(postType({ classification: { egress: 'external', audience: 'public' } }), 'media');
+        const held = await service.hold({ typeId: 'media:post', ref: {} });
+
+        expect((await service.listEligibleDestinations(held.id)).map((d) => d.sinkId)).toEqual(['x:tweet']);
+    });
+
+    it('excludes a publish sink whose required feature is absent (structural floor)', async () => {
+        const mediaSink = makePublishSink('core:media', ['media'], { egress: 'internal', audience: 'admin' }, vi.fn());
+        const { service } = makeDestinationService([mediaSink]);
+        service.registerType(postType(), 'media'); // body present, no media
+        const held = await service.hold({ typeId: 'media:post', ref: {} });
+
+        expect(await service.listEligibleDestinations(held.id)).toEqual([]);
+    });
+
+    it('approve fans out to the selected destination, records the outcome, and onApprove observes it', async () => {
+        const deliver = vi.fn(async () => undefined);
+        const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, deliver);
+        const { service } = makeDestinationService([sink]);
+        let onApproveItem: ICurationItem | undefined;
+        const type = postType({ onApprove: vi.fn(async (item: ICurationItem) => { onApproveItem = item; }) });
+        service.registerType(type, 'media');
+        const held = await service.hold({ typeId: 'media:post', ref: {} });
+
+        const decided = await service.approve(held.id, 'admin-1', [{ sinkId: 'core:internal-publish' }]);
+
+        expect(deliver).toHaveBeenCalledOnce();
+        expect(decided?.destinations).toEqual([{ sinkId: 'core:internal-publish', status: 'delivered' }]);
+        // onApprove runs after fan-out, with the outcomes attached for its bookkeeping.
+        expect(onApproveItem?.destinations).toEqual([{ sinkId: 'core:internal-publish', status: 'delivered' }]);
+        // The outcomes are persisted on the item.
+        expect((await service.get(held.id))?.destinations).toEqual([{ sinkId: 'core:internal-publish', status: 'delivered' }]);
+    });
+
+    it('records a failed destination without blocking the decision or onApprove', async () => {
+        const deliver = vi.fn(async () => { throw new Error('boom'); });
+        const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, deliver);
+        const { service } = makeDestinationService([sink]);
+        const type = postType();
+        service.registerType(type, 'media');
+        const held = await service.hold({ typeId: 'media:post', ref: {} });
+
+        const decided = await service.approve(held.id, 'admin-1', [{ sinkId: 'core:internal-publish' }]);
+
+        expect(decided?.status).toBe('approved');
+        expect(decided?.destinations?.[0]).toMatchObject({ sinkId: 'core:internal-publish', status: 'failed', error: 'boom' });
+        expect(type.onApprove).toHaveBeenCalledOnce(); // the decision still commits
+    });
+
+    it('rejects an ineligible destination before recording the decision (item stays pending)', async () => {
+        const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
+        const { service } = makeDestinationService([sink]);
+        const type = postType();
+        service.registerType(type, 'media');
+        const held = await service.hold({ typeId: 'media:post', ref: {} });
+
+        await expect(service.approve(held.id, 'admin-1', [{ sinkId: 'core:nonexistent' }])).rejects.toThrow(/not an eligible publish destination/);
+        expect(type.onApprove).not.toHaveBeenCalled();
+        expect(await service.countPending()).toBe(1);
+    });
+
+    it('pre-selects a destination saved as the type default', async () => {
+        const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
+        const { service } = makeDestinationService([sink]);
+        service.registerType(postType(), 'media');
+        await service.setDestinationDefaults('media:post', ['core:internal-publish']);
+        const held = await service.hold({ typeId: 'media:post', ref: {} });
+
+        const eligible = await service.listEligibleDestinations(held.id);
+        expect(eligible[0]).toMatchObject({ sinkId: 'core:internal-publish', defaultSelected: true });
+        expect(await service.getDestinationDefaults('media:post')).toEqual(['core:internal-publish']);
+    });
+
+    it('a classic approve with no destinations leaves destinations unset', async () => {
+        const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
+        const { service } = makeDestinationService([sink]);
+        service.registerType(postType(), 'media');
+        const held = await service.hold({ typeId: 'media:post', ref: {} });
+
+        const decided = await service.approve(held.id, 'admin-1');
+        expect(decided?.status).toBe('approved');
+        expect(decided?.destinations).toBeUndefined();
     });
 });
 

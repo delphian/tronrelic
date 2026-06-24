@@ -24,11 +24,11 @@ function silentLogger(): ISystemLogService {
 function seededRouter(): ContentRouter {
     const router = new ContentRouter(new ClassificationGate(new AllowAllRoutingPolicy()), silentLogger());
     router.register(
-        { id: 'twitter', accepts: ['body'] as ContentDescriptorFeature[], reach: { egress: 'external', audience: 'public' }, deliver: async () => undefined },
+        { id: 'twitter', kind: 'publish', accepts: ['body'] as ContentDescriptorFeature[], reach: { egress: 'external', audience: 'public' }, deliver: async () => undefined },
         'trp-x-poster'
     );
     router.register(
-        { id: 'audit', accepts: ['body'] as ContentDescriptorFeature[], reach: { egress: 'internal', audience: 'admin' }, deliver: async () => undefined },
+        { id: 'audit', kind: 'publish', accepts: ['body'] as ContentDescriptorFeature[], reach: { egress: 'internal', audience: 'admin' }, deliver: async () => undefined },
         'core'
     );
     return router;

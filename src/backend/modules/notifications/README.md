@@ -11,7 +11,8 @@ Category-based notification dispatch: any source declares a category and fires; 
 | Admin page | `/system/notifications` (menu item `Notifications`, order 37, registered in `run()`) |
 | User page | `/account/notifications` (per-user opt-outs; any logged-in user) |
 | Service registry name | `'notifications'` → `INotificationService` |
-| Consumes from registry | `'user-groups'` (`IUserGroupService.getMembers`) for audience resolution; `'content-types'` (`IContentRegistry`) to resolve a request's content type into a descriptor |
+| Content-router sinks | Each channel registers `notifications:<channelId>` on `'content-router'` in `run()` (`accepts: []` floor, `reach` per channel; toast `{ user, user }`). Dispatch matches candidates through the router (`DispatchService.candidateChannelIds`); delivery + recipient resolution stay in dispatch |
+| Consumes from registry | `'user-groups'` (`IUserGroupService.getMembers`) for audience resolution; `'content-types'` (`IContentRegistry`) to resolve a request's content type into a descriptor; `'content-router'` to advertise channels as sinks |
 | Types package | `@delphian/tronrelic-types` → `INotificationService`, `INotificationCategory`, `INotificationChannel`, `INotificationRequest`/`Receipt`, `INotificationPreferences`, `INotificationPolicy`, `INotificationAuditRecord` |
 | Mounted routes | `/api/notifications/*` (login-gated), `/api/admin/system/notifications/*` (`requireAdmin`) |
 | Owned collections | `module_notifications_preferences`, `module_notifications_policy`, `module_notifications_audit` |
@@ -80,7 +81,7 @@ await notifications?.notify({ category: 'my-plugin.thing-happened', typeId: 'my-
 
 ## The Resolution Pipeline
 
-`DispatchService.notify()` resolves the audience to user ids and resolves the request's content type into a descriptor (`describe(ref)`). The **candidate channels** are the registered channels whose `accepts` covers every feature the descriptor carries — a channel that cannot render the content is not a candidate (and not a suppression). It then applies an ordered gate per `(recipient, candidate channel)` — the first failing gate suppresses that pairing, and the reason is counted in the audit:
+`DispatchService.notify()` resolves the audience to user ids and resolves the request's content type into a descriptor (`describe(ref)`). The **candidate channels** come from the shared content router: it matches the descriptor's present features against each channel sink's floor (`accepts ⊆ present`), and dispatch keeps the notification-family sinks that map back to a registered channel. A candidate that structurally matches but cannot render the content faithfully **refuses** at delivery and is tallied as `refused` — an observable non-delivery, not a silent skip. It then applies an ordered gate per `(recipient, candidate channel)` — the first failing gate suppresses that pairing, and the reason is counted in the audit:
 
 1. Admin policy has not disabled the **category**.
 2. Admin policy has not disabled the **channel**.
@@ -91,7 +92,9 @@ Surviving pairs are grouped per channel and delivered. Per-user silencing is hon
 
 ## Channels
 
-A channel is a transport behind `INotificationChannel` that declares the content features it `accepts` (`title`/`body`/`media`/`fields`); dispatch routes a notification only to channels whose `accepts` covers the resolved descriptor. **Toast** is the only channel today — it `accepts` `['title', 'body']`, maps recipients to `user:${id}` socket rooms, and emits the single `notification` event (flattening the descriptor onto the established wire payload, so the client handler is unchanged). Email and push are future channels of the same interface. A channel-provider plugin registers its transport via `registerChannel`.
+A channel is a transport behind `INotificationChannel` that declares the content features it `accepts` (`title`/`body`/`media`/`details`) and its content-router `reach`; dispatch routes a notification only to channels whose `accepts` covers the resolved descriptor. **Toast** is the only channel today — it `accepts` `['title', 'body']`, declares reach `{ egress: 'user', audience: 'user' }`, maps recipients to `user:${id}` socket rooms, and emits the single `notification` event (flattening the descriptor onto the established wire payload, so the client handler is unchanged). Email and push are future channels of the same interface. A channel-provider plugin registers its transport via `registerChannel`.
+
+Each registered channel also registers a `notifications:<channelId>` sink on the `'content-router'` service in `run()`, and dispatch matches candidates through that router (`accepts ⊆ present` on the sink's floor — `[]` for toast), replacing the module's old `present ⊆ accepts` ceiling check. The fidelity the ceiling enforced moves to a deliver-time **refusal**: a channel that matches but cannot render the content (a toast with neither title nor body) returns `{ delivered: 0, refused: true }`, which dispatch records in the audit. Delivery itself — recipient resolution, per-user opt-out, the channel's `deliver(recipients, message)` — stays in the dispatch pipeline; the generic router sink's `deliver` is intentionally never called for a channel (it throws).
 
 ## Storage
 

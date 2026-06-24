@@ -81,3 +81,48 @@
 .curation_field_label {
     color: var(--color-text-subtle);
 }
+
+/* Destination picker: the publish sinks a curator selects when approving a
+   destinations-enabled item. Grouped in a fieldset for accessible labelling. */
+.destination_picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    margin: 0;
+    padding: var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+}
+
+.destination_legend {
+    padding: 0 var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
+}
+
+.destination_option {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    cursor: pointer;
+}
+
+.destination_option input {
+    accent-color: var(--color-primary);
+}
+
+/* Sink label grows so the reach badge sits flush at the row's end. */
+.destination_label {
+    flex: 1 1 auto;
+}
+
+/* Per-destination delivery outcomes shown on a decided item in history. */
+.destination_outcomes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+}

@@ -18,8 +18,8 @@
  * @module backend/services/content-classification
  */
 
-import { CONTENT_EGRESS_LEVELS, CONTENT_AUDIENCE_LEVELS, CONTENT_DESCRIPTOR_FEATURES } from '@/types';
-import type { IContentClassification, ContentDescriptorFeature } from '@/types';
+import { CONTENT_EGRESS_LEVELS, CONTENT_AUDIENCE_LEVELS, CONTENT_DESCRIPTOR_FEATURES, CONTENT_SINK_KINDS } from '@/types';
+import type { IContentClassification, ContentDescriptorFeature, ContentSinkKind, IContentDescriptor } from '@/types';
 
 /** The dimensions a classification declares, in the order errors report them. */
 const CLASSIFICATION_DIMENSIONS = ['egress', 'audience'] as const;
@@ -152,4 +152,56 @@ export function assertValidAccepts(accepts: ReadonlyArray<ContentDescriptorFeatu
     }
 
     return;
+}
+
+/**
+ * Validate a sink's `kind` against the governed family vocabulary, throwing on an
+ * unknown value so registration fails fast — the same stance taken for `reach`
+ * and `accepts`. The kind drives role-based filtering (the curation picker offers
+ * `publish` sinks only), so an unrecognized kind is a registration error, not a
+ * sink that silently never surfaces where an operator expects it.
+ *
+ * @param kind - The family role a sink declared.
+ * @throws Error naming the offending value when it is not a known kind.
+ */
+export function assertValidSinkKind(kind: ContentSinkKind): void {
+    if (!(CONTENT_SINK_KINDS as ReadonlyArray<string>).includes(kind)) {
+        throw new Error(
+            `Unknown content sink kind '${String(kind)}'. ` +
+            `Known kinds: ${CONTENT_SINK_KINDS.join(', ')}.`
+        );
+    }
+
+    return;
+}
+
+/**
+ * Compute the descriptor features a content instance actually carries — the
+ * `present` set the router matches a sink's `accepts` floor against. A feature
+ * counts as present only when it holds renderable content (a non-empty string,
+ * a non-empty array), so a sink that requires `body` is never offered an effect
+ * whose body is absent or blank. Centralized here, beside the rank and
+ * membership mechanics, so every pipeline that routes a descriptor (the curation
+ * destination picker today) derives `present` identically rather than each
+ * re-deciding what "carries a body" means.
+ *
+ * @param descriptor - The rendered content descriptor.
+ * @returns The descriptor features carrying renderable content.
+ */
+export function presentDescriptorFeatures(descriptor: IContentDescriptor): ContentDescriptorFeature[] {
+    const present: ContentDescriptorFeature[] = [];
+    if (typeof descriptor.title === 'string' && descriptor.title.length > 0) {
+        present.push('title');
+    }
+    if (typeof descriptor.body === 'string' && descriptor.body.length > 0) {
+        present.push('body');
+    }
+    if (Array.isArray(descriptor.media) && descriptor.media.length > 0) {
+        present.push('media');
+    }
+    if (Array.isArray(descriptor.details) && descriptor.details.length > 0) {
+        present.push('details');
+    }
+
+    return present;
 }

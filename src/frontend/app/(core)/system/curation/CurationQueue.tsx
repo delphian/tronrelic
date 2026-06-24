@@ -25,7 +25,19 @@ import { ClientTime } from '../../../../components/ui/ClientTime';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { getSocket } from '../../../../lib/socketClient';
-import { listCurations, listCurationHistory, approveCuration, rejectCuration, editCuration, type ICurationItemView } from '../../../../modules/curation';
+import {
+    listCurations,
+    listCurationHistory,
+    listDestinations,
+    setDestinationDefaults,
+    approveCuration,
+    rejectCuration,
+    editCuration,
+    type ICurationItemView,
+    type ICurationEligibleDestination,
+    type ICurationDestinationOutcome,
+    type ICurationDestinationSelection
+} from '../../../../modules/curation';
 import styles from './page.module.scss';
 
 /** Truncate body text for the inline preview cell. */
@@ -112,9 +124,50 @@ function CurationPreview({ preview }: { preview: ICurationItemView['preview'] })
 }
 
 /**
+ * Map a destination delivery status to a Badge tone, so an operator reads where
+ * approved content landed at a glance: delivered succeeds, failed alarms, pending
+ * is neutral (the leg was committed but the relay has not settled it).
+ *
+ * @param status - The per-destination delivery status.
+ * @returns The Badge tone for that status.
+ */
+function outcomeTone(status: ICurationDestinationOutcome['status']): 'success' | 'danger' | 'neutral' {
+    if (status === 'delivered') {
+        return 'success';
+    }
+    return status === 'failed' ? 'danger' : 'neutral';
+}
+
+/**
+ * Render the per-destination delivery outcomes of an approved item as toned
+ * badges — the audit of which publish sinks a curator's approval reached and
+ * which failed. A failed leg carries its error in the badge's `title` so the
+ * detail is one hover away without cluttering the row. Renders nothing when the
+ * item fanned out to no destinations (a classic single-effect approval).
+ *
+ * @param props.destinations - The recorded destination outcomes, if any.
+ * @returns The outcomes badges, or null when there are none.
+ */
+function CurationOutcomes({ destinations }: { destinations?: ICurationDestinationOutcome[] }) {
+    if (!destinations || destinations.length === 0) {
+        return null;
+    }
+    return (
+        <div className={styles.destination_outcomes}>
+            {destinations.map((outcome) => (
+                <Badge key={outcome.sinkId} tone={outcomeTone(outcome.status)}>
+                    <span title={outcome.error}>{outcome.sinkId}: {outcome.status}</span>
+                </Badge>
+            ))}
+        </div>
+    );
+}
+
+/**
  * Render a decided item's outcome for the history view: the terminal status as a
- * toned badge, when it was decided, and the deciding curator's Better Auth id.
- * Read-only by design — a history row offers no actions because its effect already
+ * toned badge, the per-destination delivery outcomes (when the approval fanned
+ * out), when it was decided, and the deciding curator's Better Auth id. Read-only
+ * by design — a history row offers no actions because its effect already
  * committed or was discarded, and the record exists only as an audit trail.
  *
  * @param props.item - The decided curation envelope (status is approved/rejected).
@@ -124,11 +177,123 @@ function CurationDecision({ item }: { item: ICurationItemView }) {
     return (
         <div className={styles.curation_preview}>
             <Badge tone={item.status === 'approved' ? 'success' : 'danger'}>{item.status}</Badge>
+            <CurationOutcomes destinations={item.destinations} />
             {item.decidedAt && (
                 <div className={styles.tool_desc}><ClientTime date={item.decidedAt} format="datetime" /></div>
             )}
             {item.decidedBy && <div className={styles.tool_desc}>by {item.decidedBy}</div>}
         </div>
+    );
+}
+
+/**
+ * Pending-row actions for one held item: the destination picker (when the item's
+ * type publishes to destinations and sinks are eligible) plus Approve / Edit /
+ * Reject. The eligible destinations are SECONDARY data, lazily fetched per row
+ * after mount, so they never block the primary queue render; an item with no
+ * eligible destinations shows the classic plain Approve button unchanged. The
+ * checkbox selection seeds from standing policy (`defaultSelected`) and the
+ * curator confirms or overrides it before approving — the human review gate
+ * doubling as the mandated-subset selector.
+ *
+ * @param props.item - The pending curation envelope.
+ * @param props.busyId - The id of the row currently deciding, or null.
+ * @param props.onApprove - Approve the item with the curator's selected destinations.
+ * @param props.onReject - Reject the item.
+ * @param props.onEdit - Open the inline editor for the item.
+ * @param props.onSetDefault - Save the current selection as the type's default.
+ * @returns The pending-row action controls.
+ */
+function PendingActions({ item, busyId, onApprove, onReject, onEdit, onSetDefault }: {
+    item: ICurationItemView;
+    busyId: string | null;
+    onApprove: (id: string, destinations?: ICurationDestinationSelection[]) => void;
+    onReject: (id: string) => void;
+    onEdit: (item: ICurationItemView) => void;
+    onSetDefault: (id: string, sinkIds: string[]) => void;
+}) {
+    // null while the lazy fetch is in flight; an empty array means "no picker".
+    const [destinations, setDestinations] = useState<ICurationEligibleDestination[] | null>(null);
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+
+    // Fetch the item's eligible destinations once after mount and seed the
+    // selection from standing policy. A `cancelled` guard drops a late resolve if
+    // the row unmounts (e.g. the queue refetched) so it cannot set stale state.
+    useEffect(() => {
+        let cancelled = false;
+        listDestinations(item.id)
+            .then((eligible) => {
+                if (cancelled) {
+                    return;
+                }
+                setDestinations(eligible);
+                setSelected(new Set(eligible.filter((d) => d.defaultSelected).map((d) => d.sinkId)));
+            })
+            .catch(() => {
+                // Destinations are secondary; on failure fall back to the plain
+                // approve flow rather than blocking the decision.
+                if (!cancelled) {
+                    setDestinations([]);
+                }
+            });
+        return () => { cancelled = true; };
+    }, [item.id]);
+
+    const toggle = useCallback((sinkId: string) => {
+        setSelected((prev) => {
+            const next = new Set(prev);
+            if (next.has(sinkId)) {
+                next.delete(sinkId);
+            } else {
+                next.add(sinkId);
+            }
+            return next;
+        });
+    }, []);
+
+    const busy = busyId === item.id;
+    const blockedByOther = busyId !== null && busyId !== item.id;
+    const hasPicker = destinations !== null && destinations.length > 0;
+    const approveDestinations = hasPicker
+        ? Array.from(selected).map((sinkId): ICurationDestinationSelection => ({ sinkId }))
+        : undefined;
+
+    return (
+        <Stack gap="sm">
+            {destinations !== null && destinations.length > 0 && (
+                <fieldset className={styles.destination_picker}>
+                    <legend className={styles.destination_legend}>Publish to</legend>
+                    {destinations.map((dest) => (
+                        <label key={dest.sinkId} className={styles.destination_option}>
+                            <input
+                                type="checkbox"
+                                checked={selected.has(dest.sinkId)}
+                                disabled={busy}
+                                onChange={() => toggle(dest.sinkId)}
+                            />
+                            <span className={styles.destination_label}>{dest.label ?? dest.sinkId}</span>
+                            <Badge tone="info">{dest.reach.egress}/{dest.reach.audience}</Badge>
+                        </label>
+                    ))}
+                    <Button variant="ghost" size="xs" disabled={busy} onClick={() => onSetDefault(item.id, Array.from(selected))}>
+                        Set as default for this type
+                    </Button>
+                </fieldset>
+            )}
+            <div className={styles.row_actions}>
+                <Button variant="primary" size="sm" loading={busy} disabled={blockedByOther} onClick={() => onApprove(item.id, approveDestinations)}>
+                    <Check size={16} /> Approve
+                </Button>
+                {item.preview.editable && (
+                    <Button variant="secondary" size="sm" disabled={busyId !== null} onClick={() => onEdit(item)}>
+                        <Pencil size={16} /> Edit
+                    </Button>
+                )}
+                <Button variant="danger" size="sm" disabled={blockedByOther} onClick={() => onReject(item.id)}>
+                    <X size={16} /> Reject
+                </Button>
+            </div>
+        </Stack>
     );
 }
 
@@ -190,11 +355,16 @@ export function CurationQueue({ onChanged }: { onChanged: () => void }) {
         return () => { socket.off('curation:changed', handler); };
     }, [load, onChanged]);
 
-    const resolve = useCallback(async (id: string, action: 'approve' | 'reject') => {
+    const resolve = useCallback(async (id: string, action: 'approve' | 'reject', destinations?: ICurationDestinationSelection[]) => {
         setBusyId(id);
         try {
-            await (action === 'approve' ? approveCuration(id) : rejectCuration(id));
-            push({ tone: action === 'approve' ? 'success' : 'info', title: action === 'approve' ? 'Approved' : 'Rejected' });
+            await (action === 'approve' ? approveCuration(id, destinations) : rejectCuration(id));
+            const fanned = action === 'approve' && destinations !== undefined && destinations.length > 0;
+            push({
+                tone: action === 'approve' ? 'success' : 'info',
+                title: action === 'approve' ? 'Approved' : 'Rejected',
+                description: fanned ? `Publishing to ${destinations.length} destination${destinations.length === 1 ? '' : 's'}.` : undefined
+            });
             await load();
             onChanged();
         } catch (err) {
@@ -203,6 +373,19 @@ export function CurationQueue({ onChanged }: { onChanged: () => void }) {
             setBusyId(null);
         }
     }, [load, onChanged, push]);
+
+    // Persist the curator's current selection as the content type's standing
+    // default — a policy-data redirect, not a per-item decision — so the picker
+    // pre-checks it on future items of the type. Failure is non-fatal; the
+    // approval flow is unaffected.
+    const setDefault = useCallback(async (id: string, sinkIds: string[]) => {
+        try {
+            await setDestinationDefaults(id, sinkIds);
+            push({ tone: 'success', title: 'Saved as default', description: `${sinkIds.length} destination${sinkIds.length === 1 ? '' : 's'} will be pre-selected for this type.` });
+        } catch (err) {
+            push({ tone: 'danger', title: 'Failed to save default', description: err instanceof Error ? err.message : String(err) });
+        }
+    }, [push]);
 
     const openEditor = useCallback((item: ICurationItemView) => {
         const modalId = 'curation-edit';
@@ -276,19 +459,14 @@ export function CurationQueue({ onChanged }: { onChanged: () => void }) {
                                                 {isHistory
                                                     ? <CurationDecision item={item} />
                                                     : (
-                                                        <div className={styles.row_actions}>
-                                                            <Button variant="primary" size="sm" loading={busyId === item.id} disabled={busyId !== null && busyId !== item.id} onClick={() => { void resolve(item.id, 'approve'); }}>
-                                                                <Check size={16} /> Approve
-                                                            </Button>
-                                                            {item.preview.editable && (
-                                                                <Button variant="secondary" size="sm" disabled={busyId !== null} onClick={() => openEditor(item)}>
-                                                                    <Pencil size={16} /> Edit
-                                                                </Button>
-                                                            )}
-                                                            <Button variant="danger" size="sm" disabled={busyId !== null && busyId !== item.id} onClick={() => { void resolve(item.id, 'reject'); }}>
-                                                                <X size={16} /> Reject
-                                                            </Button>
-                                                        </div>
+                                                        <PendingActions
+                                                            item={item}
+                                                            busyId={busyId}
+                                                            onApprove={(id, destinations) => { void resolve(id, 'approve', destinations); }}
+                                                            onReject={(id) => { void resolve(id, 'reject'); }}
+                                                            onEdit={openEditor}
+                                                            onSetDefault={(id, sinkIds) => { void setDefault(id, sinkIds); }}
+                                                        />
                                                     )}
                                             </Td>
                                         </Tr>

@@ -28,6 +28,7 @@ import { ContentTypesController, createContentTypesAdminRouter } from './service
 import { ContentRouter, CONTENT_ROUTER_SERVICE } from './services/content-router.js';
 import { ClassificationGate, AllowAllRoutingPolicy } from './services/content-routing-gate.js';
 import { ContentRouterController, createContentRouterAdminRouter } from './services/content-router-admin.js';
+import { createInternalPublishSink } from './services/internal-publish-sink.js';
 import { HookRegistry, HooksController, createHooksAdminRouter, SsrHeadFragmentsController, SsrHtmlAttributesController, createSsrRouter } from './hooks/index.js';
 import { requireAdmin } from './api/middleware/admin-auth.js';
 import { SchedulerModule } from './modules/scheduler/index.js';
@@ -337,6 +338,22 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // before its consumers.
     const contentRouter = new ContentRouter(new ClassificationGate(new AllowAllRoutingPolicy()), logger);
     serviceRegistry.register(CONTENT_ROUTER_SERVICE, contentRouter);
+
+    // Register the internal publish sink — a credential-free `publish`-kind
+    // destination so the curation destination picker has a real, selectable
+    // outlet immediately; external publish sinks (a Twitter, a Telegram) register
+    // later through the identical IContentSink contract. It "publishes" by writing
+    // a durable record and emitting an admin WebSocket signal rather than calling
+    // a third party, keeping the picker → select → deliver → record arc
+    // demonstrable without any external credentials.
+    contentRouter.register(
+        createInternalPublishSink(
+            coreDatabase,
+            logger,
+            (event, payload) => WebSocketService.getInstance().emit({ event, payload })
+        ),
+        'core'
+    );
 
     // Transaction-detail lookup: a lazily-populated, permanent cache that fills
     // misses from the injected provider. Dependencies are injected here rather

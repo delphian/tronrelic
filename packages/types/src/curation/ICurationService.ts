@@ -11,6 +11,10 @@
 
 import type { ICurationItem } from './ICurationItem.js';
 import type { ICurationType, ICurationEditPatch } from './ICurationType.js';
+import type {
+    ICurationDestinationSelection,
+    ICurationEligibleDestination
+} from './ICurationDestination.js';
 import type { IContentTypeInfo } from '../content/IContentRegistry.js';
 
 /**
@@ -111,14 +115,59 @@ export interface ICurationService extends ICurationRegistry {
     get(id: string): Promise<ICurationItem | null>;
 
     /**
-     * Approve a pending item: record the decision, then invoke the owning
-     * type's `onApprove`. Returns null when the item is missing or no longer
-     * pending, or when the owning type is unregistered (decision blocked).
+     * Approve a pending item: record the decision, deliver to any selected
+     * destinations, then invoke the owning type's `onApprove`. Returns null when
+     * the item is missing or no longer pending, or when the owning type is
+     * unregistered (decision blocked).
+     *
+     * `destinations` is the curator's mandated subset for a type that publishes
+     * to destinations: each entry must be one of the item's eligible publish
+     * sinks (see {@link listEligibleDestinations}). The selection is persisted
+     * with the decision and delivered before `onApprove`; per-destination
+     * outcomes land on the returned item's `destinations`. Omit it for the
+     * classic single-effect approval.
      *
      * @param id - The envelope id.
      * @param decidedBy - Better Auth user id of the deciding curator.
+     * @param destinations - The curator-selected publish sinks to deliver to.
      */
-    approve(id: string, decidedBy?: string): Promise<ICurationItem | null>;
+    approve(
+        id: string,
+        decidedBy?: string,
+        destinations?: ICurationDestinationSelection[]
+    ): Promise<ICurationItem | null>;
+
+    /**
+     * The publish sinks the content router admits for a pending item's content
+     * type, each flagged with whether standing policy pre-selects it. Drives the
+     * curation destination picker. Returns an empty list when the item is missing
+     * or not pending, its type does not publish to destinations, or no publish
+     * sink is eligible — so a caller renders a picker only when there is
+     * something to pick.
+     *
+     * @param id - The pending envelope id.
+     * @returns The eligible publish destinations for the item.
+     */
+    listEligibleDestinations(id: string): Promise<ICurationEligibleDestination[]>;
+
+    /**
+     * Read the standing default destination sink ids for a content type — the
+     * subset the picker pre-selects. Empty when no default is set.
+     *
+     * @param typeId - The namespaced content type id.
+     * @returns The default sink ids, or an empty array.
+     */
+    getDestinationDefaults(typeId: string): Promise<string[]>;
+
+    /**
+     * Set the standing default destination sink ids for a content type, so an
+     * operator redirects a whole type's default destinations as policy data
+     * without a code change. The next item of that type pre-selects them.
+     *
+     * @param typeId - The namespaced content type id.
+     * @param sinkIds - The sink ids to pre-select by default.
+     */
+    setDestinationDefaults(typeId: string, sinkIds: string[]): Promise<void>;
 
     /**
      * Reject a pending item: record the decision, then invoke the owning type's

@@ -18,6 +18,8 @@ import type {
     INotificationPolicy,
     NotificationContentFeature,
     IContentRegistry,
+    IContentRouter,
+    IContentClassification,
     IContentDescriptor,
     ISystemLogService
 } from '@/types';
@@ -28,6 +30,18 @@ import type { PolicyService } from './policy.service.js';
 import type { AuditService } from './audit.service.js';
 import type { RecipientResolver } from './recipient-resolver.js';
 import type { INotificationPreferencesDocument, INotificationAuditDocument } from '../database/index.js';
+import { channelIdFromSinkId } from '../channels/notification-channel-sink.js';
+
+/**
+ * The classification dispatch hands the content router while the migration's
+ * authorization gate is an allow-all stub. The maximum ceiling
+ * (`{ external, public }`) admits every sink, so the gate is a deliberate no-op
+ * and structural `accepts ⊆ present` matching alone decides candidates —
+ * preserving today's behaviour, where notifications does no egress gating. A real
+ * per-notification classification arrives with the authorization pass; until then
+ * this keeps the gate exercised end to end but neutral.
+ */
+const MIGRATION_PERMISSIVE_CLASSIFICATION: IContentClassification = { egress: 'external', audience: 'public' };
 
 /**
  * Orchestrates resolution, gating, delivery, and audit for every blast. Plain
@@ -37,6 +51,7 @@ export class DispatchService {
     /**
      * @param categories - Category registry (descriptors + defaults).
      * @param channels - Channel registry (transports + capabilities).
+     * @param contentRouter - The shared content router; matches the descriptor's features against the registered channel sinks (`accepts ⊆ present`), replacing the module-local capability check.
      * @param content - Central content-type registry; resolves a request's typeId into a descriptor via `describe(ref)`.
      * @param preferences - Per-user preference store.
      * @param policy - Admin policy store.
@@ -47,6 +62,7 @@ export class DispatchService {
     constructor(
         private readonly categories: CategoryRegistry,
         private readonly channels: ChannelRegistry,
+        private readonly contentRouter: IContentRouter,
         private readonly content: IContentRegistry,
         private readonly preferences: PreferenceService,
         private readonly policy: PolicyService,
@@ -100,18 +116,21 @@ export class DispatchService {
         const categoryEnabled = this.policy.isCategoryEnabled(policySnapshot, category.id);
         const tallies: INotificationChannelTally[] = [];
 
-        // Candidate channels are the registered channels that can render every
-        // feature the resolved descriptor carries — capability routing replaces
-        // the category naming its channels. A channel that cannot render the
-        // content is not a candidate (and not a suppression); a candidate that is
-        // policy-disabled or fully opted-out is tallied as suppressed so the audit
-        // shows what was withheld, not only what was delivered.
-        for (const info of this.channels.list()) {
-            const channel = this.channels.get(info.id);
-            if (!channel || !this.channelCanRender(channel.accepts, requiredFeatures)) {
+        // Candidate channels come from the shared content router: it matches the
+        // descriptor's present features against each registered channel sink's
+        // floor (`accepts ⊆ present`), the same predicate every sink family uses.
+        // The shared router returns sinks across all families (the curation gate,
+        // future publish sinks), so each is mapped back to a channel and only this
+        // family's are kept. A channel that does not match is not a candidate (and
+        // not a suppression); a candidate that is policy-disabled or fully
+        // opted-out is tallied as suppressed; one that matches but cannot render
+        // the content faithfully refuses at delivery and is tallied as refused —
+        // an observable non-delivery the retired capability ceiling used to hide.
+        for (const channelId of this.candidateChannelIds(requiredFeatures)) {
+            const channel = this.channels.get(channelId);
+            if (!channel) {
                 continue;
             }
-            const channelId = channel.id;
             const channelEnabled = categoryEnabled && this.policy.isChannelEnabled(policySnapshot, channelId);
 
             if (!channelEnabled) {
@@ -127,7 +146,11 @@ export class DispatchService {
             if (allowed.length > 0) {
                 try {
                     const result = await channel.deliver(allowed.map((userId) => ({ userId })), rendered);
-                    tallies.push({ channelId, delivered: result.delivered, suppressed });
+                    if (result.refused) {
+                        tallies.push({ channelId, delivered: 0, suppressed, refused: true });
+                    } else {
+                        tallies.push({ channelId, delivered: result.delivered, suppressed });
+                    }
                 } catch (error) {
                     this.logger.error({ error, channelId, categoryId: category.id }, 'Notification channel delivery failed');
                     tallies.push({ channelId, delivered: 0, suppressed: recipientIds.length });
@@ -189,16 +212,27 @@ export class DispatchService {
     }
 
     /**
-     * Whether a channel can render every feature the content carries. A channel
-     * with no matching capability for a required feature is excluded from
-     * delivery rather than handed content it would drop or mangle.
+     * The channels eligible to render a descriptor, resolved through the shared
+     * content router. Routes the present features under the migration-permissive
+     * classification (the authorization gate is a no-op stub today), then keeps
+     * only the notification-family sinks that still map to a registered channel —
+     * ignoring the other families' sinks the shared router also returns. This is
+     * the structural `accepts ⊆ present` floor match that replaced the module's
+     * own `present ⊆ accepts` capability ceiling.
      *
-     * @param accepts - The channel's declared renderable features.
-     * @param required - The features the descriptor carries.
-     * @returns True when `accepts` covers every required feature.
+     * @param present - The features the resolved descriptor carries.
+     * @returns The ids of the registered channels that structurally match.
      */
-    private channelCanRender(accepts: NotificationContentFeature[], required: NotificationContentFeature[]): boolean {
-        return required.every((feature) => accepts.includes(feature));
+    private candidateChannelIds(present: NotificationContentFeature[]): string[] {
+        const matched = this.contentRouter.route(MIGRATION_PERMISSIVE_CLASSIFICATION, present);
+        const channelIds: string[] = [];
+        for (const sink of matched) {
+            const channelId = channelIdFromSinkId(sink.id);
+            if (channelId !== null && this.channels.has(channelId)) {
+                channelIds.push(channelId);
+            }
+        }
+        return channelIds;
     }
 
     /**

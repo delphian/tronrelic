@@ -18,6 +18,7 @@
  */
 
 import type { IContentDescriptor } from '../content/IContentDescriptor.js';
+import type { IContentClassification } from '../content/IContentClassification.js';
 
 /**
  * Visual severity of a notification. Maps to a toast tone on the client and to
@@ -132,6 +133,17 @@ export interface IChannelDeliveryResult {
     delivered: number;
     /** How many deliveries failed at the transport layer (optional). */
     failed?: number;
+    /**
+     * Set when the channel structurally matched the content (the content router's
+     * `accepts ⊆ present` floor) but cannot render it faithfully — e.g. a toast
+     * handed content with neither a title nor a body. `delivered` must be 0;
+     * dispatch records the refusal in the audit so the loss is observable rather
+     * than a silent skip. This is the fidelity guard that replaced the channel's
+     * capability-ceiling exclusion when matching moved to the content router (the
+     * router matches on a minimum floor, so a channel can now be a candidate for
+     * content it cannot meaningfully render, and refuses here instead).
+     */
+    refused?: boolean;
 }
 
 /**
@@ -153,6 +165,17 @@ export interface INotificationChannel {
      * `'media'` and `'details'`.
      */
     accepts: NotificationContentFeature[];
+    /**
+     * The exposure delivering through this channel causes, in the governed
+     * content-router classification vocabulary. A delivery channel is one outlet
+     * of the notifications *delivery sink family*, so it declares its `reach` the
+     * way any content sink does — the router's classification gate reads it
+     * (`reach ≤ ceiling`) to decide whether a class of content may be delivered
+     * through this channel. Toast is `{ egress: 'user', audience: 'user' }`: an
+     * in-platform surface shown to a signed-in user. Data the gate reads, never a
+     * branch the channel runs.
+     */
+    reach: IContentClassification;
     /**
      * Deliver a rendered notification to the resolved recipients.
      *
@@ -198,6 +221,13 @@ export interface INotificationChannelTally {
     delivered: number;
     /** Recipients suppressed by policy or preference for this channel. */
     suppressed: number;
+    /**
+     * Set when the channel refused to render this blast's content (see
+     * {@link IChannelDeliveryResult.refused}). The channel's gated recipients
+     * received nothing — neither delivered nor opt-out-suppressed — so the flag
+     * records an otherwise invisible non-delivery the migration made observable.
+     */
+    refused?: boolean;
 }
 
 /**

@@ -18,7 +18,8 @@ import type {
     IContentRoutingPolicy,
     IContentDescriptor,
     IContentType,
-    ContentDescriptorFeature
+    ContentDescriptorFeature,
+    ContentSinkKind
 } from '@/types';
 import { readContentField } from '@/types';
 import { ContentRouter } from '../content-router.js';
@@ -48,9 +49,10 @@ function makeSink(
     id: string,
     accepts: ContentDescriptorFeature[],
     reach: IContentClassification,
-    deliver?: IContentSink['deliver']
+    deliver?: IContentSink['deliver'],
+    kind: ContentSinkKind = 'publish'
 ): IContentSink {
-    return { id, accepts, reach, deliver: deliver ?? (async () => undefined) };
+    return { id, kind, accepts, reach, deliver: deliver ?? (async () => undefined) };
 }
 
 describe('ContentRouter registration', () => {
@@ -60,10 +62,10 @@ describe('ContentRouter registration', () => {
 
         expect(router.getSinks()).toHaveLength(1);
         // The exact-shape toEqual is also the leak check: the projection carries
-        // only id/accepts/reach/providerId — no deliver callback.
+        // only id/kind/label/accepts/reach/providerId — no deliver callback.
         const info = router.list();
         expect(info).toEqual([
-            { id: 'twitter', accepts: ['body'], reach: { egress: 'external', audience: 'public' }, providerId: 'trp-x-poster' }
+            { id: 'twitter', kind: 'publish', label: undefined, accepts: ['body'], reach: { egress: 'external', audience: 'public' }, providerId: 'trp-x-poster' }
         ]);
 
         disposer();
@@ -111,6 +113,23 @@ describe('ContentRouter registration', () => {
         const bad = makeSink('rogue', ['body', 'sidecar' as ContentDescriptorFeature], { egress: 'user', audience: 'user' });
 
         expect(() => router.register(bad, 'plugin')).toThrow(/Unknown descriptor feature 'sidecar'/);
+    });
+
+    it('refuses a sink whose kind is not a known family (fail-fast)', () => {
+        const router = makeRouter();
+        const bad = makeSink('rogue', ['body'], { egress: 'user', audience: 'user' }, undefined, 'broadcast' as unknown as ContentSinkKind);
+
+        expect(() => router.register(bad, 'plugin')).toThrow(/Unknown content sink kind 'broadcast'/);
+        expect(router.getSinks()).toHaveLength(0);
+    });
+
+    it('surfaces the sink kind and label in the introspection projection', () => {
+        const router = makeRouter();
+        router.register({ ...makeSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }), label: 'Internal publish log' }, 'core');
+
+        const info = router.list()[0];
+        expect(info.kind).toBe('publish');
+        expect(info.label).toBe('Internal publish log');
     });
 });
 

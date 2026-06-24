@@ -39,6 +39,31 @@ export const CONTENT_DESCRIPTOR_FEATURES = ['title', 'body', 'media', 'details']
 export type ContentDescriptorFeature = typeof CONTENT_DESCRIPTOR_FEATURES[number];
 
 /**
+ * The sink families the router serves, made machine-readable. The design names
+ * three kinds of consumer — a `gate` holds content for a human decision
+ * (curation), a `delivery` sink hands content to a user-facing family pipeline
+ * (a notification channel), a `publish` sink is a terminal destination an
+ * operator selects to push content outward (a Twitter outlet, the internal
+ * publish log). Reach says *how far* a sink exposes content; `kind` says *what
+ * role* it plays, which reach alone cannot encode (a gate and an audit log can
+ * share `{ internal, admin }` reach yet are not interchangeable destinations).
+ *
+ * The kind exists because a selecting pipeline must filter by role, not just by
+ * structural match. The curation destination picker surfaces only `publish`
+ * sinks: offering the `gate` sink would re-enqueue the very item being approved
+ * (an infinite hold loop), and offering a match-only `delivery` sink whose
+ * `deliver()` throws would fail at send. Governed like the rest of the
+ * vocabulary — registration refuses an unknown kind, fail-fast.
+ */
+export const CONTENT_SINK_KINDS = ['gate', 'delivery', 'publish'] as const;
+
+/**
+ * One sink family role. Declared on every {@link IContentSink}; validated at
+ * registration against {@link CONTENT_SINK_KINDS}.
+ */
+export type ContentSinkKind = typeof CONTENT_SINK_KINDS[number];
+
+/**
  * Disposer returned by {@link IContentRouter.register}. A sink-providing plugin
  * calls it from `disable()` so its sink vanishes when the plugin is turned off;
  * a module registers for the process lifetime and keeps it only for symmetry.
@@ -53,6 +78,21 @@ export type ContentSinkDisposer = () => void;
 export interface IContentSink {
     /** Stable sink id, namespaced like a content type (`<provider>:<name>`). */
     id: string;
+
+    /**
+     * The sink's family role — `gate`, `delivery`, or `publish`. A selecting
+     * pipeline filters on this to offer only the right kind of destination (the
+     * curation picker shows `publish` sinks only); the router validates it at
+     * registration. Data the sink declares, never a predicate it runs.
+     */
+    kind: ContentSinkKind;
+
+    /**
+     * Optional human-readable name for admin surfaces — the destination picker
+     * and the `/system/content-router` introspection. Consumers fall back to the
+     * `id` when it is absent, so a sink that omits it still renders.
+     */
+    label?: string;
 
     /**
      * The descriptor features this sink consumes to render — the structural
@@ -92,6 +132,12 @@ export interface IContentSink {
 export interface IContentSinkInfo {
     /** The sink id. */
     id: string;
+
+    /** The sink's family role — `gate`, `delivery`, or `publish`. */
+    kind: ContentSinkKind;
+
+    /** Optional human-readable name; consumers fall back to `id` when absent. */
+    label?: string;
 
     /** The descriptor features the sink consumes. */
     accepts: ContentDescriptorFeature[];

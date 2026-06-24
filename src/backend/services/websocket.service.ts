@@ -368,11 +368,12 @@ export class WebSocketService implements IWebSocketService {
       case 'ai-tools:activity':
       case 'ai-tools:approvals-changed':
       case 'curation:changed':
-        // Admin-dashboard refetch nudges from the AI tool governor and the
-        // curation service. The /system/ai-tools and /system/curation surfaces
-        // subscribe on the shared socket without joining a room, so these
-        // broadcast globally; payloads carry only a timestamp or count, never
-        // governed data.
+      case 'content:published':
+        // Admin-dashboard refetch nudges from the AI tool governor, the curation
+        // service, and the internal publish sink. The /system/ai-tools,
+        // /system/curation, and publish surfaces subscribe on the shared socket
+        // without joining a room, so these broadcast globally; payloads carry
+        // only a timestamp, count, or published-item summary, never governed data.
         this.io.emit(event.event, event.payload);
         break;
       case 'toast':
