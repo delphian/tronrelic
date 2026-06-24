@@ -159,6 +159,26 @@ describe('ClassificationGate admission', () => {
         const admitted = gate.admit({ egress: 'galactic', audience: 'public' } as unknown as IContentClassification, [twitter]);
         expect(admitted).toEqual([]);
     });
+
+    it('fails closed when a sink reach carries an unknown level', () => {
+        // A malformed reach (rank -1) must not slip under a valid ceiling — the
+        // gate guards reach symmetrically with the ceiling. register() would
+        // normally reject such a sink, but isWithinCeiling is exported and the
+        // gate is public, so the guard must hold for direct callers too.
+        const rogue = makeSink('rogue', ['body'], { egress: 'galactic', audience: 'public' } as unknown as IContentClassification);
+        const admitted = gate.admit({ egress: 'external', audience: 'public' }, [rogue]);
+        expect(admitted).toEqual([]);
+    });
+
+    it('fails closed when the ceiling carries an unknown dimension', () => {
+        // An extra dimension the runtime cannot rank must not be silently ignored:
+        // the gate admits nothing rather than routing past the part of the label it
+        // does not understand — symmetric with assertValidReach rejecting unknown
+        // dimensions on a sink's reach.
+        const ceiling = { egress: 'external', audience: 'public', clearance: 'top-secret' } as unknown as IContentClassification;
+        const admitted = gate.admit(ceiling, [twitter]);
+        expect(admitted).toEqual([]);
+    });
 });
 
 describe('ContentRouter structural candidates', () => {
