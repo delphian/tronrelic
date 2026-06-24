@@ -18,9 +18,11 @@
  * sub-shape — adding a key here is a small, reviewed change, never an open
  * grab-bag.
  *
- * This is distinct from {@link IContentDescriptorField}: that is a
- * human-readable label/value fact rendered in a detail view; this is typed data
- * a sink consumes. The two never substitute for each other.
+ * This is distinct from the descriptor's `details` array (of
+ * {@link IContentDescriptorField}): `details` is a free-form, human-readable
+ * label/value facts table rendered for a person; this is a governed typed map a
+ * sink consumes by key. The two never substitute for each other, and only this
+ * one is governed. It is surfaced on the descriptor as `fields`.
  *
  * @see ../../../../docs/system/system-content-routing.md — the `fields`
  *   governance rule and the typed-key compliance invariant (reading an unwritten

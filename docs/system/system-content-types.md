@@ -10,7 +10,7 @@ The fix is to separate three roles that were tangled. **Content** is a noun owne
 
 ## How It Works
 
-A provider registers an `IContentType` once on the central registry. The type knows its `typeId`, a `label`, and `describe(ref)` — which flattens its own record into a generic `IContentDescriptor` (`title` / `body` / `media` / `fields`). Optionally it implements `applyEdit(ref, patch)` to mutate its own record. Both `describe` and `applyEdit` operate on the originator's record via the opaque `ref`; neither knows about any pipeline.
+A provider registers an `IContentType` once on the central registry. The type knows its `typeId`, a `label`, and `describe(ref)` — which flattens its own record into a generic `IContentDescriptor` (`title` / `body` / `media` / `details`, plus an optional governed typed `fields` map for machine-readable enrichment). Optionally it implements `applyEdit(ref, patch)` to mutate its own record. Both `describe` and `applyEdit` operate on the originator's record via the opaque `ref`; neither knows about any pipeline.
 
 `ContentRegistry` is core infrastructure, a peer of the service registry and hook registry — constructed in `bootstrapInit` and published as `'content-types'` **before any module init**, so curation and notifications can resolve it during their own init. It is in-memory and process-lifetime; persisted state (curation decisions, audit) references content types by `typeId`.
 
@@ -29,7 +29,7 @@ The split is deliberate: generic operate-on-own-record operations (`describe`, `
 | `IContentType.label` | Human-readable label for listing and headings |
 | `IContentType.describe(ref)` | Flatten the record into a generic `IContentDescriptor`; safe to call repeatedly, must not mutate |
 | `IContentType.applyEdit?(ref, patch)` | Optional content self-mutation (today `{ body }`); the type validates and owns the write |
-| `IContentDescriptor` | `title` / `body` / `media` / `fields` / `editable` — the channel-agnostic render shape |
+| `IContentDescriptor` | `title` / `body` / `media` / `details` (render shape) / `fields` (governed typed enrichment map) / `editable` |
 | `IContentRegistry` | `register(type, providerId)` → disposer, `get`, `has`, `list` |
 | `IContentTypeInfo` | `typeId` / `label` / `providerId` — the listing record |
 

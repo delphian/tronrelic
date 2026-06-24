@@ -24,12 +24,14 @@ import type { IContentDescriptor } from './IContentDescriptor.js';
 import type { IContentClassification } from './IContentClassification.js';
 
 /**
- * The descriptor slots a sink can render, in the same vocabulary the descriptor
- * exposes. These are the structural routing features matched against the
- * features a descriptor actually carries — the router's sole routing predicate.
- * Derived from the tuple so the type and the runtime feature list stay aligned.
+ * The renderable descriptor slots a sink can render, matched structurally
+ * against the features a descriptor actually carries — the router's sole routing
+ * predicate. `details` is the human-readable facts table; the governed typed
+ * `fields` map is deliberately absent, because it is enrichment a sink reads by
+ * key via `readContentField`, never a slot whose presence gates routing. Derived
+ * from the tuple so the type and the runtime feature list stay aligned.
  */
-export const CONTENT_DESCRIPTOR_FEATURES = ['title', 'body', 'media', 'fields'] as const;
+export const CONTENT_DESCRIPTOR_FEATURES = ['title', 'body', 'media', 'details'] as const;
 
 /**
  * One renderable descriptor feature. A sink's `accepts` is a list of these.

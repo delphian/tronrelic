@@ -7,7 +7,7 @@
  * is contained by the content's ceiling (`reach ≤ classification`, INCLUDING the
  * inverse cases that would be the direction bug); structural matching is
  * `accepts ⊆ present`; a sink renders a content type authored after it (graceful
- * degradation); and reading an undeclared `keyedFields` key fails the build.
+ * degradation); and reading an undeclared `fields` key fails the build.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -219,7 +219,7 @@ describe('Graceful degradation — a sink renders a content type authored after 
         };
         const descriptor = await announcement.describe({});
         const present = (Object.keys(descriptor) as ContentDescriptorFeature[]).filter(
-            (k): k is ContentDescriptorFeature => ['title', 'body', 'media', 'fields'].includes(k) && descriptor[k as keyof IContentDescriptor] != null
+            (k): k is ContentDescriptorFeature => ['title', 'body', 'media', 'details'].includes(k) && descriptor[k as keyof IContentDescriptor] != null
         );
 
         const candidates = router.route({ egress: 'external', audience: 'public' }, present);
@@ -233,8 +233,8 @@ describe('Graceful degradation — a sink renders a content type authored after 
 
 describe('Governed fields key registry', () => {
     it('reads a declared key through the typed accessor', () => {
-        const descriptor: IContentDescriptor = { body: 'see more', keyedFields: { canonicalUrl: 'https://tronrelic.com/x' } };
-        expect(readContentField(descriptor.keyedFields, 'canonicalUrl')).toBe('https://tronrelic.com/x');
+        const descriptor: IContentDescriptor = { body: 'see more', fields: { canonicalUrl: 'https://tronrelic.com/x' } };
+        expect(readContentField(descriptor.fields, 'canonicalUrl')).toBe('https://tronrelic.com/x');
     });
 
     it('returns undefined for an absent map or an unset declared key', () => {
@@ -243,9 +243,9 @@ describe('Governed fields key registry', () => {
     });
 
     it('rejects an undeclared key at compile time (governance — undeclared key is a build error)', () => {
-        const descriptor: IContentDescriptor = { keyedFields: { canonicalUrl: 'https://tronrelic.com/x' } };
+        const descriptor: IContentDescriptor = { fields: { canonicalUrl: 'https://tronrelic.com/x' } };
         // @ts-expect-error 'threadId' is not declared in IContentFields; reading it must fail the build.
-        const leaked = readContentField(descriptor.keyedFields, 'threadId');
+        const leaked = readContentField(descriptor.fields, 'threadId');
         expect(leaked).toBeUndefined();
     });
 });

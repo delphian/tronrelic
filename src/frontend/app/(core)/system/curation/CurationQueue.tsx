@@ -97,9 +97,9 @@ function CurationPreview({ preview }: { preview: ICurationItemView['preview'] })
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={image.url} alt={image.alt ?? 'Attached media'} className={styles.curation_thumb} loading="lazy" />
             )}
-            {preview.fields && preview.fields.length > 0 && (
+            {preview.details && preview.details.length > 0 && (
                 <div className={styles.curation_fields}>
-                    {preview.fields.map((field, index) => (
+                    {preview.details.map((field, index) => (
                         <span key={`${field.label}-${index}`} className={styles.curation_field}>
                             <span className={styles.curation_field_label}>{field.label}:</span> {field.value}
                         </span>

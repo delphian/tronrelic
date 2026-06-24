@@ -62,19 +62,24 @@ export interface IContentDescriptor {
     /** Media rendered inline, with provider-resolved public URLs. */
     media?: IContentDescriptorMedia[];
 
-    /** Supplementary labelled facts shown in a detail view. */
-    fields?: IContentDescriptorField[];
+    /**
+     * Supplementary labelled facts shown in a detail view — free-form,
+     * human-readable label/value pairs (e.g. "Status" → "posted"), not a governed
+     * vocabulary. A renderable slot: a sink or channel declares `details` in its
+     * `accepts` when it can render the facts table.
+     */
+    details?: IContentDescriptorField[];
 
     /**
      * Governed, machine-readable enrichment a sink reads programmatically — the
-     * sanctioned escape hatch for data the four slots above cannot carry. Every
-     * key is declared in {@link IContentFields} and read via `readContentField`,
-     * so a sink reading an undeclared key fails the build. Distinct from the
-     * human-readable `fields` array: that renders in a detail view, this is data
-     * a sink consumes. Optional and additive — a consumer that ignores it is
-     * unaffected.
+     * sanctioned escape hatch for typed data the renderable slots cannot carry.
+     * Every key is declared in {@link IContentFields} and read via
+     * `readContentField`, so a sink reading an undeclared key fails the build.
+     * Distinct from the human-readable `details` array: `details` is a free-form
+     * facts table rendered for a person, `fields` is a governed typed map a sink
+     * consumes. Not a routing feature — its presence never gates matching.
      */
-    keyedFields?: IContentFields;
+    fields?: IContentFields;
 
     /**
      * Whether the owning type offers an interactive editor for this instance.
