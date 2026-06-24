@@ -12,6 +12,7 @@ import { Router } from 'express';
 import type { CurationController } from './curation.controller.js';
 import { requireAdmin } from '../../../api/middleware/admin-auth.js';
 import { createAdminRateLimiter } from '../../../api/middleware/rate-limit.js';
+import { asyncHandler } from '../../../api/middleware/async-handler.js';
 
 /**
  * Build the curation admin router.
@@ -25,14 +26,14 @@ export function createCurationAdminRouter(controller: CurationController): Route
     router.use(createAdminRateLimiter('curation-admin'));
     router.use(requireAdmin);
 
-    router.get('/curations', controller.listCurations);
-    router.get('/curations/count', controller.getCurationsCount);
-    router.get('/curations/history', controller.listCurationHistory);
-    router.get('/curations/:id/destinations', controller.listDestinations);
-    router.post('/curations/:id/destinations/defaults', controller.setDestinationDefaults);
-    router.patch('/curations/:id', controller.editCuration);
-    router.post('/curations/:id/approve', controller.approveCuration);
-    router.post('/curations/:id/reject', controller.rejectCuration);
+    router.get('/curations', asyncHandler(controller.listCurations));
+    router.get('/curations/count', asyncHandler(controller.getCurationsCount));
+    router.get('/curations/history', asyncHandler(controller.listCurationHistory));
+    router.get('/curations/:id/destinations', asyncHandler(controller.listDestinations));
+    router.post('/curations/:id/destinations/defaults', asyncHandler(controller.setDestinationDefaults));
+    router.patch('/curations/:id', asyncHandler(controller.editCuration));
+    router.post('/curations/:id/approve', asyncHandler(controller.approveCuration));
+    router.post('/curations/:id/reject', asyncHandler(controller.rejectCuration));
 
     return router;
 }

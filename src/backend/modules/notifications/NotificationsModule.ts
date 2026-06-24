@@ -195,22 +195,24 @@ export class NotificationsModule implements IModule<INotificationsModuleDependen
     async run(): Promise<void> {
         this.logger.info('Running notifications module...');
 
+        // Pair channel registration with content-router sink registration, so a
+        // channel registered at runtime (a future email/push plugin calling
+        // registerChannel after startup) is advertised as a sink and stays
+        // routable through dispatch — not just the channels present now. Dispatch
+        // matches candidates through this router (see
+        // DispatchService.candidateChannelIds) and the sinks surface on the
+        // /system/content-router introspection; the composed disposer removes the
+        // sink when the channel is unregistered (plugin disable()). The router is
+        // a hard dependency resolved in init(), so no presence guard is needed.
+        // Set before any channel registers so the built-in toast is bound too.
+        this.channelRegistry.setSinkBinder((channel) =>
+            this.contentRouter.register(notificationChannelToSink(channel), this.metadata.id)
+        );
+
         // Register the built-in toast channel through the public service, so the
         // module exercises the same registration path a channel-provider plugin
-        // would.
+        // would — which now advertises the content-router sink via the binder.
         this.notificationService.registerChannel(this.toastChannel);
-
-        // Advertise each delivery channel as a content-router sink. Dispatch
-        // matches candidate channels through this same router (see
-        // DispatchService.candidateChannelIds), and the sinks also surface on the
-        // /system/content-router introspection. The router is a hard dependency
-        // resolved and stored in init(), so no presence guard is needed here.
-        for (const info of this.channelRegistry.list()) {
-            const channel = this.channelRegistry.get(info.id);
-            if (channel) {
-                this.contentRouter.register(notificationChannelToSink(channel), this.metadata.id);
-            }
-        }
         this.logger.info('Notification channels registered as content-router sinks');
 
         // Publish the single public surface. Done before any consumer module's

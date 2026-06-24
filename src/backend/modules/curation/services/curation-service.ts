@@ -598,13 +598,24 @@ export class CurationService implements ICurationService {
         const eligible = new Map(
             this.contentRouter.route(ceiling, present).filter((sink) => sink.kind === 'publish').map((sink) => [sink.id, sink])
         );
-        const resolved = destinations.map((selection) => {
+        // Deduplicate by sinkId: delivery is non-idempotent (each publish leg is a
+        // distinct external side effect with no outbox guard), so a repeated sink
+        // in the selection would publish twice. Keep the first occurrence to
+        // preserve selection order; the picker sends unique entries, but this is a
+        // public admin endpoint that accepts arbitrary JSON.
+        const seen = new Set<string>();
+        const resolved: IResolvedDestination[] = [];
+        for (const selection of destinations) {
+            if (seen.has(selection.sinkId)) {
+                continue;
+            }
             const sink = eligible.get(selection.sinkId);
             if (!sink) {
                 throw new Error(`Sink '${selection.sinkId}' is not an eligible publish destination for this item.`);
             }
-            return { sink, dest: selection.dest ?? {} };
-        });
+            seen.add(selection.sinkId);
+            resolved.push({ sink, dest: selection.dest ?? {} });
+        }
 
         return resolved;
     }
