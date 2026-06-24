@@ -7,10 +7,17 @@
  * throws on a non-2xx response so callers surface the failure in the UI.
  */
 
-import type { ICurationPreview } from '@/types';
+import type {
+    ICurationPreview,
+    ICurationEligibleDestination,
+    ICurationDestinationOutcome,
+    ICurationDestinationSelection
+} from '@/types';
 
 /** Base path for every curation admin endpoint. */
 const BASE = '/api/admin/system/curation';
+
+export type { ICurationEligibleDestination, ICurationDestinationOutcome, ICurationDestinationSelection } from '@/types';
 
 /**
  * Parse a fetch response, throwing a descriptive error on a non-2xx status so
@@ -45,6 +52,7 @@ export interface ICurationItemView {
     createdAt: string;
     decidedAt?: string;
     decidedBy?: string;
+    destinations?: ICurationDestinationOutcome[];
 }
 
 /**
@@ -97,13 +105,56 @@ export async function editCuration(id: string, patch: { body: string }): Promise
 }
 
 /**
- * Approve a held curation item, committing it through its owning type.
+ * Approve a held curation item, committing it through its owning type. When the
+ * item's type publishes to destinations, the curator's selected publish sinks
+ * ride along and the backend fans the approved content out to each. Omitting
+ * `destinations` is the classic single-effect approval, so the no-body POST is
+ * preserved for items without a picker.
  *
  * @param id - The curation envelope id.
+ * @param destinations - The curator-selected publish destinations, if any.
  * @returns Resolves when the item resolves.
  */
-export async function approveCuration(id: string): Promise<void> {
-    await parse(await fetch(`${BASE}/curations/${encodeURIComponent(id)}/approve`, { method: 'POST' }), 'approve curation item');
+export async function approveCuration(id: string, destinations?: ICurationDestinationSelection[]): Promise<void> {
+    const hasDestinations = destinations !== undefined && destinations.length > 0;
+    const init: RequestInit = hasDestinations
+        ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ destinations }) }
+        : { method: 'POST' };
+    await parse(await fetch(`${BASE}/curations/${encodeURIComponent(id)}/approve`, init), 'approve curation item');
+}
+
+/**
+ * List the publish destinations the content router admits for a pending item —
+ * the data behind the destination picker. Returns an empty array when the item's
+ * type does not publish to destinations or nothing is eligible, so the caller
+ * renders no picker. Each entry flags whether standing policy pre-selects it.
+ *
+ * @param id - The pending curation envelope id.
+ * @returns The eligible publish destinations.
+ */
+export async function listDestinations(id: string): Promise<ICurationEligibleDestination[]> {
+    const data = await parse<{ destinations: ICurationEligibleDestination[] }>(
+        await fetch(`${BASE}/curations/${encodeURIComponent(id)}/destinations`),
+        'load curation destinations'
+    );
+    return data.destinations;
+}
+
+/**
+ * Save the standing default destinations for the item's content type — the
+ * subset the picker pre-checks on future items of that type. Lets an operator
+ * redirect a type's default destinations as policy data without a code change.
+ *
+ * @param id - A curation envelope id; the backend resolves its content type.
+ * @param sinkIds - The sink ids to pre-select by default.
+ * @returns Resolves when the defaults are saved.
+ */
+export async function setDestinationDefaults(id: string, sinkIds: string[]): Promise<void> {
+    await parse(await fetch(`${BASE}/curations/${encodeURIComponent(id)}/destinations/defaults`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sinkIds })
+    }), 'set curation destination defaults');
 }
 
 /**

@@ -16,6 +16,12 @@ export type {
 export type { ICurationItem, CurationItemStatus } from './ICurationItem.js';
 export type { ICurationType, ICurationEditPatch } from './ICurationType.js';
 export type {
+    ICurationEligibleDestination,
+    ICurationDestinationSelection,
+    ICurationDestinationOutcome,
+    CurationDestinationStatus
+} from './ICurationDestination.js';
+export type {
     ICurationService,
     ICurationRegistry,
     ICurationTypeInfo,

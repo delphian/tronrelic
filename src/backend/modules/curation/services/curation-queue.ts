@@ -11,6 +11,7 @@
 
 import type {
     CurationItemStatus,
+    ICurationDestinationOutcome,
     ICurationItem,
     ICurationPreview,
     IDatabaseService,
@@ -134,13 +135,18 @@ export class CurationQueue {
      * @param id - The envelope id.
      * @param status - The terminal state.
      * @param decidedBy - Better Auth user id of the deciding curator.
+     * @param preview - Decision-time preview to freeze into history.
+     * @param destinations - Selected destinations, recorded `pending` in the same
+     *        atomic write so the publish intent commits with the decision and is
+     *        never lost to a crash before the delivery relay runs.
      * @returns The updated envelope, or null when no pending envelope matched.
      */
     async resolve(
         id: string,
         status: Exclude<CurationItemStatus, 'pending'>,
         decidedBy?: string,
-        preview?: ICurationPreview
+        preview?: ICurationPreview,
+        destinations?: ICurationDestinationOutcome[]
     ): Promise<ICurationItem | null> {
         const existing = await this.database.findOne<ICurationItem>(COLLECTION, { id, status: 'pending' });
         let resolved: ICurationItem | null = null;
@@ -157,12 +163,41 @@ export class CurationQueue {
             if (preview !== undefined) {
                 setFields.preview = preview;
             }
+            // Persist the selected destinations (each `pending`) inside the same
+            // atomic transition, so the publish intent and the decision commit
+            // together — the dual-write gap closed at the decision boundary.
+            if (destinations !== undefined) {
+                setFields.destinations = destinations;
+            }
             const modified = await this.database.updateMany(COLLECTION, { id, status: 'pending' }, { $set: setFields });
             if (modified > 0) {
-                resolved = { ...existing, status, decidedAt, decidedBy, preview: preview ?? existing.preview };
+                resolved = {
+                    ...existing,
+                    status,
+                    decidedAt,
+                    decidedBy,
+                    preview: preview ?? existing.preview,
+                    destinations: destinations ?? existing.destinations
+                };
                 this.logger.info({ id, status, decidedBy }, `Curation item ${status}: ${existing.typeId}`);
             }
         }
         return resolved;
+    }
+
+    /**
+     * Record the per-destination delivery outcomes after the relay has run,
+     * replacing the `pending` destinations written at decision time. Scoped to an
+     * already-`approved` item so a concurrent re-decision cannot have it overwrite
+     * a different lifecycle state.
+     *
+     * @param id - The envelope id.
+     * @param destinations - The settled outcomes (delivered/failed per sink).
+     * @returns Resolves when the outcomes are persisted.
+     */
+    async updateDestinationOutcomes(id: string, destinations: ICurationDestinationOutcome[]): Promise<void> {
+        await this.database.updateMany(COLLECTION, { id, status: 'approved' }, { $set: { destinations } });
+
+        return;
     }
 }

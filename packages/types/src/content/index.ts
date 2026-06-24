@@ -24,11 +24,12 @@ export type {
 } from './IContentRegistry.js';
 export { CONTENT_EGRESS_LEVELS, CONTENT_AUDIENCE_LEVELS } from './IContentClassification.js';
 export type { ContentEgress, ContentAudience, IContentClassification } from './IContentClassification.js';
-export { CONTENT_DESCRIPTOR_FEATURES } from './IContentSink.js';
+export { CONTENT_DESCRIPTOR_FEATURES, CONTENT_SINK_KINDS } from './IContentSink.js';
 export type {
     IContentSink,
     IContentSinkInfo,
     ContentDescriptorFeature,
+    ContentSinkKind,
     ContentSinkDisposer
 } from './IContentSink.js';
 export type {

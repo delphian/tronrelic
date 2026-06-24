@@ -9,7 +9,7 @@
  * are future channels implementing the same {@link INotificationChannel}.
  */
 
-import type { INotificationChannel, INotificationRecipient, IRenderedNotification, IChannelDeliveryResult, NotificationContentFeature } from '@/types';
+import type { INotificationChannel, INotificationRecipient, IRenderedNotification, IChannelDeliveryResult, NotificationContentFeature, IContentClassification } from '@/types';
 import { TOAST_CHANNEL_ID, TOAST_CHANNEL_LABEL } from '../config.js';
 
 /**
@@ -37,6 +37,15 @@ export class ToastChannel implements INotificationChannel {
     readonly accepts: NotificationContentFeature[] = ['title', 'body'];
 
     /**
+     * A toast renders to a signed-in user's in-app surface over WebSocket — it
+     * never leaves the platform and reaches a regular user — so its content-router
+     * reach is `{ egress: 'user', audience: 'user' }`. The router's classification
+     * gate reads this to decide whether a class of content may be delivered as a
+     * toast.
+     */
+    readonly reach: IContentClassification = { egress: 'user', audience: 'user' };
+
+    /**
      * @param emitter - WebSocket emitter (the core `WebSocketService`).
      */
     constructor(private readonly emitter: INotificationEmitter) {}
@@ -49,6 +58,18 @@ export class ToastChannel implements INotificationChannel {
      * @returns Delivery count (one per resolved recipient room).
      */
     async deliver(recipients: INotificationRecipient[], message: IRenderedNotification): Promise<IChannelDeliveryResult> {
+        // Fidelity refusal. The content router matches a toast on the empty floor,
+        // so it is now a candidate for content carrying only media or details. A
+        // toast frames a headline and an optional body — with neither a title nor
+        // a body there is nothing to show, so refuse observably rather than emit a
+        // category-label-only husk. Content that has a title or body still renders
+        // best-effort, silently dropping media/details (supplementary, not the
+        // message). The refusal is content-based, so it precedes the recipient
+        // guard.
+        if (!message.content.title && !message.content.body) {
+            return { delivered: 0, refused: true };
+        }
+
         if (recipients.length === 0) {
             return { delivered: 0 };
         }

@@ -20,6 +20,7 @@
 import type { Express } from 'express';
 import type {
     IContentRegistry,
+    IContentRouter,
     ICurationItem,
     IDatabaseService,
     IMenuService,
@@ -32,9 +33,12 @@ import { ADMIN_GROUP_ID } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { WebSocketService } from '../../services/websocket.service.js';
 import { CONTENT_TYPES_SERVICE } from '../../services/content-registry.js';
+import { CONTENT_ROUTER_SERVICE } from '../../services/content-router.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { CurationQueue } from './services/curation-queue.js';
 import { CurationService } from './services/curation-service.js';
+import { CurationDestinationDefaults } from './services/curation-destination-defaults.js';
+import { createCurationGateSink, CURATION_GATE_SINK_ID } from './services/curation-gate-sink.js';
 import { CurationController } from './api/curation.controller.js';
 import { createCurationAdminRouter } from './api/curation.router.js';
 
@@ -98,6 +102,15 @@ export class CurationModule implements IModule<ICurationModuleDependencies> {
     private queue!: CurationQueue;
     private curation!: CurationService;
     private controller!: CurationController;
+    private destinationDefaults!: CurationDestinationDefaults;
+
+    /**
+     * The content router, resolved once in init (it is published before module
+     * init) and reused in run for both gate-sink registration and the service's
+     * destination computation. Optional so a test boot without it degrades to no
+     * destination selection rather than failing.
+     */
+    private contentRouter?: IContentRouter;
 
     private readonly logger = logger.child({ module: 'curation' });
 
@@ -126,7 +139,24 @@ export class CurationModule implements IModule<ICurationModuleDependencies> {
         if (!contentRegistry) {
             throw new Error("CurationModule requires the 'content-types' registry to be published before init");
         }
-        this.curation = new CurationService(this.logger, this.queue, contentRegistry);
+
+        // Resolve the content router (published before module init) so the
+        // service can compute publish-sink eligibility and deliver to selected
+        // destinations. Optional-guarded so a test harness without it degrades to
+        // no destination selection rather than failing.
+        this.contentRouter = this.serviceRegistry.get<IContentRouter>(CONTENT_ROUTER_SERVICE);
+
+        // Standing per-type default-destination policy the picker pre-selects.
+        this.destinationDefaults = new CurationDestinationDefaults(this.logger, this.database);
+        await this.destinationDefaults.ensureIndexes();
+
+        this.curation = new CurationService(
+            this.logger,
+            this.queue,
+            contentRegistry,
+            this.contentRouter,
+            this.destinationDefaults
+        );
         this.controller = new CurationController(this.curation);
 
         this.logger.info('curation module initialized');
@@ -175,6 +205,21 @@ export class CurationModule implements IModule<ICurationModuleDependencies> {
         });
 
         this.serviceRegistry.register(CURATION_SERVICE, this.curation);
+
+        // Register the curation gate as a content-router sink so the central
+        // router can route an effect to human review the same way it routes to a
+        // toast or a tweet — curation is the platform's gate sink family. This is
+        // additive: every existing direct hold() caller is unchanged; it only
+        // makes review discoverable through the 'content-router' service and its
+        // /system/content-router introspection. The router is core infrastructure
+        // published before module init, so it is normally present; guard for test
+        // harnesses that do not wire it.
+        if (this.contentRouter) {
+            this.contentRouter.register(createCurationGateSink(this.curation), this.metadata.id);
+            this.logger.info({ sinkId: CURATION_GATE_SINK_ID }, 'curation gate sink registered on the content router');
+        } else {
+            this.logger.warn('content-router service unavailable; curation gate sink not registered');
+        }
 
         // Declare the curation-held notification category on the notifications
         // service (published by the notifications module, which runs before this

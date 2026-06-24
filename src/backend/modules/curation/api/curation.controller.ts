@@ -9,7 +9,7 @@
  */
 
 import type { Request, Response } from 'express';
-import type { ICurationItem } from '@/types';
+import type { ICurationItem, ICurationDestinationSelection } from '@/types';
 import type { CurationService } from '../services/curation-service.js';
 
 /**
@@ -31,8 +31,45 @@ function serializeCurationItem(item: ICurationItem): Record<string, unknown> {
         source: item.source,
         createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
         decidedAt: item.decidedAt instanceof Date ? item.decidedAt.toISOString() : item.decidedAt,
-        decidedBy: item.decidedBy
+        decidedBy: item.decidedBy,
+        destinations: item.destinations
     };
+}
+
+/**
+ * Parse and validate the optional `destinations` array on an approve request
+ * body. Returns the typed selection when well-formed, `undefined` when the field
+ * is absent (a classic approval), or `null` when present but malformed — which
+ * the caller turns into a 400. Validates shape only; the service and controller
+ * check eligibility against the live router.
+ *
+ * @param body - The request body.
+ * @returns The selection, `undefined` when absent, or `null` when malformed.
+ */
+function parseDestinations(body: unknown): ICurationDestinationSelection[] | undefined | null {
+    const raw = (body as { destinations?: unknown })?.destinations;
+    if (raw === undefined) {
+        return undefined;
+    }
+    if (!Array.isArray(raw)) {
+        return null;
+    }
+    const result: ICurationDestinationSelection[] = [];
+    for (const entry of raw) {
+        if (!entry || typeof entry !== 'object') {
+            return null;
+        }
+        const sinkId = (entry as { sinkId?: unknown }).sinkId;
+        const dest = (entry as { dest?: unknown }).dest;
+        if (typeof sinkId !== 'string' || sinkId.length === 0) {
+            return null;
+        }
+        if (dest !== undefined && (dest === null || typeof dest !== 'object' || Array.isArray(dest))) {
+            return null;
+        }
+        result.push({ sinkId, dest: dest as Record<string, unknown> | undefined });
+    }
+    return result;
 }
 
 /**
@@ -73,9 +110,40 @@ export class CurationController {
         res.json({ curations: items.map(serializeCurationItem) });
     };
 
-    /** POST /curations/:id/approve — approve a held item and commit it via its type. */
+    /** GET /curations/:id/destinations — the eligible publish destinations for a pending item. */
+    listDestinations = async (req: Request, res: Response): Promise<void> => {
+        const destinations = await this.curation.listEligibleDestinations(req.params.id);
+        res.json({ destinations });
+    };
+
+    /**
+     * POST /curations/:id/destinations/defaults — set the standing default
+     * destinations for the item's content type, the subset the picker pre-checks.
+     */
+    setDestinationDefaults = async (req: Request, res: Response): Promise<void> => {
+        const id = req.params.id;
+        const sinkIds = (req.body as { sinkIds?: unknown })?.sinkIds;
+        if (!Array.isArray(sinkIds) || !sinkIds.every((s) => typeof s === 'string')) {
+            res.status(400).json({ error: 'Body must include a string[] "sinkIds".' });
+            return;
+        }
+        const item = await this.curation.get(id);
+        if (!item) {
+            res.status(404).json({ error: 'No curation item matched that id.' });
+            return;
+        }
+        await this.curation.setDestinationDefaults(item.typeId, sinkIds);
+        res.json({ success: true, typeId: item.typeId, sinkIds });
+    };
+
+    /** POST /curations/:id/approve — approve a held item, fan to selected destinations, commit via its type. */
     approveCuration = async (req: Request, res: Response): Promise<void> => {
-        await this.decideCuration(req, res, 'approve');
+        const destinations = parseDestinations(req.body);
+        if (destinations === null) {
+            res.status(400).json({ error: 'destinations must be an array of { sinkId: string, dest?: object }.' });
+            return;
+        }
+        await this.decideCuration(req, res, 'approve', destinations);
     };
 
     /** POST /curations/:id/reject — reject a held item and discard it via its type. */
@@ -126,9 +194,15 @@ export class CurationController {
      * @param req - The admin request (`:id` param, admin actor).
      * @param res - The response.
      * @param action - Which terminal decision to apply.
+     * @param destinations - Curator-selected publish destinations (approval only).
      * @returns Resolves once a response is sent.
      */
-    private decideCuration = async (req: Request, res: Response, action: 'approve' | 'reject'): Promise<void> => {
+    private decideCuration = async (
+        req: Request,
+        res: Response,
+        action: 'approve' | 'reject',
+        destinations?: ICurationDestinationSelection[]
+    ): Promise<void> => {
         const id = req.params.id;
         const item = await this.curation.get(id);
         if (!item || item.status !== 'pending') {
@@ -141,9 +215,20 @@ export class CurationController {
             });
             return;
         }
+        // Pre-validate the selection against live eligibility so an ineligible
+        // sink is a clean 400 (client error), not the 502 the service's defensive
+        // post-decision throw would otherwise surface as.
+        if (action === 'approve' && destinations && destinations.length > 0) {
+            const eligible = new Set((await this.curation.listEligibleDestinations(id)).map((d) => d.sinkId));
+            const invalid = destinations.find((d) => !eligible.has(d.sinkId));
+            if (invalid) {
+                res.status(400).json({ error: `'${invalid.sinkId}' is not an eligible publish destination for this item.` });
+                return;
+            }
+        }
         try {
             const result = action === 'approve'
-                ? await this.curation.approve(id, actorId(req))
+                ? await this.curation.approve(id, actorId(req), destinations)
                 : await this.curation.reject(id, actorId(req));
             if (!result) {
                 res.status(409).json({ error: 'Curation item could not be decided; it may have just been resolved.' });

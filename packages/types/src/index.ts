@@ -127,6 +127,7 @@ export {
     CONTENT_EGRESS_LEVELS,
     CONTENT_AUDIENCE_LEVELS,
     CONTENT_DESCRIPTOR_FEATURES,
+    CONTENT_SINK_KINDS,
     readContentField
 } from './content/index.js';
 export type {
@@ -136,6 +137,7 @@ export type {
     IContentSink,
     IContentSinkInfo,
     ContentDescriptorFeature,
+    ContentSinkKind,
     ContentSinkDisposer,
     IContentRouter,
     IClassificationGate,
@@ -153,7 +155,11 @@ export type {
     ICurationService,
     ICurationRegistry,
     ICurationTypeInfo,
-    ICurationHoldInput
+    ICurationHoldInput,
+    ICurationEligibleDestination,
+    ICurationDestinationSelection,
+    ICurationDestinationOutcome,
+    CurationDestinationStatus
 } from './curation/index.js';
 export type {
     HookDescriptor,

@@ -23,6 +23,8 @@ import type {
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 import { ContentRegistry, CONTENT_TYPES_SERVICE } from '../../../services/content-registry.js';
+import { ContentRouter, CONTENT_ROUTER_SERVICE } from '../../../services/content-router.js';
+import { ClassificationGate, AllowAllRoutingPolicy } from '../../../services/content-routing-gate.js';
 import { NotificationsModule } from '../index.js';
 import { NotificationService } from '../services/notification.service.js';
 import { CategoryRegistry } from '../services/category-registry.js';
@@ -32,6 +34,7 @@ import { PolicyService } from '../services/policy.service.js';
 import { AuditService } from '../services/audit.service.js';
 import { RecipientResolver } from '../services/recipient-resolver.js';
 import { DispatchService } from '../services/dispatch.service.js';
+import { notificationChannelToSink } from '../channels/notification-channel-sink.js';
 import { AUDIT_COLLECTION, POLICY_COLLECTION, POLICY_DOC_ID } from '../config.js';
 
 /** No-op logger satisfying ISystemLogService for the services under test. */
@@ -51,7 +54,13 @@ function recordingChannel(): { channel: INotificationChannel; calls: Array<{ rec
         id: 'toast',
         label: 'Toast',
         accepts: ['title', 'body'],
+        reach: { egress: 'user', audience: 'user' },
         deliver: async (recipients: INotificationRecipient[], message: IRenderedNotification) => {
+            // Mirror a real channel's fidelity refusal: with nothing renderable
+            // (no title, no body) the channel refuses rather than emit a husk.
+            if (!message.content.title && !message.content.body) {
+                return { delivered: 0, refused: true };
+            }
             calls.push({ recipients: recipients.map((r) => r.userId), message });
             return { delivered: recipients.length };
         }
@@ -110,11 +119,15 @@ describe('Notifications dispatch pipeline', () => {
             })
         }, 'test');
         const resolver = new RecipientResolver(() => fakeUserGroups(), logger);
-        dispatch = new DispatchService(categories, channels, content, preferences, policy, audit, resolver, logger);
+        const router = new ContentRouter(new ClassificationGate(new AllowAllRoutingPolicy()), logger);
+        dispatch = new DispatchService(categories, channels, router, content, preferences, policy, audit, resolver, logger);
 
         const rec = recordingChannel();
         calls = rec.calls;
         channels.register(rec.channel);
+        // Register the channel's sink so the router matches it (the module does
+        // this in run(); here the services are wired directly).
+        router.register(notificationChannelToSink(rec.channel), 'notifications');
         categories.register(TEST_CATEGORY);
     });
 
@@ -194,10 +207,12 @@ describe('Notifications dispatch pipeline', () => {
         ).rejects.toThrow(/content type "no.such.type" is not registered/);
     });
 
-    it('skips a channel that cannot render the content (capability routing)', async () => {
-        // A media-only descriptor; the toast channel accepts only title/body, so
-        // it is not a delivery candidate and is absent from the tally entirely —
-        // not a suppression, a non-match.
+    it('records a refusal when a candidate channel cannot render the content (fidelity)', async () => {
+        // A media-only descriptor. Under the router's floor match the toast is now
+        // a candidate (its sink accepts []), but it cannot render media-only
+        // content, so it refuses at delivery. The refusal is recorded observably —
+        // delivered 0, refused true — instead of the silent non-match the retired
+        // capability ceiling produced.
         const receipt = await dispatch.notify({
             category: 'test.cat',
             typeId: 'test.content',
@@ -205,8 +220,23 @@ describe('Notifications dispatch pipeline', () => {
         });
 
         expect(receipt.delivered).toBe(0);
-        expect(receipt.channels).toHaveLength(0);
+        expect(receipt.channels).toHaveLength(1);
+        expect(receipt.channels[0]).toMatchObject({ channelId: 'toast', delivered: 0, refused: true });
         expect(calls).toHaveLength(0);
+    });
+
+    it('delivers best-effort when content carries media alongside renderable text (graceful degradation)', async () => {
+        // title + media: under the old ceiling the toast was skipped (media not in
+        // accepts); under the floor it matches, renders the title, and drops the
+        // supplementary media — delivered, not refused.
+        const receipt = await dispatch.notify({
+            category: 'test.cat',
+            typeId: 'test.content',
+            ref: { title: 'Heads up', media: [{ url: 'https://cdn/x.png', kind: 'image' }] }
+        });
+
+        expect(receipt.delivered).toBe(2);
+        expect(calls).toHaveLength(1);
     });
 });
 
@@ -215,13 +245,18 @@ describe('NotificationsModule lifecycle', () => {
     let app: { use: ReturnType<typeof vi.fn> };
     let menuService: { create: ReturnType<typeof vi.fn> };
     let registry: ReturnType<typeof createMockServiceRegistry>;
+    let contentRouter: ContentRouter;
 
     beforeEach(() => {
         NotificationService.__resetForTests();
         db = createMockDatabaseService();
         app = { use: vi.fn() };
         menuService = { create: vi.fn(async () => undefined) };
-        registry = createMockServiceRegistry({ [CONTENT_TYPES_SERVICE]: new ContentRegistry(silentLogger()) });
+        contentRouter = new ContentRouter(new ClassificationGate(new AllowAllRoutingPolicy()), silentLogger());
+        registry = createMockServiceRegistry({
+            [CONTENT_TYPES_SERVICE]: new ContentRegistry(silentLogger()),
+            [CONTENT_ROUTER_SERVICE]: contentRouter
+        });
     });
 
     /** Build the dependency bundle the module's init expects. */
@@ -249,5 +284,17 @@ describe('NotificationsModule lifecycle', () => {
         expect(app.use).toHaveBeenCalledWith('/api/notifications', expect.any(Function));
         expect(registry.has('notifications')).toBe(true);
         expect(menuService.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('registers each channel as a content-router sink during run()', async () => {
+        const module = new NotificationsModule();
+        await module.init(deps());
+        await module.run();
+
+        const toastSink = contentRouter.list().find((sink) => sink.id === 'notifications:toast');
+        expect(toastSink).toBeDefined();
+        // The router floor, not the channel's ['title','body'] ceiling.
+        expect(toastSink?.accepts).toEqual([]);
+        expect(toastSink?.reach).toEqual({ egress: 'user', audience: 'user' });
     });
 });

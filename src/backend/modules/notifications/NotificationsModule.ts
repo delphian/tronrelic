@@ -23,9 +23,11 @@ import type {
     IServiceRegistry,
     ISystemLogService,
     IContentRegistry,
+    IContentRouter,
     IUserGroupService
 } from '@/types';
 import { CONTENT_TYPES_SERVICE } from '../../services/content-registry.js';
+import { CONTENT_ROUTER_SERVICE } from '../../services/content-router.js';
 import { logger } from '../../lib/logger.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
@@ -40,6 +42,7 @@ import { RecipientResolver } from './services/recipient-resolver.js';
 import { DispatchService } from './services/dispatch.service.js';
 import { NotificationService } from './services/notification.service.js';
 import { ToastChannel } from './channels/toast-channel.js';
+import { notificationChannelToSink } from './channels/notification-channel-sink.js';
 import { PreferencesController } from './api/preferences.controller.js';
 import { createPreferencesRouter } from './api/preferences.routes.js';
 import { AdminController } from './api/admin.controller.js';
@@ -76,6 +79,7 @@ export class NotificationsModule implements IModule<INotificationsModuleDependen
     private menuService!: IMenuService;
     private serviceRegistry!: IServiceRegistry;
     private app!: Express;
+    private contentRouter!: IContentRouter;
 
     private categoryRegistry!: CategoryRegistry;
     private channelRegistry!: ChannelRegistry;
@@ -143,9 +147,20 @@ export class NotificationsModule implements IModule<INotificationsModuleDependen
             throw new Error("NotificationsModule requires the 'content-types' registry to be published before init");
         }
 
+        // The content router (published at bootstrap, before module init) is the
+        // shared matching authority dispatch now routes through, and the registry
+        // the channel sinks are advertised on in run(). It is a hard dependency:
+        // without it dispatch cannot compute candidate channels.
+        const contentRouter = this.serviceRegistry.get<IContentRouter>(CONTENT_ROUTER_SERVICE);
+        if (!contentRouter) {
+            throw new Error("NotificationsModule requires the 'content-router' service to be published before init");
+        }
+        this.contentRouter = contentRouter;
+
         this.dispatchService = new DispatchService(
             this.categoryRegistry,
             this.channelRegistry,
+            this.contentRouter,
             contentRegistry,
             this.preferenceService,
             this.policyService,
@@ -184,6 +199,19 @@ export class NotificationsModule implements IModule<INotificationsModuleDependen
         // module exercises the same registration path a channel-provider plugin
         // would.
         this.notificationService.registerChannel(this.toastChannel);
+
+        // Advertise each delivery channel as a content-router sink. Dispatch
+        // matches candidate channels through this same router (see
+        // DispatchService.candidateChannelIds), and the sinks also surface on the
+        // /system/content-router introspection. The router is a hard dependency
+        // resolved and stored in init(), so no presence guard is needed here.
+        for (const info of this.channelRegistry.list()) {
+            const channel = this.channelRegistry.get(info.id);
+            if (channel) {
+                this.contentRouter.register(notificationChannelToSink(channel), this.metadata.id);
+            }
+        }
+        this.logger.info('Notification channels registered as content-router sinks');
 
         // Publish the single public surface. Done before any consumer module's
         // run() (notifications runs ahead of ai-tools in bootstrap) so a source

@@ -33,7 +33,7 @@ import type {
     ContentSinkDisposer,
     ISystemLogService
 } from '@/types';
-import { assertValidReach, assertValidAccepts } from './content-classification.js';
+import { assertValidReach, assertValidAccepts, assertValidSinkKind } from './content-classification.js';
 
 /** Service-registry name the content router is published under. */
 export const CONTENT_ROUTER_SERVICE = 'content-router';
@@ -81,6 +81,7 @@ export class ContentRouter implements IContentRouter {
     register(sink: IContentSink, providerId: string): ContentSinkDisposer {
         assertValidReach(sink.reach);
         assertValidAccepts(sink.accepts);
+        assertValidSinkKind(sink.kind);
 
         const entry: IRegisteredSink = { sink, providerId };
         if (this.sinks.has(sink.id)) {
@@ -119,6 +120,8 @@ export class ContentRouter implements IContentRouter {
     list(): IContentSinkInfo[] {
         return Array.from(this.sinks.values()).map((entry) => ({
             id: entry.sink.id,
+            kind: entry.sink.kind,
+            label: entry.sink.label,
             accepts: entry.sink.accepts,
             reach: entry.sink.reach,
             providerId: entry.providerId
