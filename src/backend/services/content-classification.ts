@@ -51,16 +51,37 @@ function audienceRank(level: string): number {
  * Whether a sink's `reach` stays within a content's classification ceiling on
  * every dimension — the load-bearing containment relation `reach ≤ ceiling`.
  * The label caps where content may go; it never grants exposure. An unknown
- * ceiling level ranks -1, so any concrete reach is *not* within it: a malformed
- * ceiling admits nothing rather than leaking content past an unrecognized cap.
+ * level on *either* side ranks -1 and fails closed symmetrically: a malformed
+ * ceiling admits nothing (never leaking content past an unrecognized cap), and a
+ * malformed reach is admitted nowhere (never slipping an unrecognized exposure
+ * under a valid cap). Containment is the only way through; -1 is never within.
+ * An unknown *dimension* (an extra key on either side) fails closed the same
+ * way: only the declared dimensions can be ranked, so a label this runtime
+ * cannot fully interpret admits nothing rather than routing past the part it
+ * does not understand.
  *
  * @param reach - The exposure a sink causes.
  * @param ceiling - The content's exposure ceiling.
  * @returns True when reach is contained by the ceiling on both dimensions.
  */
 export function isWithinCeiling(reach: IContentClassification, ceiling: IContentClassification): boolean {
-    const egressOk = egressRank(reach.egress) <= egressRank(ceiling.egress) && egressRank(ceiling.egress) >= 0;
-    const audienceOk = audienceRank(reach.audience) <= audienceRank(ceiling.audience) && audienceRank(ceiling.audience) >= 0;
+    // An unknown dimension on either side (an extra key a stale plugin or JS
+    // caller supplies) cannot be ranked, so it can never be shown contained —
+    // fail closed, the same stance assertValidReach takes on a sink's reach at
+    // registration. Enumerating keys here closes the ceiling-side gap the
+    // structural `.egress`/`.audience` reads below would otherwise ignore; the
+    // null guard keeps `Object.keys` from throwing on a malformed caller.
+    if (reach === null || typeof reach !== 'object' || ceiling === null || typeof ceiling !== 'object') {
+        return false;
+    }
+    for (const key of [...Object.keys(reach), ...Object.keys(ceiling)]) {
+        if (!(CLASSIFICATION_DIMENSIONS as ReadonlyArray<string>).includes(key)) {
+            return false;
+        }
+    }
+
+    const egressOk = egressRank(reach.egress) >= 0 && egressRank(ceiling.egress) >= 0 && egressRank(reach.egress) <= egressRank(ceiling.egress);
+    const audienceOk = audienceRank(reach.audience) >= 0 && audienceRank(ceiling.audience) >= 0 && audienceRank(reach.audience) <= audienceRank(ceiling.audience);
 
     return egressOk && audienceOk;
 }
