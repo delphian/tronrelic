@@ -184,7 +184,7 @@ export class DispatchService {
         if (descriptor.title) features.push('title');
         if (descriptor.body) features.push('body');
         if (descriptor.media && descriptor.media.length > 0) features.push('media');
-        if (descriptor.fields && descriptor.fields.length > 0) features.push('fields');
+        if (descriptor.details && descriptor.details.length > 0) features.push('details');
         return features;
     }
 

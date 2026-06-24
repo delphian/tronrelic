@@ -33,7 +33,7 @@ export type NotificationSeverity = 'info' | 'success' | 'warning' | 'error';
  * than mangling it. This is the capability vocabulary that replaced a category
  * naming its channels — routing is now derived, not declared by the originator.
  */
-export type NotificationContentFeature = 'title' | 'body' | 'media' | 'fields';
+export type NotificationContentFeature = 'title' | 'body' | 'media' | 'details';
 
 /**
  * Disposer returned by {@link INotificationService.registerCategory} and
@@ -150,7 +150,7 @@ export interface INotificationChannel {
      * channel only when this set covers every feature the resolved descriptor
      * carries, so the channel never receives content it cannot represent. A
      * toast accepts `['title', 'body']`; a future rich channel might add
-     * `'media'` and `'fields'`.
+     * `'media'` and `'details'`.
      */
     accepts: NotificationContentFeature[];
     /**
