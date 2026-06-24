@@ -254,6 +254,10 @@ function PendingActions({ item, busyId, onApprove, onReject, onEdit, onSetDefaul
     const busy = busyId === item.id;
     const blockedByOther = busyId !== null && busyId !== item.id;
     const hasPicker = destinations !== null && destinations.length > 0;
+    // Eligibility is unknown until this row's fetch settles (destinations === null);
+    // block approval during that window so a fast click cannot take the classic
+    // path and silently skip the publish destinations the picker would have selected.
+    const destinationsLoading = destinations === null;
     const approveDestinations = hasPicker
         ? Array.from(selected).map((sinkId): ICurationDestinationSelection => ({ sinkId }))
         : undefined;
@@ -281,7 +285,7 @@ function PendingActions({ item, busyId, onApprove, onReject, onEdit, onSetDefaul
                 </fieldset>
             )}
             <div className={styles.row_actions}>
-                <Button variant="primary" size="sm" loading={busy} disabled={blockedByOther} onClick={() => onApprove(item.id, approveDestinations)}>
+                <Button variant="primary" size="sm" loading={busy} disabled={blockedByOther || destinationsLoading} onClick={() => onApprove(item.id, approveDestinations)}>
                     <Check size={16} /> Approve
                 </Button>
                 {item.preview.editable && (
