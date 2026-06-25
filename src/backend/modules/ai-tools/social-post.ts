@@ -28,7 +28,7 @@ import type {
     ICurationType,
     ISystemLogService
 } from '@/types';
-import type { SocialPostStore } from './services/social-post-store.js';
+import type { ISocialPostDraft, SocialPostStore } from './services/social-post-store.js';
 
 /**
  * Namespaced id of the core social-post content type. The proposing tool binds
@@ -235,7 +235,18 @@ export function createSocialPostTool(deps: ISocialPostToolDependencies): IAiTool
             // Persist the draft first, then hold its opaque ref in the queue. If
             // the hold fails the draft is left orphaned as `pending` and harmless
             // (it just never surfaces for review) — surface the error to the model.
-            const draft = await store.create({ body, title, mediaUrl, source: 'ai-tool:propose-social-post' });
+            // The governor already catches a thrown handler, but the store re-asserts
+            // its own body invariants (empty/oversized) by throwing, so catch that
+            // here too and return the uniform `{ success: false, error }` shape every
+            // other branch uses rather than letting the raw message reach the model.
+            let draft: ISocialPostDraft;
+            try {
+                draft = await store.create({ body, title, mediaUrl, source: 'ai-tool:propose-social-post' });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                logger.warn({ error: message }, 'Failed to persist proposed social post draft');
+                return { success: false, error: `Failed to save the post draft: ${message}` };
+            }
             try {
                 const held = await curation.hold({
                     typeId: SOCIAL_POST_CURATION_TYPE_ID,

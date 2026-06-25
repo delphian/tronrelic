@@ -240,6 +240,12 @@ export class CurationService implements ICurationService {
      * owning type's `onApprove` before this returns. A bypass that fails to
      * commit propagates exactly as a manual approval's failure would.
      *
+     * A `publishesToDestinations` type is exempt from the bypass: approval of a
+     * routed type *is* the curator's destination selection, which auto-approve
+     * cannot supply, so the item is left `pending` for a human rather than
+     * approved with an empty selection — which would mark the effect published
+     * while routing to no sinks.
+     *
      * The hold listener fires for every hold — before the auto-approve branch —
      * so an admin is notified whenever anything enters the queue, regardless of
      * whether a policy bypass then decides it immediately.
@@ -276,9 +282,23 @@ export class CurationService implements ICurationService {
         }
         let result = item;
         if (shouldAutoApproveCuration()) {
-            this.logger.info({ id: item.id, typeId: item.typeId }, 'Curation auto-approved by tool policy (interactive bypass)');
-            const approved = await this.approve(item.id, CURATION_AUTO_APPROVE_DECIDED_BY);
-            result = approved ?? item;
+            if (entry.type.publishesToDestinations) {
+                // A destinations-routed type cannot be auto-approved: for such a
+                // type approval *is* the curator's destination selection (the
+                // mandated subset), and the auto-approve bypass supplies none.
+                // Approving with no selection would route to zero sinks — marking
+                // the effect published while delivering nothing — so the bypass is
+                // refused and the item waits for a human to pick destinations,
+                // exactly as if auto-approve were not configured.
+                this.logger.warn(
+                    { id: item.id, typeId: item.typeId },
+                    'Curation auto-approve skipped — a destinations-routed type requires an explicit destination selection'
+                );
+            } else {
+                this.logger.info({ id: item.id, typeId: item.typeId }, 'Curation auto-approved by tool policy (interactive bypass)');
+                const approved = await this.approve(item.id, CURATION_AUTO_APPROVE_DECIDED_BY);
+                result = approved ?? item;
+            }
         }
         return result;
     }

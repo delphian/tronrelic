@@ -452,6 +452,35 @@ describe('CurationService destination selection', () => {
         expect(decided?.status).toBe('approved');
         expect(decided?.destinations).toBeUndefined();
     });
+
+    it('does not auto-approve a destinations-routed type — it waits for an explicit destination selection', async () => {
+        // Regression: an interactive `auto-approve` policy bypass supplies no
+        // destination selection, so auto-approving a publishesToDestinations type
+        // would route to zero sinks while marking the effect published. The hold
+        // must instead leave the item pending for a human to pick destinations.
+        const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
+        const { service } = makeDestinationService([sink]);
+        const type = postType();
+        service.registerType(type, 'media');
+
+        const held = await runWithCurationAutoApprove(true, () => service.hold({ typeId: 'media:post', ref: {} }));
+
+        expect(held.status).toBe('pending');
+        expect(type.onApprove).not.toHaveBeenCalled();
+        expect(await service.countPending()).toBe(1);
+    });
+
+    it('still auto-approves a non-destinations type under the same bypass (the guard is specific to routed types)', async () => {
+        const { service } = makeDestinationService([]);
+        const type = spyCurationType(); // no publishesToDestinations
+        service.registerType(type, 'x-poster');
+
+        const held = await runWithCurationAutoApprove(true, () => service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } }));
+
+        expect(held.status).toBe('approved');
+        expect(type.onApprove).toHaveBeenCalledOnce();
+        expect(await service.countPending()).toBe(0);
+    });
 });
 
 describe('curation auto-approve context', () => {
