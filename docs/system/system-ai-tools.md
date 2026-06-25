@@ -55,7 +55,7 @@ Classify every tool before it ships; the class drives the guardrails the governo
 | Forces curator review | yes / no | Tool self-gates every effect → no governor approval added; safe unattended |
 | Curation binding (`curationTypeId`) | type id / none | Verifies `forcesCuratorReview` against a live curation type; re-tightens if the owner is disabled |
 
-A transaction lookup is read / internal. A log query is read / secret / surfaces-untrusted. A tweet is external / irreversible and forces-curator-review (its plugin holds every post for human approval). An image generation is external / spends-money.
+A transaction lookup is read / internal. A log query is read / secret / surfaces-untrusted. A social post is external / irreversible and forces-curator-review (held in the central curation queue for human approval). An image generation is external / spends-money.
 
 `forcesCuratorReview` is the only governance field a tool may declare, and it is a *description* of behaviour, not a request: the governor derives the approval gate and the autonomous-path rule from it. There is no field that lets a tool exempt itself from review — an external, irreversible effect is always reviewed by someone (the tool's own curator, or the governor). Dropping review for a tool that does not self-curate is an operator-only decision (an admin policy override), never a tool self-grant.
 
@@ -75,7 +75,7 @@ Mandatory for every tool; scale to the class. A read-only lookup needs little, a
 
 **Bound side-effecting and paid tools.** Rate-limit, quota, and cap cost. A looping or injected model must not drain an API budget or flood a channel. `TransactionToolGuard` is the reference limiter.
 
-**Require human approval for irreversible or public effects.** Either let the governor park the action for admin approval, or declare `forcesCuratorReview: true` when the tool holds every effect in its own review queue. `trp-x-poster` is the reference: it declares `forcesCuratorReview`, binds `curationTypeId: 'x-poster:tweet'`, and routes every AI-authored post into the [central curation queue](./system-curation.md) (also still reviewable in its History tab).
+**Require human approval for irreversible or public effects.** Either let the governor park the action for admin approval, or declare `forcesCuratorReview: true` when the tool holds every effect in its own review queue. The core `propose-social-post` tool is the reference: it declares `forcesCuratorReview`, binds `curationTypeId: 'core:social-post'`, and holds every drafted post in the [central curation queue](./system-curation.md), where a curator picks which publish destinations (X, Telegram) it fans out to on approval.
 
 **Audit every invocation.** Record who triggered it (interactive admin / scheduled / programmatic), the arguments, the outcome, and the cost — enough to reconstruct what happened. `trp-image-gen`'s per-call history is the reference shape.
 
@@ -123,7 +123,7 @@ const tool: IAiTool = {
 |---|---|---|
 | `tronrelic-get-transaction` (blockchain) | read / internal | Input regex; global rate limiter (`TransactionToolGuard`) + usage stats |
 | logs `tronrelic-query-system-logs` | read / secret | Result + context caps; truncate-and-point-to-detail |
-| `trp-x-poster` post | external / irreversible | Mandatory admin approval queue; caller attribution |
+| `propose-social-post` (core) | external / irreversible / forces-curator-review | `curationTypeId` binding; `publishesToDestinations` fan-out to curator-selected sinks |
 | `trp-image-gen` | external / spends money | Per-call forensic history; sanitized vs raw error split |
 
 ## Pre-Ship Checklist
