@@ -288,7 +288,7 @@ export class SyndicationService implements ISyndicationService {
             // retryable failure, not a permanent one, so re-enabling the plugin
             // within the retry window delivers; the budget still dead-letters it if
             // the sink never returns.
-            await this.settleFailureOrDead(leg, attempt, `sink '${leg.sinkId}' is not registered`);
+            await this.settleFailureOrDead(leg, claimToken, attempt, `sink '${leg.sinkId}' is not registered`);
             return true;
         }
 
@@ -299,12 +299,12 @@ export class SyndicationService implements ISyndicationService {
             });
             if (result && typeof result === 'object' && result.refused) {
                 // A settled "will not" — terminal, never retried.
-                await this.settleTerminal(leg._id, 'refused', { reason: result.reason });
+                await this.settleTerminal(leg._id, claimToken, 'refused', { reason: result.reason });
             } else {
-                await this.settleTerminal(leg._id, 'delivered', {});
+                await this.settleTerminal(leg._id, claimToken, 'delivered', {});
             }
         } catch (error) {
-            await this.settleFailureOrDead(leg, attempt, error instanceof Error ? error.message : String(error));
+            await this.settleFailureOrDead(leg, claimToken, attempt, error instanceof Error ? error.message : String(error));
         }
 
         return true;
@@ -325,20 +325,29 @@ export class SyndicationService implements ISyndicationService {
      * Record a terminal outcome (`delivered` or `refused`) for a leg, clearing the
      * claim token. Terminal states are never reconsidered by the relay.
      *
+     * Guarded on `claimToken` so a slow worker whose claim was reclaimed as stale
+     * and re-claimed by a later tick cannot overwrite the new active attempt: its
+     * token no longer matches, so this write is a no-op. Clearing `claimToken` on
+     * settle is safe because `reclaimStaleClaims` keys on `status`/`updatedAt`, not
+     * the token.
+     *
      * @param legId - The leg id.
+     * @param claimToken - The token minted by this attempt's claim; the CAS guard
+     *        that scopes the write to the attempt that is still the live owner.
      * @param status - The terminal status to set.
      * @param patch - Extra fields (a `reason` for a refusal).
      * @returns Resolves when the leg is updated.
      */
     private async settleTerminal(
         legId: string,
+        claimToken: string,
         status: Extract<SyndicationLegStatus, 'delivered' | 'refused'>,
         patch: { reason?: string }
     ): Promise<void> {
         await this.database.updateMany<ISyndicationOutboxDocument>(
             SYNDICATION_OUTBOX_COLLECTION,
-            { _id: legId },
-            { $set: { status, updatedAt: new Date(), ...patch } }
+            { _id: legId, claimToken },
+            { $set: { status, claimToken: undefined, updatedAt: new Date(), ...patch } }
         );
     }
 
@@ -348,13 +357,21 @@ export class SyndicationService implements ISyndicationService {
      * surfaces on the operator dashboard; a backed-off `failed` leg re-enters the
      * due scan when its `nextAttemptAt` passes.
      *
+     * Guarded on `claimToken` so a slow worker whose claim was reclaimed as stale
+     * and re-claimed by a later tick cannot overwrite the new active attempt: its
+     * token no longer matches, so this write is a no-op. Clearing `claimToken` is
+     * safe because `reclaimStaleClaims` keys on `status`/`updatedAt`, not the token.
+     *
      * @param leg - The leg as observed before the claim (carries `maxAttempts`).
+     * @param claimToken - The token minted by this attempt's claim; the CAS guard
+     *        that scopes the write to the attempt that is still the live owner.
      * @param attempt - The 1-based attempt number that just failed.
      * @param errorMessage - The failure message recorded for the operator.
      * @returns Resolves when the leg is updated.
      */
     private async settleFailureOrDead(
         leg: ISyndicationOutboxDocument,
+        claimToken: string,
         attempt: number,
         errorMessage: string
     ): Promise<void> {
@@ -362,8 +379,8 @@ export class SyndicationService implements ISyndicationService {
         if (attempt >= leg.maxAttempts) {
             await this.database.updateMany<ISyndicationOutboxDocument>(
                 SYNDICATION_OUTBOX_COLLECTION,
-                { _id: leg._id },
-                { $set: { status: 'dead', lastError: errorMessage, updatedAt: now } }
+                { _id: leg._id, claimToken },
+                { $set: { status: 'dead', claimToken: undefined, lastError: errorMessage, updatedAt: now } }
             );
             this.logger.error(
                 { legId: leg._id, sinkId: leg.sinkId, attempt, error: errorMessage },
@@ -372,10 +389,11 @@ export class SyndicationService implements ISyndicationService {
         } else {
             await this.database.updateMany<ISyndicationOutboxDocument>(
                 SYNDICATION_OUTBOX_COLLECTION,
-                { _id: leg._id },
+                { _id: leg._id, claimToken },
                 {
                     $set: {
                         status: 'failed',
+                        claimToken: undefined,
                         lastError: errorMessage,
                         nextAttemptAt: new Date(now.getTime() + backoffMs(attempt)),
                         updatedAt: now
