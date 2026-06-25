@@ -61,12 +61,16 @@ export interface ICurationDestinationSelection {
 /**
  * Delivery state of one selected destination. `pending` is written in the same
  * atomic transition as the approval decision (so the intent commits with the
- * decision, never lost to a crash before delivery); the relay then advances each
- * to `delivered` or `failed`. This mirrors curation's existing record-decision-
- * then-act posture: the decision and the *intent* are durable, the per-leg
- * effect is best-effort and observable in the audit rather than transactional.
+ * decision, never lost to a crash before delivery); delivery then advances each
+ * to a terminal state. `delivered` and `failed` are the two-way split of an
+ * attempt — succeeded or errored; `refused` is the sink's deliberate decline of
+ * content it matched but will not render, distinct from a failure because it is
+ * settled rather than retryable. This mirrors curation's existing record-
+ * decision-then-act posture: the decision and the *intent* are durable, the
+ * per-leg effect is best-effort and observable in the audit rather than
+ * transactional.
  */
-export type CurationDestinationStatus = 'pending' | 'delivered' | 'failed';
+export type CurationDestinationStatus = 'pending' | 'delivered' | 'failed' | 'refused';
 
 /**
  * The recorded result of delivering one selected destination, persisted on the
@@ -77,9 +81,12 @@ export interface ICurationDestinationOutcome {
     /** The router sink id this outcome is for. */
     sinkId: string;
 
-    /** Delivery state — pending until the relay runs, then delivered or failed. */
+    /** Delivery state — pending until delivery runs, then delivered, failed, or refused. */
     status: CurationDestinationStatus;
 
     /** Failure message when `status` is `failed`; absent otherwise. */
     error?: string;
+
+    /** Sink-supplied explanation when `status` is `refused`; absent otherwise, never interpreted by curation. */
+    reason?: string;
 }

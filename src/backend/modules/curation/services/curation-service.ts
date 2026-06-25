@@ -30,6 +30,8 @@ import type {
     ICurationService,
     ICurationType,
     ICurationTypeInfo,
+    ISyndicationLegView,
+    ISyndicationService,
     ISystemLogService,
     CurationItemStatus
 } from '@/types';
@@ -94,6 +96,7 @@ export class CurationService implements ICurationService {
     private readonly types = new Map<string, IRegisteredType>();
     private broadcast: BroadcastFn | null = null;
     private holdListener: HoldListenerFn | null = null;
+    private syndicationResolver: (() => ISyndicationService | undefined) | null = null;
 
     /**
      * @param logger - Module-scoped logger.
@@ -140,6 +143,22 @@ export class CurationService implements ICurationService {
      */
     setOnHold(fn: HoldListenerFn): void {
         this.holdListener = fn;
+    }
+
+    /**
+     * Wire a resolver for the durable syndication service so an approval's publish
+     * legs are committed to the transactional outbox and delivered by its relay —
+     * with idempotent retry and dead-lettering — instead of the in-process best-
+     * effort fan-out. A resolver (rather than a held reference) defers the lookup
+     * to decide-time, so curation init order relative to the syndication module
+     * does not matter and a test boot that wires nothing degrades to the best-
+     * effort path. The same resolver overlays live leg state onto decided items'
+     * destination outcomes on read.
+     *
+     * @param fn - Resolver returning the syndication service, or undefined when absent.
+     */
+    setSyndicationResolver(fn: () => ISyndicationService | undefined): void {
+        this.syndicationResolver = fn;
     }
 
     /**
@@ -295,7 +314,8 @@ export class CurationService implements ICurationService {
      * @returns The decided envelopes.
      */
     async listHistory(limit?: number): Promise<ICurationItem[]> {
-        return this.queue.listHistory(limit);
+        const items = await this.queue.listHistory(limit);
+        return this.overlayHistoryDestinations(items);
     }
 
     /**
@@ -307,7 +327,14 @@ export class CurationService implements ICurationService {
      */
     async get(id: string): Promise<ICurationItem | null> {
         const item = await this.queue.get(id);
-        return item && item.status === 'pending' ? this.withLivePreview(item) : item;
+        if (!item) {
+            return null;
+        }
+        // Pending items show a live preview; decided items show live delivery
+        // state overlaid onto their recorded destination outcomes.
+        return item.status === 'pending'
+            ? this.withLivePreview(item)
+            : this.overlaySyndicationOutcomes(item);
     }
 
     /**
@@ -331,6 +358,103 @@ export class CurationService implements ICurationService {
             }
         }
         return resolved;
+    }
+
+    /**
+     * Overlay live syndication leg state onto one decided item's recorded
+     * destination outcomes. With durable delivery, the stored outcomes are written
+     * `pending` at decision time and advanced by the relay out-of-band; reading
+     * the outbox here shows the operator where an approved item actually stands
+     * rather than a frozen `pending` snapshot. The outbox is the single source of
+     * truth, so the stored outcome is only a fallback (no syndication wired, the
+     * lookup failed, or the leg is gone). A degraded lookup never fails the read.
+     *
+     * @param item - A decided envelope, possibly carrying destination outcomes.
+     * @returns The item with live-overlaid outcomes, or the original.
+     */
+    private async overlaySyndicationOutcomes(item: ICurationItem): Promise<ICurationItem> {
+        const syndication = this.syndicationResolver?.();
+        if (!syndication || !item.destinations || item.destinations.length === 0) {
+            return item;
+        }
+        try {
+            const legs = await syndication.getLegs(item.id);
+            return legs.length > 0 ? this.applyLegOverlay(item, legs) : item;
+        } catch (error) {
+            this.logger.warn({ error, id: item.id }, 'Syndication leg overlay failed; using stored outcomes');
+            return item;
+        }
+    }
+
+    /**
+     * Batch variant of {@link overlaySyndicationOutcomes} for the history list —
+     * one outbox query for every decided item that carries destinations, so a
+     * paginated history view does not fan out N lookups.
+     *
+     * @param items - The decided envelopes to overlay.
+     * @returns The items with live-overlaid outcomes where legs exist.
+     */
+    private async overlayHistoryDestinations(items: ICurationItem[]): Promise<ICurationItem[]> {
+        const syndication = this.syndicationResolver?.();
+        const originIds = items.filter((i) => i.destinations && i.destinations.length > 0).map((i) => i.id);
+        if (!syndication || originIds.length === 0) {
+            return items;
+        }
+        let legsByOrigin: Record<string, ISyndicationLegView[]>;
+        try {
+            legsByOrigin = await syndication.getLegsForOrigins(originIds);
+        } catch (error) {
+            this.logger.warn({ error }, 'Syndication leg overlay (history) failed; using stored outcomes');
+            return items;
+        }
+        return items.map((item) => {
+            const legs = legsByOrigin[item.id];
+            return legs && legs.length > 0 ? this.applyLegOverlay(item, legs) : item;
+        });
+    }
+
+    /**
+     * Replace each recorded destination outcome with the live state of its
+     * matching syndication leg, keyed by sink id. An outcome whose sink has no leg
+     * (an unexpected mismatch) keeps its stored value.
+     *
+     * @param item - The decided envelope.
+     * @param legs - The live legs for this item.
+     * @returns A copy of the item with overlaid destination outcomes.
+     */
+    private applyLegOverlay(item: ICurationItem, legs: ISyndicationLegView[]): ICurationItem {
+        const bySink = new Map(legs.map((leg) => [leg.sinkId, leg]));
+        const destinations = (item.destinations ?? []).map((outcome) => {
+            const leg = bySink.get(outcome.sinkId);
+            return leg ? this.legToOutcome(outcome.sinkId, leg) : outcome;
+        });
+        return { ...item, destinations };
+    }
+
+    /**
+     * Project one syndication leg's lifecycle state onto curation's four-state
+     * destination outcome. The mapping deliberately collapses syndication's richer
+     * states: `delivering` and a retryable `failed` both read as `pending` (still
+     * in flight from a curator's view), while a dead-lettered leg reads as the
+     * terminal `failed` an operator must act on. `delivered` and `refused` map
+     * across directly, carrying the reason verbatim.
+     *
+     * @param sinkId - The destination sink id.
+     * @param leg - The live leg view.
+     * @returns The curation destination outcome reflecting the leg.
+     */
+    private legToOutcome(sinkId: string, leg: ISyndicationLegView): ICurationDestinationOutcome {
+        switch (leg.status) {
+            case 'delivered':
+                return { sinkId, status: 'delivered' };
+            case 'refused':
+                return { sinkId, status: 'refused', reason: leg.reason };
+            case 'dead':
+                return { sinkId, status: 'failed', error: leg.lastError };
+            default:
+                // pending / delivering / (retryable) failed — still in flight.
+                return { sinkId, status: 'pending' };
+        }
     }
 
     /**
@@ -553,13 +677,30 @@ export class CurationService implements ICurationService {
                     // The decision is recorded; broadcast it before delivering or
                     // committing so the queue badge updates regardless of outcome.
                     await this.notifyChanged();
-                    // Deliver to the selected destinations (best-effort per leg),
-                    // persist the settled outcomes, and attach them to the decided
-                    // item so onApprove sees where the content landed.
+                    // Hand the selected destinations to durable delivery. When the
+                    // syndication service is wired, commit the publish legs to its
+                    // transactional outbox: the intent is now durable, the relay
+                    // delivers each leg with idempotent retry and dead-lettering,
+                    // and the recorded outcomes stay `pending` — live leg state is
+                    // overlaid on read. onApprove therefore sees `pending` intent,
+                    // not terminal results, because external delivery is now
+                    // asynchronous and must not block the decision. Absent
+                    // syndication (a test boot), fall back to the in-process best-
+                    // effort fan-out, recording settled outcomes inline.
                     if (selected.length > 0) {
-                        const outcomes = await this.deliverToDestinations(decisionPreview, selected);
-                        await this.queue.updateDestinationOutcomes(id, outcomes);
-                        resolved.destinations = outcomes;
+                        const syndication = this.syndicationResolver?.();
+                        if (syndication) {
+                            await syndication.enqueue({
+                                originId: id,
+                                originKind: 'curation',
+                                descriptor: decisionPreview,
+                                legs: selected.map((d) => ({ sinkId: d.sink.id, dest: d.dest }))
+                            });
+                        } else {
+                            const outcomes = await this.deliverToDestinations(decisionPreview, selected);
+                            await this.queue.updateDestinationOutcomes(id, outcomes);
+                            resolved.destinations = outcomes;
+                        }
                     }
                     // A commit failure propagates to the caller: the item has left
                     // the pending queue and won't reappear, so the curator must be
@@ -622,12 +763,17 @@ export class CurationService implements ICurationService {
 
     /**
      * Deliver the approved descriptor to each selected publish sink, one leg at a
-     * time, recording every outcome. A leg's failure is captured as a `failed`
-     * outcome and never thrown — so one destination failing neither blocks the
-     * others nor undoes the decision, and the failure is visible in the audit
-     * rather than silent. This is the best-effort, at-least-once-per-leg posture
-     * curation already carries for its single `onApprove`; the durable outbox
-     * relay is the proposed syndication upgrade, not this slice.
+     * time, recording every outcome. Three terminal states per leg: a resolved
+     * `void` is `delivered`; a resolved {@link IContentSinkRefusal} is `refused`
+     * (the sink matched structurally but declined to render this content — its
+     * reason recorded verbatim, never interpreted); a thrown error is `failed`.
+     * Refusal and failure are kept distinct on purpose — a failure is a retryable
+     * "could not", a refusal is a settled "will not" — so the audit does not read
+     * a deliberate decline as an error. No leg ever throws out of this method, so
+     * one destination's outcome neither blocks the others nor undoes the decision.
+     * This is the best-effort, at-least-once-per-leg posture curation already
+     * carries for its single `onApprove`; the durable outbox relay is the proposed
+     * syndication upgrade, not this slice.
      *
      * @param descriptor - The decision-time descriptor delivered to each sink.
      * @param resolved - The selected sinks paired with their destination config.
@@ -640,8 +786,15 @@ export class CurationService implements ICurationService {
         const outcomes: ICurationDestinationOutcome[] = [];
         for (const { sink, dest } of resolved) {
             try {
-                await sink.deliver(descriptor, dest);
-                outcomes.push({ sinkId: sink.id, status: 'delivered' });
+                const result = await sink.deliver(descriptor, dest);
+                // A returned refusal is an object carrying `refused: true`; a
+                // delivered leg resolves `void`. Narrow on the object shape so the
+                // `void` arm of the union is never read as a property access.
+                if (typeof result === 'object' && result !== null && result.refused) {
+                    outcomes.push({ sinkId: sink.id, status: 'refused', reason: result.reason });
+                } else {
+                    outcomes.push({ sinkId: sink.id, status: 'delivered' });
+                }
             } catch (error) {
                 this.logger.error({ error, sinkId: sink.id }, 'Curation destination delivery failed');
                 outcomes.push({

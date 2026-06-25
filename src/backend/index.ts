@@ -44,6 +44,7 @@ import { ToolsModule } from './modules/tools/index.js';
 import { AiToolsModule } from './modules/ai-tools/index.js';
 import { CurationModule } from './modules/curation/index.js';
 import { NotificationsModule } from './modules/notifications/index.js';
+import { SyndicationModule } from './modules/syndication/index.js';
 import { BlockchainObserverService } from './services/blockchain-observer/index.js';
 import { SystemConfigService } from './services/system-config/index.js';
 import { CacheService } from './services/cache.service.js';
@@ -241,6 +242,7 @@ interface BootstrapContext {
         tools: ToolsModule;
         notifications: NotificationsModule;
         curation: CurationModule;
+        syndication: SyndicationModule;
         aiTools: AiToolsModule;
         scheduler: SchedulerModule;
     };
@@ -385,6 +387,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const toolsModule = new ToolsModule();
     const notificationsModule = new NotificationsModule();
     const curationModule = new CurationModule();
+    const syndicationModule = new SyndicationModule();
     const aiToolsModule = new AiToolsModule();
     const schedulerModule = new SchedulerModule();
 
@@ -406,6 +409,12 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // `'notifications'` service) and before ai-tools, whose governor watches
     // `'curation'` to verify tool `curationTypeId` bindings.
     await curationModule.init(sharedDeps);
+    // Syndication owns durable publish delivery (the transactional outbox + relay)
+    // and publishes `'syndication'`. Curation enqueues approved publish legs into
+    // it instead of delivering inline best-effort; it resolves the service lazily
+    // at decide-time, so init order relative to curation does not matter. Receives
+    // the scheduler service so its relay job can register.
+    await syndicationModule.init({ database: coreDatabase, serviceRegistry, scheduler: schedulerService, app });
     // The ai-tools module owns the built-in dynamic prompt variables (lifted out
     // of trp-ai-assistant), so it needs the core services those resolvers read.
     // All are singletons wired by initializeCoreServices() above; the resolvers
@@ -442,6 +451,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             tools: toolsModule,
             notifications: notificationsModule,
             curation: curationModule,
+            syndication: syndicationModule,
             aiTools: aiToolsModule,
             scheduler: schedulerModule,
         },
@@ -487,6 +497,10 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     // for its curation-hold toast) and before ai-tools (so `'curation'` is
     // published when the governor's registry watch wires the binding resolver).
     await modules.curation.run();
+    // Syndication runs after curation (curation enqueues into the `'syndication'`
+    // service it publishes here) and before scheduler (which runs last and starts
+    // ticking), so the relay job is registered before the scheduler activates.
+    await modules.syndication.run();
     await modules.aiTools.run();
     await modules.scheduler.run();
 

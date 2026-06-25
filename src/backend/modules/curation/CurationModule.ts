@@ -27,9 +27,10 @@ import type {
     IModule,
     IModuleMetadata,
     INotificationService,
-    IServiceRegistry
+    IServiceRegistry,
+    ISyndicationService
 } from '@/types';
-import { ADMIN_GROUP_ID } from '@/types';
+import { ADMIN_GROUP_ID, SYNDICATION_SERVICE } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { WebSocketService } from '../../services/websocket.service.js';
 import { CONTENT_TYPES_SERVICE } from '../../services/content-registry.js';
@@ -203,6 +204,13 @@ export class CurationModule implements IModule<ICurationModuleDependencies> {
                 })
                 .catch((error) => this.logger.warn({ error, curationId: item.id }, 'Failed to dispatch curation-hold notification'));
         });
+
+        // Route approved publish legs through durable syndication delivery instead
+        // of in-process best-effort fan-out. The `'syndication'` service is
+        // published by the syndication module, which runs after this one; resolve
+        // it lazily at decide-time so boot order does not matter and a boot without
+        // it (a test harness) degrades to the best-effort path.
+        this.curation.setSyndicationResolver(() => this.serviceRegistry.get<ISyndicationService>(SYNDICATION_SERVICE));
 
         this.serviceRegistry.register(CURATION_SERVICE, this.curation);
 

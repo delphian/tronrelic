@@ -90,6 +90,10 @@ One core admin surface (`/system/curation`, owned by the Curation module) for ev
 
 Category-based notification dispatch behind one published service — `INotificationService`, registry name `'notifications'`. Any module or plugin declares a category and a content type, then fires by reference (`notify({ category, typeId, ref })`); the module resolves the audience (groups/users) to recipients, resolves the content type into a descriptor, routes to the channels whose declared capabilities can render it, enforces admin policy and per-user opt-outs, and audits every blast. Delivery is identity-targeted over WebSocket `user:${id}` rooms so per-user silencing is enforced server-side. The first consumer is the AI scheduler, which toasts admins when a cron prompt runs. See [system-notifications.md](./system-notifications.md) and [Notifications Module README](../../src/backend/modules/notifications/README.md).
 
+### Syndication
+
+The durable `publish` sink family of the [content router](./system-content-routing.md). Curation enqueues approved publish legs here; the module guarantees delivery via a transactional outbox, a retrying relay (the `syndication:relay` job), an idempotency key handed to each sink, and dead-lettering — closing the dual-write hazard of in-process best-effort fan-out. The contract is at-least-once plus idempotency (effectively-once); legs are independent, with no cross-destination saga. Published `'syndication'`; operator surface at `/api/admin/system/syndication`. See [Syndication Module README](../../src/backend/modules/syndication/README.md).
+
 ### Logging
 
 Pino-based logger with MongoDB persistence for historical queries. See [system-logging.md](./system-logging.md) and [Logs Module README](../../src/backend/modules/logs/README.md).
@@ -127,7 +131,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [system-database-migrations.md](./system-database-migrations.md) | Migration discovery, transactions, REST API, admin UI |
 | [system-hooks.md](./system-hooks.md) | Declared seams, four archetypes, plugin facade, introspection, admin UI |
 | [system-content-types.md](./system-content-types.md) | The central content registry, the `IContentType`/`IContentDescriptor` contract, capability routing, `/system/content-types` |
-| [system-content-routing.md](./system-content-routing.md) | Unifying router, a Recipient List — primitive, classification vocabulary, sink contract + `kind`, gate seam, the curation/notifications sink families, and the interactive mandated-subset selector at the curation gate all shipped (`'content-router'`); the `syndication` durable-delivery stack and the gate's authorization policy still proposed |
+| [system-content-routing.md](./system-content-routing.md) | Unifying router, a Recipient List — primitive, classification vocabulary, sink contract + `kind`, gate seam, the curation/notifications/syndication sink families, the mandated-subset selector at the curation gate, and the `syndication` durable-delivery stack all shipped (`'content-router'`, `'syndication'`); only the gate's authorization policy still proposed |
 | [system-ai-tools.md](./system-ai-tools.md) | AI tool contract, capability classes, accountability and security requirements |
 | [system-curation.md](./system-curation.md) | Central curation queue, the type contract, the verifiable `curationTypeId` binding |
 | [system-notifications.md](./system-notifications.md) | Notification dispatch, the resolution pipeline, channels, per-user opt-outs, audit |
@@ -142,6 +146,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [AI Tools Module README](../../src/backend/modules/ai-tools/README.md) | Tool registry, governor, policy, invocation audit, human-approval queue |
 | [Curation Module README](../../src/backend/modules/curation/README.md) | `ICurationService`, the held-item lifecycle, `/system/curation` admin surface |
 | [Notifications Module README](../../src/backend/modules/notifications/README.md) | `INotificationService`, dispatch pipeline, preferences, policy, audit, channels |
+| [Syndication Module README](../../src/backend/modules/syndication/README.md) | `ISyndicationService`, transactional outbox, retrying relay, idempotency, dead-letter, curation integration |
 | [system-testing.md](./system-testing.md) | Vitest, Mongoose mocks, fixtures |
 
 ## Related

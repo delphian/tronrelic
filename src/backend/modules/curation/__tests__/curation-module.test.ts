@@ -396,6 +396,28 @@ describe('CurationService destination selection', () => {
         expect(type.onApprove).toHaveBeenCalledOnce(); // the decision still commits
     });
 
+    it('records a refused destination distinctly from a failure (sink declined, decision still commits)', async () => {
+        // A returned refusal — not a throw — is the sink's settled "will not render this",
+        // recorded as `refused` with the reason verbatim rather than as a `failed` error.
+        const deliver = vi.fn(async () => ({ refused: true as const, reason: 'cannot render this faithfully' }));
+        const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, deliver);
+        const { service } = makeDestinationService([sink]);
+        const type = postType();
+        service.registerType(type, 'media');
+        const held = await service.hold({ typeId: 'media:post', ref: {} });
+
+        const decided = await service.approve(held.id, 'admin-1', [{ sinkId: 'core:internal-publish' }]);
+
+        expect(decided?.status).toBe('approved');
+        expect(decided?.destinations?.[0]).toMatchObject({
+            sinkId: 'core:internal-publish',
+            status: 'refused',
+            reason: 'cannot render this faithfully'
+        });
+        expect(decided?.destinations?.[0]).not.toHaveProperty('error'); // a refusal is not a failure
+        expect(type.onApprove).toHaveBeenCalledOnce(); // a refusal does not undo the decision
+    });
+
     it('rejects an ineligible destination before recording the decision (item stays pending)', async () => {
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
         const { service } = makeDestinationService([sink]);
