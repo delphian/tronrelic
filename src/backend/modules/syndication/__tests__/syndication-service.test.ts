@@ -194,6 +194,37 @@ describe('SyndicationService', () => {
         });
     });
 
+    describe('runRelayOnce — stale-claim settle guard', () => {
+        it('a settle carrying a stale claim token does not overwrite a re-claimed leg', async () => {
+            // Reproduce the lost-update window: while the original (slow) worker is
+            // inside deliver(), the leg is reclaimed as stale and re-claimed by a
+            // later tick, which advances `attempts` and mints a fresh claim token.
+            // The slow worker's terminal settle must be a no-op — guarded on its now
+            // stale token — leaving the re-claimed active attempt untouched. Under a
+            // `{ _id }`-only settle this would clobber the row to `delivered`.
+            const deliver = vi.fn().mockImplementation(async () => {
+                const [row] = db.getCollectionData(SYNDICATION_OUTBOX_COLLECTION);
+                row.status = 'delivering';
+                row.claimToken = 'tok-new-attempt';
+                row.attempts = 5;
+                row.updatedAt = new Date();
+                return undefined;
+            });
+            const { router } = makeRouter([makeSink('sink-a', deliver)]);
+            const service = new SyndicationService(makeLogger(), db, router);
+            await service.enqueue({ originId: 'o1', originKind: 'curation', descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a' }] });
+
+            await service.runRelayOnce();
+
+            const [row] = await service.getLegs('o1');
+            // The original worker's 'delivered' settle was filtered out by the stale
+            // token, so the re-claimed attempt's state survives intact.
+            expect(row.status).toBe('delivering');
+            expect(row.attempts).toBe(5);
+            expect(row.idempotencyKey).toBe('o1::sink-a');
+        });
+    });
+
     describe('operator surface', () => {
         it('retry() requeues a dead-lettered leg and is a no-op for a live one', async () => {
             const deliver = vi.fn().mockRejectedValue(new Error('boom'));
