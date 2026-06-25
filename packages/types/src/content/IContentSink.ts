@@ -71,6 +71,58 @@ export type ContentSinkKind = typeof CONTENT_SINK_KINDS[number];
 export type ContentSinkDisposer = () => void;
 
 /**
+ * A sink's deliberate, runtime decision to *decline* a descriptor it matched
+ * structurally but will not render — resolved from {@link IContentSink.deliver}
+ * in place of a delivered `void`. It is distinct from a thrown delivery failure:
+ * a failure is "I tried and could not" (a retryable error), a refusal is "I will
+ * not" (a settled outcome, never retried). Modelling it as a returned value
+ * rather than an exception keeps the two from sharing the throw channel, so the
+ * delivery audit records which is which.
+ *
+ * The platform never inspects `reason` and never encodes *why* a sink refuses —
+ * that judgment belongs to the sink alone. The contract supplies only the
+ * ability to refuse and to record it, opinion-free.
+ */
+export interface IContentSinkRefusal {
+    /** Discriminant: a returned refusal always sets this `true` (a delivered leg resolves `void`). */
+    refused: true;
+
+    /** Optional sink-supplied explanation, surfaced verbatim in the audit; never interpreted. */
+    reason?: string;
+}
+
+/**
+ * Per-delivery metadata a durable delivery family (syndication) hands a sink so
+ * the sink can make its outward call *idempotent*. It is the optional third
+ * argument to {@link IContentSink.deliver}: an in-process, best-effort caller
+ * (curation's own picker, a test) omits it and the sink renders exactly as
+ * before; the relay supplies it so a retried outbox row cannot double-post.
+ *
+ * The contract carries it but never inspects it — a sink that can dedupe (an API
+ * with a client-supplied idempotency key, an upsert keyed on the value) uses it;
+ * a sink whose wire protocol offers no such hook (Telegram's `sendMessage`)
+ * ignores it and the family's at-least-once guarantee stands unchanged. Because
+ * the argument is optional, every existing two-argument sink remains assignable
+ * to {@link IContentSink} with no edit.
+ */
+export interface IContentDeliveryContext {
+    /**
+     * Stable key for this `(origin, destination)` leg, identical across every
+     * retry of the same leg. Derived by the delivery family from the originating
+     * record and the sink id, so a sink that forwards it to its external API
+     * dedupes a re-delivered row. The EIP Idempotent Receiver key.
+     */
+    idempotencyKey: string;
+
+    /**
+     * 1-based attempt number for this delivery — `1` on the first try, higher on
+     * a retry after a prior failure. Supplied so a sink can vary behaviour or
+     * logging by attempt; never required for correctness.
+     */
+    attempt: number;
+}
+
+/**
  * A consumer of content registered against the router by capability. The
  * platform discovers it, authorizes it by `reach`, matches it by `accepts`, and
  * dispatches the descriptor to `deliver()`; the sink names no content type.
@@ -117,11 +169,26 @@ export interface IContentSink {
      * never the underlying payload, never the content type's id. Per-destination
      * idempotency and retry are the sink family's concern, not the router's.
      *
+     * Three outcomes: resolve `void` for a delivered leg; resolve an
+     * {@link IContentSinkRefusal} to decline this descriptor at runtime (recorded
+     * distinctly from a failure and never retried); or throw for a delivery
+     * failure. The refusal channel lets a sink that matched structurally but will
+     * not render this particular content say so without masquerading as an error.
+     *
      * @param content - The canonical intermediate representation to render.
      * @param dest - Admin-supplied destination config (a handle, a chat id).
-     * @returns Resolves when the sink has accepted the content for delivery.
+     * @param context - Optional per-delivery metadata a durable family supplies so
+     *          the sink can make its outward call idempotent (see
+     *          {@link IContentDeliveryContext}). Absent for in-process best-effort
+     *          callers; a sink that needs no idempotency hook ignores it.
+     * @returns Resolves `void` when delivered, or an {@link IContentSinkRefusal}
+     *          when the sink declines; rejects on a delivery failure.
      */
-    deliver(content: IContentDescriptor, dest: Record<string, unknown>): Promise<void>;
+    deliver(
+        content: IContentDescriptor,
+        dest: Record<string, unknown>,
+        context?: IContentDeliveryContext
+    ): Promise<void | IContentSinkRefusal>;
 }
 
 /**

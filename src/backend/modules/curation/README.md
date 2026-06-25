@@ -13,7 +13,7 @@ Owns the central human-review queue: the registry of reviewable content types, t
 | Admin page | `/system/curation` (menu item `Curation`, order 37, registered in `run()`) |
 | Service registry name | `'curation'` → `ICurationService` |
 | Content-router sink | `curation:gate` (`kind: 'gate'`, `accepts: []`, `reach: { internal, admin }`) registered on `'content-router'` in `run()` — the gate sink family |
-| Destination selection | `publishesToDestinations` types surface the gate-admitted `publish` sinks at review; the curator selects which fire on approval → best-effort fan-out, per-destination outcomes on the item |
+| Destination selection | `publishesToDestinations` types surface the gate-admitted `publish` sinks at review; the curator selects which fire on approval → enqueued into the durable [`'syndication'`](../syndication/README.md) outbox (best-effort inline fan-out only when syndication is absent), live per-destination outcomes overlaid on the item from the outbox |
 | Mounted routes | `/api/admin/system/curation/curations*` |
 | Owned collections | `module_curation_curations`, `module_curation_destination_defaults` |
 | WebSocket signal | `curation:changed` (refetch cue; needs a case in `WebSocketService.emit`) |
@@ -32,7 +32,7 @@ Curation is a module, not a plugin, because the governed-tool path cannot run wi
 | Path | Responsibility |
 |------|----------------|
 | `CurationModule.ts` | Two-phase lifecycle; constructs queue + service, mounts router, publishes `'curation'`, registers menu node + `curation.held` notification |
-| `services/curation-service.ts` | `ICurationService`: type registry + held-item lifecycle (hold/approve/reject/edit), content-registry mirroring, live-preview resolution, destination eligibility + best-effort fan-out |
+| `services/curation-service.ts` | `ICurationService`: type registry + held-item lifecycle (hold/approve/reject/edit), content-registry mirroring, live-preview resolution, destination eligibility, durable-syndication enqueue (best-effort fallback), live outcome overlay |
 | `services/curation-queue.ts` | Persistent envelope store over `module_curation_curations`; atomic decision gate (persists the selected destinations with the decision) |
 | `services/curation-destination-defaults.ts` | Standing per-type default publish destinations over `module_curation_destination_defaults` — the subset the picker pre-selects |
 | `services/curation-gate-sink.ts` | The `curation:gate` content-router sink; `deliver()` holds by reference |
@@ -78,7 +78,7 @@ All under `/api/admin/system/curation`, gated by `requireAdmin` + the curation a
 
 ## Current Capabilities
 
-What the module does today, as the contract tables above detail: a registry of reviewable content types (`registerType`/`unregisterType`, mirrored into the central `'content-types'` registry); the held-item lifecycle (`hold` → `approve`/`reject`/`edit`) with an atomic decision gate and disabled-owner blocking; live-preview resolution for pending items and frozen snapshots for decided history; a generic inline body-text editor that writes through the owning type's `applyEdit`; the interactive auto-approve bypass the AI tool governor drives; interactive destination selection for `publishesToDestinations` types (the review gate surfaces the gate-admitted `publish` sinks, the curator picks which fire on approval, delivered best-effort with per-destination outcomes recorded — the first selectable outlet being the core `core:internal-publish` sink); a `/system/curation` admin surface with Pending/History views; an admin toast per hold (`curation.held`); and a `curation:changed` WebSocket refetch cue. Two reference consumers exercise it — `trp-x-poster` and `trp-telegram-bot`.
+What the module does today, as the contract tables above detail: a registry of reviewable content types (`registerType`/`unregisterType`, mirrored into the central `'content-types'` registry); the held-item lifecycle (`hold` → `approve`/`reject`/`edit`) with an atomic decision gate and disabled-owner blocking; live-preview resolution for pending items and frozen snapshots for decided history; a generic inline body-text editor that writes through the owning type's `applyEdit`; the interactive auto-approve bypass the AI tool governor drives; interactive destination selection for `publishesToDestinations` types (the review gate surfaces the gate-admitted `publish` sinks, the curator picks which fire on approval, committed to the durable [`'syndication'`](../syndication/README.md) outbox and delivered by its retrying relay — best-effort inline only when syndication is absent — with live per-destination outcomes overlaid on read; the first selectable outlet being the core `core:internal-publish` sink); a `/system/curation` admin surface with Pending/History views; an admin toast per hold (`curation.held`); and a `curation:changed` WebSocket refetch cue. Two reference consumers exercise it — `trp-x-poster` and `trp-telegram-bot`.
 
 ## Vision & Roadmap
 

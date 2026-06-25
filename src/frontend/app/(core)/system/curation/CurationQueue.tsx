@@ -125,25 +125,31 @@ function CurationPreview({ preview }: { preview: ICurationItemView['preview'] })
 
 /**
  * Map a destination delivery status to a Badge tone, so an operator reads where
- * approved content landed at a glance: delivered succeeds, failed alarms, pending
- * is neutral (the leg was committed but the relay has not settled it).
+ * approved content landed at a glance: delivered succeeds, failed alarms, refused
+ * warns (the sink deliberately declined — not an error to chase, but not a
+ * delivery either), pending is neutral (the leg was committed but not yet
+ * settled).
  *
  * @param status - The per-destination delivery status.
  * @returns The Badge tone for that status.
  */
-function outcomeTone(status: ICurationDestinationOutcome['status']): 'success' | 'danger' | 'neutral' {
+function outcomeTone(status: ICurationDestinationOutcome['status']): 'success' | 'danger' | 'warning' | 'neutral' {
     if (status === 'delivered') {
         return 'success';
     }
-    return status === 'failed' ? 'danger' : 'neutral';
+    if (status === 'failed') {
+        return 'danger';
+    }
+    return status === 'refused' ? 'warning' : 'neutral';
 }
 
 /**
  * Render the per-destination delivery outcomes of an approved item as toned
- * badges — the audit of which publish sinks a curator's approval reached and
- * which failed. A failed leg carries its error in the badge's `title` so the
- * detail is one hover away without cluttering the row. Renders nothing when the
- * item fanned out to no destinations (a classic single-effect approval).
+ * badges — the audit of which publish sinks a curator's approval reached, which
+ * failed, and which the sink refused. A failed leg carries its error and a
+ * refused leg its reason in the badge's `title`, so the detail is one hover away
+ * without cluttering the row. Renders nothing when the item fanned out to no
+ * destinations (a classic single-effect approval).
  *
  * @param props.destinations - The recorded destination outcomes, if any.
  * @returns The outcomes badges, or null when there are none.
@@ -156,7 +162,7 @@ function CurationOutcomes({ destinations }: { destinations?: ICurationDestinatio
         <div className={styles.destination_outcomes}>
             {destinations.map((outcome) => (
                 <Badge key={outcome.sinkId} tone={outcomeTone(outcome.status)}>
-                    <span title={outcome.error}>{outcome.sinkId}: {outcome.status}</span>
+                    <span title={outcome.error ?? outcome.reason}>{outcome.sinkId}: {outcome.status}</span>
                 </Badge>
             ))}
         </div>

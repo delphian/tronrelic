@@ -28,6 +28,8 @@ export { CONTENT_DESCRIPTOR_FEATURES, CONTENT_SINK_KINDS } from './IContentSink.
 export type {
     IContentSink,
     IContentSinkInfo,
+    IContentSinkRefusal,
+    IContentDeliveryContext,
     ContentDescriptorFeature,
     ContentSinkKind,
     ContentSinkDisposer

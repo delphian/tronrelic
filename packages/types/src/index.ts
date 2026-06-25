@@ -161,6 +161,16 @@ export type {
     ICurationDestinationOutcome,
     CurationDestinationStatus
 } from './curation/index.js';
+export { SYNDICATION_SERVICE, SYNDICATION_LEG_STATUSES } from './syndication/index.js';
+export type {
+    SyndicationLegStatus,
+    ISyndicationLeg,
+    ISyndicationRequest,
+    ISyndicationEnqueueResult,
+    ISyndicationLegView,
+    ISyndicationStats,
+    ISyndicationService
+} from './syndication/index.js';
 export type {
     HookDescriptor,
     HookKind,
