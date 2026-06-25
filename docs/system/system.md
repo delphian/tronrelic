@@ -92,7 +92,7 @@ Category-based notification dispatch behind one published service — `INotifica
 
 ### Syndication
 
-The durable `publish` sink family of the [content router](./system-content-routing.md). Curation enqueues approved publish legs here; the module guarantees delivery via a transactional outbox, a retrying relay (the `syndication:relay` job), an idempotency key handed to each sink, and dead-lettering — closing the dual-write hazard of in-process best-effort fan-out. The contract is at-least-once plus idempotency (effectively-once); legs are independent, with no cross-destination saga. Published `'syndication'`; operator surface at `/api/admin/system/syndication`. See [Syndication Module README](../../src/backend/modules/syndication/README.md).
+The durable `publish` sink family of the [content router](./system-content-routing.md). Curation enqueues approved publish legs here; the module guarantees delivery via a transactional outbox, a retrying relay (the `syndication:relay` job), an idempotency key handed to each sink, and dead-lettering — closing the dual-write hazard of in-process best-effort fan-out. The contract is at-least-once plus idempotency (effectively-once); legs are independent, with no cross-destination saga. Published `'syndication'`; operator surface at `/api/admin/system/syndication`. See [system-syndication.md](./system-syndication.md) for the delivery contract and [Syndication Module README](../../src/backend/modules/syndication/README.md) for the implementation.
 
 ### Logging
 
@@ -135,6 +135,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [system-ai-tools.md](./system-ai-tools.md) | AI tool contract, capability classes, accountability and security requirements |
 | [system-curation.md](./system-curation.md) | Central curation queue, the type contract, the verifiable `curationTypeId` binding |
 | [system-notifications.md](./system-notifications.md) | Notification dispatch, the resolution pipeline, channels, per-user opt-outs, audit |
+| [system-syndication.md](./system-syndication.md) | The durable publish-sink delivery contract — at-least-once plus idempotency, the outbox→relay→idempotent-receiver→dead-letter stack, eventual outcomes |
 | [system-logging.md](./system-logging.md) | Pino, MongoDB persistence, log queries |
 | [Menu Module README](../../src/backend/modules/menu/README.md) | Menu service, plugin integration, WebSocket events |
 | [Pages Module README](../../src/backend/modules/pages/README.md) | Markdown CMS, storage providers, file uploads |

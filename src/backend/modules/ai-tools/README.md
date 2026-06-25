@@ -28,7 +28,9 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 
 | File | Responsibility |
 |------|----------------|
-| `AiToolsModule.ts` | Two-phase lifecycle; constructs services, mounts the admin router, publishes `'ai-tools'` + `'ai-tool-governor'`; registers the core built-in `send-toast` tool (external/reversible/public, ships disabled) via `registerBuiltinTools()` — a site-wide UI announcement broadcast on the global `'toast'` WebSocket event, provider-neutral so it survives a provider swap |
+| `AiToolsModule.ts` | Two-phase lifecycle; constructs services, mounts the admin router, publishes `'ai-tools'` + `'ai-tool-governor'`; registers the core built-in tools via `registerBuiltinTools()` — `send-toast` (external/reversible/public; a site-wide `'toast'` WebSocket broadcast) and `propose-social-post` (external/irreversible/forces-curator-review) — plus, on the `'curation'` watch, the `core:social-post` curation type the latter holds into. All provider-neutral, so they survive a provider swap |
+| `social-post.ts` | The provider-neutral `core:social-post` curation type (`publishesToDestinations`, `{ external, public }` ceiling) and the `propose-social-post` tool factory — drafts a destination-agnostic post and holds it in curation for the curator to fan out to publish sinks (X, Telegram) |
+| `services/social-post-store.ts` | `module_ai-tools_social_posts` — the draft lifecycle (`create` / `getById` / `markPublished` / `markRejected` / `editBody`) the `core:social-post` type resolves its opaque `ref` against |
 | `services/ai-tool-registry.ts` | `IAiToolRegistry`: registration, enabled-state (capability-driven default-deny), declarations for a provider |
 | `services/ai-tool-governor.ts` | `IAiToolGovernor`: the invoke pipeline + approve/reject |
 | `services/tool-policy-engine.ts` | Capability-classed defaults, admin overrides, fixed-window rate limiter, autonomous default-deny, curation mode (`require`/`auto-approve`) + egress-gating predicate. `setCurationResolver` holds the `'curation'` binding check, wired via a registry `watch` in the module |
@@ -90,7 +92,7 @@ The installed AI provider plugin registers itself here, handing the registry bot
 
 ### Consumes `'curation'` → `ICurationService`
 
-Curation is **not** owned here — it lives in its own [curation module](../curation/README.md) and publishes `'curation'`. This module consumes it: the module `watch`es the registry and, while `'curation'` is present, injects `ToolPolicyEngine.setCurationResolver((typeId) => curation.hasType(typeId))` so the governor verifies a tool's `curationTypeId` binding live — relaxing the tool's gates only while its owning type is registered, and re-tightening (deny-all) the moment curation unregisters. The governor also imports `runWithCurationAutoApprove` from the curation module to wrap a governed handler call for the interactive auto-approve bypass. Full design: [system-curation.md](../../../../docs/system/system-curation.md).
+Curation is **not** owned here — it lives in its own [curation module](../curation/README.md) and publishes `'curation'`. This module consumes it: the module `watch`es the registry and, while `'curation'` is present, injects `ToolPolicyEngine.setCurationResolver((typeId) => curation.hasType(typeId))` so the governor verifies a tool's `curationTypeId` binding live — relaxing the tool's gates only while its owning type is registered, and re-tightening (deny-all) the moment curation unregisters. The same `onAvailable` also **registers** the module's own `core:social-post` curation type, so the built-in `propose-social-post` tool's binding resolves against a live type. The governor also imports `runWithCurationAutoApprove` from the curation module to wrap a governed handler call for the interactive auto-approve bypass. Full design: [system-curation.md](../../../../docs/system/system-curation.md).
 
 ### `'prompt-variables'` → `IPromptVariableRegistry`
 
