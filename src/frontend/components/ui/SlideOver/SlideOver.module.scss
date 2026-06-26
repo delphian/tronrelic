@@ -1,0 +1,97 @@
+/**
+ * Right-anchored slide-over panel: a full-height detail surface overlaying the
+ * page from the right edge. Surface tokens mirror the modal so the two overlays
+ * read as one system. Width uses design-constant max-width primitives — there
+ * is no use-case semantic for a slide-over width, so tier-3 primitives are the
+ * correct fallback. Declares a container so panel content reflows to the panel's
+ * own width rather than the viewport.
+ */
+
+.backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-index-modal);
+    display: flex;
+    justify-content: flex-end;
+    background: var(--modal-backdrop-background);
+    backdrop-filter: var(--modal-backdrop-blur);
+}
+
+@keyframes slideOverIn {
+    from {
+        transform: translateX(100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    background: var(--modal-dialog-background);
+    border-left: var(--border-width-thin) solid var(--color-border-strong);
+    box-shadow: var(--shadow-lg);
+    animation: slideOverIn var(--duration-slide) ease-out;
+    container-type: inline-size;
+    container-name: slide-over;
+}
+
+.panel--md {
+    max-width: min(var(--max-width-md), 100%);
+}
+
+.panel--lg {
+    max-width: min(var(--max-width-lg), 100%);
+}
+
+.header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    padding: var(--modal-header-padding);
+    border-bottom: var(--modal-header-border);
+}
+
+.title {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.close {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--modal-close-size);
+    height: var(--modal-close-size);
+    background: var(--modal-close-background);
+    border: none;
+    border-radius: var(--radius-full);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+.close:hover {
+    background: var(--modal-close-background-hover);
+    color: var(--color-text);
+}
+
+.body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--modal-body-padding);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .panel {
+        animation: none;
+    }
+}

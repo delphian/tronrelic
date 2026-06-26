@@ -444,7 +444,7 @@ export function CurationQueue({ onChanged }: { onChanged: () => void }) {
                 : items.length === 0
                     ? <div className={styles.placeholder}>{isHistory ? 'No curation decisions yet.' : 'Nothing is awaiting curation.'}</div>
                     : (
-                        <div className="table-scroll">
+                        <div className={`table-scroll ${styles.curation_table}`}>
                             <Table>
                                 <Thead>
                                     <Tr>
@@ -457,15 +457,15 @@ export function CurationQueue({ onChanged }: { onChanged: () => void }) {
                                 <Tbody>
                                     {items.map(item => (
                                         <Tr key={item.id}>
-                                            <Td muted><ClientTime date={item.createdAt} format="datetime" /></Td>
-                                            <Td>
+                                            <Td muted data-label="Held"><ClientTime date={item.createdAt} format="datetime" /></Td>
+                                            <Td data-label="Type">
                                                 <div className={styles.tool_name}>{item.preview.title ?? item.typeId}</div>
                                                 <div className={styles.tool_desc}>
                                                     {item.providerId}{item.source ? ` · ${item.source}` : ''}
                                                 </div>
                                             </Td>
-                                            <Td><CurationPreview preview={item.preview} /></Td>
-                                            <Td>
+                                            <Td data-label="Preview"><CurationPreview preview={item.preview} /></Td>
+                                            <Td data-label="Decision">
                                                 {isHistory
                                                     ? <CurationDecision item={item} />
                                                     : (

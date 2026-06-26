@@ -1,3 +1,5 @@
+@use '../../../breakpoints' as *;
+
 /* Page-level vertical rhythm for the curation admin surface. */
 .container {
     display: flex;
@@ -125,4 +127,47 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--gap-xs);
+}
+
+/* Mobile: a four-column curation table is too wide on phones, so collapse each
+   row into a stacked card. The shared Table declares container-name: table, so
+   we react to the table's own width — the switch stays correct inside slideouts
+   and modals, not just the full viewport. The column headers are dropped and
+   each cell carries its own label via the data-label attribute the rows set, so
+   the meaning of every value survives the layout change. */
+@container table (max-width: #{$breakpoint-mobile-lg}) {
+    .curation_table thead {
+        display: none;
+    }
+
+    .curation_table tr {
+        display: block;
+        padding: var(--padding-sm);
+        border-bottom: var(--border-width-thin) solid var(--color-border);
+    }
+
+    .curation_table td {
+        display: block;
+        padding: var(--padding-2xs) 0;
+        border-bottom: none;
+    }
+
+    /* Surface the dropped column header as an inline label above each value. */
+    .curation_table td::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: var(--gap-2xs);
+        font-size: var(--font-size-caption);
+        font-weight: var(--font-weight-semibold);
+        letter-spacing: var(--letter-spacing-wide);
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+    }
+
+    /* The prose-width caps are unnecessary once each cell owns the full card
+       width; let preview and field content use the available space. */
+    .curation_table .curation_preview,
+    .curation_table .tool_desc {
+        max-width: none;
+    }
 }
