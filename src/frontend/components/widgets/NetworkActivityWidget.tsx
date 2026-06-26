@@ -160,10 +160,12 @@ export function NetworkActivityWidget({ data, context, instanceConfig }: IWidget
     // refetches the visible window without re-subscribing on every toggle, and
     // so out-of-order responses for a stale window can be dropped.
     const windowRef = useRef(activeWindow);
-    // Timestamp of the last refetch, gating the live throttle. Mutated by both
-    // the live effect and manual window changes so a manual fetch resets the
-    // throttle window.
-    const lastRefreshRef = useRef(0);
+    // Timestamp of the last refetch, gating the live throttle. Seeded to mount
+    // time (not 0) so the SSR-seeded points survive the first throttle window
+    // instead of being overwritten by a redundant heavy refetch on the first
+    // block after mount. Mutated by both the live effect and manual window
+    // changes so a manual fetch resets the throttle window.
+    const lastRefreshRef = useRef(Date.now());
 
     const activeMetric = METRICS.find(item => item.id === metric) ?? METRICS[0];
 
