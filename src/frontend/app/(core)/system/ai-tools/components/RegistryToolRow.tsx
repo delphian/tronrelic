@@ -61,7 +61,11 @@ export function RegistryToolRow({ tool, hasOverride, busy, onToggle, onSelect }:
             <Td><RiskChip capability={tool.capability} /></Td>
             <Td>
                 <div className={styles.tool_cell}>
-                    <button type="button" className={styles.tool_name_button} onClick={() => onSelect(tool)}>
+                    <button
+                        type="button"
+                        className={styles.tool_name_button}
+                        onClick={(event) => { event.stopPropagation(); onSelect(tool); }}
+                    >
                         {tool.name}
                     </button>
                     {hasOverride && <Badge tone="info">override</Badge>}

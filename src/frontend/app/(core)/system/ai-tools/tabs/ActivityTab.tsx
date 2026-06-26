@@ -9,7 +9,7 @@
  * full record: arguments, result digest, forensic error, cost, and screen verdict.
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { IToolInvocationRecord, IAiToolInfo, ToolInvocationStatus, ToolTriggerPath } from '@/types';
 import { Stack } from '../../../../../components/layout';
@@ -43,19 +43,35 @@ export function ActivityTab() {
     const [toolName, setToolName] = useState<string>('');
     const [offset, setOffset] = useState(0);
     const [tools, setTools] = useState<IAiToolInfo[]>([]);
-    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [selectedRecord, setSelectedRecord] = useState<IToolInvocationRecord | null>(null);
+    /**
+     * Monotonic load id. A response commits state only while it is still the
+     * newest in-flight request, so an out-of-order resolve — rapid filter changes
+     * or a socket-driven refetch racing a filter change — never overwrites the
+     * table with rows that no longer match the active filter.
+     */
+    const requestId = useRef(0);
 
     const load = useCallback(async () => {
+        const id = ++requestId.current;
         const query: IActivityQuery = { limit: PAGE_LIMIT, offset };
         if (status) query.status = status;
         if (triggerPath) query.triggerPath = triggerPath;
         if (toolName) query.toolName = toolName;
         try {
             const page = await listActivity(query);
+            // Drop a response a newer load already superseded so out-of-order
+            // resolves don't overwrite the table with stale rows.
+            if (id !== requestId.current) {
+                return;
+            }
             setItems(page.records);
             setTotal(page.total);
             setError(null);
         } catch (err) {
+            if (id !== requestId.current) {
+                return;
+            }
             setError(err instanceof Error ? err.message : 'Failed to load activity');
         } finally {
             setLoading(false);
@@ -101,7 +117,6 @@ export function ActivityTab() {
     }, []);
 
     const currentPage = Math.floor(offset / PAGE_LIMIT) + 1;
-    const selectedRecord = selectedId ? items.find(record => record.id === selectedId) ?? null : null;
 
     return (
         <Stack gap="md">
@@ -170,7 +185,7 @@ export function ActivityTab() {
                                             key={record.id}
                                             className={styles.tool_row}
                                             hasError={record.status === 'error'}
-                                            onClick={() => setSelectedId(record.id)}
+                                            onClick={() => setSelectedRecord(record)}
                                         >
                                             <Td muted className={styles.col_time}><ClientTime date={record.createdAt} format="datetime" /></Td>
                                             <Td><span className={styles.tool_name}>{record.toolName}</span></Td>
@@ -197,7 +212,7 @@ export function ActivityTab() {
 
             <SlideOver
                 open={selectedRecord !== null}
-                onClose={() => setSelectedId(null)}
+                onClose={() => setSelectedRecord(null)}
                 label={selectedRecord ? `Invocation ${selectedRecord.toolName}` : undefined}
                 title={selectedRecord ? <span className={styles.tool_name}>{selectedRecord.toolName}</span> : null}
             >
