@@ -38,6 +38,10 @@ export function blockchainRouter() {
         void getController().transactionTimeseries(req, res);
     });
 
+    router.get('/overview/timeseries', (req, res) => {
+        void getController().overviewTimeseries(req, res);
+    });
+
     router.post('/sync', (req, res) => {
         void getController().triggerSync(req, res);
     });

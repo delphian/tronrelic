@@ -594,6 +594,115 @@ function buildBlockTickerFetcher(deps: ICoreWidgetTypeDeps): WidgetDataFetcher {
 }
 
 /**
+ * Widget-type id for the network-activity overview chart. Namespaced under
+ * `core:` so it never collides with a plugin-declared id; the frontend
+ * component registry (`widgets.core.ts`) keys its renderer on this string.
+ */
+export const NETWORK_ACTIVITY_TYPE_ID = 'core:network-activity';
+
+/**
+ * Window the network-activity fetcher falls back to when a placement carries
+ * no `defaultWindow` override — the 7-day, 168-point overview. Typed as the
+ * literal so it satisfies the window union without a cast.
+ */
+const NETWORK_ACTIVITY_DEFAULT_WINDOW = '7d';
+
+/**
+ * One bucket in the network-activity SSR payload. Mirrors the backend
+ * `IOverviewTimeseriesPoint` and the frontend `NetworkActivityPoint` so the
+ * payload casts cleanly without a second shape. `volume` is native TRX moved
+ * by `TransferContract` transfers (TRC20/USDT value is excluded).
+ */
+export interface INetworkActivityPoint {
+    /** ISO 8601 timestamp marking the start of this bucket. */
+    date: string;
+    /** Total transactions of every contract type in the bucket. */
+    transactions: number;
+    /** Native `TransferContract` transfers in the bucket. */
+    transfers: number;
+    /** Summed native TRX moved by those transfers. */
+    volume: number;
+}
+
+/**
+ * SSR payload the network-activity data fetcher returns and the frontend
+ * `NetworkActivityWidget` consumes. Carries the resolved window plus the
+ * pre-fetched series so the widget renders immediately and refetches only on a
+ * window change.
+ */
+export interface INetworkActivityWidgetData {
+    /** Window the series was fetched for. */
+    window: '1h' | '24h' | '7d';
+    /** Pre-fetched buckets, chronologically sorted. */
+    points: INetworkActivityPoint[];
+}
+
+/**
+ * Build the network-activity SSR data fetcher bound to the service registry.
+ *
+ * Resolves `'blockchain'` lazily and reads the combined overview series for
+ * the placement's configured window. Never throws and never returns bare null:
+ * on a missing service or any error it yields an empty series for the resolved
+ * window so the widget still mounts and refetches live after hydration. The
+ * window is normalized defensively — an unrecognised stored value degrades to
+ * the 7-day default rather than reaching the service with junk.
+ *
+ * @param deps - Carries the service registry for lazy `'blockchain'` lookup.
+ * @returns A {@link WidgetDataFetcher} producing the overview SSR payload.
+ */
+function buildNetworkActivityFetcher(deps: ICoreWidgetTypeDeps): WidgetDataFetcher {
+    return async (_route, _params, placement): Promise<INetworkActivityWidgetData> => {
+        const config = placement?.instanceConfig ?? {};
+        const window: '1h' | '24h' | '7d' =
+            config.defaultWindow === '1h' || config.defaultWindow === '24h' || config.defaultWindow === '7d'
+                ? config.defaultWindow
+                : NETWORK_ACTIVITY_DEFAULT_WINDOW;
+
+        try {
+            const blockchain = deps.serviceRegistry.get<IBlockchainService>('blockchain');
+            const points = blockchain ? await blockchain.getOverviewTimeseries(window) : [];
+            return { window, points };
+        } catch {
+            return { window, points: [] };
+        }
+    };
+}
+
+/**
+ * JSON Schema (Draft 7) for the network-activity placement's `instanceConfig`.
+ *
+ * Every field is optional with an enum/default so an operator can place the
+ * widget with no configuration. `title` overrides the chart heading;
+ * `defaultWindow` seeds the initial window toggle; `display` selects chart
+ * density ('normal' full chrome vs. 'widget' compact sparkline).
+ */
+export const NETWORK_ACTIVITY_CONFIG_SCHEMA: JSONSchema7 = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+        title: {
+            type: 'string',
+            title: 'Title',
+            description: 'Heading rendered above the chart. Defaults to no heading.'
+        },
+        defaultWindow: {
+            type: 'string',
+            enum: ['1h', '24h', '7d'],
+            default: '7d',
+            title: 'Default window',
+            description: 'Time window shown on first render: 1 hour, 24 hours, or 7 days.'
+        },
+        display: {
+            type: 'string',
+            enum: ['normal', 'widget'],
+            default: 'normal',
+            title: 'Display density',
+            description: "'normal' shows axes, legend, and tooltips; 'widget' is a compact sparkline."
+        }
+    }
+};
+
+/**
  * Build the core widget-type catalog as plain registration inputs.
  *
  * A factory rather than a constant because the block-ticker fetcher needs
@@ -643,6 +752,15 @@ export function buildCoreWidgetTypeDescriptors(
                 'Compact real-time row of latest-block metrics — block number, transactions, transfers, contracts, delegations, stakes, tokens, energy.',
             category: 'Blockchain',
             defaultDataFetcher: buildBlockTickerFetcher(deps)
+        },
+        {
+            id: NETWORK_ACTIVITY_TYPE_ID,
+            label: 'Network activity',
+            description:
+                'Hourly TRON network activity chart — transactions, native transfers, and native TRX transfer volume over a 1h/24h/7d window.',
+            category: 'Blockchain',
+            defaultDataFetcher: buildNetworkActivityFetcher(deps),
+            configSchema: NETWORK_ACTIVITY_CONFIG_SCHEMA
         }
     ];
 }

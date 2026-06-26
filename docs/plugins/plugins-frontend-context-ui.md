@@ -15,7 +15,7 @@ interface IFrontendPluginContext {
     pluginId: string;              // Used internally for namespacing events and API routes
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
     ui: IUIComponents;             // Card, Badge, Button, IconButton, Switch, Input, Skeleton, ClientTime, Tooltip, IconPickerModal, Table family
-    charts: IChartComponents;      // LineChart
+    charts: IChartComponents;      // LineChart, BarChart
     system: ISystemComponents;     // SchedulerMonitor (admin)
     api: IApiClient;               // get/post/put/patch/delete
     websocket: IWebSocketClient;   // socket + auto-prefixed helpers
@@ -110,9 +110,12 @@ Six related components matching the `/system/*` admin tables. Compose them to in
 
 | Component | Props |
 |-----------|-------|
-| `LineChart` | `series: { id, label, data: { date, value, max?, count? }[], color?, fill? }[]`, `yAxisFormatter?`, `xAxisFormatter?`, `emptyLabel?`, `height?`, `minDate?`, `maxDate?`, `yAxisMin?`, `yAxisMax?`, `className?` |
+| `LineChart` | `series: { id, label, data: { date, value, max?, count? }[], color?, fill?, legendValue? }[]`, `title?`, `actions?`, `yAxisFormatter?`, `xAxisFormatter?`, `tooltipDateFormatter?`, `showLegend?`, `emptyLabel?`, `height?`, `minDate?`, `maxDate?`, `yAxisMin?`, `yAxisMax?`, `className?` |
+| `BarChart` | `series: { id, label, data: { date, value, metadata? }[], color?, legendValue? }[]`, `title?`, `actions?`, `mode?: 'normal'\|'widget'`, `yAxisFormatter?`, `xAxisFormatter?`, `showLegend?`, `emptyLabel?`, `height?`, `yAxisMin?`, `yAxisMax?`, `className?` |
 
 `minDate`/`maxDate`/`yAxisMin`/`yAxisMax` are fixed-axis overrides for sparse data — without them the chart auto-scales tightly.
+
+`BarChart` renders grouped columns (one per series per shared category) and supports negative values below a zero baseline. `mode` selects density: `normal` paints axes, legend, and an interactive tooltip; `widget` strips chrome to bars and baseline for a compact widget-zone fit, defaulting `showLegend` to false. On both charts, `title` and `actions` share one header row — pass window/view toggles via `actions` to sit them beside the title instead of stacking a separate toolbar. Per-series `legendValue` annotates the legend only (not the tooltip), letting it act as a complete key such as a window total.
 
 ## System (`context.system`) — Admin Only
 

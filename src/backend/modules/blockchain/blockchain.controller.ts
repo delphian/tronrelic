@@ -86,4 +86,30 @@ export class BlockchainController {
         const data = await this.service.getTransactionTimeseries(days);
         res.json({ success: true, data });
     };
+
+    /**
+     * GET /api/blockchain/overview/timeseries?window=7d
+     *
+     * Retrieves the combined network-activity overview series powering the
+     * core `core:network-activity` widget. Each point carries the transaction
+     * count, native-transfer count, and native TRX transfer volume for one
+     * bucket, so the widget toggles between metrics without a refetch.
+     *
+     * @param req - Express request with `window` query parameter ('1h'|'24h'|'7d').
+     * @param res - Express response containing the overview series and echoed window.
+     */
+    overviewTimeseries = async (req: Request, res: Response) => {
+        const window = String(req.query.window ?? '7d');
+
+        if (window !== '1h' && window !== '24h' && window !== '7d') {
+            res.status(400).json({
+                success: false,
+                error: "Invalid window parameter. Must be one of '1h', '24h', '7d'."
+            });
+            return;
+        }
+
+        const data = await this.service.getOverviewTimeseries(window);
+        res.json({ success: true, data, window });
+    };
 }

@@ -10,14 +10,16 @@ Direct imports from `src/frontend/` break Next.js module resolution and couple p
 
 ```typescript
 interface IFrontendPluginContext {
-    layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section
-    ui: IUIComponents;             // Card, Badge, Skeleton, Button, Input
-    charts: IChartComponents;      // LineChart
-    api: IApiClient;               // get/post/put/delete with runtime base URL
+    pluginId: string;              // namespacing for events and API routes
+    layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
+    ui: IUIComponents;             // Card, Badge, Button, IconButton, Switch, Input, Skeleton, ClientTime, Tooltip, IconPickerModal, Table family
+    charts: IChartComponents;      // LineChart, BarChart
+    system: ISystemComponents;     // SchedulerMonitor (admin)
+    api: IApiClient;               // get/post/put/patch/delete with runtime base URL
     websocket: IWebSocketClient;   // socket + auto-prefixed helpers
     useUser: () => IPluginUserState;
-    useModal: () => { open, close };
-    useToast: () => { show };
+    useModal: () => { open, close, closeAll };
+    useToast: () => { push, dismiss };
 }
 ```
 
