@@ -554,6 +554,23 @@ export class BlockchainService implements IBlockchainService {
             throw new Error(`getOverviewTimeseries: unsupported window '${window}'`);
         }
 
+        // Cache the assembled series in Redis for 60s, keyed by window. The 7d
+        // volume aggregation sums non-indexed `amountTRX` over every
+        // `TransferContract` row in range — an index-supported match that still
+        // fetches each matched document — so concurrent SSR/widget callers would
+        // otherwise repeat a heavy fetch-and-sum. 60s staleness is acceptable:
+        // the frontend already refetches at 60s and the return shape is plain
+        // JSON. A cache fault degrades to the live query rather than failing.
+        const cacheKey = `${env.REDIS_NAMESPACE}:overview-timeseries:${window}`;
+        try {
+            const cached = await this.redis.get(cacheKey);
+            if (cached) {
+                return JSON.parse(cached) as Array<{ date: string; transactions: number; transfers: number; volume: number }>;
+            }
+        } catch (error) {
+            logger.warn({ error, window }, 'Overview timeseries cache read failed; querying live');
+        }
+
         const startDate = new Date(Date.now() - spec.ms);
         const database = BlockchainService.getDatabase();
         const blocksCollection = database.getCollection<BlockDoc>(BlockchainService.BLOCKS_COLLECTION);
@@ -605,7 +622,7 @@ export class BlockchainService implements IBlockchainService {
             }
         }
 
-        return Array.from(buckets.entries())
+        const result = Array.from(buckets.entries())
             .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
             .map(([bucket, metrics]) => {
                 // MongoDB returns bucket keys like "2025-10-13 01:00" (UTC, no
@@ -625,6 +642,14 @@ export class BlockchainService implements IBlockchainService {
                     volume: Number(metrics.volume.toFixed(6))
                 };
             });
+
+        try {
+            await this.redis.setex(cacheKey, 60, JSON.stringify(result));
+        } catch (error) {
+            logger.warn({ error, window }, 'Overview timeseries cache write failed');
+        }
+
+        return result;
     }
 
     /**
