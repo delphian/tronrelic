@@ -523,6 +523,111 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
+     * Build the combined network-activity overview series for a window.
+     *
+     * Why: the core `core:network-activity` widget plots transactions, native
+     * transfers, and native TRX transfer volume on one chart, toggled
+     * client-side between the three. Counts are read from the pre-aggregated
+     * `blocks` collection (cheap); TRX volume is not stored per block, so it is
+     * summed from `amountTRX` over `TransferContract` rows in the
+     * `transactions` collection. The two aggregations run in parallel and merge
+     * by bucket key.
+     *
+     * Volume is intentionally native-TRX only: `TriggerSmartContract`
+     * (USDT/TRC20) carries the token amount in ABI-encoded contract data, not
+     * `amountTRX`, so it is excluded rather than silently under-counted. The
+     * `{ type, timestamp }` index serves the volume aggregation; `{ timestamp }`
+     * serves the block aggregation.
+     *
+     * @param window - `1h` (per-minute buckets, 60 points) or `24h`/`7d`
+     *   (hourly buckets, 24/168 points). Matches the widget's window toggle.
+     * @returns Buckets sorted chronologically; each carries all three metrics.
+     */
+    async getOverviewTimeseries(window: '1h' | '24h' | '7d') {
+        const WINDOW_SPECS: Record<'1h' | '24h' | '7d', { ms: number; format: string }> = {
+            '1h': { ms: 60 * 60 * 1000, format: '%Y-%m-%d %H:%M' },
+            '24h': { ms: 24 * 60 * 60 * 1000, format: '%Y-%m-%d %H:00' },
+            '7d': { ms: 7 * 24 * 60 * 60 * 1000, format: '%Y-%m-%d %H:00' }
+        };
+        const spec = WINDOW_SPECS[window];
+        if (!spec) {
+            throw new Error(`getOverviewTimeseries: unsupported window '${window}'`);
+        }
+
+        const startDate = new Date(Date.now() - spec.ms);
+        const database = BlockchainService.getDatabase();
+        const blocksCollection = database.getCollection<BlockDoc>(BlockchainService.BLOCKS_COLLECTION);
+        const transactionsCollection = database.getCollection<TransactionDoc>(BlockchainService.TRANSACTIONS_COLLECTION);
+
+        interface CountBucket { _id: string; transactions: number; transfers: number; }
+        interface VolumeBucket { _id: string; volume: number; }
+
+        const [countRows, volumeRows] = await Promise.all([
+            blocksCollection
+                .aggregate<CountBucket>([
+                    { $match: { timestamp: { $gte: startDate } } },
+                    {
+                        $group: {
+                            _id: { $dateToString: { format: spec.format, date: '$timestamp' } },
+                            transactions: { $sum: '$transactionCount' },
+                            transfers: { $sum: '$stats.transfers' }
+                        }
+                    }
+                ])
+                .toArray(),
+            transactionsCollection
+                .aggregate<VolumeBucket>([
+                    { $match: { type: 'TransferContract', timestamp: { $gte: startDate } } },
+                    {
+                        $group: {
+                            _id: { $dateToString: { format: spec.format, date: '$timestamp' } },
+                            volume: { $sum: '$amountTRX' }
+                        }
+                    }
+                ])
+                .toArray()
+        ]);
+
+        // Union the two aggregations by bucket key. Seed from the block counts,
+        // then layer volume on top — a bucket can have blocks but no native
+        // transfers (volume stays 0), and (rarely) vice versa — so default the
+        // absent side to 0 rather than dropping the bucket.
+        const buckets = new Map<string, { transactions: number; transfers: number; volume: number }>();
+        for (const row of countRows) {
+            buckets.set(row._id, { transactions: row.transactions, transfers: row.transfers, volume: 0 });
+        }
+        for (const row of volumeRows) {
+            const existing = buckets.get(row._id);
+            if (existing) {
+                existing.volume = row.volume;
+            } else {
+                buckets.set(row._id, { transactions: 0, transfers: 0, volume: row.volume });
+            }
+        }
+
+        return Array.from(buckets.entries())
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([bucket, metrics]) => {
+                // MongoDB returns bucket keys like "2025-10-13 01:00" (UTC, no
+                // zone). Append seconds + 'Z' so they parse as UTC ISO — the same
+                // conversion getTransactionTimeseries uses.
+                let isoDate: string;
+                try {
+                    const parsed = new Date(`${bucket}:00Z`);
+                    isoDate = Number.isNaN(parsed.getTime()) ? bucket : parsed.toISOString();
+                } catch {
+                    isoDate = bucket;
+                }
+                return {
+                    date: isoDate,
+                    transactions: metrics.transactions,
+                    transfers: metrics.transfers,
+                    volume: Number(metrics.volume.toFixed(6))
+                };
+            });
+    }
+
+    /**
      * Count transactions by contract type within a time range.
      *
      * Queries the transactions collection for count matching the specified

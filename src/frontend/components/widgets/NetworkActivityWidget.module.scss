@@ -1,0 +1,39 @@
+/**
+ * Network-activity overview widget styles.
+ *
+ * The widget owns only the outer flex column plus the standalone
+ * controls/empty states; the chart's own CSS Module owns its header, title,
+ * axes, and tooltip. `container-type` lets the chart and controls respond to
+ * the widget's host width (zone, card, slideout) via container queries rather
+ * than the viewport. Tokens only — no hardcoded values.
+ */
+
+.widget {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    container-type: inline-size;
+    container-name: network-activity-widget;
+}
+
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+}
+
+.chart_container {
+    position: relative;
+    transition: opacity var(--transition-base);
+}
+
+.refreshing {
+    opacity: var(--opacity-60);
+}
+
+.empty {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}

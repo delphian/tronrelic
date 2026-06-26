@@ -840,16 +840,16 @@ export interface IFrontendPluginContext {
     /** Plugin identifier used for namespacing events and API routes */
     pluginId: string;
 
-    /** UI component library (Card, Badge, Skeleton, Button, Input) */
+    /** UI component library (Card, Badge, Button, IconButton, Switch, Input, Skeleton, ClientTime, Tooltip, IconPickerModal, Table family) */
     ui: IUIComponents;
 
-    /** Layout component library (Page, PageHeader, Stack, Grid, Section) */
+    /** Layout component library (Page, PageHeader, Stack, Grid, Section, SubMenu) */
     layout: ILayoutComponents;
 
-    /** Chart component library (LineChart, etc.) */
+    /** Chart component library (LineChart, BarChart) */
     charts: IChartComponents;
 
-    /** System component library (SchedulerMonitor, etc.) */
+    /** System component library (SchedulerMonitor) */
     system: ISystemComponents;
 
     /** API client for making authenticated requests to backend */

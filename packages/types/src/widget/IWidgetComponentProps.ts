@@ -48,7 +48,7 @@ export interface IWidgetComponentProps {
      * Provides access to:
      * - `context.ui` - UI components (Card, Badge, Button, etc.)
      * - `context.layout` - Layout components (Page, Stack, Grid, etc.)
-     * - `context.charts` - Chart components (LineChart, etc.)
+     * - `context.charts` - Chart components (LineChart, BarChart)
      * - `context.api` - API client for data fetching
      * - `context.websocket` - WebSocket client for real-time updates
      */

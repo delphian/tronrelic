@@ -6,5 +6,10 @@ export type {
     IBlockTransactionContract,
     IResourceUsage
 } from './IBlockTransaction.js';
-export type { IBlockchainService, ITransactionTimeseriesPoint } from './IBlockchainService.js';
+export type {
+    IBlockchainService,
+    ITransactionTimeseriesPoint,
+    IOverviewTimeseriesPoint,
+    OverviewTimeseriesWindow
+} from './IBlockchainService.js';
 export type { ITransactionDetailService } from './ITransactionDetailService.js';
