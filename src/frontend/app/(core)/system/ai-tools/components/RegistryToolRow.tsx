@@ -1,99 +1,74 @@
 'use client';
 
 /**
- * @fileoverview One Registry Tools row: the tool's identity, provider,
- * capability badges, and enable toggle, with a chevron that discloses an inline
- * policy editor. The editor lives behind the chevron rather than in adjacent
- * columns so the row stays scannable and the trifecta-arming policy knobs keep a
- * deliberate click between them and the everyday enable toggle — the reason the
- * former standalone Policy tab folded into the Registry here.
+ * @fileoverview One Registry Tools row, reshaped for fast triage. The two
+ * questions an operator asks first — is it live, and how dangerous is it — lead
+ * the row as the enable toggle and the single dominant risk chip; the name and a
+ * one-line description teaser follow. The full model-facing description, the
+ * parameter schema, and the policy editor moved off the row into the slide-over
+ * (opened by clicking the row or the name) so the list stays scannable instead
+ * of every row unrolling a wall of model-facing prose.
+ *
+ * The enable switch and its cell stop click propagation so toggling a tool never
+ * also opens the panel; everything else on the row is a path into the detail.
  */
 
-import { useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
-import type { IAiToolInfo, IToolPolicy } from '@/types';
+import type { MouseEvent } from 'react';
+import type { IAiToolInfo } from '@/types';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Switch } from '../../../../../components/ui/Switch';
 import { Tr, Td } from '../../../../../components/ui/Table';
-import type { IPolicyResponse } from '../../../../../modules/ai-tools';
-import { CapabilityBadges } from './CapabilityBadges';
-import { ToolPolicyEditor } from './ToolPolicyEditor';
+import { RiskChip } from './RiskChip';
 import styles from '../page.module.scss';
 
-/** Usage tally shape from `GET /policy`. */
-type Usage = IPolicyResponse['usage'][string];
-
 /**
- * A tool's main row plus its collapsible policy editor.
+ * A single tool's registry row.
  *
- * @param props.tool - The tool to render (name, description, provider, capability, enabled state).
- * @param props.override - The tool's saved policy override, or undefined when it runs on class defaults; presence drives the "override" badge.
- * @param props.usage - Audit-trail tallies passed through to the editor.
- * @param props.defaults - The governor's resolved class defaults passed through to the editor.
+ * @param props.tool - The tool to render (enabled, capability, name, description, provider).
+ * @param props.hasOverride - Whether the tool carries a saved policy override; drives the "override" badge.
  * @param props.busy - Whether an enable toggle for this tool is in flight, disabling the switch.
- * @param props.columnCount - Total column count, so the expanded editor cell can span the full table width.
- * @param props.onToggle - Enable/disable handler the parent owns (it reloads and re-checks the trifecta).
- * @param props.onPolicyChanged - Called after a save/clear so the parent refetches policy and the trifecta.
- * @returns The row fragment (main row, and the editor row while expanded).
+ * @param props.onToggle - Enable/disable handler the parent owns (reloads and re-checks the trifecta).
+ * @param props.onSelect - Opens the detail slide-over for this tool.
+ * @returns The table row.
  */
-export function RegistryToolRow({ tool, override, usage, defaults, busy, columnCount, onToggle, onPolicyChanged }: {
+export function RegistryToolRow({ tool, hasOverride, busy, onToggle, onSelect }: {
     tool: IAiToolInfo;
-    override?: IToolPolicy;
-    usage?: Usage;
-    defaults?: { requireApproval: boolean; allowUnattended: boolean };
+    hasOverride: boolean;
     busy: boolean;
-    columnCount: number;
     onToggle: (name: string, enabled: boolean) => void;
-    onPolicyChanged: () => void;
+    onSelect: (tool: IAiToolInfo) => void;
 }) {
-    const [open, setOpen] = useState(false);
-    const hasOverride = override !== undefined;
+    /**
+     * Keep a click inside the enable cell from bubbling to the row's open
+     * handler, so toggling a tool never also opens the panel.
+     *
+     * @param event - The cell click event.
+     */
+    const stopCellClick = (event: MouseEvent<HTMLTableCellElement>) => {
+        event.stopPropagation();
+    };
 
     return (
-        <>
-            <Tr>
-                <Td>
-                    <button
-                        type="button"
-                        className={styles.expand_button}
-                        onClick={() => setOpen(current => !current)}
-                        aria-expanded={open}
-                        aria-label={`${open ? 'Hide' : 'Edit'} policy for ${tool.name}`}
-                    >
-                        {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        <Tr className={styles.tool_row} onClick={() => onSelect(tool)}>
+            <Td onClick={stopCellClick}>
+                <Switch
+                    on={tool.enabled}
+                    onChange={(next) => onToggle(tool.name, next)}
+                    disabled={busy}
+                    aria-label={`${tool.enabled ? 'Disable' : 'Enable'} ${tool.name}`}
+                />
+            </Td>
+            <Td><RiskChip capability={tool.capability} /></Td>
+            <Td>
+                <div className={styles.tool_cell}>
+                    <button type="button" className={styles.tool_name_button} onClick={() => onSelect(tool)}>
+                        {tool.name}
                     </button>
-                </Td>
-                <Td>
-                    <div className={styles.tool_cell}>
-                        <span className={styles.tool_name}>{tool.name}</span>
-                        {hasOverride && <Badge tone="info">override</Badge>}
-                    </div>
-                    <div className={styles.tool_desc}>{tool.description}</div>
-                </Td>
-                <Td muted>{tool.provider}</Td>
-                <Td><CapabilityBadges capability={tool.capability} /></Td>
-                <Td>
-                    <Switch
-                        on={tool.enabled}
-                        onChange={(next) => onToggle(tool.name, next)}
-                        disabled={busy}
-                        aria-label={`${tool.enabled ? 'Disable' : 'Enable'} ${tool.name}`}
-                    />
-                </Td>
-            </Tr>
-            {open && (
-                <Tr isExpanded>
-                    <Td colSpan={columnCount}>
-                        <ToolPolicyEditor
-                            tool={tool}
-                            override={override}
-                            usage={usage}
-                            defaults={defaults}
-                            onChanged={onPolicyChanged}
-                        />
-                    </Td>
-                </Tr>
-            )}
-        </>
+                    {hasOverride && <Badge tone="info">override</Badge>}
+                </div>
+            </Td>
+            <Td><span className={styles.tool_teaser}>{tool.description}</span></Td>
+            <Td muted>{tool.provider}</Td>
+        </Tr>
     );
 }

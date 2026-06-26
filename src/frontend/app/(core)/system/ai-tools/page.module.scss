@@ -219,26 +219,6 @@
     min-width: 0;
 }
 
-/* Chevron toggle in the Tools row that discloses the inline policy editor.
- * Bare (borderless) so it reads as an affordance on the row, not a button
- * competing with the enable switch. */
-.expand_button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--icon-button-bare-padding-md);
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--color-text-muted);
-    border-radius: var(--icon-button-bare-border-radius);
-    transition: color var(--transition-base);
-}
-
-.expand_button:hover {
-    color: var(--color-text);
-}
-
 /* Inline per-tool policy editor revealed under an expanded Tools row. Declares a
  * container so the field grid reflows to the editor's own width, not the
  * viewport — correct inside the slideout/modal contexts this dashboard renders
@@ -410,4 +390,287 @@
     .trifecta_legs {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
+}
+
+/* ============================================================================
+ * REGISTRY LIST — TRIAGE LAYOUT
+ *
+ * Risk + enabled-state lead each row; the full description, schema, and policy
+ * editor live in the slide-over (see .detail below), so the row carries only a
+ * one-line teaser. The whole row opens the slide-over.
+ * ========================================================================== */
+
+/* Row reads as interactive — clicking it opens the detail slide-over. */
+.tool_row {
+    cursor: pointer;
+}
+
+/* Tool name rendered as a bare button so it is keyboard-focusable and opens the
+ * slide-over without an extra control competing on the row. */
+.tool_name_button {
+    padding: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    text-align: left;
+}
+
+.tool_name_button:hover {
+    color: var(--color-primary);
+    text-decoration: underline;
+}
+
+/* One-line description teaser: clamp to a single line with an ellipsis so a long
+ * model-facing description never blows the row height — the full text lives in
+ * the slide-over. */
+.tool_teaser {
+    display: block;
+    max-width: 52ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+/* Search input in the filter bar: grow to fill, but keep a sane floor so it does
+ * not collapse beside the risk pills when the bar wraps. */
+.search_input {
+    flex: 1 1 16rem;
+    min-width: 12rem;
+}
+
+/* Risk-class filter pills. */
+.risk_filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+    align-items: center;
+}
+
+.risk_filter {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--padding-2xs) var(--padding-sm);
+    border-radius: var(--radius-full);
+    border: var(--chip-border);
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: var(--chip-transition);
+}
+
+.risk_filter:hover {
+    color: var(--color-text);
+}
+
+.risk_filter--active {
+    background: var(--color-primary-alpha-15);
+    border-color: var(--color-primary-alpha-38);
+    color: var(--color-text);
+}
+
+/* ============================================================================
+ * TOOL DETAIL — SLIDE-OVER BODY
+ * ========================================================================== */
+
+.detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+/* Always-on context strip above the tabs: provider + enable toggle, then the
+ * full capability badge breakdown. */
+.detail_meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.detail_meta_row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-md);
+}
+
+/* Tab switcher reuses the global .segmented-control; this only keeps it hugging
+ * its content rather than stretching across the panel. */
+.detail_tabs {
+    align-self: flex-start;
+    max-width: 100%;
+}
+
+/* Full model-facing description: preserve the author's line breaks and keep a
+ * readable measure so the prose the model selects on is legible in full. */
+.detail_description {
+    margin: 0;
+    white-space: pre-wrap;
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-relaxed);
+    color: var(--color-text);
+    max-width: var(--max-width-prose);
+}
+
+/* Schema tab: one card per parameter. */
+.schema_list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.schema_param {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    padding: var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+}
+
+.schema_param_head {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+.schema_param_name {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.schema_param_desc {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+/* ============================================================================
+ * SHARED DETAIL SURFACES — invocation + approval slide-over bodies
+ *
+ * Both the Activity record panel and the Approvals panel render the same shapes:
+ * a meta strip, labelled fact rows, a JSON argument block, and tone-coded
+ * sections. Classes live here so the two panels read identically.
+ * ========================================================================== */
+
+/* A titled block within a detail panel. */
+.detail_section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+}
+
+.detail_section_title {
+    font-size: var(--font-size-caption);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text-subtle);
+}
+
+/* Label/value fact grid (a definition list). Labels hug their content; values
+ * take the rest and wrap long ids. */
+.kv {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--gap-2xs) var(--gap-md);
+    align-items: baseline;
+    margin: 0;
+}
+
+.kv_label {
+    font-size: var(--font-size-caption);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text-subtle);
+}
+
+.kv_value {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    word-break: break-word;
+}
+
+/* Pretty-printed JSON arguments — scrolls rather than stretching the panel. */
+.args_block {
+    margin: 0;
+    padding: var(--padding-sm);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono, monospace);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 20rem;
+    overflow: auto;
+}
+
+/* Forensic error block (sanitized + raw), tinted danger. */
+.detail_error {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    padding: var(--padding-sm);
+    border-radius: var(--radius-sm);
+    background: var(--color-danger-alpha-18);
+    border: var(--border-width-thin) solid var(--color-danger-alpha-50);
+    color: var(--color-danger-text);
+    font-size: var(--font-size-body-sm);
+    word-break: break-word;
+}
+
+/* High-stakes caution above an approval's actions (irreversible / spends money /
+ * external). */
+.detail_caution {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap-sm);
+    padding: var(--alert-padding);
+    border-radius: var(--radius-md);
+    background: var(--color-warning-alpha-15);
+    border: var(--border-width-thin) solid var(--color-warning-alpha-40);
+    color: var(--color-warning-text);
+    font-size: var(--font-size-body-sm);
+}
+
+/* Action row at the foot of the approval panel. */
+.detail_actions {
+    display: flex;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+/* Bulk-action bar above the approvals table. */
+.bulk_bar {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+/* Degraded trifecta banner shown when the status could not be evaluated — an
+ * absent banner must never read as "safe". */
+.trifecta_degraded {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-warning-text);
+}
+
+/* Pagination row under a feed table. */
+.pager {
+    display: flex;
+    justify-content: flex-end;
 }
