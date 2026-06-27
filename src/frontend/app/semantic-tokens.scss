@@ -338,6 +338,20 @@
     --toast-action-font-size: var(--font-size-sm);        /* 0.85rem */
     --toast-dismiss-size: 28px;
 
+    /* Toast - Collated stack (deck)
+       When more than one toast is visible they pile up as an overlapping deck
+       (newest in front, older cards peeking behind and scaled back) instead of
+       a tall vertical column, conserving screen space. Hover or keyboard focus
+       fans the deck out so older cards' titles and dismiss controls stay
+       reachable. These steps drive ToastProvider.module.css. */
+    --toast-stack-offset-collapsed: var(--spacing-6);  /* 13.6px peek per card */
+    --toast-stack-offset-expanded: var(--spacing-15);  /* 48px fan gap on hover/focus */
+    --toast-stack-scale-step: 0.05;                    /* each deeper card shrinks 5% */
+    --toast-stack-opacity-step: 0.16;                  /* each deeper card dims 16% */
+    --toast-stack-transition:
+        transform var(--duration-slide) cubic-bezier(0.16, 1, 0.3, 1),
+        opacity var(--duration-slide) ease;
+
     /* ========================================================================
      * LAYOUT UTILITY TOKENS
      * ======================================================================== */

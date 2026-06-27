@@ -9,11 +9,15 @@
     position: fixed;
     bottom: var(--toast-viewport-position-bottom);
     right: var(--toast-viewport-position-right);
+    width: var(--toast-viewport-max-width);
+    max-width: var(--toast-viewport-max-width);
+    z-index: var(--toast-viewport-z-index);
+    /* The newest toast renders in normal flow and anchors the corner; older
+       toasts are lifted out of flow and stacked behind it as a collated deck
+       (see the :nth-last-child rules below), so the viewport only ever occupies
+       the height of a single card no matter how many toasts are queued. */
     display: flex;
     flex-direction: column;
-    gap: var(--toast-viewport-gap);
-    z-index: var(--toast-viewport-z-index);
-    max-width: var(--toast-viewport-max-width);
 }
 
 .item {
@@ -26,6 +30,11 @@
     border: var(--toast-item-border-width) solid;
     box-shadow: var(--toast-item-shadow);
     backdrop-filter: var(--toast-item-backdrop-filter);
+    /* Scaling toward the corner keeps the deck bottom-aligned; the transition
+       animates a card smoothly as a newer toast pushes it deeper into the deck
+       or as hover/focus fans the deck open. */
+    transform-origin: bottom center;
+    transition: var(--toast-stack-transition);
     animation: slideIn var(--duration-slide) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -37,6 +46,87 @@
     to {
         opacity: 1;
         transform: translateX(0);
+    }
+}
+
+/* ------------------------------------------------------------------------
+ * Collated deck
+ *
+ * The newest toast is the last child and stays in flow, fully opaque and at
+ * full scale in front. Older toasts (:not(:last-child)) are absolutely
+ * positioned, anchored to the same bottom edge, then lifted and shrunk by
+ * depth so each peeks above the card in front of it. A single toast is its own
+ * last-child, so no overlap rules apply — the deck only forms with two or more.
+ * ------------------------------------------------------------------------ */
+.item:last-child {
+    position: relative;
+    z-index: 5;
+}
+
+.item:not(:last-child) {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.item:nth-last-child(2) {
+    z-index: 4;
+    opacity: calc(1 - 1 * var(--toast-stack-opacity-step));
+    transform: translateY(calc(-1 * var(--toast-stack-offset-collapsed)))
+        scale(calc(1 - 1 * var(--toast-stack-scale-step)));
+}
+
+.item:nth-last-child(3) {
+    z-index: 3;
+    opacity: calc(1 - 2 * var(--toast-stack-opacity-step));
+    transform: translateY(calc(-2 * var(--toast-stack-offset-collapsed)))
+        scale(calc(1 - 2 * var(--toast-stack-scale-step)));
+}
+
+.item:nth-last-child(4) {
+    z-index: 2;
+    opacity: calc(1 - 3 * var(--toast-stack-opacity-step));
+    transform: translateY(calc(-3 * var(--toast-stack-offset-collapsed)))
+        scale(calc(1 - 3 * var(--toast-stack-scale-step)));
+}
+
+/* Cards deeper than the visible deck collapse fully behind it so a long queue
+   of persistent toasts never grows into a tall tower. */
+.item:nth-last-child(n + 5) {
+    z-index: 1;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(calc(-3 * var(--toast-stack-offset-collapsed)))
+        scale(calc(1 - 3 * var(--toast-stack-scale-step)));
+}
+
+/* Hover or keyboard focus fans the visible deck apart so each card's title and
+   dismiss button clear the card in front of it and stay reachable. */
+.viewport:hover .item:nth-last-child(2),
+.viewport:focus-within .item:nth-last-child(2) {
+    opacity: 1;
+    transform: translateY(calc(-1 * var(--toast-stack-offset-expanded))) scale(1);
+}
+
+.viewport:hover .item:nth-last-child(3),
+.viewport:focus-within .item:nth-last-child(3) {
+    opacity: 1;
+    transform: translateY(calc(-2 * var(--toast-stack-offset-expanded))) scale(1);
+}
+
+.viewport:hover .item:nth-last-child(4),
+.viewport:focus-within .item:nth-last-child(4) {
+    opacity: 1;
+    transform: translateY(calc(-3 * var(--toast-stack-offset-expanded))) scale(1);
+}
+
+/* Respect users who ask for reduced motion: keep the deck layout but drop the
+   entrance and restack animation. */
+@media (prefers-reduced-motion: reduce) {
+    .item {
+        animation: none;
+        transition: none;
     }
 }
 
