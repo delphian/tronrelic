@@ -39,6 +39,25 @@ import { describeCron, formatRelativeTime, getMsUntilNextCron, formatTimeUntil }
 import { PromptEditModal } from './PromptEditModal';
 import styles from './SavedPromptsPanel.module.scss';
 
+/**
+ * How often (ms) the open panel re-renders so the "next run" countdown and the
+ * "last run … ago" relative times advance without a manual refresh. One second
+ * keeps the sub-minute countdown smooth; the work is a cheap re-render over a
+ * short list, gated to while the panel is open.
+ */
+const TICK_MS = 1000;
+
+/**
+ * How often (ms) the open panel refetches the saved-prompt list while at least
+ * one schedule is active, so a `lastRunAt` written by the backend
+ * `ai-tools:run-scheduled-prompts` job appears without a page refresh. There is
+ * no WebSocket signal for a scheduled run, so this poll is the refresh channel;
+ * the backend job ticks every two minutes, so a 30s cadence surfaces a new run
+ * within at most 30s while staying light. Gated to active schedules so an
+ * all-manual prompt list never polls.
+ */
+const RUN_REFRESH_MS = 30_000;
+
 interface SavedPromptsPanelProps {
     /** Shared saved-prompts list, owned by the parent Query tab. */
     prompts: ISavedPrompt[];
@@ -71,6 +90,13 @@ export function SavedPromptsPanel({
     const [loading, setLoading] = useState(false);
     const [saveName, setSaveName] = useState('');
     const loadedRef = useRef(false);
+    /**
+     * Wall-clock used to derive the live "next run" countdown and "last run …
+     * ago" labels. Ticked while the panel is open so both advance on their own;
+     * only read inside the open panel body, which renders solely after a user
+     * opens it, so there is no SSR hydration concern.
+     */
+    const [now, setNow] = useState(() => Date.now());
 
     /** First-open fetch. Later opens reuse the parent's list (kept fresh on writes). */
     const loadPrompts = useCallback(async () => {
@@ -90,6 +116,38 @@ export function SavedPromptsPanel({
             void loadPrompts();
         }
     }, [open, loadPrompts]);
+
+    /**
+     * Whether any prompt carries a live (non-paused, valid-looking) cron. Drives
+     * the run-refresh poll gate so an all-manual list never polls the backend.
+     */
+    const hasActiveSchedule = prompts.some(
+        sp => !!sp.cron && sp.cron.trim().length > 0 && sp.scheduleEnabled !== false
+    );
+
+    // Advance `now` once a second while the panel is open so the next-run
+    // countdown and the last-run relative labels update on their own. The
+    // interval is the only writer, torn down on close/unmount.
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+        setNow(Date.now());
+        const id = setInterval(() => setNow(Date.now()), TICK_MS);
+        return () => clearInterval(id);
+    }, [open]);
+
+    // Refetch the prompt list while the panel is open and a schedule is live, so
+    // a backend-written `lastRunAt` surfaces without a manual refresh. Gated on
+    // `hasActiveSchedule` (a primitive, so the effect re-subscribes only when the
+    // gate flips, not on every list refresh) to keep an all-manual list quiet.
+    useEffect(() => {
+        if (!open || !hasActiveSchedule) {
+            return;
+        }
+        const id = setInterval(() => { void loadPrompts(); }, RUN_REFRESH_MS);
+        return () => clearInterval(id);
+    }, [open, hasActiveSchedule, loadPrompts]);
 
     /** Persist a new prompt with the current composer text. */
     const handleSave = useCallback(async () => {
@@ -254,7 +312,9 @@ export function SavedPromptsPanel({
                     // a "next run" there would mislead. getMsUntilNextCron returns null on
                     // an unparseable expression, which also suppresses the line.
                     const scheduleActive = !!sp.cron && sp.cron.trim().length > 0 && sp.scheduleEnabled !== false;
-                    const msUntilNextRun = scheduleActive ? getMsUntilNextCron(sp.cron as string, Date.now()) : null;
+                    // `now` is ticked each second while open, so this re-derives
+                    // and the countdown advances on its own.
+                    const msUntilNextRun = scheduleActive ? getMsUntilNextCron(sp.cron as string, now) : null;
                     return (
                     <li key={sp.id} className={`${styles.row} ${sp.lastRunError ? styles.row_error : ''}`}>
                         <div className={styles.row_main}>
@@ -267,18 +327,17 @@ export function SavedPromptsPanel({
                             >
                                 {sp.name}
                             </button>
-                            {(sp.lastRunAt || msUntilNextRun !== null) && (
-                                <div className={styles.row_meta}>
-                                    {/* A scheduled prompt that has yet to fire says so rather
-                                        than omitting the last-run line — the meta row only
-                                        renders here when a schedule is active, so the falsy
-                                        branch always means "scheduled, not yet run". */}
-                                    {sp.lastRunAt
-                                        ? <span>Last run {formatRelativeTime(sp.lastRunAt)}</span>
-                                        : <span>Never run yet</span>}
-                                    {msUntilNextRun !== null && <span>Next run {formatTimeUntil(msUntilNextRun)}</span>}
-                                </div>
-                            )}
+                            <div className={styles.row_meta}>
+                                {/* Last run always shows — including for a prompt with no
+                                    active schedule — so an operator can see when a prompt
+                                    last fired regardless of whether it is currently cron-
+                                    enabled; "Never run yet" covers the not-yet-fired case.
+                                    Next run shows only for a live schedule. */}
+                                {sp.lastRunAt
+                                    ? <span>Last run {formatRelativeTime(sp.lastRunAt)}</span>
+                                    : <span>Never run yet</span>}
+                                {msUntilNextRun !== null && <span>Next run {formatTimeUntil(msUntilNextRun)}</span>}
+                            </div>
                         </div>
                         <div className={styles.row_actions}>
                             {renderScheduleChip(sp)}

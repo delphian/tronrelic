@@ -37,13 +37,28 @@ const sizeClass: Record<SwitchSize, string> = {
 
 /**
  * Icon pixel sizes aligned to the design-system `--icon-size-*` ladder in
- * primitives.scss (sm=18, md=20, lg=24). Hardcoded here because CSS custom
- * properties can't be read synchronously by the lucide-react `size` prop.
+ * primitives.scss — one rung larger than the old mapping (sm=`--icon-size-md`,
+ * md=`--icon-size-lg`, lg=`--icon-size-xl`) so the toggle reads as a deliberate
+ * control rather than a faint glyph. The previous 18/20/24 ladder was too small
+ * to communicate state at a glance in a dense table row. Hardcoded here because
+ * CSS custom properties can't be read synchronously by the lucide-react `size`
+ * prop.
  */
 const iconSize: Record<SwitchSize, number> = {
-    sm: 18,
-    md: 20,
-    lg: 24
+    sm: 20,
+    md: 24,
+    lg: 32
+};
+
+/**
+ * Stroke weights per state. A heavier stroke when `on` makes the active
+ * (success-colored) toggle visually assertive, while the lighter `off` stroke
+ * keeps an inactive control quiet — so the two states differ in weight as well
+ * as color and knob position, the redundancy the old single-weight icon lacked.
+ */
+const strokeWidth: Record<'on' | 'off', number> = {
+    on: 2.5,
+    off: 2
 };
 
 /**
@@ -81,7 +96,7 @@ export function Switch({
                 }
             }}
         >
-            <Icon size={iconSize[size]} />
+            <Icon size={iconSize[size]} strokeWidth={on ? strokeWidth.on : strokeWidth.off} />
         </button>
     );
 }

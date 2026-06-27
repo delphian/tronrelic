@@ -4,8 +4,9 @@
  * @fileoverview Registry tab — every registered tool with provider attribution,
  * a single dominant risk chip, and an enable toggle, plus the Provider panel.
  * The list is built for triage: risk and enabled-state lead, a search box and
- * per-class risk filters narrow it, and the default sort surfaces the most
- * dangerous tools first. Clicking a row opens a right slide-over holding the
+ * per-class risk filters narrow it, and the default sort keeps enabled tools at
+ * the top (disabled tools sink to the bottom) with the most dangerous tools
+ * first within each group. Clicking a row opens a right slide-over holding the
  * full model-facing description, the input schema, and the per-tool policy
  * editor — the heavy surfaces that used to bloat each row. Toggling a tool or
  * saving a policy override re-checks the trifecta via the `onChanged` callback
@@ -121,8 +122,10 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
     const disabledCount = tools.filter(tool => !tool.enabled).length;
     const toolsSummary = `${tools.length} tools · ${disabledCount} disabled · ${overrideCount} overrides`;
 
-    // Apply the three filters, then sort dangerous-first (then by name) so an
-    // audit sweep meets the high-stakes tools at the top.
+    // Apply the three filters, then sort: enabled tools first so the live set
+    // an operator acts on stays together at the top and disabled tools sink to
+    // the bottom; within each group, dangerous-first (then by name) so an audit
+    // sweep still meets the high-stakes tools at the top of the active list.
     const query = search.trim().toLowerCase();
     const visibleTools = tools
         .filter(tool => !onlyOverrides || policy.overrides[tool.name] !== undefined)
@@ -132,6 +135,9 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
             || tool.description.toLowerCase().includes(query)
             || tool.provider.toLowerCase().includes(query))
         .sort((a, b) => {
+            if (a.enabled !== b.enabled) {
+                return a.enabled ? -1 : 1;
+            }
             const byRisk = riskRankOf(b.capability) - riskRankOf(a.capability);
             return byRisk !== 0 ? byRisk : a.name.localeCompare(b.name);
         });
