@@ -582,6 +582,9 @@
         align-items: stretch;
     }
     .filter_field {
+        // Column .filter_bar makes flex-basis act on the main (vertical) axis;
+        // reset to auto so the field sizes to its content instead of 240px tall.
+        flex-basis: auto;
         max-width: none;
     }
     .field_row {
