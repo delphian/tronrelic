@@ -8,3 +8,4 @@ export * from './token-model.js';
 export * from './delegation-flow-model.js';
 export * from './contract-activity-model.js';
 export * from './system-config-model.js';
+export * from './core-network-activity-rollup-model.js';

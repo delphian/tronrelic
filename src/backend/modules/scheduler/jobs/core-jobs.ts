@@ -17,6 +17,11 @@ import { UsdtParametersFetcher } from '../../usdt-parameters/usdt-parameters-fet
 import { SystemLogService } from '../../logs/index.js';
 import { SystemConfigService } from '../../../services/system-config/index.js';
 import { CacheModel, type CacheDoc } from '../../../database/models/cache-model.js';
+import {
+    CoreNetworkActivityRollupModel,
+    CORE_NETWORK_ACTIVITY_ROLLUPS_COLLECTION
+} from '../../../database/models/core-network-activity-rollup-model.js';
+import { runOverviewRollup } from '../../blockchain/overview-rollup.job.js';
 import { SchedulerService } from '../services/scheduler.service.js';
 
 /**
@@ -39,6 +44,9 @@ export async function registerCoreJobs(
 ): Promise<void> {
     // Register CacheModel for cache cleanup job
     database.registerModel('caches', CacheModel);
+
+    // Register the network-activity rollup model so its unique index is built.
+    database.registerModel(CORE_NETWORK_ACTIVITY_ROLLUPS_COLLECTION, CoreNetworkActivityRollupModel);
 
     // Inject database into BlockchainService before first getInstance() call
     BlockchainService.setDependencies(database);
@@ -66,6 +74,19 @@ export async function registerCoreJobs(
     scheduler.register('blockchain:prune', '0 * * * *', async () => {
         await blockchainService.pruneOldTransactions(24 * 7, 2);
     });
+
+    // Network-activity rollup: every 5 minutes. Pre-aggregates the
+    // transactions/transfers/volume buckets backing the core:network-activity
+    // widget so the request path is a cheap read instead of a live week-long
+    // aggregation. Each run recomputes only a bounded recent window and backfills
+    // one chunk of history, so it never scans the full window in a single pass.
+    scheduler.register('network-activity:rollup', '*/5 * * * *', async () => {
+        await runOverviewRollup(database);
+    });
+
+    // Kick one rollup now (fire-and-forget) so the widget has data without
+    // waiting for the first cron tick; the job catches and logs its own errors.
+    void runOverviewRollup(database);
 
     // Cache cleanup: every hour
     scheduler.register('cache:cleanup', '0 * * * *', async () => {

@@ -7,6 +7,7 @@ import { ProcessedTransaction } from '@/types';
 import { TransactionModel, type TransactionDoc, type TransactionFields } from '../../database/models/transaction-model.js';
 import { SyncStateModel, type SyncStateDoc, type SyncStateFields } from '../../database/models/sync-state-model.js';
 import { BlockModel, type BlockDoc, type BlockStats, type BlockFields } from '../../database/models/block-model.js';
+import { CORE_NETWORK_ACTIVITY_ROLLUPS_COLLECTION, type CoreNetworkActivityRollupFields } from '../../database/models/core-network-activity-rollup-model.js';
 import { DelegationFlowModel, ContractActivityModel, TokenModel } from '../../database/models/index.js';
 import { QueueService } from '../../services/queue.service.js';
 import { blockchainConfig } from '../../config/blockchain.js';
@@ -523,133 +524,55 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
-     * Build the combined network-activity overview series for a window.
+     * Read the pre-computed network-activity overview series for a window.
      *
-     * Why: the core `core:network-activity` widget plots transactions, native
-     * transfers, and native TRX transfer volume on one chart, toggled
-     * client-side between the three. Counts are read from the pre-aggregated
-     * `blocks` collection (cheap); TRX volume is not stored per block, so it is
-     * summed from `amountTRX` over `TransferContract` rows in the
-     * `transactions` collection. The two aggregations run in parallel and merge
-     * by bucket key.
+     * Backs the core `core:network-activity` widget — transactions, native
+     * transfers, and native TRX transfer volume per bucket. The series is
+     * pre-aggregated by the `network-activity:rollup` scheduler job into the
+     * `core_network_activity_rollups` collection (see {@link runOverviewRollup}),
+     * so this read is a bounded fetch of at most 168 small documents rather than
+     * a live aggregation over the multi-million-row transactions collection.
+     * That live aggregation previously exceeded the SSR widget resolver's
+     * 5-second budget, so the resolver silently dropped the widget from the page;
+     * reading pre-baked buckets keeps the request well inside the budget.
      *
-     * Volume is intentionally native-TRX only: `TriggerSmartContract`
-     * (USDT/TRC20) carries the token amount in ABI-encoded contract data, not
-     * `amountTRX`, so it is excluded rather than silently under-counted. The
-     * `{ type, timestamp }` index serves the volume aggregation; `{ timestamp }`
-     * serves the block aggregation.
+     * Results anchor on the latest stored bucket (sort descending, take N, then
+     * reverse to chronological), so the series stays correct even when sync lags.
      *
-     * @param window - `1h` (per-minute buckets, 60 points) or `24h`/`7d`
-     *   (hourly buckets, 24/168 points). Matches the widget's window toggle.
+     * @param window - `1h` (minute buckets, 60 points) or `24h`/`7d` (hourly
+     *   buckets, 24/168 points). Matches the widget's window toggle.
      * @returns Buckets sorted chronologically; each carries all three metrics.
      */
     async getOverviewTimeseries(window: '1h' | '24h' | '7d') {
-        const WINDOW_SPECS: Record<'1h' | '24h' | '7d', { ms: number; format: string }> = {
-            '1h': { ms: 60 * 60 * 1000, format: '%Y-%m-%d %H:%M' },
-            '24h': { ms: 24 * 60 * 60 * 1000, format: '%Y-%m-%d %H:00' },
-            '7d': { ms: 7 * 24 * 60 * 60 * 1000, format: '%Y-%m-%d %H:00' }
+        const WINDOW_SPECS: Record<'1h' | '24h' | '7d', { bucketType: 'minute' | 'hourly'; count: number }> = {
+            '1h': { bucketType: 'minute', count: 60 },
+            '24h': { bucketType: 'hourly', count: 24 },
+            '7d': { bucketType: 'hourly', count: 168 }
         };
         const spec = WINDOW_SPECS[window];
         if (!spec) {
             throw new Error(`getOverviewTimeseries: unsupported window '${window}'`);
         }
 
-        // Cache the assembled series in Redis for 60s, keyed by window. The 7d
-        // volume aggregation sums non-indexed `amountTRX` over every
-        // `TransferContract` row in range — an index-supported match that still
-        // fetches each matched document — so concurrent SSR/widget callers would
-        // otherwise repeat a heavy fetch-and-sum. 60s staleness is acceptable:
-        // the frontend already refetches at 60s and the return shape is plain
-        // JSON. A cache fault degrades to the live query rather than failing.
-        const cacheKey = `${env.REDIS_NAMESPACE}:overview-timeseries:${window}`;
-        try {
-            const cached = await this.redis.get(cacheKey);
-            if (cached) {
-                return JSON.parse(cached) as Array<{ date: string; transactions: number; transfers: number; volume: number }>;
-            }
-        } catch (error) {
-            logger.warn({ error, window }, 'Overview timeseries cache read failed; querying live');
-        }
+        const rollups = BlockchainService.getDatabase().getCollection<CoreNetworkActivityRollupFields>(
+            CORE_NETWORK_ACTIVITY_ROLLUPS_COLLECTION
+        );
+        const rows = await rollups
+            .find({ bucketType: spec.bucketType })
+            .sort({ bucketStart: -1 })
+            .limit(spec.count)
+            .toArray();
 
-        const startDate = new Date(Date.now() - spec.ms);
-        const database = BlockchainService.getDatabase();
-        const blocksCollection = database.getCollection<BlockDoc>(BlockchainService.BLOCKS_COLLECTION);
-        const transactionsCollection = database.getCollection<TransactionDoc>(BlockchainService.TRANSACTIONS_COLLECTION);
-
-        interface CountBucket { _id: string; transactions: number; transfers: number; }
-        interface VolumeBucket { _id: string; volume: number; }
-
-        const [countRows, volumeRows] = await Promise.all([
-            blocksCollection
-                .aggregate<CountBucket>([
-                    { $match: { timestamp: { $gte: startDate } } },
-                    {
-                        $group: {
-                            _id: { $dateToString: { format: spec.format, date: '$timestamp' } },
-                            transactions: { $sum: '$transactionCount' },
-                            transfers: { $sum: '$stats.transfers' }
-                        }
-                    }
-                ])
-                .toArray(),
-            transactionsCollection
-                .aggregate<VolumeBucket>([
-                    { $match: { type: 'TransferContract', timestamp: { $gte: startDate } } },
-                    {
-                        $group: {
-                            _id: { $dateToString: { format: spec.format, date: '$timestamp' } },
-                            volume: { $sum: '$amountTRX' }
-                        }
-                    }
-                ])
-                .toArray()
-        ]);
-
-        // Union the two aggregations by bucket key. Seed from the block counts,
-        // then layer volume on top — a bucket can have blocks but no native
-        // transfers (volume stays 0), and (rarely) vice versa — so default the
-        // absent side to 0 rather than dropping the bucket.
-        const buckets = new Map<string, { transactions: number; transfers: number; volume: number }>();
-        for (const row of countRows) {
-            buckets.set(row._id, { transactions: row.transactions, transfers: row.transfers, volume: 0 });
-        }
-        for (const row of volumeRows) {
-            const existing = buckets.get(row._id);
-            if (existing) {
-                existing.volume = row.volume;
-            } else {
-                buckets.set(row._id, { transactions: 0, transfers: 0, volume: row.volume });
-            }
-        }
-
-        const result = Array.from(buckets.entries())
-            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-            .map(([bucket, metrics]) => {
-                // MongoDB returns bucket keys like "2025-10-13 01:00" (UTC, no
-                // zone). Append seconds + 'Z' so they parse as UTC ISO — the same
-                // conversion getTransactionTimeseries uses.
-                let isoDate: string;
-                try {
-                    const parsed = new Date(`${bucket}:00Z`);
-                    isoDate = Number.isNaN(parsed.getTime()) ? bucket : parsed.toISOString();
-                } catch {
-                    isoDate = bucket;
-                }
-                return {
-                    date: isoDate,
-                    transactions: metrics.transactions,
-                    transfers: metrics.transfers,
-                    volume: Number(metrics.volume.toFixed(6))
-                };
-            });
-
-        try {
-            await this.redis.setex(cacheKey, 60, JSON.stringify(result));
-        } catch (error) {
-            logger.warn({ error, window }, 'Overview timeseries cache write failed');
-        }
-
-        return result;
+        // The read is newest-first (descending bucketStart); reverse to ascending
+        // chronological order for the chart.
+        return rows
+            .reverse()
+            .map((row) => ({
+                date: (row.bucketStart instanceof Date ? row.bucketStart : new Date(row.bucketStart)).toISOString(),
+                transactions: row.transactions ?? 0,
+                transfers: row.transfers ?? 0,
+                volume: row.volume ?? 0
+            }));
     }
 
     /**
