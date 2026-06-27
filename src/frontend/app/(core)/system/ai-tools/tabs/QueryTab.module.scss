@@ -516,18 +516,45 @@
     color: var(--color-text-muted);
 }
 
-/* Action column — hold the button at its intrinsic width so it never stretches. */
-.history_item_action {
+/* Action column — copy + "Open in chat" held at intrinsic width and right-aligned
+ * so the controls never stretch and stay aligned across every row. */
+.history_item_actions {
     justify-self: end;
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
     white-space: nowrap;
 }
 
+/* Prompt row — leading expand chevron pinned beside the prompt text. */
+.history_item_prompt_row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap-2xs);
+    min-width: 0;
+}
+
+/* Shrink-proof the chevron so a long prompt cannot squeeze the toggle out. */
+.history_item_expand {
+    flex-shrink: 0;
+}
+
 .history_item_prompt {
+    min-width: 0;
     font-size: var(--font-size-body-sm);
     color: var(--color-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Expanded — drop the single-line clamp so the entire opening prompt is readable
+ * inline, preserving its line breaks and breaking over-long unbroken tokens. */
+.history_item_prompt_expanded {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 .history_item_meta {

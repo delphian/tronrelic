@@ -265,7 +265,25 @@
 .bubbles {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-sm);
+    // The interleaved gap rails provide the inter-row spacing (and are the
+    // explicit top-level drop targets), so the flex container itself adds none.
+    gap: 0;
+}
+
+// Thin top-level drop target sitting between zone rows. Transparent at rest so
+// it reads only as spacing; on hover-while-dragging it opens up and shows a
+// dashed primary outline to signal "drop here to place at the zone level",
+// distinct from nesting into a layout group.
+.gap_rail {
+    height: var(--gap-sm);
+    border-radius: var(--radius-full);
+    transition: height var(--transition-base), background-color var(--transition-base);
+}
+
+.gap_rail--active {
+    height: var(--gap-lg);
+    background: var(--color-primary-alpha-15);
+    border: var(--border-width-medium) dashed var(--color-primary);
 }
 
 .bubble {
@@ -349,6 +367,8 @@
 .bubble_actions {
     display: inline-flex;
     align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
     gap: var(--gap-xs);
 }
 

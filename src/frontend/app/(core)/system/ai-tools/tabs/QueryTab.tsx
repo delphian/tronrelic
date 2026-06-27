@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { Send, Bot, User, AlertCircle, X, Copy, CheckCircle, Plus, History, MessageSquare, RefreshCw } from 'lucide-react';
+import { Send, Bot, User, AlertCircle, X, Copy, CheckCircle, Plus, History, MessageSquare, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
@@ -244,6 +244,8 @@ export function QueryTab() {
     const [historyError, setHistoryError] = useState<string | null>(null);
     /** Shared saved-prompts list; the panel loads it on first open and the composer reads it. */
     const [savedPrompts, setSavedPrompts] = useState<ISavedPrompt[]>([]);
+    /** Conversation ids whose full opening prompt is expanded inline in the history list. */
+    const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
 
     /** The queryId whose stream chunks the handler currently accepts. */
     const activeQueryIdRef = useRef<string | null>(null);
@@ -471,14 +473,18 @@ export function QueryTab() {
     }, [streaming]);
 
     /**
-     * Copy a turn's raw text to the clipboard, flashing a check on the button.
+     * Copy arbitrary text to the clipboard, flashing a check on whichever control
+     * triggered it. Shared by the transcript's per-turn copy and the history
+     * list's per-query copy so both surfaces get identical 2-second confirmation
+     * feedback from one timer and one piece of "last copied" state.
      *
-     * @param turn - The turn whose content to copy.
+     * @param id - Id of the control to flash (a turn id or a conversation id).
+     * @param text - The text to place on the clipboard.
      */
-    const handleCopyTurn = useCallback(async (turn: ChatTurn) => {
+    const handleCopy = useCallback(async (id: string, text: string) => {
         try {
-            await navigator.clipboard.writeText(turn.content);
-            setCopiedTurnId(turn.id);
+            await navigator.clipboard.writeText(text);
+            setCopiedTurnId(id);
             if (copyTimerRef.current) {
                 clearTimeout(copyTimerRef.current);
             }
@@ -490,6 +496,26 @@ export function QueryTab() {
         } catch {
             setError('Could not copy to clipboard');
         }
+    }, []);
+
+    /**
+     * Toggle whether a history row reveals its full opening prompt. The list
+     * truncates each prompt to one line by default; expanding drops the clamp so
+     * an operator can read or copy a long query in full without reopening the
+     * whole conversation. Tracked as a Set so several rows can stay open at once.
+     *
+     * @param conversationId - Id of the conversation row to expand or collapse.
+     */
+    const toggleExpanded = useCallback((conversationId: string) => {
+        setExpandedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(conversationId)) {
+                next.delete(conversationId);
+            } else {
+                next.add(conversationId);
+            }
+            return next;
+        });
     }, []);
 
     /** Load the grouped conversation history for the History view. */
@@ -695,7 +721,7 @@ export function QueryTab() {
                                                         variant="primary"
                                                         size="sm"
                                                         className={styles.turn_copy}
-                                                        onClick={() => { void handleCopyTurn(turn); }}
+                                                        onClick={() => { void handleCopy(turn.id, turn.content); }}
                                                         aria-label="Copy message to clipboard"
                                                     >
                                                         {copiedTurnId === turn.id ? <CheckCircle size={14} /> : <Copy size={14} />}
@@ -831,10 +857,28 @@ export function QueryTab() {
                         ? <div className={pageStyles.placeholder}>No conversations recorded yet.</div>
                         : (
                             <ul className={styles.history_list}>
-                                {conversations.map(group => (
+                                {conversations.map(group => {
+                                    const isExpanded = expandedIds.has(group.conversationId);
+                                    return (
                                     <li key={group.conversationId} className={styles.history_item}>
                                         <div className={styles.history_item_main}>
-                                            <span className={styles.history_item_prompt}>{group.firstPrompt}</span>
+                                            <div className={styles.history_item_prompt_row}>
+                                                <IconButton
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className={styles.history_item_expand}
+                                                    onClick={() => toggleExpanded(group.conversationId)}
+                                                    aria-expanded={isExpanded}
+                                                    aria-label={isExpanded ? 'Collapse query' : 'Expand full query'}
+                                                >
+                                                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                </IconButton>
+                                                <span
+                                                    className={`${styles.history_item_prompt} ${isExpanded ? styles.history_item_prompt_expanded : ''}`}
+                                                >
+                                                    {group.firstPrompt}
+                                                </span>
+                                            </div>
                                             <span className={styles.history_item_meta}>
                                                 <ClientTime date={group.lastAt} format="datetime" />
                                                 <span>· {group.turns} turn{group.turns === 1 ? '' : 's'}</span>
@@ -848,17 +892,27 @@ export function QueryTab() {
                                         >
                                             {formatUsd(group.costUsd)}
                                         </span>
-                                        <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            className={styles.history_item_action}
-                                            onClick={() => { void openConversation(group.conversationId); }}
-                                            aria-label={`Open conversation starting "${group.firstPrompt}" in chat`}
-                                        >
-                                            <MessageSquare size={16} /> Open in chat
-                                        </Button>
+                                        <div className={styles.history_item_actions}>
+                                            <IconButton
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => { void handleCopy(group.conversationId, group.firstPrompt); }}
+                                                aria-label="Copy query to clipboard"
+                                            >
+                                                {copiedTurnId === group.conversationId ? <CheckCircle size={14} /> : <Copy size={14} />}
+                                            </IconButton>
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                onClick={() => { void openConversation(group.conversationId); }}
+                                                aria-label={`Open conversation starting "${group.firstPrompt}" in chat`}
+                                            >
+                                                <MessageSquare size={16} /> Open in chat
+                                            </Button>
+                                        </div>
                                     </li>
-                                ))}
+                                    );
+                                })}
                             </ul>
                         )}
                 </Stack>

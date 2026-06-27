@@ -32,12 +32,13 @@ import {
     type FormEvent,
     type KeyboardEvent
 } from 'react';
-import { ChevronDown, ChevronUp, GripVertical, Pencil, Plus, RefreshCw, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, GripVertical, Pencil, Plus, RefreshCw, SlidersHorizontal, Trash2, Ungroup, X } from 'lucide-react';
 import {
     DndContext,
     KeyboardSensor,
     PointerSensor,
     closestCorners,
+    pointerWithin,
     useDroppable,
     useSensor,
     useSensors,
@@ -714,83 +715,110 @@ export default function WidgetsAdminPage() {
     );
 
     /**
-     * Persist a drag-end gesture across three move types: reorder within a
-     * list, move between zones, and nest into / detach from a layout-group
-     * container. The drop target decides which: a container's children
-     * region (`containerId` in the drop data) nests the widget; a child
-     * row nests it into that child's container; a zone or a top-level item
-     * places it directly in the zone, detaching it if it was nested.
+     * Collision strategy that lets the thin top-level "gap rails" win over the
+     * layout-group drop region they sit beside.
      *
-     * Each affected list (the source and, on a cross-list move, the
-     * destination) is renumbered sequentially (10, 20, 30…). The moved row
-     * additionally gets a `parentId` patch when its container changed
-     * (a string attaches — the backend then forces its zone and clears its
-     * routes — `null` detaches) and a `zoneId` patch on a plain zone move.
-     * The list is updated optimistically so the row snaps into place; a
-     * failed PATCH falls back to a refetch.
+     * A group's children region physically wraps the space directly under its
+     * container bubble, so the default `closestCorners` resolves a drag aimed
+     * just below the group to the group itself — re-nesting the widget instead
+     * of placing it below at the zone level. A gap rail is small, so it should
+     * only claim a drop when the pointer is literally inside it; we honour that
+     * by returning a gap hit from `pointerWithin` first and falling back to
+     * `closestCorners` everywhere else, leaving every other drop unchanged.
+     *
+     * @param args - dnd-kit collision arguments (droppable rects, pointer).
+     * @returns The single gap collision when the pointer is within one, else
+     *   the `closestCorners` result.
      */
-    const handleDragEnd = useCallback(
-        async (event: DragEndEvent): Promise<void> => {
-            const { active, over } = event;
-            if (!over) return;
-            const moved = placements.find(p => p.id === String(active.id));
-            if (!moved) return;
+    const collisionDetection = useCallback(
+        (args: Parameters<typeof closestCorners>[0]) => {
+            const gapHit = pointerWithin(args).find(hit => String(hit.id).startsWith('gap:'));
+            return gapHit ? [gapHit] : closestCorners(args);
+        },
+        []
+    );
 
-            const overData = over.data.current ?? {};
+    /**
+     * Whether a placement belongs to the list the operator is currently
+     * viewing. Only top-level zone lists are route-scoped, so a route filter
+     * must not renumber rows the operator cannot see; a container's children
+     * carry no route filter of their own and are always their full set.
+     *
+     * @param p - The placement to test against the active route filter.
+     * @returns True when the row is visible under the current route selection.
+     */
+    const placementVisibleInView = useCallback(
+        (p: IPlacement): boolean =>
+            selectedRoute === null
+                ? p.routes.length === 0
+                : placementMatchesRoute(p.routes, selectedRoute),
+        [selectedRoute]
+    );
 
-            // Resolve the destination list. A container drop region and a
-            // child row both name a container; anything else (zone droppable
-            // or top-level item) targets a zone directly.
-            let destContainerId: string | null = null;
-            let destZone: string | undefined;
-            if (typeof overData.containerId === 'string') {
-                destContainerId = overData.containerId;
-                destZone = overData.zoneId as string | undefined;
-            } else if (typeof overData.parentId === 'string') {
-                destContainerId = overData.parentId;
-                destZone = overData.zoneId as string | undefined;
-            } else {
-                destZone = (overData.zoneId as string | undefined) ?? String(over.id);
-            }
-            if (!destZone) return;
+    /**
+     * The ordered sibling list a row lives in — a container's children when
+     * `containerId` is set, otherwise the zone's visible top-level rows.
+     * Shared by drag-end, the gap rails, and the explicit move buttons so all
+     * three reorder against exactly the same list and ordering.
+     *
+     * @param containerId - Layout-group id for a child list, or null for the
+     *   zone's top-level list.
+     * @param zoneId - Zone whose top-level rows to gather (ignored for a child
+     *   list, which is keyed solely by container).
+     * @returns The matching placements sorted ascending by `order`.
+     */
+    const siblingList = useCallback(
+        (containerId: string | null, zoneId: string): IPlacement[] =>
+            (containerId
+                ? placements.filter(p => p.parentId === containerId)
+                : placements.filter(p => !p.parentId && p.zoneId === zoneId && placementVisibleInView(p))
+            ).sort((a, b) => a.order - b.order),
+        [placements, placementVisibleInView]
+    );
 
-            // A layout group is always top-level — never nest one.
-            if (moved.typeId === LAYOUT_GROUP_TYPE_ID) destContainerId = null;
-            // Dropping a container onto its own children region is a no-op.
+    /**
+     * Move a placement into a destination list and persist the result — the
+     * shared engine behind drag-drop, the gap rails, and the move buttons.
+     * Computes the source and (on a cross-list move) destination lists, inserts
+     * the row at the index the caller resolves, then renumbers each affected
+     * list sequentially (10, 20, 30…). The moved row additionally gets a
+     * `parentId` patch when its container changed (a string attaches — the
+     * backend then forces its zone and clears its routes — `null` detaches)
+     * and a `zoneId` patch on a plain zone move. The list updates optimistically
+     * so the row snaps into place; a failed PATCH falls back to a refetch.
+     *
+     * @param moved - The placement being relocated.
+     * @param requestedContainer - Destination layout-group id, or null for the
+     *   zone top level. Forced to null for a layout group (groups never nest)
+     *   and a no-op when it names the moved row itself.
+     * @param destZone - Destination zone id for the row.
+     * @param resolveInsertIdx - Given the destination list with the moved row
+     *   already excluded, returns the index to insert at. Callers express
+     *   intent (before a neighbour, after a container, append) without
+     *   duplicating the renumber logic.
+     */
+    const applyMove = useCallback(
+        async (
+            moved: IPlacement,
+            requestedContainer: string | null,
+            destZone: string,
+            resolveInsertIdx: (destListPrev: IPlacement[]) => number
+        ): Promise<void> => {
+            // A layout group is always top-level — never nest one. Dropping a
+            // container onto its own children region is a no-op.
+            const destContainerId = moved.typeId === LAYOUT_GROUP_TYPE_ID ? null : requestedContainer;
             if (destContainerId === moved.id) return;
 
             const sourceContainerId = moved.parentId ?? null;
             const srcKey = sourceContainerId ? `c:${sourceContainerId}` : `z:${moved.zoneId}`;
             const dstKey = destContainerId ? `c:${destContainerId}` : `z:${destZone}`;
             const sameList = srcKey === dstKey;
-            if (active.id === over.id && sameList) return;
 
-            // The visible-subset predicate constrains only top-level zone
-            // lists — route-scoped rows the operator isn't viewing must not
-            // be renumbered. A container's children carry no route filter of
-            // their own, so a child list is always its full set.
-            const visibleInView = (p: IPlacement): boolean =>
-                selectedRoute === null
-                    ? p.routes.length === 0
-                    : placementMatchesRoute(p.routes, selectedRoute);
-            const listFor = (containerId: string | null, zoneId: string): IPlacement[] =>
-                (containerId
-                    ? placements.filter(p => p.parentId === containerId)
-                    : placements.filter(p => !p.parentId && p.zoneId === zoneId && visibleInView(p))
-                ).sort((a, b) => a.order - b.order);
-
-            const sourceList = listFor(sourceContainerId, moved.zoneId);
+            const sourceList = siblingList(sourceContainerId, moved.zoneId);
             const sourceWithoutActive = sourceList.filter(p => p.id !== moved.id);
-            const destListPrev = sameList ? sourceWithoutActive : listFor(destContainerId, destZone);
+            const destListPrev = sameList ? sourceWithoutActive : siblingList(destContainerId, destZone);
 
-            const overIsArea =
-                typeof overData.containerId === 'string' || String(over.id) === destZone;
-            const insertIdx = overIsArea
-                ? destListPrev.length
-                : (() => {
-                    const target = destListPrev.findIndex(p => p.id === String(over.id));
-                    return target < 0 ? destListPrev.length : target;
-                })();
+            const insertIdx = Math.max(0, Math.min(resolveInsertIdx(destListPrev), destListPrev.length));
 
             const movedNext: IPlacement = {
                 ...moved,
@@ -864,7 +892,117 @@ export default function WidgetsAdminPage() {
                 void fetchAll(false);
             }
         },
-        [placements, selectedRoute, patchPlacement, notifyError, fetchAll]
+        [siblingList, patchPlacement, notifyError, fetchAll]
+    );
+
+    /**
+     * Translate a drag-end gesture into an `applyMove` call. The drop target
+     * decides the destination: a gap rail (`kind: 'gap'`) inserts at the zone
+     * top level before its anchor row; a container's children region or a child
+     * row nests into that container; a zone or a top-level item places directly
+     * in the zone, detaching the row if it was nested.
+     *
+     * @param event - dnd-kit drag-end event carrying the active and over nodes.
+     */
+    const handleDragEnd = useCallback(
+        async (event: DragEndEvent): Promise<void> => {
+            const { active, over } = event;
+            if (!over) return;
+            const moved = placements.find(p => p.id === String(active.id));
+            if (!moved) return;
+
+            const overData = over.data.current ?? {};
+
+            // A gap rail: a top-level insertion anchored before a specific row
+            // (or appended when its anchor is the trailing `end` rail).
+            // Resolving by the neighbour id keeps the index correct after the
+            // moved row is excluded from the destination list.
+            if (overData.kind === 'gap') {
+                const destZone = overData.zoneId as string;
+                const beforeId = overData.beforeId as string | null;
+                await applyMove(moved, null, destZone, destListPrev => {
+                    if (beforeId === null) return destListPrev.length;
+                    const i = destListPrev.findIndex(p => p.id === beforeId);
+                    return i < 0 ? destListPrev.length : i;
+                });
+                return;
+            }
+
+            // Resolve the destination list. A container drop region and a
+            // child row both name a container; anything else (zone droppable
+            // or top-level item) targets a zone directly.
+            let destContainerId: string | null = null;
+            let destZone: string | undefined;
+            if (typeof overData.containerId === 'string') {
+                destContainerId = overData.containerId;
+                destZone = overData.zoneId as string | undefined;
+            } else if (typeof overData.parentId === 'string') {
+                destContainerId = overData.parentId;
+                destZone = overData.zoneId as string | undefined;
+            } else {
+                destZone = (overData.zoneId as string | undefined) ?? String(over.id);
+            }
+            if (!destZone) return;
+
+            // Guard the self-drop: hovering a row's own slot resolves `over` to
+            // the moved row, which would otherwise append it to the list end.
+            const sourceContainerId = moved.parentId ?? null;
+            const sameList = (sourceContainerId ? `c:${sourceContainerId}` : `z:${moved.zoneId}`)
+                === (destContainerId ? `c:${destContainerId}` : `z:${destZone}`);
+            if (active.id === over.id && sameList) return;
+
+            const overIsArea =
+                typeof overData.containerId === 'string' || String(over.id) === destZone;
+            await applyMove(moved, destContainerId, destZone, destListPrev => {
+                if (overIsArea) return destListPrev.length;
+                const target = destListPrev.findIndex(p => p.id === String(over.id));
+                return target < 0 ? destListPrev.length : target;
+            });
+        },
+        [placements, applyMove]
+    );
+
+    /**
+     * Reorder a row one step within its current list (its layout group when
+     * nested, otherwise the zone's top-level list). Backs the up/down buttons
+     * that give a precise, keyboard-accessible alternative to dragging — the
+     * gesture hardest to land cleanly around a layout group.
+     *
+     * @param moved - The row to nudge.
+     * @param direction - 'up' moves it before its predecessor, 'down' after its
+     *   successor; boundary steps are ignored.
+     */
+    const moveWithinList = useCallback(
+        (moved: IPlacement, direction: 'up' | 'down'): void => {
+            const containerId = moved.parentId ?? null;
+            const list = siblingList(containerId, moved.zoneId);
+            const currentIdx = list.findIndex(p => p.id === moved.id);
+            if (currentIdx < 0) return;
+            const targetIdx = direction === 'up' ? currentIdx - 1 : currentIdx + 1;
+            if (targetIdx < 0 || targetIdx >= list.length) return;
+            void applyMove(moved, containerId, moved.zoneId, () => targetIdx);
+        },
+        [siblingList, applyMove]
+    );
+
+    /**
+     * Promote a nested child out of its layout group to the zone's top level,
+     * positioned immediately after its former container so it reads as "just
+     * below the group" — the exact move drag-and-drop makes cumbersome because
+     * the group's drop region owns the space beneath it.
+     *
+     * @param moved - The nested child to detach; a no-op if already top-level.
+     */
+    const moveOutOfGroup = useCallback(
+        (moved: IPlacement): void => {
+            const containerId = moved.parentId ?? null;
+            if (!containerId) return;
+            const topList = siblingList(null, moved.zoneId);
+            const containerIdx = topList.findIndex(p => p.id === containerId);
+            const insertIdx = containerIdx < 0 ? topList.length : containerIdx + 1;
+            void applyMove(moved, null, moved.zoneId, () => insertIdx);
+        },
+        [siblingList, applyMove]
     );
 
     /**
@@ -1122,7 +1260,7 @@ export default function WidgetsAdminPage() {
                     {!loading && zones && (
                         <DndContext
                             sensors={sensors}
-                            collisionDetection={closestCorners}
+                            collisionDetection={collisionDetection}
                             onDragEnd={handleDragEnd}
                         >
                             {grouped.map(track => (
@@ -1145,6 +1283,8 @@ export default function WidgetsAdminPage() {
                                                 onRestore={(p) => restoreDefaults(p.id)}
                                                 onSetWidth={(p, weight) => togglePlacement(p.id, { layoutWeight: weight })}
                                                 onLayoutChange={setZoneLayout}
+                                                onMoveWithinList={moveWithinList}
+                                                onMoveOutOfGroup={moveOutOfGroup}
                                             />
                                         ))}
                                     </div>
@@ -1176,6 +1316,10 @@ interface ZoneSectionProps {
     onRestore: (placement: IPlacement) => void;
     onSetWidth: (placement: IPlacement, weight: number | null) => void;
     onLayoutChange: (zoneId: string, config: IZoneLayoutConfig) => void;
+    /** Reorder a row one step within its current list (zone or group). */
+    onMoveWithinList: (placement: IPlacement, direction: 'up' | 'down') => void;
+    /** Promote a nested child to the zone top level, just below its group. */
+    onMoveOutOfGroup: (placement: IPlacement) => void;
 }
 
 /**
@@ -1202,7 +1346,9 @@ function ZoneSection({
     onDelete,
     onRestore,
     onSetWidth,
-    onLayoutChange
+    onLayoutChange,
+    onMoveWithinList,
+    onMoveOutOfGroup
 }: ZoneSectionProps) {
     const zoneInfo = lookupZone(zones, zoneId);
     const { setNodeRef, isOver } = useDroppable({ id: zoneId, data: { zoneId } });
@@ -1287,47 +1433,62 @@ function ZoneSection({
                             No placements in this zone — drag a widget here to place it.
                         </p>
                     ) : (
-                        topLevel.map(placement => {
-                            const isContainer = placement.typeId === LAYOUT_GROUP_TYPE_ID;
-                            const kids = isContainer
-                                ? childrenByParent.get(placement.id) ?? []
-                                : [];
-                            // A layout group carries its own arrangement in its
-                            // instanceConfig (default column); its children's
-                            // width control follows that, not the zone's.
-                            const groupDirection = placement.instanceConfig?.flexDirection;
-                            const groupIsRow = groupDirection === 'row' || groupDirection === 'row-reverse';
-                            return (
-                                <Fragment key={placement.id}>
-                                    <PlacementBubble
-                                        placement={placement}
-                                        typeInfo={lookupType(types, placement.typeId)}
-                                        busy={busyId === placement.id}
-                                        showWidth={zoneIsRow}
-                                        onToggleEnabled={onToggleEnabled}
-                                        onEdit={onEdit}
-                                        onDelete={onDelete}
-                                        onRestore={onRestore}
-                                        onSetWidth={onSetWidth}
-                                    />
-                                    {isContainer && (
-                                        <GroupDropArea
-                                            containerId={placement.id}
-                                            zoneId={zoneId}
-                                            childPlacements={kids}
-                                            types={types}
-                                            busyId={busyId}
-                                            showWidth={groupIsRow}
+                        <>
+                            {topLevel.map((placement, index) => {
+                                const isContainer = placement.typeId === LAYOUT_GROUP_TYPE_ID;
+                                const kids = isContainer
+                                    ? childrenByParent.get(placement.id) ?? []
+                                    : [];
+                                // A layout group carries its own arrangement in its
+                                // instanceConfig (default column); its children's
+                                // width control follows that, not the zone's.
+                                const groupDirection = placement.instanceConfig?.flexDirection;
+                                const groupIsRow = groupDirection === 'row' || groupDirection === 'row-reverse';
+                                return (
+                                    <Fragment key={placement.id}>
+                                        {/* Top-level insertion rail before this row. The
+                                            rail before the row after a group is the
+                                            "drop below the group" target; the rail before
+                                            a container is the "drop above the group" one. */}
+                                        <GapRail zoneId={zoneId} beforeId={placement.id} />
+                                        <PlacementBubble
+                                            placement={placement}
+                                            typeInfo={lookupType(types, placement.typeId)}
+                                            busy={busyId === placement.id}
+                                            showWidth={zoneIsRow}
+                                            isFirst={index === 0}
+                                            isLast={index === topLevel.length - 1}
+                                            onMoveUp={() => onMoveWithinList(placement, 'up')}
+                                            onMoveDown={() => onMoveWithinList(placement, 'down')}
                                             onToggleEnabled={onToggleEnabled}
                                             onEdit={onEdit}
                                             onDelete={onDelete}
                                             onRestore={onRestore}
                                             onSetWidth={onSetWidth}
                                         />
-                                    )}
-                                </Fragment>
-                            );
-                        })
+                                        {isContainer && (
+                                            <GroupDropArea
+                                                containerId={placement.id}
+                                                zoneId={zoneId}
+                                                childPlacements={kids}
+                                                types={types}
+                                                busyId={busyId}
+                                                showWidth={groupIsRow}
+                                                onToggleEnabled={onToggleEnabled}
+                                                onEdit={onEdit}
+                                                onDelete={onDelete}
+                                                onRestore={onRestore}
+                                                onSetWidth={onSetWidth}
+                                                onMoveWithinList={onMoveWithinList}
+                                                onMoveOutOfGroup={onMoveOutOfGroup}
+                                            />
+                                        )}
+                                    </Fragment>
+                                );
+                            })}
+                            {/* Trailing rail: drop here to append at the zone's end. */}
+                            <GapRail zoneId={zoneId} beforeId={null} />
+                        </>
                     )}
                 </div>
             </SortableContext>
@@ -1360,6 +1521,20 @@ interface PlacementBubbleProps {
      * control is hidden in a column arrangement where it would be inert noise.
      */
     showWidth: boolean;
+    /** Whether this row is first in its list, disabling the "move up" button. */
+    isFirst: boolean;
+    /** Whether this row is last in its list, disabling the "move down" button. */
+    isLast: boolean;
+    /** Reorder this row up one step within its current list. */
+    onMoveUp: () => void;
+    /** Reorder this row down one step within its current list. */
+    onMoveDown: () => void;
+    /**
+     * Promote this row out of its layout group to the zone top level. Provided
+     * only for nested child rows; top-level rows omit it and render no
+     * move-out control.
+     */
+    onMoveOut?: () => void;
 }
 
 /**
@@ -1419,6 +1594,10 @@ function PlacementBubble({
     typeInfo,
     busy,
     showWidth,
+    isFirst,
+    isLast,
+    onMoveUp,
+    onMoveDown,
     onToggleEnabled,
     onEdit,
     onDelete,
@@ -1474,6 +1653,24 @@ function PlacementBubble({
                 </div>
             </div>
             <div className={styles.bubble_actions}>
+                <IconButton
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Move ${label} up`}
+                    onClick={onMoveUp}
+                    disabled={busy || isFirst}
+                >
+                    <ArrowUp size={14} />
+                </IconButton>
+                <IconButton
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Move ${label} down`}
+                    onClick={onMoveDown}
+                    disabled={busy || isLast}
+                >
+                    <ArrowDown size={14} />
+                </IconButton>
                 {showWidth && (
                     <WidthSelect placement={placement} disabled={busy} label={label} onSetWidth={onSetWidth} />
                 )}
@@ -1537,12 +1734,22 @@ function PlacementBubble({
  * @param onRestore - Restores a plugin-source child's defaults.
  * @param showWidth - Whether the parent group lays out in a row, gating the
  *   inline relative-width control (a flex weight is inert in a column).
+ * @param isFirst - Whether this child is first in its group (disables move up).
+ * @param isLast - Whether this child is last in its group (disables move down).
+ * @param onMoveUp - Reorder this child up one step within its group.
+ * @param onMoveDown - Reorder this child down one step within its group.
+ * @param onMoveOut - Promote this child out of the group to the zone top level.
  */
 function ChildPlacementRow({
     placement,
     typeInfo,
     busy,
     showWidth,
+    isFirst,
+    isLast,
+    onMoveUp,
+    onMoveDown,
+    onMoveOut,
     onToggleEnabled,
     onEdit,
     onDelete,
@@ -1586,6 +1793,35 @@ function ChildPlacementRow({
                 <span className={styles.widget_meta}>{placement.typeId}</span>
             </div>
             <div className={styles.bubble_actions}>
+                <IconButton
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Move ${label} up within the group`}
+                    onClick={onMoveUp}
+                    disabled={busy || isFirst}
+                >
+                    <ArrowUp size={14} />
+                </IconButton>
+                <IconButton
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Move ${label} down within the group`}
+                    onClick={onMoveDown}
+                    disabled={busy || isLast}
+                >
+                    <ArrowDown size={14} />
+                </IconButton>
+                {onMoveOut && (
+                    <IconButton
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Move ${label} out of the group`}
+                        onClick={onMoveOut}
+                        disabled={busy}
+                    >
+                        <Ungroup size={14} />
+                    </IconButton>
+                )}
                 {showWidth && (
                     <WidthSelect placement={placement} disabled={busy} label={label} onSetWidth={onSetWidth} />
                 )}
@@ -1646,6 +1882,10 @@ interface GroupDropAreaProps {
      * actually applies.
      */
     showWidth: boolean;
+    /** Reorder a child one step within this group. */
+    onMoveWithinList: (placement: IPlacement, direction: 'up' | 'down') => void;
+    /** Promote a child out of this group to the zone top level. */
+    onMoveOutOfGroup: (placement: IPlacement) => void;
 }
 
 /**
@@ -1670,6 +1910,8 @@ interface GroupDropAreaProps {
  * @param onRestore - Restore-defaults handler passed to each child.
  * @param showWidth - Whether this group is row-arranged, gating each child's
  *   inline relative-width control.
+ * @param onMoveWithinList - Reorders a child one step within this group.
+ * @param onMoveOutOfGroup - Promotes a child out of this group to the zone.
  */
 function GroupDropArea({
     containerId,
@@ -1682,7 +1924,9 @@ function GroupDropArea({
     onEdit,
     onDelete,
     onRestore,
-    onSetWidth
+    onSetWidth,
+    onMoveWithinList,
+    onMoveOutOfGroup
 }: GroupDropAreaProps) {
     const { setNodeRef, isOver } = useDroppable({
         id: `group:${containerId}`,
@@ -1701,13 +1945,18 @@ function GroupDropArea({
                         Empty group — drag a widget here to nest it.
                     </span>
                 ) : (
-                    childPlacements.map(child => (
+                    childPlacements.map((child, idx) => (
                         <ChildPlacementRow
                             key={child.id}
                             placement={child}
                             typeInfo={lookupType(types, child.typeId)}
                             busy={busyId === child.id}
                             showWidth={showWidth}
+                            isFirst={idx === 0}
+                            isLast={idx === childPlacements.length - 1}
+                            onMoveUp={() => onMoveWithinList(child, 'up')}
+                            onMoveDown={() => onMoveWithinList(child, 'down')}
+                            onMoveOut={() => onMoveOutOfGroup(child)}
                             onToggleEnabled={onToggleEnabled}
                             onEdit={onEdit}
                             onDelete={onDelete}
@@ -1718,6 +1967,36 @@ function GroupDropArea({
                 )}
             </SortableContext>
         </div>
+    );
+}
+
+/**
+ * Thin top-level drop rail interleaved between zone rows.
+ *
+ * Exists to give dragging a clear zone-level target adjacent to a layout
+ * group: the group's children region greedily owns the space directly under
+ * its container, so without a dedicated rail there is nowhere to land a widget
+ * "above" or "below" the group at the zone level. The custom collision
+ * strategy returns this rail whenever the pointer is inside it, beating the
+ * group region. Its drop data is anchored by the id of the row it sits before
+ * (`null` for the trailing rail, meaning append) so `handleDragEnd` inserts at
+ * the right index even after the dragged row is removed from the list.
+ *
+ * @param zoneId - Zone this rail inserts into.
+ * @param beforeId - Id of the row this rail precedes, or null to append at the
+ *   zone's end.
+ */
+function GapRail({ zoneId, beforeId }: { zoneId: string; beforeId: string | null }) {
+    const { setNodeRef, isOver } = useDroppable({
+        id: `gap:${zoneId}:${beforeId ?? 'end'}`,
+        data: { kind: 'gap', zoneId, beforeId }
+    });
+    return (
+        <div
+            ref={setNodeRef}
+            className={cn(styles.gap_rail, isOver && styles['gap_rail--active'])}
+            aria-hidden
+        />
     );
 }
 
