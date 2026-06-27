@@ -70,7 +70,14 @@ const CoreNetworkActivityRollupSchema = new Schema<CoreNetworkActivityRollupDoc>
 // `bucketStart` scan within a `bucketType` for the latest N points.
 CoreNetworkActivityRollupSchema.index({ bucketType: 1, bucketStart: 1 }, { unique: true });
 
+// The third argument pins the physical collection name. Without it Mongoose
+// would bind the model (and build its unique index) on the pluralized default
+// `corenetworkactivityrollups`, while the job and read path use the raw
+// `core_network_activity_rollups` collection — leaving the (bucketType,
+// bucketStart) unique key unenforced on the actual data and allowing duplicate
+// buckets under concurrent upserts.
 export const CoreNetworkActivityRollupModel = model<CoreNetworkActivityRollupDoc>(
     'CoreNetworkActivityRollup',
-    CoreNetworkActivityRollupSchema
+    CoreNetworkActivityRollupSchema,
+    CORE_NETWORK_ACTIVITY_ROLLUPS_COLLECTION
 );

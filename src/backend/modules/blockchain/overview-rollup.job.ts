@@ -99,7 +99,10 @@ function floorToMinute(date: Date): Date {
  * @returns The parsed Date, or null when the key is unparseable.
  */
 function parseBucketKey(key: string): Date | null {
-    const parsed = new Date(`${key}:00Z`);
+    // Normalize the single space to `T` so the string is strict ISO 8601
+    // ("2025-10-13T01:00:00Z") rather than the space form, whose parsing is
+    // implementation-defined per the ECMAScript spec even though V8 accepts it.
+    const parsed = new Date(`${key.replace(' ', 'T')}:00Z`);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
@@ -115,7 +118,9 @@ function parseBucketKey(key: string): Date | null {
  * @param format - `$dateToString` format selecting the bucket granularity.
  * @param startDate - Inclusive range start.
  * @param endDate - Exclusive range end.
- * @returns Assembled buckets (unordered); empty when the range has no blocks.
+ * @returns One bucket per tick across the range in ascending order, zero-filled
+ *   where no blocks/transfers were observed, so callers always see a contiguous
+ *   series and the backfill cursor advances even over empty ranges.
  */
 async function computeBuckets(
     database: IDatabaseService,
@@ -171,18 +176,34 @@ async function computeBuckets(
         }
     }
 
-    const buckets: IRollupBucket[] = [];
+    const byTime = new Map<number, IRollupBucket>();
     for (const [key, metrics] of merged) {
         const bucketStart = parseBucketKey(key);
         if (!bucketStart) {
             continue;
         }
-        buckets.push({
+        byTime.set(bucketStart.getTime(), {
             bucketStart,
             transactions: metrics.transactions,
             transfers: metrics.transfers,
             volume: Number(metrics.volume.toFixed(6))
         });
+    }
+
+    // Materialize every expected bucket across [startDate, endDate), zero-filling
+    // any tick the aggregation produced no row for. Without this a range with no
+    // blocks returns no buckets, so the backfill cursor (the oldest stored
+    // bucket) never advances past the gap and re-queries the same empty range
+    // every run, while the read path returns a short/holey series. Callers pass
+    // tier-aligned ranges, so every aggregated bucket key lands exactly on a step
+    // tick; keying by getTime() avoids re-deriving the $dateToString UTC string.
+    // Bounded by the caller's window (<=168 hourly / <=75 minute ticks).
+    const stepMs = format === MINUTE_FORMAT ? MINUTE_MS : HOUR_MS;
+    const buckets: IRollupBucket[] = [];
+    for (let tick = startDate.getTime(); tick < endDate.getTime(); tick += stepMs) {
+        buckets.push(
+            byTime.get(tick) ?? { bucketStart: new Date(tick), transactions: 0, transfers: 0, volume: 0 }
+        );
     }
     return buckets;
 }
@@ -259,64 +280,61 @@ async function getFrontier(database: IDatabaseService): Promise<Date | null> {
  *
  * Safe to call on an empty collection (first deploy): the recent windows seed
  * the newest buckets immediately and the backfill walks history backward over
- * subsequent runs. Failures are logged, not thrown, so a bad run doesn't wedge
- * the scheduler.
+ * subsequent runs. Failures propagate to the caller so the scheduler records
+ * the run as failed (surfaced on `/system/scheduler`); the fire-and-forget boot
+ * kick in core-jobs guards itself with `.catch()` to avoid an unhandledRejection.
  *
  * @param database - Database service for raw collection access.
  */
 export async function runOverviewRollup(database: IDatabaseService): Promise<void> {
-    try {
-        const frontier = await getFrontier(database);
-        if (!frontier) {
-            logger.debug('network-activity rollup: no blocks indexed yet, skipping');
-            return;
-        }
-
-        const currentHour = floorToHour(frontier);
-        const currentMinute = floorToMinute(frontier);
-        const collection = database.getCollection<CoreNetworkActivityRollupFields>(
-            CORE_NETWORK_ACTIVITY_ROLLUPS_COLLECTION
-        );
-
-        // 1. Recent hourly recompute — the in-progress hour plus the prior two,
-        // so late-arriving blocks are absorbed and the current hour finalizes as
-        // it completes. End is the next hour boundary (exclusive).
-        const recentHourStart = new Date(currentHour.getTime() - (RECENT_HOURLY_HOURS - 1) * HOUR_MS);
-        const hourlyEnd = new Date(currentHour.getTime() + HOUR_MS);
-        await upsertBuckets(database, 'hourly', await computeBuckets(database, HOURLY_FORMAT, recentHourStart, hourlyEnd));
-
-        // 2. Backfill older hourly history one bounded chunk per run, newest-first,
-        // until the 7-day window is covered. After the first few catch-up runs the
-        // oldest present bucket reaches the target and this becomes a no-op.
-        const desiredOldest = new Date(currentHour.getTime() - (TARGET_HOURLY_BUCKETS - 1) * HOUR_MS);
-        const oldestDoc = await collection.find({ bucketType: 'hourly' })
-            .sort({ bucketStart: 1 })
-            .limit(1)
-            .toArray();
-        const oldestPresent = oldestDoc[0]?.bucketStart ? new Date(oldestDoc[0].bucketStart) : recentHourStart;
-        if (oldestPresent.getTime() > desiredOldest.getTime()) {
-            const chunkEnd = oldestPresent; // exclusive — strictly older buckets
-            const chunkStart = new Date(
-                Math.max(desiredOldest.getTime(), oldestPresent.getTime() - BACKFILL_CHUNK_HOURS * HOUR_MS)
-            );
-            await upsertBuckets(database, 'hourly', await computeBuckets(database, HOURLY_FORMAT, chunkStart, chunkEnd));
-        }
-
-        // 3. Recent minute recompute for the 1h window.
-        const recentMinuteStart = new Date(currentMinute.getTime() - RECENT_MINUTE_MINUTES * MINUTE_MS);
-        const minuteEnd = new Date(currentMinute.getTime() + MINUTE_MS);
-        await upsertBuckets(database, 'minute', await computeBuckets(database, MINUTE_FORMAT, recentMinuteStart, minuteEnd));
-
-        // 4. Prune stale buckets to keep the collection bounded.
-        await collection.deleteMany({
-            bucketType: 'minute',
-            bucketStart: { $lt: new Date(frontier.getTime() - MINUTE_RETENTION_HOURS * HOUR_MS) }
-        });
-        await collection.deleteMany({
-            bucketType: 'hourly',
-            bucketStart: { $lt: new Date(frontier.getTime() - HOURLY_RETENTION_HOURS * HOUR_MS) }
-        });
-    } catch (error) {
-        logger.warn({ error }, 'network-activity rollup run failed');
+    const frontier = await getFrontier(database);
+    if (!frontier) {
+        logger.debug('network-activity rollup: no blocks indexed yet, skipping');
+        return;
     }
+
+    const currentHour = floorToHour(frontier);
+    const currentMinute = floorToMinute(frontier);
+    const collection = database.getCollection<CoreNetworkActivityRollupFields>(
+        CORE_NETWORK_ACTIVITY_ROLLUPS_COLLECTION
+    );
+
+    // 1. Recent hourly recompute — the in-progress hour plus the prior two,
+    // so late-arriving blocks are absorbed and the current hour finalizes as
+    // it completes. End is the next hour boundary (exclusive).
+    const recentHourStart = new Date(currentHour.getTime() - (RECENT_HOURLY_HOURS - 1) * HOUR_MS);
+    const hourlyEnd = new Date(currentHour.getTime() + HOUR_MS);
+    await upsertBuckets(database, 'hourly', await computeBuckets(database, HOURLY_FORMAT, recentHourStart, hourlyEnd));
+
+    // 2. Backfill older hourly history one bounded chunk per run, newest-first,
+    // until the 7-day window is covered. After the first few catch-up runs the
+    // oldest present bucket reaches the target and this becomes a no-op.
+    const desiredOldest = new Date(currentHour.getTime() - (TARGET_HOURLY_BUCKETS - 1) * HOUR_MS);
+    const oldestDoc = await collection.find({ bucketType: 'hourly' })
+        .sort({ bucketStart: 1 })
+        .limit(1)
+        .toArray();
+    const oldestPresent = oldestDoc[0]?.bucketStart ? new Date(oldestDoc[0].bucketStart) : recentHourStart;
+    if (oldestPresent.getTime() > desiredOldest.getTime()) {
+        const chunkEnd = oldestPresent; // exclusive — strictly older buckets
+        const chunkStart = new Date(
+            Math.max(desiredOldest.getTime(), oldestPresent.getTime() - BACKFILL_CHUNK_HOURS * HOUR_MS)
+        );
+        await upsertBuckets(database, 'hourly', await computeBuckets(database, HOURLY_FORMAT, chunkStart, chunkEnd));
+    }
+
+    // 3. Recent minute recompute for the 1h window.
+    const recentMinuteStart = new Date(currentMinute.getTime() - RECENT_MINUTE_MINUTES * MINUTE_MS);
+    const minuteEnd = new Date(currentMinute.getTime() + MINUTE_MS);
+    await upsertBuckets(database, 'minute', await computeBuckets(database, MINUTE_FORMAT, recentMinuteStart, minuteEnd));
+
+    // 4. Prune stale buckets to keep the collection bounded.
+    await collection.deleteMany({
+        bucketType: 'minute',
+        bucketStart: { $lt: new Date(frontier.getTime() - MINUTE_RETENTION_HOURS * HOUR_MS) }
+    });
+    await collection.deleteMany({
+        bucketType: 'hourly',
+        bucketStart: { $lt: new Date(frontier.getTime() - HOURLY_RETENTION_HOURS * HOUR_MS) }
+    });
 }
