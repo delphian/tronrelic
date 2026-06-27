@@ -31,7 +31,6 @@
 .filter_bar {
     display: flex;
     align-items: flex-end;
-    justify-content: space-between;
     gap: var(--gap-md);
     flex-wrap: wrap;
 }
@@ -40,8 +39,9 @@
     display: flex;
     flex-direction: column;
     gap: var(--gap-2xs);
-    min-width: var(--max-width-xs);
-    flex: 1 1 var(--max-width-xs);
+    flex: 1 1 240px;
+    min-width: 0;
+    max-width: var(--max-width-sm);
 }
 
 .filter_label {
@@ -108,26 +108,104 @@
     flex-wrap: wrap;
 }
 
-/* Per-zone flexbox layout controls — a wrapping row of compact labeled
-   selects (preset + granular). Each field stays narrow so the whole row
-   fits several controls before wrapping on tight containers. */
+/* Right-aligned cluster: placement count + the layout disclosure toggle. */
+.zone_header_meta {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    margin-left: auto;
+    flex-wrap: wrap;
+}
+
+/* Disclosure that opens the per-zone layout panel. Reads as a quiet chip so
+   it sits in the header without competing with the zone title or actions; the
+   trailing preset name keeps the active arrangement visible while collapsed. */
+.layout_toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: var(--padding-2xs) var(--padding-xs);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    cursor: pointer;
+    transition: color var(--transition-base), background-color var(--transition-base), border-color var(--transition-base);
+}
+
+.layout_toggle:hover {
+    color: var(--color-text);
+    border-color: var(--color-border-strong);
+}
+
+.layout_toggle--open {
+    color: var(--color-text);
+    border-color: var(--color-primary-alpha-38);
+    background: var(--color-primary-alpha-10);
+}
+
+.layout_toggle:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 var(--border-width-medium) var(--color-focus-alpha-25);
+}
+
+.layout_toggle_text {
+    font-weight: var(--font-weight-medium);
+    color: inherit;
+}
+
+/* The active preset name, set apart from the "Layout" label so it reads as
+   the current value rather than part of the control name. */
+.layout_toggle_preset {
+    padding-left: var(--padding-xs);
+    border-left: var(--border-width-thin) solid var(--color-border-strong);
+    color: var(--color-text);
+}
+
+/* Per-zone flexbox layout panel — revealed by the header toggle. A bordered
+   surface that groups the essential controls (preset / gap / collapse) above a
+   labeled fine-tune row (the four flex axes). Each field stays a fixed, legible
+   width and wraps as the container narrows, so controls never stretch thin on
+   wide screens nor crush together mid-range. */
 .zone_layout {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    padding: var(--card-padding-sm);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+}
+
+.zone_layout_group {
     display: flex;
     flex-wrap: wrap;
     gap: var(--gap-sm);
     align-items: flex-end;
-    padding: var(--padding-xs) 0;
-    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.zone_layout_advanced {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.zone_layout_advanced_label {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
 }
 
 .zone_layout_field {
     display: flex;
     flex-direction: column;
     gap: var(--gap-2xs);
-    // Share the row and wrap as space runs out; min-width:0 lets the
-    // selects shrink below content width instead of forcing overflow.
-    flex: 1 1 auto;
-    min-width: 0;
+    // Hold a steady width and wrap when the container runs out of room, rather
+    // than growing to fill (which stretched the selects thin on wide screens).
+    flex: 0 1 180px;
+    min-width: 150px;
 }
 
 .zone_label {
@@ -148,7 +226,6 @@
 }
 
 .zone_count {
-    margin-left: auto;
     color: var(--color-text-muted);
     font-size: var(--font-size-caption);
 }
@@ -482,17 +559,36 @@
 /* Responsive                                                          */
 /* ------------------------------------------------------------------ */
 
+/* Large phones / narrow panels: the zone header's meta cluster keeps its own
+   line so the title never collides with the toggle. */
+@container widgets-admin (max-width: #{$breakpoint-mobile-lg}) {
+    .zone_header_meta {
+        margin-left: 0;
+        width: 100%;
+        justify-content: space-between;
+    }
+}
+
+/* Primary mobile: stack the page-level control rows, drop the bubble to two
+   columns with the action cluster on its own wrapping line, and let the layout
+   fields share two-up rather than each on its own line. */
 @container widgets-admin (max-width: #{$breakpoint-mobile-md}) {
     .toolbar {
         flex-direction: column;
         align-items: stretch;
     }
+    .filter_bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .filter_field {
+        max-width: none;
+    }
     .field_row {
         grid-template-columns: minmax(0, 1fr);
     }
-    .zone_count {
-        margin-left: 0;
-        width: 100%;
+    .layout_toggle_preset {
+        display: none;
     }
     .bubble {
         grid-template-columns: auto minmax(0, 1fr);
@@ -500,5 +596,14 @@
     .bubble_actions {
         grid-column: 1 / -1;
         justify-content: flex-end;
+        flex-wrap: wrap;
+    }
+}
+
+/* Small Android: layout-panel fields go full width so the selects stay tappable
+   and their labels never truncate. */
+@container widgets-admin (max-width: #{$breakpoint-mobile-sm}) {
+    .zone_layout_field {
+        flex-basis: 100%;
     }
 }

@@ -32,7 +32,7 @@ import {
     type FormEvent,
     type KeyboardEvent
 } from 'react';
-import { GripVertical, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, GripVertical, Pencil, Plus, RefreshCw, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import {
     DndContext,
     KeyboardSensor,
@@ -382,82 +382,95 @@ function ZoneLayoutControls({
 
     return (
         <div className={styles.zone_layout}>
-            <div className={styles.zone_layout_field}>
-                <label className={styles.filter_label} htmlFor={`zl-preset-${zoneId}`}>Layout</label>
-                <Select
-                    id={`zl-preset-${zoneId}`}
-                    value={layout.preset ?? 'custom'}
-                    onChange={(e) => applyPreset(e.target.value as ZoneLayoutPreset)}
-                    disabled={disabled}
-                >
-                    {PRESET_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </Select>
+            {/* Essential controls: the preset drives the arrangement; gap and
+                collapse threshold are the two operators most often touch. */}
+            <div className={styles.zone_layout_group}>
+                <div className={styles.zone_layout_field}>
+                    <label className={styles.filter_label} htmlFor={`zl-preset-${zoneId}`}>Layout</label>
+                    <Select
+                        id={`zl-preset-${zoneId}`}
+                        value={layout.preset ?? 'custom'}
+                        onChange={(e) => applyPreset(e.target.value as ZoneLayoutPreset)}
+                        disabled={disabled}
+                    >
+                        {PRESET_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </Select>
+                </div>
+                <div className={styles.zone_layout_field}>
+                    <label className={styles.filter_label} htmlFor={`zl-gap-${zoneId}`}>Gap</label>
+                    <Select
+                        id={`zl-gap-${zoneId}`}
+                        value={layout.gap}
+                        onChange={(e) => applyGranular({ gap: e.target.value as IZoneLayoutConfig['gap'] }, true)}
+                        disabled={disabled}
+                    >
+                        {GAP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                    </Select>
+                </div>
+                <div className={styles.zone_layout_field}>
+                    <label className={styles.filter_label} htmlFor={`zl-collapse-${zoneId}`}>Collapse</label>
+                    <Select
+                        id={`zl-collapse-${zoneId}`}
+                        value={layout.collapseBelow ?? 'never'}
+                        onChange={(e) => applyGranular({ collapseBelow: e.target.value as IZoneLayoutConfig['collapseBelow'] }, true)}
+                        disabled={disabled}
+                    >
+                        {COLLAPSE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </Select>
+                </div>
             </div>
-            <div className={styles.zone_layout_field}>
-                <label className={styles.filter_label} htmlFor={`zl-dir-${zoneId}`}>Direction</label>
-                <Select
-                    id={`zl-dir-${zoneId}`}
-                    value={layout.flexDirection}
-                    onChange={(e) => applyGranular({ flexDirection: e.target.value as IZoneLayoutConfig['flexDirection'] }, false)}
-                    disabled={disabled}
-                >
-                    {DIRECTION_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                </Select>
-            </div>
-            <div className={styles.zone_layout_field}>
-                <label className={styles.filter_label} htmlFor={`zl-justify-${zoneId}`}>Justify</label>
-                <Select
-                    id={`zl-justify-${zoneId}`}
-                    value={layout.justifyContent}
-                    onChange={(e) => applyGranular({ justifyContent: e.target.value as IZoneLayoutConfig['justifyContent'] }, false)}
-                    disabled={disabled}
-                >
-                    {JUSTIFY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                </Select>
-            </div>
-            <div className={styles.zone_layout_field}>
-                <label className={styles.filter_label} htmlFor={`zl-align-${zoneId}`}>Align</label>
-                <Select
-                    id={`zl-align-${zoneId}`}
-                    value={layout.alignItems}
-                    onChange={(e) => applyGranular({ alignItems: e.target.value as IZoneLayoutConfig['alignItems'] }, false)}
-                    disabled={disabled}
-                >
-                    {ALIGN_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                </Select>
-            </div>
-            <div className={styles.zone_layout_field}>
-                <label className={styles.filter_label} htmlFor={`zl-wrap-${zoneId}`}>Wrap</label>
-                <Select
-                    id={`zl-wrap-${zoneId}`}
-                    value={layout.flexWrap}
-                    onChange={(e) => applyGranular({ flexWrap: e.target.value as IZoneLayoutConfig['flexWrap'] }, false)}
-                    disabled={disabled}
-                >
-                    {WRAP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                </Select>
-            </div>
-            <div className={styles.zone_layout_field}>
-                <label className={styles.filter_label} htmlFor={`zl-gap-${zoneId}`}>Gap</label>
-                <Select
-                    id={`zl-gap-${zoneId}`}
-                    value={layout.gap}
-                    onChange={(e) => applyGranular({ gap: e.target.value as IZoneLayoutConfig['gap'] }, true)}
-                    disabled={disabled}
-                >
-                    {GAP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                </Select>
-            </div>
-            <div className={styles.zone_layout_field}>
-                <label className={styles.filter_label} htmlFor={`zl-collapse-${zoneId}`}>Collapse</label>
-                <Select
-                    id={`zl-collapse-${zoneId}`}
-                    value={layout.collapseBelow ?? 'never'}
-                    onChange={(e) => applyGranular({ collapseBelow: e.target.value as IZoneLayoutConfig['collapseBelow'] }, true)}
-                    disabled={disabled}
-                >
-                    {COLLAPSE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </Select>
+
+            {/* Fine-tune: the four flex axes the preset normally sets. Grouped
+                under a label so an operator reads them as the advanced tier
+                rather than peers of the preset. */}
+            <div className={styles.zone_layout_advanced}>
+                <span className={styles.zone_layout_advanced_label}>Fine-tune arrangement</span>
+                <div className={styles.zone_layout_group}>
+                    <div className={styles.zone_layout_field}>
+                        <label className={styles.filter_label} htmlFor={`zl-dir-${zoneId}`}>Direction</label>
+                        <Select
+                            id={`zl-dir-${zoneId}`}
+                            value={layout.flexDirection}
+                            onChange={(e) => applyGranular({ flexDirection: e.target.value as IZoneLayoutConfig['flexDirection'] }, false)}
+                            disabled={disabled}
+                        >
+                            {DIRECTION_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                        </Select>
+                    </div>
+                    <div className={styles.zone_layout_field}>
+                        <label className={styles.filter_label} htmlFor={`zl-justify-${zoneId}`}>Justify</label>
+                        <Select
+                            id={`zl-justify-${zoneId}`}
+                            value={layout.justifyContent}
+                            onChange={(e) => applyGranular({ justifyContent: e.target.value as IZoneLayoutConfig['justifyContent'] }, false)}
+                            disabled={disabled}
+                        >
+                            {JUSTIFY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                        </Select>
+                    </div>
+                    <div className={styles.zone_layout_field}>
+                        <label className={styles.filter_label} htmlFor={`zl-align-${zoneId}`}>Align</label>
+                        <Select
+                            id={`zl-align-${zoneId}`}
+                            value={layout.alignItems}
+                            onChange={(e) => applyGranular({ alignItems: e.target.value as IZoneLayoutConfig['alignItems'] }, false)}
+                            disabled={disabled}
+                        >
+                            {ALIGN_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                        </Select>
+                    </div>
+                    <div className={styles.zone_layout_field}>
+                        <label className={styles.filter_label} htmlFor={`zl-wrap-${zoneId}`}>Wrap</label>
+                        <Select
+                            id={`zl-wrap-${zoneId}`}
+                            value={layout.flexWrap}
+                            onChange={(e) => applyGranular({ flexWrap: e.target.value as IZoneLayoutConfig['flexWrap'] }, false)}
+                            disabled={disabled}
+                        >
+                            {WRAP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                        </Select>
+                    </div>
+                </div>
             </div>
         </div>
     );
@@ -1165,6 +1178,17 @@ interface ZoneSectionProps {
     onLayoutChange: (zoneId: string, config: IZoneLayoutConfig) => void;
 }
 
+/**
+ * One zone: a drop target holding its placements, with the zone's flexbox
+ * layout controls tucked behind a collapsed disclosure in the header.
+ *
+ * The layout controls are an occasional, advanced task — surfacing all seven
+ * selects on every zone at once buried the actual placements in control noise.
+ * Collapsing them (with the active preset name shown on the toggle so the
+ * current arrangement stays legible while closed) keeps the scannable content —
+ * the widgets and their order — front and centre, and lets an operator open the
+ * controls only for the zone they are tuning.
+ */
 function ZoneSection({
     zoneId,
     zoneLabel,
@@ -1182,6 +1206,21 @@ function ZoneSection({
 }: ZoneSectionProps) {
     const zoneInfo = lookupZone(zones, zoneId);
     const { setNodeRef, isOver } = useDroppable({ id: zoneId, data: { zoneId } });
+
+    // Layout controls collapse by default; the operator opens them per-zone.
+    const [layoutOpen, setLayoutOpen] = useState(false);
+
+    // Human-readable name of the zone's active preset, shown on the toggle so
+    // a custom or non-default arrangement stays visible while the panel is shut.
+    const presetLabel = useMemo(() => {
+        const match = PRESET_OPTIONS.find(o => o.value === (layoutConfig.preset ?? 'custom'));
+        return match ? match.label : 'Custom';
+    }, [layoutConfig.preset]);
+
+    // Relative width is a flex weight, so it only takes effect when the zone
+    // arranges its top-level rows along a row axis. In a column it is inert, so
+    // the inline width control is suppressed for those rows.
+    const zoneIsRow = layoutConfig.flexDirection === 'row' || layoutConfig.flexDirection === 'row-reverse';
 
     // Split the zone's placements into the top-level rows (drawn in the
     // sortable list) and the children nested inside layout-group
@@ -1211,17 +1250,35 @@ function ZoneSection({
                     <span className={styles.zone_id}>{zoneId}</span>
                 </h3>
                 {zoneInfo && <Badge tone="neutral">{zoneInfo.host}</Badge>}
-                <span className={styles.zone_count}>
-                    {placements.length} {placements.length === 1 ? 'placement' : 'placements'}
-                </span>
+                <div className={styles.zone_header_meta}>
+                    <span className={styles.zone_count}>
+                        {placements.length} {placements.length === 1 ? 'placement' : 'placements'}
+                    </span>
+                    <button
+                        type="button"
+                        className={cn(styles.layout_toggle, layoutOpen && styles['layout_toggle--open'])}
+                        onClick={() => setLayoutOpen(open => !open)}
+                        aria-expanded={layoutOpen}
+                        aria-label={`${layoutOpen ? 'Hide' : 'Show'} layout controls for ${zoneLabel}`}
+                    >
+                        <SlidersHorizontal size={14} aria-hidden />
+                        <span className={styles.layout_toggle_text}>Layout</span>
+                        <span className={styles.layout_toggle_preset}>{presetLabel}</span>
+                        {layoutOpen
+                            ? <ChevronUp size={14} aria-hidden />
+                            : <ChevronDown size={14} aria-hidden />}
+                    </button>
+                </div>
             </header>
 
-            <ZoneLayoutControls
-                zoneId={zoneId}
-                layout={layoutConfig}
-                disabled={busyId !== null}
-                onChange={onLayoutChange}
-            />
+            {layoutOpen && (
+                <ZoneLayoutControls
+                    zoneId={zoneId}
+                    layout={layoutConfig}
+                    disabled={busyId !== null}
+                    onChange={onLayoutChange}
+                />
+            )}
 
             <SortableContext id={zoneId} items={itemIds} strategy={verticalListSortingStrategy}>
                 <div ref={setNodeRef} className={styles.bubbles}>
@@ -1235,12 +1292,18 @@ function ZoneSection({
                             const kids = isContainer
                                 ? childrenByParent.get(placement.id) ?? []
                                 : [];
+                            // A layout group carries its own arrangement in its
+                            // instanceConfig (default column); its children's
+                            // width control follows that, not the zone's.
+                            const groupDirection = placement.instanceConfig?.flexDirection;
+                            const groupIsRow = groupDirection === 'row' || groupDirection === 'row-reverse';
                             return (
                                 <Fragment key={placement.id}>
                                     <PlacementBubble
                                         placement={placement}
                                         typeInfo={lookupType(types, placement.typeId)}
                                         busy={busyId === placement.id}
+                                        showWidth={zoneIsRow}
                                         onToggleEnabled={onToggleEnabled}
                                         onEdit={onEdit}
                                         onDelete={onDelete}
@@ -1254,6 +1317,7 @@ function ZoneSection({
                                             childPlacements={kids}
                                             types={types}
                                             busyId={busyId}
+                                            showWidth={groupIsRow}
                                             onToggleEnabled={onToggleEnabled}
                                             onEdit={onEdit}
                                             onDelete={onDelete}
@@ -1289,6 +1353,13 @@ interface PlacementBubbleProps {
      * side-by-side widths without opening the modal.
      */
     onSetWidth: (placement: IPlacement, weight: number | null) => void;
+    /**
+     * Whether the row's container (the zone for a top-level row, the parent
+     * layout group for a nested child) lays out in a row. Relative width is a
+     * flex weight that only takes effect along a row axis, so the inline width
+     * control is hidden in a column arrangement where it would be inert noise.
+     */
+    showWidth: boolean;
 }
 
 /**
@@ -1347,6 +1418,7 @@ function PlacementBubble({
     placement,
     typeInfo,
     busy,
+    showWidth,
     onToggleEnabled,
     onEdit,
     onDelete,
@@ -1402,7 +1474,9 @@ function PlacementBubble({
                 </div>
             </div>
             <div className={styles.bubble_actions}>
-                <WidthSelect placement={placement} disabled={busy} label={label} onSetWidth={onSetWidth} />
+                {showWidth && (
+                    <WidthSelect placement={placement} disabled={busy} label={label} onSetWidth={onSetWidth} />
+                )}
                 <Switch
                     size="sm"
                     on={placement.enabled}
@@ -1461,11 +1535,14 @@ function PlacementBubble({
  * @param onEdit - Opens the edit modal.
  * @param onDelete - Deletes an operator-source child.
  * @param onRestore - Restores a plugin-source child's defaults.
+ * @param showWidth - Whether the parent group lays out in a row, gating the
+ *   inline relative-width control (a flex weight is inert in a column).
  */
 function ChildPlacementRow({
     placement,
     typeInfo,
     busy,
+    showWidth,
     onToggleEnabled,
     onEdit,
     onDelete,
@@ -1509,7 +1586,9 @@ function ChildPlacementRow({
                 <span className={styles.widget_meta}>{placement.typeId}</span>
             </div>
             <div className={styles.bubble_actions}>
-                <WidthSelect placement={placement} disabled={busy} label={label} onSetWidth={onSetWidth} />
+                {showWidth && (
+                    <WidthSelect placement={placement} disabled={busy} label={label} onSetWidth={onSetWidth} />
+                )}
                 <Switch
                     size="sm"
                     on={placement.enabled}
@@ -1561,6 +1640,12 @@ interface GroupDropAreaProps {
     onDelete: (placement: IPlacement) => void;
     onRestore: (placement: IPlacement) => void;
     onSetWidth: (placement: IPlacement, weight: number | null) => void;
+    /**
+     * Whether the layout group lays out its children in a row, forwarded to
+     * each child so the inline width control only shows where a flex weight
+     * actually applies.
+     */
+    showWidth: boolean;
 }
 
 /**
@@ -1583,6 +1668,8 @@ interface GroupDropAreaProps {
  * @param onEdit - Edit-modal opener passed to each child.
  * @param onDelete - Delete handler passed to each child.
  * @param onRestore - Restore-defaults handler passed to each child.
+ * @param showWidth - Whether this group is row-arranged, gating each child's
+ *   inline relative-width control.
  */
 function GroupDropArea({
     containerId,
@@ -1590,6 +1677,7 @@ function GroupDropArea({
     childPlacements,
     types,
     busyId,
+    showWidth,
     onToggleEnabled,
     onEdit,
     onDelete,
@@ -1619,6 +1707,7 @@ function GroupDropArea({
                             placement={child}
                             typeInfo={lookupType(types, child.typeId)}
                             busy={busyId === child.id}
+                            showWidth={showWidth}
                             onToggleEnabled={onToggleEnabled}
                             onEdit={onEdit}
                             onDelete={onDelete}
