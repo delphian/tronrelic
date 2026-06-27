@@ -920,6 +920,12 @@ export default function WidgetsAdminPage() {
             if (overData.kind === 'gap') {
                 const destZone = overData.zoneId as string;
                 const beforeId = overData.beforeId as string | null;
+                // A row dropped on its own leading rail (the rail directly above
+                // it) inserts itself before itself — its slot never changes.
+                // `applyMove` filters the moved row out of `destListPrev`, so the
+                // anchor lookup below would miss and append it to the zone end;
+                // short-circuit to a true no-op instead.
+                if (beforeId === moved.id) return;
                 await applyMove(moved, null, destZone, destListPrev => {
                     if (beforeId === null) return destListPrev.length;
                     const i = destListPrev.findIndex(p => p.id === beforeId);

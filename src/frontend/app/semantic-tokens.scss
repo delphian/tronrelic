@@ -315,6 +315,10 @@
     --toast-viewport-gap: var(--spacing-5);                /* 0.75rem */
     --toast-viewport-z-index: var(--z-index-toast);
     --toast-viewport-max-width: min(420px, calc(100vw - 3rem));
+    /* Scroll cap applied when the deck fans open on hover/focus, so a burst of
+       persistent toasts becomes a scrollable column instead of hiding its
+       oldest cards. Mirrors the modal dialog's bounded-height pattern. */
+    --toast-viewport-max-height: min(80vh, 640px);
 
     /* Toast - Item */
     --toast-item-gap: var(--spacing-7);                    /* 1rem */
