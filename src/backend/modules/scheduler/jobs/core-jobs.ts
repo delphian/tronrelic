@@ -45,7 +45,10 @@ export async function registerCoreJobs(
     // Register CacheModel for cache cleanup job
     database.registerModel('caches', CacheModel);
 
-    // Register the network-activity rollup model so its unique index is built.
+    // Register the network-activity rollup model. The model is bound to the
+    // `core_network_activity_rollups` collection at definition time (third
+    // model() arg), where Mongoose autoIndex builds its unique index; this
+    // registration just makes the model resolvable by collection name.
     database.registerModel(CORE_NETWORK_ACTIVITY_ROLLUPS_COLLECTION, CoreNetworkActivityRollupModel);
 
     // Inject database into BlockchainService before first getInstance() call
@@ -85,8 +88,12 @@ export async function registerCoreJobs(
     });
 
     // Kick one rollup now (fire-and-forget) so the widget has data without
-    // waiting for the first cron tick; the job catches and logs its own errors.
-    void runOverviewRollup(database);
+    // waiting for the first cron tick. The scheduled run lets failures throw so
+    // the scheduler records them; this boot kick has no scheduler wrapper, so it
+    // guards itself with .catch() to avoid an unhandledRejection.
+    void runOverviewRollup(database).catch((error) => {
+        logger.warn({ error }, 'Initial network-activity rollup failed');
+    });
 
     // Cache cleanup: every hour
     scheduler.register('cache:cleanup', '0 * * * *', async () => {
