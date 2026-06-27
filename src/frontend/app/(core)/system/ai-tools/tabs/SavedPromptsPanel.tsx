@@ -145,9 +145,17 @@ export function SavedPromptsPanel({
         if (!open || !hasActiveSchedule) {
             return;
         }
-        const id = setInterval(() => { void loadPrompts(); }, RUN_REFRESH_MS);
+        const id = setInterval(() => {
+            // Silent background refresh: hit the API directly and replace the
+            // list without toggling `loading`, so the open panel never flashes to
+            // the "Loading…" placeholder mid-view every 30s. Errors are swallowed
+            // — the next tick retries — matching loadPrompts' silent-failure stance.
+            listSavedPrompts()
+                .then(onPromptsChange)
+                .catch(() => {});
+        }, RUN_REFRESH_MS);
         return () => clearInterval(id);
-    }, [open, hasActiveSchedule, loadPrompts]);
+    }, [open, hasActiveSchedule, onPromptsChange]);
 
     /** Persist a new prompt with the current composer text. */
     const handleSave = useCallback(async () => {
