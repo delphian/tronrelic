@@ -2,22 +2,35 @@
 
 /**
  * @fileoverview Curation queue — the central inbox of effects held for human
- * review across every content type. Each item renders from its content-agnostic
- * preview (title, body, media, fields); approving commits the effect through its
- * owning plugin, rejecting discards it. An item whose owning plugin is disabled
- * returns a 409 the toast surfaces, since it cannot be decided until re-enabled.
+ * review across every content type. Pending items render as focused review
+ * cards: the content on one side, a decision rail on the other holding the
+ * destination picker and Approve / Edit / Reject. Approving commits the effect
+ * through its owning plugin, rejecting discards it; an item whose owning plugin
+ * is disabled returns a 409 the toast surfaces, since it cannot be decided until
+ * re-enabled.
+ *
+ * The decision rail is built around one risk: an approval that fans content to a
+ * public destination cannot be undone. So the picker separates the calm
+ * internal/admin sinks from the amber external/public ones, and any approval
+ * whose selection includes an external destination is gated behind an explicit
+ * confirmation — internal-only approval and rejection stay one click, the fast
+ * path the queue depends on.
+ *
  * A Pending/History toggle switches between the live queue and the read-only
- * audit of past decisions — decisions never delete a record, so history is just
- * the decided items, rendered from their frozen snapshot with no actions.
- * Refetches on the `curation:changed` signal and reports the new count up via
- * `onChanged` so the header badge stays live. Like the sibling system surfaces
- * this is an admin client surface, not an SSR-first public component.
+ * audit of past decisions. Decisions never delete a record, so History is just
+ * the decided items rendered from their frozen snapshot as a scannable table —
+ * audit data you skim, not work you act on, which is why it keeps the table
+ * primitive the review cards deliberately leave behind. Refetches on the
+ * `curation:changed` signal and reports the new count up via `onChanged` so the
+ * header badge stays live. Like the sibling system surfaces this is an admin
+ * client surface, not an SSR-first public component.
  */
 
-import { useEffect, useState, useCallback } from 'react';
-import { Check, X, Pencil } from 'lucide-react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import { Check, X, Pencil, Lock, Globe, AlertTriangle } from 'lucide-react';
 import { Stack } from '../../../../components/layout';
 import { Button } from '../../../../components/ui/Button';
+import { Card } from '../../../../components/ui/Card';
 import { Textarea } from '../../../../components/ui/Textarea';
 import { Badge } from '../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
@@ -40,9 +53,28 @@ import {
 } from '../../../../modules/curation';
 import styles from './page.module.scss';
 
-/** Truncate body text for the inline preview cell. */
+/** Body length past which the expandable preview collapses behind a toggle. */
+const COLLAPSE_AT = 280;
+
+/** Truncate body text for an inline preview. */
 function truncate(text: string, max = 160): string {
     return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+/**
+ * Decide whether a destination's reach leaves the safe internal/admin zone —
+ * the single predicate that drives the picker's amber grouping and the
+ * publish-confirmation gate. A sink counts as external when it either leaves the
+ * platform (`egress` past `internal`) or widens to the public (`audience` is
+ * `public`); both are exposures an operator must not trigger by reflex. Erring
+ * toward "external" is deliberate: a false amber costs one confirmation click, a
+ * false calm costs an irreversible public publish.
+ *
+ * @param reach - The destination's reach classification.
+ * @returns True when delivering to this sink is an external/public exposure.
+ */
+function destinationIsExternal(reach: ICurationEligibleDestination['reach']): boolean {
+    return reach.egress !== 'internal' || reach.audience === 'public';
 }
 
 /**
@@ -91,18 +123,78 @@ function CurationEditForm({ initialBody, onCancel, onSave }: {
 }
 
 /**
+ * Confirmation body shown before an approval that would fan content to one or
+ * more external/public destinations. Restating exactly which public channels
+ * will fire — and that the effect cannot be undone — is the deliberate friction
+ * that turns a reflex click into a decision; the default focus sits on Cancel so
+ * the dangerous path is never the one a stray Enter takes.
+ *
+ * @param props.channels - The selected external/public destinations to name.
+ * @param props.onConfirm - Proceed with the approval and its destination fan-out.
+ * @param props.onCancel - Dismiss without approving, returning to the rail.
+ * @returns The confirmation form.
+ */
+function PublishConfirm({ channels, onConfirm, onCancel }: {
+    channels: ICurationEligibleDestination[];
+    onConfirm: () => void;
+    onCancel: () => void;
+}) {
+    return (
+        <Stack gap="md">
+            <div className={styles.confirm_warning} role="alert">
+                <AlertTriangle size={18} aria-hidden />
+                <span>This publishes externally and cannot be undone.</span>
+            </div>
+            <ul className={styles.confirm_list}>
+                {channels.map(channel => (
+                    <li key={channel.sinkId} className={styles.confirm_item}>
+                        <Globe size={14} aria-hidden />
+                        <span className={styles.dest_label}>{channel.label ?? channel.sinkId}</span>
+                        <Badge tone="warning">{channel.reach.egress}/{channel.reach.audience}</Badge>
+                    </li>
+                ))}
+            </ul>
+            <div className={styles.row_actions}>
+                <Button variant="ghost" size="sm" onClick={onCancel} autoFocus>Cancel</Button>
+                <Button variant="primary" size="sm" onClick={onConfirm}>
+                    <Check size={16} /> Publish to {channels.length} external channel{channels.length === 1 ? '' : 's'}
+                </Button>
+            </div>
+        </Stack>
+    );
+}
+
+/**
  * Render one held item's content-agnostic preview: body, an optional media
  * thumbnail, and labelled fields. Core knows nothing of the underlying payload —
- * the owning type flattened it into this descriptor.
+ * the owning type flattened it into this descriptor. In `expandable` mode (the
+ * review card) the full body is available behind an in-place expand so a long
+ * draft never forces a navigate-away; in compact mode (the history table) the
+ * body is hard-truncated to keep rows scannable.
  *
  * @param props.preview - The preview descriptor from the curation envelope.
- * @returns The preview cell content.
+ * @param props.expandable - Show the full body behind an expand toggle when long.
+ * @returns The preview content.
  */
-function CurationPreview({ preview }: { preview: ICurationItemView['preview'] }) {
+function CurationPreview({ preview, expandable = false }: { preview: ICurationItemView['preview']; expandable?: boolean }) {
+    const [expanded, setExpanded] = useState(false);
     const image = preview.media?.find(media => media.kind !== 'link');
+    const body = preview.body ?? '';
+    const isLong = expandable && body.length > COLLAPSE_AT;
+    const shownBody = !expandable
+        ? truncate(body)
+        : (expanded || !isLong ? body : truncate(body, COLLAPSE_AT));
+
+    const toggleExpanded = useCallback(() => { setExpanded(prev => !prev); }, []);
+
     return (
         <div className={styles.curation_preview}>
-            {preview.body && <div className={styles.curation_body}>{truncate(preview.body)}</div>}
+            {preview.body && <div className={styles.curation_body}>{shownBody}</div>}
+            {isLong && (
+                <Button variant="ghost" size="xs" onClick={toggleExpanded}>
+                    {expanded ? 'Show less' : 'Show full content'}
+                </Button>
+            )}
             {image && (
                 // Resolved public URL from the owning plugin; next/image adds no
                 // value for an admin-only, externally-sized thumbnail.
@@ -118,7 +210,7 @@ function CurationPreview({ preview }: { preview: ICurationItemView['preview'] })
                     ))}
                 </div>
             )}
-            {preview.editable && <Badge tone="info">editable</Badge>}
+            {!expandable && preview.editable && <Badge tone="info">editable</Badge>}
         </div>
     );
 }
@@ -193,22 +285,139 @@ function CurationDecision({ item }: { item: ICurationItemView }) {
 }
 
 /**
- * Pending-row actions for one held item: the destination picker (when the item's
- * type publishes to destinations and sinks are eligible) plus Approve / Edit /
- * Reject. The eligible destinations are SECONDARY data, lazily fetched per row
- * after mount, so they never block the primary queue render; an item with no
- * eligible destinations shows the classic plain Approve button unchanged. The
- * checkbox selection seeds from standing policy (`defaultSelected`) and the
- * curator confirms or overrides it before approving — the human review gate
- * doubling as the mandated-subset selector.
+ * One sink rendered as a labelled checkbox row inside the destination picker.
+ * The exposure icon and the reach badge are toned to the row's group — a lock
+ * and a neutral badge for internal, a globe and a warning badge for external —
+ * so an external destination never visually reads as calm.
+ *
+ * @param props.dest - The eligible destination to render.
+ * @param props.external - Whether this row belongs to the external/public group.
+ * @param props.checked - Whether the sink is in the current selection.
+ * @param props.disabled - Whether the input is locked (a decision is in flight).
+ * @param props.onToggle - Toggle this sink's membership in the selection.
+ * @returns The destination option row.
+ */
+function DestinationOption({ dest, external, checked, disabled, onToggle }: {
+    dest: ICurationEligibleDestination;
+    external: boolean;
+    checked: boolean;
+    disabled: boolean;
+    onToggle: (sinkId: string) => void;
+}) {
+    return (
+        <label className={styles.dest_option}>
+            <input
+                type="checkbox"
+                checked={checked}
+                disabled={disabled}
+                onChange={() => onToggle(dest.sinkId)}
+            />
+            {external
+                ? <Globe size={14} aria-hidden className={styles.dest_icon} />
+                : <Lock size={14} aria-hidden className={styles.dest_icon} />}
+            <span className={styles.dest_label}>{dest.label ?? dest.sinkId}</span>
+            <Badge tone={external ? 'warning' : 'neutral'}>{dest.reach.egress}/{dest.reach.audience}</Badge>
+        </label>
+    );
+}
+
+/**
+ * The destination picker for a held item that publishes to destinations. The
+ * sinks are split into an internal/admin group and an external/public group so
+ * the exposure of each choice is preattentive — a lock and a calm row versus a
+ * globe, an amber panel, and a warning-toned reach badge — rather than text the
+ * eye has to parse. A live summary names how many internal and external sinks
+ * the current selection will fire, the same count the confirmation gate keys
+ * off, so the operator sees the blast radius before committing.
+ *
+ * @param props.destinations - The item's eligible publish destinations.
+ * @param props.selected - The currently selected sink ids.
+ * @param props.busy - Whether this item's decision is in flight (locks inputs).
+ * @param props.onToggle - Toggle one sink's membership in the selection.
+ * @param props.onSetDefault - Persist the current selection as the type's default.
+ * @returns The grouped destination picker.
+ */
+function DestinationPicker({ destinations, selected, busy, onToggle, onSetDefault }: {
+    destinations: ICurationEligibleDestination[];
+    selected: Set<string>;
+    busy: boolean;
+    onToggle: (sinkId: string) => void;
+    onSetDefault: () => void;
+}) {
+    const internal = destinations.filter(dest => !destinationIsExternal(dest.reach));
+    const external = destinations.filter(dest => destinationIsExternal(dest.reach));
+    const selectedInternal = internal.filter(dest => selected.has(dest.sinkId)).length;
+    const selectedExternal = external.filter(dest => selected.has(dest.sinkId)).length;
+
+    return (
+        <fieldset className={styles.picker}>
+            <legend className={styles.picker_legend}>Publish to</legend>
+            {internal.length > 0 && (
+                <div className={styles.picker_group}>
+                    <div className={styles.picker_group_title}>Internal / Admin</div>
+                    {internal.map(dest => (
+                        <DestinationOption
+                            key={dest.sinkId}
+                            dest={dest}
+                            external={false}
+                            checked={selected.has(dest.sinkId)}
+                            disabled={busy}
+                            onToggle={onToggle}
+                        />
+                    ))}
+                </div>
+            )}
+            {external.length > 0 && (
+                <div className={`${styles.picker_group} ${styles.picker_group_external}`}>
+                    <div className={styles.picker_group_title}>External / Public</div>
+                    {external.map(dest => (
+                        <DestinationOption
+                            key={dest.sinkId}
+                            dest={dest}
+                            external
+                            checked={selected.has(dest.sinkId)}
+                            disabled={busy}
+                            onToggle={onToggle}
+                        />
+                    ))}
+                </div>
+            )}
+            <div className={styles.publish_summary}>
+                {selectedInternal === 0 && selectedExternal === 0
+                    ? 'No destinations selected'
+                    : (
+                        <>
+                            {selectedExternal > 0 && <AlertTriangle size={14} aria-hidden className={styles.summary_warn} />}
+                            Publishing to {selectedInternal} internal · {selectedExternal} external
+                        </>
+                    )}
+            </div>
+            <Button variant="ghost" size="xs" disabled={busy} onClick={onSetDefault}>
+                Set as default for this type
+            </Button>
+        </fieldset>
+    );
+}
+
+/**
+ * The decision rail of a pending review card: the destination picker (when the
+ * item's type publishes to destinations and sinks are eligible) plus the Approve
+ * / Edit / Reject actions. The eligible destinations are SECONDARY data, lazily
+ * fetched per card after mount, so they never block the queue render; an item
+ * with no eligible destinations shows the plain Approve action unchanged. The
+ * selection seeds from standing policy (`defaultSelected`) — the operator's saved
+ * per-type default — which the curator confirms or overrides before approving,
+ * the human gate doubling as the mandated-subset selector. An approval whose
+ * selection includes any external/public sink is routed through a confirmation
+ * modal first; internal-only approval and rejection commit immediately.
  *
  * @param props.item - The pending curation envelope.
- * @param props.busyId - The id of the row currently deciding, or null.
+ * @param props.busyId - The id of the card currently deciding, or null.
  * @param props.onApprove - Approve the item with the curator's selected destinations.
  * @param props.onReject - Reject the item.
  * @param props.onEdit - Open the inline editor for the item.
  * @param props.onSetDefault - Save the current selection as the type's default.
- * @returns The pending-row action controls.
+ * @returns The decision rail controls.
  */
 function PendingActions({ item, busyId, onApprove, onReject, onEdit, onSetDefault }: {
     item: ICurationItemView;
@@ -221,10 +430,11 @@ function PendingActions({ item, busyId, onApprove, onReject, onEdit, onSetDefaul
     // null while the lazy fetch is in flight; an empty array means "no picker".
     const [destinations, setDestinations] = useState<ICurationEligibleDestination[] | null>(null);
     const [selected, setSelected] = useState<Set<string>>(new Set());
+    const { open, close } = useModal();
 
     // Fetch the item's eligible destinations once after mount and seed the
     // selection from standing policy. A `cancelled` guard drops a late resolve if
-    // the row unmounts (e.g. the queue refetched) so it cannot set stale state.
+    // the card unmounts (e.g. the queue refetched) so it cannot set stale state.
     useEffect(() => {
         let cancelled = false;
         listDestinations(item.id)
@@ -260,38 +470,68 @@ function PendingActions({ item, busyId, onApprove, onReject, onEdit, onSetDefaul
     const busy = busyId === item.id;
     const blockedByOther = busyId !== null && busyId !== item.id;
     const hasPicker = destinations !== null && destinations.length > 0;
-    // Eligibility is unknown until this row's fetch settles (destinations === null);
+    // Eligibility is unknown until this card's fetch settles (destinations === null);
     // block approval during that window so a fast click cannot take the classic
     // path and silently skip the publish destinations the picker would have selected.
     const destinationsLoading = destinations === null;
-    const approveDestinations = hasPicker
-        ? Array.from(selected).map((sinkId): ICurationDestinationSelection => ({ sinkId }))
-        : undefined;
+    // A destinations-enabled item must target at least one sink: approving with an
+    // empty selection would commit the decision while publishing nowhere — a silent
+    // no-op the operator did not intend. Block Approve until a destination is picked.
+    const noDestinationSelected = hasPicker && selected.size === 0;
+
+    // The external/public sinks in the current selection — the channels the
+    // confirmation gate names, and the test for whether the gate fires at all.
+    const selectedExternal = useMemo(
+        () => (destinations ?? []).filter(dest => selected.has(dest.sinkId) && destinationIsExternal(dest.reach)),
+        [destinations, selected]
+    );
+
+    // Commit the approval with the curator's selection (or undefined when there
+    // is no picker, preserving the classic single-effect approve).
+    const commitApprove = useCallback(() => {
+        const approveDestinations = hasPicker
+            ? Array.from(selected).map((sinkId): ICurationDestinationSelection => ({ sinkId }))
+            : undefined;
+        onApprove(item.id, approveDestinations);
+    }, [hasPicker, selected, onApprove, item.id]);
+
+    // Approve, but gate any external/public fan-out behind explicit confirmation.
+    // Internal-only approvals (and items with no picker) commit immediately — the
+    // friction lands only where the effect is irreversible.
+    const handleApprove = useCallback(() => {
+        if (selectedExternal.length === 0) {
+            commitApprove();
+            return;
+        }
+        const modalId = `curation-publish-${item.id}`;
+        open({
+            id: modalId,
+            title: 'Confirm external publish',
+            size: 'sm',
+            content: (
+                <PublishConfirm
+                    channels={selectedExternal}
+                    onCancel={() => close(modalId)}
+                    onConfirm={() => { close(modalId); commitApprove(); }}
+                />
+            )
+        });
+    }, [selectedExternal, commitApprove, open, close, item.id]);
 
     return (
-        <Stack gap="sm">
-            {destinations !== null && destinations.length > 0 && (
-                <fieldset className={styles.destination_picker}>
-                    <legend className={styles.destination_legend}>Publish to</legend>
-                    {destinations.map((dest) => (
-                        <label key={dest.sinkId} className={styles.destination_option}>
-                            <input
-                                type="checkbox"
-                                checked={selected.has(dest.sinkId)}
-                                disabled={busy}
-                                onChange={() => toggle(dest.sinkId)}
-                            />
-                            <span className={styles.destination_label}>{dest.label ?? dest.sinkId}</span>
-                            <Badge tone="info">{dest.reach.egress}/{dest.reach.audience}</Badge>
-                        </label>
-                    ))}
-                    <Button variant="ghost" size="xs" disabled={busy} onClick={() => onSetDefault(item.id, Array.from(selected))}>
-                        Set as default for this type
-                    </Button>
-                </fieldset>
+        <Stack gap="md">
+            {destinationsLoading && <div className={styles.rail_hint}>Loading destinations…</div>}
+            {hasPicker && (
+                <DestinationPicker
+                    destinations={destinations}
+                    selected={selected}
+                    busy={busy}
+                    onToggle={toggle}
+                    onSetDefault={() => onSetDefault(item.id, Array.from(selected))}
+                />
             )}
-            <div className={styles.row_actions}>
-                <Button variant="primary" size="sm" loading={busy} disabled={blockedByOther || destinationsLoading} onClick={() => onApprove(item.id, approveDestinations)}>
+            <div className={styles.actions}>
+                <Button variant="primary" size="sm" loading={busy} disabled={blockedByOther || destinationsLoading || noDestinationSelected} onClick={handleApprove}>
                     <Check size={16} /> Approve
                 </Button>
                 {item.preview.editable && (
@@ -299,11 +539,65 @@ function PendingActions({ item, busyId, onApprove, onReject, onEdit, onSetDefaul
                         <Pencil size={16} /> Edit
                     </Button>
                 )}
-                <Button variant="danger" size="sm" disabled={blockedByOther} onClick={() => onReject(item.id)}>
+                <Button variant="danger" size="sm" className={styles.action_reject} loading={busy} disabled={blockedByOther} onClick={() => onReject(item.id)}>
                     <X size={16} /> Reject
                 </Button>
             </div>
         </Stack>
+    );
+}
+
+/**
+ * One pending item as a focused review card: the content (title, provider/source
+ * metadata, held-since, and the expandable preview) beside a decision rail. The
+ * two-region split gives the content readable width and hands the destination
+ * picker a column of its own, the room the old table cell never had — which is
+ * why the multilingual sink labels no longer wrap to eight lines. On a narrow
+ * container the regions stack, the rail dropping below the content.
+ *
+ * @param props.item - The pending curation envelope.
+ * @param props.busyId - The id of the card currently deciding, or null.
+ * @param props.onApprove - Approve the item with the curator's selected destinations.
+ * @param props.onReject - Reject the item.
+ * @param props.onEdit - Open the inline editor for the item.
+ * @param props.onSetDefault - Save the current selection as the type's default.
+ * @returns The review card.
+ */
+function PendingCard({ item, busyId, onApprove, onReject, onEdit, onSetDefault }: {
+    item: ICurationItemView;
+    busyId: string | null;
+    onApprove: (id: string, destinations?: ICurationDestinationSelection[]) => void;
+    onReject: (id: string) => void;
+    onEdit: (item: ICurationItemView) => void;
+    onSetDefault: (id: string, sinkIds: string[]) => void;
+}) {
+    return (
+        <Card padding="lg" className={styles.review_card}>
+            <div className={styles.review_grid}>
+                <div className={styles.review_content}>
+                    <div className={styles.review_meta}>
+                        <div className={styles.review_meta_head}>
+                            <span className={styles.review_title}>{item.preview.title ?? item.typeId}</span>
+                            {item.preview.editable && <Badge tone="info">editable</Badge>}
+                        </div>
+                        <div className={styles.review_submeta}>
+                            {item.providerId}{item.source ? ` · ${item.source}` : ''} · held <ClientTime date={item.createdAt} format="datetime" />
+                        </div>
+                    </div>
+                    <CurationPreview preview={item.preview} expandable />
+                </div>
+                <div className={styles.review_rail}>
+                    <PendingActions
+                        item={item}
+                        busyId={busyId}
+                        onApprove={onApprove}
+                        onReject={onReject}
+                        onEdit={onEdit}
+                        onSetDefault={onSetDefault}
+                    />
+                </div>
+            </div>
+        </Card>
     );
 }
 
@@ -442,49 +736,52 @@ export function CurationQueue({ onChanged }: { onChanged: () => void }) {
             {loading
                 ? <div className={styles.placeholder}>Loading…</div>
                 : items.length === 0
-                    ? <div className={styles.placeholder}>{isHistory ? 'No curation decisions yet.' : 'Nothing is awaiting curation.'}</div>
-                    : (
-                        <div className={`table-scroll ${styles.curation_table}`}>
-                            <Table>
-                                <Thead>
-                                    <Tr>
-                                        <Th width="shrink">Held</Th>
-                                        <Th width="shrink">Type</Th>
-                                        <Th>Preview</Th>
-                                        <Th width="shrink">Decision</Th>
-                                    </Tr>
-                                </Thead>
-                                <Tbody>
-                                    {items.map(item => (
-                                        <Tr key={item.id}>
-                                            <Td muted data-label="Held"><ClientTime date={item.createdAt} format="datetime" /></Td>
-                                            <Td data-label="Type">
-                                                <div className={styles.tool_name}>{item.preview.title ?? item.typeId}</div>
-                                                <div className={styles.tool_desc}>
-                                                    {item.providerId}{item.source ? ` · ${item.source}` : ''}
-                                                </div>
-                                            </Td>
-                                            <Td data-label="Preview"><CurationPreview preview={item.preview} /></Td>
-                                            <Td data-label="Decision">
-                                                {isHistory
-                                                    ? <CurationDecision item={item} />
-                                                    : (
-                                                        <PendingActions
-                                                            item={item}
-                                                            busyId={busyId}
-                                                            onApprove={(id, destinations) => { void resolve(id, 'approve', destinations); }}
-                                                            onReject={(id) => { void resolve(id, 'reject'); }}
-                                                            onEdit={openEditor}
-                                                            onSetDefault={(id, sinkIds) => { void setDefault(id, sinkIds); }}
-                                                        />
-                                                    )}
-                                            </Td>
+                    ? <div className={styles.placeholder}>{isHistory ? 'No curation decisions yet.' : 'Queue clear — nothing awaiting review.'}</div>
+                    : isHistory
+                        ? (
+                            <div className={`table-scroll ${styles.curation_table}`}>
+                                <Table>
+                                    <Thead>
+                                        <Tr>
+                                            <Th width="shrink">Held</Th>
+                                            <Th width="shrink">Type</Th>
+                                            <Th>Preview</Th>
+                                            <Th width="shrink">Decision</Th>
                                         </Tr>
-                                    ))}
-                                </Tbody>
-                            </Table>
-                        </div>
-                    )}
+                                    </Thead>
+                                    <Tbody>
+                                        {items.map(item => (
+                                            <Tr key={item.id}>
+                                                <Td muted data-label="Held"><ClientTime date={item.createdAt} format="datetime" /></Td>
+                                                <Td data-label="Type">
+                                                    <div className={styles.tool_name}>{item.preview.title ?? item.typeId}</div>
+                                                    <div className={styles.tool_desc}>
+                                                        {item.providerId}{item.source ? ` · ${item.source}` : ''}
+                                                    </div>
+                                                </Td>
+                                                <Td data-label="Preview"><CurationPreview preview={item.preview} /></Td>
+                                                <Td data-label="Decision"><CurationDecision item={item} /></Td>
+                                            </Tr>
+                                        ))}
+                                    </Tbody>
+                                </Table>
+                            </div>
+                        )
+                        : (
+                            <Stack gap="md">
+                                {items.map(item => (
+                                    <PendingCard
+                                        key={item.id}
+                                        item={item}
+                                        busyId={busyId}
+                                        onApprove={(id, destinations) => { void resolve(id, 'approve', destinations); }}
+                                        onReject={(id) => { void resolve(id, 'reject'); }}
+                                        onEdit={openEditor}
+                                        onSetDefault={(id, sinkIds) => { void setDefault(id, sinkIds); }}
+                                    />
+                                ))}
+                            </Stack>
+                        )}
         </Stack>
     );
 }

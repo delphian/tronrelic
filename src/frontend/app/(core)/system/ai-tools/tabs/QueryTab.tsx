@@ -14,14 +14,14 @@
  */
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { Send, Bot, User, AlertCircle, X, Copy, CheckCircle, Plus, History, MessageSquare, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
+import { Send, Bot, User, AlertCircle, X, Copy, CheckCircle, Plus, History, MessageSquare, RefreshCw, ChevronDown, ChevronRight, Brain, Wrench, CornerDownRight } from 'lucide-react';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
-import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IModelInfo, ISavedPrompt } from '@/types';
+import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IAiTranscriptSegment, IModelInfo, ISavedPrompt } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
@@ -87,6 +87,17 @@ interface ChatTurn {
      * only displays the number it is handed.
      */
     costUsd?: number | null;
+
+    /**
+     * Ordered transcript of an assistant turn — thinking, answer text, tool
+     * calls, and tool results — captured from the terminal `done` chunk on a
+     * live turn or rebuilt from a reopened history record. When present it is
+     * rendered in place of `content`, so the bubble shows the whole turn rather
+     * than only the final answer. Absent on a user turn, on a turn still
+     * streaming, and on legacy records written before transcripts existed (which
+     * fall back to `content`).
+     */
+    segments?: IAiTranscriptSegment[];
 }
 
 /** A run of consecutive history records sharing one `conversationId`. */
@@ -157,6 +168,102 @@ function renderAssistantHtml(text: string, pending: boolean): string {
         html = `<pre>${escaped}</pre>`;
     }
     return html;
+}
+
+/**
+ * Pretty-print a tool's JSON argument or result payload for display. Tool input
+ * arrives as an arbitrary object the model produced and a result as a string the
+ * tool returned; both read best as indented JSON when they parse as such, and as
+ * raw text otherwise. Kept tolerant — a transcript must render even if a payload
+ * is malformed — so any stringify failure degrades to `String(value)` rather
+ * than throwing inside render.
+ *
+ * @param value - The tool input object, or the tool result string.
+ * @returns A human-readable, multi-line string safe to drop into a `<pre>`.
+ */
+function formatToolPayload(value: unknown): string {
+    let formatted: string;
+    if (typeof value === 'string') {
+        try {
+            formatted = JSON.stringify(JSON.parse(value), null, 2);
+        } catch {
+            formatted = value;
+        }
+    } else {
+        try {
+            formatted = JSON.stringify(value ?? null, null, 2);
+        } catch {
+            formatted = String(value);
+        }
+    }
+    return formatted;
+}
+
+/**
+ * Render an assistant turn's structured transcript — the thinking, tool calls,
+ * tool results, and answer text in the order they occurred. This is what lets a
+ * reopened conversation (or a just-completed live turn) show the whole turn
+ * instead of only its final answer: history persists no other structure, so
+ * without this the thinking and tool activity would be invisible. Thinking is
+ * tucked into a collapsed `<details>` so a long chain of reasoning never buries
+ * the answer; tool calls and results render as labelled blocks, errors flagged.
+ * Answer text reuses the same sanitized-Markdown pipeline as a streaming turn so
+ * the prose reads identically whether live or replayed.
+ *
+ * @param segments - The turn's ordered transcript segments.
+ * @returns The rendered transcript.
+ */
+function AssistantSegments({ segments }: { segments: IAiTranscriptSegment[] }) {
+    return (
+        <div className={styles.segments}>
+            {segments.map((segment, index) => {
+                if (segment.type === 'thinking') {
+                    return (
+                        <details key={index} className={styles.thinking}>
+                            <summary className={styles.thinking_summary}>
+                                <Brain size={14} /> Thinking
+                            </summary>
+                            <div className={styles.thinking_body}>{segment.text}</div>
+                        </details>
+                    );
+                }
+                if (segment.type === 'tool_use') {
+                    return (
+                        <div key={index} className={styles.tool_call}>
+                            <div className={styles.tool_call_header}>
+                                <Wrench size={14} />
+                                <span className={styles.tool_call_name}>{segment.name || 'tool'}</span>
+                                {segment.server && <Badge tone="info">server</Badge>}
+                            </div>
+                            <pre className={styles.tool_payload}>{formatToolPayload(segment.input)}</pre>
+                        </div>
+                    );
+                }
+                if (segment.type === 'tool_result') {
+                    return (
+                        <div
+                            key={index}
+                            className={`${styles.tool_result} ${segment.isError ? styles['tool_result--error'] : ''}`}
+                        >
+                            <div className={styles.tool_call_header}>
+                                <CornerDownRight size={14} />
+                                <span className={styles.tool_call_name}>{segment.isError ? 'Tool error' : 'Tool result'}</span>
+                            </div>
+                            <pre className={styles.tool_payload}>{formatToolPayload(segment.content)}</pre>
+                        </div>
+                    );
+                }
+                return (
+                    <div
+                        key={index}
+                        className={styles.turn_markdown}
+                        // Assistant text is sanitized by the rehype-sanitize pipeline in renderAssistantHtml.
+                        dangerouslySetInnerHTML={{ __html: renderAssistantHtml(segment.text, false) }}
+                    />
+                );
+            })}
+        </div>
+    );
 }
 
 /**
@@ -330,7 +437,15 @@ export function QueryTab() {
             updateTurn(turnId, turn => ({ content: turn.content + text }));
         } else if (chunk.type === 'done') {
             setStreaming(false);
-            updateTurn(turnId, { pending: false, usage: chunk.usage ?? null, costUsd: chunk.costUsd ?? null });
+            // Adopt the finalized transcript so the just-completed turn shows the
+            // same thinking/tool structure history does, without a reload. Absent
+            // for a plain text turn — the streamed `content` already covers it.
+            updateTurn(turnId, {
+                pending: false,
+                usage: chunk.usage ?? null,
+                costUsd: chunk.costUsd ?? null,
+                ...(chunk.transcript && chunk.transcript.length > 0 ? { segments: chunk.transcript } : {})
+            });
             streamingTurnIdRef.current = null;
             activeQueryIdRef.current = null;
         } else if (chunk.type === 'error') {
@@ -574,6 +689,11 @@ export function QueryTab() {
             const rebuilt: ChatTurn[] = [];
             for (const record of records) {
                 rebuilt.push({ id: generateUUID(), role: 'user', content: record.prompt });
+                // A turn has a body when it left answer text OR a structured
+                // transcript (a tool-only round can finish with no final text yet
+                // still have plenty to show). Only a truly empty, non-failed
+                // record falls back to the "No response recorded" note.
+                const hasBody = !!record.responseText || (record.transcript?.length ?? 0) > 0;
                 rebuilt.push({
                     id: generateUUID(),
                     role: 'assistant',
@@ -581,7 +701,8 @@ export function QueryTab() {
                     model: record.model,
                     usage: record.usage,
                     costUsd: record.costUsd ?? null,
-                    error: record.responseText ? null : (record.errorMessage ?? 'No response recorded')
+                    error: record.errorMessage ?? (hasBody ? null : 'No response recorded'),
+                    ...(record.transcript && record.transcript.length > 0 ? { segments: record.transcript } : {})
                 });
             }
             setStreaming(false);
@@ -731,6 +852,10 @@ export function QueryTab() {
 
                                             {isUser ? (
                                                 <div className={styles.turn_text}>{turn.content}</div>
+                                            ) : turn.segments && turn.segments.length > 0 ? (
+                                                // A settled turn (live `done` or reopened from history) renders its
+                                                // full transcript — thinking, tool calls, results, and text in order.
+                                                <AssistantSegments segments={turn.segments} />
                                             ) : (
                                                 <div
                                                     className={styles.turn_markdown}

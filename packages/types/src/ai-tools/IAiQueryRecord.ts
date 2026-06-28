@@ -7,6 +7,8 @@
  * provider concern and is not represented here.
  */
 
+import type { IAiTranscriptSegment } from './IAiTranscriptSegment.js';
+
 /**
  * How a recorded query was executed. `stream` and `programmatic` are the two
  * interactive shapes an admin drives from the Query tab. `scheduled` marks an
@@ -67,4 +69,15 @@ export interface IAiQueryRecord {
 
     /** Optional id grouping every turn of one multi-turn chat. */
     conversationId?: string;
+
+    /**
+     * Ordered transcript of the turn — thinking blocks, visible answer text,
+     * tool calls, and tool results in occurrence order — so a reopened
+     * conversation replays the whole turn rather than only `responseText`.
+     * Absent on records written before this field existed or when the provider
+     * reported no structured transcript; the Query tab falls back to
+     * `responseText` then. Thinking segments are present only when the operator
+     * enabled `persistThinking`.
+     */
+    transcript?: IAiTranscriptSegment[];
 }

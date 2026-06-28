@@ -84,27 +84,131 @@
     color: var(--color-text-subtle);
 }
 
-/* Destination picker: the publish sinks a curator selects when approving a
-   destinations-enabled item. Grouped in a fieldset for accessible labelling. */
-.destination_picker {
+/* Pending review card: one held item presented as a focused work item rather
+   than a table row. Establishes a container so the inner content|rail split
+   responds to the card's own width — correct inside slideouts and modals, not
+   just the full viewport. */
+.review_card {
+    container-type: inline-size;
+    container-name: review-card;
+}
+
+/* Content beside decision rail. Single column by default (narrow containers);
+   the rail drops below the content. Widens to two columns once the card has the
+   room, giving the destination picker a column of its own. */
+.review_grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--gap-lg);
+}
+
+@container review-card (min-width: #{$breakpoint-mobile-lg}) {
+    .review_grid {
+        grid-template-columns: minmax(0, 1fr) var(--max-width-xs);
+    }
+}
+
+/* Content region: metadata header then the expandable preview. min-width:0 lets
+   long unbroken body text wrap instead of forcing the grid column wider. */
+.review_content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    min-width: 0;
+}
+
+.review_meta {
     display: flex;
     flex-direction: column;
     gap: var(--gap-2xs);
+}
+
+.review_meta_head {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+.review_title {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.review_submeta {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+/* Decision rail. Stacked above the content it follows on narrow cards (top
+   divider); becomes a true side rail with a left divider once two columns fit. */
+.review_rail {
+    display: flex;
+    flex-direction: column;
+    padding-top: var(--gap-md);
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+@container review-card (min-width: #{$breakpoint-mobile-lg}) {
+    .review_rail {
+        padding-top: 0;
+        padding-left: var(--gap-lg);
+        border-top: none;
+        border-left: var(--border-width-thin) solid var(--color-border);
+    }
+}
+
+/* Secondary hint while a card's eligible destinations are still loading. */
+.rail_hint {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+/* Destination picker: the publish sinks a curator selects when approving a
+   destinations-enabled item. Grouped in a fieldset for accessible labelling,
+   then split into internal and external sub-groups so exposure is preattentive. */
+.picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
     margin: 0;
+    padding: 0;
+    border: none;
+}
+
+.picker_legend {
+    padding: 0;
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
+}
+
+/* One reach group (internal or external). The external variant is tinted amber
+   so a public destination never reads as a calm, default-safe choice. */
+.picker_group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
     padding: var(--padding-sm);
     border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface-muted);
 }
 
-.destination_legend {
-    padding: 0 var(--gap-2xs);
+.picker_group_external {
+    border-color: var(--color-warning);
+    background: var(--color-warning-alpha-15);
+}
+
+.picker_group_title {
     font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
     color: var(--color-text-muted);
 }
 
-.destination_option {
+.dest_option {
     display: flex;
     align-items: center;
     gap: var(--gap-xs);
@@ -113,13 +217,74 @@
     cursor: pointer;
 }
 
-.destination_option input {
+.dest_option input {
     accent-color: var(--color-primary);
 }
 
+.dest_icon {
+    flex: 0 0 auto;
+    color: var(--color-text-muted);
+}
+
 /* Sink label grows so the reach badge sits flush at the row's end. */
-.destination_label {
+.dest_label {
     flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Live summary of the current selection's blast radius, above the actions. */
+.publish_summary {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.summary_warn {
+    flex: 0 0 auto;
+    color: var(--color-warning);
+}
+
+/* Decision actions. Reject is pushed to the far end so the destructive button is
+   never adjacent to Approve — a Fitts's-law gap against the mis-click. */
+.actions {
+    display: flex;
+    gap: var(--gap-sm);
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: var(--gap-md);
+}
+
+.action_reject {
+    margin-left: auto;
+}
+
+/* External-publish confirmation modal: the warning banner and the named list of
+   public channels the approval will fire. */
+.confirm_warning {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    color: var(--color-warning-text);
+    font-size: var(--font-size-body-sm);
+}
+
+.confirm_list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.confirm_item {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
 }
 
 /* Per-destination delivery outcomes shown on a decided item in history. */

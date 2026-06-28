@@ -19,6 +19,7 @@ import { ChevronDown, ChevronRight, AlertCircle } from 'lucide-react';
 import { Page, Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { Input } from '../../../../components/ui/Input';
+import { Switch } from '../../../../components/ui/Switch';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { ClientTime } from '../../../../components/ui/ClientTime';
 import { getSchedulerStatus, getSchedulerHealth, updateSchedulerJob } from '../../api';
@@ -32,32 +33,6 @@ interface Props {
     title?: string;
     /** Hide the stats bar (useful when embedding in other pages) */
     hideStats?: boolean;
-}
-
-/**
- * Toggle switch component for boolean state changes.
- *
- * Displays a sliding toggle control with loading state feedback.
- * Used for enable/disable job actions without confirmation dialogs.
- */
-function Toggle({ enabled, onChange, disabled, loading }: {
-    enabled: boolean;
-    onChange: () => void;
-    disabled?: boolean;
-    loading?: boolean;
-}) {
-    return (
-        <button
-            type="button"
-            role="switch"
-            aria-checked={enabled}
-            onClick={onChange}
-            disabled={disabled || loading}
-            className={`${styles.toggle} ${enabled ? styles.toggle_on : styles.toggle_off} ${loading ? styles.toggle_loading : ''}`}
-        >
-            <span className={styles.toggle_thumb} />
-        </button>
-    );
 }
 
 /**
@@ -142,11 +117,11 @@ function JobRow({ job, onToggleEnabled, onScheduleChange, isLoading, loadingJobN
                     )}
                 </Td>
                 <Td className={styles.cell_enabled}>
-                    <Toggle
-                        enabled={job.enabled}
-                        onChange={() => onToggleEnabled(job.name, !job.enabled)}
-                        disabled={isLoading}
-                        loading={isThisLoading}
+                    <Switch
+                        on={job.enabled}
+                        onChange={(next) => onToggleEnabled(job.name, next)}
+                        disabled={isLoading || isThisLoading}
+                        aria-label={`${job.enabled ? 'Disable' : 'Enable'} ${job.name}`}
                     />
                 </Td>
             </Tr>

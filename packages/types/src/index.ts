@@ -70,7 +70,7 @@ export type { ITronGridService, ITronGridAccountResponse, ITronGridAccountPermis
 export type { ITrc10, ITrc10FrozenSupply } from './trc10/index.js';
 export type { IBlockStats, IBlock, IBlockTransaction, IBlockTransactionParty, IBlockTransactionContract, IResourceUsage, IBlockchainService, ITransactionTimeseriesPoint, IOverviewTimeseriesPoint, OverviewTimeseriesWindow, ITransactionDetailService } from './blockchain/index.js';
 export type { IToolsService, IAddressConversionResult, IAddressValidationResult } from './tools/index.js';
-export type { IAiTool, IAiToolInputSchema, IAiConversationMessage, IAiProvider, IAiStreamChunk, IAiQueryRecord, AiQueryMode, IAiQueryOptions, IAiQueryResult, IModelInfo, ISavedPrompt } from './ai-tools/index.js';
+export type { IAiTool, IAiToolInputSchema, IAiConversationMessage, IAiProvider, IAiStreamChunk, IAiQueryRecord, AiQueryMode, IAiQueryOptions, IAiQueryResult, IModelInfo, ISavedPrompt, IAiTranscriptSegment, IAiThinkingSegment, IAiTextSegment, IAiToolUseSegment, IAiToolResultSegment } from './ai-tools/index.js';
 export { AI_TOOL_NAME_PATTERN } from './ai-tools/index.js';
 export { UNTRUSTED_CONTENT_NOTICE, UNTRUSTED_CONTENT_SYSTEM_CLAUSE, wrapUntrustedToolResult } from './ai-tools/index.js';
 export { DEFAULT_UNTRUSTED_SCREEN_CONFIG } from './ai-tools/index.js';

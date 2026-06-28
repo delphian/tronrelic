@@ -5,41 +5,10 @@ import { ChevronDown, ChevronRight, Download, Trash2, Settings, AlertCircle } fr
 import { Page, Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { Button } from '../../../../components/ui/Button';
+import { Switch } from '../../../../components/ui/Switch';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import type { IPluginInfo } from '@/types';
 import styles from './PluginsManagementPage.module.scss';
-
-/**
- * Toggle switch component for boolean state changes.
- *
- * Displays a sliding toggle control with loading state feedback.
- * Used for enable/disable plugin actions without confirmation dialogs.
- *
- * @param props - Component props
- * @param props.enabled - Current toggle state
- * @param props.onChange - Callback when toggle is clicked
- * @param props.disabled - Whether the toggle is interactive
- * @param props.loading - Whether an operation is in progress
- */
-function Toggle({ enabled, onChange, disabled, loading }: {
-    enabled: boolean;
-    onChange: () => void;
-    disabled?: boolean;
-    loading?: boolean;
-}) {
-    return (
-        <button
-            type="button"
-            role="switch"
-            aria-checked={enabled}
-            onClick={onChange}
-            disabled={disabled || loading}
-            className={`${styles.toggle} ${enabled ? styles.toggle_on : styles.toggle_off} ${loading ? styles.toggle_loading : ''}`}
-        >
-            <span className={styles.toggle_thumb} />
-        </button>
-    );
-}
 
 /**
  * Plugin row component for the management table.
@@ -103,11 +72,11 @@ function PluginRow({ pluginInfo, onInstall, onUninstall, onToggleEnabled, isLoad
                 </Td>
                 <Td className={styles.cell_enabled}>
                     {metadata.installed && (
-                        <Toggle
-                            enabled={metadata.enabled}
-                            onChange={() => onToggleEnabled(manifest.id, !metadata.enabled)}
-                            disabled={isLoading}
-                            loading={isThisLoading}
+                        <Switch
+                            on={metadata.enabled}
+                            onChange={(next) => onToggleEnabled(manifest.id, next)}
+                            disabled={isLoading || isThisLoading}
+                            aria-label={`${metadata.enabled ? 'Disable' : 'Enable'} ${manifest.title}`}
                         />
                     )}
                 </Td>

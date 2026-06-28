@@ -29,6 +29,9 @@
     --query-chat-height-md: 32rem;
     --query-composer-min-height: 4.5rem;
     --query-transcript-min-height: 6rem;
+    // Caps a tool call's argument/result block so a large payload scrolls within
+    // the bubble instead of pushing the answer text far down the transcript.
+    --query-tool-payload-max-height: 16rem;
 
     container-type: inline-size;
     container-name: ai-query;
@@ -564,4 +567,94 @@
     gap: var(--gap-xs);
     font-size: var(--font-size-caption);
     color: var(--color-text-muted);
+}
+
+/*
+ * ===========================================================================
+ * ASSISTANT TRANSCRIPT SEGMENTS — thinking, tool calls, tool results, text
+ * rendered in occurrence order when a turn is replayed (live `done` or history).
+ * ===========================================================================
+ */
+.segments {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+/* Thinking — collapsed by default so a long reasoning chain never buries the
+   answer; the muted body reads as secondary, set off by a left accent rule. */
+.thinking {
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    padding: var(--padding-xs) var(--padding-sm);
+}
+
+.thinking_summary {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    cursor: pointer;
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+}
+
+.thinking_body {
+    margin-top: var(--gap-xs);
+    padding-left: var(--padding-sm);
+    border-left: var(--border-width-thick) solid var(--color-border);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    line-height: var(--line-height-relaxed);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* Tool call + result blocks share a bordered, muted-surface frame; the result
+   carries a left accent (success) that flips to danger when the tool errored. */
+.tool_call,
+.tool_result {
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    padding: var(--padding-xs) var(--padding-sm);
+}
+
+.tool_result {
+    border-left: var(--border-width-thick) solid var(--color-success);
+}
+
+.tool_result--error {
+    border-left-color: var(--color-danger);
+}
+
+.tool_call_header {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+}
+
+.tool_call_name {
+    font-family: var(--font-mono);
+    color: var(--color-text);
+}
+
+.tool_payload {
+    margin: var(--gap-xs) 0 0 0;
+    padding: var(--padding-xs);
+    max-height: var(--query-tool-payload-max-height);
+    overflow: auto;
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text);
+    line-height: var(--line-height-relaxed);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
