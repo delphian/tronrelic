@@ -5,6 +5,8 @@
  * {@link IAiProvider.ask}, or {@link IAiProvider.queryStream}.
  */
 
+import type { IAiTranscriptSegment } from './IAiTranscriptSegment.js';
+
 /**
  * The complete result of a programmatic AI query.
  *
@@ -55,4 +57,13 @@ export interface IAiQueryResult {
      * matching rate; omitted by a provider that does not price queries.
      */
     costUsd?: number | null;
+
+    /**
+     * Ordered transcript of the turn — thinking blocks, visible answer text,
+     * tool calls, and tool results, in the order they occurred across every
+     * agentic round. Lets a surface render and core persist the whole turn, not
+     * just `responseText`. Absent when the provider does not report a structured
+     * transcript; a consumer falls back to `responseText` in that case.
+     */
+    transcript?: IAiTranscriptSegment[];
 }

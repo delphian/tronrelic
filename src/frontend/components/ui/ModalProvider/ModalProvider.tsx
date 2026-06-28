@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../../lib/cn';
 import { useAppDispatch } from '../../../store/hooks';
@@ -224,6 +224,72 @@ const sizeClass: Record<ModalSize, string> = {
  */
 function ModalRenderer({ descriptor, onClose }: { descriptor: ModalDescriptor; onClose: () => void }) {
     const { id, title, content, size = 'md', dismissible = true } = descriptor;
+    const dialogRef = useRef<HTMLDivElement>(null);
+    // The parent passes a fresh `onClose` arrow each render; holding it in a ref
+    // lets the focus effect run once on mount (not re-fire and steal focus on every
+    // parent re-render) while still calling the latest handler.
+    const onCloseRef = useRef(onClose);
+    onCloseRef.current = onClose;
+
+    /**
+     * Trap keyboard focus inside the dialog while it is open and restore it to the
+     * triggering element on close. Without this, Tab walks out of the dialog to the
+     * page behind it and Escape does nothing — unacceptable for a safety-critical
+     * confirm (e.g. the irreversible external-publish gate) that the operator may be
+     * driving entirely from the keyboard. Initial focus is only moved when React's
+     * own `autoFocus` has not already placed it inside the dialog, so an explicit
+     * default-focus target (the confirm dialog's Cancel button) is preserved.
+     */
+    useEffect(() => {
+        const dialog = dialogRef.current;
+        if (!dialog) {
+            return;
+        }
+        const previouslyFocused = document.activeElement as HTMLElement | null;
+        const focusable = (): HTMLElement[] => Array.from(
+            dialog.querySelectorAll<HTMLElement>(
+                'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )
+        );
+
+        if (!dialog.contains(document.activeElement)) {
+            (focusable()[0] ?? dialog).focus();
+        }
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                if (dismissible) {
+                    event.stopPropagation();
+                    onCloseRef.current();
+                }
+                return;
+            }
+            if (event.key !== 'Tab') {
+                return;
+            }
+            const items = focusable();
+            if (items.length === 0) {
+                event.preventDefault();
+                return;
+            }
+            const first = items[0];
+            const last = items[items.length - 1];
+            const active = document.activeElement;
+            if (event.shiftKey && (active === first || !dialog.contains(active))) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && active === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        };
+
+        dialog.addEventListener('keydown', onKeyDown);
+        return () => {
+            dialog.removeEventListener('keydown', onKeyDown);
+            previouslyFocused?.focus?.();
+        };
+    }, [dismissible]);
 
     /**
      * Handles backdrop click events to close dismissible modals.
@@ -247,7 +313,7 @@ function ModalRenderer({ descriptor, onClose }: { descriptor: ModalDescriptor; o
             className={styles.backdrop}
             onClick={handleBackdropClick}
         >
-            <div className={cn(styles.dialog, sizeClass[size])}>
+            <div ref={dialogRef} tabIndex={-1} className={cn(styles.dialog, sizeClass[size])}>
                 <header className={styles.dialog__header}>
                     {title && <h2 id={`${id}-title`}>{title}</h2>}
                     {dismissible && (

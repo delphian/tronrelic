@@ -7,6 +7,8 @@
  * delta, a terminal completion signal with usage, or an error notification.
  */
 
+import type { IAiTranscriptSegment } from './IAiTranscriptSegment.js';
+
 /**
  * One streamed chunk of an AI response, correlated to its query by `queryId`.
  */
@@ -46,4 +48,14 @@ export interface IAiStreamChunk {
      * rate); omitted entirely by a provider that does not price queries.
      */
     costUsd?: number | null;
+
+    /**
+     * Ordered transcript of the completed turn — thinking, answer text, tool
+     * calls, and tool results in occurrence order — present on the terminal
+     * 'done' chunk so the live transcript can show the same structure history
+     * does without a reload. The streamed text deltas remain the live answer;
+     * this is the structured record finalized once the turn settles. Omitted by
+     * a provider that does not report a structured transcript.
+     */
+    transcript?: IAiTranscriptSegment[];
 }

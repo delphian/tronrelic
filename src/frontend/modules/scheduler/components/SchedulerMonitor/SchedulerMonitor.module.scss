@@ -163,51 +163,6 @@
     border-color: var(--color-border-hover);
 }
 
-/* Toggle Switch */
-.toggle {
-    position: relative;
-    width: var(--spacing-12);
-    height: var(--spacing-9);
-    border-radius: var(--spacing-9);
-    border: none;
-    cursor: pointer;
-    transition: background-color var(--transition-fast);
-    padding: 0;
-}
-
-.toggle:disabled {
-    opacity: var(--button-disabled-opacity);
-    cursor: not-allowed;
-}
-
-.toggle_on {
-    background: var(--color-success);
-}
-
-.toggle_off {
-    background: var(--color-border);
-}
-
-.toggle_loading {
-    opacity: 0.6;
-}
-
-.toggle_thumb {
-    position: absolute;
-    top: var(--spacing-1);
-    left: var(--spacing-1);
-    width: var(--spacing-7);
-    height: var(--spacing-7);
-    border-radius: var(--radius-full);
-    background: var(--color-white);
-    box-shadow: var(--shadow-sm);
-    transition: transform var(--transition-fast);
-}
-
-.toggle_on .toggle_thumb {
-    transform: translateX(var(--spacing-5));
-}
-
 /* Details Row */
 .details_content {
     padding: var(--spacing-6);

@@ -26,7 +26,10 @@ const COLLECTION = 'module_ai-tools_query_history';
  * identical across paths: drift between them would make the same query render
  * differently depending on how it was launched. On success `result` carries the
  * model, usage, and cost; on failure `errorMessage` is set and the caller's
- * requested `fallbackModel` (if any) stands in for the unknown model.
+ * requested `fallbackModel` (if any) stands in for the unknown model. When the
+ * provider reports a structured transcript on `result`, it is persisted so a
+ * reopened conversation replays the whole turn (thinking, tool calls, tool
+ * results) rather than only `responseText`.
  *
  * @param mode - Execution mode the record is tagged with (`stream` for the
  *        admin stream path, `programmatic` for a non-streaming admin call,
@@ -67,7 +70,13 @@ export function buildAiQueryRecord(
         status: result ? 'completed' : 'failed',
         createdAt,
         completedAt: new Date().toISOString(),
-        ...(conversationId ? { conversationId } : {})
+        ...(conversationId ? { conversationId } : {}),
+        // Persist the structured transcript when the provider reported one, so a
+        // reopened conversation replays the turn's thinking, tool calls, and tool
+        // results — not just `responseText`. Absent when the query failed or the
+        // provider reports no transcript; the Query tab falls back to
+        // `responseText` then.
+        ...(result?.transcript && result.transcript.length > 0 ? { transcript: result.transcript } : {})
     };
 }
 
