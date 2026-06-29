@@ -375,8 +375,8 @@ export class WebSocketService implements IWebSocketService {
         // tick. The /system/ai-tools, /system/curation, publish, and
         // /system/account-history surfaces subscribe on the shared socket without
         // joining a room, so these broadcast globally; payloads carry only a
-        // timestamp, count, ingestion-progress snapshot, or item summary, never
-        // governed data.
+        // timestamp, count, or item summary, never governed data — each surface
+        // refetches the protected detail over its requireAdmin REST endpoint.
         this.io.emit(event.event, event.payload);
         break;
       case 'toast':
