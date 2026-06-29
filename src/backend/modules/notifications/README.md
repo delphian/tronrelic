@@ -9,7 +9,7 @@ Category-based notification dispatch: any source declares a category and fires; 
 | Module id | `notifications` |
 | Module class | `src/backend/modules/notifications/NotificationsModule.ts` |
 | Admin page | `/system/notifications` (menu item `Notifications`, order 37, registered in `run()`) |
-| User page | `/account/notifications` (per-user opt-outs; any logged-in user) |
+| User page | `/profile` (per-user opt-outs surface as a section; any logged-in user) |
 | Service registry name | `'notifications'` → `INotificationService` |
 | Content-router sinks | Each channel registers `notifications:<channelId>` on `'content-router'` in `run()` (`accepts: []` floor, `reach` per channel; toast `{ user, user }`). Dispatch matches candidates through the router (`DispatchService.candidateChannelIds`); delivery + recipient resolution stay in dispatch |
 | Consumes from registry | `'user-groups'` (`IUserGroupService.getMembers`) for audience resolution; `'user-settings'` (`IUserSettingsService`) to persist per-user opt-outs under the `notifications` namespace; `'content-types'` (`IContentRegistry`) to resolve a request's content type into a descriptor; `'content-router'` to advertise channels as sinks |
@@ -122,7 +122,7 @@ The policy and audit indexes are created in `init()`. Categories and channels ar
 
 ## First Consumer
 
-The `ai-tools` module registers the `ai-tools.scheduled-prompt-run` category (audience: admin group, `channelDefaults: { toast: true }`, user-silenceable) plus an `ai-tools:scheduled-prompt-run` content type, and fires `notify({ category, typeId, ref })` after every cron-scheduled prompt run — so admins see a toast when a scheduled AI prompt runs, any admin can opt out at `/account/notifications` or the My Preferences tab, and an admin can disable the whole category for everyone.
+The `ai-tools` module registers the `ai-tools.scheduled-prompt-run` category (audience: admin group, `channelDefaults: { toast: true }`, user-silenceable) plus an `ai-tools:scheduled-prompt-run` content type, and fires `notify({ category, typeId, ref })` after every cron-scheduled prompt run — so admins see a toast when a scheduled AI prompt runs, any admin can opt out at `/profile` or the My Preferences tab, and an admin can disable the whole category for everyone.
 
 ## Related
 

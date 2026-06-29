@@ -50,7 +50,6 @@ Every module exposes its surface through one barrel. Consumers import from the m
 export { WalletButton } from './components/WalletButton';
 export { SessionProvider, useAuthSession } from './components/SessionProvider';
 export { AuthModal } from './components/AuthModal';
-export { ProfileMenu } from './components/ProfileMenu';
 export type { ISSRSession } from './lib';
 ```
 
@@ -88,7 +87,7 @@ A page file with 500 lines of component logic is the failure mode this rule prev
 
 | Module | Purpose |
 |--------|---------|
-| `user` | Better Auth login, wallet button, admin analytics dashboards |
+| `user` | Better Auth login, the `/profile` settings hub (wallet management via TronLink signing, notification preferences), `/system/users` identity dashboards |
 | `menu` | Navigation system (PriorityNav, useMenuConfig) |
 | `address-labels` | Address labeling and display |
 | `scheduler` | Scheduler monitoring UI |

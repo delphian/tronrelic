@@ -3,7 +3,7 @@
  *
  * Two header affordances:
  *   - `signin_btn`: anonymous-visitor CTA opening the AuthModal.
- *   - `identity_btn`: logged-in pill opening the ProfileMenu.
+ *   - `identity_btn`: logged-in pill linking to the profile page.
  *
  * Both collapse to icon-only on mobile via the same @media breakpoint
  * MainHeader uses, since this component is a content-sized flex item

@@ -86,11 +86,10 @@ Delivery honors per-user silence by emitting to the resolved `user:${id}` rooms,
 
 ### Storage
 
-Three module collections (modules are not auto-prefixed like plugins; use the module convention):
+Two module collections (modules are not auto-prefixed like plugins; use the module convention). Per-user preferences are **not** stored here — they live in identity's `module_user_settings` (`notifications` namespace), reached via the `'user-settings'` service.
 
 | Collection | Key | Holds |
 |------------|-----|-------|
-| `module_notifications_preferences` | `userId` (unique) | `{ mutedAll, overrides: { [categoryId]: { [channelId]: boolean } } }` |
 | `module_notifications_policy` | singleton | `{ channels: { [id]: { enabled } }, categories: { [id]: { enabled } } }` |
 | `module_notifications_audit` | `_id` | One blast: category id + **label snapshot**, source, severity, title/body, audience snapshot, per-channel delivered/suppressed counts, `firedBy`, `createdAt` |
 
@@ -100,7 +99,7 @@ Indexes (including the 90-day audit TTL on `createdAt`, `AUDIT_RETENTION_DAYS` i
 
 Admins get `/system/notifications` with three tabs: **Categories** (enable/disable each, see its source and per-channel defaults), **Channels** (globally enable/disable a transport), and **History** (the audit feed, filterable by category, source, and time). Each tab is backed by an admin-gated REST route under the module.
 
-Users get a preferences panel at `/account/notifications` (any logged-in user), mirrored as a **My Preferences** tab on `/system/notifications` for admins — one shared `PreferencesPanel` listing every user-configurable category with a per-channel toggle and a global mute. It writes `module_notifications_preferences`; the pipeline reads it at dispatch.
+Users get a preferences panel at `/profile` (any logged-in user), mirrored as a **My Preferences** tab on `/system/notifications` for admins — one shared `PreferencesPanel` listing every user-configurable category with a per-channel toggle and a global mute. It writes identity's `module_user_settings` (`notifications` namespace); the pipeline reads it at dispatch.
 
 ### First consumer: cron AI prompt runs
 
