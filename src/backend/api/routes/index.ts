@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import type { IDatabaseService } from '@/types';
 import { blockchainRouter } from './blockchain.router.js';
-import { accountsRouter } from './accounts.router.js';
 import { transactionsRouter } from './transactions.router.js';
 import { transactionRouter } from './transaction.router.js';
 import { inflowsRouter } from './inflows.router.js';
@@ -40,7 +39,6 @@ export function createApiRouter(database: IDatabaseService) {
   router.use('/plugin-management', pluginManagementRouter);
 
   // Routers with database dependency - inject shared instance
-  router.use('/accounts', accountsRouter(database));
   router.use('/transactions', transactionsRouter(database));
   router.use('/transaction', transactionRouter(database));
   router.use('/inflows', inflowsRouter(database));
