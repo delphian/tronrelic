@@ -77,6 +77,7 @@ See `src/backend/hooks/registry.ts` for the live list. Today:
 | `ssr.headFragments` | `ssr.page` | `waterfall` | 200 | Contribute `<style>` / `<link>` / `<meta>` / `<script>` to the rendered `<head>`. Backed by `POST /api/ssr/head-fragments`. |
 | `ai.toolInvoke` | `ai.tool` | `series` | 100 | Inspect a governed AI tool call before it runs (after schema validation). Throw `HookAbortError` to veto or hold; the governor surfaces the abort to the model as a denial. For compliance / lethal-trifecta gating. |
 | `ai.toolInvoked` | `ai.tool` | `observer` | 200 | Fired after a governed AI tool call completes, with the full `IToolInvocationRecord`. For audit fan-out, alerting, and lethal-trifecta watch; cannot change the outcome. |
+| `http.walletLinked` | `http.api` | `observer` | 100 | Fired after a user verifies (links) a TRON wallet on their profile and it is persisted. Carries `IWalletLinkedContext` (`{ userId, address }`). For modules reacting to new verified ownership — account-history enrolls the address into its backfill; cannot change the link outcome. |
 
 Adding a seam is a PR to `registry.ts`: declare the descriptor with its types, then wire core to invoke it via `hookRegistry.invoke(descriptor, input, seed?)`. The bar to add is intentionally higher than the bar to use — that asymmetry is what keeps the surface small.
 

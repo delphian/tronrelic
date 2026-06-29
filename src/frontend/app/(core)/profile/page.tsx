@@ -10,7 +10,7 @@
 
 import { headers } from 'next/headers';
 import type { Metadata } from 'next';
-import type { ILinkedWallet } from '@/types';
+import type { IAccountIngestionProgress, ILinkedWallet } from '@/types';
 import { getServerSideApiUrlWithPath } from '../../../lib/api-url';
 import { getServerSession } from '../../../modules/user/lib/session-server';
 import { Page, PageHeader } from '../../../components/layout';
@@ -51,6 +51,37 @@ async function fetchInitialWallets(apiUrl: string): Promise<ILinkedWallet[]> {
 }
 
 /**
+ * Fetch the account-history download progress for the signed-in account's own
+ * verified wallets during SSR, so the wallet panel paints each wallet's status
+ * with no loading flash. Forwards the session cookie for ownership scoping and
+ * degrades to an empty list on any failure — the panel then simply shows no
+ * status badges rather than breaking the page.
+ *
+ * @param apiUrl - The resolved backend API base (already includes `/api`).
+ * @returns Progress for the caller's tracked wallets, or an empty array on failure.
+ */
+async function fetchInitialProgress(apiUrl: string): Promise<IAccountIngestionProgress[]> {
+    let progress: IAccountIngestionProgress[] = [];
+    try {
+        const reqHeaders = await headers();
+        const cookie = reqHeaders.get('cookie');
+        if (cookie) {
+            const response = await fetch(`${apiUrl}/account-history/me/progress`, {
+                headers: { Cookie: cookie },
+                cache: 'no-store'
+            });
+            if (response.ok) {
+                const data = await response.json();
+                progress = Array.isArray(data?.progress) ? data.progress : [];
+            }
+        }
+    } catch {
+        progress = [];
+    }
+    return progress;
+}
+
+/**
  * Profile page server component.
  *
  * @returns The SSR-rendered hub for a logged-in visitor, or null to defer to
@@ -62,7 +93,11 @@ export default async function ProfilePage() {
         return null;
     }
 
-    const initialWallets = await fetchInitialWallets(getServerSideApiUrlWithPath());
+    const apiUrl = getServerSideApiUrlWithPath();
+    const [initialWallets, initialProgress] = await Promise.all([
+        fetchInitialWallets(apiUrl),
+        fetchInitialProgress(apiUrl)
+    ]);
 
     return (
         <Page>
@@ -75,6 +110,7 @@ export default async function ProfilePage() {
                     emailVerified: session.user.emailVerified
                 }}
                 initialWallets={initialWallets}
+                initialProgress={initialProgress}
             />
         </Page>
     );

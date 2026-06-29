@@ -21,7 +21,7 @@
  * @module backend/hooks/registry
  */
 
-import type { IHeadFragment, ISsrHeadContext, IAiToolInvokeContext, IToolInvocationRecord } from '@/types';
+import type { IHeadFragment, ISsrHeadContext, IAiToolInvokeContext, IToolInvocationRecord, IWalletLinkedContext } from '@/types';
 import { defineHook } from './define-hook.js';
 
 /**
@@ -116,7 +116,29 @@ export const HOOKS = {
                 'fan-out, alerting, and lethal-trifecta watch — handlers cannot change the outcome.'
         })
     },
-    http: {} as Record<string, never>,
+    http: {
+        /**
+         * Observer fired after a registered user verifies (links) a TRON wallet
+         * on their profile and the wallet is persisted. The seam exists so
+         * feature modules can react to new verified ownership without identity
+         * depending on them — the account-history module registers a `'core'`
+         * handler here to enroll the address into its backfill program. Observer
+         * semantics keep failures isolated: a reactor throwing never breaks the
+         * link. Grouped under the `http.api` track because it fires inside the
+         * `POST /api/user/wallets` request.
+         */
+        walletLinked: defineHook<IWalletLinkedContext, void, 'observer'>({
+            id: 'http.walletLinked',
+            kind: 'observer',
+            phase: 'http.api',
+            order: 100,
+            description:
+                'Fired after a user verifies (links) a TRON wallet on their profile and it is persisted. ' +
+                'Carries the owner user id and the address. For feature modules that react to new verified ' +
+                'ownership (e.g. account-history enrolling the address into its backfill) — handlers cannot ' +
+                'change the link outcome.'
+        })
+    },
     websocket: {} as Record<string, never>,
     scheduler: {} as Record<string, never>,
     observer: {} as Record<string, never>

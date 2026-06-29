@@ -523,4 +523,11 @@ describe('HOOKS registry — production seams', () => {
     it('orders htmlAttributes before headFragments so the timeline matches HTML output order', () => {
         expect(HOOKS.ssr.htmlAttributes.order).toBeLessThan(HOOKS.ssr.headFragments.order);
     });
+
+    it('declares http.walletLinked as an observer under http.api at order 100', () => {
+        expect(HOOKS.http.walletLinked.id).toBe('http.walletLinked');
+        expect(HOOKS.http.walletLinked.kind).toBe('observer');
+        expect(HOOKS.http.walletLinked.phase).toBe('http.api');
+        expect(HOOKS.http.walletLinked.order).toBe(100);
+    });
 });

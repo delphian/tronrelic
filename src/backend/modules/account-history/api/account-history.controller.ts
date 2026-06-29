@@ -137,6 +137,19 @@ export class AccountHistoryController {
     };
 
     /**
+     * POST /ingest/forward/run — manually refresh completed accounts with
+     * transactions that landed after their backfill finished.
+     */
+    runForwardSync = async (_req: Request, res: Response): Promise<void> => {
+        try {
+            await this.service.runForwardSyncTick();
+            res.status(202).json({ started: true });
+        } catch (error) {
+            this.fail(res, 500, 'Failed to run forward sync tick', error);
+        }
+    };
+
+    /**
      * Log and emit a uniform error response.
      *
      * @param res - The response to write.

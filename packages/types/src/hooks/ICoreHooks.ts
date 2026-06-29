@@ -33,6 +33,7 @@ import type { ISsrHeadContext } from '../ssr/ISsrHeadContext.js';
 import type { IHeadFragment } from '../ssr/IHeadFragment.js';
 import type { IAiToolInvokeContext } from '../ai-tools/IAiToolHookContext.js';
 import type { IToolInvocationRecord } from '../ai-tools/IToolInvocationRecord.js';
+import type { IWalletLinkedContext } from './IWalletLinkedContext.js';
 
 /**
  * SSR-phase declared seams. Mirrors the `HOOKS.ssr` object in core's
@@ -87,17 +88,32 @@ export interface ICoreAiHooks {
 }
 
 /**
+ * REST-API-phase declared seams. Mirrors the `HOOKS.http` object in core's
+ * `registry.ts`. These seams fire from inside an API request handler, so the
+ * admin timeline groups them under the `http.api` track.
+ */
+export interface ICoreHttpHooks {
+    /**
+     * Observer seam fired after a user verifies (links) a TRON wallet on their
+     * profile and the wallet is persisted. Lets feature modules react to the
+     * new ownership — e.g. account-history enrolls the address into its backfill
+     * program — without identity depending on them. Handlers cannot change the
+     * link outcome; a failing handler never breaks the link.
+     */
+    readonly walletLinked: HookDescriptor<IWalletLinkedContext, void, 'observer'>;
+}
+
+/**
  * Aggregate shape of every declared seam, grouped by pipeline phase.
  *
- * The remaining phases (`http`, `websocket`, `scheduler`, `observer`) are
- * declared as empty marker objects so adding the first seam in those
- * phases is a one-line interface extension instead of a structural
- * surprise for existing consumers.
+ * The remaining phases (`websocket`, `scheduler`, `observer`) are declared as
+ * empty marker objects so adding the first seam in those phases is a one-line
+ * interface extension instead of a structural surprise for existing consumers.
  */
 export interface ICoreHooks {
     readonly ssr: ICoreSsrHooks;
     readonly ai: ICoreAiHooks;
-    readonly http: Readonly<Record<string, never>>;
+    readonly http: ICoreHttpHooks;
     readonly websocket: Readonly<Record<string, never>>;
     readonly scheduler: Readonly<Record<string, never>>;
     readonly observer: Readonly<Record<string, never>>;

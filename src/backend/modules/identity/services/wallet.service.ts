@@ -38,7 +38,8 @@
 
 import { ObjectId, type Collection } from 'mongodb';
 import type TronWeb from 'tronweb';
-import type { ICacheService, IDatabaseService, ISystemLogService, IWalletService } from '@/types';
+import type { ICacheService, IDatabaseService, IHookRegistry, ISystemLogService, IWalletService } from '@/types';
+import { HOOKS } from '../../../hooks/registry.js';
 import { SignatureService } from '../../auth/signature.service.js';
 import { WalletChallengeService } from './wallet-challenge.service.js';
 import type { WalletChallengeAction, IWalletChallenge } from './wallet-challenge.service.js';
@@ -121,22 +122,34 @@ export class WalletService implements IWalletService {
     private readonly logger: ISystemLogService;
 
     /**
+     * Declared-hook registry used to announce a successful wallet link on the
+     * `http.walletLinked` observer seam. Kept as a dependency (not a global
+     * import of the runtime registry) so the service stays mockable in tests
+     * and the firing is opt-in per deployment.
+     */
+    private readonly hookRegistry: IHookRegistry;
+
+    /**
      * @param database - Database abstraction (Tier-1 collection access).
      * @param cacheService - Backs {@link WalletChallengeService} nonce storage.
      * @param logger - Derives a `component: 'wallet-service'` child.
      * @param tronWeb - Configured TronWeb for {@link SignatureService}.
+     * @param hookRegistry - Fires the `http.walletLinked` seam after a link so
+     *   feature modules (e.g. account-history) can react to new verified ownership.
      */
     private constructor(
         database: IDatabaseService,
         cacheService: ICacheService,
         logger: ISystemLogService,
-        tronWeb: TronWeb
+        tronWeb: TronWeb,
+        hookRegistry: IHookRegistry
     ) {
         this.collection = database.getCollection<IWalletDocument>(WALLETS_COLLECTION);
         this.authUsers = database.getCollection<IAuthUserPrimaryWallet>(AUTH_USERS_COLLECTION);
         this.signatureService = new SignatureService(tronWeb);
         this.walletChallengeService = new WalletChallengeService(cacheService);
         this.logger = logger.child({ component: 'wallet-service' });
+        this.hookRegistry = hookRegistry;
     }
 
     /**
@@ -149,15 +162,17 @@ export class WalletService implements IWalletService {
      * @param cacheService - Cache service for challenge storage.
      * @param logger - User-module child logger.
      * @param tronWeb - TronWeb instance for signature verification.
+     * @param hookRegistry - Declared-hook registry for the `http.walletLinked` seam.
      */
     public static setDependencies(
         database: IDatabaseService,
         cacheService: ICacheService,
         logger: ISystemLogService,
-        tronWeb: TronWeb
+        tronWeb: TronWeb,
+        hookRegistry: IHookRegistry
     ): void {
         if (!WalletService.instance) {
-            WalletService.instance = new WalletService(database, cacheService, logger, tronWeb);
+            WalletService.instance = new WalletService(database, cacheService, logger, tronWeb, hookRegistry);
         }
     }
 
@@ -291,6 +306,14 @@ export class WalletService implements IWalletService {
         }
 
         this.logger.info({ userId, wallet: normalizedAddress }, 'Wallet linked to account');
+
+        // Announce the verified ownership so feature modules can react (e.g.
+        // account-history enrolls the address into its backfill). Observer
+        // semantics isolate handler failures, so a reactor that throws can
+        // never fail the link; awaiting lets a fast reactor (an idempotent
+        // upsert) finish before the caller refetches derived state.
+        await this.hookRegistry.invoke(HOOKS.http.walletLinked, { userId, address: normalizedAddress });
+
         return this.listWallets(userId);
     }
 

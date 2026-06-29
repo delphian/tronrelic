@@ -222,6 +222,20 @@ export interface IAccountHistoryService {
     getStats(): Promise<IAccountHistoryStats>;
 
     /**
+     * Read backfill progress for a specific set of addresses. Powers ownership-
+     * scoped surfaces — e.g. a user's profile showing the download status of
+     * only the wallets they verified — without exposing the whole tracked set
+     * behind the admin stats endpoint. Only addresses with a progress record
+     * (i.e. currently tracked) are returned; untracked addresses are omitted
+     * rather than reported as a zeroed record, so a caller can distinguish
+     * "enrolled and queued" from "not enrolled".
+     *
+     * @param addresses - Base58 addresses to look up; malformed entries are ignored.
+     * @returns Progress for the tracked subset of the requested addresses.
+     */
+    getProgressFor(addresses: string[]): Promise<IAccountIngestionProgress[]>;
+
+    /**
      * Read a page of an account's stored history from ClickHouse.
      *
      * @param query - Address and pagination window.
@@ -237,4 +251,16 @@ export interface IAccountHistoryService {
      * when `ingestionEnabled` is false or no provider is available.
      */
     runIngestionTick(): Promise<void>;
+
+    /**
+     * Refresh already-`complete` accounts with transactions that arrived after
+     * their backfill finished. The backward backfill excludes `complete` accounts
+     * forever, so this is the only path that keeps a finished account current: it
+     * re-polls each completed account's leading edge (newest pages, both
+     * endpoints) for rows newer than the recorded watermark and appends them,
+     * leaving the account `complete`. Invoked by its own scheduler job; also
+     * callable for a manual run. A no-op when `ingestionEnabled` is false or no
+     * provider is available.
+     */
+    runForwardSyncTick(): Promise<void>;
 }

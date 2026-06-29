@@ -11,23 +11,86 @@
  * the UI never drifts from server truth (e.g. primary promotion after a link).
  */
 
-import { useCallback, useState } from 'react';
-import { Wallet, Star, Unlink } from 'lucide-react';
-import type { ILinkedWallet } from '@/types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Wallet, Star, Unlink, History } from 'lucide-react';
+import type { IAccountIngestionProgress, ILinkedWallet } from '@/types';
 import { Card } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
+import { Tooltip } from '../../../../components/ui/Tooltip';
 import { Stack } from '../../../../components/layout';
 import { ClientTime } from '../../../../components/ui/ClientTime';
 import { useToast } from '../../../../components/ui/ToastProvider';
+import { getSocket } from '../../../../lib/socketClient';
 import { connectTronLink, signMessageWithTronLink } from '../../lib/tronLink';
 import {
     issueWalletChallenge,
     linkWallet,
     unlinkWallet,
-    setPrimaryWallet
+    setPrimaryWallet,
+    fetchWalletHistoryProgress
 } from '../../api/wallets.api';
 import styles from './WalletManager.module.scss';
+
+/**
+ * Global WebSocket nudge the account-history module broadcasts after each
+ * ingestion tick. It carries no progress data — it is a signal to refetch the
+ * authoritative per-wallet status, mirroring how the admin stats page reacts.
+ */
+const HISTORY_STATS_EVENT = 'account-history:stats';
+
+/**
+ * Visual presentation for one wallet's history-download status. Centralises the
+ * status → (badge tone, label, explanatory tooltip) mapping so the row render
+ * stays declarative and the copy lives in one place.
+ *
+ * @param progress - The wallet's ingestion progress record.
+ * @returns The badge tone, short label, and tooltip sentence describing what is
+ *   happening with this wallet's history download.
+ */
+function describeHistoryStatus(
+    progress: IAccountIngestionProgress
+): { tone: 'neutral' | 'info' | 'success' | 'warning' | 'danger'; label: string; tooltip: string } {
+    const rows = progress.rowsIngested.toLocaleString();
+    switch (progress.status) {
+        case 'queued':
+            return {
+                tone: 'neutral',
+                label: 'History queued',
+                tooltip: 'This wallet is enrolled in the account-history program. Its full transaction history is scheduled to download and will begin shortly.'
+            };
+        case 'running':
+            return {
+                tone: 'info',
+                label: 'Downloading history',
+                tooltip: `Downloading this wallet's full transaction history — ${rows} records saved so far.`
+            };
+        case 'complete':
+            return {
+                tone: 'success',
+                label: 'History downloaded',
+                tooltip: `This wallet's full available transaction history has been downloaded (${rows} records).`
+            };
+        case 'paused':
+            return {
+                tone: 'neutral',
+                label: 'History paused',
+                tooltip: 'The history download for this wallet is paused. It will resume automatically.'
+            };
+        case 'failed':
+            return {
+                tone: 'danger',
+                label: 'History error',
+                tooltip: 'The history download for this wallet hit an error. It will retry automatically.'
+            };
+        default:
+            return {
+                tone: 'neutral',
+                label: 'History',
+                tooltip: 'Transaction history download status for this wallet.'
+            };
+    }
+}
 
 /**
  * Props for {@link WalletManager}.
@@ -38,6 +101,13 @@ export interface IWalletManagerProps {
      * renders real content on first paint rather than fetching on mount.
      */
     initialWallets: ILinkedWallet[];
+
+    /**
+     * Account-history download progress for the account's verified wallets,
+     * resolved during SSR. Seeds the per-wallet status badges so they paint with
+     * the list (no loading flash); live updates replace it after hydration.
+     */
+    initialProgress: IAccountIngestionProgress[];
 }
 
 /**
@@ -45,13 +115,51 @@ export interface IWalletManagerProps {
  *
  * @param props - {@link IWalletManagerProps}.
  */
-export function WalletManager({ initialWallets }: IWalletManagerProps) {
+export function WalletManager({ initialWallets, initialProgress }: IWalletManagerProps) {
     const { push } = useToast();
     const [wallets, setWallets] = useState<ILinkedWallet[]>(initialWallets);
+    // Per-wallet history-download progress, seeded from SSR so badges paint with
+    // the list. Replaced wholesale on each refetch (server is authoritative).
+    const [progress, setProgress] = useState<IAccountIngestionProgress[]>(initialProgress);
     // A per-action key (e.g. 'link' or 'unlink:T...') marks which control is
     // mid-flight; a single key also disables the others so two signature
     // prompts can't race.
     const [busyKey, setBusyKey] = useState<string | null>(null);
+
+    // Index progress by address so each row renders its status in one lookup.
+    const progressByAddress = useMemo(
+        () => new Map(progress.map((entry) => [entry.address, entry])),
+        [progress]
+    );
+
+    /**
+     * Refetch the caller's wallet history progress and replace local state.
+     * Best-effort: a failure leaves the last-known badges in place rather than
+     * surfacing an error, since the status is secondary to wallet management.
+     */
+    const refreshProgress = useCallback(async (): Promise<void> => {
+        try {
+            const next = await fetchWalletHistoryProgress();
+            setProgress(next);
+        } catch {
+            // Keep the existing badges; progress is non-critical.
+        }
+    }, []);
+
+    // After hydration, refresh progress whenever the account-history module
+    // signals an ingestion tick. The nudge is a global broadcast carrying no
+    // payload, so the handler refetches the authoritative, ownership-scoped
+    // status. Mirrors the admin stats page's nudge-and-refetch pattern.
+    useEffect(() => {
+        const socket = getSocket();
+        const handler = (): void => {
+            void refreshProgress();
+        };
+        socket.on(HISTORY_STATS_EVENT, handler);
+        return () => {
+            socket.off(HISTORY_STATS_EVENT, handler);
+        };
+    }, [refreshProgress]);
 
     /**
      * Run one wallet mutation end-to-end with consistent busy-state, toast,
@@ -69,6 +177,11 @@ export function WalletManager({ initialWallets }: IWalletManagerProps) {
                 const updated = await run();
                 setWallets(updated);
                 push({ tone: 'success', title: successTitle });
+                // A link enrolls the wallet into account-history (a queued
+                // progress record appears) and an unlink/promote can change the
+                // visible set, so pull the fresh status rather than wait for the
+                // next ingestion-tick nudge.
+                void refreshProgress();
             } catch (error) {
                 push({
                     tone: 'danger',
@@ -79,7 +192,7 @@ export function WalletManager({ initialWallets }: IWalletManagerProps) {
                 setBusyKey(null);
             }
         },
-        [push]
+        [push, refreshProgress]
     );
 
     /**
@@ -194,13 +307,25 @@ export function WalletManager({ initialWallets }: IWalletManagerProps) {
                     <p className="text-muted">No wallets linked yet.</p>
                 ) : (
                     <ul className={`list--plain ${styles.list}`}>
-                        {wallets.map((wallet) => (
+                        {wallets.map((wallet) => {
+                            const walletProgress = progressByAddress.get(wallet.address);
+                            const status = walletProgress ? describeHistoryStatus(walletProgress) : null;
+                            return (
                             <li key={wallet.address} className={styles.row}>
                                 <div className={styles.identity}>
                                     <span className={styles.address}>{wallet.address}</span>
                                     <span className={styles.meta}>
                                         Linked <ClientTime date={wallet.linkedAt} format="date" />
                                     </span>
+                                    {status && (
+                                        <span className={styles.history}>
+                                            <Tooltip content={status.tooltip}>
+                                                <Badge tone={status.tone}>
+                                                    <History size={14} aria-hidden /> {status.label}
+                                                </Badge>
+                                            </Tooltip>
+                                        </span>
+                                    )}
                                 </div>
                                 <div className={styles.actions}>
                                     {wallet.isPrimary ? (
@@ -231,7 +356,8 @@ export function WalletManager({ initialWallets }: IWalletManagerProps) {
                                     </Button>
                                 </div>
                             </li>
-                        ))}
+                            );
+                        })}
                     </ul>
                 )}
             </Stack>

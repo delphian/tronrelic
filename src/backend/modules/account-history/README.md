@@ -10,8 +10,9 @@ Ingests the full transaction history of operator-tracked TRON accounts into Clic
 | Module class | `src/backend/modules/account-history/AccountHistoryModule.ts` |
 | Admin page | `/system/account-history` (menu item `Account History`, order 27, registered in `run()`) |
 | Service registry name | `'account-history'` → `IAccountHistoryService` |
-| Mounted routes | `/api/admin/system/account-history/*` (`createAdminRateLimiter` + `requireAdmin`) |
-| Scheduler job | `account-history:ingest` (default `*/2 * * * *`) |
+| Mounted routes | `/api/admin/system/account-history/*` (`createAdminRateLimiter` + `requireAdmin`); `/api/account-history/me/progress` (`requireLogin`, ownership-scoped) |
+| Auto-enrollment | Registers a `'core'` handler on the `http.walletLinked` hook — a user verifying a wallet auto-enrolls it (`label: 'user-verified'`) |
+| Scheduler jobs | `account-history:ingest` (backfill, `*/2 * * * *`); `account-history:forward-sync` (keep completed accounts current, `*/5 * * * *`) |
 | WebSocket event | `account-history:stats` (global broadcast; has a case in `WebSocketService.emit()`) |
 | Types package | `@delphian/tronrelic-types` → `IAccountHistoryService` and its DTOs |
 | ClickHouse table | `account_transactions` (ReplacingMergeTree) |
@@ -58,8 +59,10 @@ Each endpoint has its own fingerprint cursor; an account is marked `complete` on
 | `listTrackedAccounts()` | The tracked set, oldest first |
 | `getSettings()` / `updateSettings(patch)` | Read / merge pacing (`ingestionEnabled`, `pagesPerTick`, `accountsPerTick`) |
 | `getStats()` | Settings + per-account progress + rollups (admin page and live payload) |
+| `getProgressFor(addresses)` | Progress for a specific address set (tracked subset only) — backs ownership-scoped surfaces like a user's profile |
 | `getTransactions({ address, limit?, offset? })` | Paged history read returning `IBlockTransaction[]` |
-| `runIngestionTick()` | Advance ingestion one bounded slice (scheduler + manual trigger) |
+| `runIngestionTick()` | Advance the backward backfill one bounded slice (scheduler + manual trigger) |
+| `runForwardSyncTick()` | Refresh completed accounts with transactions that arrived after backfill (scheduler + manual trigger) |
 
 Consume from a plugin via `context.services.watch('account-history', ...)`; from a module via constructor DI or the registry.
 
@@ -69,17 +72,36 @@ Consume from a plugin via `context.services.watch('account-history', ...)`; from
 |--------|------|---------|
 | GET | `/api/admin/system/account-history/stats` | Full stats snapshot |
 | GET/PATCH | `/api/admin/system/account-history/settings` | Read / update pacing |
-| POST | `/api/admin/system/account-history/ingest/run` | Manual ingestion tick |
+| POST | `/api/admin/system/account-history/ingest/run` | Manual backfill tick |
+| POST | `/api/admin/system/account-history/ingest/forward/run` | Manual forward-sync tick (refresh completed accounts) |
 | GET/POST | `/api/admin/system/account-history/accounts` | List / add tracked accounts |
 | GET | `/api/admin/system/account-history/accounts/:address/transactions` | Paged history |
 | PATCH | `/api/admin/system/account-history/accounts/:address/paused` | Pause/resume |
 | DELETE | `/api/admin/system/account-history/accounts/:address` | Stop tracking |
+
+## User Endpoint (`requireLogin`)
+
+One login-gated, ownership-scoped route lets a signed-in user see the backfill status of only the wallets they verified — kept separate from the admin surface so a user never reaches the full tracked set. The handler resolves the caller's verified addresses through the identity `'wallets'` service (the only sanctioned path to that data) and returns `getProgressFor` for that intersection, so knowing an address is never enough.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/account-history/me/progress` | `{ progress }` for the caller's own verified, tracked wallets |
+
+## Auto-Enrollment
+
+The module registers a `'core'` handler on the `http.walletLinked` observer hook (`docs/system/system-hooks.md`). When a user verifies a wallet on their profile, the handler calls `addTrackedAccount({ address, label: 'user-verified' })` — idempotent, so a re-link or an operator-tracked address is a harmless no-op. Observer isolation keeps a failed enroll from breaking the link. This is the inbound counterpart to the user endpoint above: identity fires the seam, account-history reacts, and the profile shows the resulting download progress.
 
 ## Ingestion Contract
 
 `runIngestionTick()` selects the least-recently-advanced unpaused, not-complete accounts (up to `accountsPerTick`) and, for each, walks both endpoints (`tx` then `trc20`) up to `pagesPerTick` pages each, writing rows to ClickHouse and advancing **each endpoint's own cursor** after every clean write. A failed tick persists each cursor at its last cleanly-written page so the next tick resumes without re-counting or re-fetching. An account becomes `complete` only when both endpoints exhaust. ReplacingMergeTree keyed `(account, timestamp, tx_id, source, to_address)` absorbs paging/retry overlaps, so re-ingest is idempotent. The pacing dials throttle *down* only — they cannot exceed the shared TronGrid rate limiter that protects live block sync.
 
 Progress is expressed as absolute counts plus the oldest timestamp reached, never a percentage: fingerprint paging never reveals an account's total transaction count up front.
+
+## Staying Current (Forward Sync)
+
+The backward backfill only walks *down* and permanently excludes `complete` accounts, so without a second path a finished account would go stale the moment new transactions land. `runForwardSyncTick()` (job `account-history:forward-sync`) closes that gap: for each completed account it re-polls the *leading edge* — newest pages of both endpoints — for transactions newer than the recorded `newestTimestampSeen` watermark, appends them, advances the watermark, and leaves the account `complete`.
+
+Using the single start-of-poll watermark as the stop threshold for both endpoints is safe: a transaction that arrives after a backfill always has a timestamp greater than the watermark, so nothing new is ever below it, and the poll stops as soon as a page reaches known territory (normally after one page). The poll never flips an account to `failed` — that would re-admit it to the backward backfill (which filters on `status !== 'complete'`) and, with cursors cleared at completion, trigger a full re-walk that double-counts; on error it keeps `complete` and the next tick retries. **Limitation:** a poll fetches at most `pagesPerTick` newest pages per endpoint; an account that accrues more than that between polls leaves a gap below the window (logged as a warning) — raise `pagesPerTick` or the job cadence for very high-volume accounts.
 
 ## Storage
 

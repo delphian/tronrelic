@@ -191,7 +191,9 @@ export type {
     IPluginHooks,
     ICoreHooks,
     ICoreSsrHooks,
-    ICoreAiHooks
+    ICoreAiHooks,
+    ICoreHttpHooks,
+    IWalletLinkedContext
 } from './hooks/index.js';
 export { HookAbortError, isHookAbortError } from './hooks/index.js';
 export type { IHeadFragment, HeadFragmentTag, ISsrHeadContext } from './ssr/index.js';
