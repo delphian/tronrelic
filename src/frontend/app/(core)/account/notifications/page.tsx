@@ -1,26 +1,21 @@
-'use client';
-
 /**
- * @fileoverview /account/notifications — the per-user notification preferences
- * page. Any signed-in user manages their own opt-outs here; the shared
- * {@link PreferencesPanel} owns data loading and enforcement is server-side. A
- * client component because it is a personal settings surface, not public
- * primary content.
- */
-
-import { Page, PageHeader } from '../../../../components/layout';
-import { PreferencesPanel } from '../../../../modules/notifications';
-
-/**
- * Per-user notification preferences page.
+ * @fileoverview Legacy `/account/notifications` route — permanent redirect to
+ * `/profile`.
  *
- * @returns The page.
+ * Notification preferences moved into the consolidated profile settings hub.
+ * This stub preserves any bookmarks, in-app links, or external references to
+ * the old URL by redirecting them to the hub, which now owns the
+ * {@link PreferencesPanel}. A server component so the redirect happens during
+ * SSR with no client flash.
  */
-export default function AccountNotificationsPage() {
-    return (
-        <Page>
-            <PageHeader title="Notification Preferences" subtitle="Choose which notifications reach you, or mute them all." />
-            <PreferencesPanel />
-        </Page>
-    );
+
+import { redirect } from 'next/navigation';
+
+/**
+ * Redirect visitors of the retired notifications route to the profile hub.
+ *
+ * @returns Never — {@link redirect} throws to perform the navigation.
+ */
+export default function AccountNotificationsPage(): never {
+    redirect('/profile');
 }

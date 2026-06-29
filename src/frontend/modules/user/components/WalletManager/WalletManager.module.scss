@@ -1,0 +1,80 @@
+/**
+ * WalletManager panel styles.
+ *
+ * Container-query driven so the panel reflows from a single horizontal row
+ * (address left, actions right) to a stacked layout when it sits in a narrow
+ * context such as a mobile viewport or a constrained slideout. Tokens only —
+ * spacing, colour, and type all flow through semantic/curated variables.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    container-type: inline-size;
+    container-name: wallet-manager-header;
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    container-type: inline-size;
+    container-name: wallet-manager-list;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    padding: var(--padding-sm) 0;
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+.row:first-child {
+    border-top: none;
+}
+
+.identity {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+}
+
+.address {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}
+
+.meta {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.actions {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    flex-shrink: 0;
+}
+
+@container wallet-manager-header (max-width: #{$breakpoint-mobile-md}) {
+    .header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}
+
+@container wallet-manager-list (max-width: #{$breakpoint-mobile-md}) {
+    .row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

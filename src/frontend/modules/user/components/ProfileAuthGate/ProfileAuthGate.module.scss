@@ -1,0 +1,14 @@
+/**
+ * ProfileAuthGate sign-in prompt styles.
+ *
+ * Centres the short prompt and its sign-in affordance within the card. Tokens
+ * only; no fixed colours or spacing.
+ */
+
+.prompt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--gap-md);
+    text-align: center;
+}
