@@ -40,6 +40,7 @@ import { PagesModule } from './modules/pages/index.js';
 import { WidgetsModule } from './modules/widgets/index.js';
 import { IdentityModule } from './modules/identity/index.js';
 import { TrafficModule } from './modules/traffic/index.js';
+import { AccountHistoryModule } from './modules/account-history/index.js';
 import { ToolsModule } from './modules/tools/index.js';
 import { AiToolsModule } from './modules/ai-tools/index.js';
 import { CurationModule } from './modules/curation/index.js';
@@ -239,6 +240,7 @@ interface BootstrapContext {
         widgets: WidgetsModule;
         identity: IdentityModule;
         traffic: TrafficModule;
+        accountHistory: AccountHistoryModule;
         tools: ToolsModule;
         notifications: NotificationsModule;
         curation: CurationModule;
@@ -384,6 +386,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const widgetsModule = new WidgetsModule();
     const identityModule = new IdentityModule();
     const trafficModule = new TrafficModule();
+    const accountHistoryModule = new AccountHistoryModule();
     const toolsModule = new ToolsModule();
     const notificationsModule = new NotificationsModule();
     const curationModule = new CurationModule();
@@ -398,6 +401,10 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const schedulerService = schedulerModule.getSchedulerService();
     await identityModule.init(sharedDeps);
     await trafficModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
+    // Account-history: pull-based per-account transaction backfill into ClickHouse.
+    // Receives the scheduler service (for its bounded ingestion job) and clickhouse
+    // (its store); no-ops ingestion when clickhouse is absent. Independent of block sync.
+    await accountHistoryModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
     await toolsModule.init(sharedDeps);
     // Notifications module: builds the category/channel registries, preference,
     // policy, and audit stores. Inits before ai-tools so its run() (which
@@ -448,6 +455,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             widgets: widgetsModule,
             identity: identityModule,
             traffic: trafficModule,
+            accountHistory: accountHistoryModule,
             tools: toolsModule,
             notifications: notificationsModule,
             curation: curationModule,
@@ -502,6 +510,9 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     // ticking), so the relay job is registered before the scheduler activates.
     await modules.syndication.run();
     await modules.aiTools.run();
+    // Account-history runs before scheduler (which runs last and starts ticking),
+    // so its `account-history:ingest` job is registered before the scheduler activates.
+    await modules.accountHistory.run();
     await modules.scheduler.run();
 
     // Mount the hook-system introspection endpoint. The route is
