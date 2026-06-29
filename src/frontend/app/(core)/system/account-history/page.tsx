@@ -8,9 +8,10 @@
  * jobs, a filtered view of the one scheduler authority via SchedulerMonitor).
  * Admin-gated by the /system layout; a client component fetching over the
  * cookie-authenticated admin API. Ingestion stats stay live off the
- * `account-history:stats` WebSocket broadcast — the snapshot the backend emits
- * after each tick replaces local state directly, with the gated REST feed as the
- * initial load and refetch path.
+ * `account-history:stats` WebSocket nudge — a timestamp-only signal the backend
+ * emits after each tick that triggers a refetch over the requireAdmin REST feed.
+ * The snapshot itself is never sent over the socket: it carries admin-only data
+ * and the broadcast reaches every connected client.
  */
 
 import { useEffect, useState, useCallback } from 'react';
@@ -66,14 +67,17 @@ export default function AccountHistoryAdminPage() {
         void loadStats();
     }, [loadStats]);
 
-    // The backend emits the full stats snapshot after each ingestion tick, so the
-    // table updates live without polling. The payload is the snapshot itself.
+    // The backend emits a timestamp-only nudge after each ingestion tick (the
+    // snapshot carries admin-only data and the broadcast reaches every socket),
+    // so refetch the full stats over the requireAdmin REST endpoint on the
+    // signal rather than trusting the socket payload — mirroring how the
+    // /system/curation page refetches on `curation:changed`.
     useEffect(() => {
         const socket = getSocket();
-        const onStats = (payload: IAccountHistoryStatsView) => { setStats(payload); };
+        const onStats = () => { void loadStats(); };
         socket.on('account-history:stats', onStats);
         return () => { socket.off('account-history:stats', onStats); };
-    }, []);
+    }, [loadStats]);
 
     return (
         <Page>

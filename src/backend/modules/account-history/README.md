@@ -39,9 +39,14 @@ By the module-vs-plugin matrix this feature is plugin-shaped (the app runs witho
 
 ## Data Source Coverage
 
-The v1 provider uses TronGrid's `/v1/accounts/{addr}/transactions` endpoint, which returns **every** transaction type — native TRX, TRC10, staking, delegation, and contract calls (TRC20 transfers appear as `TriggerSmartContract`). One endpoint covers "all transaction types". The TRC20-specific endpoint is intentionally unused: it only adds decoded token amounts, which the source-independent `IBlockTransaction` contract does not model.
+The provider walks **both** TronGrid account endpoints, because neither alone is complete:
 
-**Limitation:** TronGrid fingerprint paging cannot reach the deepest history of very large accounts. The provider seam exists so a future archive-node or paid full-history source is a provider swap, not a service rewrite. Treat TronGrid as the v1 source the seam is designed to outgrow.
+- `/v1/accounts/{addr}/transactions` (source `tx`) — native TRX, TRC10, staking, delegation, raw contract calls, and *outbound* TRC20 (the account is the native caller).
+- `/v1/accounts/{addr}/transactions/trc20` (source `trc20`) — decoded token transfers indexed by participant, capturing *inbound* TRC20 the native endpoint omits (an inbound transfer's recipient lives only inside the contract call data, never as a native party), with the token amount.
+
+Each endpoint has its own fingerprint cursor; an account is marked `complete` only when **both** exhaust. TRC20 amount/symbol/decimals are stored in dedicated columns (carried through the normalized transaction's `contract.parameters`), so `IBlockTransaction` stays unextended. An outbound TRC20 transfer is stored as two rows — the native call (`tx`) and the decoded transfer (`trc20`); reads suppress the redundant native row when a `trc20` row exists for the same tx.
+
+**Limitation:** TronGrid fingerprint paging cannot reach the deepest history of very large accounts. The provider seam exists so a future archive-node or paid full-history source is a provider swap, not a service rewrite.
 
 ## Published Contract — `'account-history'` → `IAccountHistoryService`
 
@@ -72,13 +77,13 @@ Consume from a plugin via `context.services.watch('account-history', ...)`; from
 
 ## Ingestion Contract
 
-`runIngestionTick()` selects the least-recently-advanced unpaused, not-complete accounts (up to `accountsPerTick`), pulls up to `pagesPerTick` provider pages each, writes rows to ClickHouse, and advances each account's fingerprint cursor **only after a clean write** — a failed tick leaves the cursor untouched so the next tick retries the same page. ReplacingMergeTree keyed `(account, timestamp, tx_id)` absorbs the overlaps fingerprint paging produces, so re-ingest is idempotent. The pacing dials throttle *down* only — they cannot exceed the shared TronGrid rate limiter that protects live block sync.
+`runIngestionTick()` selects the least-recently-advanced unpaused, not-complete accounts (up to `accountsPerTick`) and, for each, walks both endpoints (`tx` then `trc20`) up to `pagesPerTick` pages each, writing rows to ClickHouse and advancing **each endpoint's own cursor** after every clean write. A failed tick persists each cursor at its last cleanly-written page so the next tick resumes without re-counting or re-fetching. An account becomes `complete` only when both endpoints exhaust. ReplacingMergeTree keyed `(account, timestamp, tx_id, source, to_address)` absorbs paging/retry overlaps, so re-ingest is idempotent. The pacing dials throttle *down* only — they cannot exceed the shared TronGrid rate limiter that protects live block sync.
 
 Progress is expressed as absolute counts plus the oldest timestamp reached, never a percentage: fingerprint paging never reveals an account's total transaction count up front.
 
 ## Storage
 
-**ClickHouse `account_transactions`** — `ReplacingMergeTree(ingested_at)`, `PARTITION BY toYYYYMM(timestamp)`, `ORDER BY (account, timestamp, tx_id)`. Columns flatten `IBlockTransaction` plus `account` and `ingested_at`. No TTL — account history is the product.
+**ClickHouse `account_transactions`** — `ReplacingMergeTree(ingested_at)`, `PARTITION BY toYYYYMM(timestamp)`, `ORDER BY (account, timestamp, tx_id, source, to_address)`. Columns flatten `IBlockTransaction` plus `account`, `source`, the TRC20 `token_amount`/`token_symbol`/`token_decimals`, and `ingested_at`. No TTL — account history is the product.
 
 **Mongo control collections** — `tracked` (the set, unique `address`), `progress` (resumable cursor per address, unique `address`), `settings` (singleton, keyed `settings`).
 

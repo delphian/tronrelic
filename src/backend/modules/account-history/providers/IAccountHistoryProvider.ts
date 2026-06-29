@@ -9,6 +9,7 @@
  */
 
 import type { IBlockTransaction } from '@/types';
+import type { AccountTxSource } from '../database/index.js';
 
 /**
  * One page of an account's history plus the cursor to continue.
@@ -28,6 +29,8 @@ export interface IAccountHistoryPageResult {
  * Options for fetching a single page of an account's history.
  */
 export interface IAccountHistoryFetchOptions {
+    /** Which endpoint to read: `'tx'` (native/TRC10/contract) or `'trc20'` (token transfers). */
+    source: AccountTxSource;
     /** Maximum transactions to return in this page (provider clamps to its own ceiling). */
     limit: number;
     /** Opaque cursor from the previous page; omit to start from the newest. */

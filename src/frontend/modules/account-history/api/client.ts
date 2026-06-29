@@ -96,12 +96,16 @@ export interface IAccountTransactionPageView {
  *
  * @param response - The fetch response.
  * @param what - A short verb phrase naming the action, for the error message.
- * @returns The parsed JSON body.
+ * @returns The parsed JSON body, or `undefined` for a 204 No Content response
+ *          (e.g. a successful DELETE) which carries no body to parse.
  */
 async function parse<T>(response: Response, what: string): Promise<T> {
     if (!response.ok) {
         const body = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
         throw new Error(body.error || `Failed to ${what} (HTTP ${response.status})`);
+    }
+    if (response.status === 204) {
+        return undefined as T;
     }
     return response.json() as Promise<T>;
 }

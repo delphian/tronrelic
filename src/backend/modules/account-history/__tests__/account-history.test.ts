@@ -169,7 +169,7 @@ describe('AccountHistoryService', () => {
 });
 
 describe('toAccountTransactionRow', () => {
-    it('projects a transaction into a flat ClickHouse row with null-coalesced optionals', () => {
+    it('projects a native transaction into a flat ClickHouse row with null token columns', () => {
         const tx: IBlockTransaction = {
             txId: 'abc',
             blockNumber: 100,
@@ -181,16 +181,40 @@ describe('toAccountTransactionRow', () => {
             contract: { address: 'Tcontract', method: '0xa9059cbb' },
             memo: null
         };
-        const row = toAccountTransactionRow('Tacct', tx, '2024-01-01 00:00:00.000', '2024-06-01 00:00:00.000');
+        const row = toAccountTransactionRow('Tacct', tx, 'tx', '2024-01-01 00:00:00.000', '2024-06-01 00:00:00.000');
 
         expect(row.account).toBe('Tacct');
         expect(row.tx_id).toBe('abc');
+        expect(row.source).toBe('tx');
         expect(row.type).toBe('TriggerSmartContract');
         expect(row.contract_address).toBe('Tcontract');
         expect(row.contract_method).toBe('0xa9059cbb');
         expect(row.amount_sun).toBeNull();
         expect(row.energy_consumed).toBeNull();
+        expect(row.token_amount).toBeNull();
+        expect(row.token_symbol).toBeNull();
         expect(row.memo).toBeNull();
         expect(row.ingested_at).toBe('2024-06-01 00:00:00.000');
+    });
+
+    it('lifts TRC20 token detail from contract.parameters into dedicated columns', () => {
+        const tx: IBlockTransaction = {
+            txId: 'def',
+            blockNumber: 0,
+            timestamp: new Date('2024-01-02T00:00:00.000Z'),
+            type: 'TriggerSmartContract',
+            status: 'SUCCESS',
+            from: { address: 'Tsender' },
+            to: { address: 'Trecipient' },
+            contract: { address: 'Ttoken', method: 'transfer', parameters: { value: '1000000', symbol: 'USDT', decimals: 6 } },
+            memo: null
+        };
+        const row = toAccountTransactionRow('Tacct', tx, 'trc20', '2024-01-02 00:00:00.000', '2024-06-01 00:00:00.000');
+
+        expect(row.source).toBe('trc20');
+        expect(row.token_amount).toBe('1000000');
+        expect(row.token_symbol).toBe('USDT');
+        expect(row.token_decimals).toBe(6);
+        expect(row.contract_address).toBe('Ttoken');
     });
 });

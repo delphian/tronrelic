@@ -36,6 +36,7 @@ import {
     SETTINGS_KEY,
     TRACKED_COLLECTION,
     TRANSACTIONS_TABLE,
+    type AccountTxSource,
     type IAccountHistorySettingsDoc,
     type IAccountProgressDoc,
     type IAccountTransactionRow,
@@ -63,6 +64,28 @@ const TRON_ADDRESS_PATTERN = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 
 /** WebSocket event name for live ingestion stats; must have a case in WebSocketService.emit(). */
 const STATS_EVENT = 'account-history:stats';
+
+/**
+ * Mutable per-tick state threaded through the two endpoint walks for one account,
+ * so both `'tx'` and `'trc20'` advance into a single combined progress record
+ * (two cursors, two completion flags, shared counts and timestamp bounds).
+ */
+interface IIngestWalkState {
+    /** Cursor for the native `/transactions` endpoint. */
+    nativeCursor?: string;
+    /** Cursor for the `/transactions/trc20` endpoint. */
+    trc20Cursor?: string;
+    /** Whether the native endpoint has reached the end of history. */
+    nativeComplete: boolean;
+    /** Whether the trc20 endpoint has reached the end of history. */
+    trc20Complete: boolean;
+    /** Running total rows written across both endpoints. */
+    rowsIngested: number;
+    /** Oldest block time reached so far. */
+    oldest?: Date;
+    /** Newest block time seen so far. */
+    newest?: Date;
+}
 
 /**
  * Dependencies injected once at bootstrap. ClickHouse and the provider are
@@ -322,19 +345,30 @@ export class AccountHistoryService implements IAccountHistoryService {
         const limit = Math.min(Math.max(1, Math.floor(query.limit ?? 50)), MAX_READ_LIMIT);
         const offset = Math.max(0, Math.floor(query.offset ?? 0));
 
+        // An outbound TRC20 transfer lands as both a native call row ('tx') and a
+        // decoded transfer row ('trc20') with the same tx_id; the trc20 row is the
+        // richer view, so suppress the native twin on read. The filter drops only a
+        // 'tx' row whose tx_id also has a 'trc20' row — native-only transactions and
+        // every (batch-distinct) trc20 row are preserved.
+        const dedupeFilter =
+            `NOT (source = 'tx' AND tx_id IN (
+                 SELECT tx_id FROM ${TRANSACTIONS_TABLE} WHERE account = {address:String} AND source = 'trc20'
+             ))`;
+
         const rows = await this.clickhouse.query<IAccountTransactionRow>(
-            `SELECT account, tx_id, block_number, timestamp, type, status, from_address, to_address,
+            `SELECT account, tx_id, source, block_number, timestamp, type, status, from_address, to_address,
                     amount_sun, fee_sun, energy_consumed, energy_fee_sun, bandwidth_consumed, bandwidth_fee_sun,
-                    contract_address, contract_method, memo
+                    contract_address, contract_method, token_amount, token_symbol, token_decimals, memo
              FROM ${TRANSACTIONS_TABLE} FINAL
-             WHERE account = {address:String}
+             WHERE account = {address:String} AND ${dedupeFilter}
              ORDER BY timestamp DESC
              LIMIT {limit:UInt32} OFFSET {offset:UInt32}`,
             { address, limit, offset }
         );
 
         const countRows = await this.clickhouse.query<{ total: string | number }>(
-            `SELECT count(DISTINCT tx_id) AS total FROM ${TRANSACTIONS_TABLE} WHERE account = {address:String}`,
+            `SELECT count() AS total FROM ${TRANSACTIONS_TABLE} FINAL
+             WHERE account = {address:String} AND ${dedupeFilter}`,
             { address }
         );
 
@@ -428,85 +462,141 @@ export class AccountHistoryService implements IAccountHistoryService {
     }
 
     /**
-     * Walk up to `pages` pages for one account, writing each page to ClickHouse
-     * and advancing the cursor only after a clean write. On error the cursor is
-     * left untouched so the next tick retries the same page.
+     * Advance one account this tick by walking BOTH TronGrid endpoints — the
+     * general `/transactions` (`'tx'`) and `/transactions/trc20` (`'trc20'`) —
+     * each up to `pages` pages with its own cursor, and marking the account
+     * `complete` only once both endpoints are exhausted. Walking both is required
+     * for full coverage: the native endpoint omits *inbound* TRC20 transfers
+     * (the account is only the decoded recipient, not a native party), which the
+     * trc20 endpoint supplies. On error each cursor is persisted at its last
+     * cleanly-written page so the next tick resumes without re-counting or
+     * re-fetching what already landed.
      *
      * @param address - Base58 account to ingest.
-     * @param pages - Maximum pages to pull this tick.
+     * @param pages - Maximum pages to pull per endpoint this tick.
      */
     private async ingestAccount(address: string, pages: number): Promise<void> {
         const progress = await this.ensureProgress(address);
         await this.patchProgress(address, { status: 'running', lastRunAt: new Date(), lastError: undefined });
 
-        let fingerprint = progress.cursorFingerprint;
-        let rowsThisTick = 0;
-        let oldest = progress.oldestTimestampReached;
-        let newest = progress.newestTimestampSeen;
+        const state: IIngestWalkState = {
+            nativeCursor: progress.cursorFingerprint,
+            trc20Cursor: progress.trc20CursorFingerprint,
+            nativeComplete: progress.nativeComplete ?? false,
+            trc20Complete: progress.trc20Complete ?? false,
+            rowsIngested: progress.rowsIngested,
+            oldest: progress.oldestTimestampReached,
+            newest: progress.newestTimestampSeen
+        };
 
         try {
-            for (let page = 0; page < pages; page++) {
-                const result = await this.provider!.fetchPage(address, { limit: PROVIDER_PAGE_LIMIT, fingerprint });
-                if (result.transactions.length > 0) {
-                    await this.writeTransactions(address, result.transactions);
-                    rowsThisTick += result.transactions.length;
-                    for (const tx of result.transactions) {
-                        if (!newest || tx.timestamp > newest) {
-                            newest = tx.timestamp;
-                        }
-                        if (!oldest || tx.timestamp < oldest) {
-                            oldest = tx.timestamp;
-                        }
-                    }
-                }
-
-                fingerprint = result.nextFingerprint;
-                if (!fingerprint) {
-                    await this.patchProgress(address, {
-                        status: 'complete',
-                        cursorFingerprint: undefined,
-                        rowsIngested: progress.rowsIngested + rowsThisTick,
-                        oldestTimestampReached: oldest,
-                        newestTimestampSeen: newest
-                    });
-                    this.logger.info({ address, rowsThisTick }, 'Account-history backfill complete for account');
-                    return;
-                }
+            if (!state.nativeComplete) {
+                await this.walkSource(address, 'tx', pages, state);
+            }
+            if (!state.trc20Complete) {
+                await this.walkSource(address, 'trc20', pages, state);
             }
 
+            const done = state.nativeComplete && state.trc20Complete;
             await this.patchProgress(address, {
-                status: 'queued',
-                cursorFingerprint: fingerprint,
-                rowsIngested: progress.rowsIngested + rowsThisTick,
-                oldestTimestampReached: oldest,
-                newestTimestampSeen: newest
+                status: done ? 'complete' : 'queued',
+                cursorFingerprint: state.nativeComplete ? undefined : state.nativeCursor,
+                trc20CursorFingerprint: state.trc20Complete ? undefined : state.trc20Cursor,
+                nativeComplete: state.nativeComplete,
+                trc20Complete: state.trc20Complete,
+                rowsIngested: state.rowsIngested,
+                oldestTimestampReached: state.oldest,
+                newestTimestampSeen: state.newest
             });
+            if (done) {
+                this.logger.info({ address, rowsIngested: state.rowsIngested }, 'Account-history backfill complete for account (both endpoints exhausted)');
+            }
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
             this.logger.error({ address, error: message }, 'Account-history ingestion failed for account');
             await this.patchProgress(address, {
                 status: 'failed',
                 lastError: message,
-                rowsIngested: progress.rowsIngested + rowsThisTick,
-                oldestTimestampReached: oldest,
-                newestTimestampSeen: newest
+                cursorFingerprint: state.nativeCursor,
+                trc20CursorFingerprint: state.trc20Cursor,
+                nativeComplete: state.nativeComplete,
+                trc20Complete: state.trc20Complete,
+                rowsIngested: state.rowsIngested,
+                oldestTimestampReached: state.oldest,
+                newestTimestampSeen: state.newest
             });
         }
     }
 
     /**
-     * Project and insert a page of transactions into ClickHouse. ReplacingMergeTree
-     * makes the insert idempotent on `(account, timestamp, tx_id)`.
+     * Walk one endpoint's pages, writing each page to ClickHouse and advancing
+     * that endpoint's cursor in `state` after every clean write. Mutates `state`
+     * in place (cursor, completion flag, counts, timestamp bounds) so the caller
+     * can persist a single combined progress record. A throw propagates to the
+     * caller's catch with `state` reflecting everything written so far.
+     *
+     * @param address - Base58 account being ingested.
+     * @param source - Which endpoint to walk (`'tx'` or `'trc20'`).
+     * @param pages - Maximum pages to pull this tick.
+     * @param state - Mutable per-tick walk state, updated in place.
+     */
+    private async walkSource(address: string, source: AccountTxSource, pages: number, state: IIngestWalkState): Promise<void> {
+        let fingerprint = source === 'tx' ? state.nativeCursor : state.trc20Cursor;
+
+        for (let page = 0; page < pages; page++) {
+            const result = await this.provider!.fetchPage(address, { source, limit: PROVIDER_PAGE_LIMIT, fingerprint });
+            if (result.transactions.length > 0) {
+                await this.writeTransactions(address, source, result.transactions);
+                state.rowsIngested += result.transactions.length;
+                for (const tx of result.transactions) {
+                    if (!state.newest || tx.timestamp > state.newest) {
+                        state.newest = tx.timestamp;
+                    }
+                    if (!state.oldest || tx.timestamp < state.oldest) {
+                        state.oldest = tx.timestamp;
+                    }
+                }
+            }
+
+            fingerprint = result.nextFingerprint;
+            if (source === 'tx') {
+                state.nativeCursor = fingerprint;
+            } else {
+                state.trc20Cursor = fingerprint;
+            }
+
+            if (!fingerprint) {
+                if (source === 'tx') {
+                    state.nativeComplete = true;
+                } else {
+                    state.trc20Complete = true;
+                }
+                return;
+            }
+        }
+    }
+
+    /**
+     * Project and insert a page of transactions from one endpoint into ClickHouse.
+     * ReplacingMergeTree makes the insert idempotent on the full sort key
+     * `(account, timestamp, tx_id, source, to_address)`.
      *
      * @param address - The tracked account these rows belong to.
+     * @param source - Which endpoint produced them (part of the dedup key).
      * @param transactions - Normalized transactions to store.
      */
-    private async writeTransactions(address: string, transactions: IBlockTransaction[]): Promise<void> {
+    private async writeTransactions(address: string, source: AccountTxSource, transactions: IBlockTransaction[]): Promise<void> {
         const ingestedAt = formatClickHouseDateTime64Utc(new Date());
         const rows = transactions.map((tx) =>
-            toAccountTransactionRow(address, tx, formatClickHouseDateTime64Utc(tx.timestamp), ingestedAt)
+            toAccountTransactionRow(address, tx, source, formatClickHouseDateTime64Utc(tx.timestamp), ingestedAt)
         );
-        await this.clickhouse!.insert<IAccountTransactionRow>(TRANSACTIONS_TABLE, rows);
+        // Wait for the durable commit before the caller advances the fingerprint
+        // cursor. With the default async_insert / wait_for_async_insert:0, a later
+        // flush failure would surface only in the error poller — after the cursor
+        // has already moved past these rows, permanently skipping the page. A throw
+        // here keeps the cursor on the failed page so the next tick re-fetches and
+        // (idempotently, via ReplacingMergeTree) re-writes it.
+        await this.clickhouse!.insert<IAccountTransactionRow>(TRANSACTIONS_TABLE, rows, { waitForCommit: true });
     }
 
     /**
@@ -518,13 +608,13 @@ export class AccountHistoryService implements IAccountHistoryService {
      */
     private async ensureProgress(address: string): Promise<IAccountProgressDoc> {
         const collection = this.database.getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION);
-        const existing = await collection.findOne({ address });
-        if (existing) {
-            return existing;
-        }
-        const fresh: IAccountProgressDoc = { address, status: 'queued', rowsIngested: 0 };
-        await collection.updateOne({ address }, { $setOnInsert: fresh }, { upsert: true });
-        return fresh;
+        const result = await collection.findOneAndUpdate(
+            { address },
+            { $setOnInsert: { address, status: 'queued', rowsIngested: 0 } },
+            { upsert: true, returnDocument: 'after' }
+        );
+        const doc = (result && 'value' in result ? result.value : result) as IAccountProgressDoc;
+        return doc;
     }
 
     /**
@@ -554,26 +644,41 @@ export class AccountHistoryService implements IAccountHistoryService {
     }
 
     /**
-     * Force a progress status, used when pausing/resuming an account.
+     * Force a progress status, used when pausing/resuming an account. A
+     * `complete` backfill is never reopened: overwriting it to `queued` on
+     * resume would re-include the account in the next tick (which filters on
+     * `status !== 'complete'`) and, with the cursor cleared at completion,
+     * trigger a full re-walk that re-fetches the whole history and double-counts
+     * `rowsIngested`. The admin badge reads `account.paused` for the paused
+     * label, so a paused completed account still displays as paused without
+     * losing its terminal status.
      *
      * @param address - Base58 address.
      * @param status - The status to set.
      */
     private async setProgressStatus(address: string, status: IAccountProgressDoc['status']): Promise<void> {
-        await this.ensureProgress(address);
+        const progress = await this.ensureProgress(address);
+        if (progress.status === 'complete') {
+            return;
+        }
         await this.patchProgress(address, { status });
     }
 
     /**
-     * Broadcast the current stats snapshot to admin listeners. Silently skipped
-     * when no emitter is wired.
+     * Nudge admin listeners to refetch stats after an ingestion tick. Emits only
+     * a timestamp, never the snapshot itself: this event is broadcast to every
+     * connected socket (anonymous visitors included) with no room or auth gate,
+     * while the {@link getStats} snapshot carries tracked-account addresses,
+     * labels, and ingestion errors that the REST surface guards behind
+     * `requireAdmin`. Admin clients refetch over that gated endpoint on this
+     * signal, mirroring the `curation:changed` / `menu:update` nudges. Silently
+     * skipped when no emitter is wired.
      */
     private async broadcastStats(): Promise<void> {
         if (!this.emitter) {
             return;
         }
-        const stats = await this.getStats();
-        this.emitter.emit({ event: STATS_EVENT, payload: stats });
+        this.emitter.emit({ event: STATS_EVENT, payload: { at: Date.now() } });
     }
 
     /**
@@ -638,6 +743,26 @@ export class AccountHistoryService implements IAccountHistoryService {
         const bandwidthConsumed = num(row.bandwidth_consumed);
         const bandwidthFee = num(row.bandwidth_fee_sun);
 
+        // Rehydrate TRC20 token detail into contract.parameters (the open decoded-
+        // ABI-args domain), mirroring how the trc20 provider mapping stored it, so
+        // consumers get the token amount/symbol/decimals without IBlockTransaction
+        // carrying token-specific fields.
+        const tokenParameters = row.token_amount != null
+            ? {
+                value: String(row.token_amount),
+                symbol: row.token_symbol ?? undefined,
+                decimals: row.token_decimals ?? undefined
+            }
+            : undefined;
+
+        const contract = row.contract_address
+            ? {
+                address: String(row.contract_address),
+                method: row.contract_method ? String(row.contract_method) : undefined,
+                parameters: tokenParameters
+            }
+            : undefined;
+
         const transaction: IBlockTransaction = {
             txId: String(row.tx_id),
             blockNumber: Number(row.block_number ?? 0),
@@ -654,9 +779,7 @@ export class AccountHistoryService implements IAccountHistoryService {
             bandwidth: bandwidthConsumed !== undefined || bandwidthFee !== undefined
                 ? { consumed: bandwidthConsumed ?? 0, feeSun: bandwidthFee ?? 0 }
                 : undefined,
-            contract: row.contract_address
-                ? { address: String(row.contract_address), method: row.contract_method ? String(row.contract_method) : undefined }
-                : undefined,
+            contract,
             memo: row.memo === null || row.memo === undefined ? null : String(row.memo)
         };
         return transaction;

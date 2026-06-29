@@ -26,6 +26,14 @@ export const TRANSACTIONS_TABLE = 'account_transactions';
 export const SETTINGS_KEY = 'settings';
 
 /**
+ * Which TronGrid account endpoint a stored row came from. `'tx'` is the general
+ * `/transactions` endpoint (native TRX, TRC10, staking, raw contract calls);
+ * `'trc20'` is `/transactions/trc20` (decoded token transfers, including inbound
+ * ones the general endpoint omits). Part of the ClickHouse dedup key.
+ */
+export type AccountTxSource = 'tx' | 'trc20';
+
+/**
  * Stored tracked-account record. Mirrors the public `ITrackedAccount` shape with
  * `addedAt`/`updatedAt` persisted as `Date`.
  */
@@ -49,10 +57,16 @@ export interface ITrackedAccountDoc {
 export interface IAccountProgressDoc {
     /** Base58 address this progress belongs to; unique within the collection. */
     address: string;
-    /** Lifecycle state of the backfill. */
+    /** Lifecycle state of the backfill; `complete` only once BOTH endpoints exhaust. */
     status: 'queued' | 'running' | 'paused' | 'complete' | 'failed';
-    /** Opaque TronGrid fingerprint for the next page; absent before first run or at completion. */
+    /** Opaque fingerprint for the next general `/transactions` page; absent before first run or when that endpoint is exhausted. */
     cursorFingerprint?: string;
+    /** Opaque fingerprint for the next `/transactions/trc20` page; absent before first run or when that endpoint is exhausted. */
+    trc20CursorFingerprint?: string;
+    /** True once the general `/transactions` walk has reached the end of available history. */
+    nativeComplete?: boolean;
+    /** True once the `/transactions/trc20` walk has reached the end of available history. */
+    trc20Complete?: boolean;
     /** Oldest block time reached walking history backward. */
     oldestTimestampReached?: Date;
     /** Newest block time observed on the first page. */
@@ -90,7 +104,9 @@ export interface IAccountTransactionRow extends Record<string, unknown> {
     account: string;
     /** Transaction hash. */
     tx_id: string;
-    /** Including block height. */
+    /** Which TronGrid endpoint produced this row (`'tx'` or `'trc20'`); part of the dedup key. */
+    source: AccountTxSource;
+    /** Including block height (0 when the source endpoint omits it, e.g. trc20). */
     block_number: number;
     /** Block execution time as a ClickHouse datetime string. */
     timestamp: string;
@@ -118,7 +134,13 @@ export interface IAccountTransactionRow extends Record<string, unknown> {
     contract_address: string | null;
     /** Decoded method selector/name; null when not a contract call. */
     contract_method: string | null;
-    /** Decoded memo (hex of `raw_data.data`); null when none. */
+    /** Raw TRC20 token amount as an integer string (decimals unapplied); null for non-token rows. */
+    token_amount: string | null;
+    /** TRC20 token symbol from the transfer's token_info; null for non-token rows. */
+    token_symbol: string | null;
+    /** TRC20 token decimals from the transfer's token_info; null for non-token rows. */
+    token_decimals: number | null;
+    /** Decoded UTF-8 memo from `raw_data.data`; null when none. */
     memo: string | null;
     /** Ingestion time; the ReplacingMergeTree version column. */
     ingested_at: string;
@@ -159,4 +181,36 @@ export interface ITronGridAccountTx {
     net_usage?: number;
     /** TRX burned for bandwidth, in sun. */
     net_fee?: number;
+}
+
+/**
+ * Minimal shape of a TronGrid TRC20 transfer item the provider reads from the
+ * `/v1/accounts/{addr}/transactions/trc20` endpoint. This endpoint indexes by
+ * token-transfer participant, so it returns transfers the account *received*
+ * (which the native `/transactions` endpoint omits, since the recipient is only
+ * inside the contract call data). Fields are optional because TronGrid omits
+ * unknowns; the decoded `value` carries the raw token amount.
+ */
+export interface ITronGridTrc20Tx {
+    /** Hash of the transaction carrying the transfer. */
+    transaction_id?: string;
+    /** Block time in epoch milliseconds. */
+    block_timestamp?: number;
+    /** Base58 sender of the token transfer. */
+    from?: string;
+    /** Base58 recipient of the token transfer. */
+    to?: string;
+    /** Raw token amount as an integer string (decimals unapplied). */
+    value?: string;
+    /** Event type, e.g. `'Transfer'` / `'Approval'`. */
+    type?: string;
+    /** Token contract metadata. */
+    token_info?: {
+        /** Base58 token contract address. */
+        address?: string;
+        /** Token symbol, e.g. `USDT`. */
+        symbol?: string;
+        /** Token decimals. */
+        decimals?: number;
+    };
 }
