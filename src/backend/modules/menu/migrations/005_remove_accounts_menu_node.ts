@@ -35,7 +35,7 @@ import type { IMigration, IMigrationContext } from '@/types';
 export const migration: IMigration = {
     id: '005_remove_accounts_menu_node',
     description: 'Delete the persisted Accounts (/accounts) main-namespace menu node and its override after the public accounts feature was removed.',
-    dependencies: ['module:menu:004_merge_system_namespace_into_main'],
+    dependencies: [],
 
     async up(context: IMigrationContext): Promise<void> {
         const nodes = context.database.getCollection('menu_nodes');
