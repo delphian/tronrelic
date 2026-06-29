@@ -1,0 +1,56 @@
+/**
+ * Scoped styles for the /system/account-history admin surface. Layout and state
+ * only — colors, spacing, and typography flow through design tokens.
+ */
+
+.summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.content {
+    margin-top: var(--gap-md);
+}
+
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.row_actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.account_addr {
+    font-weight: var(--font-weight-medium);
+    word-break: break-all;
+}
+
+.account_error {
+    margin-top: var(--gap-2xs);
+    color: var(--color-danger);
+    font-size: var(--font-size-caption);
+}
+
+.setting_row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--gap-md);
+}
+
+.setting_label {
+    font-weight: var(--font-weight-semibold);
+}
+
+.number_input {
+    max-width: var(--max-width-xs);
+    width: 8ch;
+}

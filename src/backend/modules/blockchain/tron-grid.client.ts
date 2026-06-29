@@ -696,6 +696,32 @@ export class TronGridClient {
     }
 
     /**
+     * Fetch paginated native/contract transactions for an account via the v1 REST API.
+     *
+     * Covers every non-TRC20 transaction type — native TRX transfers, TRC10,
+     * staking/delegation, and raw contract calls — that the account participated
+     * in. Pair this with `getTrc20Transactions` to assemble an account's complete
+     * history; the account-history module walks both, fingerprint-paged.
+     *
+     * Routed through the same `enqueueRequest` throttle and rotating-key headers
+     * as every other call, so a long account backfill shares the global TronGrid
+     * rate budget rather than competing with live block sync.
+     *
+     * @param base58Address - Account address in base58 format.
+     * @param params - Query parameters (`only_confirmed`, `limit`, `fingerprint`, optional `min_timestamp`/`max_timestamp`).
+     * @returns Raw response data with transactions and pagination metadata (`meta.fingerprint`).
+     */
+    async getAccountTransactions<T>(base58Address: string, params: Record<string, string | number | boolean>): Promise<T> {
+        return enqueueRequest(async () => {
+            const response = await httpClient.get<T>(
+                `${BASE_URL}/v1/accounts/${base58Address}/transactions`,
+                { params, headers: buildHeaders(), timeout: 15000 }
+            );
+            return response.data;
+        });
+    }
+
+    /**
      * Execute a read-only smart contract call via triggerconstantcontract.
      *
      * No gas cost — used for querying contract state (e.g. allowance, balanceOf).
