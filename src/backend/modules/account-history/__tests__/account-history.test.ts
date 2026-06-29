@@ -14,7 +14,7 @@ import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 import { AccountHistoryModule } from '../AccountHistoryModule.js';
 import { AccountHistoryService } from '../services/account-history.service.js';
-import { PROGRESS_COLLECTION, TRACKED_COLLECTION } from '../database/index.js';
+import { PROGRESS_COLLECTION, SETTINGS_COLLECTION, SETTINGS_KEY, TRACKED_COLLECTION } from '../database/index.js';
 import { toAccountTransactionRow } from '../providers/trongrid-account-history.provider.js';
 import type { IAccountHistoryProvider } from '../providers/IAccountHistoryProvider.js';
 
@@ -298,6 +298,75 @@ describe('AccountHistoryService', () => {
         expect(progress.status).toBe('complete');
         expect(progress.rowsIngested).toBe(101);
         expect(new Date(progress.newestTimestampSeen).getTime()).toBe(newer.getTime());
+    });
+
+    it('runForwardSyncTick resumes a capped drain across ticks and advances the watermark only once known territory is reached', async () => {
+        AccountHistoryService.resetForTests();
+        const database = createMockDatabaseService();
+        const watermark = new Date('2024-01-01T00:00:00.000Z');
+        const jan10 = new Date('2024-01-10T00:00:00.000Z');
+        const jan09 = new Date('2024-01-09T00:00:00.000Z');
+        const jan05 = new Date('2024-01-05T00:00:00.000Z');
+        database.getCollectionData(TRACKED_COLLECTION).push({ address: VALID_ADDRESS, paused: false, addedAt: watermark, updatedAt: watermark });
+        database.getCollectionData(PROGRESS_COLLECTION).push({
+            address: VALID_ADDRESS,
+            status: 'complete',
+            newestTimestampSeen: watermark,
+            nativeComplete: true,
+            trc20Complete: true,
+            rowsIngested: 100
+        });
+        // pagesPerTick = 1 so one full page carrying a continuation cursor trips the
+        // page cap and forces the 'tx' drain to span two ticks.
+        database.getCollectionData(SETTINGS_COLLECTION).push({ key: SETTINGS_KEY, ingestionEnabled: true, pagesPerTick: 1, accountsPerTick: 3 });
+
+        const inserted: any[] = [];
+        const clickhouse = {
+            query: vi.fn().mockResolvedValue([]),
+            insert: vi.fn(async (_table: string, rows: any[]) => { inserted.push(...rows); })
+        } as unknown as IClickHouseService;
+
+        // 'tx' leading page is all-fresh with a continuation cursor (cap hit on tick
+        // 1); the continuation page reaches the watermark (drain done on tick 2).
+        // 'trc20' has nothing new.
+        const provider: IAccountHistoryProvider = {
+            id: 'test',
+            fetchPage: vi.fn(async (_address: string, opts: any) => {
+                if (opts.source === 'trc20') {
+                    return { transactions: [], nextFingerprint: undefined };
+                }
+                if (!opts.fingerprint) {
+                    return { transactions: [makeTx('a', jan10), makeTx('b', jan09)], nextFingerprint: 'fp-tx-1' };
+                }
+                if (opts.fingerprint === 'fp-tx-1') {
+                    return { transactions: [makeTx('c', jan05), makeTx('known', watermark)], nextFingerprint: 'fp-tx-2' };
+                }
+                return { transactions: [], nextFingerprint: undefined };
+            })
+        };
+
+        AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
+        const service = AccountHistoryService.getInstance();
+
+        // Tick 1: page cap hit before the watermark — watermark frozen, drain cursor
+        // persisted, nothing promoted.
+        await service.runForwardSyncTick();
+        let progress = database.getCollectionData(PROGRESS_COLLECTION).find((d: any) => d.address === VALID_ADDRESS);
+        expect(new Date(progress.newestTimestampSeen).getTime()).toBe(watermark.getTime());
+        expect(progress.forwardTxCursor).toBe('fp-tx-1');
+        expect(progress.rowsIngested).toBe(102);
+        expect(progress.status).toBe('complete');
+
+        // Tick 2: continuation reaches the watermark — drain completes, watermark
+        // promoted to the newest seen across the whole drain, cursor cleared.
+        await service.runForwardSyncTick();
+        progress = database.getCollectionData(PROGRESS_COLLECTION).find((d: any) => d.address === VALID_ADDRESS);
+        expect(new Date(progress.newestTimestampSeen).getTime()).toBe(jan10.getTime());
+        expect(progress.forwardTxCursor).toBeUndefined();
+        expect(progress.rowsIngested).toBe(103);
+        expect(progress.status).toBe('complete');
+        // 'a' and 'b' on tick 1, 'c' on tick 2; the at-watermark 'known' row is filtered out.
+        expect(inserted.map((r) => r.tx_id).sort()).toEqual(['a', 'b', 'c']);
     });
 
     it('runForwardSyncTick skips accounts that are not complete', async () => {

@@ -71,6 +71,27 @@ export interface IAccountProgressDoc {
     oldestTimestampReached?: Date;
     /** Newest block time observed on the first page. */
     newestTimestampSeen?: Date;
+    /**
+     * Forward-sync continuation cursor for the general `/transactions` endpoint.
+     * Set only while a forward drain spans ticks — when one tick's newest-first
+     * walk hits the page cap before reaching the watermark, this holds the
+     * fingerprint to resume from on the next tick. Absent means the endpoint is
+     * not mid-drain, so the next forward poll starts fresh from the leading edge.
+     */
+    forwardTxCursor?: string;
+    /**
+     * Forward-sync continuation cursor for the `/transactions/trc20` endpoint —
+     * the token-transfer counterpart of {@link forwardTxCursor}, same contract.
+     */
+    forwardTrc20Cursor?: string;
+    /**
+     * Newest timestamp captured during an in-progress (multi-tick) forward drain,
+     * held back from `newestTimestampSeen` until the drain reaches known territory.
+     * Promoting the watermark only on drain completion is what closes the page-cap
+     * gap: the watermark never advances past rows a capped tick left un-fetched, so
+     * future ticks cannot filter them out as already-known and lose them.
+     */
+    forwardPendingNewest?: Date;
     /** Total rows written to ClickHouse for this account. */
     rowsIngested: number;
     /** When the ingestion tick last touched this account; drives round-robin ordering. */

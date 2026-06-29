@@ -692,20 +692,38 @@ export class AccountHistoryService implements IAccountHistoryService {
     }
 
     /**
-     * Forward-poll one completed account: for each endpoint, fetch newest-first
-     * pages and append transactions newer than the watermark recorded at the
-     * start of the poll, stopping as soon as a page reaches known territory (any
-     * transaction at or below the watermark) or the per-tick page cap. Using the
-     * single start-of-poll watermark as the stop threshold for *both* endpoints is
-     * safe: a transaction that arrives after a backfill always has a timestamp
-     * greater than the watermark, so nothing new is ever below it. ReplacingMergeTree
-     * absorbs the one overlapping boundary page idempotently.
+     * Forward-poll one completed account to capture transactions that arrived
+     * after its backfill, advancing the watermark only when the leading edge is
+     * fully drained — so a burst larger than one tick can hold never strands the
+     * rows below the fetched window.
+     *
+     * Each endpoint is walked newest-first, writing transactions newer than the
+     * watermark recorded at the start of the drain. Reaching known territory (a
+     * row at or below the watermark) completes that endpoint's drain. Hitting the
+     * per-tick page cap first instead leaves the endpoint *mid-drain*: its
+     * continuation fingerprint is persisted (`forwardTxCursor` /
+     * `forwardTrc20Cursor`) and the next tick resumes draining downward from
+     * there. Crucially the watermark is NOT advanced while any endpoint is
+     * mid-drain — the newest timestamp seen is held in `forwardPendingNewest` and
+     * promoted to `newestTimestampSeen` only once both endpoints reach known
+     * territory. This closes the silent-data-loss gap an immediate advance caused,
+     * where a capped tick moved the watermark past un-fetched rows that every
+     * future tick then filtered out as already-known.
+     *
+     * While an account is mid-drain, an endpoint that is not itself draining is
+     * skipped rather than re-walked from the leading edge. Re-walking it would let
+     * fresh arrivals push the shared pending watermark up, which on promotion could
+     * strand un-fetched rows on the still-draining endpoint; deferring the skipped
+     * endpoint's new arrivals to the next clean cycle (after the drain completes)
+     * keeps the single shared watermark safe without per-endpoint watermarks. The
+     * cost is a few minutes of extra latency for the skipped endpoint during a long
+     * drain — never lost data.
      *
      * Status stays `complete` throughout — including on failure. Flipping to
      * `failed` would re-admit the account to the backward backfill (which filters
      * on `status !== 'complete'`) and, with the cursors cleared at completion,
-     * trigger a full re-walk that double-counts. The next forward tick simply
-     * retries.
+     * trigger a full re-walk that double-counts. On error it keeps `complete`,
+     * persists the drain state, and the next forward tick resumes from it.
      *
      * @param address - Base58 completed account to refresh.
      * @param pages - Maximum newest pages to pull per endpoint this tick.
@@ -713,15 +731,42 @@ export class AccountHistoryService implements IAccountHistoryService {
     private async forwardSyncAccount(address: string, pages: number): Promise<void> {
         const progress = await this.ensureProgress(address);
         const threshold = progress.newestTimestampSeen;
-        let newest = threshold;
+
+        // An account is mid-drain when either endpoint carries a continuation
+        // cursor from a prior capped tick. While mid-drain the watermark is frozen
+        // at `threshold` and only the still-draining endpoints are advanced.
+        const midDrain = progress.forwardTxCursor !== undefined || progress.forwardTrc20Cursor !== undefined;
+
+        // Running newest across the whole (possibly multi-tick) drain: seeded from
+        // the held pending value when resuming, else from the frozen watermark so
+        // an empty poll leaves the watermark unchanged.
+        let pendingNewest: Date | undefined = progress.forwardPendingNewest ?? threshold;
+        let nextTxCursor = progress.forwardTxCursor;
+        let nextTrc20Cursor = progress.forwardTrc20Cursor;
         let written = 0;
 
         try {
             for (const source of ['tx', 'trc20'] as AccountTxSource[]) {
-                let fingerprint: string | undefined = undefined;
+                const isTx = source === 'tx';
+                const endpointCursor = isTx ? progress.forwardTxCursor : progress.forwardTrc20Cursor;
+                const endpointDraining = endpointCursor !== undefined;
+
+                // Mid-drain: leave a non-draining endpoint untouched so its fresh
+                // arrivals cannot push the shared pending watermark past rows the
+                // still-draining endpoint has not fetched. They are picked up on the
+                // next clean cycle, once the drain completes.
+                if (midDrain && !endpointDraining) {
+                    continue;
+                }
+
+                let fingerprint: string | undefined = endpointCursor;
+                let drainComplete = false;
+
                 for (let page = 0; page < pages; page++) {
                     const result = await this.provider!.fetchPage(address, { source, limit: PROVIDER_PAGE_LIMIT, fingerprint });
                     if (result.transactions.length === 0) {
+                        // Provider exhausted the leading edge — nothing more to drain.
+                        drainComplete = true;
                         break;
                     }
 
@@ -732,36 +777,56 @@ export class AccountHistoryService implements IAccountHistoryService {
                         await this.writeTransactions(address, source, fresh);
                         written += fresh.length;
                         for (const tx of fresh) {
-                            if (!newest || tx.timestamp > newest) {
-                                newest = tx.timestamp;
+                            if (!pendingNewest || tx.timestamp > pendingNewest) {
+                                pendingNewest = tx.timestamp;
                             }
                         }
                     }
 
-                    // Reached known territory (a row at/below the watermark) or this
-                    // page carried nothing new — the leading edge is fully captured.
+                    // Known territory (a row at/below the watermark) or a page with
+                    // nothing new means this endpoint's drain is finished.
                     const reachedKnown = threshold ? result.transactions.some((tx) => tx.timestamp <= threshold) : false;
                     fingerprint = result.nextFingerprint;
                     if (reachedKnown || fresh.length === 0 || !fingerprint) {
+                        drainComplete = true;
                         break;
                     }
-                    if (page === pages - 1 && fingerprint) {
-                        // Hit the page cap before reaching the watermark: a backlog
-                        // larger than one tick can hold. The watermark still advances
-                        // to the newest seen, so the gap below is not re-fetched —
-                        // surface it so an operator can raise pagesPerTick if a
-                        // high-volume account needs it.
-                        this.logger.warn({ address, source, pages }, 'Account-history forward sync hit the page cap before reaching the watermark — possible gap on a high-volume account');
+                    if (page === pages - 1) {
+                        // Hit the page cap before known territory: the drain resumes
+                        // next tick from `fingerprint`. The watermark stays frozen so
+                        // the un-fetched rows below this window are never stranded.
+                        this.logger.warn({ address, source, pages }, 'Account-history forward sync hit the page cap before reaching the watermark — drain will resume next tick');
                     }
+                }
+
+                const continuation = drainComplete ? undefined : fingerprint;
+                if (isTx) {
+                    nextTxCursor = continuation;
+                } else {
+                    nextTrc20Cursor = continuation;
                 }
             }
 
-            await this.patchProgress(address, {
-                newestTimestampSeen: newest,
+            const stillDraining = nextTxCursor !== undefined || nextTrc20Cursor !== undefined;
+            const patch: Partial<IAccountProgressDoc> = {
+                forwardTxCursor: nextTxCursor,
+                forwardTrc20Cursor: nextTrc20Cursor,
                 rowsIngested: progress.rowsIngested + written,
                 lastRunAt: new Date(),
                 lastError: undefined
-            });
+            };
+            if (stillDraining) {
+                // Hold the newest seen; the watermark must not move past an
+                // un-drained gap.
+                patch.forwardPendingNewest = pendingNewest;
+            } else {
+                // Every endpoint reached known territory — safe to promote the
+                // watermark and clear the held pending value.
+                patch.newestTimestampSeen = pendingNewest;
+                patch.forwardPendingNewest = undefined;
+            }
+            await this.patchProgress(address, patch);
+
             if (written > 0) {
                 this.logger.info({ address, written }, 'Account-history forward sync appended new transactions to a completed account');
             }
@@ -769,8 +834,12 @@ export class AccountHistoryService implements IAccountHistoryService {
             const message = error instanceof Error ? error.message : 'Unknown error';
             this.logger.error({ address, error: message }, 'Account-history forward sync failed for account');
             // Keep status `complete`; never reopen the backfill (see method doc).
+            // Persist the drain state so the next tick resumes; never promote the
+            // watermark on a failed (partial) drain.
             await this.patchProgress(address, {
-                newestTimestampSeen: newest,
+                forwardTxCursor: nextTxCursor,
+                forwardTrc20Cursor: nextTrc20Cursor,
+                forwardPendingNewest: pendingNewest,
                 rowsIngested: progress.rowsIngested + written,
                 lastRunAt: new Date(),
                 lastError: message
