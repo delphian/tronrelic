@@ -100,7 +100,7 @@ First consumer: the notifications module persists per-user opt-outs here under t
 | PATCH | `/api/user/wallets/:address/primary` | BA session | Set primary |
 | GET | `/api/user/settings` | BA session | Caller's values + user-writable catalog |
 | PUT | `/api/user/settings` | BA session | Write one registered setting (`{namespace,key,value}`) |
-| DELETE | `/api/user/settings` | BA session | Clear one setting (`{namespace,key}`) |
+| DELETE | `/api/user/settings` | BA session | Clear one setting (`?namespace=&key=`) |
 | GET/POST | `/api/admin/users/groups` | `requireAdmin` | List / create group definitions |
 | GET/PATCH/DELETE | `/api/admin/users/groups/:id` | `requireAdmin` | Read / update / delete a definition |
 | GET | `/api/admin/users/groups/:id/members` | `requireAdmin` | Paginated member ids |
