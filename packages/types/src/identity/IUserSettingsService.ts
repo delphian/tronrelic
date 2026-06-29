@@ -111,8 +111,11 @@ export interface IUserSettingsService {
     get<T = unknown>(userId: string, namespace: string, key: string): Promise<T | null>;
 
     /**
-     * Read every key a user has stored under one namespace in a single query, so
-     * a provider can hydrate all its settings at once.
+     * Read every key a user has *stored* under one namespace in a single query.
+     * Stored values only — registered defaults are not merged in (mirroring
+     * `getForUsers`; contrast `get`, which falls back to a single key's default).
+     * A caller hydrating a namespace applies its own defaults for keys absent
+     * here, so a present key means the user explicitly set it.
      *
      * @param userId - Better Auth user id.
      * @param namespace - Provider namespace.

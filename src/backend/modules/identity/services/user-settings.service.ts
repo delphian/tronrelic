@@ -44,7 +44,7 @@ import { USER_SETTINGS_COLLECTION, type IUserSettingDocument } from '../database
  * @returns The combined registry key.
  */
 function definitionKey(namespace: string, key: string): string {
-    return `${namespace}:${key}`;
+    return JSON.stringify([namespace, key]);
 }
 
 /**
@@ -63,8 +63,10 @@ export class UserSettingsService implements IUserSettingsService {
     private readonly logger: ISystemLogService;
 
     /**
-     * Registered setting definitions keyed by `namespace:key`. Drives the safe
-     * self-service surface; the programmatic methods ignore it.
+     * Registered setting definitions keyed by a tuple-safe, JSON-encoded
+     * `(namespace, key)` so a colon in either part cannot collide two distinct
+     * settings. Drives the safe self-service surface; the programmatic methods
+     * ignore it.
      */
     private readonly definitions = new Map<string, IUserSettingDefinition>();
 
@@ -183,7 +185,12 @@ export class UserSettingsService implements IUserSettingsService {
     }
 
     /**
-     * Read every key a user has stored under one namespace in a single query.
+     * Read every key a user has *stored* under one namespace in a single query.
+     * Stored values only — registered defaults are not merged in, mirroring
+     * {@link getForUsers}; a caller that wants defaults applies them itself
+     * (unlike {@link get}, which falls back to a single key's default). The
+     * result is therefore empty when the user has stored nothing, and a present
+     * key means the user explicitly set it.
      *
      * @param userId - Better Auth user id.
      * @param namespace - Provider namespace.

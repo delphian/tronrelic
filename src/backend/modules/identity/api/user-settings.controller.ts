@@ -126,7 +126,9 @@ export class UserSettingsController {
 
     /**
      * DELETE `/` — clear one setting, reverting the user to the registered
-     * default. Body: `{ namespace, key }`. Only registered, user-writable
+     * default. Query: `?namespace=<ns>&key=<key>` — a DELETE request body is
+     * discouraged by RFC 9110 and stripped by many proxies/clients, so the
+     * identifiers ride the query string. Only registered, user-writable
      * settings may be cleared, mirroring the write allow-list.
      */
     remove = async (req: Request, res: Response): Promise<void> => {
@@ -136,11 +138,10 @@ export class UserSettingsController {
             return;
         }
 
-        const body = (req.body ?? {}) as Record<string, unknown>;
-        const namespace = body.namespace;
-        const key = body.key;
+        const namespace = req.query.namespace;
+        const key = req.query.key;
         if (typeof namespace !== 'string' || typeof key !== 'string') {
-            res.status(400).json({ success: false, error: 'namespace and key are required strings' });
+            res.status(400).json({ success: false, error: 'namespace and key are required query parameters' });
             return;
         }
 
