@@ -11,7 +11,7 @@
 import { headers } from 'next/headers';
 import type { Metadata } from 'next';
 import type { ILinkedWallet } from '@/types';
-import { getServerConfig } from '../../../lib/serverConfig';
+import { getServerSideApiUrlWithPath } from '../../../lib/api-url';
 import { getServerSession } from '../../../modules/user/lib/session-server';
 import { Page, PageHeader } from '../../../components/layout';
 import { ProfileView } from '../../../modules/user/components/ProfileView';
@@ -62,8 +62,7 @@ export default async function ProfilePage() {
         return null;
     }
 
-    const { apiUrl } = await getServerConfig();
-    const initialWallets = await fetchInitialWallets(apiUrl);
+    const initialWallets = await fetchInitialWallets(getServerSideApiUrlWithPath());
 
     return (
         <Page>

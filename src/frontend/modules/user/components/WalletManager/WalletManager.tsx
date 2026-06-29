@@ -93,7 +93,14 @@ export function WalletManager({ initialWallets }: IWalletManagerProps) {
             async () => {
                 const address = await connectTronLink();
                 const challenge = await issueWalletChallenge('link', address);
-                const { signature } = await signMessageWithTronLink(challenge.message);
+                // signMessageWithTronLink re-reads the active address at sign time, so the
+                // user can switch TronLink accounts after the address-bound challenge is
+                // minted. That signature recovers to the wrong signer, which burns the nonce
+                // and fails on the backend with a confusing error, so reject the switch here.
+                const { address: signer, signature } = await signMessageWithTronLink(challenge.message);
+                if (signer !== address) {
+                    throw new Error('TronLink account changed during signing. Retry to link the active wallet.');
+                }
                 return linkWallet(address, { message: challenge.message, signature, nonce: challenge.nonce });
             },
             'Wallet linked'
@@ -111,6 +118,15 @@ export function WalletManager({ initialWallets }: IWalletManagerProps) {
             void applyMutation(
                 `primary:${address}`,
                 async () => {
+                    // The challenge is bound to the target address and the backend
+                    // rejects a signature from any other signer, so confirm TronLink
+                    // is on the target before minting the challenge — otherwise the
+                    // user signs with the wrong wallet, burns the nonce, and the
+                    // submit fails with a confusing error.
+                    const active = await connectTronLink();
+                    if (active !== address) {
+                        throw new Error(`Switch TronLink to ${address} to make it primary, then retry.`);
+                    }
                     const challenge = await issueWalletChallenge('set-primary', address);
                     const { signature } = await signMessageWithTronLink(challenge.message);
                     return setPrimaryWallet(address, { message: challenge.message, signature, nonce: challenge.nonce });
@@ -123,6 +139,8 @@ export function WalletManager({ initialWallets }: IWalletManagerProps) {
 
     /**
      * Detach a wallet from the account after a fresh signature proves control.
+     * The signer must have this wallet active in TronLink or the backend
+     * rejects the signature.
      *
      * @param address - The wallet to unlink.
      */
@@ -131,6 +149,15 @@ export function WalletManager({ initialWallets }: IWalletManagerProps) {
             void applyMutation(
                 `unlink:${address}`,
                 async () => {
+                    // The challenge is bound to the target address and the backend
+                    // rejects a signature from any other signer, so confirm TronLink
+                    // is on the target before minting the challenge — otherwise the
+                    // user signs with the wrong wallet, burns the nonce, and the
+                    // submit fails with a confusing error.
+                    const active = await connectTronLink();
+                    if (active !== address) {
+                        throw new Error(`Switch TronLink to ${address} to unlink it, then retry.`);
+                    }
                     const challenge = await issueWalletChallenge('unlink', address);
                     const { signature } = await signMessageWithTronLink(challenge.message);
                     return unlinkWallet(address, { message: challenge.message, signature, nonce: challenge.nonce });

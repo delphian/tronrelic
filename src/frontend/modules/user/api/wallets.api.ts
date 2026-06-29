@@ -33,11 +33,22 @@ interface ISignedProof {
  *
  * @param response - The raw fetch response from a wallet endpoint.
  * @returns The parsed JSON body typed as `T`.
- * @throws When the response status is not ok, using the backend error message.
+ * @throws When the response status is not ok (using the backend error message),
+ *         or when a successful response carries a body that is not valid JSON.
  */
 async function parse<T>(response: Response): Promise<T> {
     const text = await response.text();
-    const body = text ? JSON.parse(text) : {};
+    let body: any = {};
+    try {
+        body = text ? JSON.parse(text) : {};
+    } catch {
+        // A non-JSON body usually means a gateway/proxy returned an HTML error
+        // page (e.g. a 502/504). On an error response, fall through so the HTTP
+        // status drives the message; on a 200 a malformed body is a real fault.
+        if (response.ok) {
+            throw new Error(`Malformed response body (${response.status})`);
+        }
+    }
     if (!response.ok) {
         const reason = body?.message || body?.error || `Request failed (${response.status})`;
         throw new Error(reason);
