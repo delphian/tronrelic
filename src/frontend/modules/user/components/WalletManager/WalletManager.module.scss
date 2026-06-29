@@ -58,6 +58,13 @@
     color: var(--color-text-muted);
 }
 
+/* Keep the status badge content-width inside the stretch-aligned identity
+   column, and give it a touch of separation from the linked-date line. */
+.history {
+    align-self: flex-start;
+    margin-top: var(--gap-2xs);
+}
+
 .actions {
     display: flex;
     align-items: center;

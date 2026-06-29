@@ -20,7 +20,7 @@
 import type { Express, Router } from 'express';
 import mongoose from 'mongoose';
 import { toNodeHandler } from 'better-auth/node';
-import type { ICacheService, IDatabaseService, IMenuService, IModule, IModuleMetadata, IServiceRegistry } from '@/types';
+import type { ICacheService, IDatabaseService, IHookRegistry, IMenuService, IModule, IModuleMetadata, IServiceRegistry } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
@@ -62,6 +62,13 @@ export interface IIdentityModuleDependencies {
      * and `'accounts'` for plugins and other modules to discover.
      */
     serviceRegistry: IServiceRegistry;
+
+    /**
+     * Declared-hook registry. The wallet store fires the `http.walletLinked`
+     * observer seam through it after a successful link so feature modules can
+     * react to new verified ownership.
+     */
+    hookRegistry: IHookRegistry;
 }
 
 /**
@@ -123,7 +130,7 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
 
         // BA-user-keyed wallet store. Reuses the TronWeb instance for the
         // signature → challenge → verify contract.
-        WalletService.setDependencies(this.database, dependencies.cacheService, this.logger, tronWeb);
+        WalletService.setDependencies(this.database, dependencies.cacheService, this.logger, tronWeb, dependencies.hookRegistry);
         this.walletService = WalletService.getInstance();
         await this.walletService.createIndexes();
 

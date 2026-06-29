@@ -9,11 +9,12 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { IBlockTransaction, IMenuService, ISchedulerService, ISystemLogService } from '@/types';
+import type { IBlockTransaction, IClickHouseService, IHookRegistry, IMenuService, ISchedulerService, ISystemLogService } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 import { AccountHistoryModule } from '../AccountHistoryModule.js';
 import { AccountHistoryService } from '../services/account-history.service.js';
+import { PROGRESS_COLLECTION, TRACKED_COLLECTION } from '../database/index.js';
 import { toAccountTransactionRow } from '../providers/trongrid-account-history.provider.js';
 import type { IAccountHistoryProvider } from '../providers/IAccountHistoryProvider.js';
 
@@ -55,6 +56,19 @@ function createSchedulerMock(): ISchedulerService {
     } as unknown as ISchedulerService;
 }
 
+/**
+ * Build a hook-registry mock whose `register` returns a disposer, so the
+ * module's `run()` can wire its `http.walletLinked` handler.
+ *
+ * @returns A mock IHookRegistry.
+ */
+function createHookRegistryMock(): IHookRegistry {
+    return {
+        register: vi.fn().mockReturnValue(() => {}),
+        invoke: vi.fn().mockResolvedValue(undefined)
+    } as unknown as IHookRegistry;
+}
+
 describe('AccountHistoryModule', () => {
     beforeEach(() => {
         AccountHistoryService.resetForTests();
@@ -76,7 +90,8 @@ describe('AccountHistoryModule', () => {
             menuService: createMenuMock(),
             scheduler: createSchedulerMock(),
             clickhouse: undefined,
-            serviceRegistry: createMockServiceRegistry()
+            serviceRegistry: createMockServiceRegistry(),
+            hookRegistry: createHookRegistryMock()
         });
         expect(app.use).not.toHaveBeenCalled();
     });
@@ -92,13 +107,15 @@ describe('AccountHistoryModule', () => {
         const serviceRegistry = createMockServiceRegistry();
         const module = new AccountHistoryModule();
 
+        const hookRegistry = createHookRegistryMock();
         await module.init({
             database: createMockDatabaseService(),
             app: app as never,
             menuService: createMenuMock(),
             scheduler,
             clickhouse: undefined,
-            serviceRegistry
+            serviceRegistry,
+            hookRegistry
         });
         await module.run();
 
@@ -108,8 +125,21 @@ describe('AccountHistoryModule', () => {
             expect.anything(),
             expect.any(Function)
         );
+        expect(app.use).toHaveBeenCalledWith(
+            '/api/account-history',
+            expect.anything(),
+            expect.anything(),
+            expect.any(Function)
+        );
         expect(scheduler.register).toHaveBeenCalledWith('account-history:ingest', expect.any(String), expect.any(Function));
+        expect(scheduler.register).toHaveBeenCalledWith('account-history:forward-sync', expect.any(String), expect.any(Function));
         expect(serviceRegistry.has('account-history')).toBe(true);
+        expect(hookRegistry.register).toHaveBeenCalledWith(
+            'core',
+            expect.objectContaining({ id: 'http.walletLinked' }),
+            expect.any(Function),
+            expect.anything()
+        );
     });
 });
 
@@ -164,6 +194,126 @@ describe('AccountHistoryService', () => {
         const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn() };
         const service = buildService(provider);
         await service.runIngestionTick();
+        expect(provider.fetchPage).not.toHaveBeenCalled();
+    });
+
+    it('getProgressFor returns progress only for tracked addresses, ignoring untracked and malformed', async () => {
+        AccountHistoryService.resetForTests();
+        const database = createMockDatabaseService();
+        // Seed a progress record directly so the read is exercised without the
+        // raw-collection upsert the mock does not implement.
+        database.getCollectionData(PROGRESS_COLLECTION).push({ address: VALID_ADDRESS, status: 'running', rowsIngested: 5 });
+        AccountHistoryService.setDependencies({
+            database,
+            clickhouse: undefined,
+            provider: null,
+            emitter: undefined,
+            logger: createSilentLogger()
+        });
+        const service = AccountHistoryService.getInstance();
+
+        const untracked = 'TLa2f6VPqDgRE67v7c1pj7iGwsizZ1jGfX';
+        const progress = await service.getProgressFor([VALID_ADDRESS, untracked, 'not-an-address', VALID_ADDRESS]);
+
+        expect(progress).toHaveLength(1);
+        expect(progress[0]).toMatchObject({ address: VALID_ADDRESS, status: 'running', rowsIngested: 5 });
+    });
+
+    it('getProgressFor returns an empty array when no requested address is valid', async () => {
+        const service = buildService(null);
+        const progress = await service.getProgressFor(['not-an-address', '']);
+        expect(progress).toEqual([]);
+    });
+
+    /**
+     * Build a minimal IBlockTransaction for forward-sync write assertions.
+     *
+     * @param txId - Transaction id (also the ClickHouse dedup key fragment under test).
+     * @param timestamp - Block time used to compare against the forward-sync watermark.
+     * @returns A normalized transaction the provider mock can return.
+     */
+    function makeTx(txId: string, timestamp: Date): IBlockTransaction {
+        return {
+            txId,
+            blockNumber: 1,
+            timestamp,
+            type: 'TransferContract',
+            status: 'SUCCESS',
+            from: { address: 'Tfrom' },
+            to: { address: 'Tto' },
+            contract: { address: 'Tc', method: '' },
+            memo: null
+        };
+    }
+
+    it('runForwardSyncTick is a no-op without ClickHouse and never calls the provider', async () => {
+        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn() };
+        const service = buildService(provider);
+        await service.runForwardSyncTick();
+        expect(provider.fetchPage).not.toHaveBeenCalled();
+    });
+
+    it('runForwardSyncTick appends only post-watermark transactions to a completed account and keeps it complete', async () => {
+        AccountHistoryService.resetForTests();
+        const database = createMockDatabaseService();
+        const watermark = new Date('2024-01-01T00:00:00.000Z');
+        const newer = new Date('2024-02-01T00:00:00.000Z');
+        database.getCollectionData(TRACKED_COLLECTION).push({ address: VALID_ADDRESS, paused: false, addedAt: watermark, updatedAt: watermark });
+        database.getCollectionData(PROGRESS_COLLECTION).push({
+            address: VALID_ADDRESS,
+            status: 'complete',
+            newestTimestampSeen: watermark,
+            nativeComplete: true,
+            trc20Complete: true,
+            rowsIngested: 100
+        });
+
+        const inserted: any[] = [];
+        const clickhouse = {
+            query: vi.fn().mockResolvedValue([]),
+            insert: vi.fn(async (_table: string, rows: any[]) => { inserted.push(...rows); })
+        } as unknown as IClickHouseService;
+
+        // The 'tx' endpoint returns one new row and one already-known row (at the
+        // watermark); 'trc20' returns nothing. The poll must write only the new one.
+        const provider: IAccountHistoryProvider = {
+            id: 'test',
+            fetchPage: vi.fn(async (_address: string, opts: any) => {
+                if (opts.source === 'tx') {
+                    return { transactions: [makeTx('new1', newer), makeTx('old1', watermark)], nextFingerprint: undefined };
+                }
+                return { transactions: [], nextFingerprint: undefined };
+            })
+        };
+
+        AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
+        const service = AccountHistoryService.getInstance();
+
+        await service.runForwardSyncTick();
+
+        expect(inserted).toHaveLength(1);
+        expect(inserted[0].tx_id).toBe('new1');
+
+        const progress = database.getCollectionData(PROGRESS_COLLECTION).find((d: any) => d.address === VALID_ADDRESS);
+        expect(progress.status).toBe('complete');
+        expect(progress.rowsIngested).toBe(101);
+        expect(new Date(progress.newestTimestampSeen).getTime()).toBe(newer.getTime());
+    });
+
+    it('runForwardSyncTick skips accounts that are not complete', async () => {
+        AccountHistoryService.resetForTests();
+        const database = createMockDatabaseService();
+        const now = new Date('2024-01-01T00:00:00.000Z');
+        database.getCollectionData(TRACKED_COLLECTION).push({ address: VALID_ADDRESS, paused: false, addedAt: now, updatedAt: now });
+        database.getCollectionData(PROGRESS_COLLECTION).push({ address: VALID_ADDRESS, status: 'queued', rowsIngested: 0 });
+
+        const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
+        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn() };
+
+        AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
+        const service = AccountHistoryService.getInstance();
+
+        await service.runForwardSyncTick();
         expect(provider.fetchPage).not.toHaveBeenCalled();
     });
 });

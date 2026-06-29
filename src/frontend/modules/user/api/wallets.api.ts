@@ -9,6 +9,7 @@
  */
 
 import type {
+    IAccountIngestionProgress,
     ILinkedWallet,
     IWalletChallenge,
     WalletAction
@@ -66,6 +67,22 @@ export async function listWallets(): Promise<ILinkedWallet[]> {
         await fetch('/api/user/wallets', { cache: 'no-store' })
     );
     return body.wallets;
+}
+
+/**
+ * Read the account-history download progress for the signed-in account's own
+ * verified wallets. The backend scopes the result to the caller's wallets, so
+ * the UI can show each wallet's history-download status without any address
+ * plumbing. Returns only enrolled (tracked) addresses; un-enrolled wallets are
+ * simply absent.
+ *
+ * @returns Progress records for the caller's tracked wallets.
+ */
+export async function fetchWalletHistoryProgress(): Promise<IAccountIngestionProgress[]> {
+    const body = await parse<{ progress: IAccountIngestionProgress[] }>(
+        await fetch('/api/account-history/me/progress', { cache: 'no-store' })
+    );
+    return body.progress;
 }
 
 /**

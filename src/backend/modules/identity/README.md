@@ -59,7 +59,7 @@ Registered on the service registry during `run()`. Consume via `services.get<T>(
 | `unlinkWallet(userId, input)` | Detach a wallet |
 | `setPrimaryWallet(userId, input)` | Promote an existing wallet to primary (step-up) |
 
-Every method takes the resolved Better Auth user id first — the service never reads cookies/sessions. Mutations denormalize the primary address onto the BA user record so the session surfaces it without a second query.
+Every method takes the resolved Better Auth user id first — the service never reads cookies/sessions. Mutations denormalize the primary address onto the BA user record so the session surfaces it without a second query. After a successful `linkWallet`, the service fires the `http.walletLinked` observer hook (`{ userId, address }`) so feature modules react to new verified ownership without identity depending on them — account-history enrolls the address into its backfill. See [system-hooks.md](../../../../docs/system/system-hooks.md).
 
 ### `'accounts'` → `IAccountDirectoryService`
 

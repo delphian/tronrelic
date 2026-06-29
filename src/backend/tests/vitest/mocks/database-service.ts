@@ -327,6 +327,36 @@ export function createMockDatabaseService(): IDatabaseService & {
 
                     return { modifiedCount: 0, matchedCount: 0, acknowledged: true, upsertedCount: 0 };
                 },
+                findOneAndUpdate: async (filter: Filter<T>, update: UpdateFilter<T>, options?: any) => {
+                    checkInjectedError(name, 'findOneAndUpdate');
+                    // Mongo default is returnDocument: 'before'; callers in this
+                    // codebase pass 'after'. Return the document directly (the
+                    // driver-version-tolerant call sites unwrap `.value` if present).
+                    const returnAfter = options?.returnDocument === 'after';
+                    const docIndex = data.findIndex((d: any) => matchesFilter(d, filter));
+
+                    if (docIndex !== -1) {
+                        const before = deepClone(data[docIndex]);
+                        const updateFields = (update as any).$set || {};
+                        const unsetFields = (update as any).$unset || {};
+                        data[docIndex] = { ...data[docIndex], ...updateFields };
+                        for (const key of Object.keys(unsetFields)) {
+                            delete (data[docIndex] as any)[key];
+                        }
+                        return returnAfter ? deepClone(data[docIndex]) : before;
+                    }
+
+                    if (options?.upsert) {
+                        const id = (filter as any)._id || new ObjectId();
+                        const updateFields = (update as any).$set || {};
+                        const setOnInsertFields = (update as any).$setOnInsert || {};
+                        const newDoc = deepClone({ ...filter, ...setOnInsertFields, ...updateFields, _id: id });
+                        data.push(newDoc);
+                        return returnAfter ? deepClone(newDoc) : null;
+                    }
+
+                    return null;
+                },
                 updateMany: async (filter: Filter<T>, update: UpdateFilter<T>) => {
                     checkInjectedError(name, 'updateMany');
                     let modifiedCount = 0;

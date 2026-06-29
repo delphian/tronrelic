@@ -23,7 +23,7 @@ import { useToast } from '../../../../components/ui/ToastProvider';
 import { PreferencesPanel } from '../../../notifications';
 import { signOut } from '../../lib/auth-client';
 import { WalletManager } from '../WalletManager';
-import type { ILinkedWallet } from '@/types';
+import type { IAccountIngestionProgress, ILinkedWallet } from '@/types';
 import styles from './ProfileView.module.scss';
 
 /**
@@ -53,6 +53,12 @@ export interface IProfileViewProps {
 
     /** SSR-resolved linked wallets, seeding the wallet panel. */
     initialWallets: ILinkedWallet[];
+
+    /**
+     * SSR-resolved account-history download progress for the account's verified
+     * wallets, seeding the per-wallet status badges so they paint without a flash.
+     */
+    initialProgress: IAccountIngestionProgress[];
 }
 
 /**
@@ -71,7 +77,7 @@ function identityLabel(identity: IProfileIdentity): string {
  *
  * @param props - {@link IProfileViewProps}.
  */
-export function ProfileView({ identity, initialWallets }: IProfileViewProps) {
+export function ProfileView({ identity, initialWallets, initialProgress }: IProfileViewProps) {
     const router = useRouter();
     const { push } = useToast();
     const [signingOut, setSigningOut] = useState(false);
@@ -127,7 +133,7 @@ export function ProfileView({ identity, initialWallets }: IProfileViewProps) {
 
             <Section gap="sm">
                 <h2>Wallets</h2>
-                <WalletManager initialWallets={initialWallets} />
+                <WalletManager initialWallets={initialWallets} initialProgress={initialProgress} />
             </Section>
 
             <Section gap="sm">

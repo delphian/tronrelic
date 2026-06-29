@@ -120,6 +120,9 @@ export class AccountHistoryService implements IAccountHistoryService {
     /** Guards against overlapping ingestion ticks (cron + manual trigger racing). */
     private ticking = false;
 
+    /** Guards against overlapping forward-sync ticks (independent of backfill). */
+    private forwardTicking = false;
+
     /**
      * @param deps - Injected collaborators; stored for the singleton's lifetime.
      */
@@ -324,6 +327,36 @@ export class AccountHistoryService implements IAccountHistoryService {
             }
         };
         return stats;
+    }
+
+    /**
+     * Read backfill progress for a specific set of addresses. Backs ownership-
+     * scoped surfaces (a user's own verified wallets) so they never reach the
+     * admin-only full stats snapshot. Only addresses with a stored progress
+     * record are returned — an untracked address is omitted rather than reported
+     * as a zeroed record, letting the caller tell "enrolled" from "not enrolled".
+     * The single `$in` query keeps the read to one round-trip regardless of how
+     * many wallets the caller owns.
+     *
+     * @param addresses - Base58 addresses to look up; malformed/duplicate entries are dropped.
+     * @returns Progress for the tracked subset of the requested addresses.
+     */
+    public async getProgressFor(addresses: string[]): Promise<IAccountIngestionProgress[]> {
+        const normalized = Array.from(new Set(
+            (addresses ?? [])
+                .map((address) => String(address ?? '').trim())
+                .filter((address) => TRON_ADDRESS_PATTERN.test(address))
+        ));
+        if (normalized.length === 0) {
+            return [];
+        }
+
+        const docs = await this.database
+            .getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION)
+            .find({ address: { $in: normalized } })
+            .toArray();
+        const progress = docs.map((doc) => AccountHistoryService.toProgress(doc.address, doc));
+        return progress;
     }
 
     /**
@@ -573,6 +606,175 @@ export class AccountHistoryService implements IAccountHistoryService {
                 }
                 return;
             }
+        }
+    }
+
+    /**
+     * Keep already-complete accounts current. The backward backfill stops once an
+     * account reaches `complete` and is then excluded from {@link runIngestionTick}
+     * forever — so without this pass a completed account's stored history goes
+     * stale the moment new transactions land. This tick re-polls the *leading edge*
+     * of each completed account (newest pages, both endpoints) for transactions
+     * newer than the recorded watermark and appends them, leaving the account
+     * `complete`. Bounded per tick like the backfill, and gated by the same
+     * `ingestionEnabled` master switch.
+     */
+    public async runForwardSyncTick(): Promise<void> {
+        if (this.forwardTicking) {
+            this.logger.debug('Account-history forward sync already running — skipping overlapping tick');
+            return;
+        }
+
+        this.forwardTicking = true;
+        try {
+            const settings = await this.getSettings();
+            if (!settings.ingestionEnabled) {
+                this.logger.debug('Account-history ingestion disabled — forward sync is a no-op');
+                return;
+            }
+            if (!this.clickhouse || !this.provider) {
+                this.logger.info('Account-history forward sync skipped — ClickHouse or provider unavailable');
+                return;
+            }
+
+            const candidates = await this.selectCompletedAccountsForForward(settings.accountsPerTick);
+            for (const address of candidates) {
+                await this.forwardSyncAccount(address, settings.pagesPerTick);
+            }
+            await this.broadcastStats();
+        } catch (error) {
+            this.logger.error(
+                { error: error instanceof Error ? error.message : 'Unknown error' },
+                'Account-history forward sync tick failed'
+            );
+            throw error;
+        } finally {
+            this.forwardTicking = false;
+        }
+    }
+
+    /**
+     * Choose which completed accounts to forward-sync this tick: unpaused and
+     * `complete`, ordered least-recently-advanced so freshness rotates fairly
+     * across the completed set. The inverse of {@link selectAccountsForTick},
+     * which deliberately excludes `complete`.
+     *
+     * @param accountsPerTick - Maximum accounts to return.
+     * @returns Base58 addresses to forward-sync this tick.
+     */
+    private async selectCompletedAccountsForForward(accountsPerTick: number): Promise<string[]> {
+        const tracked = await this.database
+            .getCollection<ITrackedAccountDoc>(TRACKED_COLLECTION)
+            .find({ paused: { $ne: true } })
+            .toArray();
+        if (tracked.length === 0) {
+            return [];
+        }
+
+        const progressDocs = await this.database
+            .getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION)
+            .find({ address: { $in: tracked.map((t) => t.address) } })
+            .toArray();
+        const progressByAddress = new Map<string, IAccountProgressDoc>();
+        for (const doc of progressDocs) {
+            progressByAddress.set(doc.address, doc);
+        }
+
+        const eligible = tracked.filter((t) => progressByAddress.get(t.address)?.status === 'complete');
+        eligible.sort((a, b) => {
+            const aRun = progressByAddress.get(a.address)?.lastRunAt?.getTime() ?? 0;
+            const bRun = progressByAddress.get(b.address)?.lastRunAt?.getTime() ?? 0;
+            return aRun - bRun;
+        });
+
+        const selected = eligible.slice(0, accountsPerTick).map((t) => t.address);
+        return selected;
+    }
+
+    /**
+     * Forward-poll one completed account: for each endpoint, fetch newest-first
+     * pages and append transactions newer than the watermark recorded at the
+     * start of the poll, stopping as soon as a page reaches known territory (any
+     * transaction at or below the watermark) or the per-tick page cap. Using the
+     * single start-of-poll watermark as the stop threshold for *both* endpoints is
+     * safe: a transaction that arrives after a backfill always has a timestamp
+     * greater than the watermark, so nothing new is ever below it. ReplacingMergeTree
+     * absorbs the one overlapping boundary page idempotently.
+     *
+     * Status stays `complete` throughout — including on failure. Flipping to
+     * `failed` would re-admit the account to the backward backfill (which filters
+     * on `status !== 'complete'`) and, with the cursors cleared at completion,
+     * trigger a full re-walk that double-counts. The next forward tick simply
+     * retries.
+     *
+     * @param address - Base58 completed account to refresh.
+     * @param pages - Maximum newest pages to pull per endpoint this tick.
+     */
+    private async forwardSyncAccount(address: string, pages: number): Promise<void> {
+        const progress = await this.ensureProgress(address);
+        const threshold = progress.newestTimestampSeen;
+        let newest = threshold;
+        let written = 0;
+
+        try {
+            for (const source of ['tx', 'trc20'] as AccountTxSource[]) {
+                let fingerprint: string | undefined = undefined;
+                for (let page = 0; page < pages; page++) {
+                    const result = await this.provider!.fetchPage(address, { source, limit: PROVIDER_PAGE_LIMIT, fingerprint });
+                    if (result.transactions.length === 0) {
+                        break;
+                    }
+
+                    const fresh = threshold
+                        ? result.transactions.filter((tx) => tx.timestamp > threshold)
+                        : result.transactions;
+                    if (fresh.length > 0) {
+                        await this.writeTransactions(address, source, fresh);
+                        written += fresh.length;
+                        for (const tx of fresh) {
+                            if (!newest || tx.timestamp > newest) {
+                                newest = tx.timestamp;
+                            }
+                        }
+                    }
+
+                    // Reached known territory (a row at/below the watermark) or this
+                    // page carried nothing new — the leading edge is fully captured.
+                    const reachedKnown = threshold ? result.transactions.some((tx) => tx.timestamp <= threshold) : false;
+                    fingerprint = result.nextFingerprint;
+                    if (reachedKnown || fresh.length === 0 || !fingerprint) {
+                        break;
+                    }
+                    if (page === pages - 1 && fingerprint) {
+                        // Hit the page cap before reaching the watermark: a backlog
+                        // larger than one tick can hold. The watermark still advances
+                        // to the newest seen, so the gap below is not re-fetched —
+                        // surface it so an operator can raise pagesPerTick if a
+                        // high-volume account needs it.
+                        this.logger.warn({ address, source, pages }, 'Account-history forward sync hit the page cap before reaching the watermark — possible gap on a high-volume account');
+                    }
+                }
+            }
+
+            await this.patchProgress(address, {
+                newestTimestampSeen: newest,
+                rowsIngested: progress.rowsIngested + written,
+                lastRunAt: new Date(),
+                lastError: undefined
+            });
+            if (written > 0) {
+                this.logger.info({ address, written }, 'Account-history forward sync appended new transactions to a completed account');
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            this.logger.error({ address, error: message }, 'Account-history forward sync failed for account');
+            // Keep status `complete`; never reopen the backfill (see method doc).
+            await this.patchProgress(address, {
+                newestTimestampSeen: newest,
+                rowsIngested: progress.rowsIngested + written,
+                lastRunAt: new Date(),
+                lastError: message
+            });
         }
     }
 

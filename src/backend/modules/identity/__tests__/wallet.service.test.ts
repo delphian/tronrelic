@@ -138,7 +138,10 @@ describe('WalletService', () => {
         mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).push({ _id: new ObjectId(USER_A), primaryWallet: null });
         mockDatabase.getCollectionData(AUTH_USERS_COLLECTION).push({ _id: new ObjectId(USER_B), primaryWallet: null });
         WalletService.resetForTests();
-        WalletService.setDependencies(mockDatabase, cache, new StubLogger(), {} as any);
+        // Fifth arg is the declared-hook registry; linkWallet fires the
+        // `http.walletLinked` observer through it. A stub whose invoke()
+        // resolves keeps these unit tests focused on wallet persistence.
+        WalletService.setDependencies(mockDatabase, cache, new StubLogger(), {} as any, { invoke: async () => undefined } as any);
         service = WalletService.getInstance();
     });
 
@@ -155,7 +158,7 @@ describe('WalletService', () => {
 
         it('keeps the first dependencies on a second setDependencies() call', () => {
             const first = WalletService.getInstance();
-            WalletService.setDependencies(createMockDatabaseService(), new MockCacheService(), new StubLogger(), {} as any);
+            WalletService.setDependencies(createMockDatabaseService(), new MockCacheService(), new StubLogger(), {} as any, { invoke: async () => undefined } as any);
             expect(WalletService.getInstance()).toBe(first);
         });
     });
