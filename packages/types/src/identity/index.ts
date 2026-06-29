@@ -22,3 +22,8 @@ export type {
     IListAccountsOptions,
     IListAccountsResult
 } from './IAccountDirectoryService.js';
+
+export type {
+    IUserSettingsService,
+    IUserSettingDefinition
+} from './IUserSettingsService.js';

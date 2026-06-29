@@ -4,12 +4,13 @@
  * Carved out of the former omnibus user module so account identity has a
  * single owner. This module configures the Better Auth instance, the
  * group-membership service that backs BA's `groups` additional field, the
- * BA-user-keyed wallet store, the group-definition registry, and the
- * read-only account directory. It mounts `/api/auth/*`, `/api/user/wallets`,
- * the `/api/admin/users/groups` group-definition router, and the
+ * BA-user-keyed wallet store, the group-definition registry, the read-only
+ * account directory, and the central per-user settings store. It mounts
+ * `/api/auth/*`, `/api/user/wallets`, `/api/user/settings`, the
+ * `/api/admin/users/groups` group-definition router, and the
  * `/api/admin/users` account-directory router (the dashboard's user list),
- * and publishes `'user-groups'`, `'wallets'`, and `'accounts'` on the service
- * registry for late-binding consumers.
+ * and publishes `'user-groups'`, `'wallets'`, `'accounts'`, and
+ * `'user-settings'` on the service registry for late-binding consumers.
  *
  * Follows TronRelic's two-phase lifecycle: `init()` constructs services and
  * controllers without activating; `run()` mounts routes and registers
@@ -27,14 +28,17 @@ import { GroupService } from './services/group.service.js';
 import { WalletService } from './services/wallet.service.js';
 import { UserGroupService } from './services/user-group.service.js';
 import { AccountDirectoryService } from './services/account-directory.service.js';
+import { UserSettingsService } from './services/user-settings.service.js';
 import { setAuthInstance } from './services/auth-facade.js';
 import { createAuth, type Auth } from './auth.js';
 import { WalletController } from './api/wallet.controller.js';
 import { UserGroupController } from './api/user-group.controller.js';
 import { AccountsController } from './api/accounts.controller.js';
+import { UserSettingsController } from './api/user-settings.controller.js';
 import { createWalletRouter } from './api/wallet.routes.js';
 import { createAdminUserGroupRouter } from './api/user-group.routes.js';
 import { createAdminAccountsRouter } from './api/accounts.routes.js';
+import { createUserSettingsRouter } from './api/user-settings.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 
 /**
@@ -81,11 +85,13 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
     private walletService!: WalletService;
     private userGroupService!: UserGroupService;
     private accountDirectoryService!: AccountDirectoryService;
+    private userSettingsService!: UserSettingsService;
     private auth!: Auth;
 
     private walletController!: WalletController;
     private groupController!: UserGroupController;
     private accountsController!: AccountsController;
+    private userSettingsController!: UserSettingsController;
 
     private readonly logger = logger.child({ module: 'identity' });
 
@@ -133,6 +139,14 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         AccountDirectoryService.setDependencies(this.database, this.logger);
         this.accountDirectoryService = AccountDirectoryService.getInstance();
 
+        // Central per-user settings store. The single home for user-centric
+        // settings/preferences, addressed by (userId, namespace, key) and
+        // published as 'user-settings' in run() for any module or plugin to
+        // consume — the notification dispatcher reads opt-outs through it.
+        UserSettingsService.setDependencies(this.database, this.logger);
+        this.userSettingsService = UserSettingsService.getInstance();
+        await this.userSettingsService.createIndexes();
+
         // Better Auth wiring. The auth factory takes a raw MongoDB Db handle —
         // see auth.ts for the documented exception to the IDatabaseService
         // rule. GroupService (configured above) backs the BA after-create
@@ -156,6 +170,7 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         this.walletController = new WalletController(this.walletService, this.logger);
         this.groupController = new UserGroupController(this.userGroupService, this.logger);
         this.accountsController = new AccountsController(this.accountDirectoryService, this.logger);
+        this.userSettingsController = new UserSettingsController(this.userSettingsService, this.logger);
 
         this.logger.info('Identity module initialized');
     }
@@ -204,6 +219,13 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         this.app.use('/api/user/wallets', walletRouter);
         this.logger.info('Wallet router mounted at /api/user/wallets');
 
+        // Per-user settings router at the literal `/api/user/settings` segment —
+        // the self-service surface for the central settings store. Login-gated
+        // inside the controller; no `:id` catch-all captures `settings`.
+        const userSettingsRouter: Router = createUserSettingsRouter(this.userSettingsController);
+        this.app.use('/api/user/settings', userSettingsRouter);
+        this.logger.info('User-settings router mounted at /api/user/settings');
+
         // Admin group-definition + membership router.
         const adminGroupRouter: Router = createAdminUserGroupRouter(this.groupController);
         this.app.use('/api/admin/users/groups', requireAdmin, adminGroupRouter);
@@ -219,11 +241,15 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         this.app.use('/api/admin/users', requireAdmin, adminAccountsRouter);
         this.logger.info('Admin accounts router mounted at /api/admin/users');
 
-        // Publish the BA-keyed services for late-binding discovery.
+        // Publish the BA-keyed services for late-binding discovery. Published in
+        // identity's run() — which precedes notifications' run() and any runtime
+        // dispatch — so the notification preference store resolves 'user-settings'
+        // lazily without a boot-order race.
         this.serviceRegistry.register('user-groups', this.userGroupService);
         this.serviceRegistry.register('wallets', this.walletService);
         this.serviceRegistry.register('accounts', this.accountDirectoryService);
-        this.logger.info('Registered user-groups, wallets, accounts on the service registry');
+        this.serviceRegistry.register('user-settings', this.userSettingsService);
+        this.logger.info('Registered user-groups, wallets, accounts, user-settings on the service registry');
 
         this.logger.info('Identity module running');
     }

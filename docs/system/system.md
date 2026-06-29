@@ -64,7 +64,7 @@ Identity runs on Better Auth (email-OTP / OAuth / passkey), mounted at `/api/aut
 
 ### Identity
 
-The identity module owns Better Auth and everything keyed by the Better Auth user id: the auth instance (above), the `GroupService` (admin/group membership), the signature-proven wallet store, and the account directory. It publishes `'accounts'`, `'wallets'`, and `'user-groups'` on the service registry so plugins and modules reach account data without touching `module_user_auth_*` directly. See [Identity Module README](../../src/backend/modules/identity/README.md) and [system-auth.md](./system-auth.md).
+The identity module owns Better Auth and everything keyed by the Better Auth user id: the auth instance (above), the `GroupService` (admin/group membership), the signature-proven wallet store, the account directory, and the central per-user settings store. It publishes `'accounts'`, `'wallets'`, `'user-groups'`, and `'user-settings'` on the service registry so plugins and modules reach account data without touching `module_user_auth_*` directly. The `'user-settings'` store is the single home for user-centric settings and preferences, addressed by `(userId, namespace, key)`; per-user notification opt-outs are its first consumer. See [Identity Module README](../../src/backend/modules/identity/README.md) and [system-auth.md](./system-auth.md).
 
 ### Traffic
 

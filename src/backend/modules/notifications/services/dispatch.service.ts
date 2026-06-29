@@ -25,11 +25,11 @@ import type {
 } from '@/types';
 import type { CategoryRegistry } from './category-registry.js';
 import type { ChannelRegistry } from './channel-registry.js';
-import type { PreferenceService } from './preference.service.js';
+import type { PreferenceService, INotificationPreferencesValue } from './preference.service.js';
 import type { PolicyService } from './policy.service.js';
 import type { AuditService } from './audit.service.js';
 import type { RecipientResolver } from './recipient-resolver.js';
-import type { INotificationPreferencesDocument, INotificationAuditDocument } from '../database/index.js';
+import type { INotificationAuditDocument } from '../database/index.js';
 import { channelIdFromSinkId } from '../channels/notification-channel-sink.js';
 
 /**
@@ -250,7 +250,7 @@ export class DispatchService {
     private isAllowed(
         category: INotificationCategory,
         channelId: string,
-        pref: INotificationPreferencesDocument | undefined
+        pref: INotificationPreferencesValue | undefined
     ): boolean {
         if (pref?.mutedAll && category.mutable !== false) {
             return false;
