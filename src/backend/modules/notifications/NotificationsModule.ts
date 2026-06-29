@@ -24,7 +24,8 @@ import type {
     ISystemLogService,
     IContentRegistry,
     IContentRouter,
-    IUserGroupService
+    IUserGroupService,
+    IUserSettingsService
 } from '@/types';
 import { CONTENT_TYPES_SERVICE } from '../../services/content-registry.js';
 import { CONTENT_ROUTER_SERVICE } from '../../services/content-router.js';
@@ -123,8 +124,14 @@ export class NotificationsModule implements IModule<INotificationsModuleDependen
         this.categoryRegistry = new CategoryRegistry(this.logger);
         this.channelRegistry = new ChannelRegistry(this.logger);
 
-        this.preferenceService = new PreferenceService(this.database, this.logger);
-        await this.preferenceService.ensureIndexes();
+        // Per-user opt-outs persist in the identity module's central
+        // 'user-settings' store (resolved lazily — identity publishes it in its
+        // own run(), ahead of any dispatch). The store owns the collection and
+        // its indexes, so there is nothing to ensure here.
+        this.preferenceService = new PreferenceService(
+            () => this.serviceRegistry.get<IUserSettingsService>('user-settings'),
+            this.logger
+        );
 
         this.policyService = new PolicyService(this.database, this.logger);
 

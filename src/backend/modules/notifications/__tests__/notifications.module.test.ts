@@ -30,6 +30,7 @@ import { NotificationService } from '../services/notification.service.js';
 import { CategoryRegistry } from '../services/category-registry.js';
 import { ChannelRegistry } from '../services/channel-registry.js';
 import { PreferenceService } from '../services/preference.service.js';
+import { UserSettingsService } from '../../identity/services/user-settings.service.js';
 import { PolicyService } from '../services/policy.service.js';
 import { AuditService } from '../services/audit.service.js';
 import { RecipientResolver } from '../services/recipient-resolver.js';
@@ -103,7 +104,12 @@ describe('Notifications dispatch pipeline', () => {
         db = createMockDatabaseService();
         categories = new CategoryRegistry(logger);
         channels = new ChannelRegistry(logger);
-        preferences = new PreferenceService(db, logger);
+        // Opt-outs now persist in the central user-settings store; back the
+        // preference service with a real UserSettingsService over the mock db so
+        // the dispatch read/write path is exercised end to end.
+        UserSettingsService.resetForTests();
+        UserSettingsService.setDependencies(db, logger);
+        preferences = new PreferenceService(() => UserSettingsService.getInstance(), logger);
         policy = new PolicyService(db, logger);
         audit = new AuditService(db, logger);
         content = new ContentRegistry(logger);

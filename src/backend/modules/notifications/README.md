@@ -12,10 +12,10 @@ Category-based notification dispatch: any source declares a category and fires; 
 | User page | `/account/notifications` (per-user opt-outs; any logged-in user) |
 | Service registry name | `'notifications'` → `INotificationService` |
 | Content-router sinks | Each channel registers `notifications:<channelId>` on `'content-router'` in `run()` (`accepts: []` floor, `reach` per channel; toast `{ user, user }`). Dispatch matches candidates through the router (`DispatchService.candidateChannelIds`); delivery + recipient resolution stay in dispatch |
-| Consumes from registry | `'user-groups'` (`IUserGroupService.getMembers`) for audience resolution; `'content-types'` (`IContentRegistry`) to resolve a request's content type into a descriptor; `'content-router'` to advertise channels as sinks |
+| Consumes from registry | `'user-groups'` (`IUserGroupService.getMembers`) for audience resolution; `'user-settings'` (`IUserSettingsService`) to persist per-user opt-outs under the `notifications` namespace; `'content-types'` (`IContentRegistry`) to resolve a request's content type into a descriptor; `'content-router'` to advertise channels as sinks |
 | Types package | `@delphian/tronrelic-types` → `INotificationService`, `INotificationCategory`, `INotificationChannel`, `INotificationRequest`/`Receipt`, `INotificationPreferences`, `INotificationPolicy`, `INotificationAuditRecord` |
 | Mounted routes | `/api/notifications/*` (login-gated), `/api/admin/system/notifications/*` (`requireAdmin`) |
-| Owned collections | `module_notifications_preferences`, `module_notifications_policy`, `module_notifications_audit` |
+| Owned collections | `module_notifications_policy`, `module_notifications_audit` (per-user opt-outs live in identity's `module_user_settings`) |
 | WebSocket event | `notification` (emitted to `user:${id}` rooms; single switch case in `websocket.service.ts`) |
 | Bootstrap order | Inits/runs after `IdentityModule` (so `'user-groups'` is published) and before `AiToolsModule` (which registers a category and fires through `'notifications'`) |
 
@@ -35,14 +35,15 @@ It is a **module** (not a plugin) because it is essential cross-cutting infrastr
 | `services/dispatch.service.ts` | The resolution pipeline: audience → gates → channels → audit |
 | `services/category-registry.ts` | In-memory category descriptors (code, process-lifetime) |
 | `services/channel-registry.ts` | In-memory channel transports |
-| `services/preference.service.ts` | `module_notifications_preferences` — per-user opt-outs |
+| `services/preference.service.ts` | Per-user opt-outs, persisted via the central `'user-settings'` store (namespace `notifications`, key `preferences`) |
 | `services/policy.service.ts` | `module_notifications_policy` — admin channel/category kill switches |
 | `services/audit.service.ts` | `module_notifications_audit` — one row per blast, TTL-indexed |
 | `services/recipient-resolver.ts` | Audience → Better Auth user ids via `'user-groups'` |
 | `channels/toast-channel.ts` | The built-in toast channel — emits `notification` to `user:${id}` rooms |
 | `api/preferences.{controller,routes}.ts` | `/api/notifications/preferences` (login-gated) |
 | `api/admin.{controller,routes}.ts` | `/api/admin/system/notifications/*` (`requireAdmin`) |
-| `database/index.ts` | The three MongoDB document shapes |
+| `database/index.ts` | The MongoDB document shapes (policy, audit; the legacy preferences shape is retained as a reference to the retired collection) |
+| `migrations/001_move_preferences_to_user_settings.ts` | Copies legacy `module_notifications_preferences` rows into `module_user_settings` and drops the retired collection |
 
 ## The Contract
 
@@ -100,11 +101,12 @@ Each registered channel also registers a `notifications:<channelId>` sink on the
 
 | Collection | Key | Holds |
 |------------|-----|-------|
-| `module_notifications_preferences` | `userId` (unique) | `mutedAll` + `overrides[categoryId][channelId]` |
 | `module_notifications_policy` | singleton `_id` | `channels` + `categories` enable maps (missing = enabled) |
 | `module_notifications_audit` | `_id` | One blast: label/audience snapshot, per-channel delivered/suppressed, TTL-indexed (90d) |
 
-Indexes are created in `init()` (the collections are new — no production data to migrate). Categories and channels are code (registered at boot); only their admin enable-state, the per-user opt-outs, and the audit history persist.
+Per-user opt-outs are **not** stored here — they live in the identity module's central `module_user_settings` store under the `notifications` namespace (key `preferences`, value `{ mutedAll, overrides }`), reached through the `'user-settings'` service. `PreferenceService` is a thin adapter over that store; this module keeps the catalog-aware validation (in the preferences controller) and the dispatch-time read. Migration `module:notifications:001_move_preferences_to_user_settings` moved the legacy `module_notifications_preferences` collection into the central store and dropped it.
+
+The policy and audit indexes are created in `init()`. Categories and channels are code (registered at boot); only their admin enable-state, the per-user opt-outs (now central), and the audit history persist.
 
 ## REST Endpoints
 
@@ -128,4 +130,4 @@ The `ai-tools` module registers the `ai-tools.scheduled-prompt-run` category (au
 - [system-content-types.md](../../../../docs/system/system-content-types.md) — the central content registry `notify()` resolves through, and the channel-capability vocabulary
 - [Module Architecture](../../../../docs/system/modules/modules-architecture.md) — IModule contract, bootstrap order, service registry
 - [plugins-service-registry.md](../../../../docs/plugins/plugins-service-registry.md) — `watch()` vs `get()` for consuming `'notifications'`
-- [Identity Module README](../identity/README.md) — the `'user-groups'` service used for audience resolution
+- [Identity Module README](../identity/README.md) — the `'user-groups'` service used for audience resolution and the `'user-settings'` store that persists per-user opt-outs

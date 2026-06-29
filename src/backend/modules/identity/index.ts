@@ -17,13 +17,18 @@ export type { WalletAction, IWalletMutationInput } from './services/wallet.servi
 export { WalletChallengeService } from './services/wallet-challenge.service.js';
 export type { IWalletChallenge, WalletChallengeAction } from './services/wallet-challenge.service.js';
 export { AccountDirectoryService } from './services/account-directory.service.js';
+export { UserSettingsService } from './services/user-settings.service.js';
 export { AUTH_USERS_COLLECTION, AUTH_COLLECTIONS } from './services/auth-constants.js';
 export { createAuth, type Auth } from './auth.js';
 
 export { UserGroupController } from './api/user-group.controller.js';
 export { WalletController } from './api/wallet.controller.js';
+export { UserSettingsController } from './api/user-settings.controller.js';
 export { createAdminUserGroupRouter } from './api/user-group.routes.js';
 export { createWalletRouter } from './api/wallet.routes.js';
+export { createUserSettingsRouter } from './api/user-settings.routes.js';
 
 export type { IWalletDocument, ILinkedWallet } from './database/IWalletDocument.js';
 export type { IUserGroupDocument } from './database/IUserGroupDocument.js';
+export { USER_SETTINGS_COLLECTION } from './database/IUserSettingDocument.js';
+export type { IUserSettingDocument } from './database/IUserSettingDocument.js';
