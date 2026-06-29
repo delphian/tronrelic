@@ -4,7 +4,6 @@
  *
  * Creates the core navigation items for the 'main' namespace:
  * - Overview (/)
- * - Accounts (/accounts)
  *
  * Note: Energy Markets menu item is now registered by the resource-markets plugin.
  *
@@ -29,18 +28,6 @@ const MENU_ITEMS = [
         url: '/',
         icon: null,
         order: 0,
-        parent: null,
-        enabled: true,
-        children: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-    },
-    {
-        namespace: NAMESPACE,
-        label: 'Accounts',
-        url: '/accounts',
-        icon: null,
-        order: 6,
         parent: null,
         enabled: true,
         children: [],
