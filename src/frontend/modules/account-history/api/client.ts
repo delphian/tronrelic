@@ -41,6 +41,10 @@ export interface IAccountIngestionProgressView {
     newestTimestampSeen?: string;
     rowsIngested: number;
     lastRunAt?: string;
+    /** When forward sync last refreshed this completed account (ISO string). */
+    lastForwardRunAt?: string;
+    /** True when a completed account is mid-drain in forward sync (catching up). */
+    catchingUp?: boolean;
     lastError?: string;
 }
 
@@ -63,6 +67,10 @@ export interface IAccountHistoryStatsView {
         rowsIngested: number;
         completeAccounts: number;
         failedAccounts: number;
+        /** Completed accounts currently catching up across forward-sync ticks. */
+        catchingUpAccounts: number;
+        /** Stalest freshness watermark across completed accounts (ISO string). */
+        oldestNewestTimestamp?: string;
     };
 }
 
@@ -183,12 +191,24 @@ export async function updateSettings(patch: Partial<IAccountHistorySettings>): P
 }
 
 /**
- * Trigger one manual ingestion tick.
+ * Trigger one manual backfill ingestion tick.
  *
  * @returns Resolves when the tick has been requested.
  */
 export async function runIngestion(): Promise<void> {
     await parse(await fetch(`${BASE}/ingest/run`, { method: 'POST' }), 'run ingestion');
+}
+
+/**
+ * Trigger one manual forward-sync tick, refreshing completed accounts with
+ * transactions that arrived after their backfill finished. The backend endpoint
+ * has always existed; this surfaces it so an admin can force a freshness pass
+ * without waiting for the `account-history:forward-sync` cron.
+ *
+ * @returns Resolves when the tick has been requested.
+ */
+export async function runForwardSync(): Promise<void> {
+    await parse(await fetch(`${BASE}/ingest/forward/run`, { method: 'POST' }), 'run forward sync');
 }
 
 /**

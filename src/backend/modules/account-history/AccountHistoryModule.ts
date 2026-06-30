@@ -83,6 +83,25 @@ const FORWARD_SYNC_CRON = '*/5 * * * *';
 const FORWARD_SYNC_JOB = 'account-history:forward-sync';
 
 /**
+ * Dedicated menu namespace for the page's in-page tab row. Kept out of `main`
+ * so the tabs never leak into the global nav chrome — only the page's own
+ * `MenuNavClient` reads this namespace (menu module's Submenu Pattern).
+ */
+const SUBMENU_NAMESPACE = 'account-history';
+
+/**
+ * The in-page tab row, declared as menu nodes rather than a hand-rolled button
+ * array so the row inherits per-user gating, ordering, and live `menu:update`
+ * refresh from the menu service. Each `url` carries a `?tab=` the client reads
+ * to drive the active panel; the route is identical across tabs.
+ */
+const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
+    { label: 'Tracked Accounts', tab: 'accounts', icon: 'List', order: 0 },
+    { label: 'Ingestion Settings', tab: 'settings', icon: 'Settings', order: 1 },
+    { label: 'Schedules', tab: 'schedules', icon: 'CalendarClock', order: 2 }
+];
+
+/**
  * Two-phase core module wiring the account-history service, job, API, and menu.
  */
 export class AccountHistoryModule implements IModule<IAccountHistoryModuleDependencies> {
@@ -155,6 +174,7 @@ export class AccountHistoryModule implements IModule<IAccountHistoryModuleDepend
             await this.menuService.create({
                 namespace: 'main',
                 label: 'Account History',
+                description: 'Track TRON accounts, backfill their full history into ClickHouse, and keep completed accounts current with forward sync.',
                 url: '/system/account-history',
                 icon: 'History',
                 order: 27,
@@ -162,9 +182,28 @@ export class AccountHistoryModule implements IModule<IAccountHistoryModuleDepend
                 enabled: true
             });
             this.logger.info('Account-history menu item registered under the System container');
+
+            // Register the in-page tab row as a namespaced menu (Submenu Pattern).
+            // The nodes are memory-only and live outside the System container, so
+            // the container's non-bypassable `requiresAdmin` force does not reach
+            // them — the module sets `requiresAdmin` per node itself. The page
+            // renders this namespace with MenuNavClient instead of hand-rolling tabs.
+            for (const tab of SUBMENU_TABS) {
+                await this.menuService.create({
+                    namespace: SUBMENU_NAMESPACE,
+                    label: tab.label,
+                    url: `/system/account-history?tab=${tab.tab}`,
+                    icon: tab.icon,
+                    order: tab.order,
+                    parent: null,
+                    enabled: true,
+                    requiresAdmin: true
+                });
+            }
+            this.logger.info('Account-history submenu tab nodes registered');
         } catch (error) {
-            this.logger.error({ error }, 'Failed to register account-history menu item');
-            throw new Error(`Failed to register account-history menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            this.logger.error({ error }, 'Failed to register account-history menu items');
+            throw new Error(`Failed to register account-history menu items: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
 
         const router: Router = createAccountHistoryRouter(this.controller);

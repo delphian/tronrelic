@@ -28,6 +28,10 @@ Page structure is built from layout primitives in `components/layout/`. They pro
 | `<Grid>` | `gap="sm\|md\|lg"`, `columns="2\|3\|responsive"` | Grid layout |
 | `<Section>` | `gap="sm\|md\|lg"` | Content section with spacing |
 
+### Admin Page Tab Rows Use the Menu Submenu Pattern
+
+A core or module admin page's in-page tab row (e.g. `/system/account-history`) must be a menu — not a hand-rolled `<button>` array, a `.segmented-control` strip, or a per-page `styles.tab` row. Those are **not authorized** for this surface; the menu Submenu Pattern is the only permitted approach. Register the tabs as nodes in the page's own menu namespace (memory-only, `requiresAdmin` per node), fetch that namespace tree SSR-first, and render it with `MenuNavClient` in submenu mode (`onItemSelect` drives `activeTab`, `activeUrl` highlights). This inherits per-user gating, ordering, and live `menu:update` refresh, and lets a plugin contribute a tab. Reference implementation: `/system/account-history`. See [Submenu Pattern](../../src/backend/modules/menu/README.md#submenu-pattern-namespaced-tab-rows).
+
 ### Container Queries, Not Viewport Media Queries
 
 Component responsiveness uses `container-type: inline-size` and `@container` queries so a component adapts to whatever container it lives in (sidebar, modal, full page, plugin widget, slideout). Reserve `@media` queries for global layout in `app/layout.tsx` only. Breakpoint variables (`$breakpoint-mobile-md`, etc.) live in `app/breakpoints` and must be interpolated as `#{$breakpoint-mobile-md}` inside `@container` rules. See [ui-responsive-design.md](./ui/ui-responsive-design.md).
@@ -72,6 +76,7 @@ Before committing a UI component or plugin page:
 - [ ] Icons from `lucide-react`; ARIA labels on icon-only buttons; visible focus states; semantic HTML (`<button>`, `<nav>`, `<ul>`)
 - [ ] Timestamps render via `<ClientTime>`; no `window`/`document`/`localStorage` in render body (only in `useEffect`)
 - [ ] Backend URLs read via `getServerConfig()` (SSR) or `getRuntimeConfig()` (client) — never `process.env.*` and never `NEXT_PUBLIC_*`
+- [ ] In-page admin tab rows use the menu Submenu Pattern (`MenuNavClient` + a menu namespace), not a hand-rolled strip
 - [ ] Tested in multiple contexts (full page, slideout, modal, mobile container width)
 
 ## Further Reading

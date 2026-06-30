@@ -65,12 +65,31 @@ export interface IAccountIngestionProgress {
     cursorFingerprint?: string;
     /** Oldest block time reached walking history backward; advances each tick. */
     oldestTimestampReached?: Date;
-    /** Newest block time observed on the first page; the leading edge of history. */
+    /**
+     * Freshness watermark: the newest block time the account is known current to.
+     * Seeded by the backfill's first page and advanced by forward sync as new
+     * transactions land, so it answers "how up to date is this account?" — the
+     * single most useful signal for a `complete` account.
+     */
     newestTimestampSeen?: Date;
     /** Total rows written to ClickHouse for this account so far. */
     rowsIngested: number;
-    /** When the ingestion tick last touched this account. */
+    /** When the ingestion tick (backfill or forward sync) last touched this account. */
     lastRunAt?: Date;
+    /**
+     * When forward sync last refreshed this `complete` account, distinct from
+     * {@link lastRunAt} so the admin can tell a forward refresh from the original
+     * backfill advance. Absent until the first forward sync runs.
+     */
+    lastForwardRunAt?: Date;
+    /**
+     * True when a `complete` account is mid-drain — forward sync hit the per-tick
+     * page cap on a backlog larger than one tick and is catching up across ticks.
+     * Derived from the presence of a forward continuation cursor; the raw cursor
+     * fingerprints are never exposed. Lets the admin distinguish "complete and
+     * current" from "complete but still catching up".
+     */
+    catchingUp?: boolean;
     /** Message from the most recent failed tick, cleared on the next success. */
     lastError?: string;
 }
@@ -120,6 +139,19 @@ export interface IAccountHistoryStats {
         completeAccounts: number;
         /** Accounts whose last tick failed. */
         failedAccounts: number;
+        /**
+         * Completed accounts currently mid-drain in forward sync (catching up on a
+         * backlog larger than one tick). A non-zero value tells the operator the
+         * forward pass is behind and may warrant a higher page cap or cadence.
+         */
+        catchingUpAccounts: number;
+        /**
+         * The stalest freshness watermark across completed accounts — the minimum
+         * {@link IAccountIngestionProgress.newestTimestampSeen}. Every completed
+         * account is current at least to this point, so it is the fleet-wide
+         * freshness floor for the header. Absent when no account is complete.
+         */
+        oldestNewestTimestamp?: Date;
     };
 }
 

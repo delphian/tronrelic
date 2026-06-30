@@ -3,11 +3,23 @@
  * only — colors, spacing, and typography flow through design tokens.
  */
 
+.intro {
+    margin: 0;
+    max-width: var(--max-width-prose);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+}
+
 .summary {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--gap-sm);
+}
+
+.submenu {
+    margin-top: var(--gap-sm);
 }
 
 .content {
@@ -36,6 +48,19 @@
 .account_error {
     margin-top: var(--gap-2xs);
     color: var(--color-danger);
+    font-size: var(--font-size-caption);
+}
+
+.badge_stack {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-2xs);
+}
+
+.forward_run {
+    margin-top: var(--gap-2xs);
+    color: var(--color-text-muted);
     font-size: var(--font-size-caption);
 }
 

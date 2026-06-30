@@ -22,7 +22,7 @@ Source: [components/layout/](../../../src/frontend/components/layout/). Export b
 | `<Grid>` | Grid container; `gap`, `columns="2\|3\|responsive"` | [Grid](../../../src/frontend/components/layout/Grid/) |
 | `<Section>` | Content section with internal `gap` spacing | [Section](../../../src/frontend/components/layout/Section/) |
 | `<MainHeader>` | Site header: database-driven `MenuNav`, logo, wallet/theme controls (server component) | [MainHeader](../../../src/frontend/components/layout/MainHeader/) |
-| `MenuNavSSR` / `MenuNavClient` | SSR-first navigation fed by the backend Menu module; hydrates into a client menu with hamburger support | [MenuNav](../../../src/frontend/components/layout/MenuNav/) |
+| `MenuNavSSR` / `MenuNavClient` | SSR-first navigation fed by the backend Menu module; hydrates into a client menu with hamburger support. `MenuNavClient` (submenu mode) is also the **required** renderer for a core/module admin page's in-page tab row — see [Submenu Pattern](../../../src/backend/modules/menu/README.md#submenu-pattern-namespaced-tab-rows) | [MenuNav](../../../src/frontend/components/layout/MenuNav/) |
 | `<BlockTicker>` | Compact real-time block ticker; follows SSR + Live Updates with Redux hydration | [BlockTicker](../../../src/frontend/components/layout/BlockTicker/) |
 
 See [ui.md](./ui.md) and [frontend.md](../frontend.md#component-first-layout-architecture) for the decision hierarchy (layout components > utility classes > raw divs).
@@ -75,6 +75,8 @@ See [react.md](../react/react.md#context-provider-system) for composition order 
 ## Styling Utility Classes (Not Components)
 
 For one-off visual treatments, use the utility classes in [globals.scss](../../../src/frontend/app/globals.scss): `.chip`, `.pill`, `.segmented-control`, `.stat-grid`, `.stat-card__label/value/delta`, `.alert`, `.text-muted`, `.text-subtle`, `.link`, `.live-indicator`, `.table-row--flash`. Prefer the React primitives above; these utilities exist for legacy call sites and rare compositional needs. `.btn` and `.badge` are *not* global utilities — they live in `Button.module.css` and `Badge.module.css` and are reachable only through `<Button>` / `<Badge>`.
+
+`.segmented-control` is **not** authorized for a core/module admin page's in-page tab row — those must use the menu Submenu Pattern (`MenuNavClient` backed by a menu namespace), the only authorized pattern for that surface. See [Submenu Pattern](../../../src/backend/modules/menu/README.md#submenu-pattern-namespaced-tab-rows). The utility remains fine for non-navigational toggles (e.g. a chart's range switch).
 
 ## When To Add A New Component
 

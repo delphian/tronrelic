@@ -4,10 +4,12 @@
  * @fileoverview Ingestion-settings tab for /system/account-history.
  *
  * The pacing dials: a master ingestion switch plus pages-per-tick and
- * accounts-per-tick. These throttle ingestion *down* only — they cannot exceed
+ * accounts-per-tick. All three govern BOTH passes — the backward backfill and
+ * the forward sync that keeps completed accounts current — since both share one
+ * settings document. These throttle ingestion *down* only: they cannot exceed
  * the shared TronGrid rate limiter that protects live block sync, so turning
- * them up never pulls faster than the global budget allows. The cron cadence
- * itself lives on the Schedules tab (owned by the scheduler), not here.
+ * them up never pulls faster than the global budget allows. The two cron
+ * cadences live on the Schedules tab (owned by the scheduler), not here.
  */
 
 import { useEffect, useState, useCallback } from 'react';
@@ -69,7 +71,7 @@ export function SettingsTab() {
             <div className={styles.setting_row}>
                 <div>
                     <div className={styles.setting_label}>Ingestion enabled</div>
-                    <div className="text-muted">Master switch. When off, the scheduled tick is a no-op and no account advances.</div>
+                    <div className="text-muted">Master switch for both passes. When off, the backfill and forward-sync ticks are no-ops and no account advances or refreshes.</div>
                 </div>
                 <Switch on={settings.ingestionEnabled} onChange={(next) => patch({ ingestionEnabled: next })} aria-label="Toggle ingestion" />
             </div>
@@ -77,7 +79,7 @@ export function SettingsTab() {
             <div className={styles.setting_row}>
                 <div>
                     <div className={styles.setting_label}>Pages per tick</div>
-                    <div className="text-muted">TronGrid pages (200 tx each) pulled per account each tick — the primary speed/load dial.</div>
+                    <div className="text-muted">TronGrid pages (200 tx each) pulled per account each tick, for both backfill and forward sync — the primary speed/load dial. Raising it also lets forward sync drain a backlog faster.</div>
                 </div>
                 <Input
                     type="number"
@@ -92,7 +94,7 @@ export function SettingsTab() {
             <div className={styles.setting_row}>
                 <div>
                     <div className={styles.setting_label}>Accounts per tick</div>
-                    <div className="text-muted">How many tracked accounts advance each tick (round-robin, least-recent first).</div>
+                    <div className="text-muted">How many accounts each tick advances (round-robin, least-recent first) — backfill rotates not-yet-complete accounts, forward sync rotates completed ones.</div>
                 </div>
                 <Input
                     type="number"

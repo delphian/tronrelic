@@ -108,10 +108,11 @@ describe('AccountHistoryModule', () => {
         const module = new AccountHistoryModule();
 
         const hookRegistry = createHookRegistryMock();
+        const menuService = createMenuMock();
         await module.init({
             database: createMockDatabaseService(),
             app: app as never,
-            menuService: createMenuMock(),
+            menuService,
             scheduler,
             clickhouse: undefined,
             serviceRegistry,
@@ -134,6 +135,17 @@ describe('AccountHistoryModule', () => {
         expect(scheduler.register).toHaveBeenCalledWith('account-history:ingest', expect.any(String), expect.any(Function));
         expect(scheduler.register).toHaveBeenCalledWith('account-history:forward-sync', expect.any(String), expect.any(Function));
         expect(serviceRegistry.has('account-history')).toBe(true);
+
+        // The System-container entry plus the three in-page tab nodes (the
+        // Submenu Pattern): tabs live in their own namespace, outside the System
+        // container, so the module sets `requiresAdmin` on them explicitly.
+        expect(menuService.create).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'main', label: 'Account History' }));
+        expect(menuService.create).toHaveBeenCalledWith(expect.objectContaining({
+            namespace: 'account-history',
+            url: '/system/account-history?tab=accounts',
+            requiresAdmin: true
+        }));
+        expect(menuService.create).toHaveBeenCalledTimes(4);
         expect(hookRegistry.register).toHaveBeenCalledWith(
             'core',
             expect.objectContaining({ id: 'http.walletLinked' }),
@@ -298,6 +310,9 @@ describe('AccountHistoryService', () => {
         expect(progress.status).toBe('complete');
         expect(progress.rowsIngested).toBe(101);
         expect(new Date(progress.newestTimestampSeen).getTime()).toBe(newer.getTime());
+        // Forward sync records its own refresh timestamp, distinct from the frozen
+        // backfill `lastRunAt`, so the admin can read a "last refresh" fact.
+        expect(progress.lastForwardRunAt).toBeDefined();
     });
 
     it('runForwardSyncTick resumes a capped drain across ticks and advances the watermark only once known territory is reached', async () => {
@@ -384,6 +399,62 @@ describe('AccountHistoryService', () => {
 
         await service.runForwardSyncTick();
         expect(provider.fetchPage).not.toHaveBeenCalled();
+    });
+
+    it('getStats rolls up catching-up accounts, the freshness floor, and per-account catchingUp', async () => {
+        AccountHistoryService.resetForTests();
+        const database = createMockDatabaseService();
+        const draining = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+        const current = 'TLa2f6VPqDgRE67v7c1pj7iGwsizZ1jGfX';
+        const jan = new Date('2024-01-01T00:00:00.000Z');
+        const feb = new Date('2024-02-01T00:00:00.000Z');
+        database.getCollectionData(TRACKED_COLLECTION).push({ address: draining, paused: false, addedAt: jan, updatedAt: jan });
+        database.getCollectionData(TRACKED_COLLECTION).push({ address: current, paused: false, addedAt: jan, updatedAt: jan });
+        // `draining` is mid-drain (a forward cursor is parked) and its leading edge
+        // sits at `feb`; `current` is fully caught up at `jan`. The freshness floor
+        // is the older of the two watermarks (`jan`).
+        database.getCollectionData(PROGRESS_COLLECTION).push({
+            address: draining, status: 'complete', newestTimestampSeen: feb,
+            nativeComplete: true, trc20Complete: true, forwardTxCursor: 'fp-resume', rowsIngested: 200
+        });
+        database.getCollectionData(PROGRESS_COLLECTION).push({
+            address: current, status: 'complete', newestTimestampSeen: jan,
+            nativeComplete: true, trc20Complete: true, rowsIngested: 50
+        });
+
+        AccountHistoryService.setDependencies({
+            database, clickhouse: undefined, provider: null, emitter: undefined, logger: createSilentLogger()
+        });
+        const service = AccountHistoryService.getInstance();
+
+        const stats = await service.getStats();
+
+        expect(stats.totals.completeAccounts).toBe(2);
+        expect(stats.totals.catchingUpAccounts).toBe(1);
+        expect(new Date(stats.totals.oldestNewestTimestamp!).getTime()).toBe(jan.getTime());
+
+        const drainingStats = stats.accounts.find((a) => a.account.address === draining);
+        const currentStats = stats.accounts.find((a) => a.account.address === current);
+        expect(drainingStats?.progress.catchingUp).toBe(true);
+        expect(currentStats?.progress.catchingUp).toBe(false);
+    });
+
+    it('getStats omits the freshness floor when no account is complete', async () => {
+        AccountHistoryService.resetForTests();
+        const database = createMockDatabaseService();
+        const now = new Date('2024-01-01T00:00:00.000Z');
+        database.getCollectionData(TRACKED_COLLECTION).push({ address: VALID_ADDRESS, paused: false, addedAt: now, updatedAt: now });
+        database.getCollectionData(PROGRESS_COLLECTION).push({ address: VALID_ADDRESS, status: 'queued', rowsIngested: 0 });
+        AccountHistoryService.setDependencies({
+            database, clickhouse: undefined, provider: null, emitter: undefined, logger: createSilentLogger()
+        });
+        const service = AccountHistoryService.getInstance();
+
+        const stats = await service.getStats();
+
+        expect(stats.totals.completeAccounts).toBe(0);
+        expect(stats.totals.catchingUpAccounts).toBe(0);
+        expect(stats.totals.oldestNewestTimestamp).toBeUndefined();
     });
 });
 
