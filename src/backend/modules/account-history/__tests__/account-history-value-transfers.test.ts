@@ -1,0 +1,158 @@
+/**
+ * @fileoverview Tests for value-transfer derivation — the source-independent
+ * `IValueTransfer` legs that back the proposed account value ledger.
+ *
+ * Two surfaces: the pure `toValueTransfers` deriver (native + token legs from a
+ * top-level transaction) and the provider's internal-transfer mapping (TVM
+ * value moves the transaction endpoints omit). The discriminating properties are
+ * that only genuine native-TRX contract types produce a TRX leg — TRC10 and
+ * staking/delegation rows, whose `amount_sun` is not TRX, produce nothing — and
+ * that an internal call's protocol hash becomes the leg key so legs sharing a
+ * parent never collide.
+ */
+
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import type { IBlockTransaction } from '@/types';
+import { TronGridClient } from '../../blockchain/tron-grid.client.js';
+import { TronGridAccountHistoryProvider, toValueTransfers } from '../providers/trongrid-account-history.provider.js';
+
+/**
+ * Build a minimal top-level transaction.
+ *
+ * @param overrides - Fields to set on top of the SUCCESS/empty defaults.
+ * @returns An IBlockTransaction.
+ */
+function tx(overrides: Partial<IBlockTransaction>): IBlockTransaction {
+    return {
+        txId: 'tx',
+        blockNumber: 1,
+        timestamp: new Date('2024-01-01T00:00:00.000Z'),
+        type: 'TransferContract',
+        status: 'SUCCESS',
+        from: { address: 'Tfrom' },
+        to: { address: 'Tto' },
+        ...overrides
+    };
+}
+
+describe('toValueTransfers', () => {
+    it('derives a native TRX leg from a TransferContract amount', () => {
+        const legs = toValueTransfers(tx({ type: 'TransferContract', amountSun: 1_000_000 }));
+        expect(legs).toEqual([
+            expect.objectContaining({ origin: 'native', assetType: 'TRX', assetId: '', amountRaw: '1000000', legKey: '' })
+        ]);
+    });
+
+    it('derives a native TRX leg from a TriggerSmartContract call-value', () => {
+        const legs = toValueTransfers(tx({ type: 'TriggerSmartContract', amountSun: 250_000 }));
+        expect(legs).toHaveLength(1);
+        expect(legs[0]).toMatchObject({ origin: 'native', assetType: 'TRX', amountRaw: '250000' });
+    });
+
+    it('derives a TRC20 token leg from a decoded transfer', () => {
+        const legs = toValueTransfers(
+            tx({
+                type: 'TriggerSmartContract',
+                contract: { address: 'Tusdt', method: 'transfer', parameters: { value: '500', decimals: 6 } }
+            })
+        );
+        expect(legs).toEqual([
+            expect.objectContaining({ origin: 'token_event', assetType: 'TRC20', assetId: 'Tusdt', amountRaw: '500', assetDecimals: 6 })
+        ]);
+    });
+
+    it('excludes TRC10 TransferAssetContract (amount_sun is a token count, not TRX)', () => {
+        expect(toValueTransfers(tx({ type: 'TransferAssetContract', amountSun: 31_364_900_000 }))).toEqual([]);
+    });
+
+    it('excludes staking and delegation rows whose amount_sun is not a transfer', () => {
+        expect(toValueTransfers(tx({ type: 'DelegateResourceContract', amountSun: 11_585_300_000 }))).toEqual([]);
+        expect(toValueTransfers(tx({ type: 'FreezeBalanceV2Contract', amountSun: 5_000_000 }))).toEqual([]);
+    });
+});
+
+describe('TronGridAccountHistoryProvider.fetchInternalTransfersPage', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    /**
+     * Stub the shared client so the provider reads canned internal-transaction
+     * items. Address conversion (`toBase58Address`) stays real so the hex→base58
+     * step is exercised end to end.
+     *
+     * @param data - Raw internal-transaction items to return.
+     * @param fingerprint - The page's continuation cursor.
+     */
+    function stubClient(data: unknown[], fingerprint?: string): void {
+        vi.spyOn(TronGridClient, 'getInstance').mockReturnValue({
+            getAccountInternalTransactions: vi.fn(async () => ({ data, meta: { fingerprint } }))
+        } as unknown as TronGridClient);
+    }
+
+    it('maps an inline TRX call-value to an internal leg keyed by the protocol hash', async () => {
+        stubClient(
+            [
+                {
+                    internal_tx_id: 'hash1',
+                    tx_id: 'parent1',
+                    block_timestamp: 1_700_000_000_000,
+                    from_address: '419f0792b59281ac67a31010bc151ebe8d367a4fbb',
+                    to_address: '411af9228d09cd636d8ad53864b495648360218624',
+                    data: { note: 'call', rejected: false, call_value: { _: 100000 } }
+                }
+            ],
+            'fp1'
+        );
+
+        const result = await new TronGridAccountHistoryProvider().fetchInternalTransfersPage('Taddr', { limit: 50 });
+
+        expect(result.nextFingerprint).toBe('fp1');
+        expect(result.transfers).toHaveLength(1);
+        expect(result.transfers[0]).toMatchObject({
+            txId: 'parent1',
+            origin: 'internal',
+            legKey: 'hash1',
+            assetType: 'TRX',
+            assetId: '',
+            amountRaw: '100000'
+        });
+        // Hex addresses are converted to base58.
+        expect(result.transfers[0].from).toMatch(/^T[1-9A-HJ-NP-Za-km-z]{33}$/);
+        expect(result.transfers[0].to).toMatch(/^T[1-9A-HJ-NP-Za-km-z]{33}$/);
+    });
+
+    it('drops a rejected internal transfer (it moved no value)', async () => {
+        stubClient([
+            {
+                internal_tx_id: 'hash2',
+                tx_id: 'parent2',
+                from_address: '419f0792b59281ac67a31010bc151ebe8d367a4fbb',
+                to_address: '411af9228d09cd636d8ad53864b495648360218624',
+                data: { rejected: true, call_value: { _: 999 } }
+            }
+        ]);
+
+        const result = await new TronGridAccountHistoryProvider().fetchInternalTransfersPage('Taddr', { limit: 50 });
+        expect(result.transfers).toEqual([]);
+    });
+
+    it('splits a multi-asset call-value into one leg per asset, sharing the leg key', async () => {
+        stubClient([
+            {
+                internal_tx_id: 'hash3',
+                tx_id: 'parent3',
+                from_address: '419f0792b59281ac67a31010bc151ebe8d367a4fbb',
+                to_address: '411af9228d09cd636d8ad53864b495648360218624',
+                data: { rejected: false, call_value: { _: 100, '1002000': 500 } }
+            }
+        ]);
+
+        const result = await new TronGridAccountHistoryProvider().fetchInternalTransfersPage('Taddr', { limit: 50 });
+        expect(result.transfers).toHaveLength(2);
+        const trx = result.transfers.find((t) => t.assetType === 'TRX');
+        const trc10 = result.transfers.find((t) => t.assetType === 'TRC10');
+        expect(trx).toMatchObject({ legKey: 'hash3', assetId: '', amountRaw: '100' });
+        expect(trc10).toMatchObject({ legKey: 'hash3', assetId: '1002000', amountRaw: '500' });
+    });
+});

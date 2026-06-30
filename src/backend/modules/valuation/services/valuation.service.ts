@@ -48,6 +48,18 @@ const SUN_PER_TRX = 1_000_000;
 /** Default token decimals when the ledger never revealed them (USDT convention). */
 const DEFAULT_TOKEN_DECIMALS = 6;
 
+/**
+ * Native contract types whose `amountSun` is a genuine native-TRX balance
+ * movement. The ledger fills `amount_sun` from a *different* field per contract
+ * type (`transaction-parse.ts`): a TRC10 token amount for `TransferAssetContract`,
+ * the delegated/frozen stake for `Delegate*`/`Freeze*`. Summing those into the
+ * TRX series inflated the back-solved balance until the display clamp painted the
+ * curve flat-zero. Only `TransferContract` (a native TRX send) and
+ * `TriggerSmartContract` (whose `amount_sun` is the call's TRX `call_value`) move
+ * spendable TRX, so only these may become TRX-asset moves.
+ */
+const TRX_VALUE_CONTRACT_TYPES = new Set(['TransferContract', 'TriggerSmartContract']);
+
 /** Token metadata learned from the ledger, keyed by contract address. */
 interface ITokenMeta {
     symbol: string;
@@ -240,7 +252,10 @@ export class ValuationService implements IValuationService {
     /**
      * Normalize one transaction into a value move from a scope address's
      * viewpoint, learning token metadata as a side effect. Returns null for rows
-     * that move no tracked asset (staking, plain contract calls).
+     * that move no tracked asset: staking/delegation operations, plain contract
+     * calls with no TRX value, and TRC10 (`TransferAssetContract`) transfers —
+     * whose `amount_sun` is a token quantity, not native TRX, and must not enter
+     * the TRX series (see {@link TRX_VALUE_CONTRACT_TYPES}).
      *
      * @param tx - The stored transaction.
      * @param scopeAddress - The in-scope address this row was read for.
@@ -279,7 +294,7 @@ export class ValuationService implements IValuationService {
             return { txId: tx.txId, day, timestamp: tx.timestamp.getTime(), asset, quantity, direction, internal, wallet: scopeAddress };
         }
 
-        if (typeof tx.amountSun === 'number' && tx.amountSun > 0) {
+        if (typeof tx.amountSun === 'number' && tx.amountSun > 0 && TRX_VALUE_CONTRACT_TYPES.has(tx.type)) {
             return {
                 txId: tx.txId,
                 day,

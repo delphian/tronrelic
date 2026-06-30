@@ -740,6 +740,33 @@ export class TronGridClient {
     }
 
     /**
+     * Fetch paginated internal (TVM) transactions for an account via the v1 REST
+     * API. Internal transfers are TRX/TRC10 moves a contract performs during
+     * execution; they are not top-level transactions, so neither
+     * `getAccountTransactions` nor `getTrc20Transactions` surfaces them — a contract
+     * paying TRX to the account is invisible without this endpoint. Each item
+     * carries the protocol internal-transaction hash (`internal_tx_id`, identical to
+     * the node's `TransactionInfo` hash) and an inline `call_value` asset map, so
+     * value attribution needs no per-transaction detail call.
+     *
+     * Routed through the same `enqueueRequest` throttle and rotating-key headers as
+     * every other call, so it shares the global TronGrid budget with live block sync.
+     *
+     * @param base58Address - Account address in base58 format.
+     * @param params - Query parameters (`only_confirmed`, `limit`, `fingerprint`, `order_by`).
+     * @returns Raw response data with internal transactions and pagination metadata (`meta.fingerprint`).
+     */
+    async getAccountInternalTransactions<T>(base58Address: string, params: Record<string, string | number | boolean>): Promise<T> {
+        return enqueueRequest(async () => {
+            const response = await httpClient.get<T>(
+                `${BASE_URL}/v1/accounts/${base58Address}/internal-transactions`,
+                { params, headers: buildHeaders(), timeout: 15000 }
+            );
+            return response.data;
+        });
+    }
+
+    /**
      * Execute a read-only smart contract call via triggerconstantcontract.
      *
      * No gas cost — used for querying contract state (e.g. allowance, balanceOf).
