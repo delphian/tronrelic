@@ -87,6 +87,19 @@ export function TronScanProviderSection() {
     }, [applyConfig]);
 
     /**
+     * Auto-dismiss a success message after a short delay. Driving this from an effect
+     * rather than a per-handler timer guarantees the timeout is cleared on unmount and
+     * whenever newer feedback replaces it, so no stale timer fires `setFeedback` after
+     * unmount and back-to-back saves can't clear a fresh message early.
+     */
+    useEffect(() => {
+        const timer = feedback?.type === 'success'
+            ? setTimeout(() => setFeedback(null), 4000)
+            : undefined;
+        return () => clearTimeout(timer);
+    }, [feedback]);
+
+    /**
      * Persist the form. The API key is sent only when the operator typed a new one;
      * an untouched field leaves the stored key intact.
      */
@@ -108,7 +121,6 @@ export function TronScanProviderSection() {
             setApiKeyInput('');
             setShowKey(false);
             setFeedback({ type: 'success', message: 'TronScan configuration saved.' });
-            setTimeout(() => setFeedback(null), 4000);
         } catch (err) {
             setFeedback({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save.' });
         } finally {
@@ -127,7 +139,6 @@ export function TronScanProviderSection() {
             applyConfig(next);
             setApiKeyInput('');
             setFeedback({ type: 'success', message: 'API key cleared (now keyless).' });
-            setTimeout(() => setFeedback(null), 4000);
         } catch (err) {
             setFeedback({ type: 'error', message: err instanceof Error ? err.message : 'Failed to clear key.' });
         } finally {

@@ -3,10 +3,11 @@
  *
  * Locks the contract the price-history service relies on: TRX rows map to one
  * `IPricePoint` per UTC day keyed off the row's end-of-day `time` with `close` as
- * the price; token assets and a disabled provider resolve to empty/null without
- * touching TronScan (so the service degrades them gracefully); and `fetchDay`
- * yields the day's point or null at the listing floor. The TronScan client call is
- * spied so no live HTTP is made.
+ * the price; token assets resolve to empty/null without touching TronScan (so the
+ * service degrades them gracefully); a disabled provider throws so the tick is
+ * treated as retryable rather than wedging cursor state as seeded-but-empty; and
+ * `fetchDay` yields the day's point or null at the listing floor. The TronScan
+ * client call is spied so no live HTTP is made.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -71,14 +72,12 @@ describe('TronScanPriceHistoryProvider', () => {
         expect(spy).not.toHaveBeenCalled();
     });
 
-    it('returns empty when the provider is disabled in config', async () => {
+    it('throws when the provider is disabled in config, leaving cursor state resumable', async () => {
         await mockDb.set(TRONSCAN_CONFIG_KEY, { enabled: false });
         const spy = vi.spyOn(TronScanClient.getInstance(), 'getTrxPriceVolume');
         const provider = new TronScanPriceHistoryProvider(stubLogger as never);
 
-        const points = await provider.fetchRange('TRX', '2024-01-01', '2024-01-02');
-
-        expect(points).toEqual([]);
+        await expect(provider.fetchRange('TRX', '2024-01-01', '2024-01-02')).rejects.toThrow(/disabled/);
         expect(spy).not.toHaveBeenCalled();
     });
 
