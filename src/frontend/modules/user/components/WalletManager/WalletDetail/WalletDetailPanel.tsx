@@ -23,6 +23,7 @@ import { WalletResourcePanel } from './WalletResourcePanel';
 import { WalletFlowChart } from './WalletFlowChart';
 import { WalletCounterparties } from './WalletCounterparties';
 import { WalletTransactionFeed } from './WalletTransactionFeed';
+import { PortfolioPanel } from './PortfolioPanel';
 import styles from './WalletDetail.module.scss';
 
 /**
@@ -90,10 +91,11 @@ export function WalletDetailPanel({ address }: IWalletDetailPanelProps) {
         <div className={styles.detail}>
             <Stack gap="md">
                 {/*
-                  * Valuation hero seam (reserved, not implemented). The portfolio
-                  * value + PnL + balance-over-time hero mounts here once a balance
-                  * and USD-price data layer exists; see IWalletValuationSummary.
+                  * Valuation hero. Self-fetching and scoped to this wallet; it
+                  * loads its own portfolio summary (net worth, PnL, allocation,
+                  * balance-over-time) independently of the activity summary above.
                   */}
+                <PortfolioPanel address={address} />
                 {error ? (
                     <div className="alert">{error}</div>
                 ) : loading || !summary ? (

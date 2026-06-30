@@ -72,7 +72,15 @@ The traffic module owns cookieless behavioral analytics: the ClickHouse `traffic
 
 ### Account History
 
-Pull-based per-account transaction history. Backfills the full TronGrid history of operator-tracked TRON accounts into a ClickHouse `account_transactions` table — independent of the forward block-sync pipeline, bounded and resumable per scheduler tick — and keeps completed accounts current with a forward-sync job. Verified wallets auto-enroll through the `http.walletLinked` hook. Publishes `'account-history'` (`IAccountHistoryService`); an admin surface at `/system/account-history` plus login-gated, ownership-scoped per-wallet reads (download progress, activity summary, transaction feed) back the profile Wallets tab. See [Account History Module README](../../src/backend/modules/account-history/README.md).
+Pull-based per-account transaction history. Backfills the full TronGrid history of operator-tracked TRON accounts into a ClickHouse `account_transactions` table — independent of the forward block-sync pipeline, bounded and resumable per scheduler tick — and keeps completed accounts current with a forward-sync job. Verified wallets auto-enroll through the `http.walletLinked` hook. Publishes `'account-history'` (`IAccountHistoryService`); an admin surface at `/system/account-history` plus login-gated, ownership-scoped per-wallet reads (download progress, activity summary, transaction feed) back the profile Wallets tab. Also owns the scheduled per-account balance/resource snapshots (`account_balance_snapshots` + `account_token_balances`) that anchor portfolio valuation. See [Account History Module README](../../src/backend/modules/account-history/README.md).
+
+### Price History
+
+A scheduled, local daily USD price series (TRX + tracked TRC20 tokens) in ClickHouse, so portfolio valuation never makes a live external price call on a page load. Prices are immutable: a bounded resumable backward backfill (a dense recent-window seed plus a per-day deep walk behind a swappable `IPriceHistoryProvider`, CoinGecko v1) plus a cheap daily forward append. Publishes `'price-history'` (`IPriceHistoryService`). See [Price History Module README](../../src/backend/modules/price-history/README.md).
+
+### Valuation
+
+Per-user portfolio summaries — net worth, holdings, allocation, realized/unrealized PnL, and USD balance-over-time — joined entirely from local data (the account-history ledger and balance snapshots, the price-history series, and the identity wallet set). PnL is per-user by design: a transfer between two wallets the same user owns nets out (basis-preserving), so per-wallet and per-user scopes stay coherent and additive. Owns no storage; publishes `'valuation'` (`IValuationService`); login-gated, ownership-scoped reads at `/api/valuation/me/*` back the Wallets-tab portfolio hero. See [Valuation Module README](../../src/backend/modules/valuation/README.md).
 
 ### Hooks
 
@@ -145,7 +153,9 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [Pages Module README](../../src/backend/modules/pages/README.md) | Markdown CMS, storage providers, file uploads |
 | [Identity Module README](../../src/backend/modules/identity/README.md) | Better Auth, groups, wallet store, account directory |
 | [Traffic Module README](../../src/backend/modules/traffic/README.md) | ClickHouse traffic_events, tid/ref cookies, analytics |
-| [Account History Module README](../../src/backend/modules/account-history/README.md) | Pull-based per-account TRON history ingest into ClickHouse, forward sync, `IAccountHistoryService`, admin + ownership-scoped user APIs |
+| [Account History Module README](../../src/backend/modules/account-history/README.md) | Pull-based per-account TRON history ingest into ClickHouse, forward sync, balance snapshots, `IAccountHistoryService`, admin + ownership-scoped user APIs |
+| [Price History Module README](../../src/backend/modules/price-history/README.md) | Local daily USD price series (CoinGecko-backed), two-phase backfill, `IPriceHistoryService` |
+| [Valuation Module README](../../src/backend/modules/valuation/README.md) | Per-user portfolio valuation — net worth, holdings, FIFO PnL with internal-transfer netting, balance-over-time, `IValuationService` |
 | [Tools Module README](../../src/backend/modules/tools/README.md) | TRON utility calculators — address conversion, energy/stake math, signature verification, token approvals, timestamp/block conversion |
 | [Widgets Module README](../../src/backend/modules/widgets/README.md) | `IWidgetsService`, zones, placements, widget-types, SSR router integration |
 | [Logs Module README](../../src/backend/modules/logs/README.md) | `SystemLogService` singleton, `system_logs` persistence, metadata sanitizer |

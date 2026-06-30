@@ -22,5 +22,7 @@ export type {
     IWalletCounterparty,
     IWalletActivitySummary,
     IWalletValuationSummary,
+    IAccountTokenBalance,
+    IAccountBalanceSnapshot,
     IAccountHistoryService
 } from './IAccountHistoryService.js';

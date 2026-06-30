@@ -12,10 +12,10 @@ Ingests the full transaction history of operator-tracked TRON accounts into Clic
 | Service registry name | `'account-history'` → `IAccountHistoryService` |
 | Mounted routes | `/api/admin/system/account-history/*` (`createAdminRateLimiter` + `requireAdmin`); `/api/account-history/me/*` (`requireLogin`, ownership-scoped: progress, per-wallet summary, per-wallet transactions) |
 | Auto-enrollment | Registers a `'core'` handler on the `http.walletLinked` hook — a user verifying a wallet auto-enrolls it (`label: 'user-verified'`) |
-| Scheduler jobs | `account-history:ingest` (backfill, `*/2 * * * *`); `account-history:forward-sync` (keep completed accounts current, `*/5 * * * *`) |
+| Scheduler jobs | `account-history:ingest` (backfill, `*/2 * * * *`); `account-history:forward-sync` (keep completed accounts current, `*/5 * * * *`); `account-history:snapshot` (per-account balance/resource sampler, `0 */4 * * *`) |
 | WebSocket event | `account-history:stats` (global broadcast; has a case in `WebSocketService.emit()`) |
 | Types package | `@delphian/tronrelic-types` → `IAccountHistoryService` and its DTOs |
-| ClickHouse table | `account_transactions` (ReplacingMergeTree) |
+| ClickHouse tables | `account_transactions`; `account_balance_snapshots` + `account_token_balances` (all ReplacingMergeTree) |
 | Mongo collections | `module_account-history_tracked`, `module_account-history_progress`, `module_account-history_settings` |
 | Provider seam | `IAccountHistoryProvider` (v1 impl: `TronGridAccountHistoryProvider`) |
 | Bootstrap order | Inits after the scheduler service is available; runs alongside other modules before `loadPlugins` |
@@ -62,6 +62,9 @@ Each endpoint has its own fingerprint cursor; an account is marked `complete` on
 | `getProgressFor(addresses)` | Progress for a specific address set (tracked subset only) — backs ownership-scoped surfaces like a user's profile |
 | `getTransactions({ address, limit?, offset? })` | Paged history read returning `IBlockTransaction[]` |
 | `getWalletSummary(address)` | Batched `IWalletActivitySummary` — calendar heatmap, "wallet story" stats, TRON resource totals, monthly inflow/outflow, top counterparties — from the stored ledger in one call (trusts the address; caller authorizes) |
+| `getLatestSnapshot(address)` | Latest `IAccountBalanceSnapshot` (liquid/staked/unstaking TRX, energy/bandwidth, per-token balances) — the valuation anchor and current-holdings source |
+| `getSnapshotSeries(address, fromDay, toDay)` | Scalar snapshot series over a UTC day range (token balances omitted) for balance-over-time calibration |
+| `runSnapshotTick()` | Capture a bounded slice of balance snapshots through the provider (scheduler + manual trigger) |
 | `runIngestionTick()` | Advance the backward backfill one bounded slice (scheduler + manual trigger) |
 | `runForwardSyncTick()` | Refresh completed accounts with transactions that arrived after backfill (scheduler + manual trigger) |
 
@@ -90,7 +93,7 @@ Login-gated, ownership-scoped routes let a signed-in user explore only the walle
 | GET | `/api/account-history/me/wallets/:address/summary` | `{ summary }` — the `IWalletActivitySummary` for one owned wallet (heatmap, stats, resources, flow, counterparties) |
 | GET | `/api/account-history/me/wallets/:address/transactions` | `IAccountTransactionPage` — paged decoded feed for one owned wallet (`limit`/`offset` query params) |
 
-The summary is purely activity/behaviour, derived from the stored ledger. A **valuation/portfolio** surface (portfolio value, PnL, balance-over-time) is a deliberate, additive future layer — its contract is sketched as the unimplemented `IWalletValuationSummary`, gated on a balance + USD-price data layer the module does not yet have.
+The summary is purely activity/behaviour, derived from the stored ledger. The **valuation/portfolio** surface (net worth, holdings, PnL, balance-over-time) now exists as the separate [valuation module](../valuation/README.md), which consumes this module's ledger and balance snapshots plus the [price-history](../price-history/README.md) series. The balance snapshots that anchor it are owned here: `runSnapshotTick()` samples each tracked account's on-chain state through the provider's `fetchAccountSnapshot` into `account_balance_snapshots` (scalar TRX/staking/resource state) and `account_token_balances` (per-token), keyed `(account, day)`, bounded per tick by `accountsPerTick`. The ledger alone cannot reconstruct an absolute balance (unreachable deep history, staking moves), so these snapshots are the calibration anchor valuation pins its derived series to.
 
 ## Auto-Enrollment
 

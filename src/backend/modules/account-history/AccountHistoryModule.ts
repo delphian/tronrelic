@@ -83,6 +83,17 @@ const FORWARD_SYNC_CRON = '*/5 * * * *';
 const FORWARD_SYNC_JOB = 'account-history:forward-sync';
 
 /**
+ * Cron for the balance-snapshot job. Snapshots are point-in-time anchors for
+ * valuation, not history — capturing each tracked account a few times a day keeps
+ * "current" holdings fresh while staying bounded (one probe per account per tick,
+ * and at most one snapshot per account per day).
+ */
+const SNAPSHOT_CRON = '0 */4 * * *';
+
+/** Scheduler job name for the per-account balance/resource snapshot sampler. */
+const SNAPSHOT_JOB = 'account-history:snapshot';
+
+/**
  * Dedicated menu namespace for the page's in-page tab row. Kept out of `main`
  * so the tabs never leak into the global nav chrome — only the page's own
  * `MenuNavClient` reads this namespace (menu module's Submenu Pattern).
@@ -234,7 +245,10 @@ export class AccountHistoryModule implements IModule<IAccountHistoryModuleDepend
             this.scheduler.register(FORWARD_SYNC_JOB, FORWARD_SYNC_CRON, async () => {
                 await this.service.runForwardSyncTick();
             });
-            this.logger.info('Account-history ingestion and forward-sync jobs registered');
+            this.scheduler.register(SNAPSHOT_JOB, SNAPSHOT_CRON, async () => {
+                await this.service.runSnapshotTick();
+            });
+            this.logger.info('Account-history ingestion, forward-sync, and snapshot jobs registered');
         } else {
             this.logger.info('Scheduler disabled — account-history ingestion and forward-sync jobs not registered');
         }

@@ -41,6 +41,8 @@ import { WidgetsModule } from './modules/widgets/index.js';
 import { IdentityModule } from './modules/identity/index.js';
 import { TrafficModule } from './modules/traffic/index.js';
 import { AccountHistoryModule } from './modules/account-history/index.js';
+import { PriceHistoryModule } from './modules/price-history/index.js';
+import { ValuationModule } from './modules/valuation/index.js';
 import { ToolsModule } from './modules/tools/index.js';
 import { AiToolsModule } from './modules/ai-tools/index.js';
 import { CurationModule } from './modules/curation/index.js';
@@ -241,6 +243,8 @@ interface BootstrapContext {
         identity: IdentityModule;
         traffic: TrafficModule;
         accountHistory: AccountHistoryModule;
+        priceHistory: PriceHistoryModule;
+        valuation: ValuationModule;
         tools: ToolsModule;
         notifications: NotificationsModule;
         curation: CurationModule;
@@ -387,6 +391,8 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const identityModule = new IdentityModule();
     const trafficModule = new TrafficModule();
     const accountHistoryModule = new AccountHistoryModule();
+    const priceHistoryModule = new PriceHistoryModule();
+    const valuationModule = new ValuationModule();
     const toolsModule = new ToolsModule();
     const notificationsModule = new NotificationsModule();
     const curationModule = new CurationModule();
@@ -405,6 +411,14 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // Receives the scheduler service (for its bounded ingestion job) and clickhouse
     // (its store); no-ops ingestion when clickhouse is absent. Independent of block sync.
     await accountHistoryModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
+    // Price-history: scheduled local daily USD price series (CoinGecko-backed) into
+    // ClickHouse, the data layer portfolio valuation reads from. No-ops ingestion
+    // when clickhouse is absent. Inits before the valuation engine that consumes it.
+    await priceHistoryModule.init({ database: coreDatabase, clickhouse, scheduler: schedulerService, serviceRegistry, app, menuService });
+    // Valuation: joins account-history, price-history, and the caller's wallet set
+    // into portfolio summaries. Owns no storage; resolves its data services lazily
+    // from the registry, so it only needs the registry at init.
+    await valuationModule.init({ serviceRegistry, app });
     await toolsModule.init(sharedDeps);
     // Notifications module: builds the category/channel registries, preference,
     // policy, and audit stores. Inits before ai-tools so its run() (which
@@ -456,6 +470,8 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             identity: identityModule,
             traffic: trafficModule,
             accountHistory: accountHistoryModule,
+            priceHistory: priceHistoryModule,
+            valuation: valuationModule,
             tools: toolsModule,
             notifications: notificationsModule,
             curation: curationModule,
@@ -513,6 +529,12 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     // Account-history runs before scheduler (which runs last and starts ticking),
     // so its `account-history:ingest` job is registered before the scheduler activates.
     await modules.accountHistory.run();
+    // Price-history runs before scheduler (which runs last and starts ticking), so
+    // its backfill/forward-sync jobs are registered before the scheduler activates.
+    await modules.priceHistory.run();
+    // Valuation publishes `'valuation'`; runs after the services it consumes are
+    // published, though it also resolves them lazily at call time.
+    await modules.valuation.run();
     await modules.scheduler.run();
 
     // Mount the hook-system introspection endpoint. The route is

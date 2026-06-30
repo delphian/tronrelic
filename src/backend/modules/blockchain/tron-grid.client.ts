@@ -298,6 +298,24 @@ export interface TronGridAccountResponse {
     create_time?: number;
     active_permission?: TronGridAccountPermission[];
     owner_permission?: TronGridAccountPermission;
+    /**
+     * Stake 2.0 staked balances. Each entry's `type` is `'ENERGY'` or
+     * `'BANDWIDTH'`; TronGrid omits `type` for the bandwidth entry, so an absent
+     * type means bandwidth. `amount` is in sun.
+     */
+    frozenV2?: Array<{ type?: string; amount?: number }>;
+    /**
+     * Stake 2.0 pending unstake operations. `unfreeze_amount` (sun) is locked
+     * until `unfreeze_expire_time` (epoch ms); summed, this is the unstaking queue.
+     */
+    unfrozenV2?: Array<{ type?: string; unfreeze_amount?: number; unfreeze_expire_time?: number }>;
+    /** Current Super Representative vote allocations. */
+    votes?: Array<{ vote_address?: string; vote_count?: number }>;
+    /**
+     * TRC20 balances as an array of single-entry `{ contractAddress: rawBalance }`
+     * objects (TronGrid's wire shape), the raw balance a decimal string.
+     */
+    trc20?: Array<Record<string, string>>;
 }
 
 export class TronGridClient {

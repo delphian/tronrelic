@@ -12,6 +12,31 @@
     container-name: wallet-detail;
 }
 
+/* Portfolio hero: donut beside the holdings table, stacking on narrow containers. */
+.portfolio_split {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--gap-md);
+    align-items: start;
+}
+
+.portfolio_donut {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.portfolio_holdings {
+    min-width: 0;
+    overflow-x: auto;
+}
+
+@container wallet-detail (max-width: #{$breakpoint-mobile-md}) {
+    .portfolio_split {
+        grid-template-columns: 1fr;
+    }
+}
+
 .section_header {
     display: flex;
     align-items: center;

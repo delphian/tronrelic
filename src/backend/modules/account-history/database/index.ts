@@ -22,6 +22,12 @@ export const SETTINGS_COLLECTION = 'module_account-history_settings';
 /** ClickHouse table holding ingested per-account transactions. */
 export const TRANSACTIONS_TABLE = 'account_transactions';
 
+/** ClickHouse table holding scheduled scalar balance/resource snapshots. */
+export const BALANCE_SNAPSHOTS_TABLE = 'account_balance_snapshots';
+
+/** ClickHouse table holding per-token raw balances captured alongside each snapshot. */
+export const TOKEN_BALANCES_TABLE = 'account_token_balances';
+
 /** Fixed discriminator for the singleton settings document. */
 export const SETTINGS_KEY = 'settings';
 
@@ -106,6 +112,13 @@ export interface IAccountProgressDoc {
     lastForwardRunAt?: Date;
     /** Message from the most recent failed tick; cleared on the next success. */
     lastError?: string;
+    /**
+     * UTC `YYYY-MM-DD` of the most recent balance snapshot captured for this
+     * account. Drives the snapshot tick's "not yet snapshotted today" selection so
+     * the bounded sampler advances round-robin without re-snapshotting an account
+     * twice in a day. Absent until the first snapshot.
+     */
+    lastSnapshotDay?: string;
 }
 
 /**
@@ -173,6 +186,83 @@ export interface IAccountTransactionRow extends Record<string, unknown> {
     memo: string | null;
     /** Ingestion time; the ReplacingMergeTree version column. */
     ingested_at: string;
+}
+
+/**
+ * One row of the ClickHouse `account_balance_snapshots` table — the scalar TRX,
+ * staking, and resource state captured per account per day. One row per
+ * `(account, day)`; the ReplacingMergeTree version column lets a re-sample on the
+ * same day overwrite in place.
+ */
+export interface IBalanceSnapshotRow extends Record<string, unknown> {
+    /** Tracked account; part of the dedup key. */
+    account: string;
+    /** UTC calendar day, `YYYY-MM-DD`; part of the dedup key and partition. */
+    day: string;
+    /** Capture instant as a ClickHouse datetime string. */
+    captured_at: string;
+    /** Liquid TRX balance, in sun. */
+    trx_balance_sun: number;
+    /** TRX staked for energy, in sun. */
+    staked_energy_sun: number;
+    /** TRX staked for bandwidth, in sun. */
+    staked_bandwidth_sun: number;
+    /** TRX in the unstaking queue, in sun. */
+    unstaking_sun: number;
+    /** Energy limit from staking. */
+    energy_limit: number;
+    /** Energy used in the current window. */
+    energy_used: number;
+    /** Bandwidth (net) limit from staking. */
+    net_limit: number;
+    /** Bandwidth used in the current window. */
+    net_used: number;
+    /** Ingestion time; the ReplacingMergeTree version column. */
+    ingested_at: string;
+}
+
+/**
+ * One row of the ClickHouse `account_token_balances` table — a single token's raw
+ * balance for one account on one snapshot day. Split from the scalar snapshot so
+ * token holdings join cleanly to the price series without a Map column.
+ */
+export interface ITokenBalanceRow extends Record<string, unknown> {
+    /** Tracked account; part of the dedup key. */
+    account: string;
+    /** UTC calendar day, `YYYY-MM-DD`; part of the dedup key and partition. */
+    day: string;
+    /** TRC20 contract base58 address; part of the dedup key. */
+    asset: string;
+    /** Raw token balance as an integer string (decimals unapplied). */
+    raw_balance: string;
+    /** Ingestion time; the ReplacingMergeTree version column. */
+    ingested_at: string;
+}
+
+/**
+ * Normalized account state the provider returns from a single on-chain probe —
+ * the source-independent shape the service projects into snapshot rows, so the
+ * service never parses raw TronGrid envelopes. Sun fields are TRX in sun.
+ */
+export interface IAccountSnapshotSample {
+    /** Liquid TRX balance, in sun. */
+    trxBalanceSun: number;
+    /** TRX staked for energy, in sun. */
+    stakedEnergySun: number;
+    /** TRX staked for bandwidth, in sun. */
+    stakedBandwidthSun: number;
+    /** TRX in the unstaking queue, in sun. */
+    unstakingSun: number;
+    /** Energy limit from staking. */
+    energyLimit: number;
+    /** Energy used in the current window. */
+    energyUsed: number;
+    /** Bandwidth (net) limit from staking. */
+    netLimit: number;
+    /** Bandwidth used in the current window. */
+    netUsed: number;
+    /** Per-token raw balances `{ contractAddress: rawBalanceString }`. */
+    tokenBalances: Array<{ asset: string; rawBalance: string }>;
 }
 
 /**
