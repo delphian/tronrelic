@@ -70,6 +70,10 @@ The identity module owns Better Auth and everything keyed by the Better Auth use
 
 The traffic module owns cookieless behavioral analytics: the ClickHouse `traffic_events` store, the `tronrelic_tid`/`tronrelic_ref` cookies, bot classification, and geo/device derivation. It backs the `/system/traffic` analytics, crawler, and SEO dashboards. See [Traffic Module README](../../src/backend/modules/traffic/README.md).
 
+### Account History
+
+Pull-based per-account transaction history. Backfills the full TronGrid history of operator-tracked TRON accounts into a ClickHouse `account_transactions` table — independent of the forward block-sync pipeline, bounded and resumable per scheduler tick — and keeps completed accounts current with a forward-sync job. Verified wallets auto-enroll through the `http.walletLinked` hook. Publishes `'account-history'` (`IAccountHistoryService`); an admin surface at `/system/account-history` plus login-gated, ownership-scoped per-wallet reads (download progress, activity summary, transaction feed) back the profile Wallets tab. See [Account History Module README](../../src/backend/modules/account-history/README.md).
+
 ### Hooks
 
 Typed extension points where core invites plugins into its own execution. Descriptors declared in `src/backend/hooks/registry.ts` are the single source of truth; the runtime registry refuses unknown descriptors, enforces per-plugin handler caps, and serves a snapshot to the `/system/hooks` admin timeline. Four archetypes (observer / series / waterfall / bail) with explicit isolation and abort semantics. See [system-hooks.md](./system-hooks.md).
@@ -141,6 +145,7 @@ Inspect health at `/system` (auth: `ADMIN_API_TOKEN`) — fastest path to blockc
 | [Pages Module README](../../src/backend/modules/pages/README.md) | Markdown CMS, storage providers, file uploads |
 | [Identity Module README](../../src/backend/modules/identity/README.md) | Better Auth, groups, wallet store, account directory |
 | [Traffic Module README](../../src/backend/modules/traffic/README.md) | ClickHouse traffic_events, tid/ref cookies, analytics |
+| [Account History Module README](../../src/backend/modules/account-history/README.md) | Pull-based per-account TRON history ingest into ClickHouse, forward sync, `IAccountHistoryService`, admin + ownership-scoped user APIs |
 | [Tools Module README](../../src/backend/modules/tools/README.md) | TRON utility calculators — address conversion, energy/stake math, signature verification, token approvals, timestamp/block conversion |
 | [Widgets Module README](../../src/backend/modules/widgets/README.md) | `IWidgetsService`, zones, placements, widget-types, SSR router integration |
 | [Logs Module README](../../src/backend/modules/logs/README.md) | `SystemLogService` singleton, `system_logs` persistence, metadata sanitizer |

@@ -1,0 +1,83 @@
+/**
+ * Styling for the CalendarHeatmap activity grid. Structural chrome (header,
+ * labels, legend) flows through design tokens; the per-cell intensity fills are
+ * applied inline in the component per the data-visualization token exception.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+.chart {
+    container-type: inline-size;
+    container-name: calendar-heatmap;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    margin: 0;
+}
+
+.chart__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
+.chart__title {
+    margin: 0;
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.chart__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.heatmap {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.month_label {
+    font-size: 9px;
+    fill: var(--color-text-subtle);
+}
+
+.cell {
+    stroke: var(--color-border);
+    stroke-width: var(--border-width-thin);
+}
+
+.empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 96px;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+.legend {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-caption);
+}
+
+.legend__cells {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+}
+
+.legend__cell {
+    width: 11px;
+    height: 11px;
+    border-radius: var(--radius-xs);
+    border: var(--border-width-thin) solid var(--color-border);
+}

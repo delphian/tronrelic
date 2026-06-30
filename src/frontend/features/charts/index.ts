@@ -8,3 +8,5 @@
 export { LineChart } from './components/LineChart';
 export { BarChart } from './components/BarChart';
 export type { BarChartSeries } from './components/BarChart';
+export { CalendarHeatmap } from './components/CalendarHeatmap';
+export type { CalendarHeatmapDay } from './components/CalendarHeatmap';

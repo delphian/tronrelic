@@ -22,6 +22,12 @@ import type {
     IAccountIngestionProgress,
     IAccountTransactionPage,
     IAccountTransactionQuery,
+    IActivityCalendarBucket,
+    IWalletActivityStats,
+    IWalletActivitySummary,
+    IWalletCounterparty,
+    IWalletFlowBucket,
+    IWalletResourceTotals,
     IAddTrackedAccountInput,
     ITrackedAccount,
     IBlockTransaction,
@@ -58,6 +64,19 @@ const PROVIDER_PAGE_LIMIT = 200;
 
 /** Maximum rows a single history read returns, to protect the caller. */
 const MAX_READ_LIMIT = 500;
+
+/**
+ * How many recent days the activity-calendar (heatmap) covers. One year matches
+ * the GitHub-contributions convention users expect and bounds the row count the
+ * grouped read scans for the heatmap; the all-time stats are computed separately.
+ */
+const CALENDAR_WINDOW_DAYS = 366;
+
+/** How many counterparties the summary ranks — a leaderboard, not an exhaustive list. */
+const TOP_COUNTERPARTIES = 10;
+
+/** Milliseconds in a day, for the consecutive-day streak calculation. */
+const MS_PER_DAY = 86_400_000;
 
 /** Base58 TRON mainnet address shape: leading `T`, 34 chars total. */
 const TRON_ADDRESS_PATTERN = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
@@ -424,6 +443,277 @@ export class AccountHistoryService implements IAccountHistoryService {
             total: Number(countRows[0]?.total ?? 0)
         };
         return page;
+    }
+
+    /**
+     * Build the batched activity/behaviour summary for one account.
+     *
+     * Powers the user-facing wallet-detail view: every panel (calendar heatmap,
+     * "wallet story" stats, TRON resource totals, monthly inflow/outflow, top
+     * counterparties) in one call, so expanding a wallet costs a single
+     * round-trip. The five aggregate reads are independent, so they run in
+     * parallel. Each read carries the same outbound-TRC20 dedup filter as
+     * {@link getTransactions} so a token transfer's native twin is never double-
+     * counted. Authorization is the caller's responsibility — the service trusts
+     * the address, so a user-facing caller must confirm ownership first. Returns a
+     * zeroed summary when ClickHouse is absent rather than throwing, so the
+     * surface still renders on a ClickHouse-less deploy.
+     *
+     * @param address - Base58 account to summarize.
+     * @returns The activity summary for the address.
+     */
+    public async getWalletSummary(address: string): Promise<IWalletActivitySummary> {
+        const normalized = String(address ?? '').trim();
+        if (!TRON_ADDRESS_PATTERN.test(normalized)) {
+            throw new Error('address must be a base58 TRON address (T...)');
+        }
+        if (!this.clickhouse) {
+            return AccountHistoryService.emptyWalletSummary(normalized);
+        }
+
+        const [calendar, stats, resources, flow, counterparties] = await Promise.all([
+            this.queryActivityCalendar(normalized),
+            this.queryActivityStats(normalized),
+            this.queryResourceTotals(normalized),
+            this.queryMonthlyFlow(normalized),
+            this.queryTopCounterparties(normalized)
+        ]);
+
+        const summary: IWalletActivitySummary = { address: normalized, calendar, stats, resources, flow, counterparties };
+        return summary;
+    }
+
+    /**
+     * The shared outbound-TRC20 dedup predicate. An outbound TRC20 transfer is
+     * stored twice (a native `'tx'` row and a decoded `'trc20'` row with the same
+     * `tx_id`); every summary aggregate must suppress the native twin exactly as
+     * {@link getTransactions} does, or counts and sums double the token activity.
+     * The fragment references the `{address:String}` bind param, so every query
+     * using it must pass `address`.
+     *
+     * @returns A SQL boolean fragment, true for rows to keep.
+     */
+    private static dedupeFilter(): string {
+        return `NOT (source = 'tx' AND tx_id IN (
+                    SELECT tx_id FROM ${TRANSACTIONS_TABLE} WHERE account = {address:String} AND source = 'trc20'
+                ))`;
+    }
+
+    /**
+     * Per-day deduped transaction counts over the recent window, feeding the
+     * heatmap. `toDate` buckets in UTC so the day labels match the all-time stats
+     * and never drift with the server timezone.
+     *
+     * @param address - Base58 account to summarize.
+     * @returns Day buckets ordered oldest first.
+     */
+    private async queryActivityCalendar(address: string): Promise<IActivityCalendarBucket[]> {
+        const rows = await this.clickhouse!.query<{ day: string; count: string | number }>(
+            `SELECT toString(toDate(timestamp)) AS day, count() AS count
+             FROM ${TRANSACTIONS_TABLE} FINAL
+             WHERE account = {address:String} AND ${AccountHistoryService.dedupeFilter()}
+                   AND timestamp >= now() - toIntervalDay({windowDays:UInt32})
+             GROUP BY day
+             ORDER BY day ASC`,
+            { address, windowDays: CALENDAR_WINDOW_DAYS }
+        );
+        const calendar = rows.map((row) => ({ day: String(row.day), count: Number(row.count ?? 0) }));
+        return calendar;
+    }
+
+    /**
+     * The all-time "wallet story" stats. Two reads: an aggregate for the totals
+     * and timestamp bounds, and a distinct-active-days list used to derive the
+     * active-day count and the longest consecutive-day streak in application code
+     * (a streak is awkward to express in SQL and the day list is small — at most
+     * one row per active day). Timestamp bounds are null when the wallet has no
+     * stored history, so the surface shows an honest empty state rather than the
+     * epoch.
+     *
+     * @param address - Base58 account to summarize.
+     * @returns The all-time activity stats.
+     */
+    private async queryActivityStats(address: string): Promise<IWalletActivityStats> {
+        const dedupe = AccountHistoryService.dedupeFilter();
+        const [aggregateRows, dayRows] = await Promise.all([
+            this.clickhouse!.query<{ total: string | number; first_at: string; last_at: string }>(
+                `SELECT count() AS total, toString(min(timestamp)) AS first_at, toString(max(timestamp)) AS last_at
+                 FROM ${TRANSACTIONS_TABLE} FINAL
+                 WHERE account = {address:String} AND ${dedupe}`,
+                { address }
+            ),
+            this.clickhouse!.query<{ day: string }>(
+                `SELECT toString(toDate(timestamp)) AS day
+                 FROM ${TRANSACTIONS_TABLE} FINAL
+                 WHERE account = {address:String} AND ${dedupe}
+                 GROUP BY day
+                 ORDER BY day ASC`,
+                { address }
+            )
+        ]);
+
+        const total = Number(aggregateRows[0]?.total ?? 0);
+        const days = dayRows.map((row) => String(row.day));
+        const stats: IWalletActivityStats = {
+            totalTransactions: total,
+            firstActivityAt: total > 0 && aggregateRows[0]?.first_at ? parseClickHouseDateTime64Utc(aggregateRows[0].first_at) : null,
+            lastActivityAt: total > 0 && aggregateRows[0]?.last_at ? parseClickHouseDateTime64Utc(aggregateRows[0].last_at) : null,
+            activeDays: days.length,
+            longestStreakDays: AccountHistoryService.longestStreak(days)
+        };
+        return stats;
+    }
+
+    /**
+     * All-time TRON resource totals — the chain-native panel. `sum` over a
+     * nullable column ignores nulls and yields 0 for an empty set, so the zeroed
+     * shape falls out naturally for an inactive wallet.
+     *
+     * @param address - Base58 account to summarize.
+     * @returns Energy, bandwidth, and fee totals.
+     */
+    private async queryResourceTotals(address: string): Promise<IWalletResourceTotals> {
+        const rows = await this.clickhouse!.query<Record<string, string | number>>(
+            `SELECT sum(energy_consumed) AS energy_consumed,
+                    sum(bandwidth_consumed) AS bandwidth_consumed,
+                    sum(fee_sun) AS fee_sun,
+                    sum(energy_fee_sun) AS energy_fee_sun,
+                    sum(bandwidth_fee_sun) AS bandwidth_fee_sun
+             FROM ${TRANSACTIONS_TABLE} FINAL
+             WHERE account = {address:String} AND ${AccountHistoryService.dedupeFilter()}`,
+            { address }
+        );
+        const row = rows[0] ?? {};
+        const resources: IWalletResourceTotals = {
+            energyConsumed: Number(row.energy_consumed ?? 0),
+            bandwidthConsumed: Number(row.bandwidth_consumed ?? 0),
+            feeSun: Number(row.fee_sun ?? 0),
+            energyFeeSun: Number(row.energy_fee_sun ?? 0),
+            bandwidthFeeSun: Number(row.bandwidth_fee_sun ?? 0)
+        };
+        return resources;
+    }
+
+    /**
+     * Per-month inflow/outflow split by denomination. Direction is inferred from
+     * whether the wallet is the row's recipient (`to_address`) or sender
+     * (`from_address`); TRX uses native `amount_sun`, USDT uses the raw token
+     * amount (`toFloat64OrZero` tolerates the column's string/null shape). The two
+     * denominations stay separate because, without USD valuation, they share no
+     * axis. `toStartOfMonth` buckets in UTC for stable, timezone-independent labels.
+     *
+     * @param address - Base58 account to summarize.
+     * @returns Monthly flow buckets ordered oldest first.
+     */
+    private async queryMonthlyFlow(address: string): Promise<IWalletFlowBucket[]> {
+        const rows = await this.clickhouse!.query<Record<string, string | number>>(
+            `SELECT toString(toStartOfMonth(timestamp)) AS period,
+                    sumIf(amount_sun, to_address = {address:String}) AS trx_in_sun,
+                    sumIf(amount_sun, from_address = {address:String}) AS trx_out_sun,
+                    sumIf(toFloat64OrZero(token_amount), token_symbol = 'USDT' AND to_address = {address:String}) AS usdt_in_raw,
+                    sumIf(toFloat64OrZero(token_amount), token_symbol = 'USDT' AND from_address = {address:String}) AS usdt_out_raw
+             FROM ${TRANSACTIONS_TABLE} FINAL
+             WHERE account = {address:String} AND ${AccountHistoryService.dedupeFilter()}
+             GROUP BY period
+             ORDER BY period ASC`,
+            { address }
+        );
+        const flow = rows.map((row) => ({
+            period: String(row.period),
+            trxInSun: Number(row.trx_in_sun ?? 0),
+            trxOutSun: Number(row.trx_out_sun ?? 0),
+            usdtInRaw: Number(row.usdt_in_raw ?? 0),
+            usdtOutRaw: Number(row.usdt_out_raw ?? 0)
+        }));
+        return flow;
+    }
+
+    /**
+     * The top counterparties by transaction count. The counterparty is the other
+     * side of each row — `to_address` when the wallet sent, `from_address` when it
+     * received — so the `if(...)` expression is repeated in the WHERE clause to
+     * drop self-transfers and empty addresses (referencing a SELECT alias in WHERE
+     * is not portable). This ranked table is the consumer-friendly stand-in for a
+     * force-directed address graph.
+     *
+     * @param address - Base58 account to summarize.
+     * @returns Up to {@link TOP_COUNTERPARTIES} counterparties, most-frequent first.
+     */
+    private async queryTopCounterparties(address: string): Promise<IWalletCounterparty[]> {
+        const counterparty = `if(from_address = {address:String}, to_address, from_address)`;
+        const rows = await this.clickhouse!.query<Record<string, string | number>>(
+            `SELECT ${counterparty} AS counterparty,
+                    count() AS tx_count,
+                    countIf(from_address = {address:String}) AS sent_to_count,
+                    countIf(to_address = {address:String}) AS received_from_count,
+                    sumIf(amount_sun, from_address = {address:String}) AS trx_sent_sun,
+                    sumIf(amount_sun, to_address = {address:String}) AS trx_received_sun
+             FROM ${TRANSACTIONS_TABLE} FINAL
+             WHERE account = {address:String} AND ${AccountHistoryService.dedupeFilter()}
+                   AND ${counterparty} != {address:String} AND ${counterparty} != ''
+             GROUP BY counterparty
+             ORDER BY tx_count DESC
+             LIMIT {limit:UInt32}`,
+            { address, limit: TOP_COUNTERPARTIES }
+        );
+        const counterparties = rows.map((row) => ({
+            address: String(row.counterparty),
+            txCount: Number(row.tx_count ?? 0),
+            sentToCount: Number(row.sent_to_count ?? 0),
+            receivedFromCount: Number(row.received_from_count ?? 0),
+            trxSentSun: Number(row.trx_sent_sun ?? 0),
+            trxReceivedSun: Number(row.trx_received_sun ?? 0)
+        }));
+        return counterparties;
+    }
+
+    /**
+     * Longest run of consecutive calendar days in a sorted, de-duplicated list of
+     * `YYYY-MM-DD` strings. Days are parsed at UTC midnight so the day-delta is
+     * exact; a gap of more than one day resets the run.
+     *
+     * @param days - Active days, ascending, one entry per day.
+     * @returns The longest consecutive-day streak (0 for an empty list).
+     */
+    private static longestStreak(days: string[]): number {
+        if (days.length === 0) {
+            return 0;
+        }
+        let longest = 1;
+        let current = 1;
+        for (let i = 1; i < days.length; i++) {
+            const previous = Date.parse(`${days[i - 1]}T00:00:00Z`);
+            const today = Date.parse(`${days[i]}T00:00:00Z`);
+            const deltaDays = Math.round((today - previous) / MS_PER_DAY);
+            if (deltaDays === 1) {
+                current += 1;
+                if (current > longest) {
+                    longest = current;
+                }
+            } else if (deltaDays > 1) {
+                current = 1;
+            }
+        }
+        return longest;
+    }
+
+    /**
+     * The zeroed summary returned when ClickHouse is unavailable, so a
+     * ClickHouse-less deploy renders an honest empty wallet-detail view instead of
+     * erroring.
+     *
+     * @param address - Base58 account the (empty) summary describes.
+     * @returns A fully-zeroed activity summary.
+     */
+    private static emptyWalletSummary(address: string): IWalletActivitySummary {
+        return {
+            address,
+            calendar: [],
+            stats: { totalTransactions: 0, firstActivityAt: null, lastActivityAt: null, activeDays: 0, longestStreakDays: 0 },
+            resources: { energyConsumed: 0, bandwidthConsumed: 0, feeSun: 0, energyFeeSun: 0, bandwidthFeeSun: 0 },
+            flow: [],
+            counterparties: []
+        };
     }
 
     /**

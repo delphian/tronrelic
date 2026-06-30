@@ -15,5 +15,12 @@ export type {
     IAddTrackedAccountInput,
     IAccountTransactionQuery,
     IAccountTransactionPage,
+    IActivityCalendarBucket,
+    IWalletActivityStats,
+    IWalletResourceTotals,
+    IWalletFlowBucket,
+    IWalletCounterparty,
+    IWalletActivitySummary,
+    IWalletValuationSummary,
     IAccountHistoryService
 } from './IAccountHistoryService.js';
