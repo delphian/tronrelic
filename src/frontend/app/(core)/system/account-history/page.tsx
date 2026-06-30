@@ -52,9 +52,18 @@ async function fetchSubmenu(): Promise<{ roots: MenuNodeSerialized[]; generatedA
 /**
  * Account-history admin page (server entry).
  *
+ * @param props - Next.js route props.
+ * @param props.searchParams - The `?tab=` deep link (a Promise in Next.js 15+),
+ *   read SSR-first to seed the initially active panel so a refreshed, bookmarked,
+ *   or shared link opens on the selected tab instead of falling back to Accounts.
  * @returns The client shell seeded with the SSR-fetched submenu tree.
  */
-export default async function AccountHistoryAdminPage() {
+export default async function AccountHistoryAdminPage({
+    searchParams
+}: {
+    searchParams: Promise<{ tab?: string }>;
+}) {
     const { roots, generatedAt } = await fetchSubmenu();
-    return <AccountHistoryAdminClient submenuTree={roots} submenuGeneratedAt={generatedAt} />;
+    const { tab } = await searchParams;
+    return <AccountHistoryAdminClient submenuTree={roots} submenuGeneratedAt={generatedAt} initialTab={tab} />;
 }

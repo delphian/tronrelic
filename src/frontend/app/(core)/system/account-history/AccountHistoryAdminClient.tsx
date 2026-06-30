@@ -47,6 +47,12 @@ interface IAccountHistoryAdminClientProps {
     submenuTree: MenuNodeSerialized[];
     /** Snapshot timestamp of the submenu tree, seeded onto the menu Redux slice. */
     submenuGeneratedAt: string;
+    /**
+     * The `?tab=` value from the request URL, read SSR-first in `page.tsx` so a
+     * refreshed, bookmarked, or shared deep link opens on the right panel. An
+     * unknown or absent value resolves to `accounts`.
+     */
+    initialTab?: string;
 }
 
 /**
@@ -77,11 +83,13 @@ function tabFromUrl(url: string | undefined): TabId {
 /**
  * Account-history admin client shell.
  *
- * @param props - SSR submenu tree and its timestamp.
+ * @param props - SSR submenu tree, its timestamp, and the deep-linked initial tab.
  * @returns The page.
  */
-export function AccountHistoryAdminClient({ submenuTree, submenuGeneratedAt }: IAccountHistoryAdminClientProps) {
-    const [activeTab, setActiveTab] = useState<TabId>('accounts');
+export function AccountHistoryAdminClient({ submenuTree, submenuGeneratedAt, initialTab }: IAccountHistoryAdminClientProps) {
+    const [activeTab, setActiveTab] = useState<TabId>(
+        initialTab === 'settings' || initialTab === 'schedules' ? initialTab : 'accounts'
+    );
     const [stats, setStats] = useState<IAccountHistoryStatsView | null>(null);
 
     const loadStats = useCallback(async () => {
@@ -90,6 +98,25 @@ export function AccountHistoryAdminClient({ submenuTree, submenuGeneratedAt }: I
         } catch {
             /* primary data load failure surfaces on the empty table; leave stats as-is */
         }
+    }, []);
+
+    /**
+     * Activate the clicked tab and keep its URL a real deep link.
+     *
+     * `MenuNavClient` suppresses the <Link> navigation when `onItemSelect` is set
+     * (it preventDefaults the click), so without this the address bar would never
+     * reflect the selected tab and a refresh, bookmark, or shared link would fall
+     * back to the Accounts panel. Rewrite the address in place with
+     * `history.replaceState` — no server round-trip and no `useSearchParams`
+     * Suspense boundary — so the registered `?tab=` URLs become true deep links;
+     * `page.tsx` reads that value SSR-first to seed the panel on next load.
+     *
+     * @param item - The clicked submenu node, carrying its `?tab=` url.
+     */
+    const handleTabSelect = useCallback((item: MenuNodeSerialized) => {
+        const tab = tabFromUrl(item.url);
+        setActiveTab(tab);
+        window.history.replaceState(null, '', `/system/account-history?tab=${tab}`);
     }, []);
 
     useEffect(() => {
@@ -142,7 +169,7 @@ export function AccountHistoryAdminClient({ submenuTree, submenuGeneratedAt }: I
                     generatedAt={submenuGeneratedAt}
                     ariaLabel="Account history sections"
                     activeUrl={`/system/account-history?tab=${activeTab}`}
-                    onItemSelect={(item) => setActiveTab(tabFromUrl(item.url))}
+                    onItemSelect={handleTabSelect}
                 />
             </div>
 
