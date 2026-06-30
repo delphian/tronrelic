@@ -8,15 +8,21 @@
  * realized PnL and remaining lots with no awareness of ClickHouse, TronGrid, or
  * the registry.
  *
- * The defining rule is internal-transfer neutrality: a move whose counterparty is
- * another wallet the same user owns is not a disposal or an acquisition — basis
- * travels with the asset — so it is skipped for PnL. This is what lets per-wallet
- * and per-user PnL stay coherent and additive (see IValuationService).
+ * The defining rule is internal-transfer basis migration: a move whose
+ * counterparty is another wallet the same user owns is not a disposal or an
+ * acquisition — basis travels with the asset — so instead of being skipped, the
+ * consumed lots are *moved* from the source wallet's sub-book into the
+ * destination wallet's sub-book (matched by `txId`). Lots are kept per wallet
+ * (segregated FIFO), so a sale draws on the *selling* wallet's own basis, never a
+ * global pool. This is what lets per-wallet and per-user PnL stay coherent and
+ * additive: the per-user figures are exactly the sum of the per-wallet figures
+ * (an internal transfer nets out because the basis it removes from one sub-book
+ * it adds to another). See IValuationService.
  */
 
 /** One normalized value movement of a single asset, from the scope's viewpoint. */
 export interface ILedgerMove {
-    /** Transaction hash (diagnostic; not used for math). */
+    /** Transaction hash — the key that pairs an internal-out with its internal-in. */
     txId: string;
     /** UTC `YYYY-MM-DD` the move settled on — the price-lookup key. */
     day: string;
@@ -30,6 +36,8 @@ export interface ILedgerMove {
     direction: 'in' | 'out';
     /** True when the counterparty is another wallet the same user owns. */
     internal: boolean;
+    /** The owned wallet this move belongs to — the sub-book its lots are kept under. */
+    wallet: string;
 }
 
 /** Remaining position for one asset after the FIFO walk. */
@@ -42,10 +50,14 @@ export interface IRemainingPosition {
 
 /** Result of the cost-basis walk. */
 export interface ILotEngineResult {
-    /** Realized gain/loss summed over all external disposals, in USD. */
+    /** Realized gain/loss summed over every wallet's external disposals, in USD. */
     realizedPnlUsd: number;
-    /** Remaining lots per asset, for unrealized PnL and holding cost basis. */
+    /** Remaining lots per asset pooled across all wallets — basis and quantity summed. */
     remainingByAsset: Map<string, IRemainingPosition>;
+    /** Realized gain/loss per owning wallet, in USD — the additive per-wallet projection. */
+    realizedByWallet: Map<string, number>;
+    /** Remaining lots per `wallet → asset`, so a scope can sum only the wallets it covers. */
+    remainingByWalletAsset: Map<string, Map<string, IRemainingPosition>>;
 }
 
 /** One open FIFO lot: a quantity acquired at a known per-unit USD cost. */
@@ -55,69 +67,165 @@ interface IOpenLot {
 }
 
 /**
- * Walk moves chronologically, opening a lot on each external acquisition and
- * consuming lots FIFO on each external disposal, accumulating realized PnL.
- * Internal transfers are skipped (neutral). A disposal that exceeds available
- * lots (history older than the provider could reach) consumes what exists and
- * realizes the shortfall against zero basis — the known unreachable-history
- * limitation, surfaced rather than crashed.
+ * Rank moves that share a (block-granular) timestamp so the walk stays causal:
+ * acquisitions land before anything consumes them, an internal-out records its
+ * migration before the matching internal-in drains it, and a same-block
+ * internal-in is available before an external sale that might spend it. Across
+ * different timestamps this rank is irrelevant; migration pairs match by `txId`
+ * so adjacency is never required.
  *
- * @param moves - All in-scope moves; order-independent on input (sorted here).
+ * @param move - The move to rank.
+ * @returns 0 external-in, 1 internal-out, 2 internal-in, 3 external-out.
+ */
+function sameTimestampRank(move: ILedgerMove): number {
+    if (!move.internal) {
+        return move.direction === 'in' ? 0 : 3;
+    }
+    return move.direction === 'out' ? 1 : 2;
+}
+
+/**
+ * Consume up to `quantity` from a FIFO lot list in place, returning the lots
+ * actually consumed (for basis accounting or migration) and their total basis. A
+ * request exceeding available lots consumes what exists — the caller decides what
+ * the shortfall means (realized against zero basis for a sale, simply less basis
+ * to migrate for an internal transfer).
+ *
+ * @param lots - The wallet/asset lot list, mutated in place.
+ * @param quantity - Units to consume.
+ * @returns The consumed lots and their summed USD basis.
+ */
+function consumeFifo(lots: IOpenLot[], quantity: number): { consumed: IOpenLot[]; consumedBasis: number } {
+    let remaining = quantity;
+    let consumedBasis = 0;
+    const consumed: IOpenLot[] = [];
+    while (remaining > 1e-12 && lots.length > 0) {
+        const lot = lots[0];
+        const take = Math.min(remaining, lot.quantity);
+        consumed.push({ quantity: take, unitCostUsd: lot.unitCostUsd });
+        consumedBasis += take * lot.unitCostUsd;
+        lot.quantity -= take;
+        remaining -= take;
+        if (lot.quantity <= 1e-12) {
+            lots.shift();
+        }
+    }
+    return { consumed, consumedBasis };
+}
+
+/**
+ * Walk moves chronologically over per-wallet (segregated) FIFO sub-books: open a
+ * lot on each external acquisition, consume lots FIFO on each external disposal
+ * (accumulating realized PnL for that wallet), and on an internal transfer move
+ * the consumed lots from the source wallet's sub-book into the destination's,
+ * preserving their basis — matched by `txId` so the in and out sides reunite
+ * regardless of order. A disposal (or migration) that exceeds available lots
+ * (history older than the provider could reach) consumes what exists and realizes
+ * the shortfall against zero basis — the known unreachable-history limitation,
+ * surfaced rather than crashed.
+ *
+ * @param moves - All in-scope moves, internal and external; order-independent on
+ *   input (sorted here). Each must carry its owning `wallet`.
  * @param priceOnDay - USD price for an asset on a day, or null when unpriced.
- * @returns Realized PnL and the remaining lots per asset.
+ * @returns Realized PnL and remaining lots, both pooled and per wallet.
  */
 export function computeLots(
     moves: ILedgerMove[],
     priceOnDay: (asset: string, day: string) => number | null
 ): ILotEngineResult {
-    const lots = new Map<string, IOpenLot[]>();
-    let realizedPnlUsd = 0;
+    // wallet → asset → FIFO lots, and the realized total per wallet.
+    const books = new Map<string, Map<string, IOpenLot[]>>();
+    const realizedByWallet = new Map<string, number>();
+    // `${txId}|${asset}` → lots a source wallet released, awaiting the matching in.
+    const pendingMigration = new Map<string, IOpenLot[]>();
 
-    const ordered = [...moves].sort((a, b) => a.timestamp - b.timestamp);
+    /**
+     * Resolve (creating if absent) the FIFO lot list for one wallet/asset.
+     *
+     * @param wallet - Owning wallet.
+     * @param asset - Asset key.
+     * @returns The mutable lot list.
+     */
+    const lotsFor = (wallet: string, asset: string): IOpenLot[] => {
+        let assetBooks = books.get(wallet);
+        if (!assetBooks) {
+            assetBooks = new Map<string, IOpenLot[]>();
+            books.set(wallet, assetBooks);
+        }
+        let lots = assetBooks.get(asset);
+        if (!lots) {
+            lots = [];
+            assetBooks.set(asset, lots);
+        }
+        return lots;
+    };
+
+    const ordered = [...moves].sort(
+        (a, b) => a.timestamp - b.timestamp || sameTimestampRank(a) - sameTimestampRank(b)
+    );
     for (const move of ordered) {
-        if (move.internal || move.quantity <= 0) {
+        if (move.quantity <= 0) {
             continue;
         }
-        const price = priceOnDay(move.asset, move.day);
-        const assetLots = lots.get(move.asset) ?? [];
+        const lots = lotsFor(move.wallet, move.asset);
 
-        if (move.direction === 'in') {
-            assetLots.push({ quantity: move.quantity, unitCostUsd: price ?? 0 });
-            lots.set(move.asset, assetLots);
-            continue;
-        }
-
-        // Disposal: consume FIFO, realize proceeds minus consumed basis.
-        let remaining = move.quantity;
-        let consumedBasis = 0;
-        while (remaining > 0 && assetLots.length > 0) {
-            const lot = assetLots[0];
-            const take = Math.min(remaining, lot.quantity);
-            consumedBasis += take * lot.unitCostUsd;
-            lot.quantity -= take;
-            remaining -= take;
-            if (lot.quantity <= 1e-12) {
-                assetLots.shift();
+        if (move.internal) {
+            const key = `${move.txId}|${move.asset}`;
+            if (move.direction === 'out') {
+                // Release basis from the source sub-book; hold it for the matching in.
+                const { consumed } = consumeFifo(lots, move.quantity);
+                pendingMigration.set(key, [...(pendingMigration.get(key) ?? []), ...consumed]);
+            } else {
+                // Receive the migrated basis into the destination sub-book.
+                for (const lot of pendingMigration.get(key) ?? []) {
+                    lots.push({ quantity: lot.quantity, unitCostUsd: lot.unitCostUsd });
+                }
+                pendingMigration.delete(key);
             }
+            continue;
         }
-        lots.set(move.asset, assetLots);
+
+        const price = priceOnDay(move.asset, move.day);
+        if (move.direction === 'in') {
+            lots.push({ quantity: move.quantity, unitCostUsd: price ?? 0 });
+            continue;
+        }
+
+        // External disposal: consume FIFO, realize proceeds minus consumed basis.
+        const { consumedBasis } = consumeFifo(lots, move.quantity);
         if (price !== null) {
             const proceeds = move.quantity * price;
-            realizedPnlUsd += proceeds - consumedBasis;
+            realizedByWallet.set(move.wallet, (realizedByWallet.get(move.wallet) ?? 0) + (proceeds - consumedBasis));
         }
     }
 
+    const remainingByWalletAsset = new Map<string, Map<string, IRemainingPosition>>();
     const remainingByAsset = new Map<string, IRemainingPosition>();
-    for (const [asset, assetLots] of lots) {
-        let quantity = 0;
-        let costBasisUsd = 0;
-        for (const lot of assetLots) {
-            quantity += lot.quantity;
-            costBasisUsd += lot.quantity * lot.unitCostUsd;
+    for (const [wallet, assetBooks] of books) {
+        const perAsset = new Map<string, IRemainingPosition>();
+        for (const [asset, lots] of assetBooks) {
+            let quantity = 0;
+            let costBasisUsd = 0;
+            for (const lot of lots) {
+                quantity += lot.quantity;
+                costBasisUsd += lot.quantity * lot.unitCostUsd;
+            }
+            perAsset.set(asset, { quantity, costBasisUsd });
+            const pooled = remainingByAsset.get(asset) ?? { quantity: 0, costBasisUsd: 0 };
+            remainingByAsset.set(asset, {
+                quantity: pooled.quantity + quantity,
+                costBasisUsd: pooled.costBasisUsd + costBasisUsd
+            });
         }
-        remainingByAsset.set(asset, { quantity, costBasisUsd });
+        remainingByWalletAsset.set(wallet, perAsset);
     }
-    return { realizedPnlUsd, remainingByAsset };
+
+    let realizedPnlUsd = 0;
+    for (const realized of realizedByWallet.values()) {
+        realizedPnlUsd += realized;
+    }
+
+    return { realizedPnlUsd, remainingByAsset, realizedByWallet, remainingByWalletAsset };
 }
 
 /** A signed TRX delta on a UTC day (positive in, negative out). */

@@ -3,11 +3,12 @@
  *
  * Two reads, one ownership rule. The aggregate (`/me/portfolio`) values the
  * caller's whole verified wallet set; the zoom (`/me/wallets/:address/portfolio`)
- * values one owned wallet. Both pass the *full* owned set to the engine so a
- * transfer between the caller's own wallets nets out at either scope — the
- * per-user PnL correctness that single-address explorers cannot achieve. The zoom
- * gates on ownership and 404s an unowned address: knowing an address is never
- * authorization.
+ * values one owned wallet. Both pass the *full* owned set so the service walks
+ * every owned ledger and migrates an internal transfer's basis into the receiving
+ * wallet's sub-book — so the zoom of a wallet funded by another owned wallet
+ * carries real basis, not a phantom gain, and per-wallet figures sum to the
+ * aggregate. The zoom gates on ownership and 404s an unowned address: knowing an
+ * address is never authorization.
  */
 
 import type { Request, Response } from 'express';
@@ -65,7 +66,8 @@ export class ValuationUserController {
     /**
      * GET /me/wallets/:address/portfolio — the same metric set scoped to one
      * owned wallet. 404s an address the caller has not verified. The full owned
-     * set is still passed so internal transfers out of this wallet stay neutral.
+     * set is still passed so an internal transfer's basis migrates to this wallet
+     * rather than being booked as a phantom acquisition or gain.
      *
      * @param req - Express request; `req.userId` from `requireLogin`, `:address` the wallet.
      * @param res - Express response; emits an `IPortfolioSummary`.

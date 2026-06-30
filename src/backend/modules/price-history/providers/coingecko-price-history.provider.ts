@@ -103,13 +103,16 @@ export class CoinGeckoPriceHistoryProvider implements IPriceHistoryProvider {
     }
 
     /**
-     * Seed a dense recent window via the ranged endpoint. Returns empty (never
-     * throws) on any failure so one unpriceable asset cannot abort a tick.
+     * Seed a dense recent window via the ranged endpoint. Throws on a transient
+     * transport failure (timeout, rate-limit, 5xx) so the seed tick retries on
+     * the next cron instead of flipping `recentSeeded` with empty cursors and
+     * permanently stranding the asset. Returns empty only for a genuinely
+     * unlisted asset (404), which is a stable "no prices exist" answer.
      *
      * @param asset - The asset to price.
      * @param fromDay - Inclusive start UTC `YYYY-MM-DD`.
      * @param toDay - Inclusive end UTC `YYYY-MM-DD`.
-     * @returns Daily points in the range, oldest first; empty when unavailable.
+     * @returns Daily points in the range, oldest first; empty when the asset is unlisted.
      */
     async fetchRange(asset: PriceAsset, fromDay: string, toDay: string): Promise<IPricePoint[]> {
         let points: IPricePoint[] = [];
@@ -127,7 +130,12 @@ export class CoinGeckoPriceHistoryProvider implements IPriceHistoryProvider {
             );
             points = this.collapseToDaily(asset, response.data?.prices ?? []);
         } catch (error) {
-            this.logger.warn({ error, asset, fromDay, toDay }, 'CoinGecko range fetch failed; treating as unavailable');
+            const status = (error as { response?: { status?: number } })?.response?.status;
+            if (status !== 404) {
+                this.logger.warn({ error, asset, fromDay, toDay }, 'CoinGecko range fetch failed; rethrowing so the seed tick retries instead of stranding the asset');
+                throw error;
+            }
+            this.logger.info({ asset, fromDay, toDay }, 'CoinGecko range: asset unlisted (404); treating as unavailable');
         }
         return points;
     }

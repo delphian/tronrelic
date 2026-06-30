@@ -1348,9 +1348,10 @@ export class AccountHistoryService implements IAccountHistoryService {
 
     /**
      * Capture a bounded slice of balance snapshots. Picks tracked, unpaused
-     * accounts whose last snapshot day is not today (round-robin via the cursor),
-     * probes each through the provider, and writes its snapshot. A per-account
-     * failure is logged and isolated so one bad account does not abort the tick.
+     * accounts whose last snapshot day is not today, oldest snapshot day first
+     * so selection rotates fairly across UTC days, probes each through the
+     * provider, and writes its snapshot. A per-account failure is logged and
+     * isolated so one bad account does not abort the tick.
      * See {@link IAccountHistoryService.runSnapshotTick}.
      */
     public async runSnapshotTick(): Promise<void> {
@@ -1369,12 +1370,21 @@ export class AccountHistoryService implements IAccountHistoryService {
             .toArray();
         const progressDocs = await this.database
             .getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION)
-            .find({})
+            .find({ address: { $in: tracked.map((t) => t.address) } })
             .toArray();
         const lastSnapshotByAddress = new Map(progressDocs.map((doc) => [doc.address, doc.lastSnapshotDay]));
 
         const due = tracked
             .filter((account) => lastSnapshotByAddress.get(account.address) !== today)
+            // Oldest snapshot first (never-snapshotted, mapped to '', sorts first) so the
+            // tick rotates fairly across UTC days instead of re-taking the first accounts
+            // in natural collection order and starving those beyond the per-day ceiling —
+            // mirrors the ingest/forward-sync selectors above.
+            .sort((a, b) => {
+                const aDay = lastSnapshotByAddress.get(a.address) ?? '';
+                const bDay = lastSnapshotByAddress.get(b.address) ?? '';
+                return aDay < bDay ? -1 : aDay > bDay ? 1 : 0;
+            })
             .slice(0, settings.accountsPerTick);
 
         for (const account of due) {

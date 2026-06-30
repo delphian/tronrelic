@@ -17,7 +17,9 @@ Computes per-user **portfolio** summaries — net worth, holdings, allocation, r
 
 ## The Scope Rule (Why This Is Per-User)
 
-Cost-basis PnL is inherently **per user**, not per wallet: moving a token between two wallets the same user owns is neither a disposal nor an acquisition. Every query carries both the in-scope `addresses` (one wallet for the zoom, all for the aggregate) **and** the full `ownedAddresses` set. The owned set classifies each transfer's counterparty as *internal* (neutral, basis-preserving — skipped for PnL) or *external* (a real acquisition/disposal). The same metric set is produced at either scope; only the address filter differs, so per-wallet PnL and per-user PnL stay coherent and additive. Single-address explorers cannot do this — they would book a phantom gain on every self-transfer.
+Cost-basis PnL is inherently **per user**, not per wallet: moving a token between two wallets the same user owns is neither a disposal nor an acquisition. Every query carries both the in-scope `addresses` (one wallet for the zoom, all for the aggregate) **and** the full `ownedAddresses` set, which classifies each transfer's counterparty as *internal* or *external* (a real acquisition/disposal).
+
+The engine keeps lots in **per-wallet (segregated) sub-books** and treats an *internal* transfer as a **basis migration**: the source wallet's consumed lots move, basis intact, into the receiving wallet's sub-book (matched by `txId`). A sale therefore draws on the *selling* wallet's own basis, never a global pool, so per-user figures are exactly the **sum** of the per-wallet figures — coherent and additive. The service walks the **full owned set's** ledgers even for a single-wallet zoom (basis can only migrate in if the source ledger is read); holdings come only from the report-scope snapshots. Single-address explorers cannot do this — they book a phantom gain on the receiving side of every internal transfer.
 
 ## Source Map
 
