@@ -212,6 +212,19 @@ export async function runForwardSync(): Promise<void> {
 }
 
 /**
+ * Trigger one manual value-transfer ledger backfill tick. Populates internal and
+ * token legs for accounts that completed their backfill before value legs were
+ * dual-written; a one-time, self-quiescing drain. Surfaces the cron-driven
+ * `account-history:ledger-backfill` job so an admin can force progress without
+ * waiting for it.
+ *
+ * @returns Resolves when the tick has been requested.
+ */
+export async function runLedgerBackfill(): Promise<void> {
+    await parse(await fetch(`${BASE}/ingest/backfill-ledger/run`, { method: 'POST' }), 'run ledger backfill');
+}
+
+/**
  * Read a page of an account's stored history.
  *
  * @param address - Base58 address.

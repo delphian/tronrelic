@@ -565,4 +565,18 @@ export interface IAccountHistoryService {
      * provider is available.
      */
     runForwardSyncTick(): Promise<void>;
+
+    /**
+     * Backfill the value-transfer ledger for accounts that finished their backfill
+     * before value legs were dual-written. Native legs are reconstructed from
+     * stored rows by a one-time migration; this tick covers the two leg families
+     * the provider must re-fetch — historical internal legs and token legs (whose
+     * `log_index` key lives only on the events endpoint) — for the stalest
+     * completed accounts that still owe them. Idempotent and self-quiescing: a
+     * legacy account drops out once its internal source exhausts and its token
+     * sweep finishes, and accounts completing under current code never enter.
+     * Invoked by its own scheduler job; also callable for a manual run. A no-op
+     * when `ingestionEnabled` is false or no provider is available.
+     */
+    runLedgerBackfillTick(): Promise<void>;
 }

@@ -12,7 +12,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { Plus, Play, Trash2, Pause, PlayCircle, RefreshCw } from 'lucide-react';
+import { Plus, Play, Trash2, Pause, PlayCircle, RefreshCw, Layers } from 'lucide-react';
 import { Stack } from '../../../../components/layout';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
@@ -26,6 +26,7 @@ import {
     setAccountPaused,
     runIngestion,
     runForwardSync,
+    runLedgerBackfill,
     type IAccountHistoryStatsView,
     type AccountIngestionStatus
 } from '../../../../modules/account-history';
@@ -112,6 +113,15 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
         }
     }, [push]);
 
+    const runLedgerBackfillNow = useCallback(async () => {
+        try {
+            await runLedgerBackfill();
+            push({ tone: 'success', title: 'Ledger backfill tick started', description: 'Populating internal and token legs for accounts completed before value legs were recorded.' });
+        } catch (err) {
+            push({ tone: 'danger', title: 'Failed to run ledger backfill', description: err instanceof Error ? err.message : String(err) });
+        }
+    }, [push]);
+
     const accounts = stats?.accounts ?? [];
 
     return (
@@ -139,6 +149,9 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                 </Button>
                 <Button variant="secondary" size="sm" onClick={() => { void runForwardNow(); }}>
                     <RefreshCw size={16} /> Run forward sync
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => { void runLedgerBackfillNow(); }}>
+                    <Layers size={16} /> Run ledger backfill
                 </Button>
             </div>
 

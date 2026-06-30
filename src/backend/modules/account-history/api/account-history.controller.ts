@@ -150,6 +150,20 @@ export class AccountHistoryController {
     };
 
     /**
+     * POST /ingest/backfill-ledger/run — manually advance the value-transfer
+     * ledger backfill by one bounded tick, populating internal and token legs for
+     * accounts that completed before value legs were dual-written.
+     */
+    runLedgerBackfill = async (_req: Request, res: Response): Promise<void> => {
+        try {
+            await this.service.runLedgerBackfillTick();
+            res.status(202).json({ started: true });
+        } catch (error) {
+            this.fail(res, 500, 'Failed to run ledger backfill tick', error);
+        }
+    };
+
+    /**
      * Log and emit a uniform error response.
      *
      * @param res - The response to write.
