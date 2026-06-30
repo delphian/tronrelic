@@ -39,11 +39,18 @@ const SUBMENU_NAMESPACE = 'profile';
  * tab id, defaulting to `profile` for an unrecognized or missing value so a
  * malformed node or stale link can never leave the hub on a blank panel.
  *
- * @param value - A `?tab=` query value or a full node url carrying one.
+ * Next.js parses a repeated query key (`/profile?tab=wallets&tab=profile`) into
+ * a `string[]`, so the SSR `initialTab` can arrive as an array even though the
+ * route types it as a string. Collapse that to the first entry before parsing,
+ * so a crafted URL falls back to the default tab instead of throwing on `.match`.
+ *
+ * @param value - A `?tab=` query value, a full node url carrying one, or the
+ *   repeated-key array Next.js may hand the SSR `initialTab`.
  * @returns The matching tab id.
  */
-function resolveTab(value: string | undefined): ProfileTabId {
-    const tab = value?.match(/[?&]tab=([^&]+)/)?.[1] ?? value;
+function resolveTab(value: string | string[] | undefined): ProfileTabId {
+    const raw = Array.isArray(value) ? value[0] : value;
+    const tab = raw?.match(/[?&]tab=([^&]+)/)?.[1] ?? raw;
     return tab === 'wallets' ? 'wallets' : 'profile';
 }
 
@@ -181,46 +188,40 @@ export function ProfileView({
                 />
             </div>
 
-            {activeTab === 'profile' && (
-                <>
-                    <Section gap="sm">
-                        <h2>Account</h2>
-                        <Card>
-                            <div className={styles.account}>
-                                <div className={styles.identity}>
-                                    <span className="text-muted">Signed in as</span>
-                                    <strong className={styles.identity_value}>{identityLabel(identity)}</strong>
-                                    {identity.emailVerified && (
-                                        <Badge tone="success">
-                                            <ShieldCheck size={14} aria-hidden /> Email verified
-                                        </Badge>
-                                    )}
-                                </div>
-                                <Button
-                                    variant="danger"
-                                    size="sm"
-                                    icon={<LogOut size={18} aria-hidden />}
-                                    onClick={handleSignOut}
-                                    loading={signingOut}
-                                >
-                                    Sign out
-                                </Button>
-                            </div>
-                        </Card>
-                    </Section>
+            <Section gap="sm" style={{ display: activeTab === 'profile' ? undefined : 'none' }}>
+                <h2>Account</h2>
+                <Card>
+                    <div className={styles.account}>
+                        <div className={styles.identity}>
+                            <span className="text-muted">Signed in as</span>
+                            <strong className={styles.identity_value}>{identityLabel(identity)}</strong>
+                            {identity.emailVerified && (
+                                <Badge tone="success">
+                                    <ShieldCheck size={14} aria-hidden /> Email verified
+                                </Badge>
+                            )}
+                        </div>
+                        <Button
+                            variant="danger"
+                            size="sm"
+                            icon={<LogOut size={18} aria-hidden />}
+                            onClick={handleSignOut}
+                            loading={signingOut}
+                        >
+                            Sign out
+                        </Button>
+                    </div>
+                </Card>
+            </Section>
 
-                    <Section gap="sm">
-                        <h2>Notifications</h2>
-                        <PreferencesPanel />
-                    </Section>
-                </>
-            )}
+            <Section gap="sm" style={{ display: activeTab === 'profile' ? undefined : 'none' }}>
+                <h2>Notifications</h2>
+                <PreferencesPanel />
+            </Section>
 
-            {activeTab === 'wallets' && (
-                <Section gap="sm">
-                    <WalletManager initialWallets={initialWallets} initialProgress={initialProgress} />
-                </Section>
-            )}
+            <Section gap="sm" style={{ display: activeTab === 'wallets' ? undefined : 'none' }}>
+                <WalletManager initialWallets={initialWallets} initialProgress={initialProgress} />
+            </Section>
         </Stack>
     );
 }
