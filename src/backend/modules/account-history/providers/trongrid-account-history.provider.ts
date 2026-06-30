@@ -24,7 +24,7 @@
  */
 
 import type { IBlockTransaction, IValueTransfer } from '@/types';
-import { TronGridClient } from '../../blockchain/tron-grid.client.js';
+import { TronGridClient, type TronGridEvent } from '../../blockchain/tron-grid.client.js';
 import {
     normalizeContractType,
     resolveOwnerAddress,
@@ -129,6 +129,33 @@ export class TronGridAccountHistoryProvider implements IAccountHistoryProvider {
     }
 
     /**
+     * Fetch the **token** value legs of a single transaction from the
+     * per-transaction events endpoint — the only source that carries a TRC20
+     * transfer's protocol `log_index`. Each `Transfer` log involving `account` (as
+     * sender or recipient) becomes a `token_event` {@link IValueTransfer} whose
+     * `legKey` is that `log_index`, so two distinct same-token transfers in one
+     * transaction get distinct keys and never collapse under the ledger's natural
+     * key — the collision a transaction-endpoint derivation cannot avoid because
+     * those endpoints omit the index.
+     *
+     * Driven per token-bearing transaction discovered by the `trc20` walk, so it
+     * routes through the shared rate limiter and never fetches events for a
+     * transaction with no token activity. Idempotent: re-fetching reproduces the
+     * same log-index-keyed legs, which ReplacingMergeTree absorbs.
+     *
+     * @param account - Base58 tracked account; only legs it participates in are returned.
+     * @param txId - Parent transaction hash whose event logs to read.
+     * @returns The transaction's account-involving token legs, keyed by log index.
+     */
+    async fetchTokenTransferLegs(account: string, txId: string): Promise<IValueTransfer[]> {
+        const client = TronGridClient.getInstance();
+        const events = await client.getTransactionEvents(txId);
+        return events
+            .map((event) => TronGridAccountHistoryProvider.toTokenTransferLeg(account, txId, event))
+            .filter((leg): leg is IValueTransfer => leg !== null);
+    }
+
+    /**
      * Map one raw internal-transaction item to its value legs. A rejected internal
      * transfer moved nothing and is dropped; a `call_value` map with several assets
      * yields one leg each, all sharing the internal-transaction hash as `legKey` and
@@ -172,6 +199,56 @@ export class TronGridAccountHistoryProvider implements IAccountHistoryProvider {
             });
         }
         return transfers;
+    }
+
+    /**
+     * Map one transaction event log to a token value leg, or null when the log is
+     * not an account-involving TRC20 `Transfer`. Filters to `Transfer` events whose
+     * decoded `value` is present (skipping `Approval` and other value-less logs) and
+     * whose sender or recipient is the tracked account. Event addresses arrive in
+     * 20-byte EVM form (`0x…`); {@link eventAddressToBase58} normalizes them to base58
+     * to match the rest of the ledger. The `event_index` becomes the protocol
+     * `log_index` leg key, the discriminator that keeps distinct same-token legs apart.
+     *
+     * @param account - Base58 tracked account used to filter and scope the leg.
+     * @param txId - Parent transaction hash.
+     * @param event - One raw transaction event log.
+     * @returns A token value leg, or null to drop the log.
+     */
+    private static toTokenTransferLeg(account: string, txId: string, event: TronGridEvent): IValueTransfer | null {
+        if (event.event_name !== 'Transfer') {
+            return null;
+        }
+        const result = event.result ?? {};
+        const rawValue = result.value;
+        if (rawValue == null) {
+            return null;
+        }
+        const from = eventAddressToBase58(result.from);
+        const to = eventAddressToBase58(result.to);
+        if (!from || !to) {
+            return null;
+        }
+        if (from !== account && to !== account) {
+            return null;
+        }
+        const assetId = event.contract_address;
+        if (!assetId) {
+            return null;
+        }
+        const legKey = event.event_index != null ? String(event.event_index) : '';
+        return {
+            txId,
+            origin: 'token_event',
+            legKey,
+            assetType: 'TRC20',
+            assetId,
+            from,
+            to,
+            amountRaw: String(rawValue),
+            timestamp: new Date(event.block_timestamp ?? 0),
+            blockNumber: event.block_number ?? 0
+        };
     }
 
     /**
@@ -361,46 +438,52 @@ export function toAccountTransactionRow(account: string, tx: IBlockTransaction, 
 }
 
 /**
- * Derive the value legs carried by a top-level transaction, as source-independent
- * {@link IValueTransfer}s. The complement of {@link IAccountHistoryProvider.fetchInternalTransfersPage}:
- * together they give native, token, and internal legs uniformly, so a value ledger
- * sees every movement regardless of which contract type or endpoint produced it.
+ * Convert a transaction-event address to base58. Event logs encode addresses in
+ * 20-byte EVM form (`0x…`, without Tron's `41` prefix), so
+ * `TronGridClient.toBase58Address` — which expects the 41-prefixed form — would
+ * misconvert them; this prepends the `41` prefix first. An address already in
+ * base58 (`T…`) is returned unchanged.
  *
- * A decoded TRC20 transfer (the `transfer` method with a value, from the trc20
- * endpoint or an outbound native call) becomes a `token_event` leg; a genuine
- * native-TRX move (`TransferContract` amount or `TriggerSmartContract` call-value)
- * becomes a `native` leg. Everything else carries no spendable value here —
- * staking, delegation, votes, and TRC10 `TransferAssetContract` (whose token id is
- * not on `IBlockTransaction`) — and yields nothing, so the TRX series is never
- * polluted by a non-TRX `amount_sun`. `legKey` is left empty for both: the native
- * leg is unique per transaction, and a token leg's log index is deferred to the
- * future events source (so identical same-token twins idempotently collapse).
+ * @param raw - The event's hex (or already-base58) address.
+ * @returns The base58 address, or null when absent or unconvertible.
+ */
+function eventAddressToBase58(raw: unknown): string | null {
+    if (typeof raw !== 'string' || raw.length === 0) {
+        return null;
+    }
+    if (raw.startsWith('T')) {
+        return raw;
+    }
+    const body = raw.startsWith('0x') ? raw.slice(2) : raw;
+    const hex = body.length === 40 ? `41${body}` : body;
+    return TronGridClient.toBase58Address(hex);
+}
+
+/**
+ * Derive the **native TRX** value leg carried by a top-level transaction, as a
+ * source-independent {@link IValueTransfer}. Two siblings complete the picture:
+ * {@link IAccountHistoryProvider.fetchInternalTransfersPage} supplies internal
+ * (TVM) legs and {@link IAccountHistoryProvider.fetchTokenTransferLegs} supplies
+ * token (`token_event`) legs — together they give native, internal, and token legs
+ * uniformly, so a value ledger sees every movement regardless of origin.
+ *
+ * Token legs are deliberately **not** derived here. A decoded transfer the
+ * transaction endpoints surface carries no protocol `log_index`, so a token leg
+ * built from it could only use an empty `legKey` — and two distinct same-token
+ * transfers in one transaction would then collapse under the ledger's natural key.
+ * The authoritative token leg comes from the per-transaction events endpoint (which
+ * does carry `log_index`); see {@link IAccountHistoryProvider.fetchTokenTransferLegs}.
+ *
+ * A genuine native-TRX move (`TransferContract` amount or `TriggerSmartContract`
+ * call-value) becomes a `native` leg. Everything else carries no spendable native
+ * value here — staking, delegation, votes, TRC10 `TransferAssetContract`, and bare
+ * token calls — and yields nothing, so the TRX series is never polluted by a
+ * non-TRX `amount_sun`. `legKey` is empty: the native leg is unique per transaction.
  *
  * @param tx - The normalized top-level transaction.
- * @returns Zero or one value transfer (top-level transactions carry at most one value leg).
+ * @returns Zero or one native value transfer (a top-level transaction carries at most one native leg).
  */
 export function toValueTransfers(tx: IBlockTransaction): IValueTransfer[] {
-    const params = tx.contract?.parameters;
-    const isTokenTransfer = !!tx.contract?.address && params != null && params.value != null && tx.contract.method === 'transfer';
-    if (isTokenTransfer) {
-        const decimals = typeof params!.decimals === 'number' ? params!.decimals : undefined;
-        return [
-            {
-                txId: tx.txId,
-                origin: 'token_event',
-                legKey: '',
-                assetType: 'TRC20',
-                assetId: tx.contract!.address!,
-                from: tx.from.address,
-                to: tx.to.address,
-                amountRaw: String(params!.value),
-                assetDecimals: decimals,
-                timestamp: tx.timestamp,
-                blockNumber: tx.blockNumber
-            }
-        ];
-    }
-
     if (typeof tx.amountSun === 'number' && tx.amountSun > 0 && TRX_VALUE_CONTRACT_TYPES.has(tx.type)) {
         return [
             {

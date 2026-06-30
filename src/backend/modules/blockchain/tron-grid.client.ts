@@ -243,6 +243,12 @@ export interface TronGridEvent {
     contract_address?: string;
     result?: Record<string, unknown>;
     transaction_id: string;
+    /** Ordinal of this log within its parent transaction — the protocol `log_index`. */
+    event_index?: number;
+    /** Including block height. */
+    block_number?: number;
+    /** Block execution time in epoch milliseconds. */
+    block_timestamp?: number;
 }
 
 export interface TronGridAccountResourceResponse {
