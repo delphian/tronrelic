@@ -69,7 +69,10 @@ export class ProvidersController {
             const updates: Partial<ITronScanProviderConfig> = {};
 
             if (typeof body.baseUrl === 'string' && body.baseUrl.trim()) {
-                updates.baseUrl = body.baseUrl.trim();
+                // Strip trailing slashes so the client's `${baseUrl}${path}` join
+                // can't produce a double-slash path (e.g. `//api/trx/volume`) from
+                // an operator pasting a URL with a trailing `/`.
+                updates.baseUrl = body.baseUrl.trim().replace(/\/+$/, '');
             }
             if (body.priceSource === 'coinmarketcap' || body.priceSource === 'coingecko') {
                 updates.priceSource = body.priceSource;

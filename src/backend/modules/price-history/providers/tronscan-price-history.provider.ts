@@ -40,15 +40,17 @@ export class TronScanPriceHistoryProvider implements IPriceHistoryProvider {
 
     /**
      * Fetch a daily TRX price range from TronScan, collapsed to one close per UTC
-     * day. Returns empty for any non-TRX asset (TronScan has no token history) and
-     * when the provider is disabled in config. A transport failure propagates so
-     * the calling tick retries rather than flipping an asset to seeded-but-empty on
-     * a transient error.
+     * day. Returns empty only for a non-TRX asset (TronScan has no token history) —
+     * a stable "no prices exist" answer the service degrades to seeded-but-empty. A
+     * disabled provider or a transport failure instead throws, so the calling tick
+     * retries rather than flipping an asset to seeded/backfill-complete on a pause
+     * the operator will reverse (which would otherwise wedge the cursor state and
+     * require manual Mongo repair to resume).
      *
      * @param asset - The asset to price.
      * @param fromDay - Inclusive start UTC `YYYY-MM-DD`.
      * @param toDay - Inclusive end UTC `YYYY-MM-DD`.
-     * @returns Daily points in the range, oldest first; empty for tokens/disabled.
+     * @returns Daily points in the range, oldest first; empty for tokens. Throws when disabled.
      */
     async fetchRange(asset: PriceAsset, fromDay: string, toDay: string): Promise<IPricePoint[]> {
         if (asset !== PRICE_ASSET_TRX) {
@@ -56,7 +58,7 @@ export class TronScanPriceHistoryProvider implements IPriceHistoryProvider {
         }
         const config = await ProviderConfigService.getInstance().getTronScanConfig();
         if (!config.enabled) {
-            return [];
+            throw new Error('TronScan price-history provider is disabled; skipping tick to keep cursor state resumable');
         }
         const startMs = utcDayStartSeconds(fromDay) * MS_PER_SECOND;
         const endMs = utcDayEndSeconds(toDay) * MS_PER_SECOND;
@@ -66,9 +68,10 @@ export class TronScanPriceHistoryProvider implements IPriceHistoryProvider {
 
     /**
      * Fetch a single day's TRX close. Implemented as a one-day range so deep-walk
-     * and forward callers share one mapping path. Returns null for tokens, when
-     * disabled, or when TronScan has no row for the day (the pre-listing floor that
-     * signals the backfill to complete).
+     * and forward callers share one mapping path. Returns null for tokens or when
+     * TronScan has no row for the day (the pre-listing floor that signals the
+     * backfill to complete); a disabled provider throws via the delegated range
+     * call so the deep walk retries rather than booking the pause as listing-reached.
      *
      * Selects the row whose mapped day equals the requested day rather than taking
      * the last point: TronScan's end bound is loose (a one-day range query can
@@ -91,8 +94,13 @@ export class TronScanPriceHistoryProvider implements IPriceHistoryProvider {
     /**
      * Collapse TronScan's daily rows to one `IPricePoint` per UTC day, keyed by the
      * row's end-of-day `time`. Rows are already daily; the map dedupes defensively
-     * and the sort guarantees oldest-first regardless of upstream order. Rows whose
-     * `close` is not a finite number are skipped.
+     * and the sort guarantees oldest-first regardless of upstream order. Rows that
+     * are missing, carry a non-numeric `time`, or whose `close` is not a positive
+     * finite number are skipped — the client casts the upstream shape without
+     * runtime validation, and an unguarded bad `time` would throw via
+     * `toUtcDay`→`toISOString` (or silently book a `1970-01-01` price for `null`),
+     * stalling the backward backfill on that asset since its cursor only advances
+     * on a clean write.
      *
      * @param asset - The asset the points belong to (always TRX here).
      * @param rows - Raw TronScan volume rows.
@@ -104,6 +112,9 @@ export class TronScanPriceHistoryProvider implements IPriceHistoryProvider {
     ): IPricePoint[] {
         const byDay = new Map<string, number>();
         for (const row of rows) {
+            if (!row || typeof row.time !== 'number' || !Number.isFinite(row.time)) {
+                continue;
+            }
             const priceUsd = Number(row.close);
             if (!Number.isFinite(priceUsd) || priceUsd <= 0) {
                 continue;
