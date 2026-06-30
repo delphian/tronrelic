@@ -157,6 +157,12 @@ export class ValuationService implements IValuationService {
         ownedSet: Set<string>,
         tokenMeta: Map<string, ITokenMeta>
     ): ILedgerMove | null {
+        // A self-transfer (from === to) nets to zero — it neither moves basis nor
+        // changes the wallet's balance — and would otherwise leave a dangling
+        // migration (an internal-out with no matching in). Drop it outright.
+        if (tx.from.address === tx.to.address) {
+            return null;
+        }
         const direction: 'in' | 'out' = tx.from.address === scopeAddress ? 'out' : tx.to.address === scopeAddress ? 'in' : 'in';
         const counterparty = direction === 'out' ? tx.to.address : tx.from.address;
         const day = tx.timestamp.toISOString().slice(0, 10);
@@ -172,7 +178,7 @@ export class ValuationService implements IValuationService {
                 tokenMeta.set(asset, { symbol, decimals });
             }
             const quantity = Number(params!.value) / 10 ** decimals;
-            return { txId: tx.txId, day, timestamp: tx.timestamp.getTime(), asset, quantity, direction, internal };
+            return { txId: tx.txId, day, timestamp: tx.timestamp.getTime(), asset, quantity, direction, internal, wallet: scopeAddress };
         }
 
         if (typeof tx.amountSun === 'number' && tx.amountSun > 0) {
@@ -183,7 +189,8 @@ export class ValuationService implements IValuationService {
                 asset: PRICE_ASSET_TRX,
                 quantity: tx.amountSun / SUN_PER_TRX,
                 direction,
-                internal
+                internal,
+                wallet: scopeAddress
             };
         }
         return null;
@@ -203,15 +210,17 @@ export class ValuationService implements IValuationService {
         }
 
         const ownedSet = new Set(query.ownedAddresses);
+        const reportSet = new Set(query.addresses);
         const tokenMeta = new Map<string, ITokenMeta>();
         const moves: ILedgerMove[] = [];
-        const snapshots: IAccountBalanceSnapshot[] = [];
 
-        for (const address of query.addresses) {
-            const snapshot = await accountHistory.getLatestSnapshot(address);
-            if (snapshot) {
-                snapshots.push(snapshot);
-            }
+        // Read the ledgers of the FULL owned set, not just the reported addresses:
+        // an internal transfer's basis can only migrate to the receiving wallet if
+        // the *source* wallet's ledger is also walked. Reporting holdings, by
+        // contrast, draws only on the report-scope snapshots below. (For the
+        // aggregate scope the two sets are identical, so this is a no-op there.)
+        const readSet = Array.from(new Set([...query.ownedAddresses, ...query.addresses]));
+        for (const address of readSet) {
             const ledger = await this.readLedger(accountHistory, address);
             for (const tx of ledger) {
                 const move = ValuationService.toMove(tx, address, ownedSet, tokenMeta);
@@ -221,11 +230,27 @@ export class ValuationService implements IValuationService {
             }
         }
 
+        // Current holdings come only from the report-scope snapshots.
+        const snapshots: IAccountBalanceSnapshot[] = [];
+        for (const address of query.addresses) {
+            const snapshot = await accountHistory.getLatestSnapshot(address);
+            if (snapshot) {
+                snapshots.push(snapshot);
+            }
+        }
+
         // Make sure every held/seen token gets priced on future backfill ticks.
-        const tokenAssets = Array.from(new Set(moves.map((m) => m.asset).filter((a) => a !== PRICE_ASSET_TRX)));
+        // Union snapshot-held assets with ledger-move assets: a token acquired
+        // outside the scan window appears in the snapshot but never in `moves`, and
+        // would otherwise never get a price-history cursor and stay unpriced.
+        const snapshotAssets = snapshots.flatMap((s) => s.tokenBalances.map((t) => t.asset));
+        const tokenAssets = Array.from(
+            new Set([...moves.map((m) => m.asset), ...snapshotAssets].filter((a) => a !== PRICE_ASSET_TRX))
+        );
         await priceHistory.ensureAssetsTracked(tokenAssets);
 
-        // Batch historical prices per asset for the external moves.
+        // Batch historical prices per asset for the external moves (internal
+        // transfers carry migrated basis and need no price lookup).
         const externalMoves = moves.filter((m) => !m.internal);
         const priceMap = new Map<string, number>();
         const assetsToPrice = new Set(externalMoves.map((m) => m.asset));
@@ -241,7 +266,26 @@ export class ValuationService implements IValuationService {
         }
         const priceOnDay = (asset: string, day: string): number | null => priceMap.get(`${asset}|${day}`) ?? null;
 
-        const lots = computeLots(externalMoves, priceOnDay);
+        // The engine sees all moves (it migrates internal-transfer basis between
+        // wallet sub-books); the realized PnL and remaining basis are then summed
+        // over only the report-scope wallets, so per-wallet and per-user stay
+        // additive.
+        const lots = computeLots(moves, priceOnDay);
+        const realizedPnlUsd = query.addresses.reduce((sum, wallet) => sum + (lots.realizedByWallet.get(wallet) ?? 0), 0);
+        const remainingForScope = new Map<string, { quantity: number; costBasisUsd: number }>();
+        for (const wallet of query.addresses) {
+            const perAsset = lots.remainingByWalletAsset.get(wallet);
+            if (!perAsset) {
+                continue;
+            }
+            for (const [asset, position] of perAsset) {
+                const acc = remainingForScope.get(asset) ?? { quantity: 0, costBasisUsd: 0 };
+                remainingForScope.set(asset, {
+                    quantity: acc.quantity + position.quantity,
+                    costBasisUsd: acc.costBasisUsd + position.costBasisUsd
+                });
+            }
+        }
 
         // Aggregate current holdings from the authoritative snapshots.
         const today = ValuationService.today();
@@ -272,7 +316,7 @@ export class ValuationService implements IValuationService {
             currentPrice.set(asset, series.length > 0 ? series[series.length - 1].priceUsd : null);
         }
 
-        const holdings = ValuationService.buildHoldings(trxQty, tokenQty, tokenMeta, currentPrice, lots.remainingByAsset);
+        const holdings = ValuationService.buildHoldings(trxQty, tokenQty, tokenMeta, currentPrice, remainingForScope);
         const pricedHoldings = holdings.filter((h) => h.priceUsd !== null);
         const netWorthUsd = pricedHoldings.reduce((sum, h) => sum + h.valueUsd, 0);
         const unrealizedPnlUsd = pricedHoldings.reduce((sum, h) => sum + h.unrealizedPnlUsd, 0);
@@ -280,12 +324,15 @@ export class ValuationService implements IValuationService {
             .map((h) => ({ asset: h.asset, symbol: h.symbol, valueUsd: h.valueUsd, fraction: netWorthUsd > 0 ? h.valueUsd / netWorthUsd : 0 }))
             .sort((a, b) => b.valueUsd - a.valueUsd);
         const unpricedAssets = holdings.filter((h) => h.priceUsd === null && h.quantity > 0).map((h) => h.asset);
-        const totalValueOfHeld = holdings.reduce((sum, h) => sum + (h.priceUsd !== null ? h.valueUsd : 0), 0);
-        const pricedValueFraction = holdings.length === 0 ? 1 : totalValueOfHeld > 0 || unpricedAssets.length === 0 ? 1 : netWorthUsd / (netWorthUsd + unpricedAssets.length);
+        const pricedCount = holdings.length - unpricedAssets.length;
+        const pricedValueFraction = holdings.length > 0 ? pricedCount / holdings.length : 1;
 
-        // USD balance-over-time, TRX-anchored (see lot-engine notes).
+        // USD balance-over-time, TRX-anchored (see lot-engine notes). Scoped to the
+        // reported wallets only — `moves` now spans the whole owned set, but a
+        // wallet's balance curve must reflect just its own TRX deltas (internal
+        // included, since an internal transfer still moves one wallet's balance).
         const trxDeltas: IDailyTrxDelta[] = moves
-            .filter((m) => m.asset === PRICE_ASSET_TRX)
+            .filter((m) => m.asset === PRICE_ASSET_TRX && reportSet.has(m.wallet))
             .map((m) => ({ day: m.day, signedQty: m.direction === 'in' ? m.quantity : -m.quantity }));
         const anchorDay = capturedAt ? capturedAt.toISOString().slice(0, 10) : today;
         const trxSeries = await priceHistory.getSeries(PRICE_ASSET_TRX, ValuationService.shiftDay(anchorDay, -BALANCE_WINDOW_DAYS), anchorDay);
@@ -307,9 +354,9 @@ export class ValuationService implements IValuationService {
             unstakingTrxSun: unstakingSun,
             holdings,
             allocation,
-            realizedPnlUsd: lots.realizedPnlUsd,
+            realizedPnlUsd,
             unrealizedPnlUsd,
-            totalPnlUsd: lots.realizedPnlUsd + unrealizedPnlUsd,
+            totalPnlUsd: realizedPnlUsd + unrealizedPnlUsd,
             balanceSeriesUsd,
             unpricedAssets,
             pricedValueFraction: Math.max(0, Math.min(1, pricedValueFraction))

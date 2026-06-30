@@ -33,7 +33,8 @@ function move(over: Partial<ILedgerMove>): ILedgerMove {
         asset: over.asset ?? 'TRX',
         quantity: over.quantity ?? 0,
         direction: over.direction ?? 'in',
-        internal: over.internal ?? false
+        internal: over.internal ?? false,
+        wallet: over.wallet ?? 'W'
     };
 }
 
@@ -64,14 +65,56 @@ describe('computeLots', () => {
         expect(remaining?.costBasisUsd).toBeCloseTo(20, 6); // the 0.2 lot remains
     });
 
-    it('treats internal transfers as neutral (no realization, basis preserved)', () => {
+    it('migrates basis on an internal transfer (source loses it, dest gains it; no realization)', () => {
+        // A buys 100 @ $0.10, then sends all 100 to B internally. The $10 basis must
+        // travel from A's sub-book to B's, with zero realized PnL despite the price rise.
         const moves = [
-            move({ txId: 'a', day: '2024-01-01', quantity: 100, direction: 'in' }),
-            move({ txId: 'b', day: '2024-01-02', quantity: 100, direction: 'out', internal: true })
+            move({ txId: 'acq', wallet: 'A', day: '2024-01-01', quantity: 100, direction: 'in' }),
+            move({ txId: 'xfer', wallet: 'A', day: '2024-01-02', quantity: 100, direction: 'out', internal: true }),
+            move({ txId: 'xfer', wallet: 'B', day: '2024-01-02', quantity: 100, direction: 'in', internal: true })
         ];
         const result = computeLots(moves, priceLookup({ 'TRX|2024-01-01': 0.1, 'TRX|2024-01-02': 0.5 }));
         expect(result.realizedPnlUsd).toBeCloseTo(0, 6);
+        expect(result.remainingByWalletAsset.get('A')?.get('TRX')?.quantity ?? 0).toBeCloseTo(0, 6);
+        expect(result.remainingByWalletAsset.get('B')?.get('TRX')?.quantity ?? 0).toBeCloseTo(100, 6);
+        expect(result.remainingByWalletAsset.get('B')?.get('TRX')?.costBasisUsd ?? 0).toBeCloseTo(10, 6);
+        // Pooled across wallets, basis is conserved by the migration.
         expect(result.remainingByAsset.get('TRX')?.costBasisUsd).toBeCloseTo(10, 6);
+    });
+
+    it('preserves basis even when acquire and internal-forward share a block timestamp', () => {
+        // Same-block acquire-then-forward: the array is deliberately out of order and
+        // every move shares one timestamp, so correctness rests on the kind ranking
+        // (external-in before internal-out before internal-in), not array/day order.
+        const ts = new Date('2024-01-01T00:00:00Z').getTime();
+        const moves = [
+            move({ txId: 'xfer', wallet: 'A', timestamp: ts, quantity: 100, direction: 'out', internal: true }),
+            move({ txId: 'xfer', wallet: 'B', timestamp: ts, quantity: 100, direction: 'in', internal: true }),
+            move({ txId: 'acq', wallet: 'A', timestamp: ts, quantity: 100, direction: 'in' })
+        ];
+        const result = computeLots(moves, priceLookup({ 'TRX|2024-01-01': 0.1 }));
+        expect(result.realizedPnlUsd).toBeCloseTo(0, 6);
+        expect(result.remainingByWalletAsset.get('B')?.get('TRX')?.quantity ?? 0).toBeCloseTo(100, 6);
+        expect(result.remainingByWalletAsset.get('B')?.get('TRX')?.costBasisUsd ?? 0).toBeCloseTo(10, 6);
+    });
+
+    it('uses segregated (per-wallet) FIFO: a sale draws on the selling wallet basis, not a global pool', () => {
+        // B buys @ $0.10 (older), A buys @ $0.20, A sells @ $0.30. A sold its OWN
+        // $0.20 lot → $10 realized, not the $20 a single global FIFO pool (consuming
+        // B's older $0.10 lot) would report. This is what keeps scopes additive.
+        const moves = [
+            move({ txId: 'b1', wallet: 'B', day: '2024-01-01', quantity: 100, direction: 'in' }),
+            move({ txId: 'a1', wallet: 'A', day: '2024-01-02', quantity: 100, direction: 'in' }),
+            move({ txId: 'a2', wallet: 'A', day: '2024-01-03', quantity: 100, direction: 'out' })
+        ];
+        const result = computeLots(
+            moves,
+            priceLookup({ 'TRX|2024-01-01': 0.1, 'TRX|2024-01-02': 0.2, 'TRX|2024-01-03': 0.3 })
+        );
+        expect(result.realizedByWallet.get('A') ?? 0).toBeCloseTo(10, 6);
+        expect(result.realizedByWallet.get('B') ?? 0).toBeCloseTo(0, 6);
+        expect(result.realizedPnlUsd).toBeCloseTo(10, 6);
+        expect(result.remainingByWalletAsset.get('B')?.get('TRX')?.costBasisUsd ?? 0).toBeCloseTo(10, 6);
     });
 
     it('handles a disposal exceeding known lots against zero basis', () => {

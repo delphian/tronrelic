@@ -160,6 +160,34 @@ describe('ValuationService.getPortfolio', () => {
         expect(summary.netWorthUsd).toBeCloseTo(20, 6); // 100 TRX total * $0.20
     });
 
+    it('preserves migrated basis in the per-wallet zoom (no phantom gain on internal funding)', async () => {
+        // A buys 100 TRX @ $0.10 externally, then sends 60 to B internally. Zooming B
+        // must carry B's 60 at the $6 basis that travelled from A — not zero basis,
+        // which would invent a $6 unrealized gain on a wallet that never bought.
+        const service = buildService(
+            fakeAccountHistory(
+                {
+                    [WALLET_A]: [trxTx(EXTERNAL, WALLET_A, 100, '2024-01-01'), trxTx(WALLET_A, WALLET_B, 60, '2024-01-02')],
+                    [WALLET_B]: [trxTx(WALLET_A, WALLET_B, 60, '2024-01-02')]
+                },
+                { [WALLET_A]: 40, [WALLET_B]: 60 }
+            ),
+            fakePriceHistory({ 'TRX|2024-01-01': 0.1, 'TRX|2024-01-02': 0.1 }, 0.1)
+        );
+
+        const summary = await service.getPortfolio({
+            addresses: [WALLET_B],
+            ownedAddresses: [WALLET_A, WALLET_B],
+            scope: 'wallet'
+        });
+
+        const trx = summary.holdings.find((holding) => holding.asset === 'TRX');
+        expect(trx?.quantity).toBeCloseTo(60, 6);
+        expect(trx?.costBasisUsd).toBeCloseTo(6, 6); // 60 * $0.10, migrated from A
+        expect(summary.unrealizedPnlUsd).toBeCloseTo(0, 6); // value 6 - basis 6, not 6 - 0
+        expect(summary.realizedPnlUsd).toBeCloseTo(0, 6);
+    });
+
     it('returns a zeroed summary when the data services are unavailable', async () => {
         resetService();
         const registry = createMockServiceRegistry({});

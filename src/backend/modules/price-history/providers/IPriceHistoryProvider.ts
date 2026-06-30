@@ -24,14 +24,15 @@ export interface IPriceHistoryProvider {
      * Fetch a contiguous daily series for one asset over an inclusive day range —
      * the cheap bulk path used to seed the dense recent window. Implementations
      * collapse intraday samples to one closing point per UTC day. Returns an empty
-     * array (never throws) when the asset is unknown to the source or the range is
-     * unavailable, so an unpriced token degrades gracefully rather than failing
-     * the tick.
+     * array when the asset is unknown to the source (a stable "no prices exist"
+     * answer), so an unpriced token degrades gracefully. Implementations still
+     * throw on a transient transport failure (timeout, rate-limit, 5xx) so the
+     * seed tick retries rather than marking the asset seeded with empty cursors.
      *
      * @param asset - The asset to price.
      * @param fromDay - Inclusive start UTC `YYYY-MM-DD`.
      * @param toDay - Inclusive end UTC `YYYY-MM-DD`.
-     * @returns Daily points in the range, oldest first; empty when unavailable.
+     * @returns Daily points in the range, oldest first; empty when the asset is unknown to the source.
      */
     fetchRange(asset: PriceAsset, fromDay: string, toDay: string): Promise<IPricePoint[]>;
 

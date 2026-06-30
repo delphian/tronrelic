@@ -151,7 +151,7 @@ export function PortfolioHero({ summary }: IPortfolioHeroProps) {
 
                 {summary.unpricedAssets.length > 0 && (
                     <p className="text-muted">
-                        {summary.unpricedAssets.length} held asset{summary.unpricedAssets.length === 1 ? '' : 's'} have no local price and are excluded from USD totals
+                        {summary.unpricedAssets.length} held asset{summary.unpricedAssets.length === 1 ? '' : 's'} with no local price, excluded from USD totals
                         {summary.unpricedAssets.length <= 3 ? ` (${summary.unpricedAssets.map(truncateAddress).join(', ')})` : ''}.
                     </p>
                 )}

@@ -110,7 +110,11 @@ export interface IPortfolioSummary {
     balanceSeriesUsd: IPortfolioBalancePoint[];
     /** Assets held but unpriced locally — shown by quantity, excluded from USD. */
     unpricedAssets: PriceAsset[];
-    /** Fraction of holding value that is priced, in [0,1]; a confidence signal. */
+    /**
+     * Fraction of holdings (by count) that are priced, in [0,1]; a confidence
+     * signal. Value-weighting is impossible because unpriced assets have no
+     * known USD value, so the count proxy is the honest available measure.
+     */
     pricedValueFraction: number;
 }
 
