@@ -98,6 +98,27 @@ describe('computeLots', () => {
         expect(result.remainingByWalletAsset.get('B')?.get('TRX')?.costBasisUsd ?? 0).toBeCloseTo(10, 6);
     });
 
+    it('splits basis per recipient for a same-tx multisend (no recipient steals another basis)', () => {
+        // A buys 100 @ $0.10, then in ONE tx sends 60 to B and 40 to C. Both out rows
+        // and both in rows share the tx id, so the migration bucket must be drained by
+        // quantity: B gets 60 @ $0.10 ($6), C gets 40 @ $0.10 ($4) — not one recipient
+        // inheriting the whole $10 bucket.
+        const moves = [
+            move({ txId: 'acq', wallet: 'A', day: '2024-01-01', quantity: 100, direction: 'in' }),
+            move({ txId: 'multi', wallet: 'A', day: '2024-01-02', quantity: 60, direction: 'out', internal: true }),
+            move({ txId: 'multi', wallet: 'A', day: '2024-01-02', quantity: 40, direction: 'out', internal: true }),
+            move({ txId: 'multi', wallet: 'B', day: '2024-01-02', quantity: 60, direction: 'in', internal: true }),
+            move({ txId: 'multi', wallet: 'C', day: '2024-01-02', quantity: 40, direction: 'in', internal: true })
+        ];
+        const result = computeLots(moves, priceLookup({ 'TRX|2024-01-01': 0.1, 'TRX|2024-01-02': 0.5 }));
+        expect(result.realizedPnlUsd).toBeCloseTo(0, 6);
+        expect(result.remainingByWalletAsset.get('A')?.get('TRX')?.quantity ?? 0).toBeCloseTo(0, 6);
+        expect(result.remainingByWalletAsset.get('B')?.get('TRX')?.quantity ?? 0).toBeCloseTo(60, 6);
+        expect(result.remainingByWalletAsset.get('B')?.get('TRX')?.costBasisUsd ?? 0).toBeCloseTo(6, 6);
+        expect(result.remainingByWalletAsset.get('C')?.get('TRX')?.quantity ?? 0).toBeCloseTo(40, 6);
+        expect(result.remainingByWalletAsset.get('C')?.get('TRX')?.costBasisUsd ?? 0).toBeCloseTo(4, 6);
+    });
+
     it('uses segregated (per-wallet) FIFO: a sale draws on the selling wallet basis, not a global pool', () => {
         // B buys @ $0.10 (older), A buys @ $0.20, A sells @ $0.30. A sold its OWN
         // $0.20 lot → $10 realized, not the $20 a single global FIFO pool (consuming

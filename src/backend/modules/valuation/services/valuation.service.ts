@@ -157,13 +157,14 @@ export class ValuationService implements IValuationService {
         ownedSet: Set<string>,
         tokenMeta: Map<string, ITokenMeta>
     ): ILedgerMove | null {
-        // A self-transfer (from === to) nets to zero — it neither moves basis nor
-        // changes the wallet's balance — and would otherwise leave a dangling
-        // migration (an internal-out with no matching in). Drop it outright.
-        if (tx.from.address === tx.to.address) {
+        // Drop rows we cannot place on the ledger: a party with no address (some
+        // contract-deploy / system rows arrive without a `from` or `to` despite the
+        // type), and a self-transfer (from === to), which nets to zero and would
+        // otherwise leave a dangling migration (an internal-out with no matching in).
+        if (!tx.from?.address || !tx.to?.address || tx.from.address === tx.to.address) {
             return null;
         }
-        const direction: 'in' | 'out' = tx.from.address === scopeAddress ? 'out' : tx.to.address === scopeAddress ? 'in' : 'in';
+        const direction: 'in' | 'out' = tx.from.address === scopeAddress ? 'out' : 'in';
         const counterparty = direction === 'out' ? tx.to.address : tx.from.address;
         const day = tx.timestamp.toISOString().slice(0, 10);
         const internal = ownedSet.has(counterparty);
@@ -220,24 +221,22 @@ export class ValuationService implements IValuationService {
         // contrast, draws only on the report-scope snapshots below. (For the
         // aggregate scope the two sets are identical, so this is a no-op there.)
         const readSet = Array.from(new Set([...query.ownedAddresses, ...query.addresses]));
-        for (const address of readSet) {
-            const ledger = await this.readLedger(accountHistory, address);
-            for (const tx of ledger) {
+        const ledgers = await Promise.all(readSet.map((address) => this.readLedger(accountHistory, address)));
+        // Read in parallel above; normalize sequentially so tokenMeta learns symbols
+        // in a deterministic order and `moves` is order-stable for the engine sort.
+        readSet.forEach((address, index) => {
+            for (const tx of ledgers[index]) {
                 const move = ValuationService.toMove(tx, address, ownedSet, tokenMeta);
                 if (move) {
                     moves.push(move);
                 }
             }
-        }
+        });
 
-        // Current holdings come only from the report-scope snapshots.
-        const snapshots: IAccountBalanceSnapshot[] = [];
-        for (const address of query.addresses) {
-            const snapshot = await accountHistory.getLatestSnapshot(address);
-            if (snapshot) {
-                snapshots.push(snapshot);
-            }
-        }
+        // Current holdings come only from the report-scope snapshots (read in parallel).
+        const snapshots = (
+            await Promise.all(query.addresses.map((address) => accountHistory.getLatestSnapshot(address)))
+        ).filter((snapshot): snapshot is IAccountBalanceSnapshot => snapshot !== null);
 
         // Make sure every held/seen token gets priced on future backfill ticks.
         // Union snapshot-held assets with ledger-move assets: a token acquired
@@ -253,17 +252,19 @@ export class ValuationService implements IValuationService {
         // transfers carry migrated basis and need no price lookup).
         const externalMoves = moves.filter((m) => !m.internal);
         const priceMap = new Map<string, number>();
-        const assetsToPrice = new Set(externalMoves.map((m) => m.asset));
-        for (const asset of assetsToPrice) {
-            const days = Array.from(new Set(externalMoves.filter((m) => m.asset === asset).map((m) => m.day)));
-            if (days.length === 0) {
-                continue;
-            }
-            const points = await priceHistory.getPricesForDays(asset, days);
-            for (const point of points) {
-                priceMap.set(`${asset}|${point.day}`, point.priceUsd);
-            }
-        }
+        const assetsToPrice = Array.from(new Set(externalMoves.map((m) => m.asset)));
+        await Promise.all(
+            assetsToPrice.map(async (asset) => {
+                const days = Array.from(new Set(externalMoves.filter((m) => m.asset === asset).map((m) => m.day)));
+                if (days.length === 0) {
+                    return;
+                }
+                const points = await priceHistory.getPricesForDays(asset, days);
+                for (const point of points) {
+                    priceMap.set(`${asset}|${point.day}`, point.priceUsd);
+                }
+            })
+        );
         const priceOnDay = (asset: string, day: string): number | null => priceMap.get(`${asset}|${day}`) ?? null;
 
         // The engine sees all moves (it migrates internal-transfer basis between
@@ -311,10 +312,12 @@ export class ValuationService implements IValuationService {
         // Current price per held asset (today, walking back if today is unbackfilled).
         const heldAssets = [PRICE_ASSET_TRX, ...tokenQty.keys()];
         const currentPrice = new Map<string, number | null>();
-        for (const asset of heldAssets) {
-            const series = await priceHistory.getSeries(asset, ValuationService.shiftDay(today, -CURRENT_PRICE_LOOKBACK), today);
-            currentPrice.set(asset, series.length > 0 ? series[series.length - 1].priceUsd : null);
-        }
+        await Promise.all(
+            heldAssets.map(async (asset) => {
+                const series = await priceHistory.getSeries(asset, ValuationService.shiftDay(today, -CURRENT_PRICE_LOOKBACK), today);
+                currentPrice.set(asset, series.length > 0 ? series[series.length - 1].priceUsd : null);
+            })
+        );
 
         const holdings = ValuationService.buildHoldings(trxQty, tokenQty, tokenMeta, currentPrice, remainingForScope);
         const pricedHoldings = holdings.filter((h) => h.priceUsd !== null);

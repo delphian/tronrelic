@@ -176,11 +176,21 @@ export function computeLots(
                 const { consumed } = consumeFifo(lots, move.quantity);
                 pendingMigration.set(key, [...(pendingMigration.get(key) ?? []), ...consumed]);
             } else {
-                // Receive the migrated basis into the destination sub-book.
-                for (const lot of pendingMigration.get(key) ?? []) {
+                // Receive only THIS transfer's share of the migrated basis. One tx can
+                // emit several internal transfers of the same asset (a multisend, e.g.
+                // A→B and A→C), which share this `txId|asset` bucket; draining the whole
+                // bucket would hand the first recipient the others' basis. Take exactly
+                // the inbound quantity FIFO and leave the remainder for its recipients.
+                const bucket = pendingMigration.get(key) ?? [];
+                const { consumed } = consumeFifo(bucket, move.quantity);
+                for (const lot of consumed) {
                     lots.push({ quantity: lot.quantity, unitCostUsd: lot.unitCostUsd });
                 }
-                pendingMigration.delete(key);
+                if (bucket.length > 0) {
+                    pendingMigration.set(key, bucket);
+                } else {
+                    pendingMigration.delete(key);
+                }
             }
             continue;
         }
