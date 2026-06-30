@@ -297,11 +297,19 @@ export class AccountHistoryService implements IAccountHistoryService {
         if (!doc) {
             throw new Error(`account ${address} is not tracked`);
         }
-        await this.setProgressStatus(address, paused ? 'paused' : 'queued');
         // Mirror the brake onto progress so the tick selectors filter on it directly.
-        // Written even when the account is `complete` (where setProgressStatus is a
-        // no-op), so a paused completed account is excluded from forward sync.
-        await this.patchProgress(address, { paused });
+        // `paused` is written unconditionally — even when the account is `complete` —
+        // so a paused completed account is excluded from forward sync. `status` is
+        // left untouched when `complete`: a completed backfill is never reopened (a
+        // `queued` overwrite would re-walk the whole history and double-count
+        // `rowsIngested`). Consolidated into one ensureProgress + one patchProgress to
+        // drop the redundant status roundtrip.
+        const progress = await this.ensureProgress(address);
+        const update: Partial<IAccountProgressDoc> = { paused };
+        if (progress.status !== 'complete') {
+            update.status = paused ? 'paused' : 'queued';
+        }
+        await this.patchProgress(address, update);
         const tracked = AccountHistoryService.toTrackedAccount(doc);
         return tracked;
     }
@@ -1467,27 +1475,6 @@ export class AccountHistoryService implements IAccountHistoryService {
             update.$unset = unset;
         }
         await this.database.getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION).updateOne({ address }, update, { upsert: true });
-    }
-
-    /**
-     * Force a progress status, used when pausing/resuming an account. A
-     * `complete` backfill is never reopened: overwriting it to `queued` on
-     * resume would re-include the account in the next tick (which filters on
-     * `status !== 'complete'`) and, with the cursor cleared at completion,
-     * trigger a full re-walk that re-fetches the whole history and double-counts
-     * `rowsIngested`. The admin badge reads `account.paused` for the paused
-     * label, so a paused completed account still displays as paused without
-     * losing its terminal status.
-     *
-     * @param address - Base58 address.
-     * @param status - The status to set.
-     */
-    private async setProgressStatus(address: string, status: IAccountProgressDoc['status']): Promise<void> {
-        const progress = await this.ensureProgress(address);
-        if (progress.status === 'complete') {
-            return;
-        }
-        await this.patchProgress(address, { status });
     }
 
     /**

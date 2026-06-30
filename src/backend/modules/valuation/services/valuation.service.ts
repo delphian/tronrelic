@@ -205,9 +205,22 @@ export class ValuationService implements IValuationService {
         }
 
         const txIds = Array.from(txIdsToRefetch);
-        const refetched = await Promise.all(
-            ownedAddresses.map((address) => accountHistory.getTransactionsByTxIds(address, txIds))
-        );
+        // getTransactionsByTxIds clamps each read to its own by-hash maximum to
+        // bound the SQL IN-list, so a portfolio with more imbalanced hashes than
+        // that clamp would have the overflow silently dropped from the refetch —
+        // yet the rebuild below removes the partial moves for *every* requested
+        // hash, so those overflow transfers would lose their moves entirely,
+        // understating basis/PnL. Read the hashes in batches no larger than the
+        // clamp and accumulate, so every requested hash is refetched and rebuilt.
+        const TXID_READ_CHUNK = 2_000;
+        const refetched: IBlockTransaction[][] = ownedAddresses.map(() => []);
+        for (let start = 0; start < txIds.length; start += TXID_READ_CHUNK) {
+            const chunk = txIds.slice(start, start + TXID_READ_CHUNK);
+            const chunkRows = await Promise.all(
+                ownedAddresses.map((address) => accountHistory.getTransactionsByTxIds(address, chunk))
+            );
+            chunkRows.forEach((rows, index) => refetched[index].push(...rows));
+        }
 
         // Drop the partial moves for these hashes, then rebuild from the complete
         // refetch (every owned wallet's rows for each hash are now present).
