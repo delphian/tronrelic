@@ -325,7 +325,7 @@ export class AccountHistoryService implements IAccountHistoryService {
             .filter((a) => a.progress.status === 'complete' && a.progress.newestTimestampSeen)
             .map((a) => a.progress.newestTimestampSeen!.getTime());
         const oldestNewestTimestamp = completeWatermarks.length > 0
-            ? new Date(Math.min(...completeWatermarks))
+            ? new Date(completeWatermarks.reduce((min, t) => Math.min(min, t), Infinity))
             : undefined;
 
         const stats: IAccountHistoryStats = {
