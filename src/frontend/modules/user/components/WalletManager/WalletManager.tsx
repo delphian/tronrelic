@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Wallet, Star, Unlink, History } from 'lucide-react';
+import { Wallet, Star, Unlink, History, ChevronDown, ChevronUp } from 'lucide-react';
 import type { IAccountIngestionProgress, ILinkedWallet } from '@/types';
 import { Card } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
@@ -30,6 +30,7 @@ import {
     setPrimaryWallet,
     fetchWalletHistoryProgress
 } from '../../api/wallets.api';
+import { WalletDetailPanel } from './WalletDetail';
 import styles from './WalletManager.module.scss';
 
 /**
@@ -125,6 +126,20 @@ export function WalletManager({ initialWallets, initialProgress }: IWalletManage
     // mid-flight; a single key also disables the others so two signature
     // prompts can't race.
     const [busyKey, setBusyKey] = useState<string | null>(null);
+    // Which wallet's history detail is expanded, or null when all collapsed. Only
+    // one expands at a time so the list stays scannable and only one wallet's
+    // summary is fetched at once.
+    const [expandedAddress, setExpandedAddress] = useState<string | null>(null);
+
+    /**
+     * Toggle the expanded wallet-detail view for one address, collapsing any
+     * other open one.
+     *
+     * @param address - The wallet whose detail view to toggle.
+     */
+    const toggleExpanded = useCallback((address: string): void => {
+        setExpandedAddress((current) => (current === address ? null : address));
+    }, []);
 
     // Index progress by address so each row renders its status in one lookup.
     const progressByAddress = useMemo(
@@ -310,51 +325,69 @@ export function WalletManager({ initialWallets, initialProgress }: IWalletManage
                         {wallets.map((wallet) => {
                             const walletProgress = progressByAddress.get(wallet.address);
                             const status = walletProgress ? describeHistoryStatus(walletProgress) : null;
+                            // The detail view only exists once the full history is
+                            // downloaded — an incomplete wallet keeps just its badge.
+                            const isComplete = walletProgress?.status === 'complete';
+                            const isExpanded = expandedAddress === wallet.address;
                             return (
-                            <li key={wallet.address} className={styles.row}>
-                                <div className={styles.identity}>
-                                    <span className={styles.address}>{wallet.address}</span>
-                                    <span className={styles.meta}>
-                                        Linked <ClientTime date={wallet.linkedAt} format="date" />
-                                    </span>
-                                    {status && (
-                                        <span className={styles.history}>
-                                            <Tooltip content={status.tooltip}>
-                                                <Badge tone={status.tone}>
-                                                    <History size={14} aria-hidden /> {status.label}
-                                                </Badge>
-                                            </Tooltip>
+                            <li key={wallet.address} className={styles.entry}>
+                                <div className={styles.row}>
+                                    <div className={styles.identity}>
+                                        <span className={styles.address}>{wallet.address}</span>
+                                        <span className={styles.meta}>
+                                            Linked <ClientTime date={wallet.linkedAt} format="date" />
                                         </span>
-                                    )}
-                                </div>
-                                <div className={styles.actions}>
-                                    {wallet.isPrimary ? (
-                                        <Badge tone="success">
-                                            <Star size={14} aria-hidden /> Primary
-                                        </Badge>
-                                    ) : (
+                                        {status && (
+                                            <span className={styles.history}>
+                                                <Tooltip content={status.tooltip}>
+                                                    <Badge tone={status.tone}>
+                                                        <History size={14} aria-hidden /> {status.label}
+                                                    </Badge>
+                                                </Tooltip>
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className={styles.actions}>
+                                        {isComplete && (
+                                            <Button
+                                                variant="ghost"
+                                                size="xs"
+                                                icon={isExpanded ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
+                                                onClick={() => toggleExpanded(wallet.address)}
+                                                aria-expanded={isExpanded}
+                                            >
+                                                {isExpanded ? 'Hide activity' : 'View activity'}
+                                            </Button>
+                                        )}
+                                        {wallet.isPrimary ? (
+                                            <Badge tone="success">
+                                                <Star size={14} aria-hidden /> Primary
+                                            </Badge>
+                                        ) : (
+                                            <Button
+                                                variant="secondary"
+                                                size="xs"
+                                                icon={<Star size={14} aria-hidden />}
+                                                onClick={() => handleSetPrimary(wallet.address)}
+                                                loading={busyKey === `primary:${wallet.address}`}
+                                                disabled={busy}
+                                            >
+                                                Make primary
+                                            </Button>
+                                        )}
                                         <Button
-                                            variant="secondary"
+                                            variant="danger"
                                             size="xs"
-                                            icon={<Star size={14} aria-hidden />}
-                                            onClick={() => handleSetPrimary(wallet.address)}
-                                            loading={busyKey === `primary:${wallet.address}`}
+                                            icon={<Unlink size={14} aria-hidden />}
+                                            onClick={() => handleUnlink(wallet.address)}
+                                            loading={busyKey === `unlink:${wallet.address}`}
                                             disabled={busy}
                                         >
-                                            Make primary
+                                            Unlink
                                         </Button>
-                                    )}
-                                    <Button
-                                        variant="danger"
-                                        size="xs"
-                                        icon={<Unlink size={14} aria-hidden />}
-                                        onClick={() => handleUnlink(wallet.address)}
-                                        loading={busyKey === `unlink:${wallet.address}`}
-                                        disabled={busy}
-                                    >
-                                        Unlink
-                                    </Button>
+                                    </div>
                                 </div>
+                                {isComplete && isExpanded && <WalletDetailPanel address={wallet.address} />}
                             </li>
                             );
                         })}

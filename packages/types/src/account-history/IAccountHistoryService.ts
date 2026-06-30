@@ -188,6 +188,148 @@ export interface IAccountTransactionPage {
 }
 
 /**
+ * One UTC day's transaction count, the unit a calendar/contributions heatmap
+ * renders one cell per. The day is a bare `YYYY-MM-DD` (UTC) so the frontend
+ * grids it without re-deriving a timezone-dependent boundary; the count drives
+ * the cell's colour intensity.
+ */
+export interface IActivityCalendarBucket {
+    /** UTC calendar day, `YYYY-MM-DD`. */
+    day: string;
+    /** Deduped transaction count on that day. */
+    count: number;
+}
+
+/**
+ * "Wallet story" rollups — the timestamp-only summary that gives a wallet a
+ * personality at a glance (how old, how busy, how consistently used). Cheap to
+ * compute and the most engaging payoff to reveal the moment a backfill completes.
+ */
+export interface IWalletActivityStats {
+    /** Total deduped transactions across all stored history. */
+    totalTransactions: number;
+    /** Block time of the oldest stored transaction; null when the wallet has none. */
+    firstActivityAt: Date | null;
+    /** Block time of the newest stored transaction; null when the wallet has none. */
+    lastActivityAt: Date | null;
+    /** Distinct UTC days with at least one transaction, across all history. */
+    activeDays: number;
+    /** Longest run of consecutive active UTC days, across all history. */
+    longestStreakDays: number;
+}
+
+/**
+ * TRON resource totals — the chain-native angle no EVM portfolio tracker can
+ * show, because only TRON meters energy and bandwidth per transaction. Sums
+ * across all stored history; resource units are counts, the `*Sun` fields are
+ * burned TRX in sun.
+ */
+export interface IWalletResourceTotals {
+    /** Total energy units consumed across all transactions. */
+    energyConsumed: number;
+    /** Total bandwidth units consumed across all transactions. */
+    bandwidthConsumed: number;
+    /** Total TRX burned across all fees, in sun. */
+    feeSun: number;
+    /** TRX burned specifically for energy, in sun. */
+    energyFeeSun: number;
+    /** TRX burned specifically for bandwidth, in sun. */
+    bandwidthFeeSun: number;
+}
+
+/**
+ * One month's inflow vs outflow for a single wallet, split by denomination.
+ *
+ * Denominations stay on separate fields rather than summed into one number
+ * because the module stores no USD valuation — TRX (`amount_sun`) and a token's
+ * raw amount have no common axis, so the frontend renders/totals each
+ * independently. Values are smallest-unit integers carried as numbers: sun for
+ * TRX, the raw 6-dp integer for USDT (the frontend divides by 1e6 for display).
+ * Large whale totals can exceed Float64's exact-integer range; this is a display
+ * aggregate, not an accounting ledger, so minor rounding at the extreme is
+ * acceptable.
+ */
+export interface IWalletFlowBucket {
+    /** Month start as `YYYY-MM-DD` (first of the month, UTC). */
+    period: string;
+    /** TRX received this month (to_address = wallet), in sun. */
+    trxInSun: number;
+    /** TRX sent this month (from_address = wallet), in sun. */
+    trxOutSun: number;
+    /** USDT received this month (to_address = wallet), raw 6-dp integer. */
+    usdtInRaw: number;
+    /** USDT sent this month (from_address = wallet), raw 6-dp integer. */
+    usdtOutRaw: number;
+}
+
+/**
+ * One counterparty the wallet transacted with, aggregated across all history.
+ *
+ * The consumer-friendly alternative to a force-directed address graph: a ranked
+ * table answers "who does this wallet deal with most" at a fraction of the build
+ * and render cost. The counterparty is the other side of each row — `to_address`
+ * when the wallet sent, `from_address` when it received.
+ */
+export interface IWalletCounterparty {
+    /** Base58 address of the counterparty. */
+    address: string;
+    /** Total deduped transactions exchanged with this counterparty. */
+    txCount: number;
+    /** Transactions where the wallet sent to this counterparty. */
+    sentToCount: number;
+    /** Transactions where this counterparty sent to the wallet. */
+    receivedFromCount: number;
+    /** TRX sent to this counterparty, in sun. */
+    trxSentSun: number;
+    /** TRX received from this counterparty, in sun. */
+    trxReceivedSun: number;
+}
+
+/**
+ * The batched activity/behaviour summary for one wallet — every panel of the
+ * user-facing wallet-detail view in a single read, so expanding a wallet costs
+ * one round-trip instead of one per panel. Every field is derived purely from
+ * the stored transaction ledger (no balances, no USD); the valuation surface is
+ * a separate, additive concern (see {@link IWalletValuationSummary}).
+ */
+export interface IWalletActivitySummary {
+    /** The wallet this summary describes. */
+    address: string;
+    /** Per-day transaction counts for the activity heatmap (recent window). */
+    calendar: IActivityCalendarBucket[];
+    /** All-time "wallet story" rollups. */
+    stats: IWalletActivityStats;
+    /** All-time TRON energy/bandwidth/fee totals. */
+    resources: IWalletResourceTotals;
+    /** Per-month inflow/outflow, split by denomination, oldest first. */
+    flow: IWalletFlowBucket[];
+    /** Top counterparties by transaction count, most-frequent first. */
+    counterparties: IWalletCounterparty[];
+}
+
+/**
+ * Reserved seam for the valuation/portfolio surface — **not implemented**.
+ *
+ * The activity surface ({@link IWalletActivitySummary}) is buildable from the
+ * stored ledger alone. A portfolio value, PnL, and balance-over-time chart are
+ * deliberately deferred because they need a data layer the module does not have:
+ * live per-token balances, historical balance snapshots, a USD price source
+ * (current and historical), and FIFO cost-basis tracking. This interface sketches
+ * the eventual contract so the frontend can reserve its hero slot; populating it
+ * is a separate project, gated on standing up that data layer.
+ */
+export interface IWalletValuationSummary {
+    /** The wallet this valuation describes. */
+    address: string;
+    /** Total current portfolio value in USD. Requires balances + a price source. */
+    totalValueUsd?: number;
+    /** Realized + unrealized PnL in USD. Requires cost-basis tracking. */
+    pnlUsd?: number;
+    /** Balance-over-time series in USD, one point per period. Requires snapshots. */
+    balanceSeries?: Array<{ at: Date; valueUsd: number }>;
+}
+
+/**
  * The central service every account-history surface routes through.
  *
  * All access — admin controllers, the scheduler tick, and external consumers —
@@ -274,6 +416,21 @@ export interface IAccountHistoryService {
      * @returns A page of source-independent transactions plus the total count.
      */
     getTransactions(query: IAccountTransactionQuery): Promise<IAccountTransactionPage>;
+
+    /**
+     * Build the batched activity/behaviour summary for one account — the calendar
+     * heatmap buckets, the "wallet story" stats, the TRON resource totals, the
+     * per-month inflow/outflow, and the top counterparties — in a single call so
+     * the user-facing wallet-detail view costs one round-trip. Derived entirely
+     * from the stored ledger; returns an empty/zeroed summary when ClickHouse is
+     * not configured. Authorization is the caller's responsibility — the service
+     * trusts the address it is given, so a user-facing caller must confirm the
+     * caller owns the wallet first.
+     *
+     * @param address - Base58 address to summarize.
+     * @returns The activity summary for the address.
+     */
+    getWalletSummary(address: string): Promise<IWalletActivitySummary>;
 
     /**
      * Advance ingestion by one bounded slice: pick the least-recently-advanced

@@ -10,7 +10,7 @@ Ingests the full transaction history of operator-tracked TRON accounts into Clic
 | Module class | `src/backend/modules/account-history/AccountHistoryModule.ts` |
 | Admin page | `/system/account-history` — System-container item `Account History` (order 27); in-page tabs registered as the `account-history` menu namespace (menu module's Submenu Pattern), rendered with `MenuNavClient`. All in `run()`. |
 | Service registry name | `'account-history'` → `IAccountHistoryService` |
-| Mounted routes | `/api/admin/system/account-history/*` (`createAdminRateLimiter` + `requireAdmin`); `/api/account-history/me/progress` (`requireLogin`, ownership-scoped) |
+| Mounted routes | `/api/admin/system/account-history/*` (`createAdminRateLimiter` + `requireAdmin`); `/api/account-history/me/*` (`requireLogin`, ownership-scoped: progress, per-wallet summary, per-wallet transactions) |
 | Auto-enrollment | Registers a `'core'` handler on the `http.walletLinked` hook — a user verifying a wallet auto-enrolls it (`label: 'user-verified'`) |
 | Scheduler jobs | `account-history:ingest` (backfill, `*/2 * * * *`); `account-history:forward-sync` (keep completed accounts current, `*/5 * * * *`) |
 | WebSocket event | `account-history:stats` (global broadcast; has a case in `WebSocketService.emit()`) |
@@ -61,6 +61,7 @@ Each endpoint has its own fingerprint cursor; an account is marked `complete` on
 | `getStats()` | Settings + per-account progress + rollups (admin page and live payload) |
 | `getProgressFor(addresses)` | Progress for a specific address set (tracked subset only) — backs ownership-scoped surfaces like a user's profile |
 | `getTransactions({ address, limit?, offset? })` | Paged history read returning `IBlockTransaction[]` |
+| `getWalletSummary(address)` | Batched `IWalletActivitySummary` — calendar heatmap, "wallet story" stats, TRON resource totals, monthly inflow/outflow, top counterparties — from the stored ledger in one call (trusts the address; caller authorizes) |
 | `runIngestionTick()` | Advance the backward backfill one bounded slice (scheduler + manual trigger) |
 | `runForwardSyncTick()` | Refresh completed accounts with transactions that arrived after backfill (scheduler + manual trigger) |
 
@@ -79,13 +80,17 @@ Consume from a plugin via `context.services.watch('account-history', ...)`; from
 | PATCH | `/api/admin/system/account-history/accounts/:address/paused` | Pause/resume |
 | DELETE | `/api/admin/system/account-history/accounts/:address` | Stop tracking |
 
-## User Endpoint (`requireLogin`)
+## User Endpoints (`requireLogin`)
 
-One login-gated, ownership-scoped route lets a signed-in user see the backfill status of only the wallets they verified — kept separate from the admin surface so a user never reaches the full tracked set. The handler resolves the caller's verified addresses through the identity `'wallets'` service (the only sanctioned path to that data) and returns `getProgressFor` for that intersection, so knowing an address is never enough.
+Login-gated, ownership-scoped routes let a signed-in user explore only the wallets they verified — kept separate from the admin surface so a user never reaches the full tracked set. Every route resolves the caller's verified addresses through the identity `'wallets'` service (the only sanctioned path to that data); the per-wallet routes reject any `:address` the caller does not own with **404** (knowing an address is never authorization, and not-found never confirms whether an unowned address is tracked). The per-wallet detail surface drives the profile Wallets tab, which renders it only for a wallet whose backfill `status === 'complete'`.
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/api/account-history/me/progress` | `{ progress }` for the caller's own verified, tracked wallets |
+| GET | `/api/account-history/me/wallets/:address/summary` | `{ summary }` — the `IWalletActivitySummary` for one owned wallet (heatmap, stats, resources, flow, counterparties) |
+| GET | `/api/account-history/me/wallets/:address/transactions` | `IAccountTransactionPage` — paged decoded feed for one owned wallet (`limit`/`offset` query params) |
+
+The summary is purely activity/behaviour, derived from the stored ledger. A **valuation/portfolio** surface (portfolio value, PnL, balance-over-time) is a deliberate, additive future layer — its contract is sketched as the unimplemented `IWalletValuationSummary`, gated on a balance + USD-price data layer the module does not yet have.
 
 ## Auto-Enrollment
 

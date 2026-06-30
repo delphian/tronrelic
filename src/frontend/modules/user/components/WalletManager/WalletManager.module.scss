@@ -26,17 +26,25 @@
     container-name: wallet-manager-list;
 }
 
+/* One wallet entry: the summary row plus its optional expanded detail panel,
+   stacked. The border/padding live here so they wrap both. */
+.entry {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    padding: var(--padding-sm) 0;
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+.entry:first-child {
+    border-top: none;
+}
+
 .row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--gap-md);
-    padding: var(--padding-sm) 0;
-    border-top: var(--border-width-thin) solid var(--color-border);
-}
-
-.row:first-child {
-    border-top: none;
 }
 
 .identity {
