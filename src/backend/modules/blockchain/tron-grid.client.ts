@@ -385,21 +385,59 @@ export class TronGridClient {
         });
     }
 
+    /**
+     * Fetch a transaction's decoded event logs without error handling. Shared by
+     * the lenient {@link getTransactionEvents} and the strict
+     * {@link getTransactionEventsOrThrow} so the two differ only in how a failure is
+     * surfaced, never in how the request is made.
+     *
+     * @param txId - Transaction hash whose event logs to read.
+     * @returns The decoded events, or an empty array when the transaction has none.
+     */
+    private async fetchTransactionEvents(txId: string): Promise<TronGridEvent[]> {
+        return enqueueRequest(async () => {
+            const response = await httpClient.get<{ data: TronGridEvent[] }>(
+                `${BASE_URL}/v1/transactions/${txId}/events`,
+                {
+                    headers: buildHeaders()
+                }
+            );
+            return response.data?.data ?? [];
+        });
+    }
+
+    /**
+     * Lenient events read: returns `[]` on any failure. Suited to best-effort
+     * enrichment where a missed fetch is acceptable (e.g. alert decoration) and the
+     * caller cannot distinguish — nor needs to distinguish — "no events" from
+     * "fetch failed".
+     *
+     * @param txId - Transaction hash whose event logs to read.
+     * @returns The decoded events, or `[]` when the transaction has none OR the fetch failed.
+     */
     async getTransactionEvents(txId: string): Promise<TronGridEvent[]> {
         try {
-            return await enqueueRequest(async () => {
-                const response = await httpClient.get<{ data: TronGridEvent[] }>(
-                    `${BASE_URL}/v1/transactions/${txId}/events`,
-                    {
-                        headers: buildHeaders()
-                    }
-                );
-                return response.data?.data ?? [];
-            });
+            return await this.fetchTransactionEvents(txId);
         } catch (error) {
             logger.error({ error, txId }, 'Failed to fetch transaction events');
             return [];
         }
+    }
+
+    /**
+     * Strict events read: throws on a fetch failure instead of masking it as `[]`.
+     * Required by callers that key durable state on the result — the account-history
+     * token-leg sweep advances a cursor past each transaction it reads, so a
+     * silently-empty result on a transient 429/network error would skip a
+     * transaction's token legs permanently (they are unreconstructable without the
+     * events `log_index`). Throwing lets the caller's insert-before-cursor-advance
+     * discipline leave the work re-ingestable.
+     *
+     * @param txId - Transaction hash whose event logs to read.
+     * @returns The decoded events, or `[]` only when the transaction genuinely has none.
+     */
+    async getTransactionEventsOrThrow(txId: string): Promise<TronGridEvent[]> {
+        return this.fetchTransactionEvents(txId);
     }
 
     async getBlockByNumber(blockNumber: number): Promise<TronGridBlock> {

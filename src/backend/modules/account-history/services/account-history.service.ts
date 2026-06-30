@@ -1565,23 +1565,55 @@ export class AccountHistoryService implements IAccountHistoryService {
             }
         }
 
+        // Fetch each transaction's legs one at a time, tracking the last
+        // *fully-fetched* transaction. `fetchTokenTransferLegs` throws on a real
+        // events-fetch failure (rate limit, network) rather than returning empty, so
+        // a failure must not advance the cursor past the transaction it could not
+        // read — its token legs are unreconstructable without the events log_index.
+        // On a mid-batch failure we keep the progress earned through the last clean
+        // transaction and let a later tick resume from there, rather than discarding
+        // the whole batch and re-spending those rate-limited calls.
         const legs: IValueTransfer[] = [];
-        for (const txId of txIds) {
-            const txLegs = await this.provider!.fetchTokenTransferLegs(address, txId);
+        let lastSuccessfulIndex = -1;
+        let fetchFailed = false;
+        for (let index = 0; index < txIds.length; index++) {
+            let txLegs: IValueTransfer[];
+            try {
+                txLegs = await this.provider!.fetchTokenTransferLegs(address, txIds[index]);
+            } catch (error) {
+                this.logger.warn(
+                    { address, txId: txIds[index], error: error instanceof Error ? error.message : String(error) },
+                    'Account-history ledger backfill: token events fetch failed mid-batch; persisting progress through last success'
+                );
+                fetchFailed = true;
+                break;
+            }
             for (const leg of txLegs) {
                 const decimals = decimalsByAsset.get(leg.assetId);
                 legs.push(decimals != null ? { ...leg, assetDecimals: decimals } : leg);
             }
+            lastSuccessfulIndex = index;
         }
-        await this.writeValueTransfers(address, legs);
 
-        const last = batchRows[batchRows.length - 1];
+        // Write legs before advancing the cursor so a ClickHouse write failure
+        // throws first and re-ingests the batch idempotently next tick.
+        if (legs.length > 0) {
+            await this.writeValueTransfers(address, legs);
+        }
+
+        // The very first transaction failed: no progress to record, cursor stays put.
+        if (lastSuccessfulIndex < 0) {
+            return;
+        }
+
+        const last = batchRows[lastSuccessfulIndex];
         const patch: Partial<IAccountProgressDoc> = {
             tokenLegsBackfillCursor: AccountHistoryService.encodeTokenBackfillCursor(last.ts, last.tx_id)
         };
-        // A batch short of the cap exhausts the account; mark it so the next tick
-        // skips a redundant empty probe.
-        if (batchRows.length < LEDGER_BACKFILL_TOKEN_TX_PER_TICK) {
+        // Mark complete only when the whole batch fetched cleanly AND was short of
+        // the cap (the account is exhausted) — never past a failed fetch, which
+        // would drop the unread transaction's legs permanently.
+        if (!fetchFailed && batchRows.length < LEDGER_BACKFILL_TOKEN_TX_PER_TICK) {
             patch.tokenLegsBackfillComplete = true;
         }
         await this.patchProgress(address, patch);

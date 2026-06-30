@@ -52,16 +52,30 @@ export const migration: IMigration = {
             return;
         }
 
-        // Column order is positional and matches the account_value_transfers DDL
-        // (004): account, tx_id, origin, leg_key, asset_type, asset_id, from/to,
-        // amount_raw, asset_decimals, block_number, timestamp, ingested_at. `FINAL`
-        // collapses any duplicate source rows before projection (the target key
-        // would collapse them anyway; FINAL just keeps the insert lean). The WHERE
-        // reproduces toValueTransfers exactly — a positive native amount on a
-        // genuine native-TRX contract type. A USDT TriggerSmartContract twin has
-        // amount_sun = 0 (its value is the token, not TRX) and so is excluded.
+        // Columns are named explicitly (matching the live dual-write's
+        // column-name insert via `clickhouse.insert<IAccountValueTransferRow>`) so
+        // the projection cannot silently misalign; the SELECT lists them in DDL
+        // order. `FINAL` collapses any duplicate source rows before projection (the
+        // target key would collapse them anyway; FINAL just keeps the insert lean).
+        // The WHERE reproduces toValueTransfers exactly — a positive native amount
+        // on a genuine native-TRX contract type. A USDT TriggerSmartContract twin
+        // has amount_sun = 0 (its value is the token, not TRX) and so is excluded.
         await context.clickhouse.exec(`
-            INSERT INTO account_value_transfers
+            INSERT INTO account_value_transfers (
+                account,
+                tx_id,
+                origin,
+                leg_key,
+                asset_type,
+                asset_id,
+                from_address,
+                to_address,
+                amount_raw,
+                asset_decimals,
+                block_number,
+                timestamp,
+                ingested_at
+            )
             SELECT
                 account,
                 tx_id,
