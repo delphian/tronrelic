@@ -71,8 +71,18 @@ export class ProvidersController {
             if (typeof body.baseUrl === 'string' && body.baseUrl.trim()) {
                 // Strip trailing slashes so the client's `${baseUrl}${path}` join
                 // can't produce a double-slash path (e.g. `//api/trx/volume`) from
-                // an operator pasting a URL with a trailing `/`.
-                updates.baseUrl = body.baseUrl.trim().replace(/\/+$/, '');
+                // an operator pasting a URL with a trailing `/`. Done with a linear
+                // scan rather than a `/\/+$/` regex, which CodeQL flags as a
+                // polynomial-ReDoS risk on this user-provided value.
+                let normalizedBaseUrl = body.baseUrl.trim();
+                let sliceEnd = normalizedBaseUrl.length;
+                while (sliceEnd > 0 && normalizedBaseUrl[sliceEnd - 1] === '/') {
+                    sliceEnd -= 1;
+                }
+                normalizedBaseUrl = normalizedBaseUrl.slice(0, sliceEnd);
+                if (normalizedBaseUrl) {
+                    updates.baseUrl = normalizedBaseUrl;
+                }
             }
             if (body.priceSource === 'coinmarketcap' || body.priceSource === 'coingecko') {
                 updates.priceSource = body.priceSource;
