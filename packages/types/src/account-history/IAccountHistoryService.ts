@@ -330,6 +330,54 @@ export interface IWalletValuationSummary {
 }
 
 /**
+ * One token balance in a point-in-time account snapshot.
+ */
+export interface IAccountTokenBalance {
+    /** TRC20 contract base58 address — the {@link PriceAsset} key for valuation. */
+    asset: string;
+    /** Raw on-chain balance as an integer string (decimals unapplied). */
+    rawBalance: string;
+}
+
+/**
+ * A scheduled point-in-time snapshot of an account's on-chain holdings and TRON
+ * resource state.
+ *
+ * Why it exists: the transaction ledger alone cannot reconstruct a correct
+ * absolute balance — TronGrid fingerprint paging cannot always reach an account's
+ * genesis, so a cumulative inflow−outflow walk would be offset by an unknown
+ * prefix, and staking/unstaking move TRX out of the liquid balance in ways a
+ * naive sum misreads. A snapshot is the absolute-truth anchor the valuation
+ * engine pins its ledger-derived series to, and the only source of the
+ * staked/unstaking/resource figures net worth needs. Captured on a schedule,
+ * never on a page load. All `*Sun` fields are TRX in sun.
+ */
+export interface IAccountBalanceSnapshot {
+    /** Base58 account the snapshot describes. */
+    address: string;
+    /** When the snapshot was captured. */
+    capturedAt: Date;
+    /** Liquid (spendable) TRX balance, in sun. */
+    trxBalanceSun: number;
+    /** TRX staked for energy (FreezeBalanceV2), in sun. */
+    stakedEnergySun: number;
+    /** TRX staked for bandwidth (FreezeBalanceV2), in sun. */
+    stakedBandwidthSun: number;
+    /** TRX in the unstaking queue (pending unfreeze), in sun. */
+    unstakingSun: number;
+    /** Account's energy limit from staking. */
+    energyLimit: number;
+    /** Energy used in the current window. */
+    energyUsed: number;
+    /** Account's bandwidth (net) limit from staking. */
+    netLimit: number;
+    /** Bandwidth used in the current window. */
+    netUsed: number;
+    /** Per-token raw balances at capture; empty on series reads (latest-only). */
+    tokenBalances: IAccountTokenBalance[];
+}
+
+/**
  * The central service every account-history surface routes through.
  *
  * All access — admin controllers, the scheduler tick, and external consumers —
@@ -431,6 +479,47 @@ export interface IAccountHistoryService {
      * @returns The activity summary for the address.
      */
     getWalletSummary(address: string): Promise<IWalletActivitySummary>;
+
+    /**
+     * Read the most recent on-chain balance/resource snapshot for an account,
+     * including per-token balances. Returns null when none has been captured yet.
+     * Backs current-holdings valuation and anchors the balance-over-time series.
+     *
+     * @param address - Base58 address.
+     * @returns The latest snapshot, or null.
+     */
+    getLatestSnapshot(address: string): Promise<IAccountBalanceSnapshot | null>;
+
+    /**
+     * Read the snapshot series for an account over a UTC day range, oldest first.
+     * Token balances are omitted here (use {@link getLatestSnapshot} for the
+     * current breakdown); the series carries the scalar TRX/resource anchors that
+     * calibrate balance-over-time.
+     *
+     * @param address - Base58 address.
+     * @param fromDay - Inclusive start UTC `YYYY-MM-DD`.
+     * @param toDay - Inclusive end UTC `YYYY-MM-DD`.
+     * @returns Snapshots in range, oldest first.
+     */
+    getSnapshotSeries(address: string, fromDay: string, toDay: string): Promise<IAccountBalanceSnapshot[]>;
+
+    /**
+     * Capture one bounded slice of balance snapshots: pick tracked, unpaused
+     * accounts not yet snapshotted today (up to `accountsPerTick`), fetch each
+     * account's on-chain state through the provider, and write a snapshot row.
+     * Scheduler-driven; never runs on a page load.
+     */
+    runSnapshotTick(): Promise<void>;
+
+    /**
+     * List the distinct TRC20 contract addresses held in any stored balance
+     * snapshot. Powers cross-module diagnostics — joining held tokens against the
+     * price series surfaces which holdings lack a price source. Returns [] when
+     * ClickHouse is absent.
+     *
+     * @returns Distinct held token contract addresses.
+     */
+    getHeldTokenAssets(): Promise<string[]>;
 
     /**
      * Advance ingestion by one bounded slice: pick the least-recently-advanced

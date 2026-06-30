@@ -31,6 +31,7 @@ import type {
     IAddTrackedAccountInput,
     ITrackedAccount,
     IBlockTransaction,
+    IAccountBalanceSnapshot,
     IClickHouseService,
     IDatabaseService,
     ISystemLogService,
@@ -42,10 +43,15 @@ import {
     SETTINGS_KEY,
     TRACKED_COLLECTION,
     TRANSACTIONS_TABLE,
+    BALANCE_SNAPSHOTS_TABLE,
+    TOKEN_BALANCES_TABLE,
     type AccountTxSource,
     type IAccountHistorySettingsDoc,
     type IAccountProgressDoc,
     type IAccountTransactionRow,
+    type IBalanceSnapshotRow,
+    type ITokenBalanceRow,
+    type IAccountSnapshotSample,
     type ITrackedAccountDoc
 } from '../database/index.js';
 import type { IAccountHistoryProvider } from '../providers/IAccountHistoryProvider.js';
@@ -1191,6 +1197,196 @@ export class AccountHistoryService implements IAccountHistoryService {
         // here keeps the cursor on the failed page so the next tick re-fetches and
         // (idempotently, via ReplacingMergeTree) re-writes it.
         await this.clickhouse!.insert<IAccountTransactionRow>(TRANSACTIONS_TABLE, rows, { waitForCommit: true });
+    }
+
+    /**
+     * Map a stored scalar snapshot row to the published DTO, attaching any token
+     * balances the caller resolved separately (series reads pass none).
+     *
+     * @param row - Stored scalar snapshot row.
+     * @param tokenBalances - Token balances for this snapshot, or empty.
+     * @returns The published snapshot.
+     */
+    private static mapSnapshotRow(
+        row: IBalanceSnapshotRow,
+        tokenBalances: IAccountBalanceSnapshot['tokenBalances']
+    ): IAccountBalanceSnapshot {
+        return {
+            address: row.account,
+            capturedAt: parseClickHouseDateTime64Utc(row.captured_at),
+            trxBalanceSun: Number(row.trx_balance_sun),
+            stakedEnergySun: Number(row.staked_energy_sun),
+            stakedBandwidthSun: Number(row.staked_bandwidth_sun),
+            unstakingSun: Number(row.unstaking_sun),
+            energyLimit: Number(row.energy_limit),
+            energyUsed: Number(row.energy_used),
+            netLimit: Number(row.net_limit),
+            netUsed: Number(row.net_used),
+            tokenBalances
+        };
+    }
+
+    /**
+     * Columns shared by both snapshot reads; aliased so Date/DateTime64 come back
+     * as strings the DTO mapper parses uniformly.
+     */
+    private static readonly SNAPSHOT_COLUMNS =
+        `account, toString(day) AS day, toString(captured_at) AS captured_at,
+         trx_balance_sun, staked_energy_sun, staked_bandwidth_sun, unstaking_sun,
+         energy_limit, energy_used, net_limit, net_used`;
+
+    /**
+     * Read the most recent snapshot for an account plus its token balances. Null
+     * when none captured. See {@link IAccountHistoryService.getLatestSnapshot}.
+     *
+     * @param address - Base58 address.
+     * @returns The latest snapshot, or null.
+     */
+    public async getLatestSnapshot(address: string): Promise<IAccountBalanceSnapshot | null> {
+        if (!this.clickhouse) {
+            return null;
+        }
+        const rows = await this.clickhouse.query<IBalanceSnapshotRow>(
+            `SELECT ${AccountHistoryService.SNAPSHOT_COLUMNS}
+             FROM ${BALANCE_SNAPSHOTS_TABLE} FINAL
+             WHERE account = {address:String}
+             ORDER BY day DESC LIMIT 1`,
+            { address }
+        );
+        if (rows.length === 0) {
+            return null;
+        }
+        const tokenRows = await this.clickhouse.query<ITokenBalanceRow>(
+            `SELECT asset, raw_balance FROM ${TOKEN_BALANCES_TABLE} FINAL
+             WHERE account = {address:String} AND day = {day:Date}`,
+            { address, day: rows[0].day }
+        );
+        const tokenBalances = tokenRows.map((row) => ({ asset: row.asset, rawBalance: String(row.raw_balance) }));
+        return AccountHistoryService.mapSnapshotRow(rows[0], tokenBalances);
+    }
+
+    /**
+     * Read the scalar snapshot series over a UTC day range, oldest first; token
+     * balances omitted. See {@link IAccountHistoryService.getSnapshotSeries}.
+     *
+     * @param address - Base58 address.
+     * @param fromDay - Inclusive start UTC `YYYY-MM-DD`.
+     * @param toDay - Inclusive end UTC `YYYY-MM-DD`.
+     * @returns Snapshots in range, oldest first.
+     */
+    public async getSnapshotSeries(address: string, fromDay: string, toDay: string): Promise<IAccountBalanceSnapshot[]> {
+        if (!this.clickhouse) {
+            return [];
+        }
+        const rows = await this.clickhouse.query<IBalanceSnapshotRow>(
+            `SELECT ${AccountHistoryService.SNAPSHOT_COLUMNS}
+             FROM ${BALANCE_SNAPSHOTS_TABLE} FINAL
+             WHERE account = {address:String} AND day >= {fromDay:Date} AND day <= {toDay:Date}
+             ORDER BY day ASC`,
+            { address, fromDay, toDay }
+        );
+        return rows.map((row) => AccountHistoryService.mapSnapshotRow(row, []));
+    }
+
+    /**
+     * List distinct held token contracts across all stored snapshots. See
+     * {@link IAccountHistoryService.getHeldTokenAssets}.
+     *
+     * @returns Distinct token contract addresses; empty when ClickHouse is absent.
+     */
+    public async getHeldTokenAssets(): Promise<string[]> {
+        if (!this.clickhouse) {
+            return [];
+        }
+        const rows = await this.clickhouse.query<{ asset: string }>(
+            `SELECT DISTINCT asset FROM ${TOKEN_BALANCES_TABLE} FINAL`
+        );
+        return rows.map((row) => row.asset);
+    }
+
+    /**
+     * Write one account's snapshot: the scalar row always, plus a token-balance
+     * row per held token. Both tables are ReplacingMergeTree keyed on `(account,
+     * day[, asset])`, so a same-day re-sample overwrites in place.
+     *
+     * @param address - Base58 account.
+     * @param sample - Normalized on-chain state from the provider.
+     * @param day - UTC `YYYY-MM-DD` the snapshot is keyed under.
+     */
+    private async writeSnapshot(address: string, sample: IAccountSnapshotSample, day: string): Promise<void> {
+        if (!this.clickhouse) {
+            return;
+        }
+        const stamp = formatClickHouseDateTime64Utc(new Date());
+        const scalarRow: IBalanceSnapshotRow = {
+            account: address,
+            day,
+            captured_at: stamp,
+            trx_balance_sun: sample.trxBalanceSun,
+            staked_energy_sun: sample.stakedEnergySun,
+            staked_bandwidth_sun: sample.stakedBandwidthSun,
+            unstaking_sun: sample.unstakingSun,
+            energy_limit: sample.energyLimit,
+            energy_used: sample.energyUsed,
+            net_limit: sample.netLimit,
+            net_used: sample.netUsed,
+            ingested_at: stamp
+        };
+        await this.clickhouse.insert<IBalanceSnapshotRow>(BALANCE_SNAPSHOTS_TABLE, [scalarRow], { waitForCommit: true });
+
+        if (sample.tokenBalances.length > 0) {
+            const tokenRows: ITokenBalanceRow[] = sample.tokenBalances.map((token) => ({
+                account: address,
+                day,
+                asset: token.asset,
+                raw_balance: token.rawBalance,
+                ingested_at: stamp
+            }));
+            await this.clickhouse.insert<ITokenBalanceRow>(TOKEN_BALANCES_TABLE, tokenRows, { waitForCommit: true });
+        }
+    }
+
+    /**
+     * Capture a bounded slice of balance snapshots. Picks tracked, unpaused
+     * accounts whose last snapshot day is not today (round-robin via the cursor),
+     * probes each through the provider, and writes its snapshot. A per-account
+     * failure is logged and isolated so one bad account does not abort the tick.
+     * See {@link IAccountHistoryService.runSnapshotTick}.
+     */
+    public async runSnapshotTick(): Promise<void> {
+        if (!this.clickhouse || !this.provider) {
+            return;
+        }
+        const provider = this.provider;
+        const settings = await this.getSettings();
+        if (!settings.ingestionEnabled) {
+            return;
+        }
+        const today = new Date().toISOString().slice(0, 10);
+        const tracked = await this.database
+            .getCollection<ITrackedAccountDoc>(TRACKED_COLLECTION)
+            .find({ paused: { $ne: true } })
+            .toArray();
+        const progressDocs = await this.database
+            .getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION)
+            .find({})
+            .toArray();
+        const lastSnapshotByAddress = new Map(progressDocs.map((doc) => [doc.address, doc.lastSnapshotDay]));
+
+        const due = tracked
+            .filter((account) => lastSnapshotByAddress.get(account.address) !== today)
+            .slice(0, settings.accountsPerTick);
+
+        for (const account of due) {
+            try {
+                const sample = await provider.fetchAccountSnapshot(account.address);
+                await this.writeSnapshot(account.address, sample, today);
+                await this.patchProgress(account.address, { lastSnapshotDay: today });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                this.logger.error({ address: account.address, error: message }, 'Account-history balance snapshot failed');
+            }
+        }
     }
 
     /**

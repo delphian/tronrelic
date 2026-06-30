@@ -9,7 +9,7 @@
  */
 
 import type { IBlockTransaction } from '@/types';
-import type { AccountTxSource } from '../database/index.js';
+import type { AccountTxSource, IAccountSnapshotSample } from '../database/index.js';
 
 /**
  * One page of an account's history plus the cursor to continue.
@@ -52,4 +52,17 @@ export interface IAccountHistoryProvider {
      * @returns The page plus the cursor for the next call.
      */
     fetchPage(address: string, options: IAccountHistoryFetchOptions): Promise<IAccountHistoryPageResult>;
+
+    /**
+     * Probe an account's current on-chain state — liquid and staked TRX, the
+     * unstaking queue, energy/bandwidth resources, and TRC20 balances — as one
+     * normalized sample. This is the point-in-time counterpart to the historical
+     * page walk: the snapshot tick calls it on a schedule to anchor the valuation
+     * engine's balance series. Kept on the seam (not a direct TronGrid call in the
+     * service) for the same source-independence reason as {@link fetchPage}.
+     *
+     * @param address - Base58 account address to probe.
+     * @returns The account's normalized current state.
+     */
+    fetchAccountSnapshot(address: string): Promise<IAccountSnapshotSample>;
 }

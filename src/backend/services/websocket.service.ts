@@ -370,13 +370,15 @@ export class WebSocketService implements IWebSocketService {
       case 'curation:changed':
       case 'content:published':
       case 'account-history:stats':
+      case 'price-history:stats':
         // Admin-dashboard refetch nudges from the AI tool governor, the curation
-        // service, the internal publish sink, and the account-history ingestion
-        // tick. The /system/ai-tools, /system/curation, publish, and
-        // /system/account-history surfaces subscribe on the shared socket without
-        // joining a room, so these broadcast globally; payloads carry only a
-        // timestamp, count, or item summary, never governed data — each surface
-        // refetches the protected detail over its requireAdmin REST endpoint.
+        // service, the internal publish sink, and the account-history /
+        // price-history ingestion ticks. The /system/ai-tools, /system/curation,
+        // publish, /system/account-history, and /system/price-history surfaces
+        // subscribe on the shared socket without joining a room, so these
+        // broadcast globally; payloads carry only a timestamp, count, or item
+        // summary, never governed data — each surface refetches the protected
+        // detail over its requireAdmin REST endpoint.
         this.io.emit(event.event, event.payload);
         break;
       case 'toast':

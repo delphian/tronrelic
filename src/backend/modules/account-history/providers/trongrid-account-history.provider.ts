@@ -32,7 +32,7 @@ import {
     resolveAmounts,
     describeContract
 } from '../../blockchain/transaction-parse.js';
-import type { AccountTxSource, IAccountTransactionRow, ITronGridAccountTx, ITronGridTrc20Tx } from '../database/index.js';
+import type { AccountTxSource, IAccountSnapshotSample, IAccountTransactionRow, ITronGridAccountTx, ITronGridTrc20Tx } from '../database/index.js';
 import type { IAccountHistoryFetchOptions, IAccountHistoryPageResult, IAccountHistoryProvider } from './IAccountHistoryProvider.js';
 
 /** TronGrid's hard ceiling on page size for the account-transactions endpoint. */
@@ -84,6 +84,63 @@ export class TronGridAccountHistoryProvider implements IAccountHistoryProvider {
         const items = response?.data ?? [];
         const transactions = items.map((item) => TronGridAccountHistoryProvider.toBlockTransaction(item));
         return { transactions, nextFingerprint: response?.meta?.fingerprint };
+    }
+
+    /**
+     * Probe an account's current state via `getaccount` (balances, Stake 2.0
+     * freezes/unfreezes, TRC20 balances) and `getaccountresource` (energy and
+     * bandwidth limits/usage), normalizing into the source-independent sample.
+     * Both calls route through the shared rate-limited client. A missing account
+     * (never-seen address) yields a zeroed sample rather than throwing, so the
+     * snapshot tick records "empty" instead of failing.
+     *
+     * @param address - Base58 account address to probe.
+     * @returns The normalized current-state sample.
+     */
+    async fetchAccountSnapshot(address: string): Promise<IAccountSnapshotSample> {
+        const client = TronGridClient.getInstance();
+        const [account, resource] = await Promise.all([
+            client.getAccount(address),
+            client.getAccountResource(address)
+        ]);
+
+        let stakedEnergySun = 0;
+        let stakedBandwidthSun = 0;
+        for (const frozen of account?.frozenV2 ?? []) {
+            const amount = frozen.amount ?? 0;
+            if (frozen.type === 'ENERGY') {
+                stakedEnergySun += amount;
+            } else {
+                stakedBandwidthSun += amount; // TronGrid omits `type` for bandwidth
+            }
+        }
+
+        let unstakingSun = 0;
+        for (const pending of account?.unfrozenV2 ?? []) {
+            unstakingSun += pending.unfreeze_amount ?? 0;
+        }
+
+        const tokenBalances: Array<{ asset: string; rawBalance: string }> = [];
+        for (const entry of account?.trc20 ?? []) {
+            for (const [asset, rawBalance] of Object.entries(entry)) {
+                if (rawBalance && rawBalance !== '0') {
+                    tokenBalances.push({ asset, rawBalance });
+                }
+            }
+        }
+
+        const sample: IAccountSnapshotSample = {
+            trxBalanceSun: account?.balance ?? 0,
+            stakedEnergySun,
+            stakedBandwidthSun,
+            unstakingSun,
+            energyLimit: resource.EnergyLimit ?? 0,
+            energyUsed: resource.EnergyUsage ?? 0,
+            netLimit: resource.NetLimit ?? 0,
+            netUsed: resource.NetUsage ?? 0,
+            tokenBalances
+        };
+        return sample;
     }
 
     /**

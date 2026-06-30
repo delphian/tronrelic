@@ -203,7 +203,7 @@ describe('AccountHistoryService', () => {
     });
 
     it('runIngestionTick is a no-op without ClickHouse and never calls the provider', async () => {
-        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn() };
+        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn() };
         const service = buildService(provider);
         await service.runIngestionTick();
         expect(provider.fetchPage).not.toHaveBeenCalled();
@@ -259,7 +259,7 @@ describe('AccountHistoryService', () => {
     }
 
     it('runForwardSyncTick is a no-op without ClickHouse and never calls the provider', async () => {
-        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn() };
+        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn() };
         const service = buildService(provider);
         await service.runForwardSyncTick();
         expect(provider.fetchPage).not.toHaveBeenCalled();
@@ -290,6 +290,7 @@ describe('AccountHistoryService', () => {
         // watermark); 'trc20' returns nothing. The poll must write only the new one.
         const provider: IAccountHistoryProvider = {
             id: 'test',
+            fetchAccountSnapshot: vi.fn(),
             fetchPage: vi.fn(async (_address: string, opts: any) => {
                 if (opts.source === 'tx') {
                     return { transactions: [makeTx('new1', newer), makeTx('old1', watermark)], nextFingerprint: undefined };
@@ -346,6 +347,7 @@ describe('AccountHistoryService', () => {
         // 'trc20' has nothing new.
         const provider: IAccountHistoryProvider = {
             id: 'test',
+            fetchAccountSnapshot: vi.fn(),
             fetchPage: vi.fn(async (_address: string, opts: any) => {
                 if (opts.source === 'trc20') {
                     return { transactions: [], nextFingerprint: undefined };
@@ -392,7 +394,7 @@ describe('AccountHistoryService', () => {
         database.getCollectionData(PROGRESS_COLLECTION).push({ address: VALID_ADDRESS, status: 'queued', rowsIngested: 0 });
 
         const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
-        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn() };
+        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn() };
 
         AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
         const service = AccountHistoryService.getInstance();

@@ -30,7 +30,7 @@ import {
     setPrimaryWallet,
     fetchWalletHistoryProgress
 } from '../../api/wallets.api';
-import { WalletDetailPanel } from './WalletDetail';
+import { WalletDetailPanel, PortfolioPanel } from './WalletDetail';
 import styles from './WalletManager.module.scss';
 
 /**
@@ -130,6 +130,10 @@ export function WalletManager({ initialWallets, initialProgress }: IWalletManage
     // one expands at a time so the list stays scannable and only one wallet's
     // summary is fetched at once.
     const [expandedAddress, setExpandedAddress] = useState<string | null>(null);
+    // Whether the all-wallets aggregate portfolio is revealed. Kept collapsed by
+    // default so the aggregate summary is only fetched when the user asks for it
+    // (the per-wallet zoom lives in each expanded row instead).
+    const [showPortfolio, setShowPortfolio] = useState(false);
 
     /**
      * Toggle the expanded wallet-detail view for one address, collapsing any
@@ -317,6 +321,21 @@ export function WalletManager({ initialWallets, initialProgress }: IWalletManage
                         Link a wallet
                     </Button>
                 </div>
+
+                {progress.some((entry) => entry.status === 'complete') && (
+                    <Stack gap="sm">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={showPortfolio ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
+                            onClick={() => setShowPortfolio((value) => !value)}
+                            aria-expanded={showPortfolio}
+                        >
+                            {showPortfolio ? 'Hide total portfolio' : 'View total portfolio'}
+                        </Button>
+                        {showPortfolio && <PortfolioPanel />}
+                    </Stack>
+                )}
 
                 {wallets.length === 0 ? (
                     <p className="text-muted">No wallets linked yet.</p>
