@@ -202,11 +202,80 @@ describe('AccountHistoryService', () => {
         expect(page).toEqual({ transactions: [], total: 0 });
     });
 
+    it('getTransactionsByTxIds returns [] without ClickHouse and for an empty hash set', async () => {
+        const service = buildService(null);
+        expect(await service.getTransactionsByTxIds(VALID_ADDRESS, ['h1'])).toEqual([]);
+
+        // Even with ClickHouse, an empty (or all-blank) hash set short-circuits
+        // before any query, so no unbounded `IN ()` is built.
+        AccountHistoryService.resetForTests();
+        const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
+        AccountHistoryService.setDependencies({ database: createMockDatabaseService(), clickhouse, provider: null, emitter: undefined, logger: createSilentLogger() });
+        const withCh = AccountHistoryService.getInstance();
+        expect(await withCh.getTransactionsByTxIds(VALID_ADDRESS, ['', ''])).toEqual([]);
+        expect(clickhouse.query).not.toHaveBeenCalled();
+    });
+
+    it('getTransactionsByTxIds queries by hash and maps rows back to transactions', async () => {
+        AccountHistoryService.resetForTests();
+        const row = toAccountTransactionRow(VALID_ADDRESS, makeTx('h1', new Date('2024-01-01T00:00:00.000Z')), 'tx', '2024-01-01 00:00:00.000', '2024-06-01 00:00:00.000');
+        const clickhouse = { query: vi.fn().mockResolvedValue([row]), insert: vi.fn() } as unknown as IClickHouseService;
+        AccountHistoryService.setDependencies({ database: createMockDatabaseService(), clickhouse, provider: null, emitter: undefined, logger: createSilentLogger() });
+        const service = AccountHistoryService.getInstance();
+
+        const txs = await service.getTransactionsByTxIds(VALID_ADDRESS, ['h1', 'h1']);
+
+        expect(txs).toHaveLength(1);
+        expect(txs[0].txId).toBe('h1');
+        // The hash set is deduped and passed as an Array param alongside the address.
+        expect(clickhouse.query).toHaveBeenCalledWith(
+            expect.stringContaining('tx_id IN ({txIds:Array(String)})'),
+            expect.objectContaining({ address: VALID_ADDRESS, txIds: ['h1'] })
+        );
+    });
+
     it('runIngestionTick is a no-op without ClickHouse and never calls the provider', async () => {
         const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn() };
         const service = buildService(provider);
         await service.runIngestionTick();
         expect(provider.fetchPage).not.toHaveBeenCalled();
+    });
+
+    it('runIngestionTick selects only unpaused, not-complete accounts', async () => {
+        // The backfill selector pushes its predicate into one query: a queued
+        // account advances; a complete one and a paused one are both skipped.
+        AccountHistoryService.resetForTests();
+        const queued = VALID_ADDRESS;
+        const complete = 'TLa2f6VPqDgRE67v7c1pj7iGwsizZ1jGfX';
+        const paused = 'TKzxdSv2FZKQrEqkKVgp5DcwEXBEKMg2Ax';
+        const now = new Date('2024-01-01T00:00:00.000Z');
+        const database = createMockDatabaseService();
+        database.getCollectionData(TRACKED_COLLECTION).push(
+            { address: queued, paused: false, addedAt: now, updatedAt: now },
+            { address: complete, paused: false, addedAt: now, updatedAt: now },
+            { address: paused, paused: true, addedAt: now, updatedAt: now }
+        );
+        database.getCollectionData(PROGRESS_COLLECTION).push(
+            { address: queued, status: 'queued', rowsIngested: 0, paused: false },
+            { address: complete, status: 'complete', paused: false, nativeComplete: true, trc20Complete: true, rowsIngested: 9 },
+            { address: paused, status: 'paused', paused: true, rowsIngested: 0 }
+        );
+
+        const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
+        // Empty pages so the selected account's walk finishes immediately.
+        const provider: IAccountHistoryProvider = {
+            id: 'test',
+            fetchAccountSnapshot: vi.fn(),
+            fetchPage: vi.fn(async () => ({ transactions: [], nextFingerprint: undefined }))
+        };
+        AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
+        const service = AccountHistoryService.getInstance();
+
+        await service.runIngestionTick();
+
+        expect(provider.fetchPage).toHaveBeenCalledWith(queued, expect.anything());
+        expect(provider.fetchPage).not.toHaveBeenCalledWith(complete, expect.anything());
+        expect(provider.fetchPage).not.toHaveBeenCalledWith(paused, expect.anything());
     });
 
     it('getProgressFor returns progress only for tracked addresses, ignoring untracked and malformed', async () => {
@@ -396,6 +465,29 @@ describe('AccountHistoryService', () => {
         const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
         const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn() };
 
+        AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
+        const service = AccountHistoryService.getInstance();
+
+        await service.runForwardSyncTick();
+        expect(provider.fetchPage).not.toHaveBeenCalled();
+    });
+
+    it('runForwardSyncTick skips a paused completed account via the denormalized brake', async () => {
+        // A paused account keeps status `complete` (setProgressStatus is a no-op on
+        // completed accounts), so the forward selector must exclude it on the
+        // denormalized `paused` flag, not on status. Without that flag this account
+        // would be wrongly refreshed.
+        AccountHistoryService.resetForTests();
+        const database = createMockDatabaseService();
+        const now = new Date('2024-01-01T00:00:00.000Z');
+        database.getCollectionData(TRACKED_COLLECTION).push({ address: VALID_ADDRESS, paused: true, addedAt: now, updatedAt: now });
+        database.getCollectionData(PROGRESS_COLLECTION).push({
+            address: VALID_ADDRESS, status: 'complete', paused: true,
+            nativeComplete: true, trc20Complete: true, newestTimestampSeen: now, rowsIngested: 10
+        });
+
+        const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
+        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn() };
         AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
         const service = AccountHistoryService.getInstance();
 

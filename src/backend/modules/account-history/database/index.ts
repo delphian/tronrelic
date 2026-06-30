@@ -65,6 +65,17 @@ export interface IAccountProgressDoc {
     address: string;
     /** Lifecycle state of the backfill; `complete` only once BOTH endpoints exhaust. */
     status: 'queued' | 'running' | 'paused' | 'complete' | 'failed';
+    /**
+     * Denormalized copy of the tracked-account `paused` brake, kept here so the
+     * ingest, forward-sync, and snapshot tick selectors push their whole
+     * predicate (unpaused + dueness) into one indexed query on this collection
+     * instead of loading the entire tracked + progress sets and joining in
+     * memory. Authoritative value still lives on the tracked doc; this mirror is
+     * written by `setAccountPaused` and seeded `false` on insert. Absent on
+     * pre-migration documents — selectors use `{$ne: true}` so a missing value
+     * reads as unpaused until migration 003 backfills it.
+     */
+    paused?: boolean;
     /** Opaque fingerprint for the next general `/transactions` page; absent before first run or when that endpoint is exhausted. */
     cursorFingerprint?: string;
     /** Opaque fingerprint for the next `/transactions/trc20` page; absent before first run or when that endpoint is exhausted. */

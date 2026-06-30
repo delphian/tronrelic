@@ -12,7 +12,7 @@
  */
 
 import type { IPortfolioSummary } from '@/types';
-import { Wallet, TrendingUp, TrendingDown } from 'lucide-react';
+import { Wallet, TrendingUp, TrendingDown, Hourglass } from 'lucide-react';
 import { LineChart, DonutChart, type DonutSlice } from '../../../../../features/charts';
 import { Card } from '../../../../../components/ui/Card';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
@@ -62,6 +62,33 @@ function formatQty(value: number): string {
  * @returns The hero section.
  */
 export function PortfolioHero({ summary }: IPortfolioHeroProps) {
+    // No snapshot has been captured yet for this scope. Holdings and net worth are
+    // derived solely from the balance snapshot, so without one every figure would
+    // read $0 / "No holdings" — indistinguishable from a wallet that genuinely
+    // holds nothing. `capturedAt === null` is the unambiguous "snapshot pending"
+    // signal (it arrives as JSON null, never a Date), so we show a friendly
+    // preparing state instead of misleading zeros. Once the first snapshot tick
+    // runs, capturedAt becomes a date and the real hero renders.
+    if (summary.capturedAt === null) {
+        return (
+            <WalletDetailSection
+                icon={<Wallet size={16} aria-hidden style={{ color: 'var(--color-primary)' }} />}
+                title="Portfolio"
+            >
+                <div className={styles.portfolio_pending}>
+                    <span className={styles.portfolio_pending_title}>
+                        <Hourglass size={16} aria-hidden style={{ color: 'var(--color-primary)' }} />
+                        Preparing your portfolio
+                    </span>
+                    <p className="text-muted">
+                        We&rsquo;re capturing your current balances. Net worth and holdings appear
+                        here once the first snapshot completes &mdash; usually within a few hours.
+                    </p>
+                </div>
+            </WalletDetailSection>
+        );
+    }
+
     const pnlPositive = summary.totalPnlUsd >= 0;
     const slices: DonutSlice[] = summary.allocation.map((entry) => ({ label: entry.symbol, value: entry.valueUsd }));
     const series = [

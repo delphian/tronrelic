@@ -125,6 +125,7 @@ describe('AccountHistoryService balance snapshots', () => {
         const clickhouse = new FakeClickhouse();
         const { service, database } = buildService(clickhouse);
         await database.getCollection(TRACKED_COLLECTION).insertOne({ address: ADDRESS, paused: false, addedAt: new Date(), updatedAt: new Date() });
+        await database.getCollection(PROGRESS_COLLECTION).insertOne({ address: ADDRESS, status: 'queued', rowsIngested: 0, paused: false });
 
         await service.runSnapshotTick();
 
@@ -150,6 +151,7 @@ describe('AccountHistoryService balance snapshots', () => {
         const clickhouse = new FakeClickhouse();
         const { service, database } = buildService(clickhouse);
         await database.getCollection(TRACKED_COLLECTION).insertOne({ address: ADDRESS, paused: false, addedAt: new Date(), updatedAt: new Date() });
+        await database.getCollection(PROGRESS_COLLECTION).insertOne({ address: ADDRESS, status: 'queued', rowsIngested: 0, paused: false });
         await service.runSnapshotTick();
 
         const snapshot = await service.getLatestSnapshot(ADDRESS);
@@ -169,6 +171,7 @@ describe('AccountHistoryService balance snapshots', () => {
         const clickhouse = new FakeClickhouse();
         const { service, database } = buildService(clickhouse);
         await database.getCollection(TRACKED_COLLECTION).insertOne({ address: ADDRESS, paused: false, addedAt: new Date(), updatedAt: new Date() });
+        await database.getCollection(PROGRESS_COLLECTION).insertOne({ address: ADDRESS, status: 'queued', rowsIngested: 0, paused: false });
         await service.runSnapshotTick();
         expect(await service.getHeldTokenAssets()).toEqual(['TXLAtoken']);
     });

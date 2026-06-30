@@ -61,6 +61,7 @@ Each endpoint has its own fingerprint cursor; an account is marked `complete` on
 | `getStats()` | Settings + per-account progress + rollups (admin page and live payload) |
 | `getProgressFor(addresses)` | Progress for a specific address set (tracked subset only) — backs ownership-scoped surfaces like a user's profile |
 | `getTransactions({ address, limit?, offset? })` | Paged history read returning `IBlockTransaction[]` |
+| `getTransactionsByTxIds(address, txIds)` | Read specific rows by hash (clamped, deduped) — lets valuation refetch an internal-transfer leg that fell outside a per-wallet window |
 | `getWalletSummary(address)` | Batched `IWalletActivitySummary` — calendar heatmap, "wallet story" stats, TRON resource totals, monthly inflow/outflow, top counterparties — from the stored ledger in one call (trusts the address; caller authorizes) |
 | `getLatestSnapshot(address)` | Latest `IAccountBalanceSnapshot` (liquid/staked/unstaking TRX, energy/bandwidth, per-token balances) — the valuation anchor and current-holdings source |
 | `getSnapshotSeries(address, fromDay, toDay)` | Scalar snapshot series over a UTC day range (token balances omitted) for balance-over-time calibration |
@@ -119,7 +120,7 @@ The poll never flips an account to `failed` — that would re-admit it to the ba
 
 **ClickHouse `account_transactions`** — `ReplacingMergeTree(ingested_at)`, `PARTITION BY toYYYYMM(timestamp)`, `ORDER BY (account, timestamp, tx_id, source, to_address)`. Columns flatten `IBlockTransaction` plus `account`, `source`, the TRC20 `token_amount`/`token_symbol`/`token_decimals`, and `ingested_at`. No TTL — account history is the product.
 
-**Mongo control collections** — `tracked` (the set, unique `address`), `progress` (resumable cursor per address, unique `address`), `settings` (singleton, keyed `settings`).
+**Mongo control collections** — `tracked` (the set, unique `address`), `progress` (resumable cursor per address, unique `address`), `settings` (singleton, keyed `settings`). The three scheduler ticks (ingest, forward-sync, snapshot) each select their slice with a single indexed query on `progress` — filter (unpaused + dueness) + sort + `limit(accountsPerTick)` — rather than loading the whole tracked+progress set and joining in memory. This needs `paused` denormalized onto `progress` (authoritative copy stays on `tracked`, written by `setAccountPaused`, seeded `false` on insert, backfilled by migration `003`); the selectors read it with `{$ne: true}` so a pre-migration doc reads as unpaused. Composite indexes back the three selectors, ordered by the ESR rule (Equality → Sort → Range) so each sort is index-served rather than blocking: `{lastRunAt, paused, status}` (ingest), `{status, lastForwardRunAt, paused}` (forward sync), `{lastSnapshotDay, paused}` (snapshot), all created in `ensureIndexes`.
 
 ## Related
 

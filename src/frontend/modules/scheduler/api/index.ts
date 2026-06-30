@@ -3,4 +3,4 @@
  * @module modules/scheduler/api
  */
 
-export { getSchedulerStatus, getSchedulerHealth, updateSchedulerJob } from './client';
+export { getSchedulerStatus, getSchedulerHealth, updateSchedulerJob, runSchedulerJob } from './client';

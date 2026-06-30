@@ -230,4 +230,57 @@ export class SchedulerController {
             });
         }
     };
+
+    /**
+     * POST /job/:jobName/run - Trigger a job immediately, outside its schedule.
+     *
+     * Lets an operator force a run from the dashboard without waiting for the next
+     * cron tick — the path that lets a never-yet-fired low-frequency job (e.g. the
+     * 4-hourly account-history snapshot) be exercised on demand. The job's enabled
+     * state is irrelevant: a manual run executes the handler once and touches
+     * neither the cron task nor persisted config.
+     *
+     * Responds `202` with `started`, which is `false` (not an error) when the job
+     * was already running — single-flight is preserved server-side. The execution
+     * is fire-and-forget; outcome lands in the executions audit log and surfaces on
+     * the next status poll.
+     *
+     * @param req.params.jobName - Registered job identifier to run.
+     */
+    runJob = async (req: Request, res: Response): Promise<void> => {
+        const { jobName } = req.params;
+
+        let scheduler: SchedulerService;
+        try {
+            scheduler = SchedulerService.getInstance();
+        } catch {
+            res.status(503).json({
+                success: false,
+                error: 'Scheduler is not enabled or not initialized'
+            });
+            return;
+        }
+
+        try {
+            const { started } = await scheduler.runNow(jobName);
+
+            this.logger.info({ jobName, started }, 'Scheduler job manual run requested');
+
+            res.status(202).json({
+                success: true,
+                started,
+                message: started
+                    ? `Scheduler job ${jobName} run started`
+                    : `Scheduler job ${jobName} is already running`
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            const notRegistered = message.includes('not registered');
+            this.logger.error({ error, jobName }, 'Failed to run scheduler job');
+            res.status(notRegistered ? 404 : 500).json({
+                success: false,
+                error: message
+            });
+        }
+    };
 }

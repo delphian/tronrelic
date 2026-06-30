@@ -92,3 +92,22 @@
     align-items: center;
     gap: var(--gap-2xs);
 }
+
+/* Snapshot-pending notice — shown in place of the zeroed hero until the first
+   balance snapshot is captured for the scope. */
+.portfolio_pending {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--gap-xs);
+    padding: var(--padding-md) 0;
+    text-align: center;
+}
+
+.portfolio_pending_title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    color: var(--color-text);
+    font-weight: var(--font-weight-semibold);
+}

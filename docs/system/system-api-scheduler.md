@@ -15,6 +15,7 @@ Schedule changes via `PATCH` persist to MongoDB and survive restarts — operato
 | GET | `/admin/system/scheduler/status` | All jobs with last/next run, status, duration, error |
 | GET | `/admin/system/scheduler/health` | Global enabled flag, uptime, success rate, overdue jobs |
 | PATCH | `/admin/system/scheduler/job/:jobName` | Toggle `enabled` or update `schedule` (cron) |
+| POST | `/admin/system/scheduler/job/:jobName/run` | Run the job once now, outside its schedule |
 
 ## Response Reference
 
@@ -92,7 +93,28 @@ curl -X PATCH -H "X-Admin-Token: $TOKEN" -H "Content-Type: application/json" \
     http://localhost:4000/api/admin/system/scheduler/job/chain-parameters:fetch
 ```
 
-Changes apply on the next tick — they do not retroactively run a missed schedule.
+Changes apply on the next tick — they do not retroactively run a missed schedule. To run a job immediately, use the run endpoint below.
+
+### `POST /scheduler/job/:jobName/run`
+
+Triggers one out-of-schedule run of `:jobName` — the only way to exercise a low-frequency job before its next tick (e.g. forcing the 4-hourly `account-history:snapshot` for a newly tracked wallet). The job's `enabled` flag is ignored: a manual run executes the handler once and touches neither the cron task nor persisted config, so a disabled job can be run without re-enabling it.
+
+Returns `202` immediately (the run is fire-and-forget; the outcome lands in `scheduler_executions` and surfaces on the next `status` poll). `started` is `false` — not an error — when the job was already running, because single-flight is preserved server-side.
+
+```json
+{ "success": true, "started": true, "message": "Scheduler job account-history:snapshot run started" }
+```
+
+| Status | Trigger | `error` text |
+|---|---|---|
+| 202 | Run accepted (`started: true`) or already running (`started: false`) | — |
+| 404 | Unknown job | `"Job <name> not registered"` |
+| 503 | Scheduler module not running | `"Scheduler is not enabled or not initialized"` |
+
+```bash
+curl -X POST -H "X-Admin-Token: $TOKEN" \
+    http://localhost:4000/api/admin/system/scheduler/job/account-history:snapshot/run
+```
 
 ## Further Reading
 

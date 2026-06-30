@@ -53,16 +53,26 @@ function trxTx(from: string, to: string, trx: number, day: string): IBlockTransa
 /**
  * Build a fake account-history service from per-address ledgers and snapshots.
  *
- * @param ledgers - Address → its transactions.
+ * @param ledgers - Address → the transactions a windowed `getTransactions` returns.
  * @param balances - Address → liquid TRX (human units) in its latest snapshot.
+ * @param fullLedgers - Address → the complete row set a by-`txId` refetch can reach;
+ *   defaults to `ledgers`. Diverging it from `ledgers` simulates a row that fell
+ *   outside the per-wallet read window but is still fetchable by hash.
  * @returns A partial IAccountHistoryService sufficient for the valuation reads.
  */
-function fakeAccountHistory(ledgers: Record<string, IBlockTransaction[]>, balances: Record<string, number>) {
+function fakeAccountHistory(
+    ledgers: Record<string, IBlockTransaction[]>,
+    balances: Record<string, number>,
+    fullLedgers: Record<string, IBlockTransaction[]> = ledgers
+) {
     return {
         getTransactions: vi.fn(async ({ address }: { address: string }) => ({
             transactions: ledgers[address] ?? [],
             total: (ledgers[address] ?? []).length
         })),
+        getTransactionsByTxIds: vi.fn(async (address: string, txIds: string[]) =>
+            (fullLedgers[address] ?? []).filter((tx) => txIds.includes(tx.txId))
+        ),
         getLatestSnapshot: vi.fn(async (address: string) =>
             balances[address] === undefined
                 ? null
@@ -186,6 +196,41 @@ describe('ValuationService.getPortfolio', () => {
         expect(trx?.costBasisUsd).toBeCloseTo(6, 6); // 60 * $0.10, migrated from A
         expect(summary.unrealizedPnlUsd).toBeCloseTo(0, 6); // value 6 - basis 6, not 6 - 0
         expect(summary.realizedPnlUsd).toBeCloseTo(0, 6);
+    });
+
+    it('repairs an internal transfer whose receiving leg fell outside the read window', async () => {
+        // A buys 100 @ $0.10, sends 60 to B internally (01-02), then B sells 60
+        // externally (01-03) @ $0.20. B's windowed ledger has only the sale — the
+        // internal-in row was pushed past B's window. Without repair the sale
+        // realizes against ZERO basis ($12 phantom gain); the by-txId refetch
+        // restores B's $6 migrated basis so realized is the true $6.
+        const internalTx = trxTx(WALLET_A, WALLET_B, 60, '2024-01-02');
+        const accountHistory = fakeAccountHistory(
+            {
+                [WALLET_A]: [trxTx(EXTERNAL, WALLET_A, 100, '2024-01-01'), internalTx],
+                // B's window: only the external sale; the internal-in is missing.
+                [WALLET_B]: [trxTx(WALLET_B, EXTERNAL, 60, '2024-01-03')]
+            },
+            { [WALLET_A]: 40, [WALLET_B]: 0 },
+            {
+                // Full reach for the by-txId refetch: B's internal-in row is fetchable.
+                [WALLET_A]: [internalTx],
+                [WALLET_B]: [internalTx]
+            }
+        );
+        const service = buildService(
+            accountHistory,
+            fakePriceHistory({ 'TRX|2024-01-01': 0.1, 'TRX|2024-01-03': 0.2 }, 0.2)
+        );
+
+        const summary = await service.getPortfolio({
+            addresses: [WALLET_A, WALLET_B],
+            ownedAddresses: [WALLET_A, WALLET_B],
+            scope: 'user'
+        });
+
+        expect(accountHistory.getTransactionsByTxIds).toHaveBeenCalled();
+        expect(summary.realizedPnlUsd).toBeCloseTo(6, 6); // proceeds 12 - migrated basis 6, not 12 - 0
     });
 
     it('returns a zeroed summary when the data services are unavailable', async () => {

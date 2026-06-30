@@ -249,24 +249,61 @@ export class SchedulerService {
     /**
      * Schedule a single job with node-cron.
      *
-     * Wraps the handler with execution tracking and overlap protection.
+     * The cron tick delegates to {@link executeJob} so a scheduled run and a
+     * manual {@link runNow} share one execution path — identical overlap
+     * protection, audit record, and never-throw contract. The callback is sync and
+     * fire-and-forget (`void`) because executeJob owns all error handling, so an
+     * unhandled rejection can never escape the node-cron callback.
      *
      * @param job - Job to schedule
      */
     private scheduleJob(job: RegisteredJob): void {
-        const task = cron.schedule(job.currentSchedule, async () => {
-            if (this.runningJobs.has(job.name)) {
-                logger.warn(
-                    { jobName: job.name },
-                    `Scheduled Job Skipped: ${job.name} - previous execution still running`
-                );
-                return;
-            }
+        const task = cron.schedule(job.currentSchedule, () => {
+            void this.executeJob(job);
+        });
 
-            this.runningJobs.add(job.name);
+        job.task = task;
+    }
 
+    /**
+     * Execute one job's handler exactly once, with single-flight overlap
+     * protection and full execution tracking.
+     *
+     * Why extracted from the cron callback: the manual {@link runNow} trigger must
+     * behave identically to a scheduled tick — same guard against a second
+     * concurrent run, same `scheduler_executions` audit row, same contract of never
+     * rejecting — so the logic lives here rather than inline where only cron could
+     * reach it.
+     *
+     * Never rejects: a handler failure is captured to the execution record and
+     * logged, so both callers (cron and runNow) can fire-and-forget safely. The
+     * running-set membership is released in `finally` and the execution row is
+     * created *inside* the try, so even a failure while writing that row cannot
+     * wedge the job into a permanently "running" state that would silently skip
+     * every future tick and every future manual run.
+     *
+     * @param job - The registered job to execute.
+     */
+    private async executeJob(job: RegisteredJob): Promise<void> {
+        if (this.runningJobs.has(job.name)) {
+            logger.warn(
+                { jobName: job.name },
+                `Scheduled Job Skipped: ${job.name} - previous execution still running`
+            );
+            return;
+        }
+
+        this.runningJobs.add(job.name);
+        const started = Date.now();
+        logger.debug({ job: job.name }, `Scheduled Job Start: ${job.name}`);
+
+        // Held as a nullable outer binding so the catch can tell whether the row was
+        // ever created (creation itself may throw); the success path uses the
+        // non-null `created` const directly.
+        let execution: SchedulerExecutionDoc | null = null;
+        try {
             const executionModel = this.database.getModel<SchedulerExecutionDoc>(this.EXECUTION_COLLECTION);
-            const execution = await executionModel.create({
+            const created = await executionModel.create({
                 jobName: job.name,
                 startedAt: new Date(),
                 status: 'running',
@@ -274,54 +311,88 @@ export class SchedulerService {
                 duration: null,
                 error: null
             });
+            execution = created;
 
-            const started = Date.now();
-            logger.debug({ job: job.name }, `Scheduled Job Start: ${job.name}`);
+            await job.handler();
+            const duration = Date.now() - started;
 
-            try {
-                await job.handler();
-                const duration = Date.now() - started;
+            await created.updateOne({
+                completedAt: new Date(),
+                duration,
+                status: 'success'
+            });
 
-                await execution.updateOne({
-                    completedAt: new Date(),
-                    duration,
+            logger.info(
+                {
+                    job: job.name,
+                    durationMs: duration,
                     status: 'success'
-                });
+                },
+                `Scheduled Job Complete: ${job.name}`
+            );
+        } catch (error) {
+            const duration = Date.now() - started;
+            const errorMessage = error instanceof Error ? error.message : String(error);
 
-                logger.info(
-                    {
-                        job: job.name,
-                        durationMs: duration,
-                        status: 'success'
-                    },
-                    `Scheduled Job Complete: ${job.name}`
-                );
-            } catch (error) {
-                const duration = Date.now() - started;
-                const errorMessage = error instanceof Error ? error.message : String(error);
-
+            // The row may not exist if creation itself threw; only update what we have.
+            if (execution) {
                 await execution.updateOne({
                     completedAt: new Date(),
                     duration,
                     status: 'failed',
                     error: errorMessage
                 });
-
-                logger.error(
-                    {
-                        job: job.name,
-                        durationMs: duration,
-                        status: 'failed',
-                        error: errorMessage
-                    },
-                    `Scheduled Job Failed: ${job.name}`
-                );
-            } finally {
-                this.runningJobs.delete(job.name);
             }
-        });
 
-        job.task = task;
+            logger.error(
+                {
+                    job: job.name,
+                    durationMs: duration,
+                    status: 'failed',
+                    error: errorMessage
+                },
+                `Scheduled Job Failed: ${job.name}`
+            );
+        } finally {
+            this.runningJobs.delete(job.name);
+        }
+    }
+
+    /**
+     * Trigger a registered job's handler immediately, outside its cron schedule.
+     *
+     * Why: operators need to force a run without waiting for the next tick — to
+     * pick up a newly added work item, recover after a failed run, or exercise a
+     * low-frequency job (e.g. a 4-hourly balance snapshot) that has not yet reached
+     * its first scheduled boundary. The job's enabled flag is intentionally ignored
+     * because a manual run is an explicit operator action that neither touches the
+     * cron task nor mutates persisted config: a disabled job can be run once without
+     * re-enabling it.
+     *
+     * Single-flight is preserved. If the job is already running (scheduled or
+     * manual) this is a no-op reporting `started: false`, never a second concurrent
+     * execution. The run is fire-and-forget — {@link executeJob} records the
+     * outcome to the executions collection — so this resolves as soon as the run is
+     * accepted and the HTTP caller is not held open for a long-running job.
+     *
+     * @param name - Registered job identifier to run.
+     * @returns `{ started: true }` when a run was kicked off, `{ started: false }`
+     *   when one was already in flight.
+     * @throws Error if the job name is not registered.
+     */
+    async runNow(name: string): Promise<{ started: boolean }> {
+        const job = this.jobs.get(name);
+        if (!job) {
+            throw new Error(`Job ${name} not registered`);
+        }
+        if (this.runningJobs.has(name)) {
+            return { started: false };
+        }
+        // Fire-and-forget: executeJob re-checks the running set synchronously before
+        // its first await, so there is no window for a stacked run between here and
+        // there. We do not await it — the HTTP layer returns 202 immediately.
+        void this.executeJob(job);
+        return { started: true };
     }
 
     /**

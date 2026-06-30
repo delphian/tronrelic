@@ -466,6 +466,30 @@ export interface IAccountHistoryService {
     getTransactions(query: IAccountTransactionQuery): Promise<IAccountTransactionPage>;
 
     /**
+     * Read specific stored transactions for one account by transaction hash,
+     * newest first. Unlike {@link getTransactions}, this is keyed by an explicit
+     * `txIds` set rather than a pagination window, so a consumer can fetch rows it
+     * knows it needs but that fall outside a bounded window read.
+     *
+     * Why it exists: the valuation engine pairs an internal transfer's two legs
+     * (an out on the source wallet, an in on the destination) by `txId`. Each
+     * owned wallet's ledger is read newest-first under a per-wallet row cap, so a
+     * high-volume wallet can push one leg of a pair beyond its window while the
+     * other leg stays inside another wallet's window. That split silently drops
+     * the transfer's cost basis. This method lets the engine refetch the missing
+     * legs by hash and complete the pair, keeping the bulk read bounded.
+     *
+     * Applies the same outbound-TRC20 dedupe as {@link getTransactions} so a
+     * token transfer's native twin is never returned twice. Authorization is the
+     * caller's responsibility — the service trusts the address it is given.
+     *
+     * @param address - Base58 address whose rows to read.
+     * @param txIds - Transaction hashes to fetch; the service clamps the count.
+     * @returns The matching source-independent transactions, newest first.
+     */
+    getTransactionsByTxIds(address: string, txIds: string[]): Promise<IBlockTransaction[]>;
+
+    /**
      * Build the batched activity/behaviour summary for one account — the calendar
      * heatmap buckets, the "wallet story" stats, the TRON resource totals, the
      * per-month inflow/outflow, and the top counterparties — in a single call so
