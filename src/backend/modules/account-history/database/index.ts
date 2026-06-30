@@ -94,8 +94,16 @@ export interface IAccountProgressDoc {
     forwardPendingNewest?: Date;
     /** Total rows written to ClickHouse for this account. */
     rowsIngested: number;
-    /** When the ingestion tick last touched this account; drives round-robin ordering. */
+    /** When any tick (backfill or forward sync) last touched this account; drives backfill round-robin ordering. */
     lastRunAt?: Date;
+    /**
+     * When forward sync last refreshed this completed account. Set alongside
+     * `lastRunAt` by the forward pass and drives the forward round-robin (stalest
+     * first), so a never-refreshed completed account — `lastForwardRunAt` absent —
+     * sorts ahead of one refreshed recently. Surfaced to the admin as a distinct
+     * "last refresh" fact separate from the original backfill advance.
+     */
+    lastForwardRunAt?: Date;
     /** Message from the most recent failed tick; cleared on the next success. */
     lastError?: string;
 }

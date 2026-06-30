@@ -316,6 +316,18 @@ export class AccountHistoryService implements IAccountHistoryService {
             progress: AccountHistoryService.toProgress(account.address, progressByAddress.get(account.address))
         }));
 
+        // The freshness floor: the stalest leading edge among completed accounts.
+        // Computed over completed accounts only — forward sync (which advances the
+        // watermark) applies only to them, so an in-progress account's partial
+        // watermark would understate the fleet's caught-up freshness. Undefined
+        // when nothing is complete yet, so the header omits the rollup.
+        const completeWatermarks = accountStats
+            .filter((a) => a.progress.status === 'complete' && a.progress.newestTimestampSeen)
+            .map((a) => a.progress.newestTimestampSeen!.getTime());
+        const oldestNewestTimestamp = completeWatermarks.length > 0
+            ? new Date(Math.min(...completeWatermarks))
+            : undefined;
+
         const stats: IAccountHistoryStats = {
             settings,
             accounts: accountStats,
@@ -323,7 +335,9 @@ export class AccountHistoryService implements IAccountHistoryService {
                 trackedAccounts: accounts.length,
                 rowsIngested: accountStats.reduce((sum, a) => sum + a.progress.rowsIngested, 0),
                 completeAccounts: accountStats.filter((a) => a.progress.status === 'complete').length,
-                failedAccounts: accountStats.filter((a) => a.progress.status === 'failed').length
+                failedAccounts: accountStats.filter((a) => a.progress.status === 'failed').length,
+                catchingUpAccounts: accountStats.filter((a) => a.progress.catchingUp).length,
+                oldestNewestTimestamp
             }
         };
         return stats;
@@ -680,10 +694,14 @@ export class AccountHistoryService implements IAccountHistoryService {
             progressByAddress.set(doc.address, doc);
         }
 
+        // Order by the forward-specific timestamp, not `lastRunAt`: for a completed
+        // account `lastRunAt` was frozen at backfill completion, so it cannot rotate
+        // forward freshness fairly. A never-forward-synced account (no
+        // `lastForwardRunAt`) sorts first, so it is refreshed soonest.
         const eligible = tracked.filter((t) => progressByAddress.get(t.address)?.status === 'complete');
         eligible.sort((a, b) => {
-            const aRun = progressByAddress.get(a.address)?.lastRunAt?.getTime() ?? 0;
-            const bRun = progressByAddress.get(b.address)?.lastRunAt?.getTime() ?? 0;
+            const aRun = progressByAddress.get(a.address)?.lastForwardRunAt?.getTime() ?? 0;
+            const bRun = progressByAddress.get(b.address)?.lastForwardRunAt?.getTime() ?? 0;
             return aRun - bRun;
         });
 
@@ -808,11 +826,17 @@ export class AccountHistoryService implements IAccountHistoryService {
             }
 
             const stillDraining = nextTxCursor !== undefined || nextTrc20Cursor !== undefined;
+            // One timestamp for both fields: `lastRunAt` keeps its "last touched by
+            // any tick" meaning (so the admin's primary column stays live for
+            // completed accounts), while `lastForwardRunAt` records the forward
+            // refresh specifically and drives the forward round-robin.
+            const now = new Date();
             const patch: Partial<IAccountProgressDoc> = {
                 forwardTxCursor: nextTxCursor,
                 forwardTrc20Cursor: nextTrc20Cursor,
                 rowsIngested: progress.rowsIngested + written,
-                lastRunAt: new Date(),
+                lastRunAt: now,
+                lastForwardRunAt: now,
                 lastError: undefined
             };
             if (stillDraining) {
@@ -836,12 +860,14 @@ export class AccountHistoryService implements IAccountHistoryService {
             // Keep status `complete`; never reopen the backfill (see method doc).
             // Persist the drain state so the next tick resumes; never promote the
             // watermark on a failed (partial) drain.
+            const now = new Date();
             await this.patchProgress(address, {
                 forwardTxCursor: nextTxCursor,
                 forwardTrc20Cursor: nextTrc20Cursor,
                 forwardPendingNewest: pendingNewest,
                 rowsIngested: progress.rowsIngested + written,
-                lastRunAt: new Date(),
+                lastRunAt: now,
+                lastForwardRunAt: now,
                 lastError: message
             });
         }
@@ -978,7 +1004,7 @@ export class AccountHistoryService implements IAccountHistoryService {
      */
     private static toProgress(address: string, doc: IAccountProgressDoc | undefined): IAccountIngestionProgress {
         if (!doc) {
-            return { address, status: 'queued', rowsIngested: 0 };
+            return { address, status: 'queued', rowsIngested: 0, catchingUp: false };
         }
         return {
             address,
@@ -988,6 +1014,11 @@ export class AccountHistoryService implements IAccountHistoryService {
             newestTimestampSeen: doc.newestTimestampSeen,
             rowsIngested: doc.rowsIngested,
             lastRunAt: doc.lastRunAt,
+            lastForwardRunAt: doc.lastForwardRunAt,
+            // Mid-drain iff a forward continuation cursor is parked on either
+            // endpoint. Surface only the boolean — the opaque fingerprints stay
+            // internal, but the operator still learns the account is catching up.
+            catchingUp: Boolean(doc.forwardTxCursor || doc.forwardTrc20Cursor),
             lastError: doc.lastError
         };
     }

@@ -12,7 +12,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { Plus, Play, Trash2, Pause, PlayCircle } from 'lucide-react';
+import { Plus, Play, Trash2, Pause, PlayCircle, RefreshCw } from 'lucide-react';
 import { Stack } from '../../../../components/layout';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
@@ -25,6 +25,7 @@ import {
     removeTrackedAccount,
     setAccountPaused,
     runIngestion,
+    runForwardSync,
     type IAccountHistoryStatsView,
     type AccountIngestionStatus
 } from '../../../../modules/account-history';
@@ -96,9 +97,18 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
     const runNow = useCallback(async () => {
         try {
             await runIngestion();
-            push({ tone: 'success', title: 'Ingestion tick started' });
+            push({ tone: 'success', title: 'Backfill tick started' });
         } catch (err) {
             push({ tone: 'danger', title: 'Failed to run ingestion', description: err instanceof Error ? err.message : String(err) });
+        }
+    }, [push]);
+
+    const runForwardNow = useCallback(async () => {
+        try {
+            await runForwardSync();
+            push({ tone: 'success', title: 'Forward-sync tick started', description: 'Refreshing completed accounts with new transactions.' });
+        } catch (err) {
+            push({ tone: 'danger', title: 'Failed to run forward sync', description: err instanceof Error ? err.message : String(err) });
         }
     }, [push]);
 
@@ -125,13 +135,17 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                     <Plus size={16} /> Track
                 </Button>
                 <Button variant="secondary" size="sm" onClick={() => { void runNow(); }}>
-                    <Play size={16} /> Run now
+                    <Play size={16} /> Run backfill
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => { void runForwardNow(); }}>
+                    <RefreshCw size={16} /> Run forward sync
                 </Button>
             </div>
 
             <p className="text-muted" style={{ margin: 0, fontSize: 'var(--font-size-body-sm)' }}>
-                Backfill walks each account&apos;s full history newest-first, bounded per tick. Progress shows rows ingested and how far
-                back the cursor has reached — there is no percentage, since the total transaction count is unknown until the walk ends.
+                Backfill walks each account&apos;s full history newest-first, bounded per tick — no percentage, since the total count is
+                unknown until the walk ends. Once complete, forward sync keeps the account current: &ldquo;Newest tx&rdquo; is the latest
+                transaction stored, and a <em>catching up</em> tag means forward sync is still draining a backlog larger than one tick.
             </p>
 
             {accounts.length === 0
@@ -145,6 +159,7 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                                     <Th width="shrink">Status</Th>
                                     <Th width="shrink">Rows</Th>
                                     <Th width="shrink">Oldest reached</Th>
+                                    <Th width="shrink">Newest tx</Th>
                                     <Th width="shrink">Last run</Th>
                                     <Th width="shrink">Actions</Th>
                                 </Tr>
@@ -158,14 +173,25 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                                             {progress.lastError && <div className={styles.account_error}>{progress.lastError}</div>}
                                         </Td>
                                         <Td data-label="Status">
-                                            <Badge tone={statusTone(progress.status)}>{account.paused ? 'paused' : progress.status}</Badge>
+                                            <div className={styles.badge_stack}>
+                                                <Badge tone={statusTone(progress.status)}>{account.paused ? 'paused' : progress.status}</Badge>
+                                                {progress.catchingUp && !account.paused && <Badge tone="warning">catching up</Badge>}
+                                            </div>
                                         </Td>
                                         <Td data-label="Rows" muted>{progress.rowsIngested.toLocaleString()}</Td>
                                         <Td data-label="Oldest reached" muted>
                                             {progress.oldestTimestampReached ? <ClientTime date={progress.oldestTimestampReached} format="datetime" /> : '—'}
                                         </Td>
+                                        <Td data-label="Newest tx" muted>
+                                            {progress.newestTimestampSeen ? <ClientTime date={progress.newestTimestampSeen} format="relative" /> : '—'}
+                                        </Td>
                                         <Td data-label="Last run" muted>
                                             {progress.lastRunAt ? <ClientTime date={progress.lastRunAt} format="datetime" /> : '—'}
+                                            {progress.lastForwardRunAt && (
+                                                <div className={styles.forward_run}>
+                                                    refreshed <ClientTime date={progress.lastForwardRunAt} format="relative" />
+                                                </div>
+                                            )}
                                         </Td>
                                         <Td data-label="Actions">
                                             <div className={styles.row_actions}>

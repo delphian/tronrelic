@@ -332,7 +332,9 @@ export const myPluginBackendPlugin = definePlugin({
 
 ## Submenu Pattern (Namespaced Tab Rows)
 
-An admin page's submenu — the in-page tab row on surfaces like `/system/traffic` or the AI assistant admin (query / history / tools / settings) — is just a menu. Pages historically hand-roll these as `<button>` arrays with local `activeTab` state, duplicating the same pattern across surfaces. Backing the row with the menu service instead inherits per-user gating, ordering, live `menu:update` refresh, and runtime extensibility: a *different* plugin can contribute a tab into the row by registering a node, which a hand-rolled array cannot offer.
+An admin page's submenu — the in-page tab row on a surface like `/system/account-history` (tracked accounts / settings / schedules) — is just a menu, and backing it with the menu service is **the only authorized pattern for core and module admin pages.** Hand-rolled `<button>` arrays with local `activeTab` state, bare `.segmented-control` strips, and per-page `styles.tab` rows are **not permitted** for these surfaces: they duplicate the same code across pages and forfeit the per-user gating, ordering, live `menu:update` refresh, and runtime extensibility the menu service provides — a *different* plugin can even contribute a tab into the row by registering a node, which a hand-rolled array cannot.
+
+**Reference implementation:** `/system/account-history`. `AccountHistoryModule.run()` registers the `account-history` namespace nodes; `AccountHistoryAdminClient.tsx` renders them with `MenuNavClient`. Copy that surface when building a new admin page's tab row.
 
 ### How It Works
 
@@ -352,30 +354,31 @@ The click decision is the caller's: omit `onItemSelect` and a tab navigates like
 ### Example
 
 ```typescript
-// Backend: register the tabs in the page's own namespace during `ready`.
-menuService.subscribe('ready', async () => {
-    await menuService.create({
-        namespace: 'ai-assistant',
-        label: 'Query',
-        url: '/system/plugins/ai-assistant?tab=query',
-        icon: 'Search',
-        order: 0,
-        parent: null,
-        enabled: true,
-        requiresAdmin: true // caller owns gating outside the System subtree
-    });
-    // ...history, tools, settings
+// Backend: register the tabs in the page's own namespace. A core module
+// registers in `run()` (the menu service is already up); a plugin registers in
+// a `menuService.subscribe('ready', ...)` callback. Memory-only, requiresAdmin
+// per node since the namespace sits outside the System container.
+await menuService.create({
+    namespace: 'account-history',
+    label: 'Tracked Accounts',
+    url: '/system/account-history?tab=accounts',
+    icon: 'List',
+    order: 0,
+    parent: null,
+    enabled: true,
+    requiresAdmin: true // caller owns gating outside the System subtree
 });
+// ...Ingestion Settings, Schedules
 ```
 
 ```tsx
-// Frontend (page client component): render the row as in-page tabs.
+// Frontend (core page client component): render the row as in-page tabs.
 <MenuNavClient
-    namespace="ai-assistant"
+    namespace="account-history"
     items={submenuTree}
     generatedAt={generatedAt}
-    activeUrl={`/system/plugins/ai-assistant?tab=${activeTab}`}
-    onItemSelect={(item) => setActiveTab(tabKeyFromUrl(item.url))}
+    activeUrl={`/system/account-history?tab=${activeTab}`}
+    onItemSelect={(item) => setActiveTab(tabFromUrl(item.url))}
 />
 ```
 

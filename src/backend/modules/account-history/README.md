@@ -8,7 +8,7 @@ Ingests the full transaction history of operator-tracked TRON accounts into Clic
 |---------|-------|
 | Module id | `account-history` |
 | Module class | `src/backend/modules/account-history/AccountHistoryModule.ts` |
-| Admin page | `/system/account-history` (menu item `Account History`, order 27, registered in `run()`) |
+| Admin page | `/system/account-history` — System-container item `Account History` (order 27); in-page tabs registered as the `account-history` menu namespace (menu module's Submenu Pattern), rendered with `MenuNavClient`. All in `run()`. |
 | Service registry name | `'account-history'` → `IAccountHistoryService` |
 | Mounted routes | `/api/admin/system/account-history/*` (`createAdminRateLimiter` + `requireAdmin`); `/api/account-history/me/progress` (`requireLogin`, ownership-scoped) |
 | Auto-enrollment | Registers a `'core'` handler on the `http.walletLinked` hook — a user verifying a wallet auto-enrolls it (`label: 'user-verified'`) |
@@ -104,6 +104,8 @@ The backward backfill only walks *down* and permanently excludes `complete` acco
 The watermark advances only when a drain fully reaches known territory (a row at or below it). When a tick hits the per-tick page cap first — a backlog larger than one tick can hold — the endpoint is left *mid-drain*: its continuation fingerprint is persisted (`forwardTxCursor` / `forwardTrc20Cursor`) and the next tick resumes draining downward from there. The newest timestamp seen is held in `forwardPendingNewest` and promoted to the watermark only once both endpoints reach known territory, so the watermark never moves past rows a capped tick left un-fetched — the silent gap an immediate advance would create. While an account is mid-drain, an endpoint that is not itself draining is skipped rather than re-walked, so its fresh arrivals cannot push the shared pending watermark past the still-draining endpoint's un-fetched rows; those arrivals are caught on the next clean cycle. A high-volume account therefore drains over several ticks with **no data loss** — raising `pagesPerTick` or the job cadence only makes it drain faster.
 
 The poll never flips an account to `failed` — that would re-admit it to the backward backfill (which filters on `status !== 'complete'`) and, with cursors cleared at completion, trigger a full re-walk that double-counts; on error it keeps `complete`, persists the drain state, and the next tick resumes from it.
+
+**Admin visibility.** Forward sync is legible on `/system/account-history` without reading Mongo. `newestTimestampSeen` is the per-account freshness watermark ("Newest tx" column); a `catchingUp` boolean (derived from a parked forward continuation cursor, never the raw fingerprint) tags a completed account still draining a backlog; `lastForwardRunAt` records the last forward refresh, distinct from the frozen backfill `lastRunAt`. `getStats().totals` rolls these into `catchingUpAccounts` and `oldestNewestTimestamp` (the freshness floor across completed accounts) for the page header. The `POST /ingest/forward/run` endpoint is wired to a "Run forward sync" button so an operator can force a refresh without waiting for the cron.
 
 ## Storage
 
