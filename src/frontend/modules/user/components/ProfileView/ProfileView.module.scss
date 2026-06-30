@@ -8,6 +8,10 @@
 
 @use '../../../../app/breakpoints' as *;
 
+.submenu {
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
 .account {
     display: flex;
     align-items: center;

@@ -72,6 +72,28 @@ export interface IIdentityModuleDependencies {
 }
 
 /**
+ * Dedicated menu namespace for the `/profile` hub's in-page tab row. Kept out of
+ * `main` so the tabs never leak into the global nav chrome — only the profile
+ * page's own `MenuNavClient` reads this namespace (menu module's Submenu
+ * Pattern). The route is identical across tabs; each node carries a `?tab=` the
+ * client reads to drive the active panel.
+ */
+const PROFILE_SUBMENU_NAMESPACE = 'profile';
+
+/**
+ * The profile hub's tab row, declared as menu nodes rather than a hand-rolled
+ * button array so the row inherits ordering and live `menu:update` refresh from
+ * the menu service. The nodes carry no `requiresAdmin`/`requiresGroups` gate:
+ * `/profile` is login-gated by the route's `ProfileAuthGate`, and every signed-in
+ * visitor sees both tabs. Keeping the namespace out of `main` is what hides the
+ * tabs from global nav — not a per-node gate.
+ */
+const PROFILE_SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
+    { label: 'Profile', tab: 'profile', icon: 'User', order: 0 },
+    { label: 'Wallets', tab: 'wallets', icon: 'Wallet', order: 1 }
+];
+
+/**
  * Better Auth identity module.
  */
 export class IdentityModule implements IModule<IIdentityModuleDependencies> {
@@ -208,6 +230,26 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
             });
 
             this.logger.info('Users menu item registered under the System container');
+
+            // Register the /profile hub's in-page tab row as a namespaced menu
+            // (menu module's Submenu Pattern). Memory-only nodes outside the
+            // System container, so the container's non-bypassable requiresAdmin
+            // force does not reach them — and we deliberately set no gate: the
+            // route's ProfileAuthGate already requires login, and both tabs are
+            // visible to every signed-in account. The page renders this namespace
+            // with MenuNavClient instead of hand-rolling tabs.
+            for (const tab of PROFILE_SUBMENU_TABS) {
+                await this.menuService.create({
+                    namespace: PROFILE_SUBMENU_NAMESPACE,
+                    label: tab.label,
+                    url: `/profile?tab=${tab.tab}`,
+                    icon: tab.icon,
+                    order: tab.order,
+                    parent: null,
+                    enabled: true
+                });
+            }
+            this.logger.info('Profile submenu tab nodes registered');
         } catch (error) {
             this.logger.error({ error }, 'Failed to register users menu item');
             throw new Error(`Failed to register users menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);
