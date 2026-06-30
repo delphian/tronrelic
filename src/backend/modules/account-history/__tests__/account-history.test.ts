@@ -134,6 +134,7 @@ describe('AccountHistoryModule', () => {
         );
         expect(scheduler.register).toHaveBeenCalledWith('account-history:ingest', expect.any(String), expect.any(Function));
         expect(scheduler.register).toHaveBeenCalledWith('account-history:forward-sync', expect.any(String), expect.any(Function));
+        expect(scheduler.register).toHaveBeenCalledWith('account-history:ledger-backfill', expect.any(String), expect.any(Function));
         expect(serviceRegistry.has('account-history')).toBe(true);
 
         // The System-container entry plus the three in-page tab nodes (the

@@ -24,6 +24,7 @@ export function createAccountHistoryRouter(controller: AccountHistoryController)
     router.patch('/settings', controller.updateSettings);
     router.post('/ingest/run', controller.runIngestion);
     router.post('/ingest/forward/run', controller.runForwardSync);
+    router.post('/ingest/backfill-ledger/run', controller.runLedgerBackfill);
 
     router.get('/accounts', controller.listTrackedAccounts);
     router.post('/accounts', controller.addTrackedAccount);

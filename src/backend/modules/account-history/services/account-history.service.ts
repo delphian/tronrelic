@@ -97,6 +97,15 @@ const STATS_EVENT = 'account-history:stats';
 const MAX_TXID_READ = 2_000;
 
 /**
+ * Stored `trc20` transactions the ledger-backfill token sweep visits per account
+ * per tick. Each visited transaction costs one provider events call (through the
+ * shared TronGrid rate limiter), so this caps the per-account backfill burst while
+ * the keyset cursor resumes the remainder on the next tick. One-time work that
+ * self-quiesces once the legacy population is swept.
+ */
+const LEDGER_BACKFILL_TOKEN_TX_PER_TICK = 50;
+
+/**
  * The `account_transactions` columns every source-independent read projects.
  * Shared by {@link AccountHistoryService.getTransactions} and
  * {@link AccountHistoryService.getTransactionsByTxIds} so the projection stays in
@@ -178,6 +187,9 @@ export class AccountHistoryService implements IAccountHistoryService {
     /** Guards against overlapping forward-sync ticks (independent of backfill). */
     private forwardTicking = false;
 
+    /** Guards against overlapping ledger-backfill ticks (Stage-3 ledger population). */
+    private ledgerBackfillTicking = false;
+
     /**
      * @param deps - Injected collaborators; stored for the singleton's lifetime.
      */
@@ -241,6 +253,11 @@ export class AccountHistoryService implements IAccountHistoryService {
         await this.database.createIndex(PROGRESS_COLLECTION, { status: 1, lastForwardRunAt: 1, paused: 1 });
         // Snapshot: sort lastSnapshotDay (also the dueness range); range paused.
         await this.database.createIndex(PROGRESS_COLLECTION, { lastSnapshotDay: 1, paused: 1 });
+        // Ledger backfill: equality status='complete'; sort lastLedgerBackfillRunAt;
+        // range paused. The selector's `$or` over the two completion flags cannot be
+        // index-served, but this prefix serves the equality + sort so the stalest
+        // legacy-complete account is found without a blocking sort.
+        await this.database.createIndex(PROGRESS_COLLECTION, { status: 1, lastLedgerBackfillRunAt: 1, paused: 1 });
     }
 
     /**
@@ -935,6 +952,12 @@ export class AccountHistoryService implements IAccountHistoryService {
                 nativeComplete: state.nativeComplete,
                 trc20Complete: state.trc20Complete,
                 internalComplete: state.internalComplete,
+                // An account that finishes its backfill under current code already
+                // had its token legs written by the trc20 walk (events-sourced,
+                // real log_index), so it never needs the Stage-3 token sweep. Marking
+                // it here is what keeps the ledger-backfill selector targeting only
+                // the legacy population (completed before token dual-write, flag absent).
+                tokenLegsBackfillComplete: done ? true : undefined,
                 rowsIngested: state.rowsIngested,
                 oldestTimestampReached: state.oldest,
                 newestTimestampSeen: state.newest
@@ -1338,6 +1361,260 @@ export class AccountHistoryService implements IAccountHistoryService {
                 lastError: message
             });
         }
+    }
+
+    /**
+     * Backfill the value-transfer ledger for accounts that finished their backfill
+     * before the Stage-2 dual-write shipped. Native legs are reconstructed from
+     * stored rows by migration `005`; this tick covers the two leg families the
+     * provider must re-fetch: historical internal legs (never lived in
+     * `account_transactions`) and token legs (whose `log_index` key is only on the
+     * events endpoint). Bounded per tick like the other ticks and gated by the same
+     * `ingestionEnabled` master switch. Self-quiescing: once a legacy account's
+     * internal source exhausts and its token sweep finishes, the selector excludes
+     * it, and new accounts never enter (they are marked token-current at completion).
+     *
+     * Operates on `complete` accounts — the population forward sync owns — but
+     * writes a disjoint set of progress fields (internal cursor, the two token-sweep
+     * fields, `lastLedgerBackfillRunAt`), so the two ticks run concurrently without
+     * clobbering each other under `patchProgress`'s field-level `$set`.
+     */
+    public async runLedgerBackfillTick(): Promise<void> {
+        if (this.ledgerBackfillTicking) {
+            this.logger.debug('Account-history ledger backfill already running — skipping overlapping tick');
+            return;
+        }
+
+        this.ledgerBackfillTicking = true;
+        try {
+            const settings = await this.getSettings();
+            if (!settings.ingestionEnabled) {
+                this.logger.debug('Account-history ingestion disabled — ledger backfill is a no-op');
+                return;
+            }
+            if (!this.clickhouse || !this.provider) {
+                this.logger.info('Account-history ledger backfill skipped — ClickHouse or provider unavailable');
+                return;
+            }
+
+            const candidates = await this.selectAccountsForLedgerBackfill(settings.accountsPerTick);
+            if (candidates.length === 0) {
+                return;
+            }
+            for (const address of candidates) {
+                await this.backfillLedgerForAccount(address, settings.pagesPerTick);
+            }
+            await this.broadcastStats();
+        } catch (error) {
+            this.logger.error(
+                { error: error instanceof Error ? error.message : 'Unknown error' },
+                'Account-history ledger backfill tick failed'
+            );
+            throw error;
+        } finally {
+            this.ledgerBackfillTicking = false;
+        }
+    }
+
+    /**
+     * Select the stalest completed accounts that still owe ledger legs. A completed
+     * account is owed work while either its internal source has not exhausted
+     * (`internalComplete` absent/false) or its token sweep has not finished
+     * (`tokenLegsBackfillComplete` absent/false); once both are satisfied the `$or`
+     * stops matching and the account drops out forever. The `status: 'complete'`
+     * equality keeps the tick off in-flight backfills, and the
+     * `{status, lastLedgerBackfillRunAt, paused}` index serves the equality + sort.
+     *
+     * @param accountsPerTick - Round-robin batch size for this tick.
+     * @returns Up to `accountsPerTick` addresses, stalest-backfilled first.
+     */
+    private async selectAccountsForLedgerBackfill(accountsPerTick: number): Promise<string[]> {
+        const docs = await this.database
+            .getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION)
+            .find({
+                paused: { $ne: true },
+                status: 'complete',
+                $or: [{ internalComplete: { $ne: true } }, { tokenLegsBackfillComplete: { $ne: true } }]
+            })
+            .sort({ lastLedgerBackfillRunAt: 1 })
+            .limit(accountsPerTick)
+            .toArray();
+        return docs.map((doc) => doc.address);
+    }
+
+    /**
+     * Advance one account's ledger backfill: drain a bounded slice of its internal
+     * source, then sweep a bounded batch of its stored token transactions. Both
+     * sub-tasks are idempotent and persist their own cursor, so a throw in either
+     * resumes cleanly next tick. A per-account failure is logged and swallowed so
+     * one bad account does not abort the whole tick; `lastLedgerBackfillRunAt` is
+     * still stamped so the failing account does not starve the rest by always
+     * sorting first.
+     *
+     * @param address - Completed account to advance.
+     * @param pages - Internal-source pages to pull this tick (the shared pacing dial).
+     */
+    private async backfillLedgerForAccount(address: string, pages: number): Promise<void> {
+        const progress = await this.database
+            .getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION)
+            .findOne({ address });
+        if (!progress) {
+            return;
+        }
+
+        try {
+            if (!progress.internalComplete) {
+                await this.backfillInternalLegs(address, pages, progress.internalCursorFingerprint);
+            }
+            if (!progress.tokenLegsBackfillComplete) {
+                await this.backfillTokenLegsBatch(address, progress.tokenLegsBackfillCursor);
+            }
+        } catch (error) {
+            this.logger.error(
+                { address, error: error instanceof Error ? error.message : 'Unknown error' },
+                'Account-history ledger backfill failed for account'
+            );
+        } finally {
+            await this.patchProgress(address, { lastLedgerBackfillRunAt: new Date() });
+        }
+    }
+
+    /**
+     * Drain a bounded slice of an account's internal-transactions source into the
+     * ledger, reusing {@link walkInternalSource} so the historical backfill and the
+     * live forward drain stay byte-identical. A throwaway walk state is seeded from
+     * the stored internal cursor with the other endpoints flagged complete (they are
+     * not the backfill's concern). The advanced cursor and completion flag are
+     * persisted in a `finally` so a mid-walk throw still resumes from the last clean
+     * page — only the two internal fields are written, never the shared counters
+     * forward sync also touches.
+     *
+     * @param address - Completed account to advance.
+     * @param pages - Maximum internal pages to pull this tick.
+     * @param internalCursor - Stored internal cursor to resume from, if any.
+     */
+    private async backfillInternalLegs(address: string, pages: number, internalCursor?: string): Promise<void> {
+        const state: IIngestWalkState = {
+            internalCursor,
+            nativeComplete: true,
+            trc20Complete: true,
+            internalComplete: false,
+            rowsIngested: 0
+        };
+        try {
+            await this.walkInternalSource(address, pages, state);
+        } finally {
+            await this.patchProgress(address, {
+                internalCursorFingerprint: state.internalComplete ? undefined : state.internalCursor,
+                internalComplete: state.internalComplete
+            });
+        }
+    }
+
+    /**
+     * Sweep the next batch of an account's stored `trc20` transactions into the
+     * ledger as token legs. Token legs cannot be reconstructed from
+     * `account_transactions` (it lacks the `log_index` that keys them), so each
+     * distinct stored `trc20` transaction is re-fetched from the provider's events
+     * endpoint — exactly the live `writeTokenTransferLegs` source — one events call
+     * per transaction through the shared rate limiter. The keyset cursor advances
+     * over `(timestamp, tx_id)` so the sweep resumes mid-account across ticks; a
+     * short batch means the account is fully swept. Writes legs before advancing the
+     * cursor so a write failure re-ingests the batch idempotently next tick.
+     *
+     * @param address - Completed account to advance.
+     * @param cursor - Encoded `(timestamp, tx_id)` watermark of the last swept
+     *   transaction, or undefined to start from the account's oldest `trc20` row.
+     */
+    private async backfillTokenLegsBatch(address: string, cursor?: string): Promise<void> {
+        const parsed = AccountHistoryService.parseTokenBackfillCursor(cursor);
+        const keyset = parsed
+            ? `AND (timestamp, tx_id) > (toDateTime64({ts:String}, 3, 'UTC'), {txId:String})`
+            : '';
+        const batchRows = await this.clickhouse!.query<{ tx_id: string; ts: string }>(
+            `SELECT DISTINCT tx_id, toString(timestamp) AS ts
+             FROM ${TRANSACTIONS_TABLE}
+             WHERE account = {address:String} AND source = 'trc20' ${keyset}
+             ORDER BY timestamp ASC, tx_id ASC
+             LIMIT {limit:UInt32}`,
+            parsed
+                ? { address, ts: parsed.ts, txId: parsed.txId, limit: LEDGER_BACKFILL_TOKEN_TX_PER_TICK }
+                : { address, limit: LEDGER_BACKFILL_TOKEN_TX_PER_TICK }
+        );
+
+        if (batchRows.length === 0) {
+            await this.patchProgress(address, { tokenLegsBackfillComplete: true });
+            return;
+        }
+
+        const txIds = batchRows.map((row) => row.tx_id);
+        // Carry decimals from the stored trc20 rows' token metadata — the events
+        // payload omits them — mirroring the live writeTokenTransferLegs enrichment.
+        const decimalsRows = await this.clickhouse!.query<{ contract_address: string; token_decimals: number }>(
+            `SELECT DISTINCT contract_address, token_decimals
+             FROM ${TRANSACTIONS_TABLE}
+             WHERE account = {address:String} AND source = 'trc20'
+                   AND tx_id IN ({txIds:Array(String)})
+                   AND contract_address IS NOT NULL AND token_decimals IS NOT NULL`,
+            { address, txIds }
+        );
+        const decimalsByAsset = new Map<string, number>();
+        for (const row of decimalsRows) {
+            if (row.contract_address != null && typeof row.token_decimals === 'number') {
+                decimalsByAsset.set(row.contract_address, row.token_decimals);
+            }
+        }
+
+        const legs: IValueTransfer[] = [];
+        for (const txId of txIds) {
+            const txLegs = await this.provider!.fetchTokenTransferLegs(address, txId);
+            for (const leg of txLegs) {
+                const decimals = decimalsByAsset.get(leg.assetId);
+                legs.push(decimals != null ? { ...leg, assetDecimals: decimals } : leg);
+            }
+        }
+        await this.writeValueTransfers(address, legs);
+
+        const last = batchRows[batchRows.length - 1];
+        const patch: Partial<IAccountProgressDoc> = {
+            tokenLegsBackfillCursor: AccountHistoryService.encodeTokenBackfillCursor(last.ts, last.tx_id)
+        };
+        // A batch short of the cap exhausts the account; mark it so the next tick
+        // skips a redundant empty probe.
+        if (batchRows.length < LEDGER_BACKFILL_TOKEN_TX_PER_TICK) {
+            patch.tokenLegsBackfillComplete = true;
+        }
+        await this.patchProgress(address, patch);
+    }
+
+    /**
+     * Encode a token-sweep keyset watermark. The `trc20` `tx_id` is a hex hash and
+     * the ClickHouse timestamp string carries no `|`, so a single pipe is an
+     * unambiguous separator.
+     *
+     * @param ts - ClickHouse timestamp string of the last swept transaction.
+     * @param txId - Hash of the last swept transaction.
+     * @returns The encoded `"<ts>|<txId>"` cursor.
+     */
+    private static encodeTokenBackfillCursor(ts: string, txId: string): string {
+        return `${ts}|${txId}`;
+    }
+
+    /**
+     * Parse a token-sweep keyset watermark back into its parts.
+     *
+     * @param cursor - The encoded cursor, or undefined when the sweep has not started.
+     * @returns The `(ts, txId)` watermark, or null to start from the oldest row.
+     */
+    private static parseTokenBackfillCursor(cursor?: string): { ts: string; txId: string } | null {
+        if (!cursor) {
+            return null;
+        }
+        const separator = cursor.indexOf('|');
+        if (separator < 0) {
+            return null;
+        }
+        return { ts: cursor.slice(0, separator), txId: cursor.slice(separator + 1) };
     }
 
     /**
