@@ -10,6 +10,7 @@
 
 import { headers } from 'next/headers';
 import type { Metadata } from 'next';
+import type { MenuNodeSerialized } from '@/shared';
 import type { IAccountIngestionProgress, ILinkedWallet } from '@/types';
 import { getServerSideApiUrlWithPath } from '../../../lib/api-url';
 import { getServerSession } from '../../../modules/user/lib/session-server';
@@ -19,6 +20,13 @@ import { ProfileView } from '../../../modules/user/components/ProfileView';
 export const metadata: Metadata = {
     title: 'Profile'
 };
+
+/**
+ * Namespace holding the profile hub's tab nodes (Profile, Wallets), registered
+ * by the identity module. Kept out of `main` so the tabs never appear in the
+ * global nav — only this page's `MenuNavClient` reads it.
+ */
+const SUBMENU_NAMESPACE = 'profile';
 
 /**
  * Fetch the signed-in account's linked wallets during SSR, forwarding the
@@ -82,22 +90,65 @@ async function fetchInitialProgress(apiUrl: string): Promise<IAccountIngestionPr
 }
 
 /**
+ * Fetch the profile hub's tab row (the `profile` menu namespace) during SSR so
+ * the submenu paints with the page instead of after a client round-trip. The
+ * nodes carry no gate, but the cookie is forwarded for parity with other
+ * Submenu Pattern fetches and to keep behaviour identical if a gate is added
+ * later. On any failure it degrades to an empty tree — the page still renders,
+ * just without the tab row until a live `menu:update` refetch repopulates it.
+ *
+ * @param apiUrl - The resolved backend API base (already includes `/api`).
+ * @returns The namespace root nodes and the tree snapshot timestamp.
+ */
+async function fetchSubmenu(apiUrl: string): Promise<{ roots: MenuNodeSerialized[]; generatedAt: string }> {
+    const fallback = { roots: [] as MenuNodeSerialized[], generatedAt: new Date().toISOString() };
+    try {
+        const reqHeaders = await headers();
+        const cookie = reqHeaders.get('cookie');
+        const response = await fetch(`${apiUrl}/menu?namespace=${SUBMENU_NAMESPACE}`, {
+            cache: 'no-store',
+            headers: cookie ? { Cookie: cookie } : undefined
+        });
+        if (!response.ok) {
+            return fallback;
+        }
+        const data = await response.json() as { tree?: { roots?: MenuNodeSerialized[]; generatedAt?: string } };
+        return {
+            roots: data.tree?.roots ?? [],
+            generatedAt: data.tree?.generatedAt ?? fallback.generatedAt
+        };
+    } catch {
+        return fallback;
+    }
+}
+
+/**
  * Profile page server component.
  *
+ * @param props - Next.js route props.
+ * @param props.searchParams - The `?tab=` deep link (a Promise in Next.js 15+),
+ *   read SSR-first to seed the initially active tab so a refreshed, bookmarked,
+ *   or shared link opens on the selected panel instead of falling back to Profile.
  * @returns The SSR-rendered hub for a logged-in visitor, or null to defer to
  *   the route's sign-in gate when there is no session.
  */
-export default async function ProfilePage() {
+export default async function ProfilePage({
+    searchParams
+}: {
+    searchParams: Promise<{ tab?: string }>;
+}) {
     const session = await getServerSession();
     if (!session) {
         return null;
     }
 
     const apiUrl = getServerSideApiUrlWithPath();
-    const [initialWallets, initialProgress] = await Promise.all([
+    const [initialWallets, initialProgress, submenu] = await Promise.all([
         fetchInitialWallets(apiUrl),
-        fetchInitialProgress(apiUrl)
+        fetchInitialProgress(apiUrl),
+        fetchSubmenu(apiUrl)
     ]);
+    const { tab } = await searchParams;
 
     return (
         <Page>
@@ -111,6 +162,9 @@ export default async function ProfilePage() {
                 }}
                 initialWallets={initialWallets}
                 initialProgress={initialProgress}
+                submenuTree={submenu.roots}
+                submenuGeneratedAt={submenu.generatedAt}
+                initialTab={tab}
             />
         </Page>
     );
