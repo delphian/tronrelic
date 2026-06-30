@@ -135,7 +135,7 @@ export function WalletTransactionFeed({ address }: IWalletTransactionFeedProps) 
                                         ? styles.value_out
                                         : undefined;
                                 return (
-                                    <Tr key={`${tx.txId}-${tx.type}`}>
+                                    <Tr key={`${tx.txId}-${tx.type}-${tx.to.address}`}>
                                         <Td>{decoded.label}</Td>
                                         <Td className={amountClass}>{decoded.amount || '—'}</Td>
                                         <Td>
