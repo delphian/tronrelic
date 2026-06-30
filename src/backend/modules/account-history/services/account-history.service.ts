@@ -31,6 +31,7 @@ import type {
     IAddTrackedAccountInput,
     ITrackedAccount,
     IBlockTransaction,
+    IValueTransfer,
     IAccountBalanceSnapshot,
     IClickHouseService,
     IDatabaseService,
@@ -43,19 +44,21 @@ import {
     SETTINGS_KEY,
     TRACKED_COLLECTION,
     TRANSACTIONS_TABLE,
+    VALUE_TRANSFERS_TABLE,
     BALANCE_SNAPSHOTS_TABLE,
     TOKEN_BALANCES_TABLE,
     type AccountTxSource,
     type IAccountHistorySettingsDoc,
     type IAccountProgressDoc,
     type IAccountTransactionRow,
+    type IAccountValueTransferRow,
     type IBalanceSnapshotRow,
     type ITokenBalanceRow,
     type IAccountSnapshotSample,
     type ITrackedAccountDoc
 } from '../database/index.js';
 import type { IAccountHistoryProvider } from '../providers/IAccountHistoryProvider.js';
-import { toAccountTransactionRow } from '../providers/trongrid-account-history.provider.js';
+import { toAccountTransactionRow, toValueTransfers, toValueTransferRow } from '../providers/trongrid-account-history.provider.js';
 import { formatClickHouseDateTime64Utc, parseClickHouseDateTime64Utc } from '../lib/clickhouse-datetime.js';
 
 /** Default pacing applied on first read; gentle enough to share the TronGrid budget. */
@@ -123,10 +126,14 @@ interface IIngestWalkState {
     nativeCursor?: string;
     /** Cursor for the `/transactions/trc20` endpoint. */
     trc20Cursor?: string;
+    /** Cursor for the `/internal-transactions` endpoint. */
+    internalCursor?: string;
     /** Whether the native endpoint has reached the end of history. */
     nativeComplete: boolean;
     /** Whether the trc20 endpoint has reached the end of history. */
     trc20Complete: boolean;
+    /** Whether the internal-transactions endpoint has reached the end of history. */
+    internalComplete: boolean;
     /** Running total rows written across both endpoints. */
     rowsIngested: number;
     /** Oldest block time reached so far. */
@@ -688,14 +695,22 @@ export class AccountHistoryService implements IAccountHistoryService {
      * denominations stay separate because, without USD valuation, they share no
      * axis. `toStartOfMonth` buckets in UTC for stable, timezone-independent labels.
      *
+     * The TRX legs are restricted to `type = 'TransferContract'` because
+     * `amount_sun` is filled from a *different* on-chain field per contract type
+     * (`transaction-parse.ts`): a TRC10 token count for `TransferAssetContract`,
+     * delegated/frozen stake for `Delegate*`/`Freeze*`. Summing every type as TRX
+     * inflated the bars with non-TRX value. Wallet-to-wallet `TransferContract` is
+     * the genuine TRX flow; `TriggerSmartContract` call-value is deliberately
+     * excluded here so the chart reads as money in/out, not contract spend.
+     *
      * @param address - Base58 account to summarize.
      * @returns Monthly flow buckets ordered oldest first.
      */
     private async queryMonthlyFlow(address: string): Promise<IWalletFlowBucket[]> {
         const rows = await this.clickhouse!.query<Record<string, string | number>>(
             `SELECT toString(toStartOfMonth(timestamp)) AS period,
-                    sumIf(amount_sun, to_address = {address:String}) AS trx_in_sun,
-                    sumIf(amount_sun, from_address = {address:String}) AS trx_out_sun,
+                    sumIf(amount_sun, type = 'TransferContract' AND to_address = {address:String}) AS trx_in_sun,
+                    sumIf(amount_sun, type = 'TransferContract' AND from_address = {address:String}) AS trx_out_sun,
                     sumIf(toFloat64OrZero(token_amount), token_symbol = 'USDT' AND to_address = {address:String}) AS usdt_in_raw,
                     sumIf(toFloat64OrZero(token_amount), token_symbol = 'USDT' AND from_address = {address:String}) AS usdt_out_raw
              FROM ${TRANSACTIONS_TABLE} FINAL
@@ -891,8 +906,10 @@ export class AccountHistoryService implements IAccountHistoryService {
         const state: IIngestWalkState = {
             nativeCursor: progress.cursorFingerprint,
             trc20Cursor: progress.trc20CursorFingerprint,
+            internalCursor: progress.internalCursorFingerprint,
             nativeComplete: progress.nativeComplete ?? false,
             trc20Complete: progress.trc20Complete ?? false,
+            internalComplete: progress.internalComplete ?? false,
             rowsIngested: progress.rowsIngested,
             oldest: progress.oldestTimestampReached,
             newest: progress.newestTimestampSeen
@@ -905,20 +922,25 @@ export class AccountHistoryService implements IAccountHistoryService {
             if (!state.trc20Complete) {
                 await this.walkSource(address, 'trc20', pages, state);
             }
+            if (!state.internalComplete) {
+                await this.walkInternalSource(address, pages, state);
+            }
 
-            const done = state.nativeComplete && state.trc20Complete;
+            const done = state.nativeComplete && state.trc20Complete && state.internalComplete;
             await this.patchProgress(address, {
                 status: done ? 'complete' : 'queued',
                 cursorFingerprint: state.nativeComplete ? undefined : state.nativeCursor,
                 trc20CursorFingerprint: state.trc20Complete ? undefined : state.trc20Cursor,
+                internalCursorFingerprint: state.internalComplete ? undefined : state.internalCursor,
                 nativeComplete: state.nativeComplete,
                 trc20Complete: state.trc20Complete,
+                internalComplete: state.internalComplete,
                 rowsIngested: state.rowsIngested,
                 oldestTimestampReached: state.oldest,
                 newestTimestampSeen: state.newest
             });
             if (done) {
-                this.logger.info({ address, rowsIngested: state.rowsIngested }, 'Account-history backfill complete for account (both endpoints exhausted)');
+                this.logger.info({ address, rowsIngested: state.rowsIngested }, 'Account-history backfill complete for account (all endpoints exhausted)');
             }
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
@@ -928,8 +950,10 @@ export class AccountHistoryService implements IAccountHistoryService {
                 lastError: message,
                 cursorFingerprint: state.nativeCursor,
                 trc20CursorFingerprint: state.trc20Cursor,
+                internalCursorFingerprint: state.internalCursor,
                 nativeComplete: state.nativeComplete,
                 trc20Complete: state.trc20Complete,
+                internalComplete: state.internalComplete,
                 rowsIngested: state.rowsIngested,
                 oldestTimestampReached: state.oldest,
                 newestTimestampSeen: state.newest
@@ -980,6 +1004,47 @@ export class AccountHistoryService implements IAccountHistoryService {
                 } else {
                     state.trc20Complete = true;
                 }
+                return;
+            }
+        }
+    }
+
+    /**
+     * Walk the internal-transactions endpoint's pages, writing each page's value
+     * legs to the value-transfer ledger and advancing the internal cursor in
+     * `state` after every clean write. The internal counterpart of
+     * {@link walkSource}: internal transfers are value legs, not transactions, so
+     * they go to `account_value_transfers` and never to `account_transactions`. A
+     * contract paying TRX to the account is captured only here. Mutates `state` in
+     * place so the caller persists one combined progress record.
+     *
+     * @param address - Base58 account being ingested.
+     * @param pages - Maximum pages to pull this tick.
+     * @param state - Mutable per-tick walk state, updated in place.
+     */
+    private async walkInternalSource(address: string, pages: number, state: IIngestWalkState): Promise<void> {
+        let fingerprint = state.internalCursor;
+
+        for (let page = 0; page < pages; page++) {
+            const result = await this.provider!.fetchInternalTransfersPage(address, { limit: PROVIDER_PAGE_LIMIT, fingerprint });
+            if (result.transfers.length > 0) {
+                await this.writeValueTransfers(address, result.transfers);
+                state.rowsIngested += result.transfers.length;
+                for (const transfer of result.transfers) {
+                    if (!state.newest || transfer.timestamp > state.newest) {
+                        state.newest = transfer.timestamp;
+                    }
+                    if (!state.oldest || transfer.timestamp < state.oldest) {
+                        state.oldest = transfer.timestamp;
+                    }
+                }
+            }
+
+            fingerprint = result.nextFingerprint;
+            state.internalCursor = fingerprint;
+
+            if (!fingerprint) {
+                state.internalComplete = true;
                 return;
             }
         }
@@ -1100,7 +1165,10 @@ export class AccountHistoryService implements IAccountHistoryService {
         // An account is mid-drain when either endpoint carries a continuation
         // cursor from a prior capped tick. While mid-drain the watermark is frozen
         // at `threshold` and only the still-draining endpoints are advanced.
-        const midDrain = progress.forwardTxCursor !== undefined || progress.forwardTrc20Cursor !== undefined;
+        const midDrain =
+            progress.forwardTxCursor !== undefined ||
+            progress.forwardTrc20Cursor !== undefined ||
+            progress.forwardInternalCursor !== undefined;
 
         // Running newest across the whole (possibly multi-tick) drain: seeded from
         // the held pending value when resuming, else from the frozen watermark so
@@ -1108,6 +1176,7 @@ export class AccountHistoryService implements IAccountHistoryService {
         let pendingNewest: Date | undefined = progress.forwardPendingNewest ?? threshold;
         let nextTxCursor = progress.forwardTxCursor;
         let nextTrc20Cursor = progress.forwardTrc20Cursor;
+        let nextInternalCursor = progress.forwardInternalCursor;
         let written = 0;
 
         try {
@@ -1172,7 +1241,56 @@ export class AccountHistoryService implements IAccountHistoryService {
                 }
             }
 
-            const stillDraining = nextTxCursor !== undefined || nextTrc20Cursor !== undefined;
+            // Internal value transfers — same leading-edge drain discipline as the
+            // transaction endpoints, against the same shared watermark, so a contract
+            // depositing TRX to a completed account is caught here. Kept as its own
+            // block (not folded into the tx/trc20 loop) because it reads value legs,
+            // not transactions, and writes the value-transfer ledger.
+            {
+                const endpointDraining = progress.forwardInternalCursor !== undefined;
+                // Mid-drain: leave internal untouched unless it is the draining
+                // endpoint, so its fresh arrivals cannot push the shared watermark
+                // past rows a still-draining transaction endpoint has not fetched.
+                if (!(midDrain && !endpointDraining)) {
+                    let fingerprint: string | undefined = progress.forwardInternalCursor;
+                    let drainComplete = false;
+
+                    for (let page = 0; page < pages; page++) {
+                        const result = await this.provider!.fetchInternalTransfersPage(address, { limit: PROVIDER_PAGE_LIMIT, fingerprint });
+                        if (result.transfers.length === 0) {
+                            drainComplete = true;
+                            break;
+                        }
+
+                        const fresh = threshold
+                            ? result.transfers.filter((transfer) => transfer.timestamp > threshold)
+                            : result.transfers;
+                        if (fresh.length > 0) {
+                            await this.writeValueTransfers(address, fresh);
+                            written += fresh.length;
+                            for (const transfer of fresh) {
+                                if (!pendingNewest || transfer.timestamp > pendingNewest) {
+                                    pendingNewest = transfer.timestamp;
+                                }
+                            }
+                        }
+
+                        const reachedKnown = threshold ? result.transfers.some((transfer) => transfer.timestamp <= threshold) : false;
+                        fingerprint = result.nextFingerprint;
+                        if (reachedKnown || fresh.length === 0 || !fingerprint) {
+                            drainComplete = true;
+                            break;
+                        }
+                        if (page === pages - 1) {
+                            this.logger.warn({ address, source: 'internal', pages }, 'Account-history forward sync hit the page cap before reaching the watermark — drain will resume next tick');
+                        }
+                    }
+
+                    nextInternalCursor = drainComplete ? undefined : fingerprint;
+                }
+            }
+
+            const stillDraining = nextTxCursor !== undefined || nextTrc20Cursor !== undefined || nextInternalCursor !== undefined;
             // One timestamp for both fields: `lastRunAt` keeps its "last touched by
             // any tick" meaning (so the admin's primary column stays live for
             // completed accounts), while `lastForwardRunAt` records the forward
@@ -1181,6 +1299,7 @@ export class AccountHistoryService implements IAccountHistoryService {
             const patch: Partial<IAccountProgressDoc> = {
                 forwardTxCursor: nextTxCursor,
                 forwardTrc20Cursor: nextTrc20Cursor,
+                forwardInternalCursor: nextInternalCursor,
                 rowsIngested: progress.rowsIngested + written,
                 lastRunAt: now,
                 lastForwardRunAt: now,
@@ -1211,6 +1330,7 @@ export class AccountHistoryService implements IAccountHistoryService {
             await this.patchProgress(address, {
                 forwardTxCursor: nextTxCursor,
                 forwardTrc20Cursor: nextTrc20Cursor,
+                forwardInternalCursor: nextInternalCursor,
                 forwardPendingNewest: pendingNewest,
                 rowsIngested: progress.rowsIngested + written,
                 lastRunAt: now,
@@ -1241,6 +1361,35 @@ export class AccountHistoryService implements IAccountHistoryService {
         // here keeps the cursor on the failed page so the next tick re-fetches and
         // (idempotently, via ReplacingMergeTree) re-writes it.
         await this.clickhouse!.insert<IAccountTransactionRow>(TRANSACTIONS_TABLE, rows, { waitForCommit: true });
+
+        // Dual-write the source-independent value legs (the value-transfer ledger).
+        // Native and token legs are derived from the same transactions; internal
+        // legs come from the internal endpoint via walkInternalSource. Both backfill
+        // and forward sync write through here, so they inherit the dual-write. The
+        // ledger insert follows the transaction insert so a value-ledger failure
+        // also throws before the cursor advances, keeping the page re-ingestable.
+        await this.writeValueTransfers(address, transactions.flatMap((tx) => toValueTransfers(tx)));
+    }
+
+    /**
+     * Project and insert value-transfer legs into the `account_value_transfers`
+     * ledger. ReplacingMergeTree makes the insert idempotent on the natural key
+     * `(account, timestamp, tx_id, origin, leg_key, asset_id)`. A no-op on an empty
+     * batch so callers need not guard. Like {@link writeTransactions}, waits for the
+     * durable commit so a flush failure throws before any cursor advances.
+     *
+     * @param address - The tracked account these legs belong to.
+     * @param transfers - Normalized value transfers to store.
+     */
+    private async writeValueTransfers(address: string, transfers: IValueTransfer[]): Promise<void> {
+        if (transfers.length === 0) {
+            return;
+        }
+        const ingestedAt = formatClickHouseDateTime64Utc(new Date());
+        const rows = transfers.map((leg) =>
+            toValueTransferRow(address, leg, formatClickHouseDateTime64Utc(leg.timestamp), ingestedAt)
+        );
+        await this.clickhouse!.insert<IAccountValueTransferRow>(VALUE_TRANSFERS_TABLE, rows, { waitForCommit: true });
     }
 
     /**

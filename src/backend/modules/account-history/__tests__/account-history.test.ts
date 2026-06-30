@@ -9,12 +9,12 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { IBlockTransaction, IClickHouseService, IHookRegistry, IMenuService, ISchedulerService, ISystemLogService } from '@/types';
+import type { IBlockTransaction, IClickHouseService, IHookRegistry, IMenuService, ISchedulerService, ISystemLogService, IValueTransfer } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 import { AccountHistoryModule } from '../AccountHistoryModule.js';
 import { AccountHistoryService } from '../services/account-history.service.js';
-import { PROGRESS_COLLECTION, SETTINGS_COLLECTION, SETTINGS_KEY, TRACKED_COLLECTION } from '../database/index.js';
+import { PROGRESS_COLLECTION, SETTINGS_COLLECTION, SETTINGS_KEY, TRACKED_COLLECTION, TRANSACTIONS_TABLE, VALUE_TRANSFERS_TABLE } from '../database/index.js';
 import { toAccountTransactionRow } from '../providers/trongrid-account-history.provider.js';
 import type { IAccountHistoryProvider } from '../providers/IAccountHistoryProvider.js';
 
@@ -235,7 +235,7 @@ describe('AccountHistoryService', () => {
     });
 
     it('runIngestionTick is a no-op without ClickHouse and never calls the provider', async () => {
-        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn() };
+        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn(), fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })) };
         const service = buildService(provider);
         await service.runIngestionTick();
         expect(provider.fetchPage).not.toHaveBeenCalled();
@@ -265,7 +265,7 @@ describe('AccountHistoryService', () => {
         // Empty pages so the selected account's walk finishes immediately.
         const provider: IAccountHistoryProvider = {
             id: 'test',
-            fetchAccountSnapshot: vi.fn(),
+            fetchAccountSnapshot: vi.fn(), fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })),
             fetchPage: vi.fn(async () => ({ transactions: [], nextFingerprint: undefined }))
         };
         AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
@@ -276,6 +276,52 @@ describe('AccountHistoryService', () => {
         expect(provider.fetchPage).toHaveBeenCalledWith(queued, expect.anything());
         expect(provider.fetchPage).not.toHaveBeenCalledWith(complete, expect.anything());
         expect(provider.fetchPage).not.toHaveBeenCalledWith(paused, expect.anything());
+    });
+
+    it('dual-writes value-transfer legs: native legs from transactions and internal legs from the internal endpoint', async () => {
+        AccountHistoryService.resetForTests();
+        const now = new Date('2024-01-01T00:00:00.000Z');
+        const database = createMockDatabaseService();
+        database.getCollectionData(TRACKED_COLLECTION).push({ address: VALID_ADDRESS, paused: false, addedAt: now, updatedAt: now });
+        database.getCollectionData(PROGRESS_COLLECTION).push({ address: VALID_ADDRESS, status: 'queued', rowsIngested: 0, paused: false });
+
+        const insertedByTable: Record<string, any[]> = {};
+        const clickhouse = {
+            query: vi.fn().mockResolvedValue([]),
+            insert: vi.fn(async (table: string, rows: any[]) => { (insertedByTable[table] ??= []).push(...rows); })
+        } as unknown as IClickHouseService;
+
+        const nativeTx: IBlockTransaction = {
+            txId: 'n1', blockNumber: 1, timestamp: now, type: 'TransferContract', status: 'SUCCESS',
+            from: { address: 'Tfrom' }, to: { address: 'Tto' }, amountSun: 5_000_000
+        };
+        const provider: IAccountHistoryProvider = {
+            id: 'test',
+            fetchAccountSnapshot: vi.fn(),
+            fetchPage: vi.fn(async (_address: string, opts: any) =>
+                opts.source === 'tx'
+                    ? { transactions: [nativeTx], nextFingerprint: undefined }
+                    : { transactions: [], nextFingerprint: undefined }
+            ),
+            fetchInternalTransfersPage: vi.fn(async () => ({
+                transfers: [
+                    { txId: 'i1', origin: 'internal', legKey: 'h1', assetType: 'TRX', assetId: '', from: 'Tc', to: 'Tto', amountRaw: '100000', timestamp: now, blockNumber: 0 }
+                ] as IValueTransfer[],
+                nextFingerprint: undefined
+            }))
+        };
+
+        AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
+        await AccountHistoryService.getInstance().runIngestionTick();
+
+        // The top-level transaction still lands in account_transactions.
+        expect(insertedByTable[TRANSACTIONS_TABLE]).toHaveLength(1);
+        expect(insertedByTable[TRANSACTIONS_TABLE][0].tx_id).toBe('n1');
+
+        // The value ledger holds the derived native leg plus the internal leg.
+        const legs = insertedByTable[VALUE_TRANSFERS_TABLE] ?? [];
+        expect(legs).toContainEqual(expect.objectContaining({ origin: 'native', asset_type: 'TRX', amount_raw: '5000000', tx_id: 'n1' }));
+        expect(legs).toContainEqual(expect.objectContaining({ origin: 'internal', leg_key: 'h1', amount_raw: '100000', tx_id: 'i1' }));
     });
 
     it('getProgressFor returns progress only for tracked addresses, ignoring untracked and malformed', async () => {
@@ -328,7 +374,7 @@ describe('AccountHistoryService', () => {
     }
 
     it('runForwardSyncTick is a no-op without ClickHouse and never calls the provider', async () => {
-        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn() };
+        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn(), fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })) };
         const service = buildService(provider);
         await service.runForwardSyncTick();
         expect(provider.fetchPage).not.toHaveBeenCalled();
@@ -359,7 +405,7 @@ describe('AccountHistoryService', () => {
         // watermark); 'trc20' returns nothing. The poll must write only the new one.
         const provider: IAccountHistoryProvider = {
             id: 'test',
-            fetchAccountSnapshot: vi.fn(),
+            fetchAccountSnapshot: vi.fn(), fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })),
             fetchPage: vi.fn(async (_address: string, opts: any) => {
                 if (opts.source === 'tx') {
                     return { transactions: [makeTx('new1', newer), makeTx('old1', watermark)], nextFingerprint: undefined };
@@ -416,7 +462,7 @@ describe('AccountHistoryService', () => {
         // 'trc20' has nothing new.
         const provider: IAccountHistoryProvider = {
             id: 'test',
-            fetchAccountSnapshot: vi.fn(),
+            fetchAccountSnapshot: vi.fn(), fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })),
             fetchPage: vi.fn(async (_address: string, opts: any) => {
                 if (opts.source === 'trc20') {
                     return { transactions: [], nextFingerprint: undefined };
@@ -463,7 +509,7 @@ describe('AccountHistoryService', () => {
         database.getCollectionData(PROGRESS_COLLECTION).push({ address: VALID_ADDRESS, status: 'queued', rowsIngested: 0 });
 
         const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
-        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn() };
+        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn(), fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })) };
 
         AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
         const service = AccountHistoryService.getInstance();
@@ -487,7 +533,7 @@ describe('AccountHistoryService', () => {
         });
 
         const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
-        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn() };
+        const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn(), fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })) };
         AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
         const service = AccountHistoryService.getInstance();
 

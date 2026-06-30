@@ -8,7 +8,7 @@
  * a starting point the seam is designed to outgrow.
  */
 
-import type { IBlockTransaction } from '@/types';
+import type { IBlockTransaction, IValueTransfer } from '@/types';
 import type { AccountTxSource, IAccountSnapshotSample } from '../database/index.js';
 
 /**
@@ -38,6 +38,30 @@ export interface IAccountHistoryFetchOptions {
 }
 
 /**
+ * One page of an account's internal (TVM) value transfers plus the cursor to
+ * continue. Separate from {@link IAccountHistoryPageResult} because internal
+ * transfers are value legs, not transactions: a contract paying TRX to the account
+ * appears here and nowhere in the transaction endpoints.
+ */
+export interface IInternalTransfersPageResult {
+    /** The page's value transfers, normalized to the source-independent contract. */
+    transfers: IValueTransfer[];
+    /** Opaque cursor for the next page; undefined when paging is exhausted. */
+    nextFingerprint?: string;
+}
+
+/**
+ * Options for fetching a single page of an account's internal value transfers.
+ * No `source` — there is exactly one internal-transfer feed per account.
+ */
+export interface IInternalTransfersFetchOptions {
+    /** Maximum transfers to return in this page (provider clamps to its own ceiling). */
+    limit: number;
+    /** Opaque cursor from the previous page; omit to start from the newest. */
+    fingerprint?: string;
+}
+
+/**
  * A source of an account's full transaction history, walked one page at a time.
  */
 export interface IAccountHistoryProvider {
@@ -52,6 +76,20 @@ export interface IAccountHistoryProvider {
      * @returns The page plus the cursor for the next call.
      */
     fetchPage(address: string, options: IAccountHistoryFetchOptions): Promise<IAccountHistoryPageResult>;
+
+    /**
+     * Fetch one page of the account's internal (TVM) value transfers — the TRX and
+     * TRC10 moves a contract performs during execution, which the transaction
+     * endpoints omit. Each is a source-independent {@link IValueTransfer} keyed by
+     * the protocol internal-transaction hash, so a provider swap reproduces the
+     * same leg identities. Separate from {@link fetchPage} because these are value
+     * legs, not transactions, and carry their own cursor.
+     *
+     * @param address - Base58 account address to read.
+     * @param options - Page size and continuation cursor.
+     * @returns The page of value transfers plus the cursor for the next call.
+     */
+    fetchInternalTransfersPage(address: string, options: IInternalTransfersFetchOptions): Promise<IInternalTransfersPageResult>;
 
     /**
      * Probe an account's current on-chain state — liquid and staked TRX, the

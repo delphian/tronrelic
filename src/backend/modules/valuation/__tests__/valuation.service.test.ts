@@ -51,6 +51,33 @@ function trxTx(from: string, to: string, trx: number, day: string): IBlockTransa
 }
 
 /**
+ * Build a transaction that carries `amount_sun` but is NOT a native-TRX move —
+ * a TRC10 `TransferAssetContract` (whose `amount_sun` is a token count) or a
+ * `DelegateResourceContract` (whose `amount_sun` is delegated stake). The ledger
+ * populates `amount_sun` from a per-type field, so these once leaked into the TRX
+ * series; the type guard must now drop them.
+ *
+ * @param type - Native contract type to stamp on the row.
+ * @param from - Sender address.
+ * @param to - Recipient address.
+ * @param sun - Raw `amount_sun` value (a non-TRX quantity for these types).
+ * @param day - UTC `YYYY-MM-DD` of the block.
+ * @returns An IBlockTransaction with a non-TRX `amount_sun`.
+ */
+function nonTrxAmountTx(type: string, from: string, to: string, sun: number, day: string): IBlockTransaction {
+    return {
+        txId: `${type}-${from}-${to}-${day}`,
+        blockNumber: 1,
+        timestamp: new Date(`${day}T00:00:00.000Z`),
+        type,
+        status: 'SUCCESS',
+        from: { address: from },
+        to: { address: to },
+        amountSun: sun
+    };
+}
+
+/**
  * Build a fake account-history service from per-address ledgers and snapshots.
  *
  * @param ledgers - Address → the transactions a windowed `getTransactions` returns.
@@ -146,6 +173,33 @@ describe('ValuationService.getPortfolio', () => {
         expect(summary.netWorthUsd).toBeCloseTo(20, 6); // 100 TRX * $0.20
         expect(summary.realizedPnlUsd).toBeCloseTo(0, 6); // nothing disposed
         expect(summary.unrealizedPnlUsd).toBeCloseTo(10, 6); // value 20 - basis 10
+    });
+
+    it('excludes non-TRX contract amounts (TRC10, delegation) from the TRX series', async () => {
+        // `amount_sun` on a TransferAssetContract is a TRC10 token count, and on a
+        // DelegateResourceContract a delegated stake — neither is spendable TRX.
+        // Both once folded into the TRX cost basis (and inflated the balance
+        // series until the display clamp flattened it). The type guard must drop
+        // them so the TRX basis reflects only the genuine 100 TRX transfer.
+        const service = buildService(
+            fakeAccountHistory(
+                {
+                    [WALLET_A]: [
+                        trxTx(EXTERNAL, WALLET_A, 100, '2024-01-01'),
+                        nonTrxAmountTx('TransferAssetContract', EXTERNAL, WALLET_A, 30_000 * 1_000_000, '2024-01-01'),
+                        nonTrxAmountTx('DelegateResourceContract', EXTERNAL, WALLET_A, 11_585 * 1_000_000, '2024-01-01')
+                    ]
+                },
+                { [WALLET_A]: 100 }
+            ),
+            fakePriceHistory({ 'TRX|2024-01-01': 0.1 }, 0.2)
+        );
+
+        const summary = await service.getPortfolio({ addresses: [WALLET_A], ownedAddresses: [WALLET_A], scope: 'wallet' });
+
+        const trx = summary.holdings.find((holding) => holding.asset === 'TRX');
+        expect(trx?.costBasisUsd).toBeCloseTo(10, 6); // only 100 TRX @ $0.10 — polluting rows excluded
+        expect(summary.holdings).toHaveLength(1); // dropped rows create no phantom holding
     });
 
     it('nets out a transfer between the user own wallets (no realized gain)', async () => {

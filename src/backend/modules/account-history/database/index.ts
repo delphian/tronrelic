@@ -22,6 +22,9 @@ export const SETTINGS_COLLECTION = 'module_account-history_settings';
 /** ClickHouse table holding ingested per-account transactions. */
 export const TRANSACTIONS_TABLE = 'account_transactions';
 
+/** ClickHouse table holding the per-account value-transfer ledger (native/internal/token legs). */
+export const VALUE_TRANSFERS_TABLE = 'account_value_transfers';
+
 /** ClickHouse table holding scheduled scalar balance/resource snapshots. */
 export const BALANCE_SNAPSHOTS_TABLE = 'account_balance_snapshots';
 
@@ -80,10 +83,14 @@ export interface IAccountProgressDoc {
     cursorFingerprint?: string;
     /** Opaque fingerprint for the next `/transactions/trc20` page; absent before first run or when that endpoint is exhausted. */
     trc20CursorFingerprint?: string;
+    /** Opaque fingerprint for the next `/internal-transactions` page; absent before first run or when that endpoint is exhausted. */
+    internalCursorFingerprint?: string;
     /** True once the general `/transactions` walk has reached the end of available history. */
     nativeComplete?: boolean;
     /** True once the `/transactions/trc20` walk has reached the end of available history. */
     trc20Complete?: boolean;
+    /** True once the `/internal-transactions` walk has reached the end of available history. */
+    internalComplete?: boolean;
     /** Oldest block time reached walking history backward. */
     oldestTimestampReached?: Date;
     /** Newest block time observed on the first page. */
@@ -101,6 +108,11 @@ export interface IAccountProgressDoc {
      * the token-transfer counterpart of {@link forwardTxCursor}, same contract.
      */
     forwardTrc20Cursor?: string;
+    /**
+     * Forward-sync continuation cursor for the `/internal-transactions` endpoint —
+     * the internal-value-transfer counterpart of {@link forwardTxCursor}, same contract.
+     */
+    forwardInternalCursor?: string;
     /**
      * Newest timestamp captured during an in-progress (multi-tick) forward drain,
      * held back from `newestTimestampSeen` until the drain reaches known territory.
@@ -195,6 +207,43 @@ export interface IAccountTransactionRow extends Record<string, unknown> {
     token_decimals: number | null;
     /** Decoded UTF-8 memo from `raw_data.data`; null when none. */
     memo: string | null;
+    /** Ingestion time; the ReplacingMergeTree version column. */
+    ingested_at: string;
+}
+
+/**
+ * One row of the ClickHouse `account_value_transfers` table — a flat projection of
+ * a source-independent `IValueTransfer` plus the per-account key and the
+ * ReplacingMergeTree version column. One row per discrete value leg; the natural
+ * key `(account, timestamp, tx_id, origin, leg_key, asset_id)` keeps legs that
+ * share a parent transaction distinct. `amount_raw` is an integer string (sun for
+ * TRX, base units for tokens) because token amounts exceed 64-bit range.
+ */
+export interface IAccountValueTransferRow extends Record<string, unknown> {
+    /** Tracked account this leg was ingested for; part of the dedup key. */
+    account: string;
+    /** Parent transaction hash. */
+    tx_id: string;
+    /** Where the leg originated: `native`, `internal`, or `token_event`. */
+    origin: string;
+    /** Leg identity within its parent: internal-transaction hash, or empty for native/token legs. */
+    leg_key: string;
+    /** Asset class: `TRX`, `TRC10`, `TRC20`, or `TRC721`. */
+    asset_type: string;
+    /** Asset identity: empty for TRX, the TRC10 tokenId, or the TRC20/721 contract address. */
+    asset_id: string;
+    /** Base58 sender. */
+    from_address: string;
+    /** Base58 recipient. */
+    to_address: string;
+    /** Raw amount as an integer string — sun for TRX, base units for tokens. */
+    amount_raw: string;
+    /** Token decimals when known; null otherwise. */
+    asset_decimals: number | null;
+    /** Including block height; 0 when the source omits it. */
+    block_number: number;
+    /** Block execution time as a ClickHouse datetime string. */
+    timestamp: string;
     /** Ingestion time; the ReplacingMergeTree version column. */
     ingested_at: string;
 }
@@ -342,5 +391,36 @@ export interface ITronGridTrc20Tx {
         symbol?: string;
         /** Token decimals. */
         decimals?: number;
+    };
+}
+
+/**
+ * Minimal shape of a TronGrid internal-transaction item from the
+ * `/v1/accounts/{addr}/internal-transactions` endpoint. Internal transfers are the
+ * TRX/TRC10 moves a contract performs mid-execution, invisible to the two
+ * transaction endpoints. Addresses arrive hex-encoded (not base58). `call_value`
+ * is an asset map: the key `'_'` is TRX, any other key is a TRC10 tokenId; the
+ * value is the raw amount (sun for TRX). Fields are optional because TronGrid omits
+ * unknowns.
+ */
+export interface ITronGridInternalTx {
+    /** Protocol internal-transaction hash — identical to the node's `TransactionInfo` hash. */
+    internal_tx_id?: string;
+    /** Parent transaction hash. */
+    tx_id?: string;
+    /** Block time in epoch milliseconds. */
+    block_timestamp?: number;
+    /** Hex-encoded sender (the contract or account that sent value). */
+    from_address?: string;
+    /** Hex-encoded recipient. */
+    to_address?: string;
+    /** Execution detail: `note` (call/create/suicide), `rejected`, and the `call_value` asset map. */
+    data?: {
+        /** Opcode note: `call`, `create`, or `suicide`. */
+        note?: string;
+        /** True when the internal transfer failed and moved no value. */
+        rejected?: boolean;
+        /** Asset → raw amount map; key `'_'` is TRX (sun), other keys are TRC10 tokenIds. */
+        call_value?: Record<string, number | string>;
     };
 }

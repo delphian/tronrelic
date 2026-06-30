@@ -92,6 +92,7 @@ function snapshotProvider(): IAccountHistoryProvider {
     return {
         id: 'test',
         fetchPage: vi.fn(),
+        fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })),
         fetchAccountSnapshot: vi.fn().mockResolvedValue(SAMPLE)
     };
 }

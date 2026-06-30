@@ -6,6 +6,7 @@ export type {
     IBlockTransactionContract,
     IResourceUsage
 } from './IBlockTransaction.js';
+export type { IValueTransfer, ValueTransferOrigin, ValueAssetType } from './IValueTransfer.js';
 export type {
     IBlockchainService,
     ITransactionTimeseriesPoint,
