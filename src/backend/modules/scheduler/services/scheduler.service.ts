@@ -335,13 +335,24 @@ export class SchedulerService {
             const errorMessage = error instanceof Error ? error.message : String(error);
 
             // The row may not exist if creation itself threw; only update what we have.
+            // Guard this write in its own try-catch: a failing handler often coincides
+            // with a struggling database, so the update can itself reject. Letting it
+            // escape would break the never-rejects contract and surface as an unhandled
+            // rejection in the fire-and-forget callers (scheduleJob, runNow).
             if (execution) {
-                await execution.updateOne({
-                    completedAt: new Date(),
-                    duration,
-                    status: 'failed',
-                    error: errorMessage
-                });
+                try {
+                    await execution.updateOne({
+                        completedAt: new Date(),
+                        duration,
+                        status: 'failed',
+                        error: errorMessage
+                    });
+                } catch (updateError) {
+                    logger.error(
+                        { job: job.name, error: updateError },
+                        `Failed to persist failure status for job: ${job.name}`
+                    );
+                }
             }
 
             logger.error(

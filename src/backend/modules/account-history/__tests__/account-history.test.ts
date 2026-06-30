@@ -473,9 +473,9 @@ describe('AccountHistoryService', () => {
     });
 
     it('runForwardSyncTick skips a paused completed account via the denormalized brake', async () => {
-        // A paused account keeps status `complete` (setProgressStatus is a no-op on
-        // completed accounts), so the forward selector must exclude it on the
-        // denormalized `paused` flag, not on status. Without that flag this account
+        // A paused account keeps status `complete` (setAccountPaused leaves status
+        // untouched on completed accounts), so the forward selector must exclude it on
+        // the denormalized `paused` flag, not on status. Without that flag this account
         // would be wrongly refreshed.
         AccountHistoryService.resetForTests();
         const database = createMockDatabaseService();
