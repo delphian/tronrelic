@@ -133,8 +133,10 @@ export class AccountHistoryUserController {
                 return;
             }
 
-            const limit = req.query.limit !== undefined ? Number(req.query.limit) : undefined;
-            const offset = req.query.offset !== undefined ? Number(req.query.offset) : undefined;
+            const rawLimit = req.query.limit !== undefined ? Number(req.query.limit) : undefined;
+            const rawOffset = req.query.offset !== undefined ? Number(req.query.offset) : undefined;
+            const limit = Number.isNaN(rawLimit) ? undefined : rawLimit;
+            const offset = Number.isNaN(rawOffset) ? undefined : rawOffset;
             const page = await this.service.getTransactions({ address, limit, offset });
             res.json(page);
         } catch (error) {

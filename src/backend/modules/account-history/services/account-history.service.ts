@@ -569,6 +569,13 @@ export class AccountHistoryService implements IAccountHistoryService {
      * nullable column ignores nulls and yields 0 for an empty set, so the zeroed
      * shape falls out naturally for an inactive wallet.
      *
+     * This is the one exception to {@link dedupeFilter} and deliberately does NOT
+     * suppress the native `'tx'` twin: fee, energy, and bandwidth are populated
+     * only on that native row — the decoded `'trc20'` row leaves them null — so
+     * dropping it would zero the burned TRX and energy of every outbound USDT send.
+     * Summing across both rows is correct precisely because the `'trc20'` twin
+     * contributes null (0) to these columns and so cannot double-count.
+     *
      * @param address - Base58 account to summarize.
      * @returns Energy, bandwidth, and fee totals.
      */
@@ -580,7 +587,7 @@ export class AccountHistoryService implements IAccountHistoryService {
                     sum(energy_fee_sun) AS energy_fee_sun,
                     sum(bandwidth_fee_sun) AS bandwidth_fee_sun
              FROM ${TRANSACTIONS_TABLE} FINAL
-             WHERE account = {address:String} AND ${AccountHistoryService.dedupeFilter()}`,
+             WHERE account = {address:String}`,
             { address }
         );
         const row = rows[0] ?? {};
