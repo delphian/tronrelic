@@ -92,6 +92,21 @@ export interface IAccountHistoryProvider {
     fetchInternalTransfersPage(address: string, options: IInternalTransfersFetchOptions): Promise<IInternalTransfersPageResult>;
 
     /**
+     * Fetch the token (`token_event`) value legs of a single transaction — the TRC20
+     * `Transfer` logs involving the account, each keyed by its protocol `log_index`.
+     * Separate from {@link fetchPage} because the transaction endpoints that surface
+     * a token transfer omit its log index, so two distinct same-token transfers in
+     * one transaction would share an empty leg key and collapse in the ledger; the
+     * per-transaction events endpoint is the only source carrying the discriminator.
+     * Driven per token-bearing transaction the `trc20` walk discovers.
+     *
+     * @param account - Base58 tracked account; only legs it participates in are returned.
+     * @param txId - Parent transaction hash whose event logs to read.
+     * @returns The transaction's account-involving token legs, keyed by log index.
+     */
+    fetchTokenTransferLegs(account: string, txId: string): Promise<IValueTransfer[]>;
+
+    /**
      * Probe an account's current on-chain state — liquid and staked TRX, the
      * unstaking queue, energy/bandwidth resources, and TRC20 balances — as one
      * normalized sample. This is the point-in-time counterpart to the historical

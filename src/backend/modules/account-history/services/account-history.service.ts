@@ -1363,12 +1363,57 @@ export class AccountHistoryService implements IAccountHistoryService {
         await this.clickhouse!.insert<IAccountTransactionRow>(TRANSACTIONS_TABLE, rows, { waitForCommit: true });
 
         // Dual-write the source-independent value legs (the value-transfer ledger).
-        // Native and token legs are derived from the same transactions; internal
-        // legs come from the internal endpoint via walkInternalSource. Both backfill
-        // and forward sync write through here, so they inherit the dual-write. The
-        // ledger insert follows the transaction insert so a value-ledger failure
-        // also throws before the cursor advances, keeping the page re-ingestable.
+        // Native legs are derived from the same transactions; internal legs come from
+        // the internal endpoint via walkInternalSource; token legs are sourced below.
+        // Both backfill and forward sync write through here, so they inherit the
+        // dual-write. The ledger insert follows the transaction insert so a
+        // value-ledger failure also throws before the cursor advances, keeping the
+        // page re-ingestable.
         await this.writeValueTransfers(address, transactions.flatMap((tx) => toValueTransfers(tx)));
+
+        // Token (`token_event`) legs are sourced separately, from the per-transaction
+        // events endpoint, because only it carries the TRC20 `log_index` that keeps
+        // distinct same-token transfers in one transaction from colliding under the
+        // ledger's natural key. Driven off the `trc20` walk: every token transfer the
+        // account participates in (inbound and outbound alike) surfaces there, so
+        // enriching here covers both directions without a fourth cursor.
+        if (source === 'trc20') {
+            await this.writeTokenTransferLegs(address, transactions);
+        }
+    }
+
+    /**
+     * Source and write the token value legs for a page of trc20 transactions. For
+     * each distinct transaction the page touches, fetches its account-involving token
+     * legs — keyed by the protocol `log_index` so distinct same-token transfers never
+     * collapse — from the provider's events source and writes them to the value
+     * ledger. The events payload omits token decimals, so they are carried over from
+     * the trc20 rows' token metadata where available. Insert-before-cursor-advance
+     * discipline matches {@link writeTransactions}: a failed write throws before the
+     * trc20 cursor moves, so the page is re-ingested idempotently.
+     *
+     * @param address - The tracked account these legs belong to.
+     * @param transactions - The trc20-source transactions of the current page.
+     */
+    private async writeTokenTransferLegs(address: string, transactions: IBlockTransaction[]): Promise<void> {
+        const decimalsByAsset = new Map<string, number>();
+        for (const tx of transactions) {
+            const assetId = tx.contract?.address;
+            const decimals = tx.contract?.parameters?.decimals;
+            if (assetId && typeof decimals === 'number') {
+                decimalsByAsset.set(assetId, decimals);
+            }
+        }
+        const txIds = [...new Set(transactions.map((tx) => tx.txId))];
+        const legs: IValueTransfer[] = [];
+        for (const txId of txIds) {
+            const txLegs = await this.provider!.fetchTokenTransferLegs(address, txId);
+            for (const leg of txLegs) {
+                const decimals = decimalsByAsset.get(leg.assetId);
+                legs.push(decimals != null ? { ...leg, assetDecimals: decimals } : leg);
+            }
+        }
+        await this.writeValueTransfers(address, legs);
     }
 
     /**

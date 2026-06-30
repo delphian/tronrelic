@@ -68,7 +68,7 @@ The provider seam (`IAccountHistoryProvider`) already isolates the data source; 
 Each stage ships independently; dual-write keeps reads correct until the cutover.
 
 1. **Domain + provider. (Done.)** `IValueTransfer` domain type plus `IAccountHistoryProvider.fetchInternalTransfersPage` and the pure `toValueTransfers` deriver; the TronGrid `internal-transactions` source sits behind the seam. No storage change.
-2. **Create the table + dual-write. (Done.)** Migration `004_create_account_value_transfers_table.ts` creates the ledger; ingest dual-writes legs (native/token via `toValueTransfers`, internal via the new source with its own cursor and three-way completion gate) on both the backfill and forward-sync paths. Reads unchanged.
+2. **Create the table + dual-write. (Done.)** Migration `004_create_account_value_transfers_table.ts` creates the ledger; ingest dual-writes legs on both the backfill and forward-sync paths — native via `toValueTransfers`, token via the per-transaction events source (`fetchTokenTransferLegs`, keyed by `log_index`), internal via the internal source (its own cursor and three-way completion gate). Reads unchanged.
 3. **Backfill.** Re-walk tracked accounts to populate value legs, including the internal-transactions source. Idempotent via the natural key; safe to re-run. (Code is in place; this stage is the operational re-walk after the migration runs.)
 4. **Cut over reads.** Point valuation (`toMove`/series) and the money-in/out chart at `account_value_transfers`; delete the contract-type guards. Verify against known wallets before removing the old path.
 5. **Slim the top-level table.** Stop writing value legs into `account_transactions`; it becomes the top-level record only. Optionally retire the `trc20` `source` rows in favor of `token_event` legs.
@@ -78,7 +78,7 @@ Rollback at any stage is reverting the read cutover (stage 4) or pausing dual-wr
 ## Open Questions
 
 - Finalize the `origin` and `asset_type` enums (above is the proposal).
-- Whether `account_events` is needed for stage 1 or deferred — token legs may need `log_index` from the events endpoint when `/transactions/trc20` omits it.
+- A standalone `account_events` table stays deferred. The `log_index` question is **resolved**: `/transactions/trc20` omits it, so token legs are sourced per-transaction from `/transactions/{txId}/events` (`fetchTokenTransferLegs`), whose `event_index` is the `log_index`. A dedicated events table is only needed if richer log attribution (beyond the transfer leg) is later required.
 - Whether `amount_raw` stays a string uniformly or TRX gets a convenience `amount_sun Int64` companion.
 
 ## Further Reading
