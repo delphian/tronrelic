@@ -26,7 +26,7 @@ import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 import { PriceHistoryService } from './services/price-history.service.js';
-import { CoinGeckoPriceHistoryProvider } from './providers/coingecko-price-history.provider.js';
+import { TronScanPriceHistoryProvider } from './providers/tronscan-price-history.provider.js';
 import { PriceHistoryAdminController } from './api/price-history.admin.controller.js';
 import { createPriceHistoryAdminRouter } from './api/price-history.admin.routes.js';
 import { SETTINGS_COLLECTION, PROGRESS_COLLECTION } from './database/index.js';
@@ -75,7 +75,7 @@ export class PriceHistoryModule implements IModule<IPriceHistoryModuleDependenci
         id: 'price-history',
         name: 'Price History',
         version: '1.0.0',
-        description: 'Scheduled local daily USD price series (CoinGecko-backed) for portfolio valuation.'
+        description: 'Scheduled local daily USD price series (TronScan-backed, TRX) for portfolio valuation.'
     };
 
     private scheduler: ISchedulerService | null = null;
@@ -98,7 +98,7 @@ export class PriceHistoryModule implements IModule<IPriceHistoryModuleDependenci
         this.app = deps.app;
         this.menuService = deps.menuService;
 
-        const provider = new CoinGeckoPriceHistoryProvider(this.logger.child({ provider: 'coingecko' }));
+        const provider = new TronScanPriceHistoryProvider(this.logger.child({ provider: 'tronscan' }));
         PriceHistoryService.setDependencies({
             database: deps.database,
             clickhouse: deps.clickhouse,
