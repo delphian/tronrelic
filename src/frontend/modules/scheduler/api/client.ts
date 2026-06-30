@@ -75,3 +75,37 @@ export async function updateSchedulerJob(
         throw new Error(errorData.message || `Server returned ${response.status}`);
     }
 }
+
+/**
+ * Triggers an immediate, out-of-schedule run of a scheduler job.
+ *
+ * Lets an operator force a job to run now rather than waiting for its next cron
+ * tick — the only way to exercise a low-frequency job (e.g. a 4-hourly snapshot)
+ * that has not yet reached its first boundary. The job's enabled state is
+ * irrelevant; the backend runs the handler once regardless and preserves
+ * single-flight, so `started` is `false` (not an error) when a run was already in
+ * progress.
+ *
+ * Authorization rides the same-origin Better Auth session cookie.
+ *
+ * @param jobName - Name of the job to run now.
+ * @returns Whether a run was started (`false` if one was already in flight).
+ * @throws Error if the API request fails.
+ */
+export async function runSchedulerJob(jobName: string): Promise<{ started: boolean }> {
+    const response = await fetch(
+        `/api/admin/system/scheduler/job/${jobName}/run`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        }
+    );
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || errorData.message || `Server returned ${response.status}`);
+    }
+
+    const data = await response.json();
+    return { started: Boolean(data.started) };
+}

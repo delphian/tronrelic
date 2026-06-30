@@ -21,6 +21,8 @@ Cost-basis PnL is inherently **per user**, not per wallet: moving a token betwee
 
 The engine keeps lots in **per-wallet (segregated) sub-books** and treats an *internal* transfer as a **basis migration**: the source wallet's consumed lots move, basis intact, into the receiving wallet's sub-book (matched by `txId`). A sale therefore draws on the *selling* wallet's own basis, never a global pool, so per-user figures are exactly the **sum** of the per-wallet figures — coherent and additive. The service walks the **full owned set's** ledgers even for a single-wallet zoom (basis can only migrate in if the source ledger is read); holdings come only from the report-scope snapshots. Single-address explorers cannot do this — they book a phantom gain on the receiving side of every internal transfer.
 
+Each wallet's ledger read is bounded (`MAX_LEDGER_ROWS`, newest-first), so a high-volume wallet can push one leg of a migration past its window while the other leg stays inside another wallet's. The service detects that split — a `txId|asset` whose in and out quantities, summed across the owned set, disagree — and refetches the missing legs by hash via `getTransactionsByTxIds`, rebuilding the pair so basis is never silently dropped. A transfer whose *both* legs are beyond their windows stays invisible, which is the pre-existing deep-history approximation below, not a split.
+
 ## Source Map
 
 | Path | Responsibility |

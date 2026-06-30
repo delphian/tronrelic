@@ -15,14 +15,15 @@
  */
 
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, AlertCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, AlertCircle, Play } from 'lucide-react';
 import { Page, Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
+import { Button } from '../../../../components/ui/Button';
 import { Input } from '../../../../components/ui/Input';
 import { Switch } from '../../../../components/ui/Switch';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { ClientTime } from '../../../../components/ui/ClientTime';
-import { getSchedulerStatus, getSchedulerHealth, updateSchedulerJob } from '../../api';
+import { getSchedulerStatus, getSchedulerHealth, updateSchedulerJob, runSchedulerJob } from '../../api';
 import type { SchedulerJob, SchedulerHealth } from '../../types';
 import styles from './SchedulerMonitor.module.scss';
 
@@ -41,10 +42,11 @@ interface Props {
  * Displays job metadata in a compact row with expandable details section.
  * Provides inline toggle for enable/disable and editable schedule field.
  */
-function JobRow({ job, onToggleEnabled, onScheduleChange, isLoading, loadingJobName, feedback }: {
+function JobRow({ job, onToggleEnabled, onScheduleChange, onRunNow, isLoading, loadingJobName, feedback }: {
     job: SchedulerJob;
     onToggleEnabled: (jobName: string, enabled: boolean) => void;
     onScheduleChange: (jobName: string, schedule: string) => void;
+    onRunNow: (jobName: string) => void;
     isLoading: boolean;
     loadingJobName: string | null;
     feedback: { jobName: string; type: 'success' | 'error'; message: string } | null;
@@ -124,10 +126,27 @@ function JobRow({ job, onToggleEnabled, onScheduleChange, isLoading, loadingJobN
                         aria-label={`${job.enabled ? 'Disable' : 'Enable'} ${job.name}`}
                     />
                 </Td>
+                <Td className={styles.cell_actions}>
+                    {/* Manual run is an out-of-schedule trigger — useful when a
+                        low-frequency job (e.g. a 4-hourly snapshot) has not yet
+                        reached its first boundary. Disabled while any update is in
+                        flight or this job is already running, since the backend
+                        rejects a stacked run anyway. */}
+                    <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => onRunNow(job.name)}
+                        disabled={isLoading || isThisLoading || job.status === 'running'}
+                        aria-label={`Run ${job.name} now`}
+                        title="Run now"
+                    >
+                        <Play size={14} aria-hidden />
+                    </Button>
+                </Td>
             </Tr>
             {expanded && (
                 <Tr isExpanded>
-                    <Td colSpan={6}>
+                    <Td colSpan={7}>
                         <div className={styles.details_content}>
                             {jobFeedback && (
                                 <div className={jobFeedback.type === 'success' ? styles.alert_success : styles.alert_error}>
@@ -276,6 +295,36 @@ export function SchedulerMonitor({ jobFilter, title = 'Scheduled Jobs', hideStat
         await handleUpdateJob(jobName, { enabled });
     };
 
+    /**
+     * Triggers an immediate, out-of-schedule run of a job, then refreshes the
+     * table so the status badge reflects the new execution. Feedback is driven off
+     * the run response (started vs already-running) rather than the status badge,
+     * because a disabled job's badge is masked to "never run" by the status
+     * endpoint and would not reflect a manual run.
+     */
+    const handleRunNow = async (jobName: string) => {
+        setLoadingJobName(jobName);
+        setFeedback(null);
+
+        try {
+            const { started } = await runSchedulerJob(jobName);
+            setFeedback({
+                jobName,
+                type: 'success',
+                message: started ? 'Run started' : 'Job is already running'
+            });
+            await fetchData();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to run job';
+            setFeedback({ jobName, type: 'error', message });
+        } finally {
+            setLoadingJobName(null);
+            setTimeout(() => {
+                setFeedback(prev => prev?.jobName === jobName ? null : prev);
+            }, 3000);
+        }
+    };
+
     const handleScheduleChange = async (jobName: string, newSchedule: string) => {
         if (!isValidCronExpression(newSchedule)) {
             setFeedback({
@@ -380,6 +429,7 @@ export function SchedulerMonitor({ jobFilter, title = 'Scheduled Jobs', hideStat
                                 <Th width="shrink">Status</Th>
                                 <Th width="shrink" className={styles.th_last_run}>Last Run</Th>
                                 <Th width="shrink" className={styles.th_enabled}>Enabled</Th>
+                                <Th width="shrink" className={styles.th_actions}>Run</Th>
                             </Tr>
                         </Thead>
                         <Tbody>
@@ -389,6 +439,7 @@ export function SchedulerMonitor({ jobFilter, title = 'Scheduled Jobs', hideStat
                                     job={job}
                                     onToggleEnabled={handleToggleEnabled}
                                     onScheduleChange={handleScheduleChange}
+                                    onRunNow={handleRunNow}
                                     isLoading={!!loadingJobName}
                                     loadingJobName={loadingJobName}
                                     feedback={feedback}

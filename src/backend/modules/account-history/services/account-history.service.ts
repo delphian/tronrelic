@@ -90,6 +90,29 @@ const TRON_ADDRESS_PATTERN = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 /** WebSocket event name for live ingestion stats; must have a case in WebSocketService.emit(). */
 const STATS_EVENT = 'account-history:stats';
 
+/** Upper bound on a single by-`txId` read, so a caller cannot build an unbounded `IN (...)` list. */
+const MAX_TXID_READ = 2_000;
+
+/**
+ * The `account_transactions` columns every source-independent read projects.
+ * Shared by {@link AccountHistoryService.getTransactions} and
+ * {@link AccountHistoryService.getTransactionsByTxIds} so the projection stays in
+ * lockstep — a column added to one read is added to both.
+ */
+const TRANSACTION_SELECT_COLUMNS = `account, tx_id, source, block_number, timestamp, type, status, from_address, to_address,
+            amount_sun, fee_sun, energy_consumed, energy_fee_sun, bandwidth_consumed, bandwidth_fee_sun,
+            contract_address, contract_method, token_amount, token_symbol, token_decimals, memo`;
+
+/**
+ * ClickHouse predicate suppressing the native `'tx'` twin of an outbound TRC20
+ * transfer when its richer decoded `'trc20'` row exists for the same `tx_id`.
+ * Parameterized on `{address:String}`; shared by every read that must not
+ * double-count outbound token transfers.
+ */
+const OUTBOUND_TRC20_DEDUPE_FILTER = `NOT (source = 'tx' AND tx_id IN (
+                 SELECT tx_id FROM ${TRANSACTIONS_TABLE} WHERE account = {address:String} AND source = 'trc20'
+             ))`;
+
 /**
  * Mutable per-tick state threaded through the two endpoint walks for one account,
  * so both `'tx'` and `'trc20'` advance into a single combined progress record
@@ -199,6 +222,18 @@ export class AccountHistoryService implements IAccountHistoryService {
         await this.database.createIndex(TRACKED_COLLECTION, { address: 1 }, { unique: true });
         await this.database.createIndex(PROGRESS_COLLECTION, { address: 1 }, { unique: true });
         await this.database.createIndex(SETTINGS_COLLECTION, { key: 1 }, { unique: true });
+        // Tick-selector indexes: each scheduler tick pushes its (unpaused + dueness)
+        // predicate and sort into one query on PROGRESS, so coverage rotation no
+        // longer loads the whole tracked + progress set. Composite order follows the
+        // ESR rule (Equality → Sort → Range) so the sort is served by an index walk,
+        // never a blocking in-memory sort: `paused` is a `$ne` range and so trails the
+        // sort key, while `status` (an equality for forward sync) leads it.
+        // Ingest: sort lastRunAt; ranges paused ($ne) + status ($nin).
+        await this.database.createIndex(PROGRESS_COLLECTION, { lastRunAt: 1, paused: 1, status: 1 });
+        // Forward sync: equality status='complete'; sort lastForwardRunAt; range paused.
+        await this.database.createIndex(PROGRESS_COLLECTION, { status: 1, lastForwardRunAt: 1, paused: 1 });
+        // Snapshot: sort lastSnapshotDay (also the dueness range); range paused.
+        await this.database.createIndex(PROGRESS_COLLECTION, { lastSnapshotDay: 1, paused: 1 });
     }
 
     /**
@@ -263,6 +298,10 @@ export class AccountHistoryService implements IAccountHistoryService {
             throw new Error(`account ${address} is not tracked`);
         }
         await this.setProgressStatus(address, paused ? 'paused' : 'queued');
+        // Mirror the brake onto progress so the tick selectors filter on it directly.
+        // Written even when the account is `complete` (where setProgressStatus is a
+        // no-op), so a paused completed account is excluded from forward sync.
+        await this.patchProgress(address, { paused });
         const tracked = AccountHistoryService.toTrackedAccount(doc);
         return tracked;
     }
@@ -419,20 +458,11 @@ export class AccountHistoryService implements IAccountHistoryService {
 
         // An outbound TRC20 transfer lands as both a native call row ('tx') and a
         // decoded transfer row ('trc20') with the same tx_id; the trc20 row is the
-        // richer view, so suppress the native twin on read. The filter drops only a
-        // 'tx' row whose tx_id also has a 'trc20' row — native-only transactions and
-        // every (batch-distinct) trc20 row are preserved.
-        const dedupeFilter =
-            `NOT (source = 'tx' AND tx_id IN (
-                 SELECT tx_id FROM ${TRANSACTIONS_TABLE} WHERE account = {address:String} AND source = 'trc20'
-             ))`;
-
+        // richer view, so suppress the native twin on read (OUTBOUND_TRC20_DEDUPE_FILTER).
         const rows = await this.clickhouse.query<IAccountTransactionRow>(
-            `SELECT account, tx_id, source, block_number, timestamp, type, status, from_address, to_address,
-                    amount_sun, fee_sun, energy_consumed, energy_fee_sun, bandwidth_consumed, bandwidth_fee_sun,
-                    contract_address, contract_method, token_amount, token_symbol, token_decimals, memo
+            `SELECT ${TRANSACTION_SELECT_COLUMNS}
              FROM ${TRANSACTIONS_TABLE} FINAL
-             WHERE account = {address:String} AND ${dedupeFilter}
+             WHERE account = {address:String} AND ${OUTBOUND_TRC20_DEDUPE_FILTER}
              ORDER BY timestamp DESC
              LIMIT {limit:UInt32} OFFSET {offset:UInt32}`,
             { address, limit, offset }
@@ -440,7 +470,7 @@ export class AccountHistoryService implements IAccountHistoryService {
 
         const countRows = await this.clickhouse.query<{ total: string | number }>(
             `SELECT count() AS total FROM ${TRANSACTIONS_TABLE} FINAL
-             WHERE account = {address:String} AND ${dedupeFilter}`,
+             WHERE account = {address:String} AND ${OUTBOUND_TRC20_DEDUPE_FILTER}`,
             { address }
         );
 
@@ -449,6 +479,41 @@ export class AccountHistoryService implements IAccountHistoryService {
             total: Number(countRows[0]?.total ?? 0)
         };
         return page;
+    }
+
+    /**
+     * Read specific stored transactions for one account by transaction hash.
+     *
+     * Why it exists: the valuation engine refetches the missing leg of an
+     * internal transfer whose two rows straddle a per-wallet window boundary (see
+     * {@link IAccountHistoryService.getTransactionsByTxIds}). The read is keyed by
+     * an explicit hash set, clamped to {@link MAX_TXID_READ} so a caller cannot
+     * build an unbounded `IN (...)` list, and carries the same outbound-TRC20
+     * dedupe as {@link getTransactions}. Returns an empty array when ClickHouse is
+     * not configured or no hashes are requested.
+     *
+     * @param address - Base58 address whose rows to read.
+     * @param txIds - Transaction hashes to fetch.
+     * @returns The matching transactions, newest first.
+     */
+    public async getTransactionsByTxIds(address: string, txIds: string[]): Promise<IBlockTransaction[]> {
+        const normalized = String(address ?? '').trim();
+        if (!TRON_ADDRESS_PATTERN.test(normalized)) {
+            throw new Error('address must be a base58 TRON address (T...)');
+        }
+        const unique = Array.from(new Set((txIds ?? []).filter((id) => typeof id === 'string' && id.length > 0))).slice(0, MAX_TXID_READ);
+        if (!this.clickhouse || unique.length === 0) {
+            return [];
+        }
+
+        const rows = await this.clickhouse.query<IAccountTransactionRow>(
+            `SELECT ${TRANSACTION_SELECT_COLUMNS}
+             FROM ${TRANSACTIONS_TABLE} FINAL
+             WHERE account = {address:String} AND tx_id IN ({txIds:Array(String)}) AND ${OUTBOUND_TRC20_DEDUPE_FILTER}
+             ORDER BY timestamp DESC`,
+            { address: normalized, txIds: unique }
+        );
+        return rows.map(AccountHistoryService.rowToBlockTransaction);
     }
 
     /**
@@ -783,32 +848,18 @@ export class AccountHistoryService implements IAccountHistoryService {
      * @returns Base58 addresses to ingest this tick.
      */
     private async selectAccountsForTick(accountsPerTick: number): Promise<string[]> {
-        const tracked = await this.database
-            .getCollection<ITrackedAccountDoc>(TRACKED_COLLECTION)
-            .find({ paused: { $ne: true } })
-            .toArray();
-        if (tracked.length === 0) {
-            return [];
-        }
-
-        const progressDocs = await this.database
+        // One indexed query on PROGRESS does the whole selection: unpaused, not yet
+        // complete, least-recently-advanced first, capped at the per-tick count.
+        // `status: paused` excludes a paused non-complete account; `paused: {$ne:true}`
+        // also excludes a paused *complete*-status account and tolerates the missing
+        // denormalized field on pre-migration docs (reads as unpaused).
+        const docs = await this.database
             .getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION)
-            .find({ address: { $in: tracked.map((t) => t.address) } })
+            .find({ paused: { $ne: true }, status: { $nin: ['complete', 'paused'] } })
+            .sort({ lastRunAt: 1 })
+            .limit(accountsPerTick)
             .toArray();
-        const progressByAddress = new Map<string, IAccountProgressDoc>();
-        for (const doc of progressDocs) {
-            progressByAddress.set(doc.address, doc);
-        }
-
-        const eligible = tracked.filter((t) => progressByAddress.get(t.address)?.status !== 'complete');
-        eligible.sort((a, b) => {
-            const aRun = progressByAddress.get(a.address)?.lastRunAt?.getTime() ?? 0;
-            const bRun = progressByAddress.get(b.address)?.lastRunAt?.getTime() ?? 0;
-            return aRun - bRun;
-        });
-
-        const selected = eligible.slice(0, accountsPerTick).map((t) => t.address);
-        return selected;
+        return docs.map((doc) => doc.address);
     }
 
     /**
@@ -980,36 +1031,21 @@ export class AccountHistoryService implements IAccountHistoryService {
      * @returns Base58 addresses to forward-sync this tick.
      */
     private async selectCompletedAccountsForForward(accountsPerTick: number): Promise<string[]> {
-        const tracked = await this.database
-            .getCollection<ITrackedAccountDoc>(TRACKED_COLLECTION)
-            .find({ paused: { $ne: true } })
-            .toArray();
-        if (tracked.length === 0) {
-            return [];
-        }
-
-        const progressDocs = await this.database
+        // The inverse of selectAccountsForTick: unpaused and `complete`, pushed into
+        // one indexed query on PROGRESS. Ordered by the forward-specific timestamp,
+        // not `lastRunAt`: for a completed account `lastRunAt` was frozen at backfill
+        // completion, so it cannot rotate forward freshness fairly. A
+        // never-forward-synced account (`lastForwardRunAt` absent) sorts first, so it
+        // is refreshed soonest. `paused: {$ne:true}` excludes a paused completed
+        // account (whose status stays `complete`) and tolerates the missing field on
+        // pre-migration docs.
+        const docs = await this.database
             .getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION)
-            .find({ address: { $in: tracked.map((t) => t.address) } })
+            .find({ paused: { $ne: true }, status: 'complete' })
+            .sort({ lastForwardRunAt: 1 })
+            .limit(accountsPerTick)
             .toArray();
-        const progressByAddress = new Map<string, IAccountProgressDoc>();
-        for (const doc of progressDocs) {
-            progressByAddress.set(doc.address, doc);
-        }
-
-        // Order by the forward-specific timestamp, not `lastRunAt`: for a completed
-        // account `lastRunAt` was frozen at backfill completion, so it cannot rotate
-        // forward freshness fairly. A never-forward-synced account (no
-        // `lastForwardRunAt`) sorts first, so it is refreshed soonest.
-        const eligible = tracked.filter((t) => progressByAddress.get(t.address)?.status === 'complete');
-        eligible.sort((a, b) => {
-            const aRun = progressByAddress.get(a.address)?.lastForwardRunAt?.getTime() ?? 0;
-            const bRun = progressByAddress.get(b.address)?.lastForwardRunAt?.getTime() ?? 0;
-            return aRun - bRun;
-        });
-
-        const selected = eligible.slice(0, accountsPerTick).map((t) => t.address);
-        return selected;
+        return docs.map((doc) => doc.address);
     }
 
     /**
@@ -1364,28 +1400,18 @@ export class AccountHistoryService implements IAccountHistoryService {
             return;
         }
         const today = new Date().toISOString().slice(0, 10);
-        const tracked = await this.database
-            .getCollection<ITrackedAccountDoc>(TRACKED_COLLECTION)
-            .find({ paused: { $ne: true } })
-            .toArray();
-        const progressDocs = await this.database
+        // One indexed query on PROGRESS: unpaused, not yet snapshotted today, oldest
+        // snapshot first so the tick rotates fairly across UTC days instead of
+        // starving accounts beyond the per-day ceiling. `lastSnapshotDay: {$ne: today}`
+        // matches both an older day and a missing field (never snapshotted), which
+        // also sorts first under ascending order; `paused: {$ne:true}` tolerates the
+        // missing denormalized field on pre-migration docs.
+        const due = await this.database
             .getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION)
-            .find({ address: { $in: tracked.map((t) => t.address) } })
+            .find({ paused: { $ne: true }, lastSnapshotDay: { $ne: today } })
+            .sort({ lastSnapshotDay: 1 })
+            .limit(settings.accountsPerTick)
             .toArray();
-        const lastSnapshotByAddress = new Map(progressDocs.map((doc) => [doc.address, doc.lastSnapshotDay]));
-
-        const due = tracked
-            .filter((account) => lastSnapshotByAddress.get(account.address) !== today)
-            // Oldest snapshot first (never-snapshotted, mapped to '', sorts first) so the
-            // tick rotates fairly across UTC days instead of re-taking the first accounts
-            // in natural collection order and starving those beyond the per-day ceiling —
-            // mirrors the ingest/forward-sync selectors above.
-            .sort((a, b) => {
-                const aDay = lastSnapshotByAddress.get(a.address) ?? '';
-                const bDay = lastSnapshotByAddress.get(b.address) ?? '';
-                return aDay < bDay ? -1 : aDay > bDay ? 1 : 0;
-            })
-            .slice(0, settings.accountsPerTick);
 
         for (const account of due) {
             try {
@@ -1410,7 +1436,7 @@ export class AccountHistoryService implements IAccountHistoryService {
         const collection = this.database.getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION);
         const result = await collection.findOneAndUpdate(
             { address },
-            { $setOnInsert: { address, status: 'queued', rowsIngested: 0 } },
+            { $setOnInsert: { address, status: 'queued', rowsIngested: 0, paused: false } },
             { upsert: true, returnDocument: 'after' }
         );
         const doc = (result && 'value' in result ? result.value : result) as IAccountProgressDoc;

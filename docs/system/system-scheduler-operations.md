@@ -51,13 +51,17 @@ curl -X PATCH \
 
 `GET /api/admin/system/scheduler/status` returns all jobs with enabled state and last-execution metadata. See [system-api-scheduler.md](./system-api-scheduler.md) for the full endpoint reference.
 
+### Running a Job Now
+
+`POST /api/admin/system/scheduler/job/{jobName}/run` runs a job once immediately, outside its schedule — the way to exercise a low-frequency job before its next tick (e.g. the 4-hourly `account-history:snapshot` for a newly tracked account) without waiting or rescheduling. It ignores the enabled flag and preserves single-flight (a job already running reports `started: false` rather than stacking a second run). The dashboard exposes this as a per-job "Run now" button. Full contract in [system-api-scheduler.md](./system-api-scheduler.md#post-schedulerjobjobnamerun).
+
 ## Cron Expressions
 
 Standard 5-field cron (`minute hour day-of-month month day-of-week`). The backend rejects expressions that don't have exactly 5 space-separated fields with a 400 error — there is no degraded mode for malformed schedules.
 
 ## Troubleshooting
 
-Most stalls reduce to four checks: is the global flag on (`echo $ENABLE_SCHEDULER`), is the specific job enabled in `/system`, did the last run fail (red badge → tail backend logs for the job name), and is `last run` ancient (job never fired — wait one tick or trigger via API).
+Most stalls reduce to four checks: is the global flag on (`echo $ENABLE_SCHEDULER`), is the specific job enabled in `/system`, did the last run fail (red badge → tail backend logs for the job name), and is `last run` ancient (job never fired — wait one tick, or force it with the "Run now" button / the run endpoint above).
 
 | Symptom | Likely cause |
 |---|---|

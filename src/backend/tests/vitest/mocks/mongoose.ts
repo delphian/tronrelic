@@ -57,7 +57,7 @@ const mockCollectionInstances = new Map<string, any>();
 /**
  * Shared filter matching logic for all mock operations.
  *
- * Supports MongoDB query operators: $in, $ne, $or, $regex, $exists, $gte, $lte,
+ * Supports MongoDB query operators: $in, $nin, $ne, $or, $regex, $exists, $gte, $lte,
  * RegExp, array contains, ObjectId comparison, and nested field paths.
  * Exported for reuse in custom IDatabaseService mocks.
  *
@@ -120,6 +120,18 @@ export function matchesFilter(doc: any, filter: Filter<any>): boolean {
                 }
                 // Document field is scalar - check if it matches any value in $in array
                 return inValues.includes(docValue);
+            }
+
+            // Handle $nin operator: { field: { $nin: [value1, value2] } } — matches
+            // when the field value is in none of the listed values. A missing field
+            // matches (undefined is in no list), mirroring MongoDB semantics.
+            if ('$nin' in value) {
+                const ninValues = (value as any).$nin;
+                const docValue = getNestedValue(doc, key);
+                if (Array.isArray(docValue)) {
+                    return !docValue.some((dv: any) => ninValues.includes(dv));
+                }
+                return !ninValues.includes(docValue);
             }
 
             // Handle $ne operator: { field: { $ne: value } }

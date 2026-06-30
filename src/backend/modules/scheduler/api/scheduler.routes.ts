@@ -36,5 +36,8 @@ export function createSchedulerRouter(controller: SchedulerController): Router {
     // PATCH /job/:jobName - Update job configuration
     router.patch('/job/:jobName', controller.updateJob);
 
+    // POST /job/:jobName/run - Trigger a job immediately, outside its schedule
+    router.post('/job/:jobName/run', controller.runJob);
+
     return router;
 }

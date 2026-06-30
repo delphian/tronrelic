@@ -141,6 +141,90 @@ export class ValuationService implements IValuationService {
     }
 
     /**
+     * Repair internal-transfer pairs the bounded per-wallet ledger read split.
+     *
+     * Why: the engine pairs an internal transfer's two legs (an `out` on the
+     * source wallet, an `in` on the destination) by `txId|asset` and migrates
+     * basis between sub-books. {@link readLedger} caps each wallet at
+     * {@link MAX_LEDGER_ROWS} newest-first *independently*, so a high-volume wallet
+     * can push one leg beyond its window while the other leg stays inside another
+     * wallet's window. The engine then sees a half-pair and the transfer's basis
+     * silently vanishes. Both legs share one on-chain `txId`, so the split is
+     * detectable: for an intact internal transfer the `in` and `out` quantities
+     * summed across the owned set are equal, so any `txId|asset` whose sums differ
+     * has a leg outside a window. Refetch every owned wallet's rows for those
+     * hashes (each `txId`'s full row set is then in hand), drop the partial moves,
+     * and rebuild them from the authoritative refetch. A transfer whose *both*
+     * legs are beyond their windows stays invisible — the pre-existing
+     * deep-history approximation, not this split.
+     *
+     * Mutates `moves` in place. The refetch is bounded by the count of
+     * cross-window internal transfers, so the per-wallet read bound is preserved.
+     *
+     * @param accountHistory - The account-history service for the by-`txId` read.
+     * @param moves - The assembled moves, mutated in place when a refetch occurs.
+     * @param ownedAddresses - The user's full owned set; every leg lives on one of these.
+     * @param ownedSet - The owned set as a set, for internal classification on rebuild.
+     * @param tokenMeta - Token-metadata map, populated as refetched rows normalize.
+     */
+    private async reconcileSplitMigrations(
+        accountHistory: IAccountHistoryService,
+        moves: ILedgerMove[],
+        ownedAddresses: string[],
+        ownedSet: Set<string>,
+        tokenMeta: Map<string, ITokenMeta>
+    ): Promise<void> {
+        // Sum in vs out per txId|asset over internal moves; an imbalance means a leg
+        // fell outside a window. Keep the txId so we can refetch it.
+        const balances = new Map<string, { txId: string; inQty: number; outQty: number }>();
+        for (const move of moves) {
+            if (!move.internal) {
+                continue;
+            }
+            const key = `${move.txId}|${move.asset}`;
+            const entry = balances.get(key) ?? { txId: move.txId, inQty: 0, outQty: 0 };
+            if (move.direction === 'in') {
+                entry.inQty += move.quantity;
+            } else {
+                entry.outQty += move.quantity;
+            }
+            balances.set(key, entry);
+        }
+
+        const txIdsToRefetch = new Set<string>();
+        for (const { txId, inQty, outQty } of balances.values()) {
+            // Intact pairs are bit-identical (both legs decode the same on-chain
+            // amount), so a tiny tolerance only absorbs token-decimal float noise.
+            const tolerance = 1e-9 * Math.max(1, inQty, outQty);
+            if (Math.abs(inQty - outQty) > tolerance) {
+                txIdsToRefetch.add(txId);
+            }
+        }
+        if (txIdsToRefetch.size === 0) {
+            return;
+        }
+
+        const txIds = Array.from(txIdsToRefetch);
+        const refetched = await Promise.all(
+            ownedAddresses.map((address) => accountHistory.getTransactionsByTxIds(address, txIds))
+        );
+
+        // Drop the partial moves for these hashes, then rebuild from the complete
+        // refetch (every owned wallet's rows for each hash are now present).
+        const rebuilt = moves.filter((move) => !txIdsToRefetch.has(move.txId));
+        ownedAddresses.forEach((address, index) => {
+            for (const tx of refetched[index]) {
+                const move = ValuationService.toMove(tx, address, ownedSet, tokenMeta);
+                if (move) {
+                    rebuilt.push(move);
+                }
+            }
+        });
+        moves.length = 0;
+        moves.push(...rebuilt);
+    }
+
+    /**
      * Normalize one transaction into a value move from a scope address's
      * viewpoint, learning token metadata as a side effect. Returns null for rows
      * that move no tracked asset (staking, plain contract calls).
@@ -232,6 +316,13 @@ export class ValuationService implements IValuationService {
                 }
             }
         });
+
+        // Repair internal-transfer pairs the per-wallet read window split in half.
+        // readLedger caps each wallet at MAX_LEDGER_ROWS newest-first independently,
+        // so a high-volume wallet can push one leg of a migration beyond its window
+        // while the other leg stays inside another wallet's — silently dropping the
+        // transfer's basis. Refetch the missing legs by txId and rebuild them.
+        await this.reconcileSplitMigrations(accountHistory, moves, query.ownedAddresses, ownedSet, tokenMeta);
 
         // Current holdings come only from the report-scope snapshots (read in parallel).
         const snapshots = (
