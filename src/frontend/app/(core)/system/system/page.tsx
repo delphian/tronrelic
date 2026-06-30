@@ -1,52 +1,65 @@
-'use client';
+/**
+ * @fileoverview /system/system server entry.
+ *
+ * The consolidated System page now carries an in-page tab row (the menu module's
+ * Submenu Pattern) so it can host distinct concerns — the subsystem consoles
+ * under "Overview" and external-provider config under "Providers" — without a
+ * hand-rolled control. This server component fetches the `system` namespace tree
+ * SSR-first (forwarding the admin's cookie so per-node `requiresAdmin` resolves)
+ * and reads `?tab=` to seed the active panel, mirroring /system/account-history.
+ * Admin-gated by the /system layout.
+ */
 
-import { Page, Stack } from '../../../../components/layout';
-import { Card } from '../../../../components/ui/Card';
-import { ConsoleRow } from './components/ConsoleRow';
-import { OverviewBar } from './components/OverviewBar';
-import { SystemConfigSection } from './components/SystemConfigSection';
-import { ServerSection } from './components/ServerSection';
-import { BlockchainSection } from './components/BlockchainSection';
-import { WebSocketsSection } from './components/WebSocketsSection';
-import { MongoSection } from './components/MongoSection';
-import { ClickHouseSection } from './components/ClickHouseSection';
+import { cookies } from 'next/headers';
+import type { MenuNodeSerialized } from '@/shared';
+import { getServerSideApiUrl } from '../../../../lib/api-url';
+import { SystemAdminClient } from './SystemAdminClient';
+
+/** Namespace holding the page's tab nodes; registered in bootstrap. */
+const SUBMENU_NAMESPACE = 'system';
 
 /**
- * Consolidated System admin page — mission-control redesign.
+ * Fetch the submenu namespace tree, forwarding cookies so the admin gating
+ * resolves. Degrades to an empty tree on any failure — the page still renders,
+ * just without the tab row until a live `menu:update` refetch repopulates it.
  *
- * The OverviewBar at the top runs its own light polling so admins see
- * live state across all five subsystems even with every console row
- * collapsed. Below the bar, ConsoleRow sections collapse to a single
- * thin line apiece (status dot + caps title + monospace summary) and
- * defer their own data fetching until expanded — preserving the
- * "no API storm on page load" guarantee from the previous design.
+ * @returns The namespace root nodes and the tree snapshot timestamp.
  */
-export default function SystemAdminPage() {
-    return (
-        <Page>
-            <Stack gap="sm">
-                <OverviewBar />
-                <Card padding="sm" noBackgroundImage>
-                    <ConsoleRow id="config" title="Configuration" status="idle">
-                        <SystemConfigSection />
-                    </ConsoleRow>
-                    <ConsoleRow id="server" title="Server" status="idle">
-                        <ServerSection />
-                    </ConsoleRow>
-                    <ConsoleRow id="blockchain" title="Blockchain" status="idle">
-                        <BlockchainSection />
-                    </ConsoleRow>
-                    <ConsoleRow id="websockets" title="WebSockets" status="idle">
-                        <WebSocketsSection />
-                    </ConsoleRow>
-                    <ConsoleRow id="mongo" title="MongoDB" status="idle">
-                        <MongoSection />
-                    </ConsoleRow>
-                    <ConsoleRow id="clickhouse" title="ClickHouse" status="idle">
-                        <ClickHouseSection />
-                    </ConsoleRow>
-                </Card>
-            </Stack>
-        </Page>
-    );
+async function fetchSubmenu(): Promise<{ roots: MenuNodeSerialized[]; generatedAt: string }> {
+    const fallback = { roots: [] as MenuNodeSerialized[], generatedAt: new Date().toISOString() };
+    try {
+        const cookieHeader = (await cookies()).toString();
+        const response = await fetch(`${getServerSideApiUrl()}/api/menu?namespace=${SUBMENU_NAMESPACE}`, {
+            cache: 'no-store',
+            headers: cookieHeader ? { Cookie: cookieHeader } : undefined
+        });
+        if (!response.ok) {
+            return fallback;
+        }
+        const data = await response.json() as { tree?: { roots?: MenuNodeSerialized[]; generatedAt?: string } };
+        return {
+            roots: data.tree?.roots ?? [],
+            generatedAt: data.tree?.generatedAt ?? fallback.generatedAt
+        };
+    } catch {
+        return fallback;
+    }
+}
+
+/**
+ * System admin page (server entry).
+ *
+ * @param props - Next.js route props.
+ * @param props.searchParams - The `?tab=` deep link (a Promise in Next.js 15+),
+ *   read SSR-first to seed the initially active panel.
+ * @returns The client shell seeded with the SSR-fetched submenu tree.
+ */
+export default async function SystemAdminPage({
+    searchParams
+}: {
+    searchParams: Promise<{ tab?: string }>;
+}) {
+    const { roots, generatedAt } = await fetchSubmenu();
+    const { tab } = await searchParams;
+    return <SystemAdminClient submenuTree={roots} submenuGeneratedAt={generatedAt} initialTab={tab} />;
 }

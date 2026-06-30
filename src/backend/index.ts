@@ -42,6 +42,7 @@ import { IdentityModule } from './modules/identity/index.js';
 import { TrafficModule } from './modules/traffic/index.js';
 import { AccountHistoryModule } from './modules/account-history/index.js';
 import { PriceHistoryModule } from './modules/price-history/index.js';
+import { ProvidersModule } from './modules/providers/index.js';
 import { ValuationModule } from './modules/valuation/index.js';
 import { ToolsModule } from './modules/tools/index.js';
 import { AiToolsModule } from './modules/ai-tools/index.js';
@@ -244,6 +245,7 @@ interface BootstrapContext {
         traffic: TrafficModule;
         accountHistory: AccountHistoryModule;
         priceHistory: PriceHistoryModule;
+        providers: ProvidersModule;
         valuation: ValuationModule;
         tools: ToolsModule;
         notifications: NotificationsModule;
@@ -392,6 +394,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const trafficModule = new TrafficModule();
     const accountHistoryModule = new AccountHistoryModule();
     const priceHistoryModule = new PriceHistoryModule();
+    const providersModule = new ProvidersModule();
     const valuationModule = new ValuationModule();
     const toolsModule = new ToolsModule();
     const notificationsModule = new NotificationsModule();
@@ -414,6 +417,9 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // Price-history: scheduled local daily USD price series (CoinGecko-backed) into
     // ClickHouse, the data layer portfolio valuation reads from. No-ops ingestion
     // when clickhouse is absent. Inits before the valuation engine that consumes it.
+    // Providers must init before price-history: it wires the ProviderConfigService
+    // and TronScanClient singletons the price-history TronScan provider reads from.
+    await providersModule.init({ database: coreDatabase, app });
     await priceHistoryModule.init({ database: coreDatabase, clickhouse, scheduler: schedulerService, serviceRegistry, app, menuService });
     // Valuation: joins account-history, price-history, and the caller's wallet set
     // into portfolio summaries. Owns no storage; resolves its data services lazily
@@ -471,6 +477,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             traffic: trafficModule,
             accountHistory: accountHistoryModule,
             priceHistory: priceHistoryModule,
+            providers: providersModule,
             valuation: valuationModule,
             tools: toolsModule,
             notifications: notificationsModule,
@@ -529,6 +536,7 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     // Account-history runs before scheduler (which runs last and starts ticking),
     // so its `account-history:ingest` job is registered before the scheduler activates.
     await modules.accountHistory.run();
+    await modules.providers.run();
     // Price-history runs before scheduler (which runs last and starts ticking), so
     // its backfill/forward-sync jobs are registered before the scheduler activates.
     await modules.priceHistory.run();
@@ -657,6 +665,28 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
             order: item.order,
             parent: MAIN_SYSTEM_CONTAINER_ID,
             enabled: true
+        });
+    }
+
+    // In-page submenu tabs for the consolidated System page (the menu Submenu
+    // Pattern). These live in the dedicated 'system' namespace, not under the
+    // System container, so each node sets requiresAdmin itself. 'Overview' wraps
+    // the existing subsystem consoles; 'Providers' hosts external-provider config
+    // (TronScan). Registered here for now since the page is not yet a module.
+    const systemTabs = [
+        { label: 'Overview', tab: 'overview', icon: 'SlidersHorizontal', order: 0 },
+        { label: 'Providers', tab: 'providers', icon: 'Plug', order: 1 }
+    ];
+    for (const tab of systemTabs) {
+        await menuService.create({
+            namespace: 'system',
+            label: tab.label,
+            url: `/system/system?tab=${tab.tab}`,
+            icon: tab.icon,
+            order: tab.order,
+            parent: null,
+            enabled: true,
+            requiresAdmin: true
         });
     }
 }

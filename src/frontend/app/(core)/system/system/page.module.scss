@@ -1,0 +1,99 @@
+/* Styles for the consolidated System admin page (submenu tab row + panels). */
+
+.submenu {
+    margin-bottom: var(--gap-md);
+}
+
+.content {
+    display: block;
+}
+
+/* TronScan provider section */
+.provider_header {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.provider_title {
+    margin: 0;
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.label {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+}
+
+.hint {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.input_row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.icon_btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--padding-2xs);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    cursor: pointer;
+}
+
+.icon_btn:hover {
+    color: var(--color-text);
+}
+
+.source_select {
+    padding: var(--input-padding-sm);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+}
+
+.docs_link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    color: var(--color-primary);
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.feedback_success {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    color: var(--color-success);
+    font-size: var(--font-size-body-sm);
+}
+
+.feedback_error {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    color: var(--color-danger);
+    font-size: var(--font-size-body-sm);
+}

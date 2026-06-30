@@ -16,12 +16,12 @@ Maintains a **local** daily USD price series (TRX + tracked TRC20 tokens) in Cli
 | Types package | `@delphian/tronrelic-types` → `IPriceHistoryService`, `IPricePoint`, `PriceAsset`, `PRICE_ASSET_TRX` |
 | ClickHouse table | `price_history` (ReplacingMergeTree) |
 | Mongo collections | `module_price-history_settings`, `module_price-history_progress` |
-| Provider seam | `IPriceHistoryProvider` (v1 impl: `CoinGeckoPriceHistoryProvider`) |
+| Provider seam | `IPriceHistoryProvider` (active impl: `TronScanPriceHistoryProvider`, TRX-only; `CoinGeckoPriceHistoryProvider` retained for future token coverage) |
 | Bootstrap order | Inits after the scheduler service; before the valuation module that consumes it |
 
 ## Why It Is a Module
 
-Valuation depends on a local price series existing, ingested on a schedule regardless of which optional features are enabled — core, non-toggleable infrastructure. There is no live-fetch fallback by design: a missing day reads as "unpriced", never a synchronous CoinGecko call.
+Valuation depends on a local price series existing, ingested on a schedule regardless of which optional features are enabled — core, non-toggleable infrastructure. There is no live-fetch fallback by design: a missing day reads as "unpriced", never a synchronous provider call.
 
 ## Source Map
 
@@ -30,7 +30,8 @@ Valuation depends on a local price series existing, ingested on a schedule regar
 | `PriceHistoryModule.ts` | Lifecycle; creates the service, registers the two jobs, publishes `'price-history'` |
 | `services/price-history.service.ts` | `PriceHistoryService` singleton — settings, cursors, the two-phase ingestion, ClickHouse reads |
 | `providers/IPriceHistoryProvider.ts` | The source seam (`fetchRange` seed + `fetchDay` deep walk) the service depends on |
-| `providers/coingecko-price-history.provider.ts` | v1 CoinGecko provider; maps `'TRX'`→`tron`, a token→`contract/{address}` |
+| `providers/tronscan-price-history.provider.ts` | **Active** provider; TRX via TronScan `/api/trx/volume` (`close` per day), tokens → empty |
+| `providers/coingecko-price-history.provider.ts` | Retained CoinGecko provider; maps `'TRX'`→`tron`, a token→`contract/{address}` — kept for future token coverage |
 | `lib/price-day.ts` | UTC `YYYY-MM-DD` day arithmetic |
 | `database/index.ts` | Collection/table constants, cursor/settings doc shapes, ClickHouse row shape |
 | `api/price-history.admin.{controller,routes}.ts` | Admin surface (coverage stats, settings, manual backfill/forward) behind `requireAdmin` |
@@ -50,7 +51,9 @@ Valuation depends on a local price series existing, ingested on a schedule regar
 
 ## Ingestion Strategy
 
-CoinGecko's free tier serves a dense recent window cheaply but caps how far back it reaches, so backfill is two-phase. **Seed**: one `market_chart/range` call fills the recent window (`RECENT_WINDOW_DAYS`), flipping `recentSeeded`. **Deep walk**: the backward backfill walks older days one at a time via `/coins/{id}/history` (TRX) or a single-day range (tokens), up to `daysPerTick`, stopping at the first null (listing reached → `backfillComplete`) or the `MAX_BACKFILL_DAYS` floor. Each clean write advances the per-asset cursor, so a failed tick resumes without re-fetching. ReplacingMergeTree keyed `(asset, day)` makes re-fetch idempotent. Pacing dials throttle *down* only, respecting CoinGecko's rate budget (separate from the TronGrid limiter).
+Backfill is two-phase, provider-agnostic at the service layer. **Seed**: one `fetchRange` call fills the recent window (`RECENT_WINDOW_DAYS`), flipping `recentSeeded`. **Deep walk**: the backward backfill walks older days one at a time via `fetchDay`, up to `daysPerTick`, stopping at the first null (listing reached → `backfillComplete`) or the `MAX_BACKFILL_DAYS` floor. Each clean write advances the per-asset cursor, so a failed tick resumes without re-fetching. ReplacingMergeTree keyed `(asset, day)` makes re-fetch idempotent. Pacing dials throttle *down* only.
+
+The active TronScan provider fills the seed window and each forward append in a single `/api/trx/volume` call with no keyless history wall (the wall that stalled the prior CoinGecko deep walk). The service still drives the deep walk one `fetchDay` per day, so a full multi-year TRX backfill spans many ticks — bounded and resumable, just not instant. Token assets resolve to empty (TronScan has no per-token history), leaving tokens "seeded-but-empty" until a token source is added. Provider config (key, source, enable) lives in the [providers module](../providers/README.md), edited from `/system/system` → Providers.
 
 Granularity is one closing price per UTC day — the reproducible standard for cost-basis math, and it joins to the ledger's day buckets directly.
 
