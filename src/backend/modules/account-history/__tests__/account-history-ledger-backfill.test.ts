@@ -150,6 +150,58 @@ describe('AccountHistoryService ledger backfill', () => {
         expect(doc.tokenLegsBackfillCursor).toBe('2024-01-02 00:00:00.000|tB');
     });
 
+    it('on a mid-batch fetch failure persists progress through the last success and does not mark complete', async () => {
+        const now = new Date('2024-01-01T00:00:00.000Z');
+        const database = createMockDatabaseService();
+        database.getCollectionData(TRACKED_COLLECTION).push({ address: LEGACY, paused: false, addedAt: now, updatedAt: now });
+        database.getCollectionData(PROGRESS_COLLECTION).push({ address: LEGACY, status: 'complete', paused: false, internalComplete: true, rowsIngested: 3 });
+
+        const insertedByTable: Record<string, any[]> = {};
+        const query = vi.fn(async (sql: string) => {
+            if (sql.includes('DISTINCT tx_id')) {
+                return [
+                    { tx_id: 'tA', ts: '2024-01-01 00:00:00.000' },
+                    { tx_id: 'tB', ts: '2024-01-02 00:00:00.000' }
+                ];
+            }
+            if (sql.includes('DISTINCT contract_address')) {
+                return [{ contract_address: 'Tusdt', token_decimals: 6 }];
+            }
+            return [];
+        });
+        const clickhouse = {
+            query,
+            insert: vi.fn(async (table: string, rows: any[]) => { (insertedByTable[table] ??= []).push(...rows); })
+        } as unknown as IClickHouseService;
+
+        // tA succeeds; tB's events fetch throws (a transient rate-limit/network failure
+        // the strict provider surfaces rather than masking as empty).
+        const provider = createProvider({
+            fetchTokenTransferLegs: vi.fn(async (_account: string, txId: string) => {
+                if (txId === 'tB') {
+                    throw new Error('429 rate limited');
+                }
+                return [
+                    { txId, origin: 'token_event', legKey: '0', assetType: 'TRC20', assetId: 'Tusdt', from: 'Tx', to: 'Ty', amountRaw: '1000000', timestamp: now, blockNumber: 1 }
+                ] as IValueTransfer[];
+            })
+        });
+        AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
+
+        await AccountHistoryService.getInstance().runLedgerBackfillTick();
+
+        // Only tA's leg is written; tB is left for a later tick.
+        const legs = insertedByTable[VALUE_TRANSFERS_TABLE] ?? [];
+        expect(legs).toHaveLength(1);
+        expect(legs[0]).toMatchObject({ origin: 'token_event', tx_id: 'tA' });
+
+        // Cursor advanced through the last success (tA); completion NOT set, so the
+        // account stays selectable and resumes at tB next tick — no silent leg loss.
+        const doc = database.getCollectionData(PROGRESS_COLLECTION).find((d: any) => d.address === LEGACY);
+        expect(doc.tokenLegsBackfillCursor).toBe('2024-01-01 00:00:00.000|tA');
+        expect(doc.tokenLegsBackfillComplete).toBeUndefined();
+    });
+
     it('drains internal legs through the provider and persists the internal completion flag', async () => {
         const now = new Date('2024-01-01T00:00:00.000Z');
         const database = createMockDatabaseService();

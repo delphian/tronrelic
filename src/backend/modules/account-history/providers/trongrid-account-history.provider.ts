@@ -143,13 +143,20 @@ export class TronGridAccountHistoryProvider implements IAccountHistoryProvider {
      * transaction with no token activity. Idempotent: re-fetching reproduces the
      * same log-index-keyed legs, which ReplacingMergeTree absorbs.
      *
+     * Uses the **strict** events read (`getTransactionEventsOrThrow`): callers
+     * advance a durable cursor past each transaction read, so a fetch failure must
+     * throw rather than masquerade as "no token legs" — otherwise the cursor would
+     * skip the transaction's legs permanently (they cannot be rebuilt without the
+     * events `log_index`). The throw lets the caller's insert-before-cursor-advance
+     * discipline leave the work re-ingestable.
+     *
      * @param account - Base58 tracked account; only legs it participates in are returned.
      * @param txId - Parent transaction hash whose event logs to read.
      * @returns The transaction's account-involving token legs, keyed by log index.
      */
     async fetchTokenTransferLegs(account: string, txId: string): Promise<IValueTransfer[]> {
         const client = TronGridClient.getInstance();
-        const events = await client.getTransactionEvents(txId);
+        const events = await client.getTransactionEventsOrThrow(txId);
         return events
             .map((event) => TronGridAccountHistoryProvider.toTokenTransferLeg(account, txId, event))
             .filter((leg): leg is IValueTransfer => leg !== null);

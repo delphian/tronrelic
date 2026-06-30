@@ -181,7 +181,7 @@ describe('TronGridAccountHistoryProvider.fetchTokenTransferLegs', () => {
      */
     function stubEvents(events: unknown[]): void {
         vi.spyOn(TronGridClient, 'getInstance').mockReturnValue({
-            getTransactionEvents: vi.fn(async () => events)
+            getTransactionEventsOrThrow: vi.fn(async () => events)
         } as unknown as TronGridClient);
     }
 
