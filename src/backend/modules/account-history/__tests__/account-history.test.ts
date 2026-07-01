@@ -294,6 +294,29 @@ describe('AccountHistoryService', () => {
         );
     });
 
+    it('getWalletSummary reads the value ledger for monthly flow, not the transaction table', async () => {
+        // queryMonthlyFlow switched to account_value_transfers and filters USDT by
+        // contract address (asset_id), not by token_symbol. Assert the flow read so a
+        // silent revert to the old table or symbol filter is caught. All summary reads
+        // resolve to [] here; only the flow leg touches the value ledger and binds a
+        // `usdt` param, so this pairing uniquely identifies it within the fan-out.
+        AccountHistoryService.resetForTests();
+        const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
+        AccountHistoryService.setDependencies({ database: createMockDatabaseService(), clickhouse, provider: null, emitter: undefined, logger: createSilentLogger() });
+
+        await AccountHistoryService.getInstance().getWalletSummary(VALID_ADDRESS);
+
+        expect(clickhouse.query).toHaveBeenCalledWith(
+            expect.stringContaining(VALUE_TRANSFERS_TABLE),
+            expect.objectContaining({ address: VALID_ADDRESS, usdt: expect.any(String) })
+        );
+        // Guard against reintroducing the pre-ledger symbol filter.
+        expect(clickhouse.query).not.toHaveBeenCalledWith(
+            expect.stringContaining("token_symbol = 'USDT'"),
+            expect.anything()
+        );
+    });
+
     it('runIngestionTick is a no-op without ClickHouse and never calls the provider', async () => {
         const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn(), fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })), fetchTokenTransferLegs: vi.fn(async () => []) };
         const service = buildService(provider);

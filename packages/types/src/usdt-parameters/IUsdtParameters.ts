@@ -1,4 +1,15 @@
 /**
+ * The USDT (Tether) TRC20 contract address on TRON mainnet — the single
+ * source of truth for the dominant stablecoin's identity across the platform.
+ * Consumers key USDT flow, energy-cost probes, and value-ledger aggregation on
+ * this address; centralizing it here (rather than re-declaring a private const
+ * per module) removes the drift risk of the same literal living in several
+ * places. It is an immutable on-chain identifier, so it belongs in the shared
+ * contract package alongside the USDT parameter types.
+ */
+export const USDT_CONTRACT_ADDRESS = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+
+/**
  * USDT TRC20 token transaction parameters
  * Contains energy costs for different types of USDT transfers on TRON
  */

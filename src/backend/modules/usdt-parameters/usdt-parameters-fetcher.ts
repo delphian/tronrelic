@@ -1,14 +1,10 @@
 import type { AxiosInstance } from 'axios';
 import type { IUsdtParametersFetcher, IUsdtParameters, ISystemLogService, IDatabaseService } from '@/types';
+import { USDT_CONTRACT_ADDRESS } from '@/types';
 import { UsdtParametersModel, type IUsdtParametersDocument } from '../../database/models/usdt-parameters-model.js';
 import { toHexAddress } from '../../lib/tron-address.js';
 
 const USDT_PARAMETERS_COLLECTION = 'usdtParameters';
-
-/**
- * USDT TRC20 contract address on TRON mainnet
- */
-const USDT_CONTRACT_ADDRESS = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 
 /**
  * Sample wallet address for testing USDT transfers

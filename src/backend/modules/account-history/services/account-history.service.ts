@@ -38,6 +38,7 @@ import type {
     ISystemLogService,
     IWebSocketService
 } from '@/types';
+import { USDT_CONTRACT_ADDRESS } from '@/types';
 import {
     PROGRESS_COLLECTION,
     SETTINGS_COLLECTION,
@@ -89,14 +90,6 @@ const MS_PER_DAY = 86_400_000;
 
 /** Base58 TRON mainnet address shape: leading `T`, 34 chars total. */
 const TRON_ADDRESS_PATTERN = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
-
-/**
- * USDT (TRC20) contract address — the `asset_id` the money-in/out chart keys its
- * USDT flow on now that the flow query reads the value ledger (which identifies a
- * token by its contract, not a symbol string). Mainnet Tether; the dominant
- * stablecoin the flow surface breaks out beside TRX.
- */
-const USDT_CONTRACT_ADDRESS = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 
 /** WebSocket event name for live ingestion stats; must have a case in WebSocketService.emit(). */
 const STATS_EVENT = 'account-history:stats';

@@ -280,6 +280,14 @@ export class ValuationService implements IValuationService {
         if (!leg.from || !leg.to || leg.from === leg.to) {
             return null;
         }
+        // Defense in depth at the ledger-read boundary: a TRC20 leg keys holdings and
+        // the price series on its contract address, so an empty assetId would corrupt
+        // portfolio math onto the "" asset. The events source already drops these legs
+        // upstream; this guards the persistence-read seam. Type-qualified because a
+        // legitimate TRX leg carries an empty assetId by design.
+        if (leg.assetType === 'TRC20' && !leg.assetId) {
+            return null;
+        }
         const direction: 'in' | 'out' = leg.from === scopeAddress ? 'out' : 'in';
         const counterparty = direction === 'out' ? leg.to : leg.from;
         const day = leg.timestamp.toISOString().slice(0, 10);
@@ -298,11 +306,17 @@ export class ValuationService implements IValuationService {
             };
         }
 
-        // TRC20: the asset is the token contract; decimals come from the leg (the
-        // ledger carries no symbol, so the label falls back to a short address form).
+        // TRC20: the asset is the token contract. Prefer decimals already learned for
+        // this asset — a sibling leg can carry authoritative decimals this leg lacks,
+        // because the events source omits them and the trc20 back-fill only stamps the
+        // walk's own token — then fall back to this leg's explicit value, defaulting
+        // only when nothing is known. Update the map whenever a leg reveals a better
+        // value so the snapshot-holdings path keys on authoritative decimals too. The
+        // ledger carries no symbol, so the label stays a short address form.
         const asset = leg.assetId;
-        const decimals = typeof leg.assetDecimals === 'number' ? leg.assetDecimals : DEFAULT_TOKEN_DECIMALS;
-        if (!tokenMeta.has(asset)) {
+        let decimals = tokenMeta.get(asset)?.decimals;
+        if (decimals === undefined || (typeof leg.assetDecimals === 'number' && leg.assetDecimals !== decimals)) {
+            decimals = typeof leg.assetDecimals === 'number' ? leg.assetDecimals : DEFAULT_TOKEN_DECIMALS;
             tokenMeta.set(asset, { symbol: ValuationService.shortAsset(asset), decimals });
         }
         const quantity = Number(leg.amountRaw) / 10 ** decimals;
