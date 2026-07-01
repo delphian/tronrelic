@@ -29,6 +29,7 @@ import {
     setPrimaryWallet,
     fetchWalletHistoryProgress
 } from '../../api/wallets.api';
+import { fetchAggregatePortfolio } from '../../api/valuation-user.api';
 import { WalletDetailPanel, PortfolioPanel } from './WalletDetail';
 import { WalletSwitcher, type WalletScope } from './WalletSwitcher';
 import { WalletManageList } from './WalletManageList';
@@ -85,6 +86,12 @@ export function WalletManager({ initialWallets, initialProgress, initialPortfoli
     // The active scope drives the hero and detail: null is the all-wallets
     // aggregate (the default landing view), a string is one wallet's zoom.
     const [activeScope, setActiveScope] = useState<WalletScope>(null);
+    // The aggregate portfolio hero, seeded from SSR so it paints with no skeleton.
+    // Held here rather than inside PortfolioPanel so a wallet mutation can refetch
+    // it — the panel stays mounted under an unchanging seed while the aggregate
+    // scope is shown, so its own effect never re-runs and would otherwise leave net
+    // worth on pre-mutation numbers after a link / unlink.
+    const [aggregatePortfolio, setAggregatePortfolio] = useState<IPortfolioSummary | null>(initialPortfolio);
 
     // Index progress by address so the switcher and manage list render each
     // wallet's status in one lookup.
@@ -112,6 +119,20 @@ export function WalletManager({ initialWallets, initialProgress, initialPortfoli
             setProgress(next);
         } catch {
             // Keep the existing state; progress is non-critical.
+        }
+    }, []);
+
+    /**
+     * Refetch the aggregate portfolio and replace local state. Best-effort: the
+     * hero is a secondary surface, so a failure keeps the last-known numbers in
+     * place rather than surfacing an error across the whole panel.
+     */
+    const refreshPortfolio = useCallback(async (): Promise<void> => {
+        try {
+            const next = await fetchAggregatePortfolio();
+            setAggregatePortfolio(next);
+        } catch {
+            // Keep the existing summary; valuation is non-critical here.
         }
     }, []);
 
@@ -151,6 +172,10 @@ export function WalletManager({ initialWallets, initialProgress, initialPortfoli
                 // visible set, so pull the fresh status rather than wait for the
                 // next ingestion-tick nudge.
                 void refreshProgress();
+                // A link / unlink changes the valued wallet set, so revalue the
+                // aggregate hero too — its own effect can't while it stays mounted
+                // under an unchanging seed.
+                void refreshPortfolio();
             } catch (error) {
                 push({
                     tone: 'danger',
@@ -161,7 +186,7 @@ export function WalletManager({ initialWallets, initialProgress, initialPortfoli
                 setBusyKey(null);
             }
         },
-        [push, refreshProgress]
+        [push, refreshProgress, refreshPortfolio]
     );
 
     /**
@@ -288,7 +313,7 @@ export function WalletManager({ initialWallets, initialProgress, initialPortfoli
             />
 
             {activeScope === null ? (
-                <PortfolioPanel initialSummary={initialPortfolio} />
+                <PortfolioPanel initialSummary={aggregatePortfolio} />
             ) : (
                 <WalletDetailPanel address={activeScope} progress={activeProgress} />
             )}
