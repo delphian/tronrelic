@@ -9,9 +9,9 @@ Computes per-user **portfolio** summaries — net worth, holdings, allocation, r
 | Module id | `valuation` |
 | Module class | `src/backend/modules/valuation/ValuationModule.ts` |
 | Service registry name | `'valuation'` → `IValuationService` |
-| Mounted routes | `/api/valuation/me/*` (`createRateLimiter` + `requireLogin`, ownership-scoped) |
+| Mounted routes | `/api/valuation/me/*` (`createRateLimiter` + `requireLogin`, ownership-scoped); `/api/admin/system/valuation/*` (`createAdminRateLimiter` + `requireAdmin`) |
 | Scheduler jobs | none (compute-on-read) |
-| Owned storage | none — joins `'account-history'`, `'price-history'`, and identity `'wallets'` |
+| Owned storage | none — joins `'account-history'`, `'price-history'`, identity `'wallets'`, and identity `'user-settings'` (balance-range override only) |
 | Types package | `@delphian/tronrelic-types` → `IValuationService`, `IPortfolioSummary`, `IPortfolioHolding`, `IPortfolioQuery` |
 | Bootstrap order | Inits after price-history; resolves its data services lazily from the registry, so order is not load-bearing |
 
@@ -21,7 +21,7 @@ Cost-basis PnL is inherently **per user**, not per wallet: moving a token betwee
 
 The engine keeps lots in **per-wallet (segregated) sub-books** and treats an *internal* transfer as a **basis migration**: the source wallet's consumed lots move, basis intact, into the receiving wallet's sub-book (matched by `txId`). A sale therefore draws on the *selling* wallet's own basis, never a global pool, so per-user figures are exactly the **sum** of the per-wallet figures — coherent and additive. The service walks the **full owned set's** ledgers even for a single-wallet zoom (basis can only migrate in if the source ledger is read); holdings come only from the report-scope snapshots. Single-address explorers cannot do this — they book a phantom gain on the receiving side of every internal transfer.
 
-Each wallet's ledger read is bounded (`MAX_LEDGER_ROWS`, newest-first), so a high-volume wallet can push one leg of a migration past its window while the other leg stays inside another wallet's. The service detects that split — a `txId|asset` whose in and out quantities, summed across the owned set, disagree — and refetches the missing legs by hash via `getValueTransfersByTxIds`, rebuilding the pair so basis is never silently dropped. A transfer whose *both* legs are beyond their windows stays invisible, which is the pre-existing deep-history approximation below, not a split.
+Each wallet's ledger read is uncapped, newest-first, paged until a short page ends it — every owned address's full ledger is read, so an internal transfer's two legs are always both present in the same computation; there is no per-wallet window for a leg to fall outside of. The remaining approximation is upstream of this service: TronGrid's own fingerprint paging cannot reach the deepest history of very large accounts, so a transfer entirely beyond what account-history has ingested stays invisible regardless.
 
 ## Source Map
 
@@ -32,12 +32,14 @@ Each wallet's ledger read is bounded (`MAX_LEDGER_ROWS`, newest-first), so a hig
 | `lib/lot-engine.ts` | Pure FIFO cost-basis (`computeLots`) + snapshot-anchored balance reconstruction (`reconstructTrxBalanceSeries`); no I/O |
 | `api/valuation-user.controller.ts` | Login-gated handlers; resolves the owned set, enforces the 404-on-unowned gate |
 | `api/valuation-user.routes.ts` | Router factory (guards applied at mount) |
+| `api/valuation-admin.controller.ts` | Admin handlers for the per-wallet balance-range override |
+| `api/valuation-admin.routes.ts` | Admin router factory (guards applied at mount) |
 
 ## Published Contract — `'valuation'` → `IValuationService`
 
 | Method | Purpose |
 |--------|---------|
-| `getPortfolio({ addresses, ownedAddresses, scope })` | The full `IPortfolioSummary` for a scope. Trusts the addresses; the caller authorizes. |
+| `getPortfolio({ userId, addresses, ownedAddresses, scope })` | The full `IPortfolioSummary` for a scope. Trusts the addresses; the caller authorizes. `userId` resolves the balance-range override below, never authorization. |
 
 ## REST Endpoints (`requireLogin`)
 
@@ -46,11 +48,26 @@ Each wallet's ledger read is bounded (`MAX_LEDGER_ROWS`, newest-first), so a hig
 | GET | `/api/valuation/me/portfolio` | Aggregate portfolio across the caller's verified wallets (scope `user`) |
 | GET | `/api/valuation/me/wallets/:address/portfolio` | One owned wallet (scope `wallet`); 404 if unowned |
 
+## REST Endpoints (`requireAdmin`)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/admin/system/valuation/users/:userId/wallets/:address/balance-range` | Effective range for one wallet — the stored override, or `'1y'`. 404s if `userId` doesn't exist or doesn't own `address` |
+| PATCH | `/api/admin/system/valuation/users/:userId/wallets/:address/balance-range` | Body `{ range: '1y' \| 'all' }`. Setting `'1y'` clears the override; setting `'all'` stores it. Same 404 ownership check as the GET |
+
+## Balance-Chart Range: Default and Admin Override
+
+The balance-over-time chart defaults every wallet to a trailing year (`DEFAULT_BALANCE_WINDOW_DAYS = 365` in `valuation.service.ts`). An admin can widen a specific wallet to unbounded — the series then starts at the earliest ledger delta instead of a fixed floor, an honest "as far back as this ledger reaches," never a claim of the account's true genesis (TronGrid's own fingerprint paging cannot reach the deepest history of very large accounts regardless of this setting).
+
+The override is stored in the identity module's `'user-settings'` store — namespace `'valuation'`, keyed by wallet address, value `'1y' | 'all'` — through the *trusted* programmatic `set`/`get`/`delete` path, never the self-service `/api/user/settings` surface. That distinction is deliberate: it keeps the override admin-only, since a user widening their own window would defeat the point of a default. One resolved window covers the whole query (aggregate or zoom) because the series is a single reconstructed curve, not stitched per wallet — if any wallet in scope is set to `'all'`, the combined view widens too, which never exposes data the caller was not already entitled to see.
+
+`IPortfolioSummary.historyBackfillComplete` flags whether every report-scope address has finished account-history's ledger backfill (`getProgressFor` status `'complete'`). The back-solve reconstructs from today's snapshot across whatever deltas the ledger holds, so a day missing purely because ingestion hasn't reached it yet — not because nothing happened — still shifts the whole curve, widened window or not. The frontend caveats the chart when this is `false` rather than presenting an in-progress backfill as a settled history.
+
 ## Division of Truth (and Its Limits)
 
 Current **holdings and net worth** come from the latest balance *snapshot* — the absolute on-chain truth, including staked TRX the ledger cannot reconstruct. **Realized/unrealized PnL and cost basis** come from the *lot engine* walking the ledger against historical prices. The two can diverge for accounts whose oldest history TronGrid cannot reach (a disposal with no recorded acquisition realizes against zero basis); the snapshot keeps headline net worth correct regardless.
 
-Documented v1 simplifications: all inbound external transfers are treated as acquisitions at the day's price (airdrops are not distinguished from buys); fees are excluded from PnL (they affect net worth via the snapshot); the balance-over-time series is TRX-anchored over the trailing window (tokens contribute to current net worth, not the historical curve); tokens with no local price coverage appear by quantity and are excluded from USD totals (`unpricedAssets`).
+Documented v1 simplifications: all inbound external transfers are treated as acquisitions at the day's price (airdrops are not distinguished from buys); fees are excluded from PnL (they affect net worth via the snapshot); the balance-over-time series is TRX-anchored (tokens contribute to current net worth, not the historical curve); tokens with no local price coverage appear by quantity and are excluded from USD totals (`unpricedAssets`).
 
 ## Related
 

@@ -168,4 +168,24 @@ describe('reconstructTrxBalanceSeries', () => {
         // single anchor point is still emitted at the absolute balance.
         expect(series[series.length - 1]?.valueUsd).toBe(100);
     });
+
+    it('with a null window, starts at the earliest known delta instead of a fixed floor', () => {
+        const series = reconstructTrxBalanceSeries(
+            '2024-01-03',
+            100,
+            [
+                { day: '2023-01-01', signedQty: 30 },
+                { day: '2024-01-03', signedQty: 20 }
+            ],
+            () => 1,
+            null
+        );
+        expect(series[0]?.day).toBe('2023-01-01');
+        expect(series[series.length - 1]).toEqual({ day: '2024-01-03', valueUsd: 100 });
+    });
+
+    it('with a null window and no deltas, emits a single anchor point rather than fabricating history', () => {
+        const series = reconstructTrxBalanceSeries('2024-01-03', 100, [], () => 1, null);
+        expect(series).toEqual([{ day: '2024-01-03', valueUsd: 100 }]);
+    });
 });

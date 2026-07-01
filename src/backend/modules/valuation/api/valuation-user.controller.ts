@@ -52,7 +52,7 @@ export class ValuationUserController {
                 return;
             }
             const owned = await this.ownedAddresses(userId);
-            const summary = await this.service.getPortfolio({ addresses: owned, ownedAddresses: owned, scope: 'user' });
+            const summary = await this.service.getPortfolio({ userId, addresses: owned, ownedAddresses: owned, scope: 'user' });
             res.json({ summary });
         } catch (error) {
             this.logger.error({ error }, 'Failed to compute aggregate portfolio');
@@ -86,7 +86,7 @@ export class ValuationUserController {
                 return;
             }
             const scope: PortfolioScope = 'wallet';
-            const summary = await this.service.getPortfolio({ addresses: [address], ownedAddresses: owned, scope });
+            const summary = await this.service.getPortfolio({ userId, addresses: [address], ownedAddresses: owned, scope });
             res.json({ summary });
         } catch (error) {
             this.logger.error({ error }, 'Failed to compute wallet portfolio');

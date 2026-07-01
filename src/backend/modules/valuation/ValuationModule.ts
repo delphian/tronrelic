@@ -14,10 +14,13 @@ import type { Express, Router } from 'express';
 import type { IServiceRegistry, IModule, IModuleMetadata } from '@/types';
 import { logger } from '../../lib/logger.js';
 import { requireLogin } from '../../api/middleware/require-login.js';
-import { createRateLimiter } from '../../api/middleware/rate-limit.js';
+import { requireAdmin } from '../../api/middleware/admin-auth.js';
+import { createRateLimiter, createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 import { ValuationService } from './services/valuation.service.js';
 import { ValuationUserController } from './api/valuation-user.controller.js';
 import { createValuationUserRouter } from './api/valuation-user.routes.js';
+import { ValuationAdminController } from './api/valuation-admin.controller.js';
+import { createValuationAdminRouter } from './api/valuation-admin.routes.js';
 
 /** Dependencies the valuation module needs at bootstrap. */
 export interface IValuationModuleDependencies {
@@ -73,7 +76,16 @@ export class ValuationModule implements IModule<IValuationModuleDependencies> {
             userRouter
         );
 
-        this.logger.info('Valuation module running; user router mounted at /api/valuation');
+        const adminController = new ValuationAdminController(this.serviceRegistry, this.logger);
+        const adminRouter: Router = createValuationAdminRouter(adminController);
+        this.app.use(
+            '/api/admin/system/valuation',
+            createAdminRateLimiter('valuation-admin'),
+            requireAdmin,
+            adminRouter
+        );
+
+        this.logger.info('Valuation module running; user router mounted at /api/valuation, admin router at /api/admin/system/valuation');
     }
 
     /**

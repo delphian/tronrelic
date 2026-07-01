@@ -20,6 +20,7 @@ import type {
     ISystemLogService,
     IAccountHistoryService,
     IPriceHistoryService,
+    IUserSettingsService,
     IValuationService,
     IPortfolioQuery,
     IPortfolioSummary,
@@ -30,14 +31,28 @@ import type {
 import { PRICE_ASSET_TRX } from '@/types';
 import { computeLots, reconstructTrxBalanceSeries, type ILedgerMove, type IDailyTrxDelta } from '../lib/lot-engine.js';
 
-/** Page size for ledger reads; account-history clamps to its own max. */
+/** Page size for ledger reads. Pagination has no row cap — a high-volume wallet's
+ *  full ledger is always read, so an internal transfer's counterpart leg is never
+ *  split across a window (see the removed split-migration repair this replaced). */
 const LEDGER_PAGE = 500;
 
-/** Cap on ledger rows scanned per address, bounding work for very large wallets. */
-const MAX_LEDGER_ROWS = 10_000;
+/** Default trailing days of the USD balance series absent an admin override. */
+const DEFAULT_BALANCE_WINDOW_DAYS = 365;
 
-/** Trailing days of the USD balance series shown on the chart. */
-const BALANCE_WINDOW_DAYS = 365;
+/**
+ * Lookback (days) used for the price-series read when an admin has widened a
+ * wallet's balance window to unbounded. Large rather than tied to any specific
+ * blockchain-genesis date — the reconstruction itself clips to the earliest
+ * known ledger delta, so this only needs to comfortably predate any real TRX
+ * history, not be exact.
+ */
+const UNBOUNDED_PRICE_LOOKBACK_DAYS = 10_000;
+
+/** Namespace under which the per-wallet balance-range override is stored in `'user-settings'`. */
+const BALANCE_RANGE_NAMESPACE = 'valuation';
+
+/** The only two admin-settable balance-chart ranges: the default trailing year, or unbounded. */
+export type BalanceRangeSetting = '1y' | 'all';
 
 /** How many days back to accept as the "current" price when today is unbackfilled. */
 const CURRENT_PRICE_LOOKBACK = 7;
@@ -124,19 +139,21 @@ export class ValuationService implements IValuationService {
     }
 
     /**
-     * Read an account's full value-transfer ledger (bounded), newest-first from the
+     * Read an account's complete value-transfer ledger, newest-first from the
      * service, returned as-is for the caller to normalize. Reads the value ledger
      * (`getValueTransfers`) rather than the transaction table: a leg is already the
      * unit of value movement, so a contract's TRX deposit is a first-class
      * `internal` leg here and enters PnL without pattern-matching contract types.
      *
-     * Paged by window size alone — the value read returns a bare array (no total),
-     * so a page shorter than {@link LEDGER_PAGE} marks the end, and the
-     * {@link MAX_LEDGER_ROWS} cap bounds work on very large wallets.
+     * Paged by window size alone, uncapped — the value read returns a bare array
+     * (no total), so a page shorter than {@link LEDGER_PAGE} marks the end. A very
+     * high-volume wallet costs a slower read, not a truncated one; every owned
+     * address's ledger is read in full, so an internal transfer's two legs are
+     * always both present (no per-wallet window for a leg to fall outside of).
      *
      * @param accountHistory - The account-history service.
      * @param address - Address whose ledger to read.
-     * @returns Up to {@link MAX_LEDGER_ROWS} value legs.
+     * @returns Every value leg for the address.
      */
     private async readLedger(accountHistory: IAccountHistoryService, address: string): Promise<IValueTransfer[]> {
         const all: IValueTransfer[] = [];
@@ -145,7 +162,7 @@ export class ValuationService implements IValuationService {
             const page = await accountHistory.getValueTransfers({ address, limit: LEDGER_PAGE, offset });
             all.push(...page);
             offset += page.length;
-            if (page.length < LEDGER_PAGE || all.length >= MAX_LEDGER_ROWS) {
+            if (page.length < LEDGER_PAGE) {
                 break;
             }
         }
@@ -153,100 +170,47 @@ export class ValuationService implements IValuationService {
     }
 
     /**
-     * Repair internal-transfer pairs the bounded per-wallet ledger read split.
+     * Resolve the balance-over-time chart's trailing window for a query: the
+     * default trailing year, widened to unbounded if an admin has set any
+     * in-scope wallet's stored override to `'all'`. One window covers the whole
+     * query because the series is a single reconstructed curve, not one stitched
+     * per wallet — widening it for a wallet the caller is already viewing never
+     * exposes data they are not entitled to see.
      *
-     * Why: the engine pairs an internal transfer's two legs (an `out` on the
-     * source wallet, an `in` on the destination) by `txId|asset` and migrates
-     * basis between sub-books. {@link readLedger} caps each wallet at
-     * {@link MAX_LEDGER_ROWS} newest-first *independently*, so a high-volume wallet
-     * can push one leg beyond its window while the other leg stays inside another
-     * wallet's window. The engine then sees a half-pair and the transfer's basis
-     * silently vanishes. Both legs share one on-chain `txId`, so the split is
-     * detectable: for an intact internal transfer the `in` and `out` quantities
-     * summed across the owned set are equal, so any `txId|asset` whose sums differ
-     * has a leg outside a window. Refetch every owned wallet's rows for those
-     * hashes (each `txId`'s full row set is then in hand), drop the partial moves,
-     * and rebuild them from the authoritative refetch. A transfer whose *both*
-     * legs are beyond their windows stays invisible — the pre-existing
-     * deep-history approximation, not this split.
+     * Degrades to the default when `'user-settings'` is unavailable (mirrors how
+     * the rest of this service treats an absent optional dependency).
      *
-     * Mutates `moves` in place. The refetch is bounded by the count of
-     * cross-window internal transfers, so the per-wallet read bound is preserved.
-     *
-     * @param accountHistory - The account-history service for the by-`txId` read.
-     * @param moves - The assembled moves, mutated in place when a refetch occurs.
-     * @param ownedAddresses - The user's full owned set; every leg lives on one of these.
-     * @param ownedSet - The owned set as a set, for internal classification on rebuild.
-     * @param tokenMeta - Token-metadata map, populated as refetched rows normalize.
+     * @param userId - Better Auth id whose stored overrides to check.
+     * @param addresses - The report-scope addresses for this query.
+     * @returns Trailing window in days, or `null` for unbounded.
      */
-    private async reconcileSplitMigrations(
-        accountHistory: IAccountHistoryService,
-        moves: ILedgerMove[],
-        ownedAddresses: string[],
-        ownedSet: Set<string>,
-        tokenMeta: Map<string, ITokenMeta>
-    ): Promise<void> {
-        // Sum in vs out per txId|asset over internal moves; an imbalance means a leg
-        // fell outside a window. Keep the txId so we can refetch it.
-        const balances = new Map<string, { txId: string; inQty: number; outQty: number }>();
-        for (const move of moves) {
-            if (!move.internal) {
-                continue;
-            }
-            const key = `${move.txId}|${move.asset}`;
-            const entry = balances.get(key) ?? { txId: move.txId, inQty: 0, outQty: 0 };
-            if (move.direction === 'in') {
-                entry.inQty += move.quantity;
-            } else {
-                entry.outQty += move.quantity;
-            }
-            balances.set(key, entry);
+    private async resolveBalanceWindowDays(userId: string, addresses: string[]): Promise<number | null> {
+        const userSettings = this.serviceRegistry.get<IUserSettingsService>('user-settings');
+        if (!userSettings) {
+            return DEFAULT_BALANCE_WINDOW_DAYS;
         }
+        const stored = await userSettings.getNamespace(userId, BALANCE_RANGE_NAMESPACE);
+        const unboundedRange: BalanceRangeSetting = 'all';
+        const hasUnboundedOverride = addresses.some((address) => stored[address] === unboundedRange);
+        return hasUnboundedOverride ? null : DEFAULT_BALANCE_WINDOW_DAYS;
+    }
 
-        const txIdsToRefetch = new Set<string>();
-        for (const { txId, inQty, outQty } of balances.values()) {
-            // Intact pairs are bit-identical (both legs decode the same on-chain
-            // amount), so a tiny tolerance only absorbs token-decimal float noise.
-            const tolerance = 1e-9 * Math.max(1, inQty, outQty);
-            if (Math.abs(inQty - outQty) > tolerance) {
-                txIdsToRefetch.add(txId);
-            }
-        }
-        if (txIdsToRefetch.size === 0) {
-            return;
-        }
-
-        const txIds = Array.from(txIdsToRefetch);
-        // getValueTransfersByTxIds clamps each read to its own by-hash maximum to
-        // bound the SQL IN-list, so a portfolio with more imbalanced hashes than
-        // that clamp would have the overflow silently dropped from the refetch —
-        // yet the rebuild below removes the partial moves for *every* requested
-        // hash, so those overflow transfers would lose their moves entirely,
-        // understating basis/PnL. Read the hashes in batches no larger than the
-        // clamp and accumulate, so every requested hash is refetched and rebuilt.
-        const TXID_READ_CHUNK = 2_000;
-        const refetched: IValueTransfer[][] = ownedAddresses.map(() => []);
-        for (let start = 0; start < txIds.length; start += TXID_READ_CHUNK) {
-            const chunk = txIds.slice(start, start + TXID_READ_CHUNK);
-            const chunkRows = await Promise.all(
-                ownedAddresses.map((address) => accountHistory.getValueTransfersByTxIds(address, chunk))
-            );
-            chunkRows.forEach((legs, index) => refetched[index].push(...legs));
-        }
-
-        // Drop the partial moves for these hashes, then rebuild from the complete
-        // refetch (every owned wallet's legs for each hash are now present).
-        const rebuilt = moves.filter((move) => !txIdsToRefetch.has(move.txId));
-        ownedAddresses.forEach((address, index) => {
-            for (const leg of refetched[index]) {
-                const move = ValuationService.toMove(leg, address, ownedSet, tokenMeta);
-                if (move) {
-                    rebuilt.push(move);
-                }
-            }
-        });
-        moves.length = 0;
-        moves.push(...rebuilt);
+    /**
+     * Whether every report-scope address has finished account-history's ledger
+     * backfill. The balance series back-solves from today's snapshot across
+     * whatever deltas the ledger has, so a day missing purely because ingestion
+     * hasn't reached it yet — not because nothing happened — still shifts the
+     * whole reconstructed curve. An address absent from the progress read (never
+     * ticked yet) counts as not complete, the conservative read.
+     *
+     * @param accountHistory - The account-history service for the progress read.
+     * @param addresses - The report-scope addresses for this query.
+     * @returns `true` only if every address is `'complete'`.
+     */
+    private async resolveHistoryBackfillComplete(accountHistory: IAccountHistoryService, addresses: string[]): Promise<boolean> {
+        const progress = await accountHistory.getProgressFor(addresses);
+        const statusByAddress = new Map(progress.map((entry) => [entry.address, entry.status]));
+        return addresses.every((address) => statusByAddress.get(address) === 'complete');
     }
 
     /**
@@ -359,13 +323,6 @@ export class ValuationService implements IValuationService {
             }
         });
 
-        // Repair internal-transfer pairs the per-wallet read window split in half.
-        // readLedger caps each wallet at MAX_LEDGER_ROWS newest-first independently,
-        // so a high-volume wallet can push one leg of a migration beyond its window
-        // while the other leg stays inside another wallet's — silently dropping the
-        // transfer's basis. Refetch the missing legs by txId and rebuild them.
-        await this.reconcileSplitMigrations(accountHistory, moves, query.ownedAddresses, ownedSet, tokenMeta);
-
         // Current holdings come only from the report-scope snapshots (read in parallel).
         const snapshots = (
             await Promise.all(query.addresses.map((address) => accountHistory.getLatestSnapshot(address)))
@@ -471,15 +428,20 @@ export class ValuationService implements IValuationService {
             .filter((m) => m.asset === PRICE_ASSET_TRX && reportSet.has(m.wallet))
             .map((m) => ({ day: m.day, signedQty: m.direction === 'in' ? m.quantity : -m.quantity }));
         const anchorDay = capturedAt ? capturedAt.toISOString().slice(0, 10) : today;
-        const trxSeries = await priceHistory.getSeries(PRICE_ASSET_TRX, ValuationService.shiftDay(anchorDay, -BALANCE_WINDOW_DAYS), anchorDay);
+        const windowDays = await this.resolveBalanceWindowDays(query.userId, query.addresses);
+        const priceFloorDay = windowDays === null
+            ? ValuationService.shiftDay(anchorDay, -UNBOUNDED_PRICE_LOOKBACK_DAYS)
+            : ValuationService.shiftDay(anchorDay, -windowDays);
+        const trxSeries = await priceHistory.getSeries(PRICE_ASSET_TRX, priceFloorDay, anchorDay);
         const trxPriceByDay = new Map(trxSeries.map((p) => [p.day, p.priceUsd]));
         const balanceSeriesUsd = reconstructTrxBalanceSeries(
             anchorDay,
             trxQty,
             trxDeltas,
             (day) => trxPriceByDay.get(day) ?? null,
-            BALANCE_WINDOW_DAYS
+            windowDays
         );
+        const historyBackfillComplete = await this.resolveHistoryBackfillComplete(accountHistory, query.addresses);
 
         return {
             scope: query.scope,
@@ -495,7 +457,8 @@ export class ValuationService implements IValuationService {
             totalPnlUsd: realizedPnlUsd + unrealizedPnlUsd,
             balanceSeriesUsd,
             unpricedAssets,
-            pricedValueFraction: Math.max(0, Math.min(1, pricedValueFraction))
+            pricedValueFraction: Math.max(0, Math.min(1, pricedValueFraction)),
+            historyBackfillComplete
         };
     }
 
@@ -566,7 +529,8 @@ export class ValuationService implements IValuationService {
             totalPnlUsd: 0,
             balanceSeriesUsd: [],
             unpricedAssets: [],
-            pricedValueFraction: 1
+            pricedValueFraction: 1,
+            historyBackfillComplete: true
         };
     }
 }
