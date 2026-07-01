@@ -26,6 +26,7 @@ import type {
     IPortfolioSummary,
     IPortfolioHolding,
     IValueTransfer,
+    IValueTransferCursor,
     IAccountBalanceSnapshot
 } from '@/types';
 import { PRICE_ASSET_TRX } from '@/types';
@@ -38,15 +39,6 @@ const LEDGER_PAGE = 500;
 
 /** Default trailing days of the USD balance series absent an admin override. */
 const DEFAULT_BALANCE_WINDOW_DAYS = 365;
-
-/**
- * Lookback (days) used for the price-series read when an admin has widened a
- * wallet's balance window to unbounded. Large rather than tied to any specific
- * blockchain-genesis date — the reconstruction itself clips to the earliest
- * known ledger delta, so this only needs to comfortably predate any real TRX
- * history, not be exact.
- */
-const UNBOUNDED_PRICE_LOOKBACK_DAYS = 10_000;
 
 /** Namespace under which the per-wallet balance-range override is stored in `'user-settings'`. */
 const BALANCE_RANGE_NAMESPACE = 'valuation';
@@ -145,11 +137,15 @@ export class ValuationService implements IValuationService {
      * unit of value movement, so a contract's TRX deposit is a first-class
      * `internal` leg here and enters PnL without pattern-matching contract types.
      *
-     * Paged by window size alone, uncapped — the value read returns a bare array
-     * (no total), so a page shorter than {@link LEDGER_PAGE} marks the end. A very
+     * Paged by a keyset cursor, uncapped — the value read returns a bare array (no
+     * total), so a page shorter than {@link LEDGER_PAGE} marks the end. A very
      * high-volume wallet costs a slower read, not a truncated one; every owned
      * address's ledger is read in full, so an internal transfer's two legs are
-     * always both present (no per-wallet window for a leg to fall outside of).
+     * always both present (no per-wallet window for a leg to fall outside of). The
+     * cursor — the last leg's `(timestamp, txId, origin, legKey, assetId)` — is a
+     * stable watermark even while forward-sync concurrently inserts newer legs;
+     * `offset` would shift underneath the scan and silently duplicate or skip legs
+     * at a page boundary (see {@link IValueTransferCursor}).
      *
      * @param accountHistory - The account-history service.
      * @param address - Address whose ledger to read.
@@ -157,14 +153,15 @@ export class ValuationService implements IValuationService {
      */
     private async readLedger(accountHistory: IAccountHistoryService, address: string): Promise<IValueTransfer[]> {
         const all: IValueTransfer[] = [];
-        let offset = 0;
+        let cursor: IValueTransferCursor | undefined;
         for (;;) {
-            const page = await accountHistory.getValueTransfers({ address, limit: LEDGER_PAGE, offset });
+            const page = await accountHistory.getValueTransfers({ address, limit: LEDGER_PAGE, cursor });
             all.push(...page);
-            offset += page.length;
             if (page.length < LEDGER_PAGE) {
                 break;
             }
+            const last = page[page.length - 1];
+            cursor = { timestamp: last.timestamp, txId: last.txId, origin: last.origin, legKey: last.legKey, assetId: last.assetId };
         }
         return all;
     }
@@ -189,10 +186,18 @@ export class ValuationService implements IValuationService {
         if (!userSettings) {
             return DEFAULT_BALANCE_WINDOW_DAYS;
         }
-        const stored = await userSettings.getNamespace(userId, BALANCE_RANGE_NAMESPACE);
-        const unboundedRange: BalanceRangeSetting = 'all';
-        const hasUnboundedOverride = addresses.some((address) => stored[address] === unboundedRange);
-        return hasUnboundedOverride ? null : DEFAULT_BALANCE_WINDOW_DAYS;
+        try {
+            const stored = await userSettings.getNamespace(userId, BALANCE_RANGE_NAMESPACE);
+            const unboundedRange: BalanceRangeSetting = 'all';
+            const hasUnboundedOverride = addresses.some((address) => stored[address] === unboundedRange);
+            return hasUnboundedOverride ? null : DEFAULT_BALANCE_WINDOW_DAYS;
+        } catch (error) {
+            this.logger.warn(
+                { error, userId },
+                'valuation: balance-range override read failed; falling back to default window'
+            );
+            return DEFAULT_BALANCE_WINDOW_DAYS;
+        }
     }
 
     /**
@@ -205,12 +210,29 @@ export class ValuationService implements IValuationService {
      *
      * @param accountHistory - The account-history service for the progress read.
      * @param addresses - The report-scope addresses for this query.
-     * @returns `true` only if every address is `'complete'`.
+     * @returns `true` only if every address is `'complete'` and not still catching
+     *   up on a forward-sync backlog.
      */
     private async resolveHistoryBackfillComplete(accountHistory: IAccountHistoryService, addresses: string[]): Promise<boolean> {
-        const progress = await accountHistory.getProgressFor(addresses);
-        const statusByAddress = new Map(progress.map((entry) => [entry.address, entry.status]));
-        return addresses.every((address) => statusByAddress.get(address) === 'complete');
+        try {
+            const progress = await accountHistory.getProgressFor(addresses);
+            const progressByAddress = new Map(progress.map((entry) => [entry.address, entry]));
+            // A 'complete' account still draining a forward-sync backlog (catchingUp)
+            // has recent ledger rows missing behind an already-current snapshot anchor,
+            // which shifts the whole reconstructed curve — treat it as incomplete so the
+            // in-progress warning stays up for exactly the high-activity wallets that
+            // overflow the per-tick forward page cap.
+            return addresses.every((address) => {
+                const entry = progressByAddress.get(address);
+                return entry?.status === 'complete' && !entry.catchingUp;
+            });
+        } catch (error) {
+            this.logger.warn(
+                { error },
+                'valuation: backfill-progress read failed; treating history as incomplete'
+            );
+            return false;
+        }
     }
 
     /**
@@ -429,8 +451,12 @@ export class ValuationService implements IValuationService {
             .map((m) => ({ day: m.day, signedQty: m.direction === 'in' ? m.quantity : -m.quantity }));
         const anchorDay = capturedAt ? capturedAt.toISOString().slice(0, 10) : today;
         const windowDays = await this.resolveBalanceWindowDays(query.userId, query.addresses);
+        const earliestDeltaDay = trxDeltas.reduce<string | null>(
+            (min, d) => (!min || d.day < min ? d.day : min),
+            null
+        );
         const priceFloorDay = windowDays === null
-            ? ValuationService.shiftDay(anchorDay, -UNBOUNDED_PRICE_LOOKBACK_DAYS)
+            ? (earliestDeltaDay ?? anchorDay)
             : ValuationService.shiftDay(anchorDay, -windowDays);
         const trxSeries = await priceHistory.getSeries(PRICE_ASSET_TRX, priceFloorDay, anchorDay);
         const trxPriceByDay = new Map(trxSeries.map((p) => [p.day, p.priceUsd]));

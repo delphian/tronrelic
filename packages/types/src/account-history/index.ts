@@ -14,6 +14,8 @@ export type {
     IAccountHistoryStats,
     IAddTrackedAccountInput,
     IAccountTransactionQuery,
+    IValueTransferCursor,
+    IValueTransferQuery,
     IAccountTransactionPage,
     IActivityCalendarBucket,
     IWalletActivityStats,

@@ -14,7 +14,7 @@
  */
 
 import type { IBlockTransaction } from '../blockchain/IBlockTransaction.js';
-import type { IValueTransfer } from '../blockchain/IValueTransfer.js';
+import type { IValueTransfer, ValueTransferOrigin } from '../blockchain/IValueTransfer.js';
 
 /**
  * Lifecycle state of one account's backfill.
@@ -187,6 +187,50 @@ export interface IAccountTransactionQuery {
     limit?: number;
     /** Row offset for pagination. */
     offset?: number;
+}
+
+/**
+ * A watermark identifying one value leg's position in `account_value_transfers`'
+ * physical sort order (`timestamp, tx_id, origin, leg_key, asset_id`, all
+ * descending). Every field is a leg-identity fact `IValueTransfer` already
+ * exposes, so a caller builds the next cursor directly from the last leg of the
+ * previous page — no opaque token round-trips through the service.
+ *
+ * A plain `offset` cannot page this table safely: forward-sync inserts new legs
+ * concurrently, and a coarse `timestamp` alone is not unique (one transaction can
+ * emit several legs sharing it), so an offset window shifts and reshuffles
+ * mid-scan — silently duplicating or skipping legs. Comparing the full tuple
+ * against a keyset watermark is stable regardless of concurrent inserts.
+ */
+export interface IValueTransferCursor {
+    /** Block execution time of the last-seen leg. */
+    timestamp: Date;
+    /** Parent transaction hash of the last-seen leg. */
+    txId: string;
+    /** Leg origin of the last-seen leg. */
+    origin: ValueTransferOrigin;
+    /** Leg-identity key of the last-seen leg (see {@link IValueTransfer.legKey}). */
+    legKey: string;
+    /** Asset identity of the last-seen leg. */
+    assetId: string;
+}
+
+/**
+ * Parameters for a paged, keyset-stable read of an account's value-transfer
+ * ledger. Distinct from {@link IAccountTransactionQuery} because
+ * `account_value_transfers` and `account_transactions` sort on different tuples —
+ * an `offset` valid for one table means nothing for the other.
+ */
+export interface IValueTransferQuery {
+    /** Base58 address whose ledger to read. */
+    address: string;
+    /** Page size; the service clamps to a sane maximum. */
+    limit?: number;
+    /**
+     * Watermark from the last leg of the previous page, or omitted to start from
+     * the newest leg.
+     */
+    cursor?: IValueTransferCursor;
 }
 
 /**
@@ -491,10 +535,14 @@ export interface IAccountHistoryService {
      * address it is given. Returns an empty array when ClickHouse is not
      * configured.
      *
-     * @param query - Address and pagination window (same clamp as {@link getTransactions}).
+     * Paged by a keyset {@link IValueTransferQuery.cursor}, not `offset` — see
+     * {@link IValueTransferCursor} for why an offset cannot page this table safely
+     * under concurrent forward-sync inserts.
+     *
+     * @param query - Address, page size, and the previous page's cursor.
      * @returns A page of source-independent value legs, newest first.
      */
-    getValueTransfers(query: IAccountTransactionQuery): Promise<IValueTransfer[]>;
+    getValueTransfers(query: IValueTransferQuery): Promise<IValueTransfer[]>;
 
     /**
      * Read specific value legs for one account by parent transaction hash, newest
