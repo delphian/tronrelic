@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { IBlockTransaction, ISystemLogService } from '@/types';
+import type { IValueTransfer, ISystemLogService } from '@/types';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 import { ValuationService } from '../services/valuation.service.js';
 
@@ -29,76 +29,78 @@ function resetService(): void {
 }
 
 /**
- * Build a minimal TRX-transfer transaction.
+ * Build a minimal TRX value-transfer leg. `origin` defaults to `native`
+ * (a `TransferContract`-style top-level move); pass `internal` to model a TVM
+ * transfer (a contract's deposit), which the ledger records as a first-class leg.
  *
  * @param from - Sender address.
  * @param to - Recipient address.
  * @param trx - TRX amount (human units).
  * @param day - UTC `YYYY-MM-DD` of the block.
- * @returns An IBlockTransaction.
+ * @param origin - Leg origin; defaults to `native`.
+ * @returns An IValueTransfer (TRX leg).
  */
-function trxTx(from: string, to: string, trx: number, day: string): IBlockTransaction {
+function trxLeg(from: string, to: string, trx: number, day: string, origin: IValueTransfer['origin'] = 'native'): IValueTransfer {
     return {
         txId: `${from}-${to}-${day}`,
-        blockNumber: 1,
+        origin,
+        legKey: origin === 'internal' ? `${from}-${to}-${day}-ik` : '',
+        assetType: 'TRX',
+        assetId: '',
+        from,
+        to,
+        amountRaw: String(trx * 1_000_000),
         timestamp: new Date(`${day}T00:00:00.000Z`),
-        type: 'TransferContract',
-        status: 'SUCCESS',
-        from: { address: from },
-        to: { address: to },
-        amountSun: trx * 1_000_000
+        blockNumber: 1
     };
 }
 
 /**
- * Build a transaction that carries `amount_sun` but is NOT a native-TRX move —
- * a TRC10 `TransferAssetContract` (whose `amount_sun` is a token count) or a
- * `DelegateResourceContract` (whose `amount_sun` is delegated stake). The ledger
- * populates `amount_sun` from a per-type field, so these once leaked into the TRX
- * series; the type guard must now drop them.
+ * Build a TRC10 value-transfer leg — a non-priceable asset the ledger may carry
+ * but valuation must drop (only TRX and TRC20 have a USD price series). Under the
+ * old transaction model this pollution arrived as a `TransferAssetContract` whose
+ * `amount_sun` was a token count; the exclusion now happens on `assetType`.
  *
- * @param type - Native contract type to stamp on the row.
  * @param from - Sender address.
  * @param to - Recipient address.
- * @param sun - Raw `amount_sun` value (a non-TRX quantity for these types).
+ * @param raw - Raw token amount (base units).
  * @param day - UTC `YYYY-MM-DD` of the block.
- * @returns An IBlockTransaction with a non-TRX `amount_sun`.
+ * @returns An IValueTransfer (TRC10 leg) that valuation must ignore.
  */
-function nonTrxAmountTx(type: string, from: string, to: string, sun: number, day: string): IBlockTransaction {
+function trc10Leg(from: string, to: string, raw: number, day: string): IValueTransfer {
     return {
-        txId: `${type}-${from}-${to}-${day}`,
-        blockNumber: 1,
+        txId: `trc10-${from}-${to}-${day}`,
+        origin: 'native',
+        legKey: '',
+        assetType: 'TRC10',
+        assetId: '1000001',
+        from,
+        to,
+        amountRaw: String(raw),
         timestamp: new Date(`${day}T00:00:00.000Z`),
-        type,
-        status: 'SUCCESS',
-        from: { address: from },
-        to: { address: to },
-        amountSun: sun
+        blockNumber: 1
     };
 }
 
 /**
- * Build a fake account-history service from per-address ledgers and snapshots.
+ * Build a fake account-history service from per-address value ledgers and snapshots.
  *
- * @param ledgers - Address → the transactions a windowed `getTransactions` returns.
+ * @param ledgers - Address → the value legs a windowed `getValueTransfers` returns.
  * @param balances - Address → liquid TRX (human units) in its latest snapshot.
- * @param fullLedgers - Address → the complete row set a by-`txId` refetch can reach;
- *   defaults to `ledgers`. Diverging it from `ledgers` simulates a row that fell
+ * @param fullLedgers - Address → the complete leg set a by-`txId` refetch can reach;
+ *   defaults to `ledgers`. Diverging it from `ledgers` simulates a leg that fell
  *   outside the per-wallet read window but is still fetchable by hash.
  * @returns A partial IAccountHistoryService sufficient for the valuation reads.
  */
 function fakeAccountHistory(
-    ledgers: Record<string, IBlockTransaction[]>,
+    ledgers: Record<string, IValueTransfer[]>,
     balances: Record<string, number>,
-    fullLedgers: Record<string, IBlockTransaction[]> = ledgers
+    fullLedgers: Record<string, IValueTransfer[]> = ledgers
 ) {
     return {
-        getTransactions: vi.fn(async ({ address }: { address: string }) => ({
-            transactions: ledgers[address] ?? [],
-            total: (ledgers[address] ?? []).length
-        })),
-        getTransactionsByTxIds: vi.fn(async (address: string, txIds: string[]) =>
-            (fullLedgers[address] ?? []).filter((tx) => txIds.includes(tx.txId))
+        getValueTransfers: vi.fn(async ({ address }: { address: string }) => ledgers[address] ?? []),
+        getValueTransfersByTxIds: vi.fn(async (address: string, txIds: string[]) =>
+            (fullLedgers[address] ?? []).filter((leg) => txIds.includes(leg.txId))
         ),
         getLatestSnapshot: vi.fn(async (address: string) =>
             balances[address] === undefined
@@ -162,7 +164,7 @@ describe('ValuationService.getPortfolio', () => {
 
     it('values current holdings from the snapshot and cost basis from the ledger', async () => {
         const service = buildService(
-            fakeAccountHistory({ [WALLET_A]: [trxTx(EXTERNAL, WALLET_A, 100, '2024-01-01')] }, { [WALLET_A]: 100 }),
+            fakeAccountHistory({ [WALLET_A]: [trxLeg(EXTERNAL, WALLET_A, 100, '2024-01-01')] }, { [WALLET_A]: 100 }),
             fakePriceHistory({ 'TRX|2024-01-01': 0.1 }, 0.2)
         );
 
@@ -175,19 +177,17 @@ describe('ValuationService.getPortfolio', () => {
         expect(summary.unrealizedPnlUsd).toBeCloseTo(10, 6); // value 20 - basis 10
     });
 
-    it('excludes non-TRX contract amounts (TRC10, delegation) from the TRX series', async () => {
-        // `amount_sun` on a TransferAssetContract is a TRC10 token count, and on a
-        // DelegateResourceContract a delegated stake — neither is spendable TRX.
-        // Both once folded into the TRX cost basis (and inflated the balance
-        // series until the display clamp flattened it). The type guard must drop
-        // them so the TRX basis reflects only the genuine 100 TRX transfer.
+    it('excludes non-priceable asset legs (TRC10) from the TRX series', async () => {
+        // The value ledger can carry a TRC10 leg (a non-priceable asset). Only TRX
+        // and TRC20 have a USD price series, so valuation must drop the TRC10 leg —
+        // otherwise it would invent a phantom holding and pollute the TRX basis. The
+        // TRX basis must reflect only the genuine 100 TRX transfer.
         const service = buildService(
             fakeAccountHistory(
                 {
                     [WALLET_A]: [
-                        trxTx(EXTERNAL, WALLET_A, 100, '2024-01-01'),
-                        nonTrxAmountTx('TransferAssetContract', EXTERNAL, WALLET_A, 30_000 * 1_000_000, '2024-01-01'),
-                        nonTrxAmountTx('DelegateResourceContract', EXTERNAL, WALLET_A, 11_585 * 1_000_000, '2024-01-01')
+                        trxLeg(EXTERNAL, WALLET_A, 100, '2024-01-01'),
+                        trc10Leg(EXTERNAL, WALLET_A, 30_000 * 1_000_000, '2024-01-01')
                     ]
                 },
                 { [WALLET_A]: 100 }
@@ -198,16 +198,16 @@ describe('ValuationService.getPortfolio', () => {
         const summary = await service.getPortfolio({ addresses: [WALLET_A], ownedAddresses: [WALLET_A], scope: 'wallet' });
 
         const trx = summary.holdings.find((holding) => holding.asset === 'TRX');
-        expect(trx?.costBasisUsd).toBeCloseTo(10, 6); // only 100 TRX @ $0.10 — polluting rows excluded
-        expect(summary.holdings).toHaveLength(1); // dropped rows create no phantom holding
+        expect(trx?.costBasisUsd).toBeCloseTo(10, 6); // only 100 TRX @ $0.10 — TRC10 leg excluded
+        expect(summary.holdings).toHaveLength(1); // dropped leg creates no phantom holding
     });
 
     it('nets out a transfer between the user own wallets (no realized gain)', async () => {
         const service = buildService(
             fakeAccountHistory(
                 {
-                    [WALLET_A]: [trxTx(WALLET_A, WALLET_B, 50, '2024-01-01')],
-                    [WALLET_B]: [trxTx(WALLET_A, WALLET_B, 50, '2024-01-01')]
+                    [WALLET_A]: [trxLeg(WALLET_A, WALLET_B, 50, '2024-01-01')],
+                    [WALLET_B]: [trxLeg(WALLET_A, WALLET_B, 50, '2024-01-01')]
                 },
                 { [WALLET_A]: 50, [WALLET_B]: 50 }
             ),
@@ -231,8 +231,8 @@ describe('ValuationService.getPortfolio', () => {
         const service = buildService(
             fakeAccountHistory(
                 {
-                    [WALLET_A]: [trxTx(EXTERNAL, WALLET_A, 100, '2024-01-01'), trxTx(WALLET_A, WALLET_B, 60, '2024-01-02')],
-                    [WALLET_B]: [trxTx(WALLET_A, WALLET_B, 60, '2024-01-02')]
+                    [WALLET_A]: [trxLeg(EXTERNAL, WALLET_A, 100, '2024-01-01'), trxLeg(WALLET_A, WALLET_B, 60, '2024-01-02')],
+                    [WALLET_B]: [trxLeg(WALLET_A, WALLET_B, 60, '2024-01-02')]
                 },
                 { [WALLET_A]: 40, [WALLET_B]: 60 }
             ),
@@ -258,12 +258,12 @@ describe('ValuationService.getPortfolio', () => {
         // internal-in row was pushed past B's window. Without repair the sale
         // realizes against ZERO basis ($12 phantom gain); the by-txId refetch
         // restores B's $6 migrated basis so realized is the true $6.
-        const internalTx = trxTx(WALLET_A, WALLET_B, 60, '2024-01-02');
+        const internalTx = trxLeg(WALLET_A, WALLET_B, 60, '2024-01-02');
         const accountHistory = fakeAccountHistory(
             {
-                [WALLET_A]: [trxTx(EXTERNAL, WALLET_A, 100, '2024-01-01'), internalTx],
+                [WALLET_A]: [trxLeg(EXTERNAL, WALLET_A, 100, '2024-01-01'), internalTx],
                 // B's window: only the external sale; the internal-in is missing.
-                [WALLET_B]: [trxTx(WALLET_B, EXTERNAL, 60, '2024-01-03')]
+                [WALLET_B]: [trxLeg(WALLET_B, EXTERNAL, 60, '2024-01-03')]
             },
             { [WALLET_A]: 40, [WALLET_B]: 0 },
             {
@@ -283,7 +283,7 @@ describe('ValuationService.getPortfolio', () => {
             scope: 'user'
         });
 
-        expect(accountHistory.getTransactionsByTxIds).toHaveBeenCalled();
+        expect(accountHistory.getValueTransfersByTxIds).toHaveBeenCalled();
         expect(summary.realizedPnlUsd).toBeCloseTo(6, 6); // proceeds 12 - migrated basis 6, not 12 - 0
     });
 

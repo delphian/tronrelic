@@ -14,6 +14,7 @@
  */
 
 import type { IBlockTransaction } from '../blockchain/IBlockTransaction.js';
+import type { IValueTransfer } from '../blockchain/IValueTransfer.js';
 
 /**
  * Lifecycle state of one account's backfill.
@@ -152,6 +153,17 @@ export interface IAccountHistoryStats {
          * freshness floor for the header. Absent when no account is complete.
          */
         oldestNewestTimestamp?: Date;
+        /**
+         * Completed accounts that still owe value-transfer ledger backfill — those
+         * that reached `complete` before value legs were dual-written and have not
+         * yet had their internal source drained or their token sweep finished. This
+         * is the at-a-glance "is the one-time ledger backfill done?" signal: it
+         * counts down as the `account-history:ledger-backfill` job drains the legacy
+         * population and is `0` once every completed account's ledger is whole.
+         * Counted regardless of pause state, so a paused account that still owes
+         * backfill keeps the count non-zero rather than masking remaining work.
+         */
+        legacyBackfillPending: number;
     };
 }
 
@@ -488,6 +500,39 @@ export interface IAccountHistoryService {
      * @returns The matching source-independent transactions, newest first.
      */
     getTransactionsByTxIds(address: string, txIds: string[]): Promise<IBlockTransaction[]>;
+
+    /**
+     * Read a page of an account's value-transfer ledger from ClickHouse, newest
+     * first. Unlike {@link getTransactions} — which returns top-level transactions
+     * from `account_transactions` — this returns the discrete on-chain value legs
+     * (native TRX, TVM-internal, and TRC20/721 token) recorded in
+     * `account_value_transfers`, one per movement. This is the read valuation and
+     * the money-in/out chart consume: a contract's TRX deposit is a first-class
+     * `internal` leg here, invisible in the transaction view, so summing value no
+     * longer pattern-matches contract types.
+     *
+     * Authorization is the caller's responsibility — the service trusts the
+     * address it is given. Returns an empty array when ClickHouse is not
+     * configured.
+     *
+     * @param query - Address and pagination window (same clamp as {@link getTransactions}).
+     * @returns A page of source-independent value legs, newest first.
+     */
+    getValueTransfers(query: IAccountTransactionQuery): Promise<IValueTransfer[]>;
+
+    /**
+     * Read specific value legs for one account by parent transaction hash, newest
+     * first — the value-ledger analog of {@link getTransactionsByTxIds}. Keyed by
+     * an explicit `txIds` set rather than a pagination window so the valuation
+     * engine can refetch the legs of an internal transfer whose two sides straddle
+     * a per-wallet window boundary and complete the pair. Authorization is the
+     * caller's responsibility.
+     *
+     * @param address - Base58 address whose legs to read.
+     * @param txIds - Parent transaction hashes to fetch; the service clamps the count.
+     * @returns The matching value legs, newest first.
+     */
+    getValueTransfersByTxIds(address: string, txIds: string[]): Promise<IValueTransfer[]>;
 
     /**
      * Build the batched activity/behaviour summary for one account — the calendar

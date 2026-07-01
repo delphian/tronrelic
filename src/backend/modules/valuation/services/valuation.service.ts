@@ -24,7 +24,7 @@ import type {
     IPortfolioQuery,
     IPortfolioSummary,
     IPortfolioHolding,
-    IBlockTransaction,
+    IValueTransfer,
     IAccountBalanceSnapshot
 } from '@/types';
 import { PRICE_ASSET_TRX } from '@/types';
@@ -49,18 +49,11 @@ const SUN_PER_TRX = 1_000_000;
 const DEFAULT_TOKEN_DECIMALS = 6;
 
 /**
- * Native contract types whose `amountSun` is a genuine native-TRX balance
- * movement. The ledger fills `amount_sun` from a *different* field per contract
- * type (`transaction-parse.ts`): a TRC10 token amount for `TransferAssetContract`,
- * the delegated/frozen stake for `Delegate*`/`Freeze*`. Summing those into the
- * TRX series inflated the back-solved balance until the display clamp painted the
- * curve flat-zero. Only `TransferContract` (a native TRX send) and
- * `TriggerSmartContract` (whose `amount_sun` is the call's TRX `call_value`) move
- * spendable TRX, so only these may become TRX-asset moves.
+ * Token metadata learned from the value ledger, keyed by contract address. The
+ * ledger carries a leg's `assetDecimals` but no symbol, so `decimals` is
+ * authoritative and `symbol` is a best-effort short form of the contract address
+ * (used only for holding labels; quantities and pricing key on the address).
  */
-const TRX_VALUE_CONTRACT_TYPES = new Set(['TransferContract', 'TriggerSmartContract']);
-
-/** Token metadata learned from the ledger, keyed by contract address. */
 interface ITokenMeta {
     symbol: string;
     decimals: number;
@@ -131,21 +124,28 @@ export class ValuationService implements IValuationService {
     }
 
     /**
-     * Read an account's full stored ledger (bounded), newest-first from the
-     * service, returned as-is for the caller to normalize.
+     * Read an account's full value-transfer ledger (bounded), newest-first from the
+     * service, returned as-is for the caller to normalize. Reads the value ledger
+     * (`getValueTransfers`) rather than the transaction table: a leg is already the
+     * unit of value movement, so a contract's TRX deposit is a first-class
+     * `internal` leg here and enters PnL without pattern-matching contract types.
+     *
+     * Paged by window size alone — the value read returns a bare array (no total),
+     * so a page shorter than {@link LEDGER_PAGE} marks the end, and the
+     * {@link MAX_LEDGER_ROWS} cap bounds work on very large wallets.
      *
      * @param accountHistory - The account-history service.
      * @param address - Address whose ledger to read.
-     * @returns Up to {@link MAX_LEDGER_ROWS} transactions.
+     * @returns Up to {@link MAX_LEDGER_ROWS} value legs.
      */
-    private async readLedger(accountHistory: IAccountHistoryService, address: string): Promise<IBlockTransaction[]> {
-        const all: IBlockTransaction[] = [];
+    private async readLedger(accountHistory: IAccountHistoryService, address: string): Promise<IValueTransfer[]> {
+        const all: IValueTransfer[] = [];
         let offset = 0;
         for (;;) {
-            const page = await accountHistory.getTransactions({ address, limit: LEDGER_PAGE, offset });
-            all.push(...page.transactions);
-            offset += page.transactions.length;
-            if (page.transactions.length < LEDGER_PAGE || offset >= page.total || all.length >= MAX_LEDGER_ROWS) {
+            const page = await accountHistory.getValueTransfers({ address, limit: LEDGER_PAGE, offset });
+            all.push(...page);
+            offset += page.length;
+            if (page.length < LEDGER_PAGE || all.length >= MAX_LEDGER_ROWS) {
                 break;
             }
         }
@@ -217,7 +217,7 @@ export class ValuationService implements IValuationService {
         }
 
         const txIds = Array.from(txIdsToRefetch);
-        // getTransactionsByTxIds clamps each read to its own by-hash maximum to
+        // getValueTransfersByTxIds clamps each read to its own by-hash maximum to
         // bound the SQL IN-list, so a portfolio with more imbalanced hashes than
         // that clamp would have the overflow silently dropped from the refetch —
         // yet the rebuild below removes the partial moves for *every* requested
@@ -225,21 +225,21 @@ export class ValuationService implements IValuationService {
         // understating basis/PnL. Read the hashes in batches no larger than the
         // clamp and accumulate, so every requested hash is refetched and rebuilt.
         const TXID_READ_CHUNK = 2_000;
-        const refetched: IBlockTransaction[][] = ownedAddresses.map(() => []);
+        const refetched: IValueTransfer[][] = ownedAddresses.map(() => []);
         for (let start = 0; start < txIds.length; start += TXID_READ_CHUNK) {
             const chunk = txIds.slice(start, start + TXID_READ_CHUNK);
             const chunkRows = await Promise.all(
-                ownedAddresses.map((address) => accountHistory.getTransactionsByTxIds(address, chunk))
+                ownedAddresses.map((address) => accountHistory.getValueTransfersByTxIds(address, chunk))
             );
-            chunkRows.forEach((rows, index) => refetched[index].push(...rows));
+            chunkRows.forEach((legs, index) => refetched[index].push(...legs));
         }
 
         // Drop the partial moves for these hashes, then rebuild from the complete
-        // refetch (every owned wallet's rows for each hash are now present).
+        // refetch (every owned wallet's legs for each hash are now present).
         const rebuilt = moves.filter((move) => !txIdsToRefetch.has(move.txId));
         ownedAddresses.forEach((address, index) => {
-            for (const tx of refetched[index]) {
-                const move = ValuationService.toMove(tx, address, ownedSet, tokenMeta);
+            for (const leg of refetched[index]) {
+                const move = ValuationService.toMove(leg, address, ownedSet, tokenMeta);
                 if (move) {
                     rebuilt.push(move);
                 }
@@ -250,63 +250,63 @@ export class ValuationService implements IValuationService {
     }
 
     /**
-     * Normalize one transaction into a value move from a scope address's
-     * viewpoint, learning token metadata as a side effect. Returns null for rows
-     * that move no tracked asset: staking/delegation operations, plain contract
-     * calls with no TRX value, and TRC10 (`TransferAssetContract`) transfers —
-     * whose `amount_sun` is a token quantity, not native TRX, and must not enter
-     * the TRX series (see {@link TRX_VALUE_CONTRACT_TYPES}).
+     * Normalize one value-transfer leg into a value move from a scope address's
+     * viewpoint, learning token metadata as a side effect. The ledger already
+     * distilled value from contract type at write time, so the mapping is
+     * mechanical: `TRX` legs become the priced TRX asset, `TRC20` legs become their
+     * contract-addressed asset, and everything else (TRC10, TRC721) is dropped —
+     * they have no USD price series and never belonged in the portfolio math. The
+     * old per-contract-type guard is gone precisely because that exclusion now
+     * happens upstream at leg derivation.
      *
-     * @param tx - The stored transaction.
-     * @param scopeAddress - The in-scope address this row was read for.
+     * @param leg - The stored value leg (native / internal / token).
+     * @param scopeAddress - The in-scope address this leg was read for.
      * @param ownedSet - The user's full wallet set, for internal classification.
-     * @param tokenMeta - Mutable token-metadata map to populate.
-     * @returns The move, or null when the row carries no tracked value.
+     * @param tokenMeta - Mutable token-metadata map to populate (decimals authoritative).
+     * @returns The move, or null when the leg carries no priceable asset.
      */
     private static toMove(
-        tx: IBlockTransaction,
+        leg: IValueTransfer,
         scopeAddress: string,
         ownedSet: Set<string>,
         tokenMeta: Map<string, ITokenMeta>
     ): ILedgerMove | null {
-        // Drop rows we cannot place on the ledger: a party with no address (some
-        // contract-deploy / system rows arrive without a `from` or `to` despite the
-        // type), and a self-transfer (from === to), which nets to zero and would
-        // otherwise leave a dangling migration (an internal-out with no matching in).
-        if (!tx.from?.address || !tx.to?.address || tx.from.address === tx.to.address) {
+        // Only TRX and TRC20 have a price series; TRC10/TRC721 legs are not portfolio
+        // value. Drop a leg with a missing party or a self-transfer (from === to),
+        // which nets to zero and would otherwise leave a dangling internal migration.
+        if (leg.assetType !== 'TRX' && leg.assetType !== 'TRC20') {
             return null;
         }
-        const direction: 'in' | 'out' = tx.from.address === scopeAddress ? 'out' : 'in';
-        const counterparty = direction === 'out' ? tx.to.address : tx.from.address;
-        const day = tx.timestamp.toISOString().slice(0, 10);
+        if (!leg.from || !leg.to || leg.from === leg.to) {
+            return null;
+        }
+        const direction: 'in' | 'out' = leg.from === scopeAddress ? 'out' : 'in';
+        const counterparty = direction === 'out' ? leg.to : leg.from;
+        const day = leg.timestamp.toISOString().slice(0, 10);
         const internal = ownedSet.has(counterparty);
 
-        const params = tx.contract?.parameters;
-        const isTokenTransfer = !!tx.contract?.address && params != null && params.value != null && tx.contract.method === 'transfer';
-        if (isTokenTransfer) {
-            const asset = tx.contract!.address!;
-            const decimals = typeof params!.decimals === 'number' ? params!.decimals : DEFAULT_TOKEN_DECIMALS;
-            const symbol = typeof params!.symbol === 'string' ? params!.symbol : ValuationService.shortAsset(asset);
-            if (!tokenMeta.has(asset)) {
-                tokenMeta.set(asset, { symbol, decimals });
-            }
-            const quantity = Number(params!.value) / 10 ** decimals;
-            return { txId: tx.txId, day, timestamp: tx.timestamp.getTime(), asset, quantity, direction, internal, wallet: scopeAddress };
-        }
-
-        if (typeof tx.amountSun === 'number' && tx.amountSun > 0 && TRX_VALUE_CONTRACT_TYPES.has(tx.type)) {
+        if (leg.assetType === 'TRX') {
             return {
-                txId: tx.txId,
+                txId: leg.txId,
                 day,
-                timestamp: tx.timestamp.getTime(),
+                timestamp: leg.timestamp.getTime(),
                 asset: PRICE_ASSET_TRX,
-                quantity: tx.amountSun / SUN_PER_TRX,
+                quantity: Number(leg.amountRaw) / SUN_PER_TRX,
                 direction,
                 internal,
                 wallet: scopeAddress
             };
         }
-        return null;
+
+        // TRC20: the asset is the token contract; decimals come from the leg (the
+        // ledger carries no symbol, so the label falls back to a short address form).
+        const asset = leg.assetId;
+        const decimals = typeof leg.assetDecimals === 'number' ? leg.assetDecimals : DEFAULT_TOKEN_DECIMALS;
+        if (!tokenMeta.has(asset)) {
+            tokenMeta.set(asset, { symbol: ValuationService.shortAsset(asset), decimals });
+        }
+        const quantity = Number(leg.amountRaw) / 10 ** decimals;
+        return { txId: leg.txId, day, timestamp: leg.timestamp.getTime(), asset, quantity, direction, internal, wallet: scopeAddress };
     }
 
     /**
@@ -337,8 +337,8 @@ export class ValuationService implements IValuationService {
         // Read in parallel above; normalize sequentially so tokenMeta learns symbols
         // in a deterministic order and `moves` is order-stable for the engine sort.
         readSet.forEach((address, index) => {
-            for (const tx of ledgers[index]) {
-                const move = ValuationService.toMove(tx, address, ownedSet, tokenMeta);
+            for (const leg of ledgers[index]) {
+                const move = ValuationService.toMove(leg, address, ownedSet, tokenMeta);
                 if (move) {
                     moves.push(move);
                 }

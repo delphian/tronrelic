@@ -235,6 +235,65 @@ describe('AccountHistoryService', () => {
         );
     });
 
+    it('getValueTransfers returns [] without ClickHouse and maps ledger rows otherwise', async () => {
+        // Absent ClickHouse yields an empty read, mirroring getTransactions.
+        expect(await buildService(null).getValueTransfers({ address: VALID_ADDRESS })).toEqual([]);
+
+        // With a stored value-leg row, the read reads account_value_transfers (never
+        // the transaction table) and projects the row back to IValueTransfer: a null
+        // asset_decimals collapses to undefined, amount_raw stays a string.
+        AccountHistoryService.resetForTests();
+        const row = {
+            account: VALID_ADDRESS,
+            tx_id: 'h1',
+            origin: 'internal',
+            leg_key: 'ik1',
+            asset_type: 'TRX',
+            asset_id: '',
+            from_address: 'Tcontract',
+            to_address: VALID_ADDRESS,
+            amount_raw: '700000000',
+            asset_decimals: null,
+            block_number: 42,
+            timestamp: '2024-01-01 00:00:00.000',
+            ingested_at: '2024-06-01 00:00:00.000'
+        };
+        const clickhouse = { query: vi.fn().mockResolvedValue([row]), insert: vi.fn() } as unknown as IClickHouseService;
+        AccountHistoryService.setDependencies({ database: createMockDatabaseService(), clickhouse, provider: null, emitter: undefined, logger: createSilentLogger() });
+
+        const legs: IValueTransfer[] = await AccountHistoryService.getInstance().getValueTransfers({ address: VALID_ADDRESS });
+
+        expect(legs).toHaveLength(1);
+        expect(legs[0]).toMatchObject({ txId: 'h1', origin: 'internal', assetType: 'TRX', amountRaw: '700000000', blockNumber: 42 });
+        expect(legs[0].assetDecimals).toBeUndefined();
+        expect(clickhouse.query).toHaveBeenCalledWith(
+            expect.stringContaining(VALUE_TRANSFERS_TABLE),
+            expect.objectContaining({ address: VALID_ADDRESS })
+        );
+        // The value ledger has no tx/trc20 twin, so the read carries no dedupe filter.
+        expect(clickhouse.query).not.toHaveBeenCalledWith(expect.stringContaining("source = 'trc20'"), expect.anything());
+    });
+
+    it('getValueTransfersByTxIds short-circuits an empty set and queries by hash otherwise', async () => {
+        // No ClickHouse or an all-blank hash set returns [] before any query.
+        expect(await buildService(null).getValueTransfersByTxIds(VALID_ADDRESS, ['h1'])).toEqual([]);
+
+        AccountHistoryService.resetForTests();
+        const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
+        AccountHistoryService.setDependencies({ database: createMockDatabaseService(), clickhouse, provider: null, emitter: undefined, logger: createSilentLogger() });
+        const service = AccountHistoryService.getInstance();
+
+        expect(await service.getValueTransfersByTxIds(VALID_ADDRESS, ['', ''])).toEqual([]);
+        expect(clickhouse.query).not.toHaveBeenCalled();
+
+        // A real (deduped) hash set queries account_value_transfers by hash.
+        await service.getValueTransfersByTxIds(VALID_ADDRESS, ['h1', 'h1']);
+        expect(clickhouse.query).toHaveBeenCalledWith(
+            expect.stringContaining('tx_id IN ({txIds:Array(String)})'),
+            expect.objectContaining({ address: VALID_ADDRESS, txIds: ['h1'] })
+        );
+    });
+
     it('runIngestionTick is a no-op without ClickHouse and never calls the provider', async () => {
         const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn(), fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })), fetchTokenTransferLegs: vi.fn(async () => []) };
         const service = buildService(provider);
@@ -597,6 +656,36 @@ describe('AccountHistoryService', () => {
         expect(stats.totals.completeAccounts).toBe(0);
         expect(stats.totals.catchingUpAccounts).toBe(0);
         expect(stats.totals.oldestNewestTimestamp).toBeUndefined();
+    });
+
+    it('getStats counts legacy ledger-backfill pending (complete accounts owing legs, paused included)', async () => {
+        AccountHistoryService.resetForTests();
+        const database = createMockDatabaseService();
+        const now = new Date('2024-01-01T00:00:00.000Z');
+        const legacy = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';       // owes both internal + token
+        const tokenPending = 'TLa2f6VPqDgRE67v7c1pj7iGwsizZ1jGfX'; // internal done, token still owed
+        const pausedOwing = 'TKzxdSv2FZKQrEqkKVgp5DcwEXBEKMg2Ax';  // owes legs but paused — still counts
+        for (const address of [legacy, tokenPending, pausedOwing]) {
+            database.getCollectionData(TRACKED_COLLECTION).push({ address, paused: address === pausedOwing, addedAt: now, updatedAt: now });
+        }
+        database.getCollectionData(PROGRESS_COLLECTION).push(
+            { address: legacy, status: 'complete', paused: false, rowsIngested: 5 },
+            { address: tokenPending, status: 'complete', paused: false, internalComplete: true, rowsIngested: 7 },
+            { address: pausedOwing, status: 'complete', paused: true, rowsIngested: 4 },
+            // Fully backfilled and an in-flight account: neither owes legacy backfill.
+            { address: 'TXdoneXXXXXXXXXXXXXXXXXXXXXXXXXXXXX', status: 'complete', paused: false, internalComplete: true, tokenLegsBackfillComplete: true, rowsIngested: 9 },
+            { address: 'TXqueuedXXXXXXXXXXXXXXXXXXXXXXXXXXX', status: 'queued', paused: false, rowsIngested: 0 }
+        );
+
+        AccountHistoryService.setDependencies({
+            database, clickhouse: undefined, provider: null, emitter: undefined, logger: createSilentLogger()
+        });
+        const service = AccountHistoryService.getInstance();
+
+        const stats = await service.getStats();
+
+        // legacy + tokenPending + pausedOwing = 3; the fully-done and queued accounts do not count.
+        expect(stats.totals.legacyBackfillPending).toBe(3);
     });
 });
 
