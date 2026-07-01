@@ -16,6 +16,7 @@ export type { IChainParameters } from './chain-parameters/IChainParameters.js';
 export type { IChainParametersService } from './chain-parameters/IChainParametersService.js';
 export type { IChainParametersFetcher } from './chain-parameters/IChainParametersFetcher.js';
 export type { IUsdtParameters } from './usdt-parameters/IUsdtParameters.js';
+export { USDT_CONTRACT_ADDRESS } from './usdt-parameters/IUsdtParameters.js';
 export type { IUsdtParametersService } from './usdt-parameters/IUsdtParametersService.js';
 export type { IUsdtParametersFetcher } from './usdt-parameters/IUsdtParametersFetcher.js';
 export type { ICacheService } from './services/ICacheService.js';
