@@ -130,11 +130,13 @@ export class ValuationAdminController {
         if (!accounts || !wallets) {
             throw new Error("'accounts'/'wallets' services are unavailable");
         }
-        const account = await accounts.getAccount(userId);
+        const [account, owned] = await Promise.all([
+            accounts.getAccount(userId),
+            wallets.listWallets(userId)
+        ]);
         if (!account) {
             throw new NotFoundError(`No account found for userId ${userId}`);
         }
-        const owned = await wallets.listWallets(userId);
         if (!owned.some((wallet) => wallet.address === address)) {
             throw new NotFoundError(`Wallet ${address} is not linked to userId ${userId}`);
         }

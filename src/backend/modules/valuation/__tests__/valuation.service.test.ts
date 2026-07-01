@@ -83,12 +83,33 @@ function trc10Leg(from: string, to: string, raw: number, day: string): IValueTra
     };
 }
 
+/** The five fields identifying a leg's position in the ledger's physical sort order. */
+type ILegSortKey = { timestamp: Date; txId: string; origin: string; legKey: string; assetId: string };
+
+/**
+ * Whether `a`'s sort tuple is strictly less than `b`'s, mirroring the real
+ * ClickHouse predicate `(timestamp, tx_id, origin, leg_key, asset_id) < (...)`.
+ *
+ * @param a - The candidate leg or cursor.
+ * @param b - The comparison leg or cursor.
+ * @returns Whether `a` sorts strictly before `b` in ascending tuple order.
+ */
+function legTupleLessThan(a: ILegSortKey, b: ILegSortKey): boolean {
+    if (a.timestamp.getTime() !== b.timestamp.getTime()) return a.timestamp.getTime() < b.timestamp.getTime();
+    if (a.txId !== b.txId) return a.txId < b.txId;
+    if (a.origin !== b.origin) return a.origin < b.origin;
+    if (a.legKey !== b.legKey) return a.legKey < b.legKey;
+    return a.assetId < b.assetId;
+}
+
 /**
  * Build a fake account-history service from per-address value ledgers and snapshots.
- * The fake ignores `limit`/`offset` and returns the full array in one page — the
- * service's own `readLedger` loop still exercises normally since a full page
- * shorter than its page size ends pagination on the first call. Every requested
- * address reports ingestion `status: 'complete'` unless listed in
+ * The fake honors the keyset `cursor`/`limit` contract, mirroring the real
+ * service: it sorts the ledger by the same `(timestamp, tx_id, origin, leg_key,
+ * asset_id)` tuple descending, filters to legs strictly before the cursor, then
+ * takes one page — so `readLedger`'s pagination loop exercises normally and
+ * terminates on a short final page even for a ledger longer than `LEDGER_PAGE`.
+ * Every requested address reports ingestion `status: 'complete'` unless listed in
  * `incompleteAddresses`, so existing tests default to a fully-backfilled ledger.
  *
  * @param ledgers - Address → the complete value legs `getValueTransfers` returns.
@@ -103,7 +124,15 @@ function fakeAccountHistory(
 ) {
     const incomplete = new Set(incompleteAddresses);
     return {
-        getValueTransfers: vi.fn(async ({ address }: { address: string }) => ledgers[address] ?? []),
+        getValueTransfers: vi.fn(async ({ address, limit, cursor }: { address: string; limit?: number; cursor?: ILegSortKey }) => {
+            const sorted = [...(ledgers[address] ?? [])].sort((a, b) => {
+                if (legTupleLessThan(a, b)) return 1;
+                if (legTupleLessThan(b, a)) return -1;
+                return 0;
+            });
+            const page = cursor ? sorted.filter((leg) => legTupleLessThan(leg, cursor)) : sorted;
+            return page.slice(0, limit ?? Number.MAX_SAFE_INTEGER);
+        }),
         getLatestSnapshot: vi.fn(async (address: string) =>
             balances[address] === undefined
                 ? null
@@ -351,5 +380,34 @@ describe('ValuationService.getPortfolio', () => {
         const summary = await ValuationService.getInstance().getPortfolio({ userId: USER_ID, addresses: [WALLET_A], ownedAddresses: [WALLET_A], scope: 'wallet' });
         expect(summary.netWorthUsd).toBe(0);
         expect(summary.holdings).toEqual([]);
+    });
+
+    it('reads a ledger longer than one page in full via the keyset cursor', async () => {
+        // 520 rows exceeds the service's 500-row LEDGER_PAGE, forcing readLedger's
+        // pagination loop to fetch a second page by cursor. A regression back to
+        // offset pagination — or a cursor bug — would either hang (infinite loop,
+        // since the mock always returns a full page for an unbounded slice) or
+        // silently drop legs, which would undercount TRX cost basis below the
+        // correct $52 (520 legs @ $0.10).
+        const ROW_COUNT = 520;
+        const legs: IValueTransfer[] = [];
+        const historical: Record<string, number> = {};
+        for (let i = 0; i < ROW_COUNT; i++) {
+            const day = new Date('2024-01-01T00:00:00.000Z');
+            day.setUTCDate(day.getUTCDate() + i);
+            const dayStr = day.toISOString().slice(0, 10);
+            legs.push(trxLeg(EXTERNAL, WALLET_A, 1, dayStr));
+            historical[`TRX|${dayStr}`] = 0.1;
+        }
+
+        const accountHistory = fakeAccountHistory({ [WALLET_A]: legs }, { [WALLET_A]: ROW_COUNT });
+        const service = buildService(accountHistory, fakePriceHistory(historical, 0.2));
+
+        const summary = await service.getPortfolio({ userId: USER_ID, addresses: [WALLET_A], ownedAddresses: [WALLET_A], scope: 'wallet' });
+
+        const trx = summary.holdings.find((holding) => holding.asset === 'TRX');
+        expect(trx?.quantity).toBeCloseTo(ROW_COUNT, 6);
+        expect(trx?.costBasisUsd).toBeCloseTo(ROW_COUNT * 0.1, 6); // every leg's basis accounted for
+        expect((accountHistory.getValueTransfers as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(1); // proves multi-page
     });
 });

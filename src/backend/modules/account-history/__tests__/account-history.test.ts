@@ -242,6 +242,49 @@ describe('AccountHistoryService', () => {
         expect(clickhouse.query).not.toHaveBeenCalledWith(expect.stringContaining("source = 'trc20'"), expect.anything());
     });
 
+    it('getValueTransfers pages by a keyset cursor, not offset', async () => {
+        // A plain offset cannot page account_value_transfers safely: forward-sync
+        // inserts newer legs concurrently, and timestamp alone is not a unique sort
+        // key (one transaction can emit several legs sharing it). The keyset
+        // predicate compares the full physical sort tuple instead, so a page
+        // boundary is a stable watermark regardless of concurrent inserts.
+        AccountHistoryService.resetForTests();
+        const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
+        AccountHistoryService.setDependencies({ database: createMockDatabaseService(), clickhouse, provider: null, emitter: undefined, logger: createSilentLogger() });
+
+        await AccountHistoryService.getInstance().getValueTransfers({
+            address: VALID_ADDRESS,
+            limit: 500,
+            cursor: {
+                timestamp: new Date('2024-01-05T00:00:00.000Z'),
+                txId: 'h5',
+                origin: 'native',
+                legKey: '',
+                assetId: ''
+            }
+        });
+
+        expect(clickhouse.query).toHaveBeenCalledWith(
+            expect.stringContaining('(timestamp, tx_id, origin, leg_key, asset_id) <'),
+            expect.objectContaining({
+                address: VALID_ADDRESS,
+                limit: 500,
+                cursorTs: '2024-01-05 00:00:00.000',
+                cursorTxId: 'h5',
+                cursorOrigin: 'native',
+                cursorLegKey: '',
+                cursorAssetId: ''
+            })
+        );
+
+        // Without a cursor, the first page carries no keyset predicate.
+        await AccountHistoryService.getInstance().getValueTransfers({ address: VALID_ADDRESS });
+        expect(clickhouse.query).toHaveBeenLastCalledWith(
+            expect.not.stringContaining('<'),
+            expect.objectContaining({ address: VALID_ADDRESS })
+        );
+    });
+
     it('getValueTransfersByTxIds short-circuits an empty set and queries by hash otherwise', async () => {
         // No ClickHouse or an all-blank hash set returns [] before any query.
         expect(await buildService(null).getValueTransfersByTxIds(VALID_ADDRESS, ['h1'])).toEqual([]);

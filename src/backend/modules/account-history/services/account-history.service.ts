@@ -22,6 +22,7 @@ import type {
     IAccountIngestionProgress,
     IAccountTransactionPage,
     IAccountTransactionQuery,
+    IValueTransferQuery,
     IActivityCalendarBucket,
     IWalletActivityStats,
     IWalletActivitySummary,
@@ -542,10 +543,16 @@ export class AccountHistoryService implements IAccountHistoryService {
      * leg is keyed by its own `log_index`), so every row is a distinct movement.
      * Returns an empty array when ClickHouse is not configured.
      *
-     * @param query - Address and pagination window.
+     * Pages by keyset, not `offset`: the sort tuple `(timestamp, tx_id, origin,
+     * leg_key, asset_id)` mirrors the table's own `ORDER BY`, so a page boundary
+     * is a stable watermark even while forward-sync concurrently inserts newer
+     * legs — an `offset` window would shift underneath a live scan and silently
+     * duplicate or skip legs at the boundary.
+     *
+     * @param query - Address, page size, and the previous page's cursor.
      * @returns A page of source-independent value legs, newest first.
      */
-    public async getValueTransfers(query: IAccountTransactionQuery): Promise<IValueTransfer[]> {
+    public async getValueTransfers(query: IValueTransferQuery): Promise<IValueTransfer[]> {
         const address = String(query.address ?? '').trim();
         if (!TRON_ADDRESS_PATTERN.test(address)) {
             throw new Error('address must be a base58 TRON address (T...)');
@@ -555,15 +562,32 @@ export class AccountHistoryService implements IAccountHistoryService {
         }
 
         const limit = Math.min(Math.max(1, Math.floor(query.limit ?? 50)), MAX_READ_LIMIT);
-        const offset = Math.max(0, Math.floor(query.offset ?? 0));
+        const cursor = query.cursor;
+        const keyset = cursor
+            ? `AND (timestamp, tx_id, origin, leg_key, asset_id) < (
+                   toDateTime64({cursorTs:String}, 3, 'UTC'), {cursorTxId:String}, {cursorOrigin:String}, {cursorLegKey:String}, {cursorAssetId:String}
+               )`
+            : '';
 
         const rows = await this.clickhouse.query<IAccountValueTransferRow>(
             `SELECT ${VALUE_TRANSFER_SELECT_COLUMNS}
              FROM ${VALUE_TRANSFERS_TABLE} FINAL
-             WHERE account = {address:String}
-             ORDER BY timestamp DESC
-             LIMIT {limit:UInt32} OFFSET {offset:UInt32}`,
-            { address, limit, offset }
+             WHERE account = {address:String} ${keyset}
+             ORDER BY timestamp DESC, tx_id DESC, origin DESC, leg_key DESC, asset_id DESC
+             LIMIT {limit:UInt32}`,
+            {
+                address,
+                limit,
+                ...(cursor
+                    ? {
+                          cursorTs: formatClickHouseDateTime64Utc(cursor.timestamp),
+                          cursorTxId: cursor.txId,
+                          cursorOrigin: cursor.origin,
+                          cursorLegKey: cursor.legKey,
+                          cursorAssetId: cursor.assetId
+                      }
+                    : {})
+            }
         );
         return rows.map(AccountHistoryService.rowToValueTransfer);
     }
