@@ -11,7 +11,7 @@
 import { headers } from 'next/headers';
 import type { Metadata } from 'next';
 import type { MenuNodeSerialized } from '@/shared';
-import type { IAccountIngestionProgress, ILinkedWallet } from '@/types';
+import type { IAccountIngestionProgress, ILinkedWallet, IPortfolioSummary } from '@/types';
 import { getServerSideApiUrlWithPath } from '../../../lib/api-url';
 import { getServerSession } from '../../../modules/user/lib/session-server';
 import { Page, PageHeader } from '../../../components/layout';
@@ -90,6 +90,40 @@ async function fetchInitialProgress(apiUrl: string): Promise<IAccountIngestionPr
 }
 
 /**
+ * Fetch the signed-in account's aggregate portfolio summary during SSR so the
+ * Wallets-tab landing hero paints net worth immediately with no skeleton flash.
+ * The wallet panel is always mounted (the tabs toggle visibility, they don't
+ * unmount), so this valuation is computed on every profile load regardless —
+ * resolving it here simply moves that single compute-on-read to the server and
+ * lets the hero skip its client fetch. Forwards the session cookie for ownership
+ * scoping and degrades to null on any failure (no cookie, no snapshot yet, error)
+ * — the hero then falls back to a client fetch rather than breaking the page.
+ *
+ * @param apiUrl - The resolved backend API base (already includes `/api`).
+ * @returns The aggregate portfolio summary, or null on any failure.
+ */
+async function fetchInitialPortfolio(apiUrl: string): Promise<IPortfolioSummary | null> {
+    try {
+        const reqHeaders = await headers();
+        const cookie = reqHeaders.get('cookie');
+        if (!cookie) {
+            return null;
+        }
+        const response = await fetch(`${apiUrl}/valuation/me/portfolio`, {
+            headers: { Cookie: cookie },
+            cache: 'no-store'
+        });
+        if (!response.ok) {
+            return null;
+        }
+        const data = await response.json();
+        return data?.summary ?? null;
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Fetch the profile hub's tab row (the `profile` menu namespace) during SSR so
  * the submenu paints with the page instead of after a client round-trip. The
  * nodes carry no gate, but the cookie is forwarded for parity with other
@@ -143,9 +177,10 @@ export default async function ProfilePage({
     }
 
     const apiUrl = getServerSideApiUrlWithPath();
-    const [initialWallets, initialProgress, submenu] = await Promise.all([
+    const [initialWallets, initialProgress, initialPortfolio, submenu] = await Promise.all([
         fetchInitialWallets(apiUrl),
         fetchInitialProgress(apiUrl),
+        fetchInitialPortfolio(apiUrl),
         fetchSubmenu(apiUrl)
     ]);
     const { tab } = await searchParams;
@@ -162,6 +197,7 @@ export default async function ProfilePage({
                 }}
                 initialWallets={initialWallets}
                 initialProgress={initialProgress}
+                initialPortfolio={initialPortfolio}
                 submenuTree={submenu.roots}
                 submenuGeneratedAt={submenu.generatedAt}
                 initialTab={tab}

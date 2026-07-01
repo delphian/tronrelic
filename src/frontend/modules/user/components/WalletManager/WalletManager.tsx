@@ -1,25 +1,24 @@
 'use client';
 
 /**
- * @fileoverview Self-service wallet management panel for the profile page.
+ * @fileoverview Orchestrator for the reformed profile Wallets tab.
  *
- * Renders the account's linked wallets and drives the three signature-proven
- * mutations — link, set-primary, unlink — each of which follows the same
- * challenge → TronLink signature → submit handshake. The list is seeded from
- * SSR data so it paints immediately with no loading flash, and every mutation
- * replaces the list from the authoritative response the backend returns, so
- * the UI never drifts from server truth (e.g. primary promotion after a link).
+ * Portfolio dashboards land on a value view and drill down, so this component
+ * leads with a scope switcher (aggregate by default) and a portfolio hero, then
+ * offers the per-wallet detail, and finally demotes the rare, destructive wallet
+ * management (link / make-primary / unlink) into a collapsed section so a danger
+ * button never competes with viewing balances. The list is seeded from SSR data
+ * so it paints immediately with no loading flash, and every mutation replaces the
+ * list from the authoritative response the backend returns, so the UI never
+ * drifts from server truth (e.g. primary promotion after a link).
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Wallet, Star, Unlink, History, ChevronDown, ChevronUp } from 'lucide-react';
-import type { IAccountIngestionProgress, ILinkedWallet } from '@/types';
+import { Wallet } from 'lucide-react';
+import type { IAccountIngestionProgress, ILinkedWallet, IPortfolioSummary } from '@/types';
 import { Card } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
-import { Badge } from '../../../../components/ui/Badge';
-import { Tooltip } from '../../../../components/ui/Tooltip';
 import { Stack } from '../../../../components/layout';
-import { ClientTime } from '../../../../components/ui/ClientTime';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { getSocket } from '../../../../lib/socketClient';
 import { connectTronLink, signMessageWithTronLink } from '../../lib/tronLink';
@@ -31,7 +30,8 @@ import {
     fetchWalletHistoryProgress
 } from '../../api/wallets.api';
 import { WalletDetailPanel, PortfolioPanel } from './WalletDetail';
-import styles from './WalletManager.module.scss';
+import { WalletSwitcher, type WalletScope } from './WalletSwitcher';
+import { WalletManageList } from './WalletManageList';
 
 /**
  * Global WebSocket nudge the account-history module broadcasts after each
@@ -39,59 +39,6 @@ import styles from './WalletManager.module.scss';
  * authoritative per-wallet status, mirroring how the admin stats page reacts.
  */
 const HISTORY_STATS_EVENT = 'account-history:stats';
-
-/**
- * Visual presentation for one wallet's history-download status. Centralises the
- * status → (badge tone, label, explanatory tooltip) mapping so the row render
- * stays declarative and the copy lives in one place.
- *
- * @param progress - The wallet's ingestion progress record.
- * @returns The badge tone, short label, and tooltip sentence describing what is
- *   happening with this wallet's history download.
- */
-function describeHistoryStatus(
-    progress: IAccountIngestionProgress
-): { tone: 'neutral' | 'info' | 'success' | 'warning' | 'danger'; label: string; tooltip: string } {
-    const rows = progress.rowsIngested.toLocaleString();
-    switch (progress.status) {
-        case 'queued':
-            return {
-                tone: 'neutral',
-                label: 'History queued',
-                tooltip: 'This wallet is enrolled in the account-history program. Its full transaction history is scheduled to download and will begin shortly.'
-            };
-        case 'running':
-            return {
-                tone: 'info',
-                label: 'Downloading history',
-                tooltip: `Downloading this wallet's full transaction history — ${rows} records saved so far.`
-            };
-        case 'complete':
-            return {
-                tone: 'success',
-                label: 'History downloaded',
-                tooltip: `This wallet's full available transaction history has been downloaded (${rows} records).`
-            };
-        case 'paused':
-            return {
-                tone: 'neutral',
-                label: 'History paused',
-                tooltip: 'The history download for this wallet is paused. It will resume automatically.'
-            };
-        case 'failed':
-            return {
-                tone: 'danger',
-                label: 'History error',
-                tooltip: 'The history download for this wallet hit an error. It will retry automatically.'
-            };
-        default:
-            return {
-                tone: 'neutral',
-                label: 'History',
-                tooltip: 'Transaction history download status for this wallet.'
-            };
-    }
-}
 
 /**
  * Props for {@link WalletManager}.
@@ -105,10 +52,18 @@ export interface IWalletManagerProps {
 
     /**
      * Account-history download progress for the account's verified wallets,
-     * resolved during SSR. Seeds the per-wallet status badges so they paint with
-     * the list (no loading flash); live updates replace it after hydration.
+     * resolved during SSR. Seeds the per-wallet sync state so it paints with the
+     * switcher (no loading flash); live updates replace it after hydration.
      */
     initialProgress: IAccountIngestionProgress[];
+
+    /**
+     * SSR-resolved aggregate portfolio summary, seeding the landing hero so net
+     * worth paints immediately with no skeleton. Null when the SSR fetch failed
+     * (e.g. no snapshot yet) — the aggregate hero then falls back to a client
+     * fetch. Only the aggregate scope is seeded; per-wallet zooms self-fetch.
+     */
+    initialPortfolio: IPortfolioSummary | null;
 }
 
 /**
@@ -116,44 +71,39 @@ export interface IWalletManagerProps {
  *
  * @param props - {@link IWalletManagerProps}.
  */
-export function WalletManager({ initialWallets, initialProgress }: IWalletManagerProps) {
+export function WalletManager({ initialWallets, initialProgress, initialPortfolio }: IWalletManagerProps) {
     const { push } = useToast();
     const [wallets, setWallets] = useState<ILinkedWallet[]>(initialWallets);
-    // Per-wallet history-download progress, seeded from SSR so badges paint with
-    // the list. Replaced wholesale on each refetch (server is authoritative).
+    // Per-wallet history-download progress, seeded from SSR so the switcher paints
+    // its sync dots immediately. Replaced wholesale on each refetch (server is
+    // authoritative).
     const [progress, setProgress] = useState<IAccountIngestionProgress[]>(initialProgress);
     // A per-action key (e.g. 'link' or 'unlink:T...') marks which control is
     // mid-flight; a single key also disables the others so two signature
     // prompts can't race.
     const [busyKey, setBusyKey] = useState<string | null>(null);
-    // Which wallet's history detail is expanded, or null when all collapsed. Only
-    // one expands at a time so the list stays scannable and only one wallet's
-    // summary is fetched at once.
-    const [expandedAddress, setExpandedAddress] = useState<string | null>(null);
-    // Whether the all-wallets aggregate portfolio is revealed. Kept collapsed by
-    // default so the aggregate summary is only fetched when the user asks for it
-    // (the per-wallet zoom lives in each expanded row instead).
-    const [showPortfolio, setShowPortfolio] = useState(false);
+    // The active scope drives the hero and detail: null is the all-wallets
+    // aggregate (the default landing view), a string is one wallet's zoom.
+    const [activeScope, setActiveScope] = useState<WalletScope>(null);
 
-    /**
-     * Toggle the expanded wallet-detail view for one address, collapsing any
-     * other open one.
-     *
-     * @param address - The wallet whose detail view to toggle.
-     */
-    const toggleExpanded = useCallback((address: string): void => {
-        setExpandedAddress((current) => (current === address ? null : address));
-    }, []);
-
-    // Index progress by address so each row renders its status in one lookup.
+    // Index progress by address so the switcher and manage list render each
+    // wallet's status in one lookup.
     const progressByAddress = useMemo(
         () => new Map(progress.map((entry) => [entry.address, entry])),
         [progress]
     );
 
+    // If the active wallet is unlinked out from under the zoom, fall back to the
+    // aggregate so the hero never points at a wallet that no longer exists.
+    useEffect(() => {
+        if (activeScope !== null && !wallets.some((wallet) => wallet.address === activeScope)) {
+            setActiveScope(null);
+        }
+    }, [wallets, activeScope]);
+
     /**
      * Refetch the caller's wallet history progress and replace local state.
-     * Best-effort: a failure leaves the last-known badges in place rather than
+     * Best-effort: a failure leaves the last-known state in place rather than
      * surfacing an error, since the status is secondary to wallet management.
      */
     const refreshProgress = useCallback(async (): Promise<void> => {
@@ -161,7 +111,7 @@ export function WalletManager({ initialWallets, initialProgress }: IWalletManage
             const next = await fetchWalletHistoryProgress();
             setProgress(next);
         } catch {
-            // Keep the existing badges; progress is non-critical.
+            // Keep the existing state; progress is non-critical.
         }
     }, []);
 
@@ -300,15 +250,16 @@ export function WalletManager({ initialWallets, initialProgress }: IWalletManage
         [applyMutation]
     );
 
-    const busy = busyKey !== null;
-
-    return (
-        <Card>
-            <Stack gap="md">
-                <div className={styles.header}>
+    // No wallets yet: a focused onboarding card with the single primary action,
+    // rather than an empty switcher and a zeroed hero.
+    if (wallets.length === 0) {
+        return (
+            <Card>
+                <Stack gap="md">
                     <p className="text-muted">
                         Link a TRON wallet by signing a one-time challenge in TronLink. Linking proves you
-                        control the address — no transaction or fee.
+                        control the address — no transaction or fee — and unlocks your portfolio, activity,
+                        and full transaction history here.
                     </p>
                     <Button
                         variant="primary"
@@ -316,103 +267,40 @@ export function WalletManager({ initialWallets, initialProgress }: IWalletManage
                         icon={<Wallet size={18} aria-hidden />}
                         onClick={handleLink}
                         loading={busyKey === 'link'}
-                        disabled={busy}
+                        disabled={busyKey !== null}
                     >
                         Link a wallet
                     </Button>
-                </div>
+                </Stack>
+            </Card>
+        );
+    }
 
-                {progress.some((entry) => entry.status === 'complete') && (
-                    <Stack gap="sm">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            icon={showPortfolio ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
-                            onClick={() => setShowPortfolio((value) => !value)}
-                            aria-expanded={showPortfolio}
-                        >
-                            {showPortfolio ? 'Hide total portfolio' : 'View total portfolio'}
-                        </Button>
-                        {showPortfolio && <PortfolioPanel />}
-                    </Stack>
-                )}
+    const activeProgress = activeScope !== null ? progressByAddress.get(activeScope) : undefined;
 
-                {wallets.length === 0 ? (
-                    <p className="text-muted">No wallets linked yet.</p>
-                ) : (
-                    <ul className={`list--plain ${styles.list}`}>
-                        {wallets.map((wallet) => {
-                            const walletProgress = progressByAddress.get(wallet.address);
-                            const status = walletProgress ? describeHistoryStatus(walletProgress) : null;
-                            // The detail view only exists once the full history is
-                            // downloaded — an incomplete wallet keeps just its badge.
-                            const isComplete = walletProgress?.status === 'complete';
-                            const isExpanded = expandedAddress === wallet.address;
-                            return (
-                            <li key={wallet.address} className={styles.entry}>
-                                <div className={styles.row}>
-                                    <div className={styles.identity}>
-                                        <span className={styles.address}>{wallet.address}</span>
-                                        <span className={styles.meta}>
-                                            Linked <ClientTime date={wallet.linkedAt} format="date" />
-                                        </span>
-                                        {status && (
-                                            <span className={styles.history}>
-                                                <Tooltip content={status.tooltip}>
-                                                    <Badge tone={status.tone}>
-                                                        <History size={14} aria-hidden /> {status.label}
-                                                    </Badge>
-                                                </Tooltip>
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className={styles.actions}>
-                                        {isComplete && (
-                                            <Button
-                                                variant="ghost"
-                                                size="xs"
-                                                icon={isExpanded ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
-                                                onClick={() => toggleExpanded(wallet.address)}
-                                                aria-expanded={isExpanded}
-                                            >
-                                                {isExpanded ? 'Hide activity' : 'View activity'}
-                                            </Button>
-                                        )}
-                                        {wallet.isPrimary ? (
-                                            <Badge tone="success">
-                                                <Star size={14} aria-hidden /> Primary
-                                            </Badge>
-                                        ) : (
-                                            <Button
-                                                variant="secondary"
-                                                size="xs"
-                                                icon={<Star size={14} aria-hidden />}
-                                                onClick={() => handleSetPrimary(wallet.address)}
-                                                loading={busyKey === `primary:${wallet.address}`}
-                                                disabled={busy}
-                                            >
-                                                Make primary
-                                            </Button>
-                                        )}
-                                        <Button
-                                            variant="danger"
-                                            size="xs"
-                                            icon={<Unlink size={14} aria-hidden />}
-                                            onClick={() => handleUnlink(wallet.address)}
-                                            loading={busyKey === `unlink:${wallet.address}`}
-                                            disabled={busy}
-                                        >
-                                            Unlink
-                                        </Button>
-                                    </div>
-                                </div>
-                                {isComplete && isExpanded && <WalletDetailPanel address={wallet.address} />}
-                            </li>
-                            );
-                        })}
-                    </ul>
-                )}
-            </Stack>
-        </Card>
+    return (
+        <Stack gap="lg">
+            <WalletSwitcher
+                wallets={wallets}
+                progressByAddress={progressByAddress}
+                activeScope={activeScope}
+                onSelect={setActiveScope}
+            />
+
+            {activeScope === null ? (
+                <PortfolioPanel initialSummary={initialPortfolio} />
+            ) : (
+                <WalletDetailPanel address={activeScope} progress={activeProgress} />
+            )}
+
+            <WalletManageList
+                wallets={wallets}
+                progressByAddress={progressByAddress}
+                busyKey={busyKey}
+                onLink={handleLink}
+                onSetPrimary={handleSetPrimary}
+                onUnlink={handleUnlink}
+            />
+        </Stack>
     );
 }

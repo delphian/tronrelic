@@ -1,21 +1,51 @@
 /**
  * WalletManager panel styles.
  *
- * Container-query driven so the panel reflows from a single horizontal row
- * (address left, actions right) to a stacked layout when it sits in a narrow
- * context such as a mobile viewport or a constrained slideout. Tokens only —
- * spacing, colour, and type all flow through semantic/curated variables.
+ * The switcher chips and the demoted manage list are container-query driven so
+ * they reflow from horizontal rows to stacked layouts when the panel sits in a
+ * narrow context (mobile viewport, constrained slideout). Tokens only — spacing,
+ * colour, and type all flow through semantic/curated variables.
  */
 
 @use '../../../../app/breakpoints' as *;
 
-.header {
+/* Wraps the global .segmented-control switcher; allows horizontal scroll when a
+   user has more wallet chips than fit, rather than breaking the segmented row. */
+.switcher {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+/* One wallet chip's inner content: optional primary star, truncated address,
+   and a sync dot. */
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+}
+
+.chip_address {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+}
+
+/* Sync-state dot; colour is supplied inline from the wallet's history tone. */
+.sync_dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: var(--radius-full);
+    flex-shrink: 0;
+}
+
+/* Manage-wallets header: the collapse toggle on the left, the primary Link
+   action on the right; stacks on a narrow container. */
+.manage_header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--gap-md);
     container-type: inline-size;
-    container-name: wallet-manager-header;
+    container-name: wallet-manage-header;
 }
 
 .list {
@@ -26,8 +56,7 @@
     container-name: wallet-manager-list;
 }
 
-/* One wallet entry: the summary row plus its optional expanded detail panel,
-   stacked. The border/padding live here so they wrap both. */
+/* One wallet entry in the manage list. */
 .entry {
     display: flex;
     flex-direction: column;
@@ -54,6 +83,13 @@
     min-width: 0;
 }
 
+/* Address plus its copy button, kept on one line inside the identity column. */
+.address_row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+}
+
 .address {
     font-family: var(--font-mono);
     font-size: var(--font-size-body-sm);
@@ -66,13 +102,6 @@
     color: var(--color-text-muted);
 }
 
-/* Keep the status badge content-width inside the stretch-aligned identity
-   column, and give it a touch of separation from the linked-date line. */
-.history {
-    align-self: flex-start;
-    margin-top: var(--gap-2xs);
-}
-
 .actions {
     display: flex;
     align-items: center;
@@ -80,8 +109,8 @@
     flex-shrink: 0;
 }
 
-@container wallet-manager-header (max-width: #{$breakpoint-mobile-md}) {
-    .header {
+@container wallet-manage-header (max-width: #{$breakpoint-mobile-md}) {
+    .manage_header {
         flex-direction: column;
         align-items: stretch;
     }

@@ -25,7 +25,7 @@ import { useToast } from '../../../../components/ui/ToastProvider';
 import { PreferencesPanel } from '../../../notifications';
 import { signOut } from '../../lib/auth-client';
 import { WalletManager } from '../WalletManager';
-import type { IAccountIngestionProgress, ILinkedWallet } from '@/types';
+import type { IAccountIngestionProgress, ILinkedWallet, IPortfolioSummary } from '@/types';
 import styles from './ProfileView.module.scss';
 
 /** The hub's tab ids; the `?tab=` value carried by each submenu node. */
@@ -89,6 +89,13 @@ export interface IProfileViewProps {
     initialProgress: IAccountIngestionProgress[];
 
     /**
+     * SSR-resolved aggregate portfolio summary, seeding the Wallets-tab landing
+     * hero so net worth paints with no skeleton. Null when the SSR fetch failed;
+     * the hero then falls back to a client fetch.
+     */
+    initialPortfolio: IPortfolioSummary | null;
+
+    /**
      * SSR-fetched tab row nodes (Profile, Wallets) for the hub's submenu. Driving
      * the row through the menu service rather than a hand-rolled button array
      * gives it ordering and live `menu:update` refresh, and lets a plugin
@@ -127,6 +134,7 @@ export function ProfileView({
     identity,
     initialWallets,
     initialProgress,
+    initialPortfolio,
     submenuTree,
     submenuGeneratedAt,
     initialTab
@@ -220,7 +228,11 @@ export function ProfileView({
             </Section>
 
             <Section gap="sm" style={{ display: activeTab === 'wallets' ? undefined : 'none' }}>
-                <WalletManager initialWallets={initialWallets} initialProgress={initialProgress} />
+                <WalletManager
+                    initialWallets={initialWallets}
+                    initialProgress={initialProgress}
+                    initialPortfolio={initialPortfolio}
+                />
             </Section>
         </Stack>
     );

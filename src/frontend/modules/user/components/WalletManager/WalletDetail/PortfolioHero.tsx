@@ -1,48 +1,93 @@
 'use client';
 
 /**
- * @fileoverview Presentational portfolio hero — the valuation surface that fills
- * the seam reserved at the top of the wallet detail view.
+ * @fileoverview Presentational portfolio hero — the money-first surface of the
+ * Wallets tab.
  *
- * Renders one {@link IPortfolioSummary} at either scope (a single wallet or the
- * user's whole set) with the identical layout, because the summary shape is
- * scope-agnostic by design. Pure presentation: it receives a fully-computed
- * summary and draws net worth, PnL, an allocation donut, a holdings table, and
- * the USD balance-over-time line — no fetching, no business logic.
+ * Net worth is the single number a portfolio user wants, so it leads at hero
+ * size with PnL beside it; the number carries a directional arrow AND a signed
+ * value so gain/loss never relies on colour alone (≈8% of men are red/green
+ * colour-blind). Realized and unrealized PnL are labelled separately because
+ * they mean different things (realized is taxable, unrealized is not). The
+ * balance chart carries a 1M/3M/1Y/All range selector that filters the returned
+ * trailing-year series client-side — an honest zoom over data actually present,
+ * not a fabricated live range. Pure presentation: it receives a fully-computed
+ * {@link IPortfolioSummary} and renders it identically at either scope.
  */
 
 import { useMemo, useState } from 'react';
-import type { IPortfolioSummary } from '@/types';
+import type { IPortfolioSummary, IPortfolioBalancePoint } from '@/types';
 import { Wallet, TrendingUp, TrendingDown, Hourglass, Coins } from 'lucide-react';
 import { LineChart, DonutChart, type DonutSlice } from '../../../../../features/charts';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { Stack } from '../../../../../components/layout';
-import { WalletDetailSection, StatTile } from './WalletDetailPrimitives';
+import { WalletDetailSection } from './WalletDetailPrimitives';
 import { truncateAddress } from '../../../lib/walletFormat';
 import styles from './WalletDetail.module.scss';
 
-/**
- * Which asset the balance-over-time chart plots. Only TRX is populated today —
- * the backend `balanceSeriesUsd` reconstructs the TRX balance alone — so the
- * selector is explicit rather than implying the curve is full net worth. The
- * union and {@link BALANCE_DENOMINATIONS} extend when per-token or aggregate
- * ("all") series are added.
- */
-type BalanceDenomination = 'trx';
+/** A selectable window over the balance series. `days === null` means the full series. */
+interface IBalanceRange {
+    /** Stable id used for the active-state comparison. */
+    id: string;
+    /** Short button label. */
+    label: string;
+    /** Trailing window in days, or null for the whole returned series. */
+    days: number | null;
+}
 
-/** Selectable denominations for the balance-over-time chart, in display order. */
-const BALANCE_DENOMINATIONS: ReadonlyArray<{ id: BalanceDenomination; label: string }> = [{ id: 'trx', label: 'TRX' }];
+/**
+ * Selectable ranges for the balance-over-time chart. The backend reconstructs a
+ * trailing 365-day series, so these are honest client-side zooms over data
+ * already present — never a claim of finer or live resolution.
+ */
+const BALANCE_RANGES: ReadonlyArray<IBalanceRange> = [
+    { id: '1m', label: '1M', days: 30 },
+    { id: '3m', label: '3M', days: 90 },
+    { id: '1y', label: '1Y', days: 365 },
+    { id: 'all', label: 'All', days: null }
+];
 
 /** Locale-independent month abbreviations, for hydration-safe date labels (UTC). */
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /**
+ * Shift a `YYYY-MM-DD` day by a number of days, using UTC so the result is
+ * identical on server and client (no timezone drift). Used to compute the
+ * range-selector cutoff from the series' newest day.
+ *
+ * @param day - The base day as `YYYY-MM-DD`.
+ * @param deltaDays - Days to add (negative to go back).
+ * @returns The shifted day as `YYYY-MM-DD`.
+ */
+function shiftDay(day: string, deltaDays: number): string {
+    const [year, month, date] = day.split('-').map(Number);
+    const shifted = new Date(Date.UTC(year, month - 1, date));
+    shifted.setUTCDate(shifted.getUTCDate() + deltaDays);
+    return shifted.toISOString().slice(0, 10);
+}
+
+/**
+ * Filter the balance series to a trailing window measured from its newest point.
+ * ISO `YYYY-MM-DD` strings compare lexicographically, so a string compare against
+ * the cutoff is correct and avoids per-point Date parsing.
+ *
+ * @param points - The full balance series, oldest first.
+ * @param days - Trailing window in days, or null for the whole series.
+ * @returns The points within the window.
+ */
+function filterByRange(points: IPortfolioBalancePoint[], days: number | null): IPortfolioBalancePoint[] {
+    if (days === null || points.length === 0) {
+        return points;
+    }
+    const cutoff = shiftDay(points[points.length - 1].day, -days);
+    return points.filter((point) => point.day >= cutoff);
+}
+
+/**
  * Format a daily point's Date as `MMM D` for the x-axis. Uses UTC fields and a
- * fixed name table so the label is identical on server and client (no
- * locale/timezone drift) — the same hydration-safe approach the flow chart uses,
- * replacing the bare numeric `M/D` so the axis reads as a date.
+ * fixed name table so the label is identical on server and client.
  *
  * @param date - The point's day (parsed UTC by the chart).
  * @returns The `MMM D` axis label.
@@ -53,8 +98,7 @@ function formatAxisDay(date: Date): string {
 
 /**
  * Format a daily point's Date as `MMM D, YYYY` for the tooltip heading, giving
- * the absolute date (with year) the compact axis label omits. UTC-based for the
- * same hydration safety as {@link formatAxisDay}.
+ * the absolute date the compact axis label omits. UTC-based for hydration safety.
  *
  * @param date - The hovered point's day.
  * @returns The `MMM D, YYYY` tooltip heading.
@@ -106,26 +150,26 @@ function formatQty(value: number): string {
 export function PortfolioHero({ summary }: IPortfolioHeroProps) {
     // Hooks run before the snapshot-pending early return so their call order stays
     // stable across renders (React's rules-of-hooks).
-    const [denomination, setDenomination] = useState<BalanceDenomination>('trx');
+    const [rangeId, setRangeId] = useState<string>('3m');
 
-    // The balance-over-time series. Only TRX is sourced today — the backend
-    // reconstructs the TRX balance alone — so the chart is honestly a TRX curve,
-    // not full net worth. Structured so a future per-token or "all" aggregate
-    // slots in by sourcing its own points under another denomination here.
+    // The balance series clipped to the active range. Only TRX is sourced today —
+    // the backend reconstructs the TRX balance alone — so the caption stays honest
+    // about scope; the range only zooms the window.
     const balanceSeries = useMemo(
         () => {
-            const points = denomination === 'trx' ? summary.balanceSeriesUsd : [];
+            const range = BALANCE_RANGES.find((option) => option.id === rangeId) ?? BALANCE_RANGES[0];
+            const points = filterByRange(summary.balanceSeriesUsd, range.days);
             return [
                 {
                     id: 'balance',
-                    label: denomination.toUpperCase(),
+                    label: 'TRX',
                     color: 'var(--chart-color-total)',
                     fill: true,
                     data: points.map((point) => ({ date: point.day, value: point.valueUsd }))
                 }
             ];
         },
-        [summary, denomination]
+        [summary, rangeId]
     );
 
     // No snapshot has been captured yet for this scope. Holdings and net worth are
@@ -133,8 +177,7 @@ export function PortfolioHero({ summary }: IPortfolioHeroProps) {
     // read $0 / "No holdings" — indistinguishable from a wallet that genuinely
     // holds nothing. `capturedAt === null` is the unambiguous "snapshot pending"
     // signal (it arrives as JSON null, never a Date), so we show a friendly
-    // preparing state instead of misleading zeros. Once the first snapshot tick
-    // runs, capturedAt becomes a date and the real hero renders.
+    // preparing state instead of misleading zeros.
     if (summary.capturedAt === null) {
         return (
             <WalletDetailSection
@@ -156,19 +199,19 @@ export function PortfolioHero({ summary }: IPortfolioHeroProps) {
     }
 
     const pnlPositive = summary.totalPnlUsd >= 0;
+    const pnlColor = pnlPositive ? 'var(--color-success)' : 'var(--color-danger)';
     const slices: DonutSlice[] = summary.allocation.map((entry) => ({ label: entry.symbol, value: entry.valueUsd }));
 
-    // Denomination switch placed in the chart header (mirrors the flow chart). One
-    // option today; makes the TRX-only scope explicit and reserves the slot.
-    const denominationToggle = (
+    // Range selector in the chart header (mirrors the flow chart's toggle slot).
+    const rangeToggle = (
         <span className={styles.flow_toggle}>
-            {BALANCE_DENOMINATIONS.map((option) => (
+            {BALANCE_RANGES.map((option) => (
                 <Button
                     key={option.id}
-                    variant={denomination === option.id ? 'secondary' : 'ghost'}
+                    variant={rangeId === option.id ? 'secondary' : 'ghost'}
                     size="xs"
-                    aria-pressed={denomination === option.id}
-                    onClick={() => setDenomination(option.id)}
+                    aria-pressed={rangeId === option.id}
+                    onClick={() => setRangeId(option.id)}
                 >
                     {option.label}
                 </Button>
@@ -182,15 +225,32 @@ export function PortfolioHero({ summary }: IPortfolioHeroProps) {
             title="Portfolio"
         >
             <Stack gap="md">
-                <div className="stat-grid">
-                    <StatTile label="Net worth" value={formatUsd(summary.netWorthUsd)} icon={<Wallet size={14} aria-hidden />} />
-                    <StatTile
-                        label="Total PnL"
-                        value={<span style={{ color: pnlPositive ? 'var(--color-success)' : 'var(--color-danger)' }}>{formatUsd(summary.totalPnlUsd, true)}</span>}
-                        icon={pnlPositive ? <TrendingUp size={14} aria-hidden /> : <TrendingDown size={14} aria-hidden />}
-                    />
-                    <StatTile label="Realized" value={formatUsd(summary.realizedPnlUsd, true)} />
-                    <StatTile label="Unrealized" value={formatUsd(summary.unrealizedPnlUsd, true)} />
+                {/* Net-worth-dominant header: the headline figure, PnL with an
+                    arrow + signed value (non-colour cues), then realized/unrealized. */}
+                <div className={styles.hero}>
+                    <div className={styles.hero_primary}>
+                        <span className={styles.hero_label}>Net worth</span>
+                        <span className={styles.hero_value}>{formatUsd(summary.netWorthUsd)}</span>
+                        <span className={styles.hero_pnl} style={{ color: pnlColor }}>
+                            {pnlPositive ? <TrendingUp size={16} aria-hidden /> : <TrendingDown size={16} aria-hidden />}
+                            {formatUsd(summary.totalPnlUsd, true)}
+                            <span className={styles.hero_pnl_caption}>all-time PnL</span>
+                        </span>
+                    </div>
+                    <div className={styles.hero_secondary}>
+                        <div className={styles.hero_metric}>
+                            <span className={styles.hero_metric_label}>Realized</span>
+                            <span style={{ color: summary.realizedPnlUsd >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                                {formatUsd(summary.realizedPnlUsd, true)}
+                            </span>
+                        </div>
+                        <div className={styles.hero_metric}>
+                            <span className={styles.hero_metric_label}>Unrealized</span>
+                            <span style={{ color: summary.unrealizedPnlUsd >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                                {formatUsd(summary.unrealizedPnlUsd, true)}
+                            </span>
+                        </div>
+                    </div>
                 </div>
 
                 <div className={styles.portfolio_split}>
@@ -244,7 +304,7 @@ export function PortfolioHero({ summary }: IPortfolioHeroProps) {
                     <LineChart
                         series={balanceSeries}
                         title="Net worth over time"
-                        actions={denominationToggle}
+                        actions={rangeToggle}
                         height={220}
                         yAxisFormatter={(value) => formatUsd(value)}
                         xAxisFormatter={formatAxisDay}
