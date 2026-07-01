@@ -71,6 +71,12 @@ export interface IAccountHistoryStatsView {
         catchingUpAccounts: number;
         /** Stalest freshness watermark across completed accounts (ISO string). */
         oldestNewestTimestamp?: string;
+        /**
+         * Completed accounts that still owe value-transfer ledger backfill. Counts
+         * down as the `account-history:ledger-backfill` job drains the legacy
+         * population; `0` means the one-time ledger backfill is done.
+         */
+        legacyBackfillPending: number;
     };
 }
 

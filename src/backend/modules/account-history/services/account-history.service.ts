@@ -90,6 +90,14 @@ const MS_PER_DAY = 86_400_000;
 /** Base58 TRON mainnet address shape: leading `T`, 34 chars total. */
 const TRON_ADDRESS_PATTERN = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 
+/**
+ * USDT (TRC20) contract address — the `asset_id` the money-in/out chart keys its
+ * USDT flow on now that the flow query reads the value ledger (which identifies a
+ * token by its contract, not a symbol string). Mainnet Tether; the dominant
+ * stablecoin the flow surface breaks out beside TRX.
+ */
+const USDT_CONTRACT_ADDRESS = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+
 /** WebSocket event name for live ingestion stats; must have a case in WebSocketService.emit(). */
 const STATS_EVENT = 'account-history:stats';
 
@@ -114,6 +122,15 @@ const LEDGER_BACKFILL_TOKEN_TX_PER_TICK = 50;
 const TRANSACTION_SELECT_COLUMNS = `account, tx_id, source, block_number, timestamp, type, status, from_address, to_address,
             amount_sun, fee_sun, energy_consumed, energy_fee_sun, bandwidth_consumed, bandwidth_fee_sun,
             contract_address, contract_method, token_amount, token_symbol, token_decimals, memo`;
+
+/**
+ * The `account_value_transfers` columns every value-ledger read projects into an
+ * {@link IValueTransfer}. Shared by {@link AccountHistoryService.getValueTransfers}
+ * and {@link AccountHistoryService.getValueTransfersByTxIds} so the projection
+ * stays in lockstep across both reads.
+ */
+const VALUE_TRANSFER_SELECT_COLUMNS = `tx_id, origin, leg_key, asset_type, asset_id, from_address, to_address,
+            amount_raw, asset_decimals, block_number, timestamp`;
 
 /**
  * ClickHouse predicate suppressing the native `'tx'` twin of an outbound TRC20
@@ -424,6 +441,15 @@ export class AccountHistoryService implements IAccountHistoryService {
             ? new Date(completeWatermarks.reduce((min, t) => Math.min(min, t), Infinity))
             : undefined;
 
+        // Legacy ledger-backfill remaining: completed accounts that still owe an
+        // internal drain or a token sweep. Mirrors selectAccountsForLedgerBackfill's
+        // predicate but, unlike the selector, does NOT exclude paused accounts — the
+        // count is an honest "work remaining" signal, so a paused owing account keeps
+        // it non-zero rather than letting it read 0 while legs are still missing.
+        const legacyBackfillPending = progressDocs.filter(
+            (doc) => doc.status === 'complete' && (doc.internalComplete !== true || doc.tokenLegsBackfillComplete !== true)
+        ).length;
+
         const stats: IAccountHistoryStats = {
             settings,
             accounts: accountStats,
@@ -433,7 +459,8 @@ export class AccountHistoryService implements IAccountHistoryService {
                 completeAccounts: accountStats.filter((a) => a.progress.status === 'complete').length,
                 failedAccounts: accountStats.filter((a) => a.progress.status === 'failed').length,
                 catchingUpAccounts: accountStats.filter((a) => a.progress.catchingUp).length,
-                oldestNewestTimestamp
+                oldestNewestTimestamp,
+                legacyBackfillPending
             }
         };
         return stats;
@@ -546,6 +573,72 @@ export class AccountHistoryService implements IAccountHistoryService {
             { address: normalized, txIds: unique }
         );
         return rows.map(AccountHistoryService.rowToBlockTransaction);
+    }
+
+    /**
+     * Read a page of an account's value-transfer ledger from ClickHouse, newest
+     * first. Unlike {@link getTransactions}, this reads `account_value_transfers` —
+     * the discrete value legs (native / internal / token) — with no outbound-TRC20
+     * dedupe: the value ledger carries no `tx`/`trc20` twin (an outbound token
+     * transfer's native call-value is zero and writes no native leg, and the token
+     * leg is keyed by its own `log_index`), so every row is a distinct movement.
+     * Returns an empty array when ClickHouse is not configured.
+     *
+     * @param query - Address and pagination window.
+     * @returns A page of source-independent value legs, newest first.
+     */
+    public async getValueTransfers(query: IAccountTransactionQuery): Promise<IValueTransfer[]> {
+        const address = String(query.address ?? '').trim();
+        if (!TRON_ADDRESS_PATTERN.test(address)) {
+            throw new Error('address must be a base58 TRON address (T...)');
+        }
+        if (!this.clickhouse) {
+            return [];
+        }
+
+        const limit = Math.min(Math.max(1, Math.floor(query.limit ?? 50)), MAX_READ_LIMIT);
+        const offset = Math.max(0, Math.floor(query.offset ?? 0));
+
+        const rows = await this.clickhouse.query<IAccountValueTransferRow>(
+            `SELECT ${VALUE_TRANSFER_SELECT_COLUMNS}
+             FROM ${VALUE_TRANSFERS_TABLE} FINAL
+             WHERE account = {address:String}
+             ORDER BY timestamp DESC
+             LIMIT {limit:UInt32} OFFSET {offset:UInt32}`,
+            { address, limit, offset }
+        );
+        return rows.map(AccountHistoryService.rowToValueTransfer);
+    }
+
+    /**
+     * Read specific value legs for one account by parent transaction hash, newest
+     * first — the value-ledger analog of {@link getTransactionsByTxIds}. Keyed by an
+     * explicit hash set, clamped to {@link MAX_TXID_READ} so a caller cannot build an
+     * unbounded `IN (...)` list. Returns an empty array when ClickHouse is not
+     * configured or no hashes are requested.
+     *
+     * @param address - Base58 address whose legs to read.
+     * @param txIds - Parent transaction hashes to fetch.
+     * @returns The matching value legs, newest first.
+     */
+    public async getValueTransfersByTxIds(address: string, txIds: string[]): Promise<IValueTransfer[]> {
+        const normalized = String(address ?? '').trim();
+        if (!TRON_ADDRESS_PATTERN.test(normalized)) {
+            throw new Error('address must be a base58 TRON address (T...)');
+        }
+        const unique = Array.from(new Set((txIds ?? []).filter((id) => typeof id === 'string' && id.length > 0))).slice(0, MAX_TXID_READ);
+        if (!this.clickhouse || unique.length === 0) {
+            return [];
+        }
+
+        const rows = await this.clickhouse.query<IAccountValueTransferRow>(
+            `SELECT ${VALUE_TRANSFER_SELECT_COLUMNS}
+             FROM ${VALUE_TRANSFERS_TABLE} FINAL
+             WHERE account = {address:String} AND tx_id IN ({txIds:Array(String)})
+             ORDER BY timestamp DESC`,
+            { address: normalized, txIds: unique }
+        );
+        return rows.map(AccountHistoryService.rowToValueTransfer);
     }
 
     /**
@@ -705,20 +798,24 @@ export class AccountHistoryService implements IAccountHistoryService {
     }
 
     /**
-     * Per-month inflow/outflow split by denomination. Direction is inferred from
-     * whether the wallet is the row's recipient (`to_address`) or sender
-     * (`from_address`); TRX uses native `amount_sun`, USDT uses the raw token
-     * amount (`toFloat64OrZero` tolerates the column's string/null shape). The two
-     * denominations stay separate because, without USD valuation, they share no
-     * axis. `toStartOfMonth` buckets in UTC for stable, timezone-independent labels.
+     * Per-month inflow/outflow split by denomination, read from the value-transfer
+     * ledger (`account_value_transfers`) rather than the transaction table.
+     * Direction is inferred from whether the wallet is the leg's recipient
+     * (`to_address`) or sender (`from_address`); TRX sums the raw sun amount, USDT
+     * sums the raw token amount (`toFloat64OrZero`/`toInt64OrZero` tolerate the
+     * column's string shape). The two denominations stay separate because, without
+     * USD valuation, they share no axis. `toStartOfMonth` buckets in UTC for stable,
+     * timezone-independent labels.
      *
-     * The TRX legs are restricted to `type = 'TransferContract'` because
-     * `amount_sun` is filled from a *different* on-chain field per contract type
-     * (`transaction-parse.ts`): a TRC10 token count for `TransferAssetContract`,
-     * delegated/frozen stake for `Delegate*`/`Freeze*`. Summing every type as TRX
-     * inflated the bars with non-TRX value. Wallet-to-wallet `TransferContract` is
-     * the genuine TRX flow; `TriggerSmartContract` call-value is deliberately
-     * excluded here so the chart reads as money in/out, not contract spend.
+     * Reading the ledger is the fix the redesign delivers: TRX now spans both
+     * `native` and `internal` origins (both are real money movement), so a
+     * contract's TRX deposit — an `internal` leg invisible to the transaction table,
+     * which the old `type = 'TransferContract'` guard could never capture — finally
+     * shows as inflow. The ledger already excludes non-value rows at derivation
+     * (TRC10 counts, delegated/frozen stake never become legs), so no per-type guard
+     * is needed here. USDT keys on `asset_id` (the token contract) instead of a
+     * symbol string, and the ledger carries no `tx`/`trc20` twin, so no dedupe filter
+     * is needed either.
      *
      * @param address - Base58 account to summarize.
      * @returns Monthly flow buckets ordered oldest first.
@@ -726,15 +823,15 @@ export class AccountHistoryService implements IAccountHistoryService {
     private async queryMonthlyFlow(address: string): Promise<IWalletFlowBucket[]> {
         const rows = await this.clickhouse!.query<Record<string, string | number>>(
             `SELECT toString(toStartOfMonth(timestamp)) AS period,
-                    sumIf(amount_sun, type = 'TransferContract' AND to_address = {address:String}) AS trx_in_sun,
-                    sumIf(amount_sun, type = 'TransferContract' AND from_address = {address:String}) AS trx_out_sun,
-                    sumIf(toFloat64OrZero(token_amount), token_symbol = 'USDT' AND to_address = {address:String}) AS usdt_in_raw,
-                    sumIf(toFloat64OrZero(token_amount), token_symbol = 'USDT' AND from_address = {address:String}) AS usdt_out_raw
-             FROM ${TRANSACTIONS_TABLE} FINAL
-             WHERE account = {address:String} AND ${AccountHistoryService.dedupeFilter()}
+                    sumIf(toInt64OrZero(amount_raw), asset_type = 'TRX' AND to_address = {address:String}) AS trx_in_sun,
+                    sumIf(toInt64OrZero(amount_raw), asset_type = 'TRX' AND from_address = {address:String}) AS trx_out_sun,
+                    sumIf(toFloat64OrZero(amount_raw), asset_id = {usdt:String} AND to_address = {address:String}) AS usdt_in_raw,
+                    sumIf(toFloat64OrZero(amount_raw), asset_id = {usdt:String} AND from_address = {address:String}) AS usdt_out_raw
+             FROM ${VALUE_TRANSFERS_TABLE} FINAL
+             WHERE account = {address:String}
              GROUP BY period
              ORDER BY period ASC`,
-            { address }
+            { address, usdt: USDT_CONTRACT_ADDRESS }
         );
         const flow = rows.map((row) => ({
             period: String(row.period),
@@ -2104,5 +2201,32 @@ export class AccountHistoryService implements IAccountHistoryService {
             memo: row.memo === null || row.memo === undefined ? null : String(row.memo)
         };
         return transaction;
+    }
+
+    /**
+     * Convert an `account_value_transfers` row back to the source-independent
+     * {@link IValueTransfer} contract. `amount_raw` stays a string (token amounts
+     * exceed 64-bit range and the domain type keeps it raw); `asset_decimals` is
+     * nullable in the column but optional in the contract, so a null collapses to
+     * `undefined`; the datetime literal is parsed to a `Date`.
+     *
+     * @param row - A ClickHouse value-transfer result row.
+     * @returns The value-leg projection.
+     */
+    private static rowToValueTransfer(row: IAccountValueTransferRow): IValueTransfer {
+        const transfer: IValueTransfer = {
+            txId: String(row.tx_id),
+            origin: String(row.origin) as IValueTransfer['origin'],
+            legKey: String(row.leg_key ?? ''),
+            assetType: String(row.asset_type) as IValueTransfer['assetType'],
+            assetId: String(row.asset_id ?? ''),
+            from: String(row.from_address),
+            to: String(row.to_address),
+            amountRaw: String(row.amount_raw ?? '0'),
+            assetDecimals: row.asset_decimals === null || row.asset_decimals === undefined ? undefined : Number(row.asset_decimals),
+            timestamp: parseClickHouseDateTime64Utc(String(row.timestamp)),
+            blockNumber: Number(row.block_number ?? 0)
+        };
+        return transfer;
     }
 }
