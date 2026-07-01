@@ -107,10 +107,10 @@ const MAX_TXID_READ = 2_000;
 const LEDGER_BACKFILL_TOKEN_TX_PER_TICK = 50;
 
 /**
- * The `account_transactions` columns every source-independent read projects.
- * Shared by {@link AccountHistoryService.getTransactions} and
- * {@link AccountHistoryService.getTransactionsByTxIds} so the projection stays in
- * lockstep — a column added to one read is added to both.
+ * The `account_transactions` columns the source-independent transaction read
+ * ({@link AccountHistoryService.getTransactions}) projects into an
+ * {@link IBlockTransaction}. Kept as a named constant so the projection and the
+ * row mapper stay in lockstep — a column added here is added to the mapper too.
  */
 const TRANSACTION_SELECT_COLUMNS = `account, tx_id, source, block_number, timestamp, type, status, from_address, to_address,
             amount_sun, fee_sun, energy_consumed, energy_fee_sun, bandwidth_consumed, bandwidth_fee_sun,
@@ -534,41 +534,6 @@ export class AccountHistoryService implements IAccountHistoryService {
     }
 
     /**
-     * Read specific stored transactions for one account by transaction hash.
-     *
-     * Why it exists: the valuation engine refetches the missing leg of an
-     * internal transfer whose two rows straddle a per-wallet window boundary (see
-     * {@link IAccountHistoryService.getTransactionsByTxIds}). The read is keyed by
-     * an explicit hash set, clamped to {@link MAX_TXID_READ} so a caller cannot
-     * build an unbounded `IN (...)` list, and carries the same outbound-TRC20
-     * dedupe as {@link getTransactions}. Returns an empty array when ClickHouse is
-     * not configured or no hashes are requested.
-     *
-     * @param address - Base58 address whose rows to read.
-     * @param txIds - Transaction hashes to fetch.
-     * @returns The matching transactions, newest first.
-     */
-    public async getTransactionsByTxIds(address: string, txIds: string[]): Promise<IBlockTransaction[]> {
-        const normalized = String(address ?? '').trim();
-        if (!TRON_ADDRESS_PATTERN.test(normalized)) {
-            throw new Error('address must be a base58 TRON address (T...)');
-        }
-        const unique = Array.from(new Set((txIds ?? []).filter((id) => typeof id === 'string' && id.length > 0))).slice(0, MAX_TXID_READ);
-        if (!this.clickhouse || unique.length === 0) {
-            return [];
-        }
-
-        const rows = await this.clickhouse.query<IAccountTransactionRow>(
-            `SELECT ${TRANSACTION_SELECT_COLUMNS}
-             FROM ${TRANSACTIONS_TABLE} FINAL
-             WHERE account = {address:String} AND tx_id IN ({txIds:Array(String)}) AND ${OUTBOUND_TRC20_DEDUPE_FILTER}
-             ORDER BY timestamp DESC`,
-            { address: normalized, txIds: unique }
-        );
-        return rows.map(AccountHistoryService.rowToBlockTransaction);
-    }
-
-    /**
      * Read a page of an account's value-transfer ledger from ClickHouse, newest
      * first. Unlike {@link getTransactions}, this reads `account_value_transfers` —
      * the discrete value legs (native / internal / token) — with no outbound-TRC20
@@ -605,7 +570,7 @@ export class AccountHistoryService implements IAccountHistoryService {
 
     /**
      * Read specific value legs for one account by parent transaction hash, newest
-     * first — the value-ledger analog of {@link getTransactionsByTxIds}. Keyed by an
+     * first — the by-hash companion to {@link getValueTransfers}. Keyed by an
      * explicit hash set, clamped to {@link MAX_TXID_READ} so a caller cannot build an
      * unbounded `IN (...)` list. Returns an empty array when ClickHouse is not
      * configured or no hashes are requested.

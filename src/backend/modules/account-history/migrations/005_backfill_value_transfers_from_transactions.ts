@@ -1,8 +1,8 @@
 /**
  * @fileoverview Migration: backfill NATIVE value legs into `account_value_transfers`.
  *
- * Stage 3a of the account value-transfer ledger redesign (see
- * `docs/system/system-account-value-ledger.md`). The Stage-2 dual-write only fills
+ * Native-leg backfill for the account value-transfer ledger (documented in the
+ * module README, `src/backend/modules/account-history/README.md`). The dual-write only fills
  * the ledger for accounts ingested *after* it shipped; every account that finished
  * its backfill earlier has native-TRX rows sitting in `account_transactions` that
  * were never projected into the ledger. Native legs are a pure function of those

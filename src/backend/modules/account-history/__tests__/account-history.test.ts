@@ -203,38 +203,6 @@ describe('AccountHistoryService', () => {
         expect(page).toEqual({ transactions: [], total: 0 });
     });
 
-    it('getTransactionsByTxIds returns [] without ClickHouse and for an empty hash set', async () => {
-        const service = buildService(null);
-        expect(await service.getTransactionsByTxIds(VALID_ADDRESS, ['h1'])).toEqual([]);
-
-        // Even with ClickHouse, an empty (or all-blank) hash set short-circuits
-        // before any query, so no unbounded `IN ()` is built.
-        AccountHistoryService.resetForTests();
-        const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
-        AccountHistoryService.setDependencies({ database: createMockDatabaseService(), clickhouse, provider: null, emitter: undefined, logger: createSilentLogger() });
-        const withCh = AccountHistoryService.getInstance();
-        expect(await withCh.getTransactionsByTxIds(VALID_ADDRESS, ['', ''])).toEqual([]);
-        expect(clickhouse.query).not.toHaveBeenCalled();
-    });
-
-    it('getTransactionsByTxIds queries by hash and maps rows back to transactions', async () => {
-        AccountHistoryService.resetForTests();
-        const row = toAccountTransactionRow(VALID_ADDRESS, makeTx('h1', new Date('2024-01-01T00:00:00.000Z')), 'tx', '2024-01-01 00:00:00.000', '2024-06-01 00:00:00.000');
-        const clickhouse = { query: vi.fn().mockResolvedValue([row]), insert: vi.fn() } as unknown as IClickHouseService;
-        AccountHistoryService.setDependencies({ database: createMockDatabaseService(), clickhouse, provider: null, emitter: undefined, logger: createSilentLogger() });
-        const service = AccountHistoryService.getInstance();
-
-        const txs = await service.getTransactionsByTxIds(VALID_ADDRESS, ['h1', 'h1']);
-
-        expect(txs).toHaveLength(1);
-        expect(txs[0].txId).toBe('h1');
-        // The hash set is deduped and passed as an Array param alongside the address.
-        expect(clickhouse.query).toHaveBeenCalledWith(
-            expect.stringContaining('tx_id IN ({txIds:Array(String)})'),
-            expect.objectContaining({ address: VALID_ADDRESS, txIds: ['h1'] })
-        );
-    });
-
     it('getValueTransfers returns [] without ClickHouse and maps ledger rows otherwise', async () => {
         // Absent ClickHouse yields an empty read, mirroring getTransactions.
         expect(await buildService(null).getValueTransfers({ address: VALID_ADDRESS })).toEqual([]);

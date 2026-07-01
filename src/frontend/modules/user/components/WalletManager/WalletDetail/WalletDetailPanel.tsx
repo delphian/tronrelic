@@ -1,71 +1,145 @@
 'use client';
 
 /**
- * @fileoverview Container for one wallet's detail view.
+ * @fileoverview Single-wallet detail view for the profile Wallets tab.
  *
- * Lazy-loads the batched activity summary when a wallet row is expanded — a
- * user-triggered, secondary surface, so a loading skeleton is appropriate here
- * (unlike the page's primary render). The valuation/portfolio surface is a
- * deliberate future addition: a hero slot is reserved at the top of the stack so
- * that, when a balance/price data layer exists, the portfolio value + PnL +
- * balance-over-time hero drops in above these activity panels without touching
- * them.
+ * Progressive disclosure is capped at two levels (NNG): the switcher chooses the
+ * wallet, and this panel's segmented sub-tabs — Overview / Activity /
+ * Transactions — split what used to be one endless vertical dump into three
+ * scannable surfaces. Overview is the portfolio hero (money first); Activity is
+ * the behavioural story, lazy-loaded only when opened; Transactions is the
+ * decoded audit feed. A wallet still downloading its history shows an honest
+ * "still syncing" notice (count + oldest date reached, never a fake percentage)
+ * instead of a partial view mistaken for the whole picture.
  */
 
 import { useEffect, useState } from 'react';
-import type { IWalletActivitySummary } from '@/types';
+import { Hourglass, LayoutDashboard, Activity as ActivityIcon, ListOrdered } from 'lucide-react';
+import type { IAccountIngestionProgress, IWalletActivitySummary } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Skeleton } from '../../../../../components/ui/Skeleton';
+import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { fetchWalletSummary } from '../../../api/account-history-user.api';
+import { describeHistoryStatus } from '../../../lib/walletHistoryStatus';
+import { formatCount } from '../../../lib/walletFormat';
 import { WalletActivityStats } from './WalletActivityStats';
 import { WalletActivityCalendar } from './WalletActivityCalendar';
 import { WalletResourcePanel } from './WalletResourcePanel';
 import { WalletFlowChart } from './WalletFlowChart';
 import { WalletCounterparties } from './WalletCounterparties';
 import { WalletTransactionFeed } from './WalletTransactionFeed';
+import { WalletDetailSection } from './WalletDetailPrimitives';
 import { PortfolioPanel } from './PortfolioPanel';
 import styles from './WalletDetail.module.scss';
+
+/** The detail sub-tabs, in display order. */
+type DetailTab = 'overview' | 'activity' | 'transactions';
+
+/** Tab row definition — id, label, and leading icon. */
+const DETAIL_TABS: ReadonlyArray<{ id: DetailTab; label: string; icon: typeof LayoutDashboard }> = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'activity', label: 'Activity', icon: ActivityIcon },
+    { id: 'transactions', label: 'Transactions', icon: ListOrdered }
+];
 
 /**
  * Props for {@link WalletDetailPanel}.
  */
 interface IWalletDetailPanelProps {
-    /** The base58 wallet to summarize; the panel mounts only for synced wallets. */
+    /** The base58 wallet to render. */
     address: string;
+
+    /**
+     * The wallet's ingestion progress, if known. The full detail view unlocks
+     * only once its backfill is `complete`; before then the panel shows the
+     * honest syncing notice instead of partial data.
+     */
+    progress?: IAccountIngestionProgress;
 }
 
 /**
- * Placeholder rendered while the summary loads — skeleton blocks shaped like the
- * panels they replace, so the reveal does not shift layout and the user never
- * sees an empty/zeroed state mistaken for "no activity".
+ * Skeleton shaped like the activity panels, shown while the summary loads. A
+ * loading state is appropriate here because this is a user-triggered, secondary
+ * surface (the Activity sub-tab), not the page's primary render.
  *
  * @returns A stack of skeleton placeholders.
  */
-function WalletDetailSkeleton() {
+function ActivitySkeleton() {
     return (
         <Stack gap="md">
-            <Skeleton style={{ width: '100%', height: '5rem' }} />
             <Skeleton style={{ width: '100%', height: '7rem' }} />
+            <Skeleton style={{ width: '100%', height: '10rem' }} />
             <Skeleton style={{ width: '100%', height: '16rem' }} />
         </Stack>
     );
 }
 
 /**
- * Render the full activity/behaviour detail view for one wallet.
+ * Honest "still syncing" notice for a wallet whose backfill has not completed.
+ * Presents the absolute records-saved count and the oldest point reached —
+ * monotonic, truthful signals — rather than a percentage the data cannot support.
+ *
+ * @param props - The wallet's ingestion progress.
+ * @returns The syncing notice section.
+ */
+function WalletSyncNotice({ progress }: { progress?: IAccountIngestionProgress }) {
+    const status = progress ? describeHistoryStatus(progress) : null;
+    return (
+        <WalletDetailSection
+            icon={<Hourglass size={16} aria-hidden style={{ color: 'var(--color-primary)' }} />}
+            title="Downloading history"
+        >
+            <Stack gap="sm">
+                <p className="text-muted">
+                    {status ? status.tooltip : 'This wallet’s transaction history is still downloading.'}
+                </p>
+                {progress && (
+                    <p className="text-muted">
+                        {formatCount(progress.rowsIngested)} records saved
+                        {progress.oldestTimestampReached && (
+                            <>
+                                {' '}· back to <ClientTime date={progress.oldestTimestampReached} format="date" />
+                            </>
+                        )}
+                        . Your portfolio, activity, and full transaction feed unlock here once the download completes.
+                    </p>
+                )}
+            </Stack>
+        </WalletDetailSection>
+    );
+}
+
+/**
+ * Render the single-wallet detail view.
  *
  * @param props - {@link IWalletDetailPanelProps}.
  * @returns The wallet detail panel.
  */
-export function WalletDetailPanel({ address }: IWalletDetailPanelProps) {
+export function WalletDetailPanel({ address, progress }: IWalletDetailPanelProps) {
+    const [tab, setTab] = useState<DetailTab>('overview');
     const [summary, setSummary] = useState<IWalletActivitySummary | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const [summaryLoading, setSummaryLoading] = useState(false);
+    const [summaryError, setSummaryError] = useState<string | null>(null);
 
+    const isComplete = progress ? describeHistoryStatus(progress).complete : false;
+
+    // Reset the cached activity summary and return to Overview whenever the wallet
+    // changes, so a switch never shows one wallet's activity under another.
     useEffect(() => {
+        setTab('overview');
+        setSummary(null);
+        setSummaryError(null);
+    }, [address]);
+
+    // Lazy-load the activity summary the first time the Activity tab is opened for
+    // this wallet. The guard on summary/summaryError stops it re-fetching once
+    // resolved, so switching tabs back and forth costs one request, not many.
+    useEffect(() => {
+        if (tab !== 'activity' || summary !== null || summaryError !== null) {
+            return;
+        }
         let active = true;
-        setLoading(true);
-        setError(null);
+        setSummaryLoading(true);
         fetchWalletSummary(address)
             .then((result) => {
                 if (active) {
@@ -74,42 +148,64 @@ export function WalletDetailPanel({ address }: IWalletDetailPanelProps) {
             })
             .catch((cause: unknown) => {
                 if (active) {
-                    setError(cause instanceof Error ? cause.message : 'Failed to load wallet activity.');
+                    setSummaryError(cause instanceof Error ? cause.message : 'Failed to load wallet activity.');
                 }
             })
             .finally(() => {
                 if (active) {
-                    setLoading(false);
+                    setSummaryLoading(false);
                 }
             });
         return () => {
             active = false;
         };
-    }, [address]);
+    }, [tab, address, summary, summaryError]);
+
+    // Not finished downloading: show the honest syncing notice, no sub-tabs.
+    if (!isComplete) {
+        return (
+            <div className={styles.detail}>
+                <WalletSyncNotice progress={progress} />
+            </div>
+        );
+    }
 
     return (
         <div className={styles.detail}>
             <Stack gap="md">
-                {/*
-                  * Valuation hero. Self-fetching and scoped to this wallet; it
-                  * loads its own portfolio summary (net worth, PnL, allocation,
-                  * balance-over-time) independently of the activity summary above.
-                  */}
-                <PortfolioPanel address={address} />
-                {error ? (
-                    <div className="alert">{error}</div>
-                ) : loading || !summary ? (
-                    <WalletDetailSkeleton />
-                ) : (
-                    <>
-                        <WalletActivityStats stats={summary.stats} />
-                        <WalletActivityCalendar calendar={summary.calendar} />
-                        <WalletResourcePanel resources={summary.resources} />
-                        <WalletFlowChart flow={summary.flow} />
-                        <WalletCounterparties counterparties={summary.counterparties} />
-                    </>
+                <div className={`segmented-control ${styles.detail_tabs}`} role="group" aria-label="Wallet detail sections">
+                    {DETAIL_TABS.map(({ id, label, icon: Icon }) => (
+                        <button
+                            key={id}
+                            type="button"
+                            aria-pressed={tab === id}
+                            className={tab === id ? 'is-active' : undefined}
+                            onClick={() => setTab(id)}
+                        >
+                            <Icon size={14} aria-hidden /> {label}
+                        </button>
+                    ))}
+                </div>
+
+                {tab === 'overview' && <PortfolioPanel address={address} />}
+
+                {tab === 'activity' && (
+                    summaryError ? (
+                        <div className="alert">{summaryError}</div>
+                    ) : summaryLoading || summary === null ? (
+                        <ActivitySkeleton />
+                    ) : (
+                        <>
+                            <WalletActivityStats stats={summary.stats} />
+                            <WalletActivityCalendar calendar={summary.calendar} />
+                            <WalletResourcePanel resources={summary.resources} />
+                            <WalletFlowChart flow={summary.flow} />
+                            <WalletCounterparties counterparties={summary.counterparties} />
+                        </>
+                    )
                 )}
-                {!error && <WalletTransactionFeed address={address} />}
+
+                {tab === 'transactions' && <WalletTransactionFeed address={address} />}
             </Stack>
         </div>
     );

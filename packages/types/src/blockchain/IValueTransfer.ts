@@ -14,8 +14,8 @@
  * a provider artifact: the internal-transaction hash a node computes in
  * `TransactionInfo` is the same value TronGrid surfaces as `internal_tx_id`, and a
  * log index is the same in any decoder. See `docs/system/system-domain-types.md`
- * for the admission rule and `docs/system/system-account-value-ledger.md` for the
- * ledger this type backs.
+ * for the admission rule; the account-history module README documents the
+ * `account_value_transfers` ledger this type backs.
  */
 
 /**

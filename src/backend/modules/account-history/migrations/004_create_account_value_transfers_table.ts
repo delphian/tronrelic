@@ -1,8 +1,8 @@
 /**
  * @fileoverview Migration: create the ClickHouse `account_value_transfers` table.
  *
- * The unifying value-movement ledger of the proposed account-history redesign (see
- * `docs/system/system-account-value-ledger.md`). Where `account_transactions` holds
+ * The unifying value-movement ledger for account history (documented in the module
+ * README, `src/backend/modules/account-history/README.md`). Where `account_transactions` holds
  * one row per top-level transaction, this holds one row per discrete VALUE leg —
  * native transfers, TVM internal transfers, and token transfers alike — so a
  * transaction that moves value more than once (a contract paying several
