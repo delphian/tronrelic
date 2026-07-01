@@ -269,7 +269,10 @@ export interface IBalanceSeriesPoint {
  * @param deltas - Signed daily TRX deltas (all transfers, including internal, since
  *   internal moves still change a single wallet's balance).
  * @param priceForDay - TRX USD price for a day, or null (gap → carry forward).
- * @param windowDays - Trailing days to emit, bounding the series length.
+ * @param windowDays - Trailing days to emit, bounding the series length, or
+ *   `null` for unbounded — the series then starts at the earliest known delta
+ *   instead of a fixed floor (an honest "as far back as this ledger reaches",
+ *   never a claim of the account's true genesis).
  * @returns Daily USD value points within the window, oldest first.
  */
 export function reconstructTrxBalanceSeries(
@@ -277,7 +280,7 @@ export function reconstructTrxBalanceSeries(
     anchorTrxQty: number,
     deltas: IDailyTrxDelta[],
     priceForDay: (day: string) => number | null,
-    windowDays: number
+    windowDays: number | null
 ): IBalanceSeriesPoint[] {
     const deltaByDay = new Map<string, number>();
     for (const delta of deltas) {
@@ -285,12 +288,16 @@ export function reconstructTrxBalanceSeries(
     }
 
     // Day range: from the earliest activity (or the window floor) to the anchor.
+    // Unbounded (windowDays === null) has no floor, so the range starts at the
+    // earliest known delta, or the anchor itself when there is no activity at all.
     const earliestActivity = deltas.reduce<string | null>(
         (min, d) => (!min || d.day < min ? d.day : min),
         null
     );
-    const windowFloor = shiftDay(anchorDay, -windowDays);
-    const startDay = !earliestActivity || earliestActivity > windowFloor ? earliestActivity ?? windowFloor : windowFloor;
+    const windowFloor = windowDays === null ? null : shiftDay(anchorDay, -windowDays);
+    const startDay = windowFloor === null
+        ? earliestActivity ?? anchorDay
+        : (!earliestActivity || earliestActivity > windowFloor ? earliestActivity ?? windowFloor : windowFloor);
 
     const days = enumerateDays(startDay, anchorDay);
     if (days.length === 0) {
@@ -303,7 +310,6 @@ export function reconstructTrxBalanceSeries(
 
     const points: IBalanceSeriesPoint[] = [];
     let lastPrice = 0;
-    const visibleFloor = shiftDay(anchorDay, -windowDays);
     for (let index = 0; index < days.length; index += 1) {
         const day = days[index];
         if (index > 0) {
@@ -313,9 +319,7 @@ export function reconstructTrxBalanceSeries(
         if (price !== null) {
             lastPrice = price;
         }
-        if (day >= visibleFloor) {
-            points.push({ day, valueUsd: Math.max(0, balance) * lastPrice });
-        }
+        points.push({ day, valueUsd: Math.max(0, balance) * lastPrice });
     }
     return points;
 }

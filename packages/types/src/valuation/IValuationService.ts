@@ -28,6 +28,13 @@ export type PortfolioScope = 'wallet' | 'user';
  * user's own wallets so they never book a phantom gain.
  */
 export interface IPortfolioQuery {
+    /**
+     * Better Auth id the query is computed for. Used to resolve any per-wallet
+     * admin override of the balance-over-time chart window (stored in
+     * `'user-settings'` under the `'valuation'` namespace) — never for
+     * authorization, which remains the caller's responsibility.
+     */
+    userId: string;
     /** Addresses in scope for this view (one for a zoom, all for the aggregate). */
     addresses: string[];
     /** The caller's full verified wallet set, for internal-transfer classification. */
@@ -116,6 +123,16 @@ export interface IPortfolioSummary {
      * known USD value, so the count proxy is the honest available measure.
      */
     pricedValueFraction: number;
+    /**
+     * False when account-history's ledger backfill has not finished for at least
+     * one address in scope (or has not started at all). The balance-over-time
+     * series back-solves from today's snapshot, so a delta missing purely
+     * because ingestion hasn't reached it yet — not because it didn't happen —
+     * still shifts the whole reconstructed curve; callers should caveat the
+     * chart rather than presenting it as settled. True when the underlying
+     * account-history service is unavailable (nothing to caveat against).
+     */
+    historyBackfillComplete: boolean;
 }
 
 /**

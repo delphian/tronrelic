@@ -16,6 +16,7 @@ import { ValuationService } from '../services/valuation.service.js';
 const WALLET_A = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 const WALLET_B = 'TKzxdSv2FZKQrEqkKVgp5DcwEXBEKMg2Ax';
 const EXTERNAL = 'TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7';
+const USER_ID = 'user-1';
 
 /** No-op logger. */
 function silentLogger(): ISystemLogService {
@@ -84,24 +85,25 @@ function trc10Leg(from: string, to: string, raw: number, day: string): IValueTra
 
 /**
  * Build a fake account-history service from per-address value ledgers and snapshots.
+ * The fake ignores `limit`/`offset` and returns the full array in one page — the
+ * service's own `readLedger` loop still exercises normally since a full page
+ * shorter than its page size ends pagination on the first call. Every requested
+ * address reports ingestion `status: 'complete'` unless listed in
+ * `incompleteAddresses`, so existing tests default to a fully-backfilled ledger.
  *
- * @param ledgers - Address → the value legs a windowed `getValueTransfers` returns.
+ * @param ledgers - Address → the complete value legs `getValueTransfers` returns.
  * @param balances - Address → liquid TRX (human units) in its latest snapshot.
- * @param fullLedgers - Address → the complete leg set a by-`txId` refetch can reach;
- *   defaults to `ledgers`. Diverging it from `ledgers` simulates a leg that fell
- *   outside the per-wallet read window but is still fetchable by hash.
+ * @param incompleteAddresses - Addresses whose backfill should report `'running'` instead of `'complete'`.
  * @returns A partial IAccountHistoryService sufficient for the valuation reads.
  */
 function fakeAccountHistory(
     ledgers: Record<string, IValueTransfer[]>,
     balances: Record<string, number>,
-    fullLedgers: Record<string, IValueTransfer[]> = ledgers
+    incompleteAddresses: string[] = []
 ) {
+    const incomplete = new Set(incompleteAddresses);
     return {
         getValueTransfers: vi.fn(async ({ address }: { address: string }) => ledgers[address] ?? []),
-        getValueTransfersByTxIds: vi.fn(async (address: string, txIds: string[]) =>
-            (fullLedgers[address] ?? []).filter((leg) => txIds.includes(leg.txId))
-        ),
         getLatestSnapshot: vi.fn(async (address: string) =>
             balances[address] === undefined
                 ? null
@@ -118,6 +120,13 @@ function fakeAccountHistory(
                       netUsed: 0,
                       tokenBalances: []
                   }
+        ),
+        getProgressFor: vi.fn(async (addresses: string[]) =>
+            addresses.map((address) => ({
+                address,
+                status: incomplete.has(address) ? 'running' : 'complete',
+                rowsIngested: 0
+            }))
         )
     };
 }
@@ -168,7 +177,7 @@ describe('ValuationService.getPortfolio', () => {
             fakePriceHistory({ 'TRX|2024-01-01': 0.1 }, 0.2)
         );
 
-        const summary = await service.getPortfolio({ addresses: [WALLET_A], ownedAddresses: [WALLET_A], scope: 'wallet' });
+        const summary = await service.getPortfolio({ userId: USER_ID, addresses: [WALLET_A], ownedAddresses: [WALLET_A], scope: 'wallet' });
 
         const trx = summary.holdings.find((holding) => holding.asset === 'TRX');
         expect(trx?.quantity).toBeCloseTo(100, 6);
@@ -195,7 +204,7 @@ describe('ValuationService.getPortfolio', () => {
             fakePriceHistory({ 'TRX|2024-01-01': 0.1 }, 0.2)
         );
 
-        const summary = await service.getPortfolio({ addresses: [WALLET_A], ownedAddresses: [WALLET_A], scope: 'wallet' });
+        const summary = await service.getPortfolio({ userId: USER_ID, addresses: [WALLET_A], ownedAddresses: [WALLET_A], scope: 'wallet' });
 
         const trx = summary.holdings.find((holding) => holding.asset === 'TRX');
         expect(trx?.costBasisUsd).toBeCloseTo(10, 6); // only 100 TRX @ $0.10 — TRC10 leg excluded
@@ -215,6 +224,7 @@ describe('ValuationService.getPortfolio', () => {
         );
 
         const summary = await service.getPortfolio({
+            userId: USER_ID,
             addresses: [WALLET_A, WALLET_B],
             ownedAddresses: [WALLET_A, WALLET_B],
             scope: 'user'
@@ -240,6 +250,7 @@ describe('ValuationService.getPortfolio', () => {
         );
 
         const summary = await service.getPortfolio({
+            userId: USER_ID,
             addresses: [WALLET_B],
             ownedAddresses: [WALLET_A, WALLET_B],
             scope: 'wallet'
@@ -252,46 +263,92 @@ describe('ValuationService.getPortfolio', () => {
         expect(summary.realizedPnlUsd).toBeCloseTo(0, 6);
     });
 
-    it('repairs an internal transfer whose receiving leg fell outside the read window', async () => {
-        // A buys 100 @ $0.10, sends 60 to B internally (01-02), then B sells 60
-        // externally (01-03) @ $0.20. B's windowed ledger has only the sale — the
-        // internal-in row was pushed past B's window. Without repair the sale
-        // realizes against ZERO basis ($12 phantom gain); the by-txId refetch
-        // restores B's $6 migrated basis so realized is the true $6.
-        const internalTx = trxLeg(WALLET_A, WALLET_B, 60, '2024-01-02');
-        const accountHistory = fakeAccountHistory(
-            {
-                [WALLET_A]: [trxLeg(EXTERNAL, WALLET_A, 100, '2024-01-01'), internalTx],
-                // B's window: only the external sale; the internal-in is missing.
-                [WALLET_B]: [trxLeg(WALLET_B, EXTERNAL, 60, '2024-01-03')]
-            },
-            { [WALLET_A]: 40, [WALLET_B]: 0 },
-            {
-                // Full reach for the by-txId refetch: B's internal-in row is fetchable.
-                [WALLET_A]: [internalTx],
-                [WALLET_B]: [internalTx]
-            }
-        );
+    it('clips the balance series to the default trailing year absent an admin override', async () => {
+        // The snapshot anchors at 2024-02-01; a deposit almost two years earlier is
+        // far outside the default 365-day window, so the series must not reach it.
         const service = buildService(
-            accountHistory,
-            fakePriceHistory({ 'TRX|2024-01-01': 0.1, 'TRX|2024-01-03': 0.2 }, 0.2)
+            fakeAccountHistory({ [WALLET_A]: [trxLeg(EXTERNAL, WALLET_A, 100, '2022-01-01')] }, { [WALLET_A]: 100 }),
+            fakePriceHistory({}, 0.2)
         );
 
-        const summary = await service.getPortfolio({
-            addresses: [WALLET_A, WALLET_B],
-            ownedAddresses: [WALLET_A, WALLET_B],
-            scope: 'user'
+        const summary = await service.getPortfolio({ userId: USER_ID, addresses: [WALLET_A], ownedAddresses: [WALLET_A], scope: 'wallet' });
+
+        expect(summary.balanceSeriesUsd[0]?.day).toBe('2023-02-01'); // trailing-year floor, not the 2022 deposit
+    });
+
+    it("widens the balance series to the full ledger when an admin sets a wallet's range to 'all'", async () => {
+        resetService();
+        const registry = createMockServiceRegistry({
+            'account-history': fakeAccountHistory({ [WALLET_A]: [trxLeg(EXTERNAL, WALLET_A, 100, '2022-01-01')] }, { [WALLET_A]: 100 }),
+            'price-history': fakePriceHistory({}, 0.2),
+            'user-settings': { getNamespace: vi.fn(async () => ({ [WALLET_A]: 'all' })) }
+        });
+        ValuationService.setDependencies({ serviceRegistry: registry, logger: silentLogger() });
+
+        const summary = await ValuationService.getInstance().getPortfolio({
+            userId: USER_ID,
+            addresses: [WALLET_A],
+            ownedAddresses: [WALLET_A],
+            scope: 'wallet'
         });
 
-        expect(accountHistory.getValueTransfersByTxIds).toHaveBeenCalled();
-        expect(summary.realizedPnlUsd).toBeCloseTo(6, 6); // proceeds 12 - migrated basis 6, not 12 - 0
+        expect(summary.balanceSeriesUsd[0]?.day).toBe('2022-01-01'); // the admin override reaches the true deposit day
+    });
+
+    it('flags historyBackfillComplete true when every in-scope address has finished backfill', async () => {
+        const service = buildService(
+            fakeAccountHistory({ [WALLET_A]: [trxLeg(EXTERNAL, WALLET_A, 100, '2024-01-01')] }, { [WALLET_A]: 100 }),
+            fakePriceHistory({ 'TRX|2024-01-01': 0.1 }, 0.2)
+        );
+
+        const summary = await service.getPortfolio({ userId: USER_ID, addresses: [WALLET_A], ownedAddresses: [WALLET_A], scope: 'wallet' });
+
+        expect(summary.historyBackfillComplete).toBe(true);
+    });
+
+    it('flags historyBackfillComplete false when an in-scope address is still backfilling', async () => {
+        const service = buildService(
+            fakeAccountHistory(
+                { [WALLET_A]: [trxLeg(EXTERNAL, WALLET_A, 100, '2024-01-01')] },
+                { [WALLET_A]: 100 },
+                [WALLET_A] // still 'running'
+            ),
+            fakePriceHistory({ 'TRX|2024-01-01': 0.1 }, 0.2)
+        );
+
+        const summary = await service.getPortfolio({ userId: USER_ID, addresses: [WALLET_A], ownedAddresses: [WALLET_A], scope: 'wallet' });
+
+        expect(summary.historyBackfillComplete).toBe(false);
+    });
+
+    it('flags historyBackfillComplete false when an in-scope address has no progress record at all', async () => {
+        // Never ticked yet (e.g. just linked) — absence must read as "not complete",
+        // not as "nothing to report".
+        resetService();
+        const registry = createMockServiceRegistry({
+            'account-history': {
+                ...fakeAccountHistory({ [WALLET_A]: [trxLeg(EXTERNAL, WALLET_A, 100, '2024-01-01')] }, { [WALLET_A]: 100 }),
+                getProgressFor: vi.fn(async () => [])
+            },
+            'price-history': fakePriceHistory({ 'TRX|2024-01-01': 0.1 }, 0.2)
+        });
+        ValuationService.setDependencies({ serviceRegistry: registry, logger: silentLogger() });
+
+        const summary = await ValuationService.getInstance().getPortfolio({
+            userId: USER_ID,
+            addresses: [WALLET_A],
+            ownedAddresses: [WALLET_A],
+            scope: 'wallet'
+        });
+
+        expect(summary.historyBackfillComplete).toBe(false);
     });
 
     it('returns a zeroed summary when the data services are unavailable', async () => {
         resetService();
         const registry = createMockServiceRegistry({});
         ValuationService.setDependencies({ serviceRegistry: registry, logger: silentLogger() });
-        const summary = await ValuationService.getInstance().getPortfolio({ addresses: [WALLET_A], ownedAddresses: [WALLET_A], scope: 'wallet' });
+        const summary = await ValuationService.getInstance().getPortfolio({ userId: USER_ID, addresses: [WALLET_A], ownedAddresses: [WALLET_A], scope: 'wallet' });
         expect(summary.netWorthUsd).toBe(0);
         expect(summary.holdings).toEqual([]);
     });

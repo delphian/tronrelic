@@ -10,9 +10,15 @@
  * colour-blind). Realized and unrealized PnL are labelled separately because
  * they mean different things (realized is taxable, unrealized is not). The
  * balance chart carries a 1M/3M/1Y/All range selector that filters the returned
- * trailing-year series client-side — an honest zoom over data actually present,
- * not a fabricated live range. Pure presentation: it receives a fully-computed
- * {@link IPortfolioSummary} and renders it identically at either scope.
+ * series client-side — an honest zoom over data actually present, not a
+ * fabricated live range. The series itself defaults to a trailing year and
+ * only reaches further back when an admin has widened that specific wallet to
+ * unbounded, so "All" is not always longer than "1Y" — it is whatever the
+ * backend actually returned. A warning banner appears under the chart when
+ * `summary.historyBackfillComplete` is false, since an in-progress ledger
+ * backfill can shift the reconstructed curve, not just shorten it. Pure
+ * presentation: it receives a fully-computed {@link IPortfolioSummary} and
+ * renders it identically at either scope.
  */
 
 import { useMemo, useState } from 'react';
@@ -38,9 +44,10 @@ interface IBalanceRange {
 }
 
 /**
- * Selectable ranges for the balance-over-time chart. The backend reconstructs a
- * trailing 365-day series, so these are honest client-side zooms over data
- * already present — never a claim of finer or live resolution.
+ * Selectable ranges for the balance-over-time chart. These are honest
+ * client-side zooms over whatever series the backend returned — a trailing
+ * year by default, or the wallet's full reconstructable history once an admin
+ * widens it — never a claim of finer or live resolution.
  */
 const BALANCE_RANGES: ReadonlyArray<IBalanceRange> = [
     { id: '1m', label: '1M', days: 30 },
@@ -314,6 +321,11 @@ export function PortfolioHero({ summary }: IPortfolioHeroProps) {
                     <p className="text-muted">
                         <Coins size={14} aria-hidden /> Balance over time currently reflects TRX holdings only — token balances are not yet included.
                     </p>
+                    {!summary.historyBackfillComplete && (
+                        <div className="alert alert--warning" role="alert">
+                            <Hourglass size={14} aria-hidden /> Historical data collection for this wallet is still in progress — the chart may be incomplete until it finishes.
+                        </div>
+                    )}
                 </Card>
 
                 {summary.unpricedAssets.length > 0 && (
