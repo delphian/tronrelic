@@ -28,8 +28,10 @@ interface IPortfolioPanelProps {
     /**
      * SSR-resolved aggregate summary, seeding the hero so it paints real content
      * with no loading flash. Only supplied for the aggregate scope; when present
-     * the mount fetch is skipped (the SSR value is `no-store`-fresh). Null when
-     * the SSR fetch failed, in which case the panel falls back to client fetch.
+     * the panel mirrors it instead of self-fetching (the seed is `no-store`-fresh
+     * on mount, and the parent refetches and passes a new object after a wallet
+     * mutation, which this panel picks up the same way). Null when the SSR fetch
+     * failed, in which case the panel falls back to client fetch.
      */
     initialSummary?: IPortfolioSummary | null;
 }
@@ -46,11 +48,13 @@ export function PortfolioPanel({ address, initialSummary }: IPortfolioPanelProps
 
     useEffect(() => {
         let active = true;
-        // Aggregate scope already seeded from SSR: render it immediately and skip
-        // the fetch — the SSR value was fetched `no-store` at page load, so a
-        // refetch would only duplicate the (compute-on-read) valuation and risk a
-        // skeleton flash the seed exists to prevent.
+        // Aggregate scope is seeded — and re-seeded — by the parent, which owns
+        // the summary and refetches it after a wallet-set change (link / unlink).
+        // Mirror whatever seed is current instead of self-fetching: the SSR seed
+        // paints with no skeleton flash, and a post-mutation reseed swaps the
+        // numbers in place without one either.
         if (!address && initialSummary) {
+            setSummary(initialSummary);
             return;
         }
         setSummary(null);

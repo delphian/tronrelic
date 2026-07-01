@@ -89,10 +89,15 @@ export function WalletTransactionFeed({ address }: IWalletTransactionFeedProps) 
     const [error, setError] = useState<string | null>(null);
 
     // Reset to the first page when the wallet changes so a switch never lands on
-    // an offset past the new wallet's history.
-    useEffect(() => {
+    // an offset past the new wallet's history. Done during render (not in an
+    // effect) to match the sibling detail panel's reset and stay self-contained:
+    // if this feed were ever retained across an address change, the fetch effect
+    // could not fire at the prior wallet's stale offset.
+    const [prevAddress, setPrevAddress] = useState(address);
+    if (address !== prevAddress) {
+        setPrevAddress(address);
         setOffset(0);
-    }, [address]);
+    }
 
     // Load the page whenever the offset (or wallet) changes.
     useEffect(() => {

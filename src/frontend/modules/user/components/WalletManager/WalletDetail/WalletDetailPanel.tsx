@@ -121,15 +121,21 @@ export function WalletDetailPanel({ address, progress }: IWalletDetailPanelProps
     const [summaryLoading, setSummaryLoading] = useState(false);
     const [summaryError, setSummaryError] = useState<string | null>(null);
 
-    const isComplete = progress ? describeHistoryStatus(progress).complete : false;
-
-    // Reset the cached activity summary and return to Overview whenever the wallet
-    // changes, so a switch never shows one wallet's activity under another.
-    useEffect(() => {
+    // Reset to Overview and drop the cached activity summary whenever the wallet
+    // changes, so a switch never shows one wallet's activity under another. Doing
+    // this during render (not in an effect) lands the reset before children render
+    // and before the lazy-fetch effect runs, so switching wallets while the
+    // Activity tab is open can neither flash the prior wallet's data nor fire a
+    // wasted request for the new address under the stale tab.
+    const [prevAddress, setPrevAddress] = useState(address);
+    if (address !== prevAddress) {
+        setPrevAddress(address);
         setTab('overview');
         setSummary(null);
         setSummaryError(null);
-    }, [address]);
+    }
+
+    const isComplete = progress ? describeHistoryStatus(progress).complete : false;
 
     // Lazy-load the activity summary the first time the Activity tab is opened for
     // this wallet. The guard on summary/summaryError stops it re-fetching once
@@ -173,12 +179,13 @@ export function WalletDetailPanel({ address, progress }: IWalletDetailPanelProps
     return (
         <div className={styles.detail}>
             <Stack gap="md">
-                <div className={`segmented-control ${styles.detail_tabs}`} role="group" aria-label="Wallet detail sections">
+                <div className={`segmented-control ${styles.detail_tabs}`} role="tablist" aria-label="Wallet detail sections">
                     {DETAIL_TABS.map(({ id, label, icon: Icon }) => (
                         <button
                             key={id}
                             type="button"
-                            aria-pressed={tab === id}
+                            role="tab"
+                            aria-selected={tab === id}
                             className={tab === id ? 'is-active' : undefined}
                             onClick={() => setTab(id)}
                         >
