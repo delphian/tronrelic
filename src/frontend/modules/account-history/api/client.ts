@@ -12,12 +12,50 @@
  * curation client's view-type convention.
  */
 
-import type { IAccountHistorySettings, AccountIngestionStatus } from '@/types';
+import type {
+    IAccountHistorySettings,
+    AccountIngestionStatus,
+    AccountHistoryTickKind,
+    AccountHistoryTickSkipReason,
+    IAccountHistorySourceFlags,
+    IAccountHistoryTickAccountOutcome
+} from '@/types';
 
 /** Base path for every account-history admin endpoint. */
 const BASE = '/api/admin/system/account-history';
 
-export type { IAccountHistorySettings, AccountIngestionStatus } from '@/types';
+export type {
+    IAccountHistorySettings,
+    AccountIngestionStatus,
+    AccountHistoryTickKind,
+    AccountHistoryTickSkipReason,
+    IAccountHistorySourceFlags,
+    IAccountHistorySourcePages,
+    IAccountHistoryTickAccountOutcome
+} from '@/types';
+
+/**
+ * One tick outcome as serialized over the wire (dates as ISO strings). The
+ * per-account entries carry no dates, so the published
+ * `IAccountHistoryTickAccountOutcome` shape is reused as-is.
+ */
+export interface IAccountHistoryTickOutcomeView {
+    kind: AccountHistoryTickKind;
+    startedAt: string;
+    finishedAt: string;
+    durationMs: number;
+    /** Present when the tick did no work; names why. */
+    skippedReason?: AccountHistoryTickSkipReason;
+    accounts: IAccountHistoryTickAccountOutcome[];
+    totals: {
+        accountsTouched: number;
+        providerCalls: number;
+        rowsWritten: number;
+        errors: number;
+    };
+    /** Setup-failure message when the tick itself aborted. */
+    error?: string;
+}
 
 /**
  * A tracked account as serialized over the wire (dates as ISO strings).
@@ -47,6 +85,10 @@ export interface IAccountIngestionProgressView {
     catchingUp?: boolean;
     /** UTC `YYYY-MM-DD` of the most recent balance snapshot; absent when never snapshotted. */
     lastSnapshotDay?: string;
+    /** Which of the three source walks (tx / trc20 / internal) have exhausted their history. */
+    sourcesComplete?: IAccountHistorySourceFlags;
+    /** Which source walks are currently mid-drain in forward sync. */
+    forwardDraining?: IAccountHistorySourceFlags;
     lastError?: string;
 }
 
@@ -76,6 +118,8 @@ export interface IAccountHistoryStatsView {
         /** Tracked accounts whose balance snapshot was captured today (UTC). */
         snapshottedTodayAccounts: number;
     };
+    /** Recent tick outcomes, newest first (bounded in-memory ring; resets on backend restart). */
+    recentTicks: IAccountHistoryTickOutcomeView[];
 }
 
 /**
@@ -208,24 +252,35 @@ export async function updateSettings(patch: Partial<IAccountHistorySettings>): P
 }
 
 /**
- * Trigger one manual backfill ingestion tick.
+ * Trigger one manual backfill ingestion tick. The backend runs the tick to
+ * completion before responding, so the returned outcome describes what the
+ * tick actually did — accounts touched, provider calls spent, rows written,
+ * per-account errors — instead of a bare "started".
  *
- * @returns Resolves when the tick has been requested.
+ * @returns The completed tick's outcome.
  */
-export async function runIngestion(): Promise<void> {
-    await parse(await fetch(`${BASE}/ingest/run`, { method: 'POST' }), 'run ingestion');
+export async function runIngestion(): Promise<IAccountHistoryTickOutcomeView> {
+    const body = await parse<{ started: boolean; outcome: IAccountHistoryTickOutcomeView }>(
+        await fetch(`${BASE}/ingest/run`, { method: 'POST' }),
+        'run ingestion'
+    );
+    return body.outcome;
 }
 
 /**
  * Trigger one manual forward-sync tick, refreshing completed accounts with
- * transactions that arrived after their backfill finished. The backend endpoint
- * has always existed; this surfaces it so an admin can force a freshness pass
- * without waiting for the `account-history:forward-sync` cron.
+ * transactions that arrived after their backfill finished. Like the backfill
+ * trigger, resolves with the completed tick's outcome so callers can report
+ * what the tick did.
  *
- * @returns Resolves when the tick has been requested.
+ * @returns The completed tick's outcome.
  */
-export async function runForwardSync(): Promise<void> {
-    await parse(await fetch(`${BASE}/ingest/forward/run`, { method: 'POST' }), 'run forward sync');
+export async function runForwardSync(): Promise<IAccountHistoryTickOutcomeView> {
+    const body = await parse<{ started: boolean; outcome: IAccountHistoryTickOutcomeView }>(
+        await fetch(`${BASE}/ingest/forward/run`, { method: 'POST' }),
+        'run forward sync'
+    );
+    return body.outcome;
 }
 
 /**

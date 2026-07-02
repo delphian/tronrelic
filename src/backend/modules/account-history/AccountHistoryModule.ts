@@ -108,8 +108,9 @@ const SUBMENU_NAMESPACE = 'account-history';
  */
 const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
     { label: 'Tracked Accounts', tab: 'accounts', icon: 'List', order: 0 },
-    { label: 'Ingestion Settings', tab: 'settings', icon: 'Settings', order: 1 },
-    { label: 'Schedules', tab: 'schedules', icon: 'CalendarClock', order: 2 }
+    { label: 'Tick Activity', tab: 'activity', icon: 'Activity', order: 1 },
+    { label: 'Ingestion Settings', tab: 'settings', icon: 'Settings', order: 2 },
+    { label: 'Schedules', tab: 'schedules', icon: 'CalendarClock', order: 3 }
 ];
 
 /**

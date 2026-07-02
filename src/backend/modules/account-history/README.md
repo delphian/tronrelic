@@ -67,7 +67,7 @@ Each of the first three sources has its own cursor; an account is marked `comple
 | `setAccountPaused(address, paused)` | Pause/resume one account, preserving its cursor |
 | `listTrackedAccounts()` | The tracked set, oldest first |
 | `getSettings()` / `updateSettings(patch)` | Read / merge pacing (`ingestionEnabled`, `pagesPerTick`, `accountsPerTick`) |
-| `getStats()` | Settings + per-account progress + rollups (admin page and live payload) |
+| `getStats()` | Settings + per-account progress + rollups + `recentTicks` telemetry (admin page and live payload) |
 | `getProgressFor(addresses)` | Progress for a specific address set (tracked subset only) — backs ownership-scoped surfaces like a user's profile |
 | `getTransactions({ address, limit?, offset? })` | Paged **activity** read from `account_transactions`, returning an `IAccountTransactionPage` (`{ transactions: IBlockTransaction[], total }`) — the top-level transaction record; the value read is `getValueTransfers` |
 | `getValueTransfers({ address, limit?, cursor? })` | Paged **value-ledger** read from `account_value_transfers`, returning `IValueTransfer[]` — the discrete value legs (native / internal / token) valuation and the money-in/out chart consume. Pages by a keyset `cursor` (the previous page's last leg), not `offset`: an offset window shifts under a concurrent forward-sync insert and can duplicate or skip legs at the boundary; the keyset compares the table's full physical sort tuple `(timestamp, tx_id, origin, leg_key, asset_id)` instead |
@@ -77,8 +77,8 @@ Each of the first three sources has its own cursor; an account is marked `comple
 | `getLatestSnapshot(address)` | Latest `IAccountBalanceSnapshot` (liquid/staked/unstaking TRX, withdrawable rewards, energy/bandwidth, per-token balances) — the valuation anchor and current-holdings source |
 | `getSnapshotSeries(address, fromDay, toDay)` | Scalar snapshot series over a UTC day range (token balances omitted) for balance-over-time calibration |
 | `runSnapshotTick()` | Capture a bounded slice of balance snapshots through the provider (scheduler + manual trigger) |
-| `runIngestionTick()` | Advance the backward backfill one bounded slice (scheduler + manual trigger) |
-| `runForwardSyncTick()` | Refresh completed accounts with transactions that arrived after backfill (scheduler + manual trigger) |
+| `runIngestionTick()` | Advance the backward backfill one bounded slice (scheduler + manual trigger); returns an `IAccountHistoryTickOutcome` |
+| `runForwardSyncTick()` | Refresh completed accounts with transactions that arrived after backfill (scheduler + manual trigger); returns an `IAccountHistoryTickOutcome` |
 
 Consume from a plugin via `context.services.watch('account-history', ...)`; from a module via constructor DI or the registry.
 
@@ -88,8 +88,8 @@ Consume from a plugin via `context.services.watch('account-history', ...)`; from
 |--------|------|---------|
 | GET | `/api/admin/system/account-history/stats` | Full stats snapshot |
 | GET/PATCH | `/api/admin/system/account-history/settings` | Read / update pacing |
-| POST | `/api/admin/system/account-history/ingest/run` | Manual backfill tick |
-| POST | `/api/admin/system/account-history/ingest/forward/run` | Manual forward-sync tick (refresh completed accounts) |
+| POST | `/api/admin/system/account-history/ingest/run` | Manual backfill tick; responds with the completed tick's outcome |
+| POST | `/api/admin/system/account-history/ingest/forward/run` | Manual forward-sync tick (refresh completed accounts); responds with the outcome |
 | GET/POST | `/api/admin/system/account-history/accounts` | List / add tracked accounts |
 | GET | `/api/admin/system/account-history/accounts/:address/transactions` | Paged history |
 | PATCH | `/api/admin/system/account-history/accounts/:address/paused` | Pause/resume |
@@ -127,6 +127,8 @@ The watermark advances only when a drain fully reaches known territory (a row at
 The poll never flips an account to `failed` — that would re-admit it to the backward backfill (which filters on `status !== 'complete'`) and, with cursors cleared at completion, trigger a full re-walk that double-counts; on error it keeps `complete`. TronGrid continuation fingerprints are short-lived, so a parked drain has two escape paths: an empty page on a resumed cursor's first fetch is treated as fingerprint expiry (the walk restarts once from the leading edge within the same tick), and an errored tick clears all continuation cursors rather than persisting them (the next tick restarts from the leading edge) — either way the frozen watermark plus ReplacingMergeTree idempotency makes the re-walk safe, and `forwardPendingNewest` is held so rows written before a failure still lift the watermark when a clean drain lands.
 
 A tick that writes new rows also clears `lastSnapshotDay`, marking the account snapshot-due: valuation's current holdings read only the latest balance snapshot, so without the nudge fresh activity would stay invisible in the portfolio overview until the next UTC-day sample.
+
+**Tick telemetry.** Every ingest and forward-sync tick returns and records an `IAccountHistoryTickOutcome`: per-account provider-call counts (page walks per source plus per-transaction token-event reads), pages fetched per source, rows written, and per-account errors, with tick-level rollups and a `skippedReason` on no-op ticks. The last `RECENT_TICKS_MAX` (20) outcomes live in a bounded in-memory ring surfaced as `getStats().recentTicks` and rendered on the page's **Tick Activity** tab — deliberately not persisted (telemetry, not history; resets on restart). The manual trigger endpoints respond with the outcome, so an operator sees what a forced tick did without diffing `/stats`. Per-account progress additionally projects `sourcesComplete` and `forwardDraining` (per-source booleans) so the admin can see *which* of the three walks is outstanding or mid-drain — the opaque cursor fingerprints stay internal.
 
 **Admin visibility.** Forward sync is legible on `/system/account-history` without reading Mongo. `newestTimestampSeen` is the per-account freshness watermark ("Newest tx" column); a `catchingUp` boolean (derived from a parked forward continuation cursor, never the raw fingerprint) tags a completed account still draining a backlog; `lastForwardRunAt` records the last forward refresh, distinct from the frozen backfill `lastRunAt`. `getStats().totals` rolls these into `catchingUpAccounts` and `oldestNewestTimestamp` (the freshness floor across completed accounts) for the page header. The `POST /ingest/forward/run` endpoint is wired to a "Run forward sync" button so an operator can force a refresh without waiting for the cron.
 

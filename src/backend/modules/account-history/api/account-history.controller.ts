@@ -139,12 +139,15 @@ export class AccountHistoryController {
     };
 
     /**
-     * POST /ingest/run — manually advance ingestion by one bounded tick.
+     * POST /ingest/run — manually advance ingestion by one bounded tick. The
+     * tick runs to completion before responding, so the response carries the
+     * full outcome (accounts touched, provider calls, rows, errors) instead of
+     * forcing the operator to diff `/stats` before and after.
      */
     runIngestion = async (_req: Request, res: Response): Promise<void> => {
         try {
-            await this.service.runIngestionTick();
-            res.status(202).json({ started: true });
+            const outcome = await this.service.runIngestionTick();
+            res.status(202).json({ started: true, outcome });
         } catch (error) {
             this.fail(res, 500, 'Failed to run ingestion tick', error);
         }
@@ -152,12 +155,13 @@ export class AccountHistoryController {
 
     /**
      * POST /ingest/forward/run — manually refresh completed accounts with
-     * transactions that landed after their backfill finished.
+     * transactions that landed after their backfill finished. Like the backfill
+     * trigger, responds with the completed tick's outcome.
      */
     runForwardSync = async (_req: Request, res: Response): Promise<void> => {
         try {
-            await this.service.runForwardSyncTick();
-            res.status(202).json({ started: true });
+            const outcome = await this.service.runForwardSyncTick();
+            res.status(202).json({ started: true, outcome });
         } catch (error) {
             this.fail(res, 500, 'Failed to run forward sync tick', error);
         }

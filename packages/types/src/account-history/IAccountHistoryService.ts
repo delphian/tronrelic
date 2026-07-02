@@ -47,6 +47,36 @@ export interface ITrackedAccount {
 }
 
 /**
+ * One boolean per ingestion source — the three provider walks (`tx` external
+ * transactions, `trc20` token transfers, `internal` TVM value moves) an
+ * account's history is assembled from. Shared by the per-source completion and
+ * forward-drain projections so the admin surface can say *which* walk is
+ * exhausted or still draining instead of only an aggregate.
+ */
+export interface IAccountHistorySourceFlags {
+    /** The external `/transactions` walk. */
+    tx: boolean;
+    /** The `/transactions/trc20` token-transfer walk. */
+    trc20: boolean;
+    /** The `/internal-transactions` TVM value-move walk. */
+    internal: boolean;
+}
+
+/**
+ * One page-count per ingestion source, for tick telemetry — how many provider
+ * pages a tick pulled from each walk, so an operator can see where the API
+ * budget actually went.
+ */
+export interface IAccountHistorySourcePages {
+    /** Pages fetched from the external `/transactions` walk. */
+    tx: number;
+    /** Pages fetched from the `/transactions/trc20` walk. */
+    trc20: number;
+    /** Pages fetched from the `/internal-transactions` walk. */
+    internal: number;
+}
+
+/**
  * Resumable backfill progress for one account.
  *
  * The cursor is TronGrid's opaque `fingerprint`; the timestamps describe how far
@@ -98,8 +128,100 @@ export interface IAccountIngestionProgress {
      * account on the admin page.
      */
     lastSnapshotDay?: string;
+    /**
+     * Which of the three source walks have exhausted their history. The
+     * aggregate `status` flips to `complete` only when all three are true, so
+     * during a long backfill this is the only way an operator can see *which*
+     * walk is still outstanding (e.g. a whale whose token history runs far
+     * deeper than its native history).
+     */
+    sourcesComplete?: IAccountHistorySourceFlags;
+    /**
+     * Which source walks are currently mid-drain in forward sync — the
+     * per-source detail behind the aggregate {@link catchingUp} boolean, so the
+     * operator can see which endpoint's backlog is larger than one tick. Derived
+     * from continuation-cursor presence; the opaque fingerprints stay internal.
+     */
+    forwardDraining?: IAccountHistorySourceFlags;
     /** Message from the most recent failed tick, cleared on the next success. */
     lastError?: string;
+}
+
+/**
+ * Which pass a tick outcome describes: the backward backfill (`ingest`) or the
+ * completed-account leading-edge refresh (`forward-sync`).
+ */
+export type AccountHistoryTickKind = 'ingest' | 'forward-sync';
+
+/**
+ * Why a tick did no work, when it didn't. `disabled` — the `ingestionEnabled`
+ * master switch is off; `unavailable` — ClickHouse or the history provider is
+ * absent; `overlapping` — another tick of the same kind was still running
+ * (cron and a manual trigger racing).
+ */
+export type AccountHistoryTickSkipReason = 'disabled' | 'unavailable' | 'overlapping';
+
+/**
+ * What one tick did to one account — the per-account line of a tick outcome.
+ * This is the call-level accountability the pacing dials need: every provider
+ * request the tick made on the account's behalf is counted here, so an operator
+ * can attribute TronGrid budget to specific accounts instead of inferring it
+ * from row deltas.
+ */
+export interface IAccountHistoryTickAccountOutcome {
+    /** Base58 account the tick advanced. */
+    address: string;
+    /**
+     * Total provider (TronGrid) requests issued for this account this tick —
+     * page walks across all three sources plus the per-transaction token-event
+     * reads that source token value legs.
+     */
+    providerCalls: number;
+    /** Pages fetched per source walk this tick. */
+    pages: IAccountHistorySourcePages;
+    /** Rows this tick added to the account's stored history (transactions + internal legs). */
+    rowsWritten: number;
+    /** The failure message when this account's slice errored; absent on success. */
+    error?: string;
+}
+
+/**
+ * The full outcome of one ingestion or forward-sync tick.
+ *
+ * Ticks previously returned nothing, so "what did that tick actually do" was
+ * answerable only by diffing `/stats` before and after. The outcome makes each
+ * tick self-describing: which accounts were touched, how many provider calls
+ * were spent, how many rows landed, and what failed. Returned by the manual
+ * trigger endpoints and retained in a bounded in-memory ring surfaced on
+ * {@link IAccountHistoryStats.recentTicks} — telemetry, not durable history; it
+ * resets on process restart.
+ */
+export interface IAccountHistoryTickOutcome {
+    /** Which pass ran. */
+    kind: AccountHistoryTickKind;
+    /** When the tick started. */
+    startedAt: Date;
+    /** When the tick finished (including a skip, which finishes immediately). */
+    finishedAt: Date;
+    /** Wall-clock tick duration in milliseconds. */
+    durationMs: number;
+    /** Present when the tick did no work; names why. */
+    skippedReason?: AccountHistoryTickSkipReason;
+    /** Per-account outcomes, in the order the tick processed them. */
+    accounts: IAccountHistoryTickAccountOutcome[];
+    /** Tick-level rollups for the activity table. */
+    totals: {
+        /** Accounts the tick selected and processed. */
+        accountsTouched: number;
+        /** Provider (TronGrid) requests issued across all accounts. */
+        providerCalls: number;
+        /** Rows written across all accounts. */
+        rowsWritten: number;
+        /** Accounts whose slice errored. */
+        errors: number;
+    };
+    /** The setup-failure message when the tick itself aborted; absent otherwise. */
+    error?: string;
 }
 
 /**
@@ -167,6 +289,13 @@ export interface IAccountHistoryStats {
          */
         snapshottedTodayAccounts: number;
     };
+    /**
+     * The most recent tick outcomes (ingest and forward-sync interleaved),
+     * newest first, from a bounded in-memory ring. Telemetry for the admin
+     * activity view — resets on process restart, so absence of history means
+     * "recently restarted", not "never ran".
+     */
+    recentTicks: IAccountHistoryTickOutcome[];
 }
 
 /**
@@ -669,8 +798,11 @@ export interface IAccountHistoryService {
      * pages each, write rows, and persist the advanced cursors. Invoked by the
      * scheduler job; also callable for a manual operator-triggered run. A no-op
      * when `ingestionEnabled` is false or no provider is available.
+     *
+     * @returns The tick outcome — accounts touched, provider calls spent, rows
+     *   written, and per-account errors — with `skippedReason` set on a no-op.
      */
-    runIngestionTick(): Promise<void>;
+    runIngestionTick(): Promise<IAccountHistoryTickOutcome>;
 
     /**
      * Refresh already-`complete` accounts with transactions that arrived after
@@ -681,6 +813,9 @@ export interface IAccountHistoryService {
      * leaving the account `complete`. Invoked by its own scheduler job; also
      * callable for a manual run. A no-op when `ingestionEnabled` is false or no
      * provider is available.
+     *
+     * @returns The tick outcome — accounts refreshed, provider calls spent, rows
+     *   appended, and per-account errors — with `skippedReason` set on a no-op.
      */
-    runForwardSyncTick(): Promise<void>;
+    runForwardSyncTick(): Promise<IAccountHistoryTickOutcome>;
 }

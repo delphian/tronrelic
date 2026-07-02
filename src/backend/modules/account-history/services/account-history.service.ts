@@ -20,6 +20,11 @@ import type {
     IAccountHistoryStats,
     IAccountHistoryAccountStats,
     IAccountIngestionProgress,
+    IAccountHistorySourcePages,
+    IAccountHistoryTickAccountOutcome,
+    IAccountHistoryTickOutcome,
+    AccountHistoryTickKind,
+    AccountHistoryTickSkipReason,
     IAccountTransactionPage,
     IAccountTransactionQuery,
     IValueTransferQuery,
@@ -100,6 +105,14 @@ const STATS_EVENT = 'account-history:stats';
 const MAX_TXID_READ = 2_000;
 
 /**
+ * How many tick outcomes the in-memory telemetry ring retains. Twenty covers
+ * roughly the last half hour of cron ticks (ingest every 2m interleaved with
+ * forward sync every 5m) — enough for an operator watching a backfill without
+ * growing an unbounded process-lifetime buffer.
+ */
+const RECENT_TICKS_MAX = 20;
+
+/**
  * The `account_transactions` columns the source-independent transaction read
  * ({@link AccountHistoryService.getTransactions}) projects into an
  * {@link IBlockTransaction}. Kept as a named constant so the projection and the
@@ -155,6 +168,20 @@ interface IIngestWalkState {
 }
 
 /**
+ * Mutable per-account provider-call counters threaded through one tick's walks
+ * and writes, so every TronGrid request — page fetches on all three sources plus
+ * the per-transaction token-event reads — is attributed to the account that
+ * spent it. Internal to the service; the aggregated shape is published on the
+ * tick outcome.
+ */
+interface ITickCounters {
+    /** Total provider requests issued for the account this tick. */
+    providerCalls: number;
+    /** Pages fetched per source walk this tick. */
+    pages: IAccountHistorySourcePages;
+}
+
+/**
  * Outcome of draining one endpoint's leading edge during forward sync, folded
  * into the shared per-tick state (pending watermark, written count, persisted
  * continuation) by the caller.
@@ -203,6 +230,14 @@ export class AccountHistoryService implements IAccountHistoryService {
 
     /** Guards against overlapping forward-sync ticks (independent of backfill). */
     private forwardTicking = false;
+
+    /**
+     * Bounded in-memory ring of recent tick outcomes, newest first — the
+     * telemetry behind `getStats().recentTicks`. Deliberately not persisted:
+     * it is operational visibility, not durable history, and resetting on
+     * restart is an acceptable trade for zero storage cost.
+     */
+    private recentTicks: IAccountHistoryTickOutcome[] = [];
 
     /**
      * @param deps - Injected collaborators; stored for the singleton's lifetime.
@@ -503,7 +538,10 @@ export class AccountHistoryService implements IAccountHistoryService {
                 catchingUpAccounts: accountStats.filter((a) => a.progress.catchingUp).length,
                 oldestNewestTimestamp,
                 snapshottedTodayAccounts: accountStats.filter((a) => a.progress.lastSnapshotDay === todayUtc).length
-            }
+            },
+            // A copy, not the live ring: the snapshot is serialized and cached by
+            // callers, and the ring mutates on every tick.
+            recentTicks: [...this.recentTicks]
         };
         return stats;
     }
@@ -962,45 +1000,114 @@ export class AccountHistoryService implements IAccountHistoryService {
     }
 
     /**
+     * Zeroed per-source page counters, one fresh object per account per tick so
+     * counter increments never leak across accounts.
+     *
+     * @returns A zeroed page-count record.
+     */
+    private static emptyPages(): IAccountHistorySourcePages {
+        return { tx: 0, trc20: 0, internal: 0 };
+    }
+
+    /**
+     * Assemble a tick outcome from the per-account results, stamping the end
+     * time and deriving the rollup totals so every exit path (completion, skip,
+     * setup failure) publishes the same self-describing shape.
+     *
+     * @param kind - Which pass ran.
+     * @param startedAt - When the tick started.
+     * @param accounts - Per-account outcomes gathered so far (empty on a skip).
+     * @param skippedReason - Why the tick did no work, when it didn't.
+     * @param error - The setup-failure message when the tick itself aborted.
+     * @returns The completed outcome.
+     */
+    private static buildTickOutcome(
+        kind: AccountHistoryTickKind,
+        startedAt: Date,
+        accounts: IAccountHistoryTickAccountOutcome[],
+        skippedReason?: AccountHistoryTickSkipReason,
+        error?: string
+    ): IAccountHistoryTickOutcome {
+        const finishedAt = new Date();
+        return {
+            kind,
+            startedAt,
+            finishedAt,
+            durationMs: finishedAt.getTime() - startedAt.getTime(),
+            skippedReason,
+            accounts,
+            totals: {
+                accountsTouched: accounts.length,
+                providerCalls: accounts.reduce((sum, a) => sum + a.providerCalls, 0),
+                rowsWritten: accounts.reduce((sum, a) => sum + a.rowsWritten, 0),
+                errors: accounts.filter((a) => a.error).length
+            },
+            error
+        };
+    }
+
+    /**
+     * Push a tick outcome onto the bounded telemetry ring (newest first) and
+     * hand it back, so every tick exit path records and returns in one step.
+     *
+     * @param outcome - The finished tick outcome.
+     * @returns The same outcome, for returning to the caller.
+     */
+    private recordTick(outcome: IAccountHistoryTickOutcome): IAccountHistoryTickOutcome {
+        this.recentTicks.unshift(outcome);
+        if (this.recentTicks.length > RECENT_TICKS_MAX) {
+            this.recentTicks.length = RECENT_TICKS_MAX;
+        }
+        return outcome;
+    }
+
+    /**
      * Advance ingestion by one bounded slice. Picks the least-recently-advanced
      * unpaused, not-complete accounts (up to `accountsPerTick`), pulls up to
      * `pagesPerTick` pages each, writes rows, and persists cursors. No-op when
      * disabled, when ClickHouse or the provider is absent, or when a tick is
      * already running.
+     *
+     * @returns The tick outcome (accounts touched, provider calls, rows,
+     *   per-account errors), recorded on the telemetry ring; `skippedReason`
+     *   names why a no-op tick did nothing.
      */
-    public async runIngestionTick(): Promise<void> {
+    public async runIngestionTick(): Promise<IAccountHistoryTickOutcome> {
+        const startedAt = new Date();
         if (this.ticking) {
             this.logger.debug('Account-history ingestion already running — skipping overlapping tick');
-            return;
+            return this.recordTick(AccountHistoryService.buildTickOutcome('ingest', startedAt, [], 'overlapping'));
         }
 
         // The whole tick body — settings read, account selection, and the
         // broadcast — runs inside one try so a setup failure (not just a
         // per-account fetch/write, which ingestAccount self-catches) is logged
         // with account-history context. It is rethrown so the scheduler still
-        // records the run as failed in its execution history.
+        // records the run as failed in its execution history; the outcome is
+        // recorded first so the admin activity view shows the aborted tick too.
         this.ticking = true;
+        const accounts: IAccountHistoryTickAccountOutcome[] = [];
         try {
             const settings = await this.getSettings();
             if (!settings.ingestionEnabled) {
                 this.logger.debug('Account-history ingestion disabled — tick is a no-op');
-                return;
+                return this.recordTick(AccountHistoryService.buildTickOutcome('ingest', startedAt, [], 'disabled'));
             }
             if (!this.clickhouse || !this.provider) {
                 this.logger.info('Account-history ingestion skipped — ClickHouse or provider unavailable');
-                return;
+                return this.recordTick(AccountHistoryService.buildTickOutcome('ingest', startedAt, [], 'unavailable'));
             }
 
             const candidates = await this.selectAccountsForTick(settings.accountsPerTick);
             for (const address of candidates) {
-                await this.ingestAccount(address, settings.pagesPerTick);
+                accounts.push(await this.ingestAccount(address, settings.pagesPerTick));
             }
             await this.broadcastStats();
+            return this.recordTick(AccountHistoryService.buildTickOutcome('ingest', startedAt, accounts));
         } catch (error) {
-            this.logger.error(
-                { error: error instanceof Error ? error.message : 'Unknown error' },
-                'Account-history ingestion tick failed'
-            );
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            this.logger.error({ error: message }, 'Account-history ingestion tick failed');
+            this.recordTick(AccountHistoryService.buildTickOutcome('ingest', startedAt, accounts, undefined, message));
             throw error;
         } finally {
             this.ticking = false;
@@ -1042,10 +1149,13 @@ export class AccountHistoryService implements IAccountHistoryService {
      *
      * @param address - Base58 account to ingest.
      * @param pages - Maximum pages to pull per endpoint this tick.
+     * @returns This account's tick outcome — provider calls and pages spent,
+     *   rows written this tick, and the failure message if the slice errored.
      */
-    private async ingestAccount(address: string, pages: number): Promise<void> {
+    private async ingestAccount(address: string, pages: number): Promise<IAccountHistoryTickAccountOutcome> {
         const progress = await this.ensureProgress(address);
         await this.patchProgress(address, { status: 'running', lastRunAt: new Date(), lastError: undefined });
+        const counters: ITickCounters = { providerCalls: 0, pages: AccountHistoryService.emptyPages() };
 
         const state: IIngestWalkState = {
             nativeCursor: progress.cursorFingerprint,
@@ -1061,13 +1171,13 @@ export class AccountHistoryService implements IAccountHistoryService {
 
         try {
             if (!state.nativeComplete) {
-                await this.walkSource(address, 'tx', pages, state);
+                await this.walkSource(address, 'tx', pages, state, counters);
             }
             if (!state.trc20Complete) {
-                await this.walkSource(address, 'trc20', pages, state);
+                await this.walkSource(address, 'trc20', pages, state, counters);
             }
             if (!state.internalComplete) {
-                await this.walkInternalSource(address, pages, state);
+                await this.walkInternalSource(address, pages, state, counters);
             }
 
             const done = state.nativeComplete && state.trc20Complete && state.internalComplete;
@@ -1086,6 +1196,12 @@ export class AccountHistoryService implements IAccountHistoryService {
             if (done) {
                 this.logger.info({ address, rowsIngested: state.rowsIngested }, 'Account-history backfill complete for account (all endpoints exhausted)');
             }
+            return {
+                address,
+                providerCalls: counters.providerCalls,
+                pages: counters.pages,
+                rowsWritten: state.rowsIngested - progress.rowsIngested
+            };
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
             this.logger.error({ address, error: message }, 'Account-history ingestion failed for account');
@@ -1102,6 +1218,13 @@ export class AccountHistoryService implements IAccountHistoryService {
                 oldestTimestampReached: state.oldest,
                 newestTimestampSeen: state.newest
             });
+            return {
+                address,
+                providerCalls: counters.providerCalls,
+                pages: counters.pages,
+                rowsWritten: state.rowsIngested - progress.rowsIngested,
+                error: message
+            };
         }
     }
 
@@ -1116,14 +1239,18 @@ export class AccountHistoryService implements IAccountHistoryService {
      * @param source - Which endpoint to walk (`'tx'` or `'trc20'`).
      * @param pages - Maximum pages to pull this tick.
      * @param state - Mutable per-tick walk state, updated in place.
+     * @param counters - Per-account tick counters; each page fetch and token-event
+     *   read is attributed here so the tick outcome accounts for every call.
      */
-    private async walkSource(address: string, source: AccountTxSource, pages: number, state: IIngestWalkState): Promise<void> {
+    private async walkSource(address: string, source: AccountTxSource, pages: number, state: IIngestWalkState, counters: ITickCounters): Promise<void> {
         let fingerprint = source === 'tx' ? state.nativeCursor : state.trc20Cursor;
 
         for (let page = 0; page < pages; page++) {
+            counters.providerCalls += 1;
+            counters.pages[source] += 1;
             const result = await this.provider!.fetchPage(address, { source, limit: PROVIDER_PAGE_LIMIT, fingerprint });
             if (result.transactions.length > 0) {
-                await this.writeTransactions(address, source, result.transactions);
+                await this.writeTransactions(address, source, result.transactions, counters);
                 state.rowsIngested += result.transactions.length;
                 for (const tx of result.transactions) {
                     if (!state.newest || tx.timestamp > state.newest) {
@@ -1165,11 +1292,15 @@ export class AccountHistoryService implements IAccountHistoryService {
      * @param address - Base58 account being ingested.
      * @param pages - Maximum pages to pull this tick.
      * @param state - Mutable per-tick walk state, updated in place.
+     * @param counters - Per-account tick counters; each page fetch is attributed
+     *   here so the tick outcome accounts for every call.
      */
-    private async walkInternalSource(address: string, pages: number, state: IIngestWalkState): Promise<void> {
+    private async walkInternalSource(address: string, pages: number, state: IIngestWalkState, counters: ITickCounters): Promise<void> {
         let fingerprint = state.internalCursor;
 
         for (let page = 0; page < pages; page++) {
+            counters.providerCalls += 1;
+            counters.pages.internal += 1;
             const result = await this.provider!.fetchInternalTransfersPage(address, { limit: PROVIDER_PAGE_LIMIT, fingerprint });
             if (result.transfers.length > 0) {
                 await this.writeValueTransfers(address, result.transfers);
@@ -1203,35 +1334,41 @@ export class AccountHistoryService implements IAccountHistoryService {
      * newer than the recorded watermark and appends them, leaving the account
      * `complete`. Bounded per tick like the backfill, and gated by the same
      * `ingestionEnabled` master switch.
+     *
+     * @returns The tick outcome (accounts refreshed, provider calls, rows,
+     *   per-account errors), recorded on the telemetry ring; `skippedReason`
+     *   names why a no-op tick did nothing.
      */
-    public async runForwardSyncTick(): Promise<void> {
+    public async runForwardSyncTick(): Promise<IAccountHistoryTickOutcome> {
+        const startedAt = new Date();
         if (this.forwardTicking) {
             this.logger.debug('Account-history forward sync already running — skipping overlapping tick');
-            return;
+            return this.recordTick(AccountHistoryService.buildTickOutcome('forward-sync', startedAt, [], 'overlapping'));
         }
 
         this.forwardTicking = true;
+        const accounts: IAccountHistoryTickAccountOutcome[] = [];
         try {
             const settings = await this.getSettings();
             if (!settings.ingestionEnabled) {
                 this.logger.debug('Account-history ingestion disabled — forward sync is a no-op');
-                return;
+                return this.recordTick(AccountHistoryService.buildTickOutcome('forward-sync', startedAt, [], 'disabled'));
             }
             if (!this.clickhouse || !this.provider) {
                 this.logger.info('Account-history forward sync skipped — ClickHouse or provider unavailable');
-                return;
+                return this.recordTick(AccountHistoryService.buildTickOutcome('forward-sync', startedAt, [], 'unavailable'));
             }
 
             const candidates = await this.selectCompletedAccountsForForward(settings.accountsPerTick);
             for (const address of candidates) {
-                await this.forwardSyncAccount(address, settings.pagesPerTick);
+                accounts.push(await this.forwardSyncAccount(address, settings.pagesPerTick));
             }
             await this.broadcastStats();
+            return this.recordTick(AccountHistoryService.buildTickOutcome('forward-sync', startedAt, accounts));
         } catch (error) {
-            this.logger.error(
-                { error: error instanceof Error ? error.message : 'Unknown error' },
-                'Account-history forward sync tick failed'
-            );
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            this.logger.error({ error: message }, 'Account-history forward sync tick failed');
+            this.recordTick(AccountHistoryService.buildTickOutcome('forward-sync', startedAt, accounts, undefined, message));
             throw error;
         } finally {
             this.forwardTicking = false;
@@ -1301,10 +1438,13 @@ export class AccountHistoryService implements IAccountHistoryService {
      *
      * @param address - Base58 completed account to refresh.
      * @param pages - Maximum newest pages to pull per endpoint this tick.
+     * @returns This account's tick outcome — provider calls and pages spent,
+     *   rows appended this tick, and the failure message if the refresh errored.
      */
-    private async forwardSyncAccount(address: string, pages: number): Promise<void> {
+    private async forwardSyncAccount(address: string, pages: number): Promise<IAccountHistoryTickAccountOutcome> {
         const progress = await this.ensureProgress(address);
         const threshold = progress.newestTimestampSeen;
+        const counters: ITickCounters = { providerCalls: 0, pages: AccountHistoryService.emptyPages() };
 
         // An account is mid-drain when either endpoint carries a continuation
         // cursor from a prior capped tick. While mid-drain the watermark is frozen
@@ -1356,10 +1496,12 @@ export class AccountHistoryService implements IAccountHistoryService {
                     threshold,
                     pages,
                     fetchPage: async (fingerprint) => {
+                        counters.providerCalls += 1;
+                        counters.pages[source] += 1;
                         const page = await this.provider!.fetchPage(address, { source, limit: PROVIDER_PAGE_LIMIT, fingerprint });
                         return { items: page.transactions, nextFingerprint: page.nextFingerprint };
                     },
-                    write: (fresh) => this.writeTransactions(address, source, fresh)
+                    write: (fresh) => this.writeTransactions(address, source, fresh, counters)
                 });
                 absorb(result);
                 if (isTx) {
@@ -1382,6 +1524,8 @@ export class AccountHistoryService implements IAccountHistoryService {
                     threshold,
                     pages,
                     fetchPage: async (fingerprint) => {
+                        counters.providerCalls += 1;
+                        counters.pages.internal += 1;
                         const page = await this.provider!.fetchInternalTransfersPage(address, { limit: PROVIDER_PAGE_LIMIT, fingerprint });
                         return { items: page.transfers, nextFingerprint: page.nextFingerprint };
                     },
@@ -1430,6 +1574,7 @@ export class AccountHistoryService implements IAccountHistoryService {
             if (written > 0) {
                 this.logger.info({ address, written }, 'Account-history forward sync appended new transactions to a completed account');
             }
+            return { address, providerCalls: counters.providerCalls, pages: counters.pages, rowsWritten: written };
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
             this.logger.error({ address, error: message }, 'Account-history forward sync failed for account');
@@ -1461,6 +1606,7 @@ export class AccountHistoryService implements IAccountHistoryService {
                 failurePatch.lastSnapshotDay = undefined;
             }
             await this.patchProgress(address, failurePatch);
+            return { address, providerCalls: counters.providerCalls, pages: counters.pages, rowsWritten: written, error: message };
         }
     }
 
@@ -1576,8 +1722,10 @@ export class AccountHistoryService implements IAccountHistoryService {
      * @param address - The tracked account these rows belong to.
      * @param source - Which endpoint produced them (part of the dedup key).
      * @param transactions - Normalized transactions to store.
+     * @param counters - Per-account tick counters, forwarded to the token-leg
+     *   sourcing so its per-transaction event reads are attributed to the tick.
      */
-    private async writeTransactions(address: string, source: AccountTxSource, transactions: IBlockTransaction[]): Promise<void> {
+    private async writeTransactions(address: string, source: AccountTxSource, transactions: IBlockTransaction[], counters?: ITickCounters): Promise<void> {
         const ingestedAt = formatClickHouseDateTime64Utc(new Date());
         const rows = transactions.map((tx) =>
             toAccountTransactionRow(address, tx, source, formatClickHouseDateTime64Utc(tx.timestamp), ingestedAt)
@@ -1606,7 +1754,7 @@ export class AccountHistoryService implements IAccountHistoryService {
         // account participates in (inbound and outbound alike) surfaces there, so
         // enriching here covers both directions without a fourth cursor.
         if (source === 'trc20') {
-            await this.writeTokenTransferLegs(address, transactions);
+            await this.writeTokenTransferLegs(address, transactions, counters);
         }
     }
 
@@ -1622,8 +1770,10 @@ export class AccountHistoryService implements IAccountHistoryService {
      *
      * @param address - The tracked account these legs belong to.
      * @param transactions - The trc20-source transactions of the current page.
+     * @param counters - Per-account tick counters; each per-transaction events
+     *   read is a provider call the tick outcome must account for.
      */
-    private async writeTokenTransferLegs(address: string, transactions: IBlockTransaction[]): Promise<void> {
+    private async writeTokenTransferLegs(address: string, transactions: IBlockTransaction[], counters?: ITickCounters): Promise<void> {
         const decimalsByAsset = new Map<string, number>();
         for (const tx of transactions) {
             const assetId = tx.contract?.address;
@@ -1635,6 +1785,9 @@ export class AccountHistoryService implements IAccountHistoryService {
         const txIds = [...new Set(transactions.map((tx) => tx.txId))];
         const legs: IValueTransfer[] = [];
         for (const txId of txIds) {
+            if (counters) {
+                counters.providerCalls += 1;
+            }
             const txLegs = await this.provider!.fetchTokenTransferLegs(address, txId);
             for (const leg of txLegs) {
                 const decimals = decimalsByAsset.get(leg.assetId);
@@ -1979,7 +2132,14 @@ export class AccountHistoryService implements IAccountHistoryService {
      */
     private static toProgress(address: string, doc: IAccountProgressDoc | undefined): IAccountIngestionProgress {
         if (!doc) {
-            return { address, status: 'queued', rowsIngested: 0, catchingUp: false };
+            return {
+                address,
+                status: 'queued',
+                rowsIngested: 0,
+                catchingUp: false,
+                sourcesComplete: { tx: false, trc20: false, internal: false },
+                forwardDraining: { tx: false, trc20: false, internal: false }
+            };
         }
         return {
             address,
@@ -2000,6 +2160,20 @@ export class AccountHistoryService implements IAccountHistoryService {
             catchingUp: Boolean(
                 doc.forwardTxCursor || doc.forwardTrc20Cursor || doc.forwardInternalCursor || doc.forwardPendingNewest
             ),
+            // Per-source detail behind the aggregates: which walks have exhausted
+            // (status flips to complete only when all three are true) and which
+            // are parked mid-drain in forward sync. Booleans only — the opaque
+            // fingerprints never leave the progress doc.
+            sourcesComplete: {
+                tx: Boolean(doc.nativeComplete),
+                trc20: Boolean(doc.trc20Complete),
+                internal: Boolean(doc.internalComplete)
+            },
+            forwardDraining: {
+                tx: Boolean(doc.forwardTxCursor),
+                trc20: Boolean(doc.forwardTrc20Cursor),
+                internal: Boolean(doc.forwardInternalCursor)
+            },
             lastSnapshotDay: doc.lastSnapshotDay,
             lastError: doc.lastError
         };
