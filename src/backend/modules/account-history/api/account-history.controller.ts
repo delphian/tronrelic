@@ -147,7 +147,7 @@ export class AccountHistoryController {
     runIngestion = async (_req: Request, res: Response): Promise<void> => {
         try {
             const outcome = await this.service.runIngestionTick();
-            res.status(202).json({ started: true, outcome });
+            res.status(200).json({ started: !outcome.skippedReason, outcome });
         } catch (error) {
             this.fail(res, 500, 'Failed to run ingestion tick', error);
         }
@@ -161,7 +161,7 @@ export class AccountHistoryController {
     runForwardSync = async (_req: Request, res: Response): Promise<void> => {
         try {
             const outcome = await this.service.runForwardSyncTick();
-            res.status(202).json({ started: true, outcome });
+            res.status(200).json({ started: !outcome.skippedReason, outcome });
         } catch (error) {
             this.fail(res, 500, 'Failed to run forward sync tick', error);
         }

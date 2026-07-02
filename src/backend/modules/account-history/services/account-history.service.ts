@@ -1102,8 +1102,9 @@ export class AccountHistoryService implements IAccountHistoryService {
             for (const address of candidates) {
                 accounts.push(await this.ingestAccount(address, settings.pagesPerTick));
             }
+            const outcome = this.recordTick(AccountHistoryService.buildTickOutcome('ingest', startedAt, accounts));
             await this.broadcastStats();
-            return this.recordTick(AccountHistoryService.buildTickOutcome('ingest', startedAt, accounts));
+            return outcome;
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
             this.logger.error({ error: message }, 'Account-history ingestion tick failed');
@@ -1363,8 +1364,9 @@ export class AccountHistoryService implements IAccountHistoryService {
             for (const address of candidates) {
                 accounts.push(await this.forwardSyncAccount(address, settings.pagesPerTick));
             }
+            const outcome = this.recordTick(AccountHistoryService.buildTickOutcome('forward-sync', startedAt, accounts));
             await this.broadcastStats();
-            return this.recordTick(AccountHistoryService.buildTickOutcome('forward-sync', startedAt, accounts));
+            return outcome;
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
             this.logger.error({ error: message }, 'Account-history forward sync tick failed');
