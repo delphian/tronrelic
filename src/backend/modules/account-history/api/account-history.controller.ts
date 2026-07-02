@@ -62,6 +62,20 @@ export class AccountHistoryController {
     };
 
     /**
+     * POST /accounts/:address/reset — delete all stored history for a tracked
+     * account and requeue it for a fresh backfill. Irreversible; the tracked
+     * record itself is kept.
+     */
+    resetAccountHistory = async (req: Request, res: Response): Promise<void> => {
+        try {
+            await this.service.resetAccountHistory(req.params.address);
+            res.status(204).end();
+        } catch (error) {
+            this.fail(res, 400, 'Failed to reset account history', error);
+        }
+    };
+
+    /**
      * PATCH /accounts/:address/paused — pause or resume one account. Body: `{ paused }`.
      */
     setAccountPaused = async (req: Request, res: Response): Promise<void> => {

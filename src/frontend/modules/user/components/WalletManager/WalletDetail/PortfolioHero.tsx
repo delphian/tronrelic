@@ -115,6 +115,21 @@ function formatTooltipDay(date: Date): string {
 }
 
 /**
+ * Resolve a human-friendly display name for an asset id (a TRC20 contract
+ * address): prefer the symbol the holdings table already carries for the same
+ * asset, falling back to the truncated contract address so an unknown token
+ * still reads as an address rather than an opaque blob.
+ *
+ * @param summary - The portfolio summary whose holdings carry symbols.
+ * @param asset - The asset id (contract address) to name.
+ * @returns The holding's symbol, or the truncated address.
+ */
+function assetDisplayName(summary: IPortfolioSummary, asset: string): string {
+    const symbol = summary.holdings.find((holding) => holding.asset === asset)?.symbol;
+    return symbol ?? truncateAddress(asset);
+}
+
+/**
  * Props for {@link PortfolioHero}.
  */
 interface IPortfolioHeroProps {
@@ -338,7 +353,7 @@ export function PortfolioHero({ summary }: IPortfolioHeroProps) {
                 {summary.unpricedAssets.length > 0 && (
                     <p className="text-muted">
                         {summary.unpricedAssets.length} held asset{summary.unpricedAssets.length === 1 ? '' : 's'} with no local price, excluded from USD totals
-                        {summary.unpricedAssets.length <= 3 ? ` (${summary.unpricedAssets.map(truncateAddress).join(', ')})` : ''}.
+                        {summary.unpricedAssets.length <= 3 ? ` (${summary.unpricedAssets.map((asset) => assetDisplayName(summary, asset)).join(', ')})` : ''}.
                     </p>
                 )}
             </Stack>

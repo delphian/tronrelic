@@ -312,6 +312,64 @@ export class AccountHistoryService implements IAccountHistoryService {
     }
 
     /**
+     * Delete all stored history for a tracked account and requeue it for a fresh
+     * backfill. Purges the account's rows from every ClickHouse table the module
+     * owns, then replaces the progress record with a zeroed `queued` one so the
+     * next ingestion tick starts the walk from scratch. The tracked-account
+     * record (label, pause brake) is kept.
+     *
+     * ClickHouse rows are deleted before the progress reset: if a table purge
+     * fails mid-way the cursors are untouched, the operator retries, and the
+     * remaining deletes re-run idempotently. Refused while a tick is running —
+     * a concurrent walk would re-persist its in-memory cursors after the reset
+     * and resume mid-history against an emptied table.
+     *
+     * The interpolated address is safe: it has passed {@link TRON_ADDRESS_PATTERN}
+     * (base58 charset only — no quotes or escapes), and `IClickHouseService.exec`
+     * carries no parameter binding for the lightweight DELETE statement.
+     *
+     * @param address - Base58 address whose history to reset; must be tracked.
+     */
+    public async resetAccountHistory(address: string): Promise<void> {
+        const normalized = String(address ?? '').trim();
+        if (!TRON_ADDRESS_PATTERN.test(normalized)) {
+            throw new Error('address must be a base58 TRON address (T...)');
+        }
+        const tracked = await this.database
+            .getCollection<ITrackedAccountDoc>(TRACKED_COLLECTION)
+            .findOne({ address: normalized });
+        if (!tracked) {
+            throw new Error(`account ${normalized} is not tracked`);
+        }
+        if (this.ticking || this.forwardTicking) {
+            throw new Error('an ingestion tick is currently running — retry once it finishes');
+        }
+
+        if (this.clickhouse) {
+            const tables = [TRANSACTIONS_TABLE, VALUE_TRANSFERS_TABLE, BALANCE_SNAPSHOTS_TABLE, TOKEN_BALANCES_TABLE];
+            for (const table of tables) {
+                await this.clickhouse.exec(`DELETE FROM ${table} WHERE account = '${normalized}'`);
+            }
+        }
+
+        // Replace (not patch) so every cursor, watermark, completion flag, and
+        // snapshot marker is dropped in one write; only the pause brake carries over.
+        await this.database.getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION).replaceOne(
+            { address: normalized },
+            {
+                address: normalized,
+                status: tracked.paused ? 'paused' : 'queued',
+                rowsIngested: 0,
+                paused: Boolean(tracked.paused)
+            },
+            { upsert: true }
+        );
+
+        this.logger.info({ address: normalized }, 'Account-history reset — stored history purged and backfill requeued');
+        await this.broadcastStats();
+    }
+
+    /**
      * Pause or resume one account without removing it; the cursor is preserved so
      * a resumed account continues from where it stopped.
      *

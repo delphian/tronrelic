@@ -486,6 +486,18 @@ export interface IAccountHistoryService {
     removeTrackedAccount(address: string): Promise<void>;
 
     /**
+     * Delete all stored history for a tracked account and requeue it for a fresh
+     * backfill. Purges the account's ClickHouse rows (transactions, value legs,
+     * balance snapshots, token balances) and replaces its progress record with a
+     * zeroed `queued` one, so the next ingestion tick re-walks the full history
+     * from scratch. The tracked-account record (label, pause state) is kept.
+     * Irreversible — the operator's remedy for a corrupted or partial backfill.
+     *
+     * @param address - Base58 address whose history to reset; must be tracked.
+     */
+    resetAccountHistory(address: string): Promise<void>;
+
+    /**
      * Pause or resume a single account's backfill without removing it. A paused
      * account keeps its cursor so it resumes exactly where it left off.
      *

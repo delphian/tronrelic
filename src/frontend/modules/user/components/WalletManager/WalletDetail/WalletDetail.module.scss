@@ -158,6 +158,23 @@
     font-size: var(--font-size-body-sm);
 }
 
+/* Resolved address label — a human name (exchange, pool), so regular type
+   rather than the monospace address treatment. */
+.address_label {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+}
+
+/* Feed data columns (amount / counterparty / when / status). On non-mobile
+   container widths keep them on one line so the expanding Action column
+   absorbs the slack and rows stay one line tall; narrow containers keep
+   wrapping to avoid forcing horizontal scroll. */
+@container wallet-detail (min-width: #{$breakpoint-mobile-lg}) {
+    .feed_cell {
+        white-space: nowrap;
+    }
+}
+
 .feed_footer {
     display: flex;
     align-items: center;

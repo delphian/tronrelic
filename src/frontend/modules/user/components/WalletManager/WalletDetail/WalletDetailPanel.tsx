@@ -19,7 +19,7 @@ import type { IAccountIngestionProgress, IWalletActivitySummary } from '@/types'
 import { Stack } from '../../../../../components/layout';
 import { Skeleton } from '../../../../../components/ui/Skeleton';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { fetchWalletSummary } from '../../../api/account-history-user.api';
+import { fetchWalletSummary, type IAddressLabelMap } from '../../../api/account-history-user.api';
 import { describeHistoryStatus } from '../../../lib/walletHistoryStatus';
 import { formatCount } from '../../../lib/walletFormat';
 import { WalletActivityStats } from './WalletActivityStats';
@@ -118,6 +118,7 @@ function WalletSyncNotice({ progress }: { progress?: IAccountIngestionProgress }
 export function WalletDetailPanel({ address, progress }: IWalletDetailPanelProps) {
     const [tab, setTab] = useState<DetailTab>('overview');
     const [summary, setSummary] = useState<IWalletActivitySummary | null>(null);
+    const [summaryLabels, setSummaryLabels] = useState<IAddressLabelMap>({});
     const [summaryLoading, setSummaryLoading] = useState(false);
     const [summaryError, setSummaryError] = useState<string | null>(null);
 
@@ -132,6 +133,7 @@ export function WalletDetailPanel({ address, progress }: IWalletDetailPanelProps
         setPrevAddress(address);
         setTab('overview');
         setSummary(null);
+        setSummaryLabels({});
         setSummaryError(null);
     }
 
@@ -149,7 +151,8 @@ export function WalletDetailPanel({ address, progress }: IWalletDetailPanelProps
         fetchWalletSummary(address)
             .then((result) => {
                 if (active) {
-                    setSummary(result);
+                    setSummary(result.summary);
+                    setSummaryLabels(result.labels);
                 }
             })
             .catch((cause: unknown) => {
@@ -207,7 +210,7 @@ export function WalletDetailPanel({ address, progress }: IWalletDetailPanelProps
                             <WalletActivityCalendar calendar={summary.calendar} />
                             <WalletResourcePanel resources={summary.resources} />
                             <WalletFlowChart flow={summary.flow} />
-                            <WalletCounterparties counterparties={summary.counterparties} />
+                            <WalletCounterparties counterparties={summary.counterparties} labels={summaryLabels} />
                         </>
                     )
                 )}

@@ -29,6 +29,7 @@ export function createAccountHistoryRouter(controller: AccountHistoryController)
     router.post('/accounts', controller.addTrackedAccount);
     router.get('/accounts/:address/transactions', controller.getTransactions);
     router.patch('/accounts/:address/paused', controller.setAccountPaused);
+    router.post('/accounts/:address/reset', controller.resetAccountHistory);
     router.delete('/accounts/:address', controller.removeTrackedAccount);
 
     return router;

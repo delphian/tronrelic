@@ -15,17 +15,15 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { ListOrdered } from 'lucide-react';
-import type { IAccountTransactionPage, IBlockTransaction } from '@/types';
+import type { IBlockTransaction } from '@/types';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Skeleton } from '../../../../../components/ui/Skeleton';
-import { Tooltip } from '../../../../../components/ui/Tooltip';
 import { Pagination } from '../../../../../components/ui/Pagination';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { WalletDetailSection } from './WalletDetailPrimitives';
-import { fetchWalletTransactions } from '../../../api/account-history-user.api';
+import { AddressDisplay, WalletDetailSection } from './WalletDetailPrimitives';
+import { fetchWalletTransactions, type IWalletTransactionPage } from '../../../api/account-history-user.api';
 import { decodeTronTransaction } from '../../../lib/decodeTronTransaction';
-import { truncateAddress } from '../../../lib/walletFormat';
 import styles from './WalletDetail.module.scss';
 
 /** Rows per page in the feed. */
@@ -83,7 +81,7 @@ function counterpartyOf(tx: IBlockTransaction, wallet: string, direction: string
  * @returns The transaction feed section.
  */
 export function WalletTransactionFeed({ address }: IWalletTransactionFeedProps) {
-    const [page, setPage] = useState<IAccountTransactionPage | null>(null);
+    const [page, setPage] = useState<IWalletTransactionPage | null>(null);
     const [offset, setOffset] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -131,6 +129,7 @@ export function WalletTransactionFeed({ address }: IWalletTransactionFeedProps) 
 
     const total = page?.total ?? 0;
     const transactions = page?.transactions ?? [];
+    const labels = page?.labels ?? {};
     const rangeStart = total === 0 ? 0 : offset + 1;
     const rangeEnd = Math.min(offset + PAGE_SIZE, total);
     const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
@@ -179,6 +178,7 @@ export function WalletTransactionFeed({ address }: IWalletTransactionFeedProps) 
                                         amount={decoded.amount || '—'}
                                         amountClass={amountClass}
                                         counterparty={counterparty}
+                                        counterpartyLabel={counterparty ? labels[counterparty] : undefined}
                                         timestamp={tx.timestamp}
                                         status={tx.status}
                                     />
@@ -217,6 +217,8 @@ interface ITransactionRowsProps {
     amountClass?: string;
     /** Counterparty base58 address, or empty. */
     counterparty: string;
+    /** Human-friendly label for the counterparty, when the label service knows it. */
+    counterpartyLabel?: string;
     /** Row timestamp. */
     timestamp: IBlockTransaction['timestamp'];
     /** Transaction status. */
@@ -231,7 +233,7 @@ interface ITransactionRowsProps {
  * @param props - {@link ITransactionRowsProps}.
  * @returns The (optional header +) transaction row.
  */
-function TransactionRows({ dayHeader, label, amount, amountClass, counterparty, timestamp, status }: ITransactionRowsProps) {
+function TransactionRows({ dayHeader, label, amount, amountClass, counterparty, counterpartyLabel, timestamp, status }: ITransactionRowsProps) {
     return (
         <>
             {dayHeader && (
@@ -243,16 +245,14 @@ function TransactionRows({ dayHeader, label, amount, amountClass, counterparty, 
             )}
             <Tr>
                 <Td>{label}</Td>
-                <Td className={amountClass}>{amount}</Td>
-                <Td>
+                <Td className={amountClass ? `${amountClass} ${styles.feed_cell}` : styles.feed_cell}>{amount}</Td>
+                <Td className={styles.feed_cell}>
                     {counterparty ? (
-                        <Tooltip content={counterparty}>
-                            <span className={styles.address}>{truncateAddress(counterparty)}</span>
-                        </Tooltip>
+                        <AddressDisplay address={counterparty} label={counterpartyLabel} />
                     ) : '—'}
                 </Td>
-                <Td muted><ClientTime date={timestamp} format="datetime" /></Td>
-                <Td>
+                <Td muted className={styles.feed_cell}><ClientTime date={timestamp} format="datetime" /></Td>
+                <Td className={styles.feed_cell}>
                     <Badge tone={status === 'SUCCESS' ? 'success' : 'danger'}>{status}</Badge>
                 </Td>
             </Tr>
