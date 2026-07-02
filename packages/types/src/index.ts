@@ -141,6 +141,8 @@ export type {
     IContentClassification,
     IContentSink,
     IContentSinkInfo,
+    IContentSinkRefusal,
+    IContentDeliveryContext,
     ContentDescriptorFeature,
     ContentSinkKind,
     ContentSinkDisposer,
