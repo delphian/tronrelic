@@ -311,10 +311,10 @@ export class TronGridAccountHistoryProvider implements IAccountHistoryProvider {
             stakedEnergySun,
             stakedBandwidthSun,
             unstakingSun,
-            energyLimit: resource.EnergyLimit ?? 0,
-            energyUsed: resource.EnergyUsage ?? 0,
-            netLimit: resource.NetLimit ?? 0,
-            netUsed: resource.NetUsage ?? 0,
+            energyLimit: resource?.EnergyLimit ?? 0,
+            energyUsed: resource?.EnergyUsage ?? 0,
+            netLimit: resource?.NetLimit ?? 0,
+            netUsed: resource?.NetUsage ?? 0,
             withdrawableRewardSun,
             tokenBalances
         };

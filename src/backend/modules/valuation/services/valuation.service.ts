@@ -144,6 +144,11 @@ export class ValuationService implements IValuationService {
         return date.toISOString().slice(0, 10);
     }
 
+    /** Signed day difference (`a` - `b`) between two UTC day strings. */
+    private static dayDelta(a: string, b: string): number {
+        return (Date.parse(`${a}T00:00:00.000Z`) - Date.parse(`${b}T00:00:00.000Z`)) / 86_400_000;
+    }
+
     /** Short display label for an unnamed token. */
     private static shortAsset(asset: string): string {
         return asset.length > 10 ? `${asset.slice(0, 5)}…${asset.slice(-4)}` : asset;
@@ -454,30 +459,68 @@ export class ValuationService implements IValuationService {
             })
         );
         // Depeg-aware stablecoin fallback: a known stablecoin's missing day may
-        // be pinned to $1, but only when its nearest real price does not dispute
-        // the peg. One lookback read per stable asset decides the pin for the
-        // whole computation; a genuine depeg (a nearby real price off by more
-        // than the tolerance) disables the pin so the March-2023-style event is
-        // never papered over. A stable with no real coverage at all pins freely —
-        // that is the exact gap the fallback exists to fill.
+        // be pinned to $1, but only when a real price *near that specific day*
+        // does not dispute the peg. Scoped per (asset, day) rather than per
+        // asset — a coin trading at par today says nothing about whether it
+        // held its peg on a historical gap day, so a past depeg (a
+        // March-2023-style event) is checked against prices near the day it
+        // happened, not against today's price. A day with no real coverage
+        // nearby pins freely — that is the exact gap the fallback exists to fill.
         const today = ValuationService.today();
         const stableAssetsInPlay = Array.from(new Set(
             [...assetsToPrice, ...tokenAssets].filter((asset) => STABLECOIN_ASSETS.has(asset))
         ));
+        const stableGapDays = new Map<string, Set<string>>();
+        for (const asset of stableAssetsInPlay) {
+            const days = externalMoves
+                .filter((m) => m.asset === asset && !priceMap.has(`${asset}|${m.day}`))
+                .map((m) => m.day);
+            if (days.length > 0) {
+                stableGapDays.set(asset, new Set(days));
+            }
+        }
         const stablePinAllowed = new Map<string, boolean>();
+        const resolveStablePin = async (asset: string, day: string): Promise<boolean> => {
+            const key = `${asset}|${day}`;
+            const cached = stablePinAllowed.get(key);
+            if (cached !== undefined) {
+                return cached;
+            }
+            try {
+                const windowEnd = ValuationService.shiftDay(day, CURRENT_PRICE_LOOKBACK);
+                const nearby = await priceHistory.getSeries(
+                    asset,
+                    ValuationService.shiftDay(day, -CURRENT_PRICE_LOOKBACK),
+                    windowEnd > today ? today : windowEnd
+                );
+                const nearest = nearby.reduce<{ day: string; priceUsd: number } | null>((best, point) => {
+                    if (!best) {
+                        return point;
+                    }
+                    return Math.abs(ValuationService.dayDelta(point.day, day)) < Math.abs(ValuationService.dayDelta(best.day, day))
+                        ? point
+                        : best;
+                }, null);
+                const allowed = nearest === null || Math.abs(nearest.priceUsd - 1) <= STABLECOIN_DEPEG_TOLERANCE;
+                stablePinAllowed.set(key, allowed);
+                return allowed;
+            } catch (error) {
+                this.logger.warn({ error, asset, day }, 'valuation: stablecoin depeg check failed; defaulting to allowing pin');
+                stablePinAllowed.set(key, true);
+                return true;
+            }
+        };
         await Promise.all(
-            stableAssetsInPlay.map(async (asset) => {
-                const recent = await priceHistory.getSeries(asset, ValuationService.shiftDay(today, -CURRENT_PRICE_LOOKBACK), today);
-                const latest = recent.length > 0 ? recent[recent.length - 1].priceUsd : null;
-                stablePinAllowed.set(asset, latest === null || Math.abs(latest - 1) <= STABLECOIN_DEPEG_TOLERANCE);
-            })
+            Array.from(stableGapDays.entries()).flatMap(([asset, days]) =>
+                Array.from(days).map((day) => resolveStablePin(asset, day))
+            )
         );
         const priceOnDay = (asset: string, day: string): number | null => {
             const stored = priceMap.get(`${asset}|${day}`);
             if (stored !== undefined) {
                 return stored;
             }
-            return STABLECOIN_ASSETS.has(asset) && stablePinAllowed.get(asset) !== false ? 1 : null;
+            return STABLECOIN_ASSETS.has(asset) && stablePinAllowed.get(`${asset}|${day}`) !== false ? 1 : null;
         };
 
         // The engine sees all moves (it migrates internal-transfer basis between
@@ -535,15 +578,22 @@ export class ValuationService implements IValuationService {
         const currentPrice = new Map<string, number | null>();
         await Promise.all(
             heldAssets.map(async (asset) => {
-                const series = await priceHistory.getSeries(asset, ValuationService.shiftDay(today, -CURRENT_PRICE_LOOKBACK), today);
-                if (series.length > 0) {
-                    currentPrice.set(asset, series[series.length - 1].priceUsd);
-                    return;
+                try {
+                    const series = await priceHistory.getSeries(asset, ValuationService.shiftDay(today, -CURRENT_PRICE_LOOKBACK), today);
+                    if (series.length > 0) {
+                        currentPrice.set(asset, series[series.length - 1].priceUsd);
+                        return;
+                    }
+                    // Same depeg-aware $1 pin as the historical lookup, scoped to
+                    // today: a held stablecoin with no local coverage values at
+                    // par instead of dropping out of USD totals entirely.
+                    const pinAllowed = STABLECOIN_ASSETS.has(asset) ? await resolveStablePin(asset, today) : false;
+                    currentPrice.set(asset, pinAllowed ? 1 : null);
+                } catch (error) {
+                    this.logger.warn({ error, asset }, 'valuation: current price fetch failed; treating as unpriced');
+                    const pinAllowed = STABLECOIN_ASSETS.has(asset) && stablePinAllowed.get(`${asset}|${today}`) !== false;
+                    currentPrice.set(asset, pinAllowed ? 1 : null);
                 }
-                // Same depeg-aware $1 pin as the historical lookup: a held
-                // stablecoin with no local coverage values at par instead of
-                // dropping out of USD totals entirely.
-                currentPrice.set(asset, STABLECOIN_ASSETS.has(asset) && stablePinAllowed.get(asset) !== false ? 1 : null);
             })
         );
 
