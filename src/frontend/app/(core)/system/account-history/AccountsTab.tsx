@@ -12,7 +12,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { Plus, Play, Trash2, Pause, PlayCircle, RefreshCw } from 'lucide-react';
+import { Plus, Play, Trash2, Pause, PlayCircle, RefreshCw, RotateCcw } from 'lucide-react';
 import { Stack } from '../../../../components/layout';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
@@ -23,6 +23,7 @@ import { useToast } from '../../../../components/ui/ToastProvider';
 import {
     addTrackedAccount,
     removeTrackedAccount,
+    resetAccountHistory,
     setAccountPaused,
     runIngestion,
     runForwardSync,
@@ -82,6 +83,31 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
             onChanged();
         } catch (err) {
             push({ tone: 'danger', title: 'Failed to remove account', description: err instanceof Error ? err.message : String(err) });
+        }
+    }, [onChanged, push]);
+
+    /**
+     * Purge all stored history for one account and requeue its backfill, after
+     * an explicit confirmation — the delete is irreversible and the re-ingest
+     * costs real TronGrid budget, so a stray click must not trigger it.
+     *
+     * @param addr - Base58 address whose history to reset.
+     */
+    const reset = useCallback(async (addr: string) => {
+        const confirmed = window.confirm(
+            `Delete ALL stored history for ${addr} and re-ingest from scratch?\n\n` +
+            'This removes the account\'s transactions, value ledger, and balance snapshots, ' +
+            'then requeues the backfill to start fresh. This cannot be undone.'
+        );
+        if (!confirmed) {
+            return;
+        }
+        try {
+            await resetAccountHistory(addr);
+            push({ tone: 'success', title: 'Account history reset', description: 'Stored history purged — backfill requeued from scratch.' });
+            onChanged();
+        } catch (err) {
+            push({ tone: 'danger', title: 'Failed to reset account history', description: err instanceof Error ? err.message : String(err) });
         }
     }, [onChanged, push]);
 
@@ -209,6 +235,14 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                                                 >
                                                     {account.paused ? <PlayCircle size={14} /> : <Pause size={14} />}
                                                     {account.paused ? 'Resume' : 'Pause'}
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="xs"
+                                                    onClick={() => { void reset(account.address); }}
+                                                    aria-label="Reset account history"
+                                                >
+                                                    <RotateCcw size={14} /> Reset
                                                 </Button>
                                                 <Button
                                                     variant="ghost"

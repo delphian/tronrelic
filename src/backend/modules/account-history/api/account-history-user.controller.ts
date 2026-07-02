@@ -19,6 +19,24 @@ import type {
 } from '@/types';
 
 /**
+ * Minimal structural view of the optional `'address-labels'` registry service
+ * (published by the trp-address-labels plugin). Core cannot depend on a
+ * plugin's types package — that would invert the dependency direction — so the
+ * controller declares only the one method it consumes and duck-types against
+ * whatever implementation the registry currently holds.
+ */
+interface IAddressLabelResolver {
+    /**
+     * Batch-resolve human-friendly labels for many addresses; unlabeled
+     * addresses are omitted from the returned map.
+     *
+     * @param addresses - TRON base58 addresses to resolve.
+     * @returns Map of address → resolved label record.
+     */
+    resolveMany(addresses: string[]): Promise<Map<string, { label: string }>>;
+}
+
+/**
  * Login-gated controller exposing a user's own wallet backfill progress.
  */
 export class AccountHistoryUserController {
@@ -100,7 +118,10 @@ export class AccountHistoryUserController {
             }
 
             const summary = await this.service.getWalletSummary(address);
-            res.json({ summary });
+            const labels = await this.resolveLabels(
+                summary.counterparties.map((counterparty) => counterparty.address)
+            );
+            res.json({ summary, labels });
         } catch (error) {
             this.logger.error({ error }, 'Failed to read wallet summary');
             res.status(500).json({
@@ -138,7 +159,10 @@ export class AccountHistoryUserController {
             const limit = Number.isNaN(rawLimit) ? undefined : rawLimit;
             const offset = Number.isNaN(rawOffset) ? undefined : rawOffset;
             const page = await this.service.getTransactions({ address, limit, offset });
-            res.json(page);
+            const labels = await this.resolveLabels(
+                page.transactions.flatMap((tx) => [tx.from?.address ?? '', tx.to?.address ?? ''])
+            );
+            res.json({ ...page, labels });
         } catch (error) {
             this.logger.error({ error }, 'Failed to read wallet transactions');
             res.status(500).json({
@@ -147,6 +171,35 @@ export class AccountHistoryUserController {
             });
         }
     };
+
+    /**
+     * Resolve human-friendly labels for a set of addresses through the optional
+     * `'address-labels'` registry service. The wallet detail surfaces render
+     * counterparty addresses; labeling known entities (exchanges, pools) makes
+     * the feed legible. Resolution is best-effort by design — the plugin may be
+     * disabled, so any failure degrades to an empty map and the UI falls back
+     * to truncated addresses rather than the request failing.
+     *
+     * @param addresses - Candidate base58 addresses (blanks and duplicates tolerated).
+     * @returns Plain address → label record, empty when unavailable.
+     */
+    private async resolveLabels(addresses: string[]): Promise<Record<string, string>> {
+        let labels: Record<string, string> = {};
+        try {
+            const resolver = this.serviceRegistry.get<IAddressLabelResolver>('address-labels');
+            const unique = [...new Set(addresses.filter((address) => address.length > 0))];
+            if (resolver && unique.length > 0) {
+                const resolved = await resolver.resolveMany(unique);
+                labels = Object.fromEntries(
+                    [...resolved.entries()].map(([address, entry]) => [address, entry.label])
+                );
+            }
+        } catch (error) {
+            this.logger.warn({ error }, 'Address label resolution failed; returning unlabeled addresses');
+            labels = {};
+        }
+        return labels;
+    }
 
     /**
      * Confirm the caller verified the given wallet. Resolves the identity

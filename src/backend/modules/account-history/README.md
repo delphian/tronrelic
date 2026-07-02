@@ -63,6 +63,7 @@ Each of the first three sources has its own cursor; an account is marked `comple
 |--------|---------|
 | `addTrackedAccount({ address, label? })` | Begin tracking (idempotent on address) |
 | `removeTrackedAccount(address)` | Stop tracking; retains stored history |
+| `resetAccountHistory(address)` | Purge all stored ClickHouse rows for one tracked account (transactions, value legs, snapshots) and requeue a fresh backfill; keeps the tracked record. Refused mid-tick |
 | `setAccountPaused(address, paused)` | Pause/resume one account, preserving its cursor |
 | `listTrackedAccounts()` | The tracked set, oldest first |
 | `getSettings()` / `updateSettings(patch)` | Read / merge pacing (`ingestionEnabled`, `pagesPerTick`, `accountsPerTick`) |
@@ -92,6 +93,7 @@ Consume from a plugin via `context.services.watch('account-history', ...)`; from
 | GET/POST | `/api/admin/system/account-history/accounts` | List / add tracked accounts |
 | GET | `/api/admin/system/account-history/accounts/:address/transactions` | Paged history |
 | PATCH | `/api/admin/system/account-history/accounts/:address/paused` | Pause/resume |
+| POST | `/api/admin/system/account-history/accounts/:address/reset` | Delete all stored history and requeue a fresh backfill |
 | DELETE | `/api/admin/system/account-history/accounts/:address` | Stop tracking |
 
 ## User Endpoints (`requireLogin`)

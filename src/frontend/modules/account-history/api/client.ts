@@ -157,6 +157,19 @@ export async function removeTrackedAccount(address: string): Promise<void> {
 }
 
 /**
+ * Delete all stored history for a tracked account and requeue it for a fresh
+ * backfill. Irreversible — the automated backfill re-walks the account's full
+ * history from scratch on subsequent ingestion ticks. The tracked record
+ * (label, pause state) is kept.
+ *
+ * @param address - Base58 address whose history to reset.
+ * @returns Resolves when the reset completes.
+ */
+export async function resetAccountHistory(address: string): Promise<void> {
+    await parse(await fetch(`${BASE}/accounts/${encodeURIComponent(address)}/reset`, { method: 'POST' }), 'reset account history');
+}
+
+/**
  * Pause or resume one account's backfill.
  *
  * @param address - Base58 address.

@@ -10,10 +10,8 @@
 import { Users } from 'lucide-react';
 import type { IWalletCounterparty } from '@/types';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
-import { Tooltip } from '../../../../../components/ui/Tooltip';
-import { WalletDetailSection } from './WalletDetailPrimitives';
-import { formatCount, formatTrxFromSun, truncateAddress } from '../../../lib/walletFormat';
-import styles from './WalletDetail.module.scss';
+import { AddressDisplay, WalletDetailSection } from './WalletDetailPrimitives';
+import { formatCount, formatTrxFromSun } from '../../../lib/walletFormat';
 
 /**
  * Props for {@link WalletCounterparties}.
@@ -21,6 +19,8 @@ import styles from './WalletDetail.module.scss';
 interface IWalletCounterpartiesProps {
     /** Top counterparties for the wallet, most-frequent first. */
     counterparties: IWalletCounterparty[];
+    /** Address → human-friendly label map resolved by the backend (misses omitted). */
+    labels?: Record<string, string>;
 }
 
 /**
@@ -29,7 +29,7 @@ interface IWalletCounterpartiesProps {
  * @param props - {@link IWalletCounterpartiesProps}.
  * @returns The counterparties section.
  */
-export function WalletCounterparties({ counterparties }: IWalletCounterpartiesProps) {
+export function WalletCounterparties({ counterparties, labels }: IWalletCounterpartiesProps) {
     return (
         <WalletDetailSection icon={<Users size={16} aria-hidden />} title="Top counterparties">
             {counterparties.length === 0 ? (
@@ -48,9 +48,10 @@ export function WalletCounterparties({ counterparties }: IWalletCounterpartiesPr
                         {counterparties.map((counterparty) => (
                             <Tr key={counterparty.address}>
                                 <Td>
-                                    <Tooltip content={counterparty.address}>
-                                        <span className={styles.address}>{truncateAddress(counterparty.address)}</span>
-                                    </Tooltip>
+                                    <AddressDisplay
+                                        address={counterparty.address}
+                                        label={labels?.[counterparty.address]}
+                                    />
                                 </Td>
                                 <Td>{formatCount(counterparty.txCount)}</Td>
                                 <Td muted>{formatTrxFromSun(counterparty.trxSentSun)}</Td>
