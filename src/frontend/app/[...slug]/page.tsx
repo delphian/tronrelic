@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
+import type { IPluginPageMetadata } from '@/types';
 import { cache } from 'react';
 import { Page } from '../../components/layout';
 import { PluginPageWithZones } from '../../components/PluginPageWithZones';
@@ -138,6 +139,49 @@ const resolveSlug = cache(async (slug: string): Promise<ISlugResolution> => {
 });
 
 /**
+ * Outcome of running a plugin page's optional serverMetadataFetcher.
+ *
+ * 'none' — the page declares no fetcher; static IPageConfig fields apply.
+ * 'error' — the fetcher threw (transient backend failure); static fields
+ * apply so a brief outage never serves 404s or blank metadata to crawlers.
+ * null — the fetcher authoritatively reported the resource absent; the route
+ * emits noindex metadata and the body renders a 404.
+ */
+type IMetadataFetchOutcome = IPluginPageMetadata | null | 'none' | 'error';
+
+/**
+ * Run the resolved plugin page's serverMetadataFetcher exactly once per request.
+ *
+ * Wildcard plugin pages (e.g. '/blog/*') compute their SEO metadata per URL,
+ * and both generateMetadata() and the page body need the outcome — the head
+ * for <title>/OG tags, the body to 404 when the fetcher says the resource
+ * doesn't exist. React.cache() shares the single invocation between them,
+ * mirroring how resolveSlug() is shared.
+ *
+ * @param slug - The requested URL path, passed to the fetcher as ctx.path
+ * @returns The fetched metadata, null (authoritative not-found), 'none'
+ *   (no fetcher declared), or 'error' (fetcher threw; use static fields)
+ */
+const runServerMetadataFetcher = cache(async (slug: string): Promise<IMetadataFetchOutcome> => {
+    const resolution = await resolveSlug(slug);
+    let outcome: IMetadataFetchOutcome = 'none';
+    if (resolution.type === 'plugin' && resolution.config.serverMetadataFetcher) {
+        try {
+            const { siteUrl } = await getServerConfig();
+            outcome = await resolution.config.serverMetadataFetcher({
+                apiBaseUrl: getServerSideApiUrlWithPath(),
+                siteUrl,
+                path: slug
+            });
+        } catch (error) {
+            console.error(`[catch-all] serverMetadataFetcher failed for ${slug}:`, error);
+            outcome = 'error';
+        }
+    }
+    return outcome;
+});
+
+/**
  * Generate metadata for the page.
  *
  * Uses resolveSlug() to determine which system owns the URL, then builds
@@ -194,38 +238,63 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
         const { siteUrl } = await getServerConfig();
         let metadata: Metadata;
 
+        // Dynamic metadata for wildcard pages: a serverMetadataFetcher
+        // computes per-URL SEO fields (a specific blog post's title, not the
+        // page config's generic one). An authoritative not-found emits
+        // noindex here and 404s in the body below; a thrown fetcher error
+        // ('error') falls back to the static fields so a transient backend
+        // outage never blanks metadata or serves 404s to crawlers.
+        const fetched = await runServerMetadataFetcher(slug);
+        if (fetched === null) {
+            return { robots: { index: false, follow: false } };
+        }
+        const dynamic: IPluginPageMetadata = fetched === 'none' || fetched === 'error' ? {} : fetched;
+
+        // Effective SEO fields: dynamic values win over static declarations,
+        // field by field, so a fetcher may override only the title while the
+        // static ogImage still applies.
+        const seo = {
+            title: dynamic.title ?? pluginPage.title,
+            description: dynamic.description ?? pluginPage.description,
+            keywords: dynamic.keywords ?? pluginPage.keywords,
+            ogImage: dynamic.ogImage ?? pluginPage.ogImage,
+            ogType: dynamic.ogType ?? pluginPage.ogType,
+            canonical: dynamic.canonical ?? pluginPage.canonical,
+            noindex: dynamic.noindex ?? pluginPage.noindex
+        };
+
         // When both title and description are present, emit the full SEO
         // bundle via the shared buildMetadata helper (canonical, openGraph,
         // twitter card, keywords). For pages that declare only a subset of
         // fields, fall through to a fields-only path that emits whatever
         // was actually declared. Either way, noindex is honored below
         // independently of which other fields are present.
-        if (pluginPage.title && pluginPage.description) {
+        if (seo.title && seo.description) {
             metadata = buildMetadata({
                 siteUrl,
-                title: pluginPage.title,
-                description: pluginPage.description,
+                title: seo.title,
+                description: seo.description,
                 path: slug,
-                image: pluginPage.ogImage,
-                type: pluginPage.ogType,
-                keywords: pluginPage.keywords,
-                canonical: pluginPage.canonical
+                image: seo.ogImage,
+                type: seo.ogType,
+                keywords: seo.keywords,
+                canonical: seo.canonical
             });
         } else {
             metadata = {};
-            if (pluginPage.title) {
-                metadata.title = pluginPage.title;
+            if (seo.title) {
+                metadata.title = seo.title;
             }
-            if (pluginPage.description) {
-                metadata.description = pluginPage.description;
+            if (seo.description) {
+                metadata.description = seo.description;
             }
-            if (pluginPage.keywords) {
-                metadata.keywords = pluginPage.keywords;
+            if (seo.keywords) {
+                metadata.keywords = seo.keywords;
             }
             // Resolve relative canonical paths against siteUrl so the rendered
             // <link rel="canonical"> and og:url are always absolute.
-            const canonicalUrl = pluginPage.canonical
-                ? absoluteUrl(siteUrl, pluginPage.canonical)
+            const canonicalUrl = seo.canonical
+                ? absoluteUrl(siteUrl, seo.canonical)
                 : undefined;
             if (canonicalUrl) {
                 metadata.alternates = { canonical: canonicalUrl };
@@ -233,19 +302,19 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
             // Build openGraph only when at least one OG-relevant field is
             // present, so we don't synthesize an empty default OG block for
             // pages that explicitly opted out by omitting all SEO fields.
-            if (pluginPage.title || pluginPage.description || pluginPage.ogImage || pluginPage.ogType) {
+            if (seo.title || seo.description || seo.ogImage || seo.ogType) {
                 metadata.openGraph = {
-                    type: pluginPage.ogType ?? 'website',
-                    ...(pluginPage.title ? { title: pluginPage.title } : {}),
-                    ...(pluginPage.description ? { description: pluginPage.description } : {}),
+                    type: seo.ogType ?? 'website',
+                    ...(seo.title ? { title: seo.title } : {}),
+                    ...(seo.description ? { description: seo.description } : {}),
                     ...(canonicalUrl ? { url: canonicalUrl } : {}),
-                    ...(pluginPage.ogImage
+                    ...(seo.ogImage
                         ? {
                             images: [{
-                                url: pluginPage.ogImage,
+                                url: seo.ogImage,
                                 width: 1200,
                                 height: 630,
-                                alt: pluginPage.title ?? 'TronRelic'
+                                alt: seo.title ?? 'TronRelic'
                             }]
                         }
                         : {})
@@ -256,7 +325,7 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
         // noindex applies independently of which other fields are present —
         // admin pages frequently set noindex without bothering to populate
         // crawler-friendly title/description copy.
-        if (pluginPage.noindex) {
+        if (seo.noindex) {
             metadata.robots = { index: false, follow: false };
         }
 
@@ -363,7 +432,24 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
     }
 
     const pluginPage = resolution.config;
-    const pluginStructuredData = pluginPage.structuredData ?? null;
+
+    // Honor the serverMetadataFetcher's not-found verdict in the body too:
+    // generateMetadata already emitted noindex for this case, and rendering
+    // the component anyway would show a broken page at a URL crawlers were
+    // just told not to index. A fetcher error ('error') renders normally —
+    // the component's own data fetch decides what to show.
+    const fetchedMetadata = await runServerMetadataFetcher(slug);
+    if (fetchedMetadata === null) {
+        notFound();
+    }
+
+    // Dynamic structured data (per-URL, e.g. a BlogPosting for one post)
+    // beats the static page-config declaration when both exist.
+    const dynamicStructuredData =
+        fetchedMetadata !== 'none' && fetchedMetadata !== 'error'
+            ? fetchedMetadata.structuredData ?? null
+            : null;
+    const pluginStructuredData = dynamicStructuredData ?? pluginPage.structuredData ?? null;
 
     // If the plugin declares a serverDataFetcher, run it server-side and pass
     // the result to the plugin component as `initialData`. This is the SSR +
@@ -387,7 +473,8 @@ export default async function UnifiedPage({ params }: { params: Promise<IPagePar
             const { siteUrl } = await getServerConfig();
             const raw = await pluginPage.serverDataFetcher({
                 apiBaseUrl: getServerSideApiUrlWithPath(),
-                siteUrl
+                siteUrl,
+                path: slug
             });
             initialData = raw === undefined ? undefined : JSON.parse(JSON.stringify(raw));
         } catch (error) {
