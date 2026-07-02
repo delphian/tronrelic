@@ -45,6 +45,8 @@ export interface IAccountIngestionProgressView {
     lastForwardRunAt?: string;
     /** True when a completed account is mid-drain in forward sync (catching up). */
     catchingUp?: boolean;
+    /** UTC `YYYY-MM-DD` of the most recent balance snapshot; absent when never snapshotted. */
+    lastSnapshotDay?: string;
     lastError?: string;
 }
 
@@ -71,12 +73,8 @@ export interface IAccountHistoryStatsView {
         catchingUpAccounts: number;
         /** Stalest freshness watermark across completed accounts (ISO string). */
         oldestNewestTimestamp?: string;
-        /**
-         * Completed accounts that still owe value-transfer ledger backfill. Counts
-         * down as the `account-history:ledger-backfill` job drains the legacy
-         * population; `0` means the one-time ledger backfill is done.
-         */
-        legacyBackfillPending: number;
+        /** Tracked accounts whose balance snapshot was captured today (UTC). */
+        snapshottedTodayAccounts: number;
     };
 }
 
@@ -215,19 +213,6 @@ export async function runIngestion(): Promise<void> {
  */
 export async function runForwardSync(): Promise<void> {
     await parse(await fetch(`${BASE}/ingest/forward/run`, { method: 'POST' }), 'run forward sync');
-}
-
-/**
- * Trigger one manual value-transfer ledger backfill tick. Populates internal and
- * token legs for accounts that completed their backfill before value legs were
- * dual-written; a one-time, self-quiescing drain. Surfaces the cron-driven
- * `account-history:ledger-backfill` job so an admin can force progress without
- * waiting for it.
- *
- * @returns Resolves when the tick has been requested.
- */
-export async function runLedgerBackfill(): Promise<void> {
-    await parse(await fetch(`${BASE}/ingest/backfill-ledger/run`, { method: 'POST' }), 'run ledger backfill');
 }
 
 /**

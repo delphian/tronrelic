@@ -34,6 +34,7 @@ import type {
     IBlockTransaction,
     IValueTransfer,
     IAccountBalanceSnapshot,
+    ITokenMetadata,
     IClickHouseService,
     IDatabaseService,
     ISystemLogService,
@@ -99,15 +100,6 @@ const STATS_EVENT = 'account-history:stats';
 const MAX_TXID_READ = 2_000;
 
 /**
- * Stored `trc20` transactions the ledger-backfill token sweep visits per account
- * per tick. Each visited transaction costs one provider events call (through the
- * shared TronGrid rate limiter), so this caps the per-account backfill burst while
- * the keyset cursor resumes the remainder on the next tick. One-time work that
- * self-quiesces once the legacy population is swept.
- */
-const LEDGER_BACKFILL_TOKEN_TX_PER_TICK = 50;
-
-/**
  * The `account_transactions` columns the source-independent transaction read
  * ({@link AccountHistoryService.getTransactions}) projects into an
  * {@link IBlockTransaction}. Kept as a named constant so the projection and the
@@ -163,6 +155,20 @@ interface IIngestWalkState {
 }
 
 /**
+ * Outcome of draining one endpoint's leading edge during forward sync, folded
+ * into the shared per-tick state (pending watermark, written count, persisted
+ * continuation) by the caller.
+ */
+interface IForwardDrainResult {
+    /** Continuation fingerprint to persist; undefined when the drain completed. */
+    continuation: string | undefined;
+    /** Newest row timestamp seen this drain, lifting the pending watermark. */
+    newest: Date | undefined;
+    /** Rows written this drain. */
+    written: number;
+}
+
+/**
  * Dependencies injected once at bootstrap. ClickHouse and the provider are
  * nullable because a deployment may lack ClickHouse, and the provider seam may
  * be unconfigured — either way ingestion no-ops rather than throwing.
@@ -197,9 +203,6 @@ export class AccountHistoryService implements IAccountHistoryService {
 
     /** Guards against overlapping forward-sync ticks (independent of backfill). */
     private forwardTicking = false;
-
-    /** Guards against overlapping ledger-backfill ticks (Stage-3 ledger population). */
-    private ledgerBackfillTicking = false;
 
     /**
      * @param deps - Injected collaborators; stored for the singleton's lifetime.
@@ -264,11 +267,6 @@ export class AccountHistoryService implements IAccountHistoryService {
         await this.database.createIndex(PROGRESS_COLLECTION, { status: 1, lastForwardRunAt: 1, paused: 1 });
         // Snapshot: sort lastSnapshotDay (also the dueness range); range paused.
         await this.database.createIndex(PROGRESS_COLLECTION, { lastSnapshotDay: 1, paused: 1 });
-        // Ledger backfill: equality status='complete'; sort lastLedgerBackfillRunAt;
-        // range paused. The selector's `$or` over the two completion flags cannot be
-        // index-served, but this prefix serves the equality + sort so the stalest
-        // legacy-complete account is found without a blocking sort.
-        await this.database.createIndex(PROGRESS_COLLECTION, { status: 1, lastLedgerBackfillRunAt: 1, paused: 1 });
     }
 
     /**
@@ -435,15 +433,6 @@ export class AccountHistoryService implements IAccountHistoryService {
             ? new Date(completeWatermarks.reduce((min, t) => Math.min(min, t), Infinity))
             : undefined;
 
-        // Legacy ledger-backfill remaining: completed accounts that still owe an
-        // internal drain or a token sweep. Mirrors selectAccountsForLedgerBackfill's
-        // predicate but, unlike the selector, does NOT exclude paused accounts — the
-        // count is an honest "work remaining" signal, so a paused owing account keeps
-        // it non-zero rather than letting it read 0 while legs are still missing.
-        const legacyBackfillPending = progressDocs.filter(
-            (doc) => doc.status === 'complete' && (doc.internalComplete !== true || doc.tokenLegsBackfillComplete !== true)
-        ).length;
-
         const stats: IAccountHistoryStats = {
             settings,
             accounts: accountStats,
@@ -454,7 +443,9 @@ export class AccountHistoryService implements IAccountHistoryService {
                 failedAccounts: accountStats.filter((a) => a.progress.status === 'failed').length,
                 catchingUpAccounts: accountStats.filter((a) => a.progress.catchingUp).length,
                 oldestNewestTimestamp,
-                legacyBackfillPending
+                snapshottedTodayAccounts: accountStats.filter(
+                    (a) => a.progress.lastSnapshotDay === new Date().toISOString().slice(0, 10)
+                ).length
             }
         };
         return stats;
@@ -1031,12 +1022,6 @@ export class AccountHistoryService implements IAccountHistoryService {
                 nativeComplete: state.nativeComplete,
                 trc20Complete: state.trc20Complete,
                 internalComplete: state.internalComplete,
-                // An account that finishes its backfill under current code already
-                // had its token legs written by the trc20 walk (events-sourced,
-                // real log_index), so it never needs the Stage-3 token sweep. Marking
-                // it here is what keeps the ledger-backfill selector targeting only
-                // the legacy population (completed before token dual-write, flag absent).
-                tokenLegsBackfillComplete: done ? true : undefined,
                 rowsIngested: state.rowsIngested,
                 oldestTimestampReached: state.oldest,
                 newestTimestampSeen: state.newest
@@ -1281,115 +1266,72 @@ export class AccountHistoryService implements IAccountHistoryService {
         let nextInternalCursor = progress.forwardInternalCursor;
         let written = 0;
 
+        /**
+         * Fold one endpoint's drain result into the shared tick state: accumulate
+         * the written count and lift the pending watermark to the newest row seen.
+         *
+         * @param result - The drain outcome for one endpoint.
+         */
+        const absorb = (result: IForwardDrainResult): void => {
+            written += result.written;
+            if (result.newest && (!pendingNewest || result.newest > pendingNewest)) {
+                pendingNewest = result.newest;
+            }
+        };
+
         try {
             for (const source of ['tx', 'trc20'] as AccountTxSource[]) {
                 const isTx = source === 'tx';
                 const endpointCursor = isTx ? progress.forwardTxCursor : progress.forwardTrc20Cursor;
-                const endpointDraining = endpointCursor !== undefined;
 
                 // Mid-drain: leave a non-draining endpoint untouched so its fresh
                 // arrivals cannot push the shared pending watermark past rows the
                 // still-draining endpoint has not fetched. They are picked up on the
                 // next clean cycle, once the drain completes.
-                if (midDrain && !endpointDraining) {
+                if (midDrain && endpointCursor === undefined) {
                     continue;
                 }
 
-                let fingerprint: string | undefined = endpointCursor;
-                let drainComplete = false;
-
-                for (let page = 0; page < pages; page++) {
-                    const result = await this.provider!.fetchPage(address, { source, limit: PROVIDER_PAGE_LIMIT, fingerprint });
-                    if (result.transactions.length === 0) {
-                        // Provider exhausted the leading edge — nothing more to drain.
-                        drainComplete = true;
-                        break;
-                    }
-
-                    const fresh = threshold
-                        ? result.transactions.filter((tx) => tx.timestamp > threshold)
-                        : result.transactions;
-                    if (fresh.length > 0) {
-                        await this.writeTransactions(address, source, fresh);
-                        written += fresh.length;
-                        for (const tx of fresh) {
-                            if (!pendingNewest || tx.timestamp > pendingNewest) {
-                                pendingNewest = tx.timestamp;
-                            }
-                        }
-                    }
-
-                    // Known territory (a row at/below the watermark) or a page with
-                    // nothing new means this endpoint's drain is finished.
-                    const reachedKnown = threshold ? result.transactions.some((tx) => tx.timestamp <= threshold) : false;
-                    fingerprint = result.nextFingerprint;
-                    if (reachedKnown || fresh.length === 0 || !fingerprint) {
-                        drainComplete = true;
-                        break;
-                    }
-                    if (page === pages - 1) {
-                        // Hit the page cap before known territory: the drain resumes
-                        // next tick from `fingerprint`. The watermark stays frozen so
-                        // the un-fetched rows below this window are never stranded.
-                        this.logger.warn({ address, source, pages }, 'Account-history forward sync hit the page cap before reaching the watermark — drain will resume next tick');
-                    }
-                }
-
-                const continuation = drainComplete ? undefined : fingerprint;
+                const result = await this.drainForwardEndpoint<IBlockTransaction>({
+                    address,
+                    label: source,
+                    startCursor: endpointCursor,
+                    threshold,
+                    pages,
+                    fetchPage: async (fingerprint) => {
+                        const page = await this.provider!.fetchPage(address, { source, limit: PROVIDER_PAGE_LIMIT, fingerprint });
+                        return { items: page.transactions, nextFingerprint: page.nextFingerprint };
+                    },
+                    write: (fresh) => this.writeTransactions(address, source, fresh)
+                });
+                absorb(result);
                 if (isTx) {
-                    nextTxCursor = continuation;
+                    nextTxCursor = result.continuation;
                 } else {
-                    nextTrc20Cursor = continuation;
+                    nextTrc20Cursor = result.continuation;
                 }
             }
 
             // Internal value transfers — same leading-edge drain discipline as the
             // transaction endpoints, against the same shared watermark, so a contract
             // depositing TRX to a completed account is caught here. Kept as its own
-            // block (not folded into the tx/trc20 loop) because it reads value legs,
+            // call (not folded into the tx/trc20 loop) because it reads value legs,
             // not transactions, and writes the value-transfer ledger.
-            {
-                const endpointDraining = progress.forwardInternalCursor !== undefined;
-                // Mid-drain: leave internal untouched unless it is the draining
-                // endpoint, so its fresh arrivals cannot push the shared watermark
-                // past rows a still-draining transaction endpoint has not fetched.
-                if (!(midDrain && !endpointDraining)) {
-                    let fingerprint: string | undefined = progress.forwardInternalCursor;
-                    let drainComplete = false;
-
-                    for (let page = 0; page < pages; page++) {
-                        const result = await this.provider!.fetchInternalTransfersPage(address, { limit: PROVIDER_PAGE_LIMIT, fingerprint });
-                        if (result.transfers.length === 0) {
-                            drainComplete = true;
-                            break;
-                        }
-
-                        const fresh = threshold
-                            ? result.transfers.filter((transfer) => transfer.timestamp > threshold)
-                            : result.transfers;
-                        if (fresh.length > 0) {
-                            await this.writeValueTransfers(address, fresh);
-                            written += fresh.length;
-                            for (const transfer of fresh) {
-                                if (!pendingNewest || transfer.timestamp > pendingNewest) {
-                                    pendingNewest = transfer.timestamp;
-                                }
-                            }
-                        }
-
-                        const reachedKnown = threshold ? result.transfers.some((transfer) => transfer.timestamp <= threshold) : false;
-                        fingerprint = result.nextFingerprint;
-                        if (reachedKnown || fresh.length === 0 || !fingerprint) {
-                            drainComplete = true;
-                            break;
-                        }
-                        if (page === pages - 1) {
-                            this.logger.warn({ address, source: 'internal', pages }, 'Account-history forward sync hit the page cap before reaching the watermark — drain will resume next tick');
-                        }
-                    }
-
-                    nextInternalCursor = drainComplete ? undefined : fingerprint;
-                }
+            if (!(midDrain && progress.forwardInternalCursor === undefined)) {
+                const result = await this.drainForwardEndpoint<IValueTransfer>({
+                    address,
+                    label: 'internal',
+                    startCursor: progress.forwardInternalCursor,
+                    threshold,
+                    pages,
+                    fetchPage: async (fingerprint) => {
+                        const page = await this.provider!.fetchInternalTransfersPage(address, { limit: PROVIDER_PAGE_LIMIT, fingerprint });
+                        return { items: page.transfers, nextFingerprint: page.nextFingerprint };
+                    },
+                    write: (fresh) => this.writeValueTransfers(address, fresh)
+                });
+                absorb(result);
+                nextInternalCursor = result.continuation;
             }
 
             const stillDraining = nextTxCursor !== undefined || nextTrc20Cursor !== undefined || nextInternalCursor !== undefined;
@@ -1417,6 +1359,15 @@ export class AccountHistoryService implements IAccountHistoryService {
                 patch.newestTimestampSeen = pendingNewest;
                 patch.forwardPendingNewest = undefined;
             }
+            if (written > 0) {
+                // New activity landed: mark the account snapshot-due so the next
+                // snapshot tick re-samples it. Valuation's current holdings read
+                // only the latest balance snapshot (the ledger cannot reconstruct
+                // staking/resource state), so without this nudge fresh activity
+                // stays invisible in the portfolio overview until the next UTC-day
+                // snapshot — up to ~24h of lag for a once-per-day sampler.
+                patch.lastSnapshotDay = undefined;
+            }
             await this.patchProgress(address, patch);
 
             if (written > 0) {
@@ -1426,306 +1377,138 @@ export class AccountHistoryService implements IAccountHistoryService {
             const message = error instanceof Error ? error.message : 'Unknown error';
             this.logger.error({ address, error: message }, 'Account-history forward sync failed for account');
             // Keep status `complete`; never reopen the backfill (see method doc).
-            // Persist the drain state so the next tick resumes; never promote the
-            // watermark on a failed (partial) drain.
+            // Clear the continuation cursors instead of persisting them: a TronGrid
+            // fingerprint is a short-lived pagination token, and replaying one after
+            // an errored tick risks retrying a dead cursor forever — a stall in which
+            // every tick fails, the mid-drain skip keeps the leading edges unpolled,
+            // and the account silently stops ingesting while the job reports success.
+            // Restarting from the leading edge next tick is always safe: the
+            // watermark stays frozen (never promoted on a partial drain) and
+            // ReplacingMergeTree absorbs the re-fetched overlap, so the only cost is
+            // re-reading a few pages. `forwardPendingNewest` is held so rows written
+            // before the failure still lift the watermark once a clean drain lands.
             const now = new Date();
-            await this.patchProgress(address, {
-                forwardTxCursor: nextTxCursor,
-                forwardTrc20Cursor: nextTrc20Cursor,
-                forwardInternalCursor: nextInternalCursor,
+            const failurePatch: Partial<IAccountProgressDoc> = {
+                forwardTxCursor: undefined,
+                forwardTrc20Cursor: undefined,
+                forwardInternalCursor: undefined,
                 forwardPendingNewest: pendingNewest,
                 rowsIngested: progress.rowsIngested + written,
                 lastRunAt: now,
                 lastForwardRunAt: now,
                 lastError: message
-            });
+            };
+            if (written > 0) {
+                // Rows landed before the failure — the balance changed, so the
+                // account is snapshot-due just as on the success path.
+                failurePatch.lastSnapshotDay = undefined;
+            }
+            await this.patchProgress(address, failurePatch);
         }
     }
 
     /**
-     * Backfill the value-transfer ledger for accounts that finished their backfill
-     * before the Stage-2 dual-write shipped. Native legs are reconstructed from
-     * stored rows by migration `005`; this tick covers the two leg families the
-     * provider must re-fetch: historical internal legs (never lived in
-     * `account_transactions`) and token legs (whose `log_index` key is only on the
-     * events endpoint). Bounded per tick like the other ticks and gated by the same
-     * `ingestionEnabled` master switch. Self-quiescing: once a legacy account's
-     * internal source exhausts and its token sweep finishes, the selector excludes
-     * it, and new accounts never enter (they are marked token-current at completion).
+     * Drain one endpoint's leading edge for forward sync: walk newest-first from
+     * `startCursor` (or the very top when absent), write rows newer than the
+     * frozen watermark, and stop at known territory, exhaustion, or the page cap.
+     * Shared by the two transaction endpoints and the internal-transfers endpoint
+     * so all three inherit the same watermark discipline and failure handling.
      *
-     * Operates on `complete` accounts — the population forward sync owns — but
-     * writes a disjoint set of progress fields (internal cursor, the two token-sweep
-     * fields, `lastLedgerBackfillRunAt`), so the two ticks run concurrently without
-     * clobbering each other under `patchProgress`'s field-level `$set`.
-     */
-    public async runLedgerBackfillTick(): Promise<void> {
-        if (this.ledgerBackfillTicking) {
-            this.logger.debug('Account-history ledger backfill already running — skipping overlapping tick');
-            return;
-        }
-
-        this.ledgerBackfillTicking = true;
-        try {
-            const settings = await this.getSettings();
-            if (!settings.ingestionEnabled) {
-                this.logger.debug('Account-history ingestion disabled — ledger backfill is a no-op');
-                return;
-            }
-            if (!this.clickhouse || !this.provider) {
-                this.logger.info('Account-history ledger backfill skipped — ClickHouse or provider unavailable');
-                return;
-            }
-
-            const candidates = await this.selectAccountsForLedgerBackfill(settings.accountsPerTick);
-            if (candidates.length === 0) {
-                return;
-            }
-            for (const address of candidates) {
-                await this.backfillLedgerForAccount(address, settings.pagesPerTick);
-            }
-            await this.broadcastStats();
-        } catch (error) {
-            this.logger.error(
-                { error: error instanceof Error ? error.message : 'Unknown error' },
-                'Account-history ledger backfill tick failed'
-            );
-            throw error;
-        } finally {
-            this.ledgerBackfillTicking = false;
-        }
-    }
-
-    /**
-     * Select the stalest completed accounts that still owe ledger legs. A completed
-     * account is owed work while either its internal source has not exhausted
-     * (`internalComplete` absent/false) or its token sweep has not finished
-     * (`tokenLegsBackfillComplete` absent/false); once both are satisfied the `$or`
-     * stops matching and the account drops out forever. The `status: 'complete'`
-     * equality keeps the tick off in-flight backfills, and the
-     * `{status, lastLedgerBackfillRunAt, paused}` index serves the equality + sort.
+     * Escape path for expired continuations: a TronGrid fingerprint is a
+     * short-lived token, and a drain resumed minutes later may present a dead one,
+     * which TronGrid answers with an empty page rather than an error. Trusting
+     * that page as "drain complete" would promote the watermark past rows that
+     * were never fetched — a permanent silent gap. A real drain against a
+     * completed account always terminates by reaching the watermark, never by
+     * running out of history, so an empty first page on a resumed cursor is
+     * treated as expiry: the walk restarts once from the leading edge within the
+     * same tick and re-descends to the watermark, re-writing the overlap
+     * idempotently.
      *
-     * @param accountsPerTick - Round-robin batch size for this tick.
-     * @returns Up to `accountsPerTick` addresses, stalest-backfilled first.
+     * @param config - The endpoint binding: address and label for logs, the
+     *   persisted continuation to resume from, the frozen watermark, the page
+     *   budget, and the fetch/write callbacks that make the drain source-agnostic.
+     * @returns The continuation to persist (undefined when the drain completed),
+     *   the newest row timestamp seen, and how many rows were written.
      */
-    private async selectAccountsForLedgerBackfill(accountsPerTick: number): Promise<string[]> {
-        const docs = await this.database
-            .getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION)
-            .find({
-                paused: { $ne: true },
-                status: 'complete',
-                $or: [{ internalComplete: { $ne: true } }, { tokenLegsBackfillComplete: { $ne: true } }]
-            })
-            .sort({ lastLedgerBackfillRunAt: 1 })
-            .limit(accountsPerTick)
-            .toArray();
-        return docs.map((doc) => doc.address);
-    }
+    private async drainForwardEndpoint<TItem extends { timestamp: Date }>(config: {
+        /** Base58 account being drained (log context). */
+        address: string;
+        /** Endpoint label for log lines (`tx` / `trc20` / `internal`). */
+        label: string;
+        /** Persisted continuation fingerprint to resume from, if mid-drain. */
+        startCursor: string | undefined;
+        /** The frozen watermark; rows at or below it are already stored. */
+        threshold: Date | undefined;
+        /** Maximum pages to fetch this tick. */
+        pages: number;
+        /** Fetch one page from the endpoint, newest-first from the fingerprint. */
+        fetchPage: (fingerprint: string | undefined) => Promise<{ items: TItem[]; nextFingerprint?: string }>;
+        /** Persist the fresh (post-watermark) rows of a page. */
+        write: (fresh: TItem[]) => Promise<void>;
+    }): Promise<IForwardDrainResult> {
+        let fingerprint = config.startCursor;
+        let restarted = false;
+        let newest: Date | undefined;
+        let written = 0;
+        let drainComplete = false;
 
-    /**
-     * Advance one account's ledger backfill: drain a bounded slice of its internal
-     * source, then sweep a bounded batch of its stored token transactions. Both
-     * sub-tasks are idempotent and persist their own cursor, so a throw in either
-     * resumes cleanly next tick. A per-account failure is logged and swallowed so
-     * one bad account does not abort the whole tick; `lastLedgerBackfillRunAt` is
-     * still stamped so the failing account does not starve the rest by always
-     * sorting first.
-     *
-     * @param address - Completed account to advance.
-     * @param pages - Internal-source pages to pull this tick (the shared pacing dial).
-     */
-    private async backfillLedgerForAccount(address: string, pages: number): Promise<void> {
-        const progress = await this.database
-            .getCollection<IAccountProgressDoc>(PROGRESS_COLLECTION)
-            .findOne({ address });
-        if (!progress) {
-            return;
-        }
-
-        try {
-            if (!progress.internalComplete) {
-                await this.backfillInternalLegs(address, pages, progress.internalCursorFingerprint);
-            }
-            if (!progress.tokenLegsBackfillComplete) {
-                await this.backfillTokenLegsBatch(address, progress.tokenLegsBackfillCursor);
-            }
-        } catch (error) {
-            this.logger.error(
-                { address, error: error instanceof Error ? error.message : 'Unknown error' },
-                'Account-history ledger backfill failed for account'
-            );
-        } finally {
-            await this.patchProgress(address, { lastLedgerBackfillRunAt: new Date() });
-        }
-    }
-
-    /**
-     * Drain a bounded slice of an account's internal-transactions source into the
-     * ledger, reusing {@link walkInternalSource} so the historical backfill and the
-     * live forward drain stay byte-identical. A throwaway walk state is seeded from
-     * the stored internal cursor with the other endpoints flagged complete (they are
-     * not the backfill's concern). The advanced cursor and completion flag are
-     * persisted in a `finally` so a mid-walk throw still resumes from the last clean
-     * page — only the two internal fields are written, never the shared counters
-     * forward sync also touches.
-     *
-     * @param address - Completed account to advance.
-     * @param pages - Maximum internal pages to pull this tick.
-     * @param internalCursor - Stored internal cursor to resume from, if any.
-     */
-    private async backfillInternalLegs(address: string, pages: number, internalCursor?: string): Promise<void> {
-        const state: IIngestWalkState = {
-            internalCursor,
-            nativeComplete: true,
-            trc20Complete: true,
-            internalComplete: false,
-            rowsIngested: 0
-        };
-        try {
-            await this.walkInternalSource(address, pages, state);
-        } finally {
-            await this.patchProgress(address, {
-                internalCursorFingerprint: state.internalComplete ? undefined : state.internalCursor,
-                internalComplete: state.internalComplete
-            });
-        }
-    }
-
-    /**
-     * Sweep the next batch of an account's stored `trc20` transactions into the
-     * ledger as token legs. Token legs cannot be reconstructed from
-     * `account_transactions` (it lacks the `log_index` that keys them), so each
-     * distinct stored `trc20` transaction is re-fetched from the provider's events
-     * endpoint — exactly the live `writeTokenTransferLegs` source — one events call
-     * per transaction through the shared rate limiter. The keyset cursor advances
-     * over `(timestamp, tx_id)` so the sweep resumes mid-account across ticks; a
-     * short batch means the account is fully swept. Writes legs before advancing the
-     * cursor so a write failure re-ingests the batch idempotently next tick.
-     *
-     * @param address - Completed account to advance.
-     * @param cursor - Encoded `(timestamp, tx_id)` watermark of the last swept
-     *   transaction, or undefined to start from the account's oldest `trc20` row.
-     */
-    private async backfillTokenLegsBatch(address: string, cursor?: string): Promise<void> {
-        const parsed = AccountHistoryService.parseTokenBackfillCursor(cursor);
-        const keyset = parsed
-            ? `AND (timestamp, tx_id) > (toDateTime64({ts:String}, 3, 'UTC'), {txId:String})`
-            : '';
-        const batchRows = await this.clickhouse!.query<{ tx_id: string; ts: string }>(
-            `SELECT DISTINCT tx_id, toString(timestamp) AS ts
-             FROM ${TRANSACTIONS_TABLE}
-             WHERE account = {address:String} AND source = 'trc20' ${keyset}
-             ORDER BY timestamp ASC, tx_id ASC
-             LIMIT {limit:UInt32}`,
-            parsed
-                ? { address, ts: parsed.ts, txId: parsed.txId, limit: LEDGER_BACKFILL_TOKEN_TX_PER_TICK }
-                : { address, limit: LEDGER_BACKFILL_TOKEN_TX_PER_TICK }
-        );
-
-        if (batchRows.length === 0) {
-            await this.patchProgress(address, { tokenLegsBackfillComplete: true });
-            return;
-        }
-
-        const txIds = batchRows.map((row) => row.tx_id);
-        // Carry decimals from the stored trc20 rows' token metadata — the events
-        // payload omits them — mirroring the live writeTokenTransferLegs enrichment.
-        const decimalsRows = await this.clickhouse!.query<{ contract_address: string; token_decimals: number }>(
-            `SELECT DISTINCT contract_address, token_decimals
-             FROM ${TRANSACTIONS_TABLE}
-             WHERE account = {address:String} AND source = 'trc20'
-                   AND tx_id IN ({txIds:Array(String)})
-                   AND contract_address IS NOT NULL AND token_decimals IS NOT NULL`,
-            { address, txIds }
-        );
-        const decimalsByAsset = new Map<string, number>();
-        for (const row of decimalsRows) {
-            if (row.contract_address != null && typeof row.token_decimals === 'number') {
-                decimalsByAsset.set(row.contract_address, row.token_decimals);
-            }
-        }
-
-        // Fetch each transaction's legs one at a time, tracking the last
-        // *fully-fetched* transaction. `fetchTokenTransferLegs` throws on a real
-        // events-fetch failure (rate limit, network) rather than returning empty, so
-        // a failure must not advance the cursor past the transaction it could not
-        // read — its token legs are unreconstructable without the events log_index.
-        // On a mid-batch failure we keep the progress earned through the last clean
-        // transaction and let a later tick resume from there, rather than discarding
-        // the whole batch and re-spending those rate-limited calls.
-        const legs: IValueTransfer[] = [];
-        let lastSuccessfulIndex = -1;
-        let fetchFailed = false;
-        for (let index = 0; index < txIds.length; index++) {
-            let txLegs: IValueTransfer[];
-            try {
-                txLegs = await this.provider!.fetchTokenTransferLegs(address, txIds[index]);
-            } catch (error) {
-                this.logger.warn(
-                    { address, txId: txIds[index], error: error instanceof Error ? error.message : String(error) },
-                    'Account-history ledger backfill: token events fetch failed mid-batch; persisting progress through last success'
-                );
-                fetchFailed = true;
+        for (let page = 0; page < config.pages; page++) {
+            const result = await config.fetchPage(fingerprint);
+            if (result.items.length === 0) {
+                if (fingerprint !== undefined && fingerprint === config.startCursor && !restarted) {
+                    // Empty page on the resumed cursor's first fetch: expired
+                    // fingerprint (see method doc). Restart from the leading edge —
+                    // the retry consumes this page's budget slot, keeping the tick's
+                    // fetch count bounded by `pages`.
+                    this.logger.warn(
+                        { address: config.address, source: config.label },
+                        'Account-history forward sync: persisted continuation returned an empty page — treating the fingerprint as expired and restarting from the leading edge'
+                    );
+                    restarted = true;
+                    fingerprint = undefined;
+                    continue;
+                }
+                // Genuinely nothing at the leading edge — nothing more to drain.
+                drainComplete = true;
                 break;
             }
-            for (const leg of txLegs) {
-                const decimals = decimalsByAsset.get(leg.assetId);
-                legs.push(decimals != null ? { ...leg, assetDecimals: decimals } : leg);
+
+            const fresh = config.threshold
+                ? result.items.filter((item) => item.timestamp > config.threshold!)
+                : result.items;
+            if (fresh.length > 0) {
+                await config.write(fresh);
+                written += fresh.length;
+                for (const item of fresh) {
+                    if (!newest || item.timestamp > newest) {
+                        newest = item.timestamp;
+                    }
+                }
             }
-            lastSuccessfulIndex = index;
+
+            // Known territory (a row at/below the watermark) or a page with
+            // nothing new means this endpoint's drain is finished.
+            const reachedKnown = config.threshold
+                ? result.items.some((item) => item.timestamp <= config.threshold!)
+                : false;
+            fingerprint = result.nextFingerprint;
+            if (reachedKnown || fresh.length === 0 || !fingerprint) {
+                drainComplete = true;
+                break;
+            }
+            if (page === config.pages - 1) {
+                // Hit the page cap before known territory: the drain resumes next
+                // tick from `fingerprint`. The watermark stays frozen so the
+                // un-fetched rows below this window are never stranded.
+                this.logger.warn(
+                    { address: config.address, source: config.label, pages: config.pages },
+                    'Account-history forward sync hit the page cap before reaching the watermark — drain will resume next tick'
+                );
+            }
         }
 
-        // Write legs before advancing the cursor so a ClickHouse write failure
-        // throws first and re-ingests the batch idempotently next tick.
-        if (legs.length > 0) {
-            await this.writeValueTransfers(address, legs);
-        }
-
-        // The very first transaction failed: no progress to record, cursor stays put.
-        if (lastSuccessfulIndex < 0) {
-            return;
-        }
-
-        const last = batchRows[lastSuccessfulIndex];
-        const patch: Partial<IAccountProgressDoc> = {
-            tokenLegsBackfillCursor: AccountHistoryService.encodeTokenBackfillCursor(last.ts, last.tx_id)
-        };
-        // Mark complete only when the whole batch fetched cleanly AND was short of
-        // the cap (the account is exhausted) — never past a failed fetch, which
-        // would drop the unread transaction's legs permanently.
-        if (!fetchFailed && batchRows.length < LEDGER_BACKFILL_TOKEN_TX_PER_TICK) {
-            patch.tokenLegsBackfillComplete = true;
-        }
-        await this.patchProgress(address, patch);
-    }
-
-    /**
-     * Encode a token-sweep keyset watermark. The `trc20` `tx_id` is a hex hash and
-     * the ClickHouse timestamp string carries no `|`, so a single pipe is an
-     * unambiguous separator.
-     *
-     * @param ts - ClickHouse timestamp string of the last swept transaction.
-     * @param txId - Hash of the last swept transaction.
-     * @returns The encoded `"<ts>|<txId>"` cursor.
-     */
-    private static encodeTokenBackfillCursor(ts: string, txId: string): string {
-        return `${ts}|${txId}`;
-    }
-
-    /**
-     * Parse a token-sweep keyset watermark back into its parts.
-     *
-     * @param cursor - The encoded cursor, or undefined when the sweep has not started.
-     * @returns The `(ts, txId)` watermark, or null to start from the oldest row.
-     */
-    private static parseTokenBackfillCursor(cursor?: string): { ts: string; txId: string } | null {
-        if (!cursor) {
-            return null;
-        }
-        const separator = cursor.indexOf('|');
-        if (separator < 0) {
-            return null;
-        }
-        return { ts: cursor.slice(0, separator), txId: cursor.slice(separator + 1) };
+        return { continuation: drainComplete ? undefined : fingerprint, newest, written };
     }
 
     /**
@@ -1848,6 +1631,7 @@ export class AccountHistoryService implements IAccountHistoryService {
             energyUsed: Number(row.energy_used),
             netLimit: Number(row.net_limit),
             netUsed: Number(row.net_used),
+            withdrawableRewardSun: Number(row.withdrawable_reward_sun ?? 0),
             tokenBalances
         };
     }
@@ -1859,7 +1643,7 @@ export class AccountHistoryService implements IAccountHistoryService {
     private static readonly SNAPSHOT_COLUMNS =
         `account, toString(day) AS day, toString(captured_at) AS captured_at,
          trx_balance_sun, staked_energy_sun, staked_bandwidth_sun, unstaking_sun,
-         energy_limit, energy_used, net_limit, net_used`;
+         energy_limit, energy_used, net_limit, net_used, withdrawable_reward_sun`;
 
     /**
      * Read the most recent snapshot for an account plus its token balances. Null
@@ -1915,6 +1699,41 @@ export class AccountHistoryService implements IAccountHistoryService {
     }
 
     /**
+     * Resolve real symbol/decimals for TRC20 contracts from stored trc20-source
+     * rows — the token metadata registry backing valuation's display symbols and
+     * decimals. `anyLast` picks the most recently merged non-default observation
+     * per contract; contracts the ingest never decoded are omitted so callers
+     * fall back only for genuinely unknown tokens. Local-only; never a network
+     * call. See {@link IAccountHistoryService.getTokenMetadata}.
+     *
+     * @param assets - TRC20 contract addresses to resolve.
+     * @returns Metadata for the known subset, unordered.
+     */
+    public async getTokenMetadata(assets: string[]): Promise<ITokenMetadata[]> {
+        const unique = Array.from(new Set(
+            (assets ?? []).filter((asset) => TRON_ADDRESS_PATTERN.test(String(asset ?? '').trim()))
+        ));
+        if (!this.clickhouse || unique.length === 0) {
+            return [];
+        }
+        const rows = await this.clickhouse.query<{ asset: string; symbol: string | null; decimals: number | string | null }>(
+            `SELECT contract_address AS asset,
+                    anyLast(token_symbol) AS symbol,
+                    anyLast(token_decimals) AS decimals
+             FROM ${TRANSACTIONS_TABLE} FINAL
+             WHERE source = 'trc20' AND contract_address IN ({assets:Array(String)})
+                   AND (token_symbol IS NOT NULL OR token_decimals IS NOT NULL)
+             GROUP BY asset`,
+            { assets: unique }
+        );
+        return rows.map((row) => ({
+            asset: String(row.asset),
+            symbol: row.symbol === null || row.symbol === undefined ? null : String(row.symbol),
+            decimals: row.decimals === null || row.decimals === undefined ? null : Number(row.decimals)
+        }));
+    }
+
+    /**
      * List distinct held token contracts across all stored snapshots. See
      * {@link IAccountHistoryService.getHeldTokenAssets}.
      *
@@ -1956,6 +1775,7 @@ export class AccountHistoryService implements IAccountHistoryService {
             energy_used: sample.energyUsed,
             net_limit: sample.netLimit,
             net_used: sample.netUsed,
+            withdrawable_reward_sun: sample.withdrawableRewardSun,
             ingested_at: stamp
         };
         await this.clickhouse.insert<IBalanceSnapshotRow>(BALANCE_SNAPSHOTS_TABLE, [scalarRow], { waitForCommit: true });
@@ -2113,10 +1933,17 @@ export class AccountHistoryService implements IAccountHistoryService {
             rowsIngested: doc.rowsIngested,
             lastRunAt: doc.lastRunAt,
             lastForwardRunAt: doc.lastForwardRunAt,
-            // Mid-drain iff a forward continuation cursor is parked on either
-            // endpoint. Surface only the boolean — the opaque fingerprints stay
-            // internal, but the operator still learns the account is catching up.
-            catchingUp: Boolean(doc.forwardTxCursor || doc.forwardTrc20Cursor),
+            // Catching up iff a forward continuation cursor is parked on any of the
+            // three endpoints, or a pending watermark is held from a drain that has
+            // not yet completed cleanly (cursors are cleared on error so a dead
+            // fingerprint is never replayed — the held pending value is then the
+            // only trace that a drain is still outstanding). Surface only the
+            // boolean — the opaque fingerprints stay internal, but the operator
+            // still learns the account is catching up.
+            catchingUp: Boolean(
+                doc.forwardTxCursor || doc.forwardTrc20Cursor || doc.forwardInternalCursor || doc.forwardPendingNewest
+            ),
+            lastSnapshotDay: doc.lastSnapshotDay,
             lastError: doc.lastError
         };
     }

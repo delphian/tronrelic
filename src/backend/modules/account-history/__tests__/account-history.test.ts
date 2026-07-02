@@ -134,7 +134,6 @@ describe('AccountHistoryModule', () => {
         );
         expect(scheduler.register).toHaveBeenCalledWith('account-history:ingest', expect.any(String), expect.any(Function));
         expect(scheduler.register).toHaveBeenCalledWith('account-history:forward-sync', expect.any(String), expect.any(Function));
-        expect(scheduler.register).toHaveBeenCalledWith('account-history:ledger-backfill', expect.any(String), expect.any(Function));
         expect(serviceRegistry.has('account-history')).toBe(true);
 
         // The System-container entry plus the three in-page tab nodes (the
@@ -596,6 +595,166 @@ describe('AccountHistoryService', () => {
         expect(inserted.map((r) => r.tx_id).sort()).toEqual(['a', 'b', 'c']);
     });
 
+    it('runForwardSyncTick treats an empty page on a resumed cursor as an expired fingerprint and restarts from the leading edge', async () => {
+        AccountHistoryService.resetForTests();
+        const database = createMockDatabaseService();
+        const watermark = new Date('2024-01-01T00:00:00.000Z');
+        const held = new Date('2024-01-09T00:00:00.000Z');
+        const jan10 = new Date('2024-01-10T00:00:00.000Z');
+        database.getCollectionData(TRACKED_COLLECTION).push({ address: VALID_ADDRESS, paused: false, addedAt: watermark, updatedAt: watermark });
+        // Mid-drain on 'tx' with a persisted continuation that TronGrid has since
+        // expired, plus a held pending watermark from the capped prior tick.
+        database.getCollectionData(PROGRESS_COLLECTION).push({
+            address: VALID_ADDRESS,
+            status: 'complete',
+            newestTimestampSeen: watermark,
+            forwardTxCursor: 'fp-dead',
+            forwardPendingNewest: held,
+            nativeComplete: true,
+            trc20Complete: true,
+            rowsIngested: 100
+        });
+        // Two pages so the expired-cursor probe and the leading-edge restart both
+        // fit inside one tick's budget.
+        database.getCollectionData(SETTINGS_COLLECTION).push({ key: SETTINGS_KEY, ingestionEnabled: true, pagesPerTick: 2, accountsPerTick: 3 });
+
+        const inserted: any[] = [];
+        const clickhouse = {
+            query: vi.fn().mockResolvedValue([]),
+            insert: vi.fn(async (_table: string, rows: any[]) => { inserted.push(...rows); })
+        } as unknown as IClickHouseService;
+
+        // The dead cursor yields an empty page (TronGrid's expired-fingerprint
+        // shape); the leading edge yields one fresh row then known territory.
+        const provider: IAccountHistoryProvider = {
+            id: 'test',
+            fetchAccountSnapshot: vi.fn(), fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })), fetchTokenTransferLegs: vi.fn(async () => []),
+            fetchPage: vi.fn(async (_address: string, opts: any) => {
+                if (opts.fingerprint === 'fp-dead') {
+                    return { transactions: [], nextFingerprint: undefined };
+                }
+                return { transactions: [makeTx('fresh', jan10), makeTx('known', watermark)], nextFingerprint: undefined };
+            })
+        };
+
+        AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
+        const service = AccountHistoryService.getInstance();
+
+        await service.runForwardSyncTick();
+
+        // The restart re-walked the leading edge instead of trusting the empty
+        // page: the fresh row landed and the watermark advanced through the drain's
+        // full span rather than being promoted past un-fetched rows.
+        expect(inserted.map((r) => r.tx_id)).toEqual(['fresh']);
+        const progress = database.getCollectionData(PROGRESS_COLLECTION).find((d: any) => d.address === VALID_ADDRESS);
+        expect(new Date(progress.newestTimestampSeen).getTime()).toBe(jan10.getTime());
+        expect(progress.forwardTxCursor).toBeUndefined();
+        expect(progress.forwardPendingNewest).toBeUndefined();
+        expect(progress.status).toBe('complete');
+    });
+
+    it('runForwardSyncTick marks the account snapshot-due when new activity lands, and leaves it alone otherwise', async () => {
+        AccountHistoryService.resetForTests();
+        const database = createMockDatabaseService();
+        const watermark = new Date('2024-01-01T00:00:00.000Z');
+        const newer = new Date('2024-02-01T00:00:00.000Z');
+        const today = new Date().toISOString().slice(0, 10);
+        database.getCollectionData(TRACKED_COLLECTION).push({ address: VALID_ADDRESS, paused: false, addedAt: watermark, updatedAt: watermark });
+        // Already snapshotted today; only fresh activity may re-arm the sampler.
+        database.getCollectionData(PROGRESS_COLLECTION).push({
+            address: VALID_ADDRESS, status: 'complete', newestTimestampSeen: watermark,
+            nativeComplete: true, trc20Complete: true, lastSnapshotDay: today, rowsIngested: 100
+        });
+
+        const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
+        let fresh = true;
+        const provider: IAccountHistoryProvider = {
+            id: 'test',
+            fetchAccountSnapshot: vi.fn(), fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })), fetchTokenTransferLegs: vi.fn(async () => []),
+            fetchPage: vi.fn(async (_address: string, opts: any) => {
+                if (opts.source === 'tx' && fresh) {
+                    return { transactions: [makeTx('new1', newer), makeTx('old1', watermark)], nextFingerprint: undefined };
+                }
+                return { transactions: [makeTx('old1', watermark)], nextFingerprint: undefined };
+            })
+        };
+
+        AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
+        const service = AccountHistoryService.getInstance();
+
+        // Tick with new activity: lastSnapshotDay cleared so the next snapshot
+        // tick re-samples — valuation's holdings read only the latest snapshot.
+        await service.runForwardSyncTick();
+        let progress = database.getCollectionData(PROGRESS_COLLECTION).find((d: any) => d.address === VALID_ADDRESS);
+        expect(progress.lastSnapshotDay).toBeUndefined();
+
+        // Re-snapshot, then an empty tick: dueness must not be re-armed.
+        database.getCollectionData(PROGRESS_COLLECTION).find((d: any) => d.address === VALID_ADDRESS).lastSnapshotDay = today;
+        fresh = false;
+        await service.runForwardSyncTick();
+        progress = database.getCollectionData(PROGRESS_COLLECTION).find((d: any) => d.address === VALID_ADDRESS);
+        expect(progress.lastSnapshotDay).toBe(today);
+    });
+
+    it('runForwardSyncTick clears the continuation cursors on error so a dead fingerprint is never replayed', async () => {
+        AccountHistoryService.resetForTests();
+        const database = createMockDatabaseService();
+        const watermark = new Date('2024-01-01T00:00:00.000Z');
+        database.getCollectionData(TRACKED_COLLECTION).push({ address: VALID_ADDRESS, paused: false, addedAt: watermark, updatedAt: watermark });
+        database.getCollectionData(PROGRESS_COLLECTION).push({
+            address: VALID_ADDRESS,
+            status: 'complete',
+            newestTimestampSeen: watermark,
+            forwardTxCursor: 'fp-dead',
+            nativeComplete: true,
+            trc20Complete: true,
+            rowsIngested: 100
+        });
+
+        const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
+        const provider: IAccountHistoryProvider = {
+            id: 'test',
+            fetchAccountSnapshot: vi.fn(), fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })), fetchTokenTransferLegs: vi.fn(async () => []),
+            fetchPage: vi.fn(async () => { throw new Error('boom'); })
+        };
+
+        AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
+        const service = AccountHistoryService.getInstance();
+
+        await service.runForwardSyncTick();
+
+        // The errored drain must not persist the (possibly dead) cursor — the next
+        // tick restarts from the leading edge. Watermark frozen, account stays
+        // complete, the failure is legible via lastError.
+        const progress = database.getCollectionData(PROGRESS_COLLECTION).find((d: any) => d.address === VALID_ADDRESS);
+        expect(progress.forwardTxCursor).toBeUndefined();
+        expect(progress.status).toBe('complete');
+        expect(progress.lastError).toBe('boom');
+        expect(new Date(progress.newestTimestampSeen).getTime()).toBe(watermark.getTime());
+    });
+
+    it('getStats reports catchingUp for a drain parked on the internal endpoint', async () => {
+        AccountHistoryService.resetForTests();
+        const database = createMockDatabaseService();
+        const jan = new Date('2024-01-01T00:00:00.000Z');
+        database.getCollectionData(TRACKED_COLLECTION).push({ address: VALID_ADDRESS, paused: false, addedAt: jan, updatedAt: jan });
+        // Only the internal-transfers cursor is parked — the derivation must not
+        // ignore it (an internal-only stall was previously invisible as healthy).
+        database.getCollectionData(PROGRESS_COLLECTION).push({
+            address: VALID_ADDRESS, status: 'complete', newestTimestampSeen: jan,
+            nativeComplete: true, trc20Complete: true, forwardInternalCursor: 'fp-internal', rowsIngested: 10
+        });
+
+        AccountHistoryService.setDependencies({
+            database, clickhouse: undefined, provider: null, emitter: undefined, logger: createSilentLogger()
+        });
+        const service = AccountHistoryService.getInstance();
+
+        const stats = await service.getStats();
+        expect(stats.accounts[0].progress.catchingUp).toBe(true);
+        expect(stats.totals.catchingUpAccounts).toBe(1);
+    });
+
     it('runForwardSyncTick skips accounts that are not complete', async () => {
         AccountHistoryService.resetForTests();
         const database = createMockDatabaseService();
@@ -692,35 +851,6 @@ describe('AccountHistoryService', () => {
         expect(stats.totals.oldestNewestTimestamp).toBeUndefined();
     });
 
-    it('getStats counts legacy ledger-backfill pending (complete accounts owing legs, paused included)', async () => {
-        AccountHistoryService.resetForTests();
-        const database = createMockDatabaseService();
-        const now = new Date('2024-01-01T00:00:00.000Z');
-        const legacy = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';       // owes both internal + token
-        const tokenPending = 'TLa2f6VPqDgRE67v7c1pj7iGwsizZ1jGfX'; // internal done, token still owed
-        const pausedOwing = 'TKzxdSv2FZKQrEqkKVgp5DcwEXBEKMg2Ax';  // owes legs but paused — still counts
-        for (const address of [legacy, tokenPending, pausedOwing]) {
-            database.getCollectionData(TRACKED_COLLECTION).push({ address, paused: address === pausedOwing, addedAt: now, updatedAt: now });
-        }
-        database.getCollectionData(PROGRESS_COLLECTION).push(
-            { address: legacy, status: 'complete', paused: false, rowsIngested: 5 },
-            { address: tokenPending, status: 'complete', paused: false, internalComplete: true, rowsIngested: 7 },
-            { address: pausedOwing, status: 'complete', paused: true, rowsIngested: 4 },
-            // Fully backfilled and an in-flight account: neither owes legacy backfill.
-            { address: 'TXdoneXXXXXXXXXXXXXXXXXXXXXXXXXXXXX', status: 'complete', paused: false, internalComplete: true, tokenLegsBackfillComplete: true, rowsIngested: 9 },
-            { address: 'TXqueuedXXXXXXXXXXXXXXXXXXXXXXXXXXX', status: 'queued', paused: false, rowsIngested: 0 }
-        );
-
-        AccountHistoryService.setDependencies({
-            database, clickhouse: undefined, provider: null, emitter: undefined, logger: createSilentLogger()
-        });
-        const service = AccountHistoryService.getInstance();
-
-        const stats = await service.getStats();
-
-        // legacy + tokenPending + pausedOwing = 3; the fully-done and queued accounts do not count.
-        expect(stats.totals.legacyBackfillPending).toBe(3);
-    });
 });
 
 describe('toAccountTransactionRow', () => {

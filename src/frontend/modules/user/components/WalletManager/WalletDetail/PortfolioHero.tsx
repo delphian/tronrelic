@@ -241,7 +241,9 @@ export function PortfolioHero({ summary }: IPortfolioHeroProps) {
                         <span className={styles.hero_pnl} style={{ color: pnlColor }}>
                             {pnlPositive ? <TrendingUp size={16} aria-hidden /> : <TrendingDown size={16} aria-hidden />}
                             {formatUsd(summary.totalPnlUsd, true)}
-                            <span className={styles.hero_pnl_caption}>all-time PnL</span>
+                            <span className={styles.hero_pnl_caption}>
+                                {summary.basisApproximate ? 'all-time PnL (approximate)' : 'all-time PnL'}
+                            </span>
                         </span>
                     </div>
                     <div className={styles.hero_secondary}>
@@ -325,6 +327,11 @@ export function PortfolioHero({ summary }: IPortfolioHeroProps) {
                         <div className="alert alert--warning" role="alert">
                             <Hourglass size={14} aria-hidden /> Historical data collection for this wallet is still in progress — the chart may be incomplete until it finishes.
                         </div>
+                    )}
+                    {summary.historyBackfillComplete && summary.basisApproximate && (
+                        <p className="text-muted">
+                            Some early history is beyond what data sources can reach, so PnL and cost basis are approximate. Net worth is exact — it comes from live balances.
+                        </p>
                     )}
                 </Card>
 

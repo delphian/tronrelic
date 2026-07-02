@@ -133,6 +133,16 @@ export interface IPortfolioSummary {
      * account-history service is unavailable (nothing to caveat against).
      */
     historyBackfillComplete: boolean;
+    /**
+     * True when the cost-basis walk hit evidence of missing history: an external
+     * disposal (or fee) consumed more quantity than open lots could supply
+     * (realized against zero basis), or an internal transfer's migrated basis was
+     * never drained by its counterpart leg. Either means PnL and cost basis are
+     * approximate — the ledger does not reach far enough back — so callers should
+     * label the figures rather than present them as exact. Net worth is
+     * unaffected (it comes from the balance snapshot).
+     */
+    basisApproximate: boolean;
 }
 
 /**

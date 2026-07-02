@@ -2,8 +2,8 @@
  * @fileoverview Tests for value-transfer derivation — the source-independent
  * `IValueTransfer` legs that back the proposed account value ledger.
  *
- * Three surfaces: the pure `toValueTransfers` deriver (native legs only — token
- * legs are sourced from events, not transactions), the provider's internal-transfer
+ * Three surfaces: the pure `toValueTransfers` deriver (native, fee, and reward
+ * legs — token legs are sourced from events, not transactions), the provider's internal-transfer
  * mapping (TVM value moves the transaction endpoints omit), and the provider's
  * token-leg sourcing from the per-transaction events endpoint. The discriminating
  * properties are that only genuine native-TRX contract types produce a TRX leg —
@@ -71,6 +71,30 @@ describe('toValueTransfers', () => {
     it('excludes staking and delegation rows whose amount_sun is not a transfer', () => {
         expect(toValueTransfers(tx({ type: 'DelegateResourceContract', amountSun: 11_585_300_000 }))).toEqual([]);
         expect(toValueTransfers(tx({ type: 'FreezeBalanceV2Contract', amountSun: 5_000_000 }))).toEqual([]);
+    });
+
+    it('derives a fee leg (payer → burn) whenever the transaction burned TRX', () => {
+        // The fee is a genuine total-balance reduction even for non-value contract
+        // types, so it must appear alongside — or without — a native leg.
+        const legs = toValueTransfers(tx({ type: 'TransferContract', amountSun: 1_000_000, feeSun: 267_000 }));
+        expect(legs).toHaveLength(2);
+        expect(legs[1]).toMatchObject({ origin: 'fee', assetType: 'TRX', from: 'Tfrom', to: '', amountRaw: '267000', legKey: '' });
+
+        const feeOnly = toValueTransfers(tx({ type: 'FreezeBalanceV2Contract', amountSun: 5_000_000, feeSun: 1_100 }));
+        expect(feeOnly).toEqual([expect.objectContaining({ origin: 'fee', amountRaw: '1100' })]);
+    });
+
+    it('derives a reward leg (protocol → claimer) from a WithdrawBalanceContract claim', () => {
+        // The claim's amount is overlaid from the transaction info's withdraw_amount
+        // upstream; here the deriver must book it as income entering the claimer.
+        const legs = toValueTransfers(tx({ type: 'WithdrawBalanceContract', amountSun: 42_000_000, to: { address: 'Tfrom' } }));
+        expect(legs).toEqual([
+            expect.objectContaining({ origin: 'reward', assetType: 'TRX', from: '', to: 'Tfrom', amountRaw: '42000000', legKey: '' })
+        ]);
+    });
+
+    it('derives no reward or native leg from an amount-less claim', () => {
+        expect(toValueTransfers(tx({ type: 'WithdrawBalanceContract' }))).toEqual([]);
     });
 });
 

@@ -202,6 +202,16 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
                                 {!stats ? '—' : stats.totals.staleAssets > 0 ? <Badge tone="warning">{stats.totals.staleAssets}</Badge> : 0}
                             </div>
                         </Card>
+                        <Card padding="md">
+                            <div className="stat-card__label">Provider errors</div>
+                            <div className="stat-card__value">
+                                {!stats
+                                    ? '—'
+                                    : stats.totals.providerErrors > 0
+                                        ? <Badge tone="danger">{stats.totals.providerErrors} / {stats.totals.providerCalls} calls</Badge>
+                                        : `0 / ${stats.totals.providerCalls} calls`}
+                            </div>
+                        </Card>
                     </Grid>
 
                     <Stack direction="horizontal" gap="sm">
@@ -221,13 +231,14 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
                                     <Th align="right">Days</Th>
                                     <Th>Oldest</Th>
                                     <Th>Newest</Th>
+                                    <Th align="right">Days left</Th>
                                     <Th>Status</Th>
                                 </Tr>
                             </Thead>
                             <Tbody>
                                 {!stats || stats.assets.length === 0 ? (
                                     <Tr>
-                                        <Td colSpan={5}><span className="text-muted">No assets tracked yet — TRX is added on the first backfill tick.</span></Td>
+                                        <Td colSpan={6}><span className="text-muted">No assets tracked yet — TRX is added on the first backfill tick.</span></Td>
                                     </Tr>
                                 ) : (
                                     stats.assets.map((asset) => (
@@ -236,6 +247,9 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
                                             <Td align="right">{asset.dayCount.toLocaleString()}</Td>
                                             <Td>{asset.oldestDay ?? '—'}</Td>
                                             <Td>{asset.newestDay ?? '—'}</Td>
+                                            <Td align="right">
+                                                {asset.estimatedDaysRemaining === null ? '—' : asset.estimatedDaysRemaining.toLocaleString()}
+                                            </Td>
                                             <Td>
                                                 {asset.backfillComplete ? (
                                                     <Badge tone="success">Complete</Badge>

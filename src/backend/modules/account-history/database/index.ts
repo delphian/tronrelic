@@ -142,38 +142,6 @@ export interface IAccountProgressDoc {
      * twice in a day. Absent until the first snapshot.
      */
     lastSnapshotDay?: string;
-    /**
-     * Keyset watermark for the ledger-backfill token-leg sweep (Stage 3 of the
-     * value-transfer ledger redesign). Encodes the last visited `trc20` transaction
-     * as `"<clickhouse-timestamp>|<tx_id>"`; the next batch reads stored `trc20`
-     * transactions strictly after it, in `(timestamp, tx_id)` order. Absent before
-     * the sweep starts for this account. The sweep re-fetches each token-bearing
-     * transaction's legs from the provider's events endpoint (the only source of the
-     * `log_index` that keys a token leg), so it cannot be reconstructed from
-     * `account_transactions` by SQL the way native legs are.
-     */
-    tokenLegsBackfillCursor?: string;
-    /**
-     * True once the ledger-backfill token-leg sweep has visited every stored `trc20`
-     * transaction for this account. Distinguishes a legacy account that completed
-     * before token legs were dual-written (flag absent → still needs the sweep) from
-     * one that finished its backfill under current code, which sets this `true` at
-     * the moment it reaches `complete` because the live `trc20` walk already wrote
-     * its token legs. Together with {@link internalComplete} it gates a completed
-     * account out of the ledger-backfill selector once both are satisfied.
-     */
-    tokenLegsBackfillComplete?: boolean;
-    /**
-     * When the ledger-backfill tick last advanced this account; drives the backfill
-     * round-robin (stalest first). Kept separate from {@link lastRunAt} and
-     * {@link lastForwardRunAt} on purpose: the backfill operates on `complete`
-     * accounts, the same population forward sync owns, so writing a *disjoint* set
-     * of progress fields (this, plus the internal cursor and the two token-sweep
-     * fields) lets the two ticks run concurrently without clobbering each other's
-     * state under `patchProgress`'s field-level `$set`. Absent until the first
-     * backfill advance.
-     */
-    lastLedgerBackfillRunAt?: Date;
 }
 
 /**
@@ -309,6 +277,8 @@ export interface IBalanceSnapshotRow extends Record<string, unknown> {
     net_limit: number;
     /** Bandwidth used in the current window. */
     net_used: number;
+    /** Unclaimed (withdrawable) staking/vote rewards, in sun; 0 pre-probe. */
+    withdrawable_reward_sun: number;
     /** Ingestion time; the ReplacingMergeTree version column. */
     ingested_at: string;
 }
@@ -353,6 +323,8 @@ export interface IAccountSnapshotSample {
     netLimit: number;
     /** Bandwidth used in the current window. */
     netUsed: number;
+    /** Unclaimed (withdrawable) staking/vote rewards, in sun. */
+    withdrawableRewardSun: number;
     /** Per-token raw balances `{ contractAddress: rawBalanceString }`. */
     tokenBalances: Array<{ asset: string; rawBalance: string }>;
 }
@@ -392,6 +364,12 @@ export interface ITronGridAccountTx {
     net_usage?: number;
     /** TRX burned for bandwidth, in sun. */
     net_fee?: number;
+    /** Vote rewards claimed by a `WithdrawBalanceContract`, in sun (from transaction info). */
+    withdraw_amount?: number;
+    /** TRX unfrozen by a legacy `UnfreezeBalanceContract`, in sun (from transaction info). */
+    unfreeze_amount?: number;
+    /** Expired-unstake TRX withdrawn by a `WithdrawExpireUnfreezeContract`, in sun (from transaction info). */
+    withdraw_expire_amount?: number;
 }
 
 /**

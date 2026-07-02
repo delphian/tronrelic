@@ -97,6 +97,16 @@ export class PriceHistoryService implements IPriceHistoryService {
     private readonly logger: ISystemLogService;
 
     /**
+     * Provider fetch calls attempted since process start. In-memory by design:
+     * the signal is "is the provider healthy right now", not an audit trail, so
+     * a restart resetting it is acceptable and keeps the counter free of storage.
+     */
+    private providerCalls = 0;
+
+    /** Provider fetch calls that failed since process start (see {@link providerCalls}). */
+    private providerErrors = 0;
+
+    /**
      * @param deps - Injected collaborators; private so the singleton owns
      *   construction.
      */
@@ -162,6 +172,26 @@ export class PriceHistoryService implements IPriceHistoryService {
      */
     private static delay(ms: number): Promise<void> {
         return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    /**
+     * Run one provider fetch through the rolling health counters: every call
+     * increments the attempt count, a throw increments the error count and
+     * rethrows unchanged so the caller's failure handling (cursor persistence,
+     * scheduler failure record) is untouched. Wrapping here keeps the counting
+     * in one place instead of at each of the three provider call sites.
+     *
+     * @param fetch - The provider call to run.
+     * @returns Whatever the provider call resolves to.
+     */
+    private async countProviderCall<T>(fetch: () => Promise<T>): Promise<T> {
+        this.providerCalls += 1;
+        try {
+            return await fetch();
+        } catch (error) {
+            this.providerErrors += 1;
+            throw error;
+        }
     }
 
     /**
@@ -380,15 +410,27 @@ export class PriceHistoryService implements IPriceHistoryService {
             }
         }
 
+        const floorDay = shiftUtcDay(todayUtcDay(), -MAX_BACKFILL_DAYS);
         const assets: IPriceAssetCoverage[] = progress.map((doc) => {
             const count = counts.get(doc.asset);
+            const oldestDay = count?.oldest_day ?? doc.oldestDayFetched;
+            // Backfill ETA input: days the deep walk still has to cover before
+            // the lookback floor — 0 once complete, null before a cursor exists.
+            // The listing date may end the walk earlier, so this is a ceiling,
+            // which is the honest bound an operator can plan against.
+            const estimatedDaysRemaining = doc.backfillComplete
+                ? 0
+                : oldestDay
+                    ? Math.max(0, diffUtcDays(floorDay, oldestDay))
+                    : null;
             return {
                 asset: doc.asset,
-                oldestDay: count?.oldest_day ?? doc.oldestDayFetched,
+                oldestDay,
                 newestDay: count?.newest_day ?? doc.newestDayFetched,
                 dayCount: count?.day_count ?? 0,
                 recentSeeded: doc.recentSeeded,
-                backfillComplete: doc.backfillComplete
+                backfillComplete: doc.backfillComplete,
+                estimatedDaysRemaining
             };
         });
 
@@ -409,7 +451,14 @@ export class PriceHistoryService implements IPriceHistoryService {
         return {
             settings,
             assets,
-            totals: { assetCount: assets.length, oldestDay, newestDay, staleAssets }
+            totals: {
+                assetCount: assets.length,
+                oldestDay,
+                newestDay,
+                staleAssets,
+                providerCalls: this.providerCalls,
+                providerErrors: this.providerErrors
+            }
         };
     }
 
@@ -424,7 +473,7 @@ export class PriceHistoryService implements IPriceHistoryService {
     private async seedRecentWindow(asset: PriceAsset): Promise<void> {
         const today = todayUtcDay();
         const fromDay = shiftUtcDay(today, -RECENT_WINDOW_DAYS);
-        const points = await this.provider.fetchRange(asset, fromDay, today);
+        const points = await this.countProviderCall(() => this.provider.fetchRange(asset, fromDay, today));
         await this.insertPoints(points);
         const patch: Partial<IPriceAssetProgressDoc> = { recentSeeded: true };
         if (points.length > 0) {
@@ -458,7 +507,7 @@ export class PriceHistoryService implements IPriceHistoryService {
                 this.logger.info({ asset: doc.asset, floorDay }, 'Backfill reached lookback floor');
                 return;
             }
-            const point = await this.provider.fetchDay(doc.asset, target);
+            const point = await this.countProviderCall(() => this.provider.fetchDay(doc.asset, target));
             if (!point) {
                 await this.patchAssetProgress(doc.asset, { backfillComplete: true });
                 this.logger.info({ asset: doc.asset, target }, 'Backfill reached asset listing (no earlier price)');
@@ -517,10 +566,11 @@ export class PriceHistoryService implements IPriceHistoryService {
         const today = todayUtcDay();
         const progress = await this.listAssetProgress();
         for (const doc of progress) {
-            if (!doc.recentSeeded || !doc.newestDayFetched || doc.newestDayFetched >= today) {
+            const newestDayFetched = doc.newestDayFetched;
+            if (!doc.recentSeeded || !newestDayFetched || newestDayFetched >= today) {
                 continue;
             }
-            const points = await this.provider.fetchRange(doc.asset, doc.newestDayFetched, today);
+            const points = await this.countProviderCall(() => this.provider.fetchRange(doc.asset, newestDayFetched, today));
             if (points.length === 0) {
                 continue;
             }

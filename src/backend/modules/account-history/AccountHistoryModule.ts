@@ -94,18 +94,6 @@ const SNAPSHOT_CRON = '0 */4 * * *';
 const SNAPSHOT_JOB = 'account-history:snapshot';
 
 /**
- * Cron for the value-transfer ledger backfill. A one-time drain that populates
- * internal and token legs for accounts completed before value legs were
- * dual-written, then self-quiesces (the selector empties once the legacy
- * population is swept). Five minutes keeps it gentle on the shared TronGrid budget;
- * operators can disable it from the Schedules tab once the backfill is done.
- */
-const LEDGER_BACKFILL_CRON = '*/5 * * * *';
-
-/** Scheduler job name for the Stage-3 value-transfer ledger backfill. */
-const LEDGER_BACKFILL_JOB = 'account-history:ledger-backfill';
-
-/**
  * Dedicated menu namespace for the page's in-page tab row. Kept out of `main`
  * so the tabs never leak into the global nav chrome — only the page's own
  * `MenuNavClient` reads this namespace (menu module's Submenu Pattern).
@@ -260,10 +248,7 @@ export class AccountHistoryModule implements IModule<IAccountHistoryModuleDepend
             this.scheduler.register(SNAPSHOT_JOB, SNAPSHOT_CRON, async () => {
                 await this.service.runSnapshotTick();
             });
-            this.scheduler.register(LEDGER_BACKFILL_JOB, LEDGER_BACKFILL_CRON, async () => {
-                await this.service.runLedgerBackfillTick();
-            });
-            this.logger.info('Account-history ingestion, forward-sync, snapshot, and ledger-backfill jobs registered');
+            this.logger.info('Account-history ingestion, forward-sync, and snapshot jobs registered');
         } else {
             this.logger.info('Scheduler disabled — account-history ingestion and forward-sync jobs not registered');
         }

@@ -91,6 +91,13 @@ export interface IAccountIngestionProgress {
      * current" from "complete but still catching up".
      */
     catchingUp?: boolean;
+    /**
+     * UTC `YYYY-MM-DD` of the most recent balance snapshot captured for this
+     * account, or absent when never snapshotted. Surfaces the otherwise-invisible
+     * `account-history:snapshot` sampler so a stalled snapshot job is legible per
+     * account on the admin page.
+     */
+    lastSnapshotDay?: string;
     /** Message from the most recent failed tick, cleared on the next success. */
     lastError?: string;
 }
@@ -154,16 +161,11 @@ export interface IAccountHistoryStats {
          */
         oldestNewestTimestamp?: Date;
         /**
-         * Completed accounts that still owe value-transfer ledger backfill — those
-         * that reached `complete` before value legs were dual-written and have not
-         * yet had their internal source drained or their token sweep finished. This
-         * is the at-a-glance "is the one-time ledger backfill done?" signal: it
-         * counts down as the `account-history:ledger-backfill` job drains the legacy
-         * population and is `0` once every completed account's ledger is whole.
-         * Counted regardless of pause state, so a paused account that still owes
-         * backfill keeps the count non-zero rather than masking remaining work.
+         * Tracked accounts whose {@link IAccountIngestionProgress.lastSnapshotDay}
+         * is the current UTC day — the "accounts snapshotted today" rollup that
+         * makes a stalled balance-snapshot sampler visible at a glance.
          */
-        legacyBackfillPending: number;
+        snapshottedTodayAccounts: number;
     };
 }
 
@@ -429,8 +431,31 @@ export interface IAccountBalanceSnapshot {
     netLimit: number;
     /** Bandwidth used in the current window. */
     netUsed: number;
+    /**
+     * Unclaimed (withdrawable) staking/vote rewards, in sun. Part of the
+     * account's real net worth even before a `WithdrawBalanceContract` claim
+     * moves it into the liquid balance; sampled via the provider's reward probe.
+     * Zero for accounts that never voted and on snapshots captured before the
+     * probe shipped.
+     */
+    withdrawableRewardSun: number;
     /** Per-token raw balances at capture; empty on series reads (latest-only). */
     tokenBalances: IAccountTokenBalance[];
+}
+
+/**
+ * Real symbol/decimals for one TRC20 contract, learned from the decoded token
+ * transfers the ingest walk stored (`token_info` on the trc20 endpoint). The
+ * authoritative alternative to a hard-coded decimals default: unusual-decimal
+ * tokens value correctly only when consumers key on these observed values.
+ */
+export interface ITokenMetadata {
+    /** TRC20 contract base58 address. */
+    asset: string;
+    /** Token symbol as the chain metadata reported it, or null when never seen. */
+    symbol: string | null;
+    /** Token decimals as the chain metadata reported them, or null when never seen. */
+    decimals: number | null;
 }
 
 /**
@@ -605,6 +630,18 @@ export interface IAccountHistoryService {
     runSnapshotTick(): Promise<void>;
 
     /**
+     * Resolve real symbol/decimals for a set of TRC20 contracts from the stored
+     * decoded transfers (`token_symbol` / `token_decimals` on trc20-source rows).
+     * Local-only — never a network call. Contracts the ingest never saw a decoded
+     * transfer for are omitted, so a caller falls back to its own default only
+     * for genuinely unknown tokens.
+     *
+     * @param assets - TRC20 contract addresses to resolve; malformed entries ignored.
+     * @returns Metadata for the known subset of the requested contracts.
+     */
+    getTokenMetadata(assets: string[]): Promise<ITokenMetadata[]>;
+
+    /**
      * List the distinct TRC20 contract addresses held in any stored balance
      * snapshot. Powers cross-module diagnostics — joining held tokens against the
      * price series surfaces which holdings lack a price source. Returns [] when
@@ -634,18 +671,4 @@ export interface IAccountHistoryService {
      * provider is available.
      */
     runForwardSyncTick(): Promise<void>;
-
-    /**
-     * Backfill the value-transfer ledger for accounts that finished their backfill
-     * before value legs were dual-written. Native legs are reconstructed from
-     * stored rows by a one-time migration; this tick covers the two leg families
-     * the provider must re-fetch — historical internal legs and token legs (whose
-     * `log_index` key lives only on the events endpoint) — for the stalest
-     * completed accounts that still owe them. Idempotent and self-quiescing: a
-     * legacy account drops out once its internal source exhausts and its token
-     * sweep finishes, and accounts completing under current code never enter.
-     * Invoked by its own scheduler job; also callable for a manual run. A no-op
-     * when `ingestionEnabled` is false or no provider is available.
-     */
-    runLedgerBackfillTick(): Promise<void>;
 }

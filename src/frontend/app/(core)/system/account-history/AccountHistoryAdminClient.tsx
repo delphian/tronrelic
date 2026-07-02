@@ -156,6 +156,9 @@ export function AccountHistoryAdminClient({ submenuTree, submenuGeneratedAt, ini
                     {stats.totals.completeAccounts > 0 && <Badge tone="success">{stats.totals.completeAccounts} complete</Badge>}
                     {stats.totals.catchingUpAccounts > 0 && <Badge tone="warning">{stats.totals.catchingUpAccounts} catching up</Badge>}
                     {stats.totals.failedAccounts > 0 && <Badge tone="danger">{stats.totals.failedAccounts} failed</Badge>}
+                    <Badge tone={stats.totals.snapshottedTodayAccounts >= stats.totals.trackedAccounts ? 'success' : 'neutral'}>
+                        {stats.totals.snapshottedTodayAccounts}/{stats.totals.trackedAccounts} snapshotted today
+                    </Badge>
                     {stats.totals.oldestNewestTimestamp && (
                         <Badge tone="neutral">current to <ClientTime date={stats.totals.oldestNewestTimestamp} format="relative" /></Badge>
                     )}

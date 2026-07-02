@@ -22,9 +22,20 @@
  * Where a value leg originated within its parent transaction. `native` is a
  * top-level contract value (a `TransferContract` amount or a `TriggerSmartContract`
  * call-value); `internal` is a TVM transfer performed during contract execution;
- * `token_event` is a TRC20/721 transfer emitted as a contract log.
+ * `token_event` is a TRC20/721 transfer emitted as a contract log; `fee` is the
+ * TRX the transaction burned as its network fee (a genuine reduction of the
+ * payer's total balance — `to` is empty because burned TRX has no recipient);
+ * `reward` is claimed staking/vote income entering the account (a
+ * `WithdrawBalanceContract` claim — `from` is empty because reward TRX is minted
+ * by the protocol, not sent by a counterparty).
+ *
+ * Staking state changes (freeze/unfreeze/withdraw-expire) deliberately produce
+ * NO leg: they move TRX between an account's own liquid/staked/unstaking buckets
+ * without changing its total, so a leg would have to be filtered back out of
+ * every value consumer. Bucket state is captured by the balance snapshots and
+ * the typed rows in `account_transactions`.
  */
-export type ValueTransferOrigin = 'native' | 'internal' | 'token_event';
+export type ValueTransferOrigin = 'native' | 'internal' | 'token_event' | 'fee' | 'reward';
 
 /** The asset class a value leg moves. `TRX` is native; the rest are token standards. */
 export type ValueAssetType = 'TRX' | 'TRC10' | 'TRC20' | 'TRC721';

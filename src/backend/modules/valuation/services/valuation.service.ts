@@ -29,7 +29,7 @@ import type {
     IValueTransferCursor,
     IAccountBalanceSnapshot
 } from '@/types';
-import { PRICE_ASSET_TRX } from '@/types';
+import { PRICE_ASSET_TRX, USDT_CONTRACT_ADDRESS } from '@/types';
 import { computeLots, reconstructTrxBalanceSeries, type ILedgerMove, type IDailyTrxDelta } from '../lib/lot-engine.js';
 
 /** Page size for ledger reads. Pagination has no row cap — a high-volume wallet's
@@ -52,8 +52,27 @@ const CURRENT_PRICE_LOOKBACK = 7;
 /** Sun per TRX. */
 const SUN_PER_TRX = 1_000_000;
 
-/** Default token decimals when the ledger never revealed them (USDT convention). */
+/** Default token decimals when neither the ledger nor the metadata registry revealed them (USDT convention). */
 const DEFAULT_TOKEN_DECIMALS = 6;
+
+/**
+ * Known USD stablecoins on TRON, eligible for the $1 missing-day fallback.
+ * Keyed by contract address; USDC's TRON deployment is a fixed constant like
+ * USDT's. Membership is deliberately narrow — only assets whose peg is the
+ * product — so an arbitrary token can never inherit the pin.
+ */
+const STABLECOIN_ASSETS = new Set<string>([
+    USDT_CONTRACT_ADDRESS,
+    'TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8' // USDC (TRON)
+]);
+
+/**
+ * Maximum deviation from $1.00 a stablecoin's nearest real price may show
+ * before the fallback refuses to pin missing days. 2% is far outside normal
+ * peg noise but inside a genuine depeg (USDC hit ~$0.88 in March 2023 —
+ * exactly when a naive pin lies).
+ */
+const STABLECOIN_DEPEG_TOLERANCE = 0.02;
 
 /**
  * Token metadata learned from the value ledger, keyed by contract address. The
@@ -263,6 +282,44 @@ export class ValuationService implements IValuationService {
         if (leg.assetType !== 'TRX' && leg.assetType !== 'TRC20') {
             return null;
         }
+
+        // Fee and reward legs deliberately carry one empty party (burned TRX has
+        // no recipient; protocol-minted rewards have no sender), so they resolve
+        // before the both-parties guard. Both are external by construction: a fee
+        // is a disposal with no proceeds (flagged for the engine), a reward is an
+        // income acquisition priced at the day's price.
+        if (leg.origin === 'fee') {
+            if (leg.from !== scopeAddress) {
+                return null;
+            }
+            return {
+                txId: leg.txId,
+                day: leg.timestamp.toISOString().slice(0, 10),
+                timestamp: leg.timestamp.getTime(),
+                asset: PRICE_ASSET_TRX,
+                quantity: Number(leg.amountRaw) / SUN_PER_TRX,
+                direction: 'out',
+                internal: false,
+                wallet: scopeAddress,
+                fee: true
+            };
+        }
+        if (leg.origin === 'reward') {
+            if (leg.to !== scopeAddress) {
+                return null;
+            }
+            return {
+                txId: leg.txId,
+                day: leg.timestamp.toISOString().slice(0, 10),
+                timestamp: leg.timestamp.getTime(),
+                asset: PRICE_ASSET_TRX,
+                quantity: Number(leg.amountRaw) / SUN_PER_TRX,
+                direction: 'in',
+                internal: false,
+                wallet: scopeAddress
+            };
+        }
+
         if (!leg.from || !leg.to || leg.from === leg.to) {
             return null;
         }
@@ -360,6 +417,25 @@ export class ValuationService implements IValuationService {
         );
         await priceHistory.ensureAssetsTracked(tokenAssets);
 
+        // Upgrade token metadata from the registry (real symbol/decimals learned
+        // from decoded trc20 transfers). The ledger walk above only yields
+        // decimals and a short-address label; the registry supplies the display
+        // symbol for every token and decimals for tokens the ledger legs never
+        // carried (e.g. held in the snapshot but acquired outside the ingested
+        // window). Ledger-observed decimals stay authoritative when present.
+        try {
+            const registry = await accountHistory.getTokenMetadata(tokenAssets);
+            for (const meta of registry) {
+                const existing = tokenMeta.get(meta.asset);
+                tokenMeta.set(meta.asset, {
+                    symbol: meta.symbol ?? existing?.symbol ?? ValuationService.shortAsset(meta.asset),
+                    decimals: existing?.decimals ?? meta.decimals ?? DEFAULT_TOKEN_DECIMALS
+                });
+            }
+        } catch (error) {
+            this.logger.warn({ error }, 'valuation: token-metadata read failed; falling back to ledger-learned metadata');
+        }
+
         // Batch historical prices per asset for the external moves (internal
         // transfers carry migrated basis and need no price lookup).
         const externalMoves = moves.filter((m) => !m.internal);
@@ -377,7 +453,32 @@ export class ValuationService implements IValuationService {
                 }
             })
         );
-        const priceOnDay = (asset: string, day: string): number | null => priceMap.get(`${asset}|${day}`) ?? null;
+        // Depeg-aware stablecoin fallback: a known stablecoin's missing day may
+        // be pinned to $1, but only when its nearest real price does not dispute
+        // the peg. One lookback read per stable asset decides the pin for the
+        // whole computation; a genuine depeg (a nearby real price off by more
+        // than the tolerance) disables the pin so the March-2023-style event is
+        // never papered over. A stable with no real coverage at all pins freely —
+        // that is the exact gap the fallback exists to fill.
+        const today = ValuationService.today();
+        const stableAssetsInPlay = Array.from(new Set(
+            [...assetsToPrice, ...tokenAssets].filter((asset) => STABLECOIN_ASSETS.has(asset))
+        ));
+        const stablePinAllowed = new Map<string, boolean>();
+        await Promise.all(
+            stableAssetsInPlay.map(async (asset) => {
+                const recent = await priceHistory.getSeries(asset, ValuationService.shiftDay(today, -CURRENT_PRICE_LOOKBACK), today);
+                const latest = recent.length > 0 ? recent[recent.length - 1].priceUsd : null;
+                stablePinAllowed.set(asset, latest === null || Math.abs(latest - 1) <= STABLECOIN_DEPEG_TOLERANCE);
+            })
+        );
+        const priceOnDay = (asset: string, day: string): number | null => {
+            const stored = priceMap.get(`${asset}|${day}`);
+            if (stored !== undefined) {
+                return stored;
+            }
+            return STABLECOIN_ASSETS.has(asset) && stablePinAllowed.get(asset) !== false ? 1 : null;
+        };
 
         // The engine sees all moves (it migrates internal-transfer basis between
         // wallet sub-books); the realized PnL and remaining basis are then summed
@@ -401,14 +502,22 @@ export class ValuationService implements IValuationService {
         }
 
         // Aggregate current holdings from the authoritative snapshots.
-        const today = ValuationService.today();
         let trxQty = 0;
         let stakedSun = 0;
         let unstakingSun = 0;
         const tokenQty = new Map<string, number>();
         let capturedAt: Date | null = null;
         for (const snapshot of snapshots) {
-            trxQty += (snapshot.trxBalanceSun + snapshot.stakedEnergySun + snapshot.stakedBandwidthSun + snapshot.unstakingSun) / SUN_PER_TRX;
+            // Withdrawable (unclaimed) vote rewards are real net worth — the
+            // claim only moves them into the liquid balance — so they count in
+            // the TRX quantity alongside liquid, staked, and unstaking TRX.
+            trxQty += (
+                snapshot.trxBalanceSun +
+                snapshot.stakedEnergySun +
+                snapshot.stakedBandwidthSun +
+                snapshot.unstakingSun +
+                snapshot.withdrawableRewardSun
+            ) / SUN_PER_TRX;
             stakedSun += snapshot.stakedEnergySun + snapshot.stakedBandwidthSun;
             unstakingSun += snapshot.unstakingSun;
             if (!capturedAt || snapshot.capturedAt > capturedAt) {
@@ -427,7 +536,14 @@ export class ValuationService implements IValuationService {
         await Promise.all(
             heldAssets.map(async (asset) => {
                 const series = await priceHistory.getSeries(asset, ValuationService.shiftDay(today, -CURRENT_PRICE_LOOKBACK), today);
-                currentPrice.set(asset, series.length > 0 ? series[series.length - 1].priceUsd : null);
+                if (series.length > 0) {
+                    currentPrice.set(asset, series[series.length - 1].priceUsd);
+                    return;
+                }
+                // Same depeg-aware $1 pin as the historical lookup: a held
+                // stablecoin with no local coverage values at par instead of
+                // dropping out of USD totals entirely.
+                currentPrice.set(asset, STABLECOIN_ASSETS.has(asset) && stablePinAllowed.get(asset) !== false ? 1 : null);
             })
         );
 
@@ -469,6 +585,11 @@ export class ValuationService implements IValuationService {
         );
         const historyBackfillComplete = await this.resolveHistoryBackfillComplete(accountHistory, query.addresses);
 
+        // The engine's incompleteness evidence: any zero-basis disposal or
+        // undrained migration means the ledger did not reach far enough back, so
+        // PnL and cost basis are approximate and the UI should label them.
+        const basisApproximate = lots.zeroBasisDisposals > 0 || lots.undrainedMigrations > 0;
+
         return {
             scope: query.scope,
             addresses: query.addresses,
@@ -484,7 +605,8 @@ export class ValuationService implements IValuationService {
             balanceSeriesUsd,
             unpricedAssets,
             pricedValueFraction: Math.max(0, Math.min(1, pricedValueFraction)),
-            historyBackfillComplete
+            historyBackfillComplete,
+            basisApproximate
         };
     }
 
@@ -556,7 +678,8 @@ export class ValuationService implements IValuationService {
             balanceSeriesUsd: [],
             unpricedAssets: [],
             pricedValueFraction: 1,
-            historyBackfillComplete: true
+            historyBackfillComplete: true,
+            basisApproximate: false
         };
     }
 }
