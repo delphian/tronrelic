@@ -28,9 +28,60 @@ import {
     runIngestion,
     runForwardSync,
     type IAccountHistoryStatsView,
+    type IAccountHistoryTickOutcomeView,
+    type IAccountHistorySourceFlags,
     type AccountIngestionStatus
 } from '../../../../modules/account-history';
 import styles from './page.module.scss';
+
+/**
+ * Summarize a completed tick for the trigger buttons' toast, so the operator
+ * learns what the tick actually did (or why it did nothing) without opening
+ * the Tick Activity tab.
+ *
+ * @param outcome - The tick outcome the trigger endpoint returned.
+ * @returns A one-line human summary.
+ */
+function describeOutcome(outcome: IAccountHistoryTickOutcomeView): string {
+    let description: string;
+    if (outcome.skippedReason === 'disabled') {
+        description = 'Skipped — ingestion is disabled in settings.';
+    } else if (outcome.skippedReason === 'unavailable') {
+        description = 'Skipped — ClickHouse or the history provider is unavailable.';
+    } else if (outcome.skippedReason === 'overlapping') {
+        description = 'Skipped — another tick is already running.';
+    } else {
+        const errors = outcome.totals.errors > 0 ? `, ${outcome.totals.errors} error${outcome.totals.errors === 1 ? '' : 's'}` : '';
+        description = `${outcome.totals.accountsTouched} account${outcome.totals.accountsTouched === 1 ? '' : 's'}, `
+            + `${outcome.totals.providerCalls.toLocaleString()} API calls, `
+            + `${outcome.totals.rowsWritten.toLocaleString()} rows${errors}.`;
+    }
+    return description;
+}
+
+/**
+ * Render the per-source walk status line under an in-progress account's status
+ * badge: a check for an exhausted walk, an ellipsis for one still descending.
+ *
+ * @param flags - The per-source completion flags from progress.
+ * @returns The `tx ✓ · trc20 … · internal …` display string.
+ */
+function describeSources(flags: IAccountHistorySourceFlags): string {
+    const mark = (done: boolean) => (done ? '✓' : '…');
+    return `tx ${mark(flags.tx)} · trc20 ${mark(flags.trc20)} · internal ${mark(flags.internal)}`;
+}
+
+/**
+ * Name the source walks currently mid-drain in forward sync, for the catching-up
+ * detail line (e.g. `draining trc20`).
+ *
+ * @param flags - The per-source forward-drain flags from progress.
+ * @returns The joined names, or an empty string when none drain.
+ */
+function describeDraining(flags: IAccountHistorySourceFlags): string {
+    const names = (['tx', 'trc20', 'internal'] as const).filter((source) => flags[source]);
+    return names.length > 0 ? `draining ${names.join(' + ')}` : '';
+}
 
 /**
  * Map a backfill status to a Badge tone so an operator reads progress at a glance.
@@ -122,8 +173,12 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
 
     const runNow = useCallback(async () => {
         try {
-            await runIngestion();
-            push({ tone: 'success', title: 'Backfill tick started' });
+            const outcome = await runIngestion();
+            push({
+                tone: outcome.skippedReason || outcome.totals.errors > 0 ? 'info' : 'success',
+                title: 'Backfill tick finished',
+                description: describeOutcome(outcome)
+            });
         } catch (err) {
             push({ tone: 'danger', title: 'Failed to run ingestion', description: err instanceof Error ? err.message : String(err) });
         }
@@ -131,8 +186,12 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
 
     const runForwardNow = useCallback(async () => {
         try {
-            await runForwardSync();
-            push({ tone: 'success', title: 'Forward-sync tick started', description: 'Refreshing completed accounts with new transactions.' });
+            const outcome = await runForwardSync();
+            push({
+                tone: outcome.skippedReason || outcome.totals.errors > 0 ? 'info' : 'success',
+                title: 'Forward-sync tick finished',
+                description: describeOutcome(outcome)
+            });
         } catch (err) {
             push({ tone: 'danger', title: 'Failed to run forward sync', description: err instanceof Error ? err.message : String(err) });
         }
@@ -204,6 +263,12 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                                                 <Badge tone={statusTone(progress.status)}>{account.paused ? 'paused' : progress.status}</Badge>
                                                 {progress.catchingUp && !account.paused && <Badge tone="warning">catching up</Badge>}
                                             </div>
+                                            {progress.status !== 'complete' && progress.sourcesComplete && (
+                                                <div className={styles.source_flags}>{describeSources(progress.sourcesComplete)}</div>
+                                            )}
+                                            {progress.catchingUp && progress.forwardDraining && describeDraining(progress.forwardDraining) && (
+                                                <div className={styles.source_flags}>{describeDraining(progress.forwardDraining)}</div>
+                                            )}
                                         </Td>
                                         <Td data-label="Rows" muted>{progress.rowsIngested.toLocaleString()}</Td>
                                         <Td data-label="Oldest reached" muted>

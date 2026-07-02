@@ -7,6 +7,12 @@
 
 export type {
     AccountIngestionStatus,
+    AccountHistoryTickKind,
+    AccountHistoryTickSkipReason,
+    IAccountHistorySourceFlags,
+    IAccountHistorySourcePages,
+    IAccountHistoryTickAccountOutcome,
+    IAccountHistoryTickOutcome,
     ITrackedAccount,
     IAccountIngestionProgress,
     IAccountHistorySettings,

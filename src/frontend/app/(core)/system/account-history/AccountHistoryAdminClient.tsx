@@ -30,11 +30,23 @@ import { getSocket } from '../../../../lib/socketClient';
 import { SchedulerMonitor, type SchedulerJob } from '../../../../modules/scheduler';
 import { getStats, type IAccountHistoryStatsView } from '../../../../modules/account-history';
 import { AccountsTab } from './AccountsTab';
+import { ActivityTab } from './ActivityTab';
 import { SettingsTab } from './SettingsTab';
 import styles from './page.module.scss';
 
-/** The page's three tab ids; the `?tab=` value carried by each submenu node. */
-type TabId = 'accounts' | 'settings' | 'schedules';
+/** The page's four tab ids; the `?tab=` value carried by each submenu node. */
+type TabId = 'accounts' | 'activity' | 'settings' | 'schedules';
+
+/**
+ * Type guard narrowing an arbitrary `?tab=` string to a known TabId, so the
+ * deep-link seeding and click routing share one source of truth for valid tabs.
+ *
+ * @param tab - The raw `?tab=` value.
+ * @returns True when the value names a real tab.
+ */
+function isTabId(tab: string | undefined): tab is TabId {
+    return tab === 'accounts' || tab === 'activity' || tab === 'settings' || tab === 'schedules';
+}
 
 /** The menu namespace the module registers the tab nodes under. */
 const SUBMENU_NAMESPACE = 'account-history';
@@ -77,7 +89,7 @@ function isAccountHistoryJob(job: SchedulerJob): boolean {
  */
 function tabFromUrl(url: string | undefined): TabId {
     const tab = url?.match(/[?&]tab=([^&]+)/)?.[1];
-    return tab === 'settings' || tab === 'schedules' ? tab : 'accounts';
+    return isTabId(tab) ? tab : 'accounts';
 }
 
 /**
@@ -87,9 +99,7 @@ function tabFromUrl(url: string | undefined): TabId {
  * @returns The page.
  */
 export function AccountHistoryAdminClient({ submenuTree, submenuGeneratedAt, initialTab }: IAccountHistoryAdminClientProps) {
-    const [activeTab, setActiveTab] = useState<TabId>(
-        initialTab === 'settings' || initialTab === 'schedules' ? initialTab : 'accounts'
-    );
+    const [activeTab, setActiveTab] = useState<TabId>(isTabId(initialTab) ? initialTab : 'accounts');
     const [stats, setStats] = useState<IAccountHistoryStatsView | null>(null);
 
     const loadStats = useCallback(async () => {
@@ -178,6 +188,7 @@ export function AccountHistoryAdminClient({ submenuTree, submenuGeneratedAt, ini
 
             <div className={styles.content}>
                 {activeTab === 'accounts' && <AccountsTab stats={stats} onChanged={loadStats} />}
+                {activeTab === 'activity' && <ActivityTab stats={stats} />}
                 {activeTab === 'settings' && <SettingsTab />}
                 {activeTab === 'schedules' && <SchedulerMonitor jobFilter={isAccountHistoryJob} title="Account History Schedules" />}
             </div>

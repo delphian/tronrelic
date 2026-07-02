@@ -11,6 +11,26 @@
     line-height: var(--line-height-relaxed);
 }
 
+.tick_account {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.tick_account + .tick_account {
+    margin-top: var(--gap-2xs);
+}
+
+.tick_account_addr {
+    font-family: var(--font-mono);
+    color: var(--color-text);
+}
+
+.source_flags {
+    margin-top: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
 .summary {
     display: flex;
     flex-wrap: wrap;

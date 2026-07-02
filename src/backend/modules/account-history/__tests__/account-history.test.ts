@@ -136,7 +136,7 @@ describe('AccountHistoryModule', () => {
         expect(scheduler.register).toHaveBeenCalledWith('account-history:forward-sync', expect.any(String), expect.any(Function));
         expect(serviceRegistry.has('account-history')).toBe(true);
 
-        // The System-container entry plus the three in-page tab nodes (the
+        // The System-container entry plus the four in-page tab nodes (the
         // Submenu Pattern): tabs live in their own namespace, outside the System
         // container, so the module sets `requiresAdmin` on them explicitly.
         expect(menuService.create).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'main', label: 'Account History' }));
@@ -145,7 +145,12 @@ describe('AccountHistoryModule', () => {
             url: '/system/account-history?tab=accounts',
             requiresAdmin: true
         }));
-        expect(menuService.create).toHaveBeenCalledTimes(4);
+        expect(menuService.create).toHaveBeenCalledWith(expect.objectContaining({
+            namespace: 'account-history',
+            url: '/system/account-history?tab=activity',
+            requiresAdmin: true
+        }));
+        expect(menuService.create).toHaveBeenCalledTimes(5);
         expect(hookRegistry.register).toHaveBeenCalledWith(
             'core',
             expect.objectContaining({ id: 'http.walletLinked' }),
@@ -330,8 +335,14 @@ describe('AccountHistoryService', () => {
     it('runIngestionTick is a no-op without ClickHouse and never calls the provider', async () => {
         const provider: IAccountHistoryProvider = { id: 'test', fetchPage: vi.fn(), fetchAccountSnapshot: vi.fn(), fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })), fetchTokenTransferLegs: vi.fn(async () => []) };
         const service = buildService(provider);
-        await service.runIngestionTick();
+        // The no-op still self-describes: the outcome names the skip reason and
+        // is recorded on the stats telemetry ring.
+        const outcome = await service.runIngestionTick();
         expect(provider.fetchPage).not.toHaveBeenCalled();
+        expect(outcome.skippedReason).toBe('unavailable');
+        expect(outcome.totals.providerCalls).toBe(0);
+        const stats = await service.getStats();
+        expect(stats.recentTicks[0]).toMatchObject({ kind: 'ingest', skippedReason: 'unavailable' });
     });
 
     it('runIngestionTick selects only unpaused, not-complete accounts', async () => {
@@ -369,6 +380,42 @@ describe('AccountHistoryService', () => {
         expect(provider.fetchPage).toHaveBeenCalledWith(queued, expect.anything());
         expect(provider.fetchPage).not.toHaveBeenCalledWith(complete, expect.anything());
         expect(provider.fetchPage).not.toHaveBeenCalledWith(paused, expect.anything());
+    });
+
+    it('runIngestionTick returns a per-account outcome accounting for every provider call', async () => {
+        // Call-level accountability: the outcome attributes one page fetch per
+        // source walk (tx, trc20, internal — all empty here, so one page each)
+        // to the selected account, and the same outcome lands on the stats ring.
+        AccountHistoryService.resetForTests();
+        const now = new Date('2024-01-01T00:00:00.000Z');
+        const database = createMockDatabaseService();
+        database.getCollectionData(TRACKED_COLLECTION).push({ address: VALID_ADDRESS, paused: false, addedAt: now, updatedAt: now });
+        database.getCollectionData(PROGRESS_COLLECTION).push({ address: VALID_ADDRESS, status: 'queued', rowsIngested: 0, paused: false });
+        const clickhouse = { query: vi.fn().mockResolvedValue([]), insert: vi.fn() } as unknown as IClickHouseService;
+        const provider: IAccountHistoryProvider = {
+            id: 'test',
+            fetchAccountSnapshot: vi.fn(),
+            fetchPage: vi.fn(async () => ({ transactions: [], nextFingerprint: undefined })),
+            fetchInternalTransfersPage: vi.fn(async () => ({ transfers: [], nextFingerprint: undefined })),
+            fetchTokenTransferLegs: vi.fn(async () => [])
+        };
+        AccountHistoryService.setDependencies({ database, clickhouse, provider, emitter: undefined, logger: createSilentLogger() });
+        const service = AccountHistoryService.getInstance();
+
+        const outcome = await service.runIngestionTick();
+
+        expect(outcome.kind).toBe('ingest');
+        expect(outcome.skippedReason).toBeUndefined();
+        expect(outcome.accounts).toHaveLength(1);
+        expect(outcome.accounts[0]).toMatchObject({
+            address: VALID_ADDRESS,
+            providerCalls: 3,
+            pages: { tx: 1, trc20: 1, internal: 1 },
+            rowsWritten: 0
+        });
+        expect(outcome.totals).toMatchObject({ accountsTouched: 1, providerCalls: 3, rowsWritten: 0, errors: 0 });
+        const stats = await service.getStats();
+        expect(stats.recentTicks[0]).toBe(outcome);
     });
 
     it('dual-writes value-transfer legs: native legs from transactions and internal legs from the internal endpoint', async () => {
