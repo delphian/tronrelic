@@ -13,7 +13,7 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
      * Padding size variant
      * @default 'md'
      */
-    padding?: 'sm' | 'md' | 'lg';
+    padding?: 'xs' | 'sm' | 'md' | 'lg';
     /**
      * Enables elevated shadow effect
      * @default false
@@ -24,6 +24,14 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
      * @default 'default'
      */
     tone?: 'default' | 'muted' | 'accent';
+    /**
+     * Renders the border and box-shadow. Set false for a Card nested inside
+     * another Card (e.g. a stat tile inside a titled section) so the pairing
+     * doesn't double up on border/radius/shadow — the outer Card already owns
+     * that boundary, and the inner one only needs its tone background.
+     * @default true
+     */
+    bordered?: boolean;
     /**
      * Disables the theme background image watermark for this card
      * @default false
@@ -36,6 +44,7 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
  * Ensures type-safe selection of padding variants.
  */
 const paddingClass: Record<NonNullable<CardProps['padding']>, string> = {
+    xs: styles['card--padding-xs'],
     sm: styles['card--padding-sm'],
     md: styles['card--padding-md'],
     lg: styles['card--padding-lg']
@@ -76,13 +85,14 @@ const toneClass: Record<NonNullable<CardProps['tone']>, string> = {
  * @param props - Card component properties
  * @returns A styled div element with surface styling
  */
-export function Card({ className, padding = 'md', elevated = false, tone = 'default', noBackgroundImage = false, ...props }: CardProps) {
+export function Card({ className, padding = 'md', elevated = false, tone = 'default', bordered = true, noBackgroundImage = false, ...props }: CardProps) {
     return (
         <div
             className={cn(
                 toneClass[tone],
                 paddingClass[padding],
                 elevated && styles['card--elevated'],
+                !bordered && styles['card--flat'],
                 noBackgroundImage && styles['card--no-bg-image'],
                 className
             )}

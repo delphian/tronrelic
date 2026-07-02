@@ -31,6 +31,15 @@
     overflow-x: auto;
 }
 
+/* Balance-over-time chart + its caption/warning banner, grouped without a
+   nested Card — the outer WalletDetailSection already provides the one
+   bordered boundary for this panel. */
+.portfolio_chart {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
 @container wallet-detail (max-width: #{$breakpoint-mobile-md}) {
     .portfolio_split {
         grid-template-columns: 1fr;

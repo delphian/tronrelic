@@ -291,6 +291,18 @@ export class TronGridAccountHistoryProvider implements IAccountHistoryProvider {
                 stakedBandwidthSun += amount; // TronGrid omits `type` for bandwidth
             }
         }
+        // Delegated-OUT stake: TRX this account froze but delegated to another
+        // address for that address to use. Still owned/staked by this account
+        // (counts toward its own net worth and its own TRON Power/votes), but
+        // TronGrid excludes it from `frozenV2` once delegated out, so it must
+        // be added back separately. Bandwidth's delegated-out amount sits
+        // top-level on the account response; energy's sits nested under
+        // `account_resource` — asymmetric per protobuf `Account`/`AccountResource`.
+        // `acquired_delegated_frozenV2_balance_for_*` (resource delegated IN
+        // from someone else) is intentionally excluded — that stake belongs to
+        // the delegator, not this account.
+        stakedBandwidthSun += account?.delegated_frozenV2_balance_for_bandwidth ?? 0;
+        stakedEnergySun += account?.account_resource?.delegated_frozenV2_balance_for_energy ?? 0;
 
         let unstakingSun = 0;
         for (const pending of account?.unfrozenV2 ?? []) {
