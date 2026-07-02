@@ -1,5 +1,12 @@
 import type { IMenuItemConfig, IPageConfig, IPlugin } from '@/types';
 import { frontendPlugins } from '../components/plugins/plugins.generated';
+import {
+    isWildcardPath,
+    wildcardPrefix,
+    matchPluginPagePath,
+    sortWildcardEntries,
+    type IWildcardPageEntry
+} from './pluginPagePathMatch';
 
 /**
  * Plugin menu and page registry for dynamic navigation.
@@ -276,15 +283,32 @@ class PluginRegistry {
     /**
      * Get a specific page by path.
      *
-     * Looks up a page configuration by its URL path. This is useful for
-     * dynamic route handlers that need to render the appropriate component
-     * based on the current route.
+     * Looks up a page configuration by its URL path, honoring the wildcard
+     * convention: exact registrations win, then the longest matching '/*'
+     * wildcard prefix. Runs the same shared matcher as the server registry
+     * (serverPluginRegistry.ts) so SSR and client hydration always resolve a
+     * URL to the same page config — a divergence here would hydration-crash
+     * every wildcard route.
      *
-     * @param path - The URL path to lookup (e.g., '/whales', '/my-plugin/settings')
+     * Registration already enforces first-wins on duplicate literal paths, so
+     * the match inputs built here contain no collisions. Page counts are small
+     * (tens), so rebuilding the inputs per lookup is cheaper than keeping a
+     * derived index coherent through registerPlugin/clear.
+     *
+     * @param path - The URL path to lookup (e.g., '/whales', '/blog/my-post')
      * @returns The page configuration if found, undefined otherwise
      */
     getPageByPath(path: string): IPageConfig | undefined {
-        return this.state.pages.find(page => page.path === path);
+        const exactMap = new Map<string, IPageConfig>();
+        const wildcards: Array<IWildcardPageEntry<IPageConfig>> = [];
+        for (const page of this.state.pages) {
+            if (isWildcardPath(page.path)) {
+                wildcards.push({ prefix: wildcardPrefix(page.path), value: page });
+            } else {
+                exactMap.set(page.path, page);
+            }
+        }
+        return matchPluginPagePath(exactMap, sortWildcardEntries(wildcards), path) ?? undefined;
     }
 
     /**

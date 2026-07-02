@@ -25,14 +25,19 @@ export const myFrontendPlugin = definePlugin({
 });
 ```
 
+## Wildcard Routes
+
+A `path` ending in `/*` (e.g. `'/blog/*'`) registers a wildcard page owning every strictly deeper URL — the mechanism behind per-resource plugin pages like `/blog/my-post`. `/blog/*` matches `/blog/my-post` and `/blog/2026/recap` but never `/blog` itself; register the index page's exact path separately. Exact registrations beat wildcards, and the longest wildcard prefix wins among overlaps. Both `serverDataFetcher` and `serverMetadataFetcher` receive the concrete requested URL as `ctx.path`, so the fetcher derives its route parameter by stripping the declared prefix. Per-URL SEO comes from `serverMetadataFetcher` — see [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md#servermetadatafetcher-pattern).
+
 ## IPageConfig Fields
 
 | Field | Purpose |
 |-------|---------|
-| `path` | URL route; must match backend menu `url` exactly |
+| `path` | URL route; must match backend menu `url` exactly. A trailing `/*` registers a wildcard route (see [Wildcard Routes](#wildcard-routes)) |
 | `component` | React component receiving `{ context, initialData }` |
 | `title`, `description`, `keywords`, `ogImage`, `ogType`, `canonical`, `noindex`, `structuredData` | SEO metadata — see [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md) |
 | `serverDataFetcher` | Async hook returning `initialData` for SSR — see [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md) |
+| `serverMetadataFetcher` | Async hook computing per-URL SEO metadata for wildcard pages; `null` return means the resource does not exist (404 + noindex) — see [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md#servermetadatafetcher-pattern) |
 | `requiresAuth` | Authentication required (declarative; enforce in component) |
 | `requiresAdmin` | Admin required (declarative; admin pages auto-enforce — see [plugins-page-registration-admin.md](./plugins-page-registration-admin.md)) |
 

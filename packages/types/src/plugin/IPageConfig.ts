@@ -22,6 +22,51 @@ export interface IServerDataContext {
      * Use this when building absolute URLs in fetched data.
      */
     siteUrl: string;
+
+    /**
+     * The actual URL path being rendered (e.g., '/blog/my-post').
+     *
+     * Essential for wildcard pages, whose registered `path` (e.g. '/blog/*')
+     * does not identify the concrete resource requested — fetchers derive
+     * route parameters by stripping their declared prefix from this value.
+     * Optional so plugins compiled against older core versions (which did not
+     * supply it) still typecheck; current core always populates it.
+     */
+    path?: string;
+}
+
+/**
+ * Dynamic SEO metadata returned by a page's `serverMetadataFetcher`.
+ *
+ * Static `IPageConfig` SEO fields describe a page whose content is fixed at
+ * registration time. A wildcard page renders a different resource per URL, so
+ * its metadata must be computed per request. This shape mirrors the static
+ * fields; values returned here override the corresponding static field.
+ */
+export interface IPluginPageMetadata {
+    /** Page title for <title>, og:title, and twitter:title. */
+    title?: string;
+
+    /** Page description for <meta description>, og:description, and twitter:description. */
+    description?: string;
+
+    /** SEO keywords for <meta name="keywords">. */
+    keywords?: string[];
+
+    /** Open Graph image URL (relative to siteUrl or absolute). */
+    ogImage?: string;
+
+    /** Open Graph type; use 'article' for time-stamped content. */
+    ogType?: 'website' | 'article';
+
+    /** Canonical URL override for search-engine signal consolidation. */
+    canonical?: string;
+
+    /** If true, instructs search engines not to index this page. */
+    noindex?: boolean;
+
+    /** Schema.org JSON-LD injected as a <script type="application/ld+json"> tag. */
+    structuredData?: Record<string, unknown>;
 }
 
 /**
@@ -47,7 +92,17 @@ export interface IPageConfig {
     /** Plugin identifier (set automatically by the registry) */
     pluginId?: string;
 
-    /** URL path (e.g., '/whales', '/my-plugin/settings') */
+    /**
+     * URL path (e.g., '/whales', '/my-plugin/settings').
+     *
+     * A path ending in '/*' registers a wildcard page (e.g. '/blog/*') that
+     * matches any strictly deeper path — '/blog/*' matches '/blog/my-post'
+     * and '/blog/2026/recap' but never '/blog' itself (register '/blog'
+     * separately for the index page). Exact registrations always win over
+     * wildcards; among overlapping wildcards the longest prefix wins.
+     * Wildcard pages should pair `serverDataFetcher`/`serverMetadataFetcher`
+     * with `IServerDataContext.path` to resolve the concrete resource.
+     */
     path: string;
 
     /**
@@ -109,6 +164,24 @@ export interface IPageConfig {
      * ```
      */
     serverDataFetcher?: (ctx: IServerDataContext) => Promise<unknown>;
+
+    /**
+     * Optional async function computing per-request SEO metadata during SSR.
+     *
+     * Static SEO fields cannot describe a wildcard page's concrete resource
+     * (a specific blog post, a specific record), so crawlers would see one
+     * generic title for every URL. When defined, the catch-all route invokes
+     * this before rendering and merges the returned fields over the static
+     * ones for <head> generation.
+     *
+     * Returning `null` is an authoritative "resource not found": the route
+     * emits noindex metadata and renders a 404. Only return `null` when the
+     * backend definitively reported the resource absent (e.g. HTTP 404).
+     * Throw on transient failures instead — thrown errors are caught and the
+     * route falls back to the static fields, so a brief backend outage never
+     * serves 404s to crawlers.
+     */
+    serverMetadataFetcher?: (ctx: IServerDataContext) => Promise<IPluginPageMetadata | null>;
 
     /** Page title for SEO. Used in <title>, og:title, and twitter:title. */
     title?: string;

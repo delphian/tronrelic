@@ -32,6 +32,13 @@ import { cache } from 'react';
 import type { IPageConfig } from '@/types';
 import { frontendPlugins } from '../components/plugins/plugins.generated';
 import { getServerSideApiUrlWithPath } from './api-url';
+import {
+    isWildcardPath,
+    wildcardPrefix,
+    matchPluginPagePath,
+    sortWildcardEntries,
+    type IWildcardPageEntry
+} from './pluginPagePathMatch';
 
 /**
  * A page resolved from a plugin's frontend module, with the owning pluginId
@@ -43,27 +50,39 @@ interface IResolvedPluginPage {
 }
 
 /**
+ * The process-lifetime page index: exact paths keyed literally, plus wildcard
+ * registrations ('/*' suffix) pre-stripped and sorted longest-prefix-first so
+ * request-time matching is a first-hit scan.
+ */
+interface IPluginPageIndex {
+    exact: Map<string, IResolvedPluginPage>;
+    wildcards: Array<IWildcardPageEntry<IResolvedPluginPage>>;
+}
+
+/**
  * Process-lifetime cache of every plugin page declared by every plugin,
  * regardless of enabled state. Built lazily on first call to
  * getEnabledPluginPageConfig.
  */
-let permanentMap: Map<string, IResolvedPluginPage> | null = null;
+let permanentIndex: IPluginPageIndex | null = null;
 
 /**
  * Walks the synchronously-imported plugin list and indexes every plugin's
- * pages and adminPages by URL path.
+ * pages and adminPages by URL path, separating exact paths from wildcard
+ * ('/*' suffix) registrations.
  *
  * Collision policy: first-wins. The first plugin to register a given path
  * keeps it; later plugins are warned and skipped. This matches the
- * client-side `pluginRegistry.getPageByPath` semantics (which uses
- * `Array.find` and returns the first match), so the server and client
+ * client-side `pluginRegistry.getPageByPath` semantics (both sides run the
+ * shared matcher in pluginPagePathMatch.ts), so the server and client
  * always resolve the same plugin for any given path — preventing React
  * hydration mismatches when two plugins accidentally collide.
  *
- * @returns A path-to-resolved-page map covering every plugin's pages
+ * @returns The exact-map + sorted-wildcard index covering every plugin's pages
  */
-function buildPermanentMap(): Map<string, IResolvedPluginPage> {
+function buildPermanentIndex(): IPluginPageIndex {
     const map = new Map<string, IResolvedPluginPage>();
+    const wildcards: Array<IWildcardPageEntry<IResolvedPluginPage>> = [];
     for (const plugin of frontendPlugins) {
         // Defense in depth — the generated registry already filters malformed
         // modules, but a plugin whose pages array contains entries with
@@ -88,6 +107,23 @@ function buildPermanentMap(): Map<string, IResolvedPluginPage> {
                     );
                     continue;
                 }
+                const resolved: IResolvedPluginPage = {
+                    pluginId,
+                    config: { ...page, pluginId }
+                };
+                if (isWildcardPath(page.path)) {
+                    const prefix = wildcardPrefix(page.path);
+                    const existingWildcard = wildcards.find(entry => entry.prefix === prefix);
+                    if (existingWildcard) {
+                        console.warn(
+                            `[serverPluginRegistry] Duplicate wildcard page path '${page.path}' detected. ` +
+                                `Plugin '${pluginId}' will be ignored; '${existingWildcard.value.pluginId}' keeps the route.`
+                        );
+                        continue;
+                    }
+                    wildcards.push({ prefix, value: resolved });
+                    continue;
+                }
                 const existing = map.get(page.path);
                 if (existing) {
                     console.warn(
@@ -96,10 +132,7 @@ function buildPermanentMap(): Map<string, IResolvedPluginPage> {
                     );
                     continue;
                 }
-                map.set(page.path, {
-                    pluginId,
-                    config: { ...page, pluginId }
-                });
+                map.set(page.path, resolved);
             }
         } catch (error) {
             const pluginId = plugin?.manifest?.id ?? '<unknown>';
@@ -109,20 +142,20 @@ function buildPermanentMap(): Map<string, IResolvedPluginPage> {
             );
         }
     }
-    return map;
+    return { exact: map, wildcards: sortWildcardEntries(wildcards) };
 }
 
 /**
- * Returns the permanent path-to-page-config map, building it on first call.
- * Subsequent calls return the cached map immediately.
+ * Returns the permanent page index, building it on first call.
+ * Subsequent calls return the cached index immediately.
  *
- * @returns The permanent path-to-resolved-page map
+ * @returns The permanent exact-map + wildcard page index
  */
-function getPermanentMap(): Map<string, IResolvedPluginPage> {
-    if (!permanentMap) {
-        permanentMap = buildPermanentMap();
+function getPermanentIndex(): IPluginPageIndex {
+    if (!permanentIndex) {
+        permanentIndex = buildPermanentIndex();
     }
-    return permanentMap;
+    return permanentIndex;
 }
 
 /**
@@ -167,20 +200,24 @@ const fetchEnabledPluginIds = cache(async (): Promise<Set<string>> => {
  * Look up a plugin page config by URL path, returning it only if the owning
  * plugin is currently enabled.
  *
+ * Resolution honors the wildcard convention via the shared matcher: an exact
+ * registration wins, then the longest matching '/*' wildcard prefix. The
+ * client registry runs the same matcher so SSR and hydration agree.
+ *
  * Used by the catch-all route's generateMetadata to populate <head> and by the
  * default page render to await serverDataFetcher and render the plugin component.
  * Returns null when the path is not registered by any plugin OR when the
  * registering plugin is currently disabled — both cases collapse to a 404 in
  * the catch-all route.
  *
- * @param slug - URL path to look up (e.g., '/tools/bazi-fortune')
+ * @param slug - URL path to look up (e.g., '/tools/bazi-fortune', '/blog/my-post')
  * @returns The page config with pluginId attached, or null if not found / disabled
  */
 export async function getEnabledPluginPageConfig(
     slug: string
 ): Promise<IPageConfig | null> {
-    const map = getPermanentMap();
-    const resolved = map.get(slug);
+    const index = getPermanentIndex();
+    const resolved = matchPluginPagePath(index.exact, index.wildcards, slug);
     if (!resolved) {
         return null;
     }

@@ -29,5 +29,6 @@ export const DEFAULT_PAGE_SETTINGS: Omit<IPageSettingsDocument, '_id' | 'updated
         '^/accounts$',
         '^/transactions$',
         '^/whales$',
+        '^/blog(/.*)?$',
     ],
 };

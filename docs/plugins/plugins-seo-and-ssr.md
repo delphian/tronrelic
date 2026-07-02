@@ -49,8 +49,19 @@ serverDataFetcher?: (ctx: IServerDataContext) => Promise<unknown>;
 |-------|-------------|
 | `apiBaseUrl` | Backend API base URL with `/api` suffix (Docker-internal in containers, localhost otherwise) |
 | `siteUrl` | Public site URL from runtime config |
+| `path` | The concrete URL being rendered (e.g. `/blog/my-post`) — essential for wildcard pages, whose registered path (`/blog/*`) doesn't identify the resource |
 
 The returned data **must be JSON-serializable** because it crosses the React Server Components boundary. Functions, class instances, Maps, Sets, and component references will fail. Stick to plain objects, arrays, strings, numbers, booleans, and `null`.
+
+## serverMetadataFetcher Pattern
+
+Static SEO fields describe a page fixed at registration time. A wildcard page renders a different resource per URL, so its `<head>` must be computed per request. The optional `serverMetadataFetcher` runs during SSR before rendering; its returned fields (same shape as the static SEO fields, `IPluginPageMetadata`) override the static ones field by field.
+
+```typescript
+serverMetadataFetcher?: (ctx: IServerDataContext) => Promise<IPluginPageMetadata | null>;
+```
+
+The return value carries a contract with teeth: return `null` **only** when the backend authoritatively reported the resource absent (HTTP 404) — the catch-all then emits noindex metadata and renders a 404. Throw on transient failures instead; thrown errors are caught and the route falls back to the static fields, so a brief backend outage never serves 404s to crawlers. The catch-all invokes the fetcher once per request (shared between `generateMetadata` and the body via `React.cache()`), so a fetcher and a `serverDataFetcher` hitting the same URL cost one backend call under Next's fetch dedupe.
 
 ## Canonical Example: bazi-fortune
 
