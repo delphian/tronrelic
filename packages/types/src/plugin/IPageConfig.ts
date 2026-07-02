@@ -142,9 +142,11 @@ export interface IPageConfig {
      * rendering of plugin pages — the data appears in the initial HTML so crawlers
      * see it without executing JavaScript, and users see no loading flash.
      *
-     * The function receives an IServerDataContext containing the backend API URL
-     * and the public site URL, so plugins can fetch from their own backend without
-     * importing frontend internals or hardcoding environment variables.
+     * The function receives an IServerDataContext containing the backend API URL,
+     * the public site URL, and the concrete requested path (`ctx.path` — essential
+     * for wildcard pages to resolve which resource to fetch), so plugins can fetch
+     * from their own backend without importing frontend internals or hardcoding
+     * environment variables.
      *
      * The returned data must be JSON-serializable because it crosses the React
      * Server Components boundary. Functions, class instances, Maps, Sets, and
