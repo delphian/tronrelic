@@ -18,6 +18,34 @@ import { truncateAddress } from '../../../lib/walletFormat';
 import styles from './WalletDetail.module.scss';
 
 /**
+ * Props for {@link SectionHeader}.
+ */
+interface ISectionHeaderProps {
+    /** Leading icon for the header. */
+    icon: ReactNode;
+    /** Header title. */
+    title: string;
+}
+
+/**
+ * The icon-plus-title row shared by every detail panel header, whether the
+ * panel sits inside a {@link WalletDetailSection} card or renders its own
+ * boxed content (e.g. a Table, which already draws its own border/background)
+ * directly under a flat header.
+ *
+ * @param props - {@link ISectionHeaderProps}.
+ * @returns The icon/title header row.
+ */
+export function SectionHeader({ icon, title }: ISectionHeaderProps) {
+    return (
+        <div className={styles.section_header}>
+            {icon}
+            <h3 className={styles.section_title}>{title}</h3>
+        </div>
+    );
+}
+
+/**
  * Props for {@link WalletDetailSection}.
  */
 interface IWalletDetailSectionProps {
@@ -38,10 +66,7 @@ interface IWalletDetailSectionProps {
 export function WalletDetailSection({ icon, title, children }: IWalletDetailSectionProps) {
     return (
         <Card padding="md">
-            <div className={styles.section_header}>
-                {icon}
-                <h3 className={styles.section_title}>{title}</h3>
-            </div>
+            <SectionHeader icon={icon} title={title} />
             {children}
         </Card>
     );

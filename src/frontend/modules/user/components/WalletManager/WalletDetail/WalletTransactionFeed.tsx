@@ -21,7 +21,7 @@ import { Badge } from '../../../../../components/ui/Badge';
 import { Skeleton } from '../../../../../components/ui/Skeleton';
 import { Pagination } from '../../../../../components/ui/Pagination';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { AddressDisplay } from './WalletDetailPrimitives';
+import { AddressDisplay, SectionHeader } from './WalletDetailPrimitives';
 import { fetchWalletTransactions, type IWalletTransactionPage } from '../../../api/account-history-user.api';
 import { decodeTronTransaction } from '../../../lib/decodeTronTransaction';
 import styles from './WalletDetail.module.scss';
@@ -139,11 +139,8 @@ export function WalletTransactionFeed({ address }: IWalletTransactionFeedProps) 
     let lastDayKey: string | null = null;
 
     return (
-        <>
-            <div className={styles.section_header}>
-                <ListOrdered size={16} aria-hidden />
-                <h3 className={styles.section_title}>Transactions</h3>
-            </div>
+        <div>
+            <SectionHeader icon={<ListOrdered size={16} aria-hidden />} title="Transactions" />
             {error ? (
                 <div className="alert">{error}</div>
             ) : !page && loading ? (
@@ -203,7 +200,7 @@ export function WalletTransactionFeed({ address }: IWalletTransactionFeedProps) 
                     </div>
                 </>
             )}
-        </>
+        </div>
     );
 }
 
