@@ -152,9 +152,14 @@
 }
 
 /* Counterparties table's numeric columns pair Th's width="shrink" (column
-   sizing) with this on the Td (Td has no width prop) so values never wrap. */
-.counterparty_nowrap {
-    white-space: nowrap;
+   sizing) with this on the Td (Td has no width prop). On non-mobile container
+   widths keep the "12,345 TRX" values on one line; narrow containers keep
+   wrapping so the shared Table wrapper (overflow: hidden, no horizontal scroll
+   path) can't clip the rightmost amounts. Mirrors .feed_cell in this file. */
+@container wallet-detail (min-width: #{$breakpoint-mobile-lg}) {
+    .counterparty_nowrap {
+        white-space: nowrap;
+    }
 }
 
 /* Directional value colours, shared by the flow legend and the feed amounts. */
