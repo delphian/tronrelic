@@ -67,7 +67,13 @@ The override is stored in the identity module's `'user-settings'` store — name
 
 Current **holdings and net worth** come from the latest balance *snapshot* — the absolute on-chain truth, including staked TRX the ledger cannot reconstruct. **Realized/unrealized PnL and cost basis** come from the *lot engine* walking the ledger against historical prices. The two can diverge for accounts whose oldest history TronGrid cannot reach (a disposal with no recorded acquisition realizes against zero basis); the snapshot keeps headline net worth correct regardless.
 
-Documented v1 simplifications: all inbound external transfers are treated as acquisitions at the day's price (airdrops are not distinguished from buys); fees are excluded from PnL (they affect net worth via the snapshot); the balance-over-time series is TRX-anchored (tokens contribute to current net worth, not the historical curve); tokens with no local price coverage appear by quantity and are excluded from USD totals (`unpricedAssets`).
+**Fees and rewards are in PnL.** The ledger's `fee` legs consume lots as a pure basis loss (no proceeds — burned TRX is destroyed, not sold, so no phantom market-price gain), and `reward` legs (claimed vote income) are external acquisitions at the day's price. Unclaimed rewards from the snapshot's `withdrawableRewardSun` count toward net worth. Staking legs never reach the engine — they are intra-account bucket moves, and snapshots carry the buckets.
+
+**Approximation is labelled, not silent.** `IPortfolioSummary.basisApproximate` is true when the walk hit a zero-basis disposal or an undrained internal migration — evidence the ledger does not reach far enough back — so the UI marks PnL/cost-basis as approximate while net worth (snapshot-derived) stays exact.
+
+**Token metadata and stablecoins.** Display symbols and decimals come from account-history's `getTokenMetadata` registry (observed on-chain `token_info`), with ledger-observed decimals authoritative and `DEFAULT_TOKEN_DECIMALS` only a last resort. Known stablecoins (USDT, USDC) with a missing price day pin to $1 — but only when their nearest real price does not dispute the peg beyond `STABLECOIN_DEPEG_TOLERANCE`, so a genuine depeg is never papered over.
+
+Remaining v1 simplifications: all inbound external transfers are treated as acquisitions at the day's price (airdrops are not distinguished from buys); the balance-over-time series is TRX-anchored (tokens contribute to current net worth, not the historical curve); non-stablecoin tokens with no local price coverage appear by quantity and are excluded from USD totals (`unpricedAssets`).
 
 ## Related
 

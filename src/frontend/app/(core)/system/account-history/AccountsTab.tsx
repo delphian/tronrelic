@@ -12,7 +12,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { Plus, Play, Trash2, Pause, PlayCircle, RefreshCw, Layers } from 'lucide-react';
+import { Plus, Play, Trash2, Pause, PlayCircle, RefreshCw } from 'lucide-react';
 import { Stack } from '../../../../components/layout';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
@@ -26,7 +26,6 @@ import {
     setAccountPaused,
     runIngestion,
     runForwardSync,
-    runLedgerBackfill,
     type IAccountHistoryStatsView,
     type AccountIngestionStatus
 } from '../../../../modules/account-history';
@@ -113,15 +112,6 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
         }
     }, [push]);
 
-    const runLedgerBackfillNow = useCallback(async () => {
-        try {
-            await runLedgerBackfill();
-            push({ tone: 'success', title: 'Ledger backfill tick started', description: 'Populating internal and token legs for accounts completed before value legs were recorded.' });
-        } catch (err) {
-            push({ tone: 'danger', title: 'Failed to run ledger backfill', description: err instanceof Error ? err.message : String(err) });
-        }
-    }, [push]);
-
     const accounts = stats?.accounts ?? [];
 
     return (
@@ -150,9 +140,6 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                 <Button variant="secondary" size="sm" onClick={() => { void runForwardNow(); }}>
                     <RefreshCw size={16} /> Run forward sync
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => { void runLedgerBackfillNow(); }}>
-                    <Layers size={16} /> Run ledger backfill
-                </Button>
             </div>
 
             <p className="text-muted" style={{ margin: 0, fontSize: 'var(--font-size-body-sm)' }}>
@@ -173,6 +160,7 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                                     <Th width="shrink">Rows</Th>
                                     <Th width="shrink">Oldest reached</Th>
                                     <Th width="shrink">Newest tx</Th>
+                                    <Th width="shrink">Snapshot</Th>
                                     <Th width="shrink">Last run</Th>
                                     <Th width="shrink">Actions</Th>
                                 </Tr>
@@ -197,6 +185,11 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                                         </Td>
                                         <Td data-label="Newest tx" muted>
                                             {progress.newestTimestampSeen ? <ClientTime date={progress.newestTimestampSeen} format="relative" /> : '—'}
+                                        </Td>
+                                        <Td data-label="Snapshot" muted>
+                                            {/* A bare UTC day, not a timestamp — rendered verbatim, so no
+                                                ClientTime is needed and server/client HTML always match. */}
+                                            {progress.lastSnapshotDay ?? '—'}
                                         </Td>
                                         <Td data-label="Last run" muted>
                                             {progress.lastRunAt ? <ClientTime date={progress.lastRunAt} format="datetime" /> : '—'}

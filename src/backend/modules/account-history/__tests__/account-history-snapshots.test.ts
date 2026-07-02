@@ -80,6 +80,7 @@ const SAMPLE: IAccountSnapshotSample = {
     energyUsed: 100,
     netLimit: 500,
     netUsed: 50,
+    withdrawableRewardSun: 3_000_000,
     tokenBalances: [{ asset: 'TXLAtoken', rawBalance: '5000000' }]
 };
 

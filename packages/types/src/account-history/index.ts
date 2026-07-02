@@ -26,5 +26,6 @@ export type {
     IWalletValuationSummary,
     IAccountTokenBalance,
     IAccountBalanceSnapshot,
+    ITokenMetadata,
     IAccountHistoryService
 } from './IAccountHistoryService.js';

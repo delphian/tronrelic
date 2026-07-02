@@ -47,6 +47,9 @@ const INTERNAL_TRX_ASSET_KEY = '_';
 /** Contract types whose `IBlockTransaction.amountSun` is a genuine native-TRX movement. */
 const TRX_VALUE_CONTRACT_TYPES = new Set(['TransferContract', 'TriggerSmartContract']);
 
+/** Contract type whose info-level `withdraw_amount` is claimed vote-reward income. */
+const REWARD_CLAIM_CONTRACT_TYPE = 'WithdrawBalanceContract';
+
 /** TronGrid's hard ceiling on page size for the account-transactions endpoint. */
 const MAX_PAGE_SIZE = 200;
 
@@ -260,9 +263,10 @@ export class TronGridAccountHistoryProvider implements IAccountHistoryProvider {
 
     /**
      * Probe an account's current state via `getaccount` (balances, Stake 2.0
-     * freezes/unfreezes, TRC20 balances) and `getaccountresource` (energy and
-     * bandwidth limits/usage), normalizing into the source-independent sample.
-     * Both calls route through the shared rate-limited client. A missing account
+     * freezes/unfreezes, TRC20 balances), `getaccountresource` (energy and
+     * bandwidth limits/usage), and `getReward` (unclaimed vote rewards — real net
+     * worth invisible to the ledger until claimed), normalizing into the
+     * source-independent sample. All calls route through the shared rate-limited client. A missing account
      * (never-seen address) yields a zeroed sample rather than throwing, so the
      * snapshot tick records "empty" instead of failing.
      *
@@ -271,9 +275,10 @@ export class TronGridAccountHistoryProvider implements IAccountHistoryProvider {
      */
     async fetchAccountSnapshot(address: string): Promise<IAccountSnapshotSample> {
         const client = TronGridClient.getInstance();
-        const [account, resource] = await Promise.all([
+        const [account, resource, withdrawableRewardSun] = await Promise.all([
             client.getAccount(address),
-            client.getAccountResource(address)
+            client.getAccountResource(address),
+            client.getReward(address)
         ]);
 
         let stakedEnergySun = 0;
@@ -310,6 +315,7 @@ export class TronGridAccountHistoryProvider implements IAccountHistoryProvider {
             energyUsed: resource.EnergyUsage ?? 0,
             netLimit: resource.NetLimit ?? 0,
             netUsed: resource.NetUsage ?? 0,
+            withdrawableRewardSun,
             tokenBalances
         };
         return sample;
@@ -331,7 +337,20 @@ export class TronGridAccountHistoryProvider implements IAccountHistoryProvider {
         const normalized = normalizeContractType(rawType);
         const from = resolveOwnerAddress(value);
         const to = resolveRecipient(normalized, value, from);
-        const { rawAmountSun } = resolveAmounts(normalized, value);
+        let { rawAmountSun } = resolveAmounts(normalized, value);
+
+        // Reward-claim and expired-unstake withdrawals carry no amount in the
+        // contract body — the moved value lives only in the transaction *info*
+        // fields TronGrid folds into the envelope. Overlay them here so these
+        // transactions stop landing amount-less, which made vote-reward income
+        // invisible to every downstream read.
+        if (normalized === REWARD_CLAIM_CONTRACT_TYPE && typeof item.withdraw_amount === 'number') {
+            rawAmountSun = item.withdraw_amount;
+        } else if (normalized === 'WithdrawExpireUnfreezeContract' && typeof item.withdraw_expire_amount === 'number') {
+            rawAmountSun = item.withdraw_expire_amount;
+        } else if (normalized === 'UnfreezeBalanceContract' && rawAmountSun === 0 && typeof item.unfreeze_amount === 'number') {
+            rawAmountSun = item.unfreeze_amount;
+        }
 
         const isContractCall = normalized === 'TriggerSmartContract' || normalized === 'CreateSmartContract';
         const details = isContractCall ? describeContract(normalized, value) : undefined;
@@ -482,33 +501,59 @@ function eventAddressToBase58(raw: unknown): string | null {
  * does carry `log_index`); see {@link IAccountHistoryProvider.fetchTokenTransferLegs}.
  *
  * A genuine native-TRX move (`TransferContract` amount or `TriggerSmartContract`
- * call-value) becomes a `native` leg. Everything else carries no spendable native
- * value here — staking, delegation, votes, TRC10 `TransferAssetContract`, and bare
- * token calls — and yields nothing, so the TRX series is never polluted by a
- * non-TRX `amount_sun`. `legKey` is empty: the native leg is unique per transaction.
+ * call-value) becomes a `native` leg. Two further legs make the ledger a complete
+ * record of *total-balance* changes: the transaction's burned network fee becomes
+ * a `fee` leg (payer → nobody; burned TRX has no recipient), and a
+ * `WithdrawBalanceContract`'s claimed vote reward becomes a `reward` leg
+ * (nobody → claimer; reward TRX is protocol-minted). Staking, delegation, votes,
+ * TRC10 `TransferAssetContract`, and bare token calls still yield nothing —
+ * staking ops move TRX between the account's own buckets without changing its
+ * total (see `ValueTransferOrigin`), so a leg would only pollute value consumers.
+ * `legKey` is empty for all three: each is unique per transaction by origin.
  *
  * @param tx - The normalized top-level transaction.
- * @returns Zero or one native value transfer (a top-level transaction carries at most one native leg).
+ * @returns The transaction's native, fee, and reward legs (zero to three).
  */
 export function toValueTransfers(tx: IBlockTransaction): IValueTransfer[] {
+    const legs: IValueTransfer[] = [];
+    /**
+     * Assemble one TRX leg of this transaction, sharing the parent's identity
+     * fields so the three origins differ only in direction and amount.
+     *
+     * @param origin - The leg origin (`native` / `fee` / `reward`).
+     * @param from - Base58 sender ('' for protocol-minted rewards).
+     * @param to - Base58 recipient ('' for burned fees).
+     * @param amountSun - The leg's TRX amount in sun.
+     * @returns The assembled value transfer.
+     */
+    const trxLeg = (origin: IValueTransfer['origin'], from: string, to: string, amountSun: number): IValueTransfer => ({
+        txId: tx.txId,
+        origin,
+        legKey: '',
+        assetType: 'TRX',
+        assetId: '',
+        from,
+        to,
+        amountRaw: String(amountSun),
+        timestamp: tx.timestamp,
+        blockNumber: tx.blockNumber
+    });
+
     if (typeof tx.amountSun === 'number' && tx.amountSun > 0 && TRX_VALUE_CONTRACT_TYPES.has(tx.type)) {
-        return [
-            {
-                txId: tx.txId,
-                origin: 'native',
-                legKey: '',
-                assetType: 'TRX',
-                assetId: '',
-                from: tx.from.address,
-                to: tx.to.address,
-                amountRaw: String(tx.amountSun),
-                timestamp: tx.timestamp,
-                blockNumber: tx.blockNumber
-            }
-        ];
+        legs.push(trxLeg('native', tx.from.address, tx.to.address, tx.amountSun));
+    }
+    if (typeof tx.amountSun === 'number' && tx.amountSun > 0 && tx.type === REWARD_CLAIM_CONTRACT_TYPE) {
+        legs.push(trxLeg('reward', '', tx.from.address, tx.amountSun));
+    }
+    // The fee burns even when the contract itself fails, so it is emitted
+    // regardless of status. Only the native `'tx'` walk populates `feeSun`
+    // (the decoded trc20 mapping leaves it undefined), so an outbound token
+    // transfer's fee is emitted exactly once, from its native twin.
+    if (typeof tx.feeSun === 'number' && tx.feeSun > 0) {
+        legs.push(trxLeg('fee', tx.from.address, '', tx.feeSun));
     }
 
-    return [];
+    return legs;
 }
 
 /**

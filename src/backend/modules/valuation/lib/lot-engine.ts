@@ -38,6 +38,13 @@ export interface ILedgerMove {
     internal: boolean;
     /** The owned wallet this move belongs to — the sub-book its lots are kept under. */
     wallet: string;
+    /**
+     * True for a burned network fee. A fee consumes lots like a disposal but has
+     * no proceeds — the TRX is destroyed, not sold — so the engine realizes the
+     * consumed basis as a pure loss instead of booking a phantom market-price
+     * sale. This is how fees enter PnL ("fees in cost basis").
+     */
+    fee?: boolean;
 }
 
 /** Remaining position for one asset after the FIFO walk. */
@@ -58,6 +65,18 @@ export interface ILotEngineResult {
     realizedByWallet: Map<string, number>;
     /** Remaining lots per `wallet → asset`, so a scope can sum only the wallets it covers. */
     remainingByWalletAsset: Map<string, Map<string, IRemainingPosition>>;
+    /**
+     * External disposals (or fees) whose quantity exceeded available lots — each
+     * realized part of its quantity against zero basis, the unreachable-history
+     * approximation. Non-zero means realized PnL is approximate.
+     */
+    zeroBasisDisposals: number;
+    /**
+     * Internal-transfer migration buckets left undrained after the walk — basis
+     * released by a source wallet that no counterpart leg ever received. Non-zero
+     * means cost basis silently left the books and the figures are approximate.
+     */
+    undrainedMigrations: number;
 }
 
 /** One open FIFO lot: a quantity acquired at a known per-unit USD cost. */
@@ -138,6 +157,9 @@ export function computeLots(
     const realizedByWallet = new Map<string, number>();
     // `${txId}|${asset}` → lots a source wallet released, awaiting the matching in.
     const pendingMigration = new Map<string, IOpenLot[]>();
+    // Incompleteness evidence: disposals that outran available lots, so part of
+    // their quantity realized against zero basis (unreachable history).
+    let zeroBasisDisposals = 0;
 
     /**
      * Resolve (creating if absent) the FIFO lot list for one wallet/asset.
@@ -201,9 +223,20 @@ export function computeLots(
             continue;
         }
 
-        // External disposal: consume FIFO, realize proceeds minus consumed basis.
-        const { consumedBasis } = consumeFifo(lots, move.quantity);
-        if (price !== null) {
+        // External disposal (or fee): consume FIFO. A shortfall means the ledger
+        // does not reach the acquisition — the uncovered quantity realizes
+        // against zero basis, and the walk records the approximation.
+        const { consumed, consumedBasis } = consumeFifo(lots, move.quantity);
+        const consumedQty = consumed.reduce((sum, lot) => sum + lot.quantity, 0);
+        if (move.quantity - consumedQty > 1e-9) {
+            zeroBasisDisposals += 1;
+        }
+        if (move.fee) {
+            // A fee has no proceeds — the TRX is burned, not sold — so the
+            // consumed basis is a pure realized loss. Booked without a price
+            // lookup: the loss is the basis itself.
+            realizedByWallet.set(move.wallet, (realizedByWallet.get(move.wallet) ?? 0) - consumedBasis);
+        } else if (price !== null) {
             const proceeds = move.quantity * price;
             realizedByWallet.set(move.wallet, (realizedByWallet.get(move.wallet) ?? 0) + (proceeds - consumedBasis));
         }
@@ -235,7 +268,18 @@ export function computeLots(
         realizedPnlUsd += realized;
     }
 
-    return { realizedPnlUsd, remainingByAsset, realizedByWallet, remainingByWalletAsset };
+    // Migration buckets still holding lots after the walk: a source wallet
+    // released basis no counterpart leg ever drained (a half-pair beyond the
+    // ledger's reach). Count only buckets with a real remainder — a bucket can
+    // linger with empty lots after a partial drain.
+    let undrainedMigrations = 0;
+    for (const bucket of pendingMigration.values()) {
+        if (bucket.some((lot) => lot.quantity > 1e-9)) {
+            undrainedMigrations += 1;
+        }
+    }
+
+    return { realizedPnlUsd, remainingByAsset, realizedByWallet, remainingByWalletAsset, zeroBasisDisposals, undrainedMigrations };
 }
 
 /** A signed TRX delta on a UTC day (positive in, negative out). */

@@ -1,5 +1,5 @@
 import type { AddressMetadata } from './common.js';
-export type TronTransactionType = 'TransferContract' | 'TransferAssetContract' | 'TriggerSmartContract' | 'ParticipateAssetIssueContract' | 'FreezeBalanceContract' | 'FreezeBalanceV2Contract' | 'UnfreezeBalanceContract' | 'VoteWitnessContract' | 'DelegateResourceContract' | 'UnDelegateResourceContract' | 'AssetIssueContract' | 'CreateSmartContract' | 'Unknown';
+export type TronTransactionType = 'TransferContract' | 'TransferAssetContract' | 'TriggerSmartContract' | 'ParticipateAssetIssueContract' | 'FreezeBalanceContract' | 'FreezeBalanceV2Contract' | 'UnfreezeBalanceContract' | 'UnfreezeBalanceV2Contract' | 'WithdrawBalanceContract' | 'WithdrawExpireUnfreezeContract' | 'CancelAllUnfreezeV2Contract' | 'VoteWitnessContract' | 'DelegateResourceContract' | 'UnDelegateResourceContract' | 'AssetIssueContract' | 'CreateSmartContract' | 'Unknown';
 export interface ResourceCost {
     consumed: number;
     price: number;

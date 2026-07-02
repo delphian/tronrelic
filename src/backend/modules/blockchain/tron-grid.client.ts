@@ -606,6 +606,36 @@ export class TronGridClient {
     }
 
     /**
+     * Probe an account's unclaimed (withdrawable) staking/vote rewards via
+     * `/wallet/getReward`. The reward is real net worth the ledger cannot see —
+     * it enters the balance only when a `WithdrawBalanceContract` claims it — so
+     * the balance-snapshot sampler reads it here. Returns 0 on a miss or a
+     * transport failure (logged) rather than throwing: a snapshot without the
+     * reward figure is still worth capturing, and callers treat 0 as "none known".
+     *
+     * @param address - Base58 account address to probe.
+     * @param visible - True to send/receive base58 addresses (TronGrid's `visible` flag).
+     * @returns The withdrawable reward in sun, or 0 when none/unavailable.
+     */
+    async getReward(address: string, visible = true): Promise<number> {
+        try {
+            const response = await retry(
+                () => this.post<{ reward?: number }>('/wallet/getReward', { address, visible }),
+                {
+                    ...blockchainConfig.retry,
+                    onRetry: (attempt, error) =>
+                        logger.warn({ attempt, error, address }, 'Retrying TronGrid getReward')
+                }
+            );
+            const reward = Number(response?.reward ?? 0);
+            return Number.isFinite(reward) && reward > 0 ? reward : 0;
+        } catch (error) {
+            logger.error({ error, address }, 'Failed to fetch withdrawable reward');
+            return 0;
+        }
+    }
+
+    /**
      * Resolve a TRC10 token to its source-agnostic record by chain-assigned id.
      *
      * Queries `/wallet/getassetissuebyid` and maps the raw asset to {@link ITrc10}.

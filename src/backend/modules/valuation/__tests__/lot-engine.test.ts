@@ -34,7 +34,8 @@ function move(over: Partial<ILedgerMove>): ILedgerMove {
         quantity: over.quantity ?? 0,
         direction: over.direction ?? 'in',
         internal: over.internal ?? false,
-        wallet: over.wallet ?? 'W'
+        wallet: over.wallet ?? 'W',
+        fee: over.fee
     };
 }
 
@@ -142,6 +143,34 @@ describe('computeLots', () => {
         const moves = [move({ day: '2024-01-05', quantity: 100, direction: 'out' })];
         const result = computeLots(moves, priceLookup({ 'TRX|2024-01-05': 0.3 }));
         expect(result.realizedPnlUsd).toBeCloseTo(30, 6); // proceeds, no basis to subtract
+        expect(result.zeroBasisDisposals).toBe(1); // and the approximation is flagged
+    });
+
+    it('realizes a fee as a pure basis loss (no proceeds, no phantom sale)', () => {
+        // Buy 100 @ $0.10, burn 10 as a fee. The fee consumes 10 units of basis
+        // ($1) as a straight loss — never a market-price sale that would book a
+        // gain on the burned TRX's appreciation.
+        const moves = [
+            move({ txId: 'buy', day: '2024-01-01', quantity: 100, direction: 'in' }),
+            move({ txId: 'fee', day: '2024-01-02', quantity: 10, direction: 'out', fee: true })
+        ];
+        const result = computeLots(moves, priceLookup({ 'TRX|2024-01-01': 0.1, 'TRX|2024-01-02': 0.5 }));
+        expect(result.realizedPnlUsd).toBeCloseTo(-1, 6);
+        expect(result.remainingByAsset.get('TRX')?.quantity ?? 0).toBeCloseTo(90, 6);
+        expect(result.remainingByAsset.get('TRX')?.costBasisUsd ?? 0).toBeCloseTo(9, 6);
+        expect(result.zeroBasisDisposals).toBe(0);
+    });
+
+    it('counts an undrained internal migration as incompleteness evidence', () => {
+        // The out side releases basis but no matching in ever arrives (the
+        // counterpart leg is beyond the ledger's reach) — the walk must flag it.
+        const moves = [
+            move({ txId: 'buy', day: '2024-01-01', quantity: 100, direction: 'in' }),
+            move({ txId: 'mig', day: '2024-01-02', quantity: 50, direction: 'out', internal: true })
+        ];
+        const result = computeLots(moves, priceLookup({ 'TRX|2024-01-01': 0.1 }));
+        expect(result.undrainedMigrations).toBe(1);
+        expect(result.realizedPnlUsd).toBeCloseTo(0, 6); // migration never realizes
     });
 });
 

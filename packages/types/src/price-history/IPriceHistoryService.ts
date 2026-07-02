@@ -78,6 +78,13 @@ export interface IPriceAssetCoverage {
     recentSeeded: boolean;
     /** True once the backward backfill has reached the asset's start. */
     backfillComplete: boolean;
+    /**
+     * Days the deep backfill still has to walk before reaching the lookback
+     * floor — derived from the cursor, so an operator can estimate completion
+     * (divide by `daysPerTick` × tick cadence). 0 once complete; null before the
+     * recent window is seeded (no cursor to measure from).
+     */
+    estimatedDaysRemaining: number | null;
 }
 
 /**
@@ -103,6 +110,19 @@ export interface IPriceHistoryStats {
          * cadence bump.
          */
         staleAssets: number;
+        /**
+         * Provider fetch calls attempted since this backend process started.
+         * Paired with {@link providerErrors} it exposes the provider's error
+         * rate; in-memory by design (a restart resets it) because the signal is
+         * "is the provider healthy right now", not an audit trail.
+         */
+        providerCalls: number;
+        /**
+         * Provider fetch calls that failed since this backend process started.
+         * A rising value warns of rate-limiting or an outage before coverage
+         * visibly stalls.
+         */
+        providerErrors: number;
     };
 }
 

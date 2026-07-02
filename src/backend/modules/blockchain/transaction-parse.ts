@@ -29,6 +29,10 @@ export function normalizeContractType(rawType: string | undefined): TronTransact
         'FreezeBalanceContract',
         'FreezeBalanceV2Contract',
         'UnfreezeBalanceContract',
+        'UnfreezeBalanceV2Contract',
+        'WithdrawBalanceContract',
+        'WithdrawExpireUnfreezeContract',
+        'CancelAllUnfreezeV2Contract',
         'DelegateResourceContract',
         'UnDelegateResourceContract',
         'VoteWitnessContract',
@@ -86,6 +90,14 @@ export function resolveRecipient(contractType: TronTransactionType, value: Recor
         case 'UnfreezeBalanceContract':
             candidates.push(value.receiver_address as string);
             break;
+        case 'UnfreezeBalanceV2Contract':
+        case 'WithdrawBalanceContract':
+        case 'WithdrawExpireUnfreezeContract':
+        case 'CancelAllUnfreezeV2Contract':
+            // Self-directed staking/reward operations carry no recipient field —
+            // the value moves within (or into) the owner's own account, so the
+            // caller's fallback (the owner) is the honest recipient.
+            break;
         default:
             candidates.push(value.to_address as string);
     }
@@ -139,6 +151,17 @@ export function resolveAmounts(contractType: TronTransactionType, value: Record<
         case 'FreezeBalanceV2Contract':
         case 'UnfreezeBalanceContract':
             rawAmountSun = extract('frozen_balance') || extract('amount');
+            break;
+        case 'UnfreezeBalanceV2Contract':
+            rawAmountSun = extract('unfreeze_balance');
+            break;
+        case 'WithdrawBalanceContract':
+        case 'WithdrawExpireUnfreezeContract':
+        case 'CancelAllUnfreezeV2Contract':
+            // The claimed/withdrawn amount is not in the contract body — it lives
+            // in the transaction *info* (`withdraw_amount` / `withdraw_expire_amount`),
+            // which endpoint-specific mappers overlay after parsing.
+            rawAmountSun = 0;
             break;
         default:
             rawAmountSun = extract('amount');

@@ -147,6 +147,7 @@ function fakeAccountHistory(
                       energyUsed: 0,
                       netLimit: 0,
                       netUsed: 0,
+                      withdrawableRewardSun: 0,
                       tokenBalances: []
                   }
         ),
