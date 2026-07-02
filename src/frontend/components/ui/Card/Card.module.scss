@@ -40,6 +40,10 @@
 }
 
 /* Padding Variants */
+.card--padding-xs {
+    padding: var(--card-padding-xs);
+}
+
 .card--padding-sm {
     padding: var(--card-padding-sm);
 }
@@ -122,4 +126,19 @@
 /* Modifier to disable background image for specific cards */
 .card--no-bg-image::after {
     display: none;
+}
+
+/* Flat modifier — for a Card nested inside another Card (e.g. a stat tile
+ * inside a titled section). Drops the border and shadow so the pairing
+ * doesn't double up on the boxed treatment; the outer Card already owns
+ * that boundary and this one keeps only its tone background. Declared last
+ * so it overrides the base border/shadow and hover rules above. */
+.card--flat {
+    border: none;
+    box-shadow: none;
+}
+
+.card--flat:hover {
+    border-color: transparent;
+    box-shadow: none;
 }

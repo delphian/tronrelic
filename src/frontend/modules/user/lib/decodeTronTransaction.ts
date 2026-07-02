@@ -56,6 +56,16 @@ function resolveDirection(tx: IBlockTransaction, wallet: string): TransactionDir
 }
 
 /**
+ * Format a SUN amount for display, or an empty string when the type carries none.
+ *
+ * @param amountSun - The transaction's `amountSun` field, if the contract type populates it.
+ * @returns The formatted TRX amount, or `''` when `amountSun` is absent.
+ */
+function formatSunAmount(amountSun: number | undefined): string {
+    return typeof amountSun === 'number' ? formatTrxFromSun(amountSun) : '';
+}
+
+/**
  * Decode a transaction into feed-ready copy. Branches on TRON's contract type and
  * (for token transfers) the decoded token symbol carried in `contract.parameters`.
  *
@@ -69,10 +79,8 @@ export function decodeTronTransaction(tx: IBlockTransaction, wallet: string): ID
     const token = tx.contract?.parameters;
 
     switch (tx.type) {
-        case 'TransferContract': {
-            const amount = typeof tx.amountSun === 'number' ? formatTrxFromSun(tx.amountSun) : '';
-            return { label: sent ? 'Sent TRX' : 'Received TRX', direction, amount };
-        }
+        case 'TransferContract':
+            return { label: sent ? 'Sent TRX' : 'Received TRX', direction, amount: formatSunAmount(tx.amountSun) };
         case 'TriggerSmartContract': {
             // A decoded token transfer carries a symbol in the open parameters bag
             // (typed `unknown`, so narrow it); otherwise it is a bare contract call
@@ -87,15 +95,17 @@ export function decodeTronTransaction(tx: IBlockTransaction, wallet: string): ID
             return { label: 'Contract call', direction, amount: '' };
         }
         case 'FreezeBalanceV2Contract':
-            return { label: 'Staked TRX', direction, amount: '' };
+            return { label: 'Staked TRX', direction, amount: formatSunAmount(tx.amountSun) };
         case 'UnfreezeBalanceV2Contract':
             return { label: 'Unstaked TRX', direction, amount: '' };
         case 'DelegateResourceContract':
-            return { label: 'Delegated resources', direction, amount: '' };
+            return { label: 'Delegated resources', direction, amount: formatSunAmount(tx.amountSun) };
         case 'UnDelegateResourceContract':
             return { label: 'Reclaimed resources', direction, amount: '' };
         case 'WithdrawExpireUnfreezeContract':
             return { label: 'Withdrew unstaked TRX', direction, amount: '' };
+        case 'WithdrawBalanceContract':
+            return { label: 'Withdraw Balance', direction, amount: formatSunAmount(tx.amountSun) };
         default: {
             // Humanize an unmapped contract type: strip the trailing "Contract"
             // and space the PascalCase so it still reads, rather than dumping the

@@ -90,14 +90,17 @@ interface IStatTileProps {
 
 /**
  * One labelled metric tile, composing the global `stat-card__*` utilities inside
- * a muted card so a grid of these reads as a stat strip.
+ * a muted card so a grid of these reads as a stat strip. Always nested inside a
+ * {@link WalletDetailSection} card, so it renders flat (no border/shadow) —
+ * the section already owns the boxed boundary; the tile only needs the muted
+ * tone to read as a distinct metric within the grid.
  *
  * @param props - {@link IStatTileProps}.
- * @returns A stat tile card.
+ * @returns A flat, muted-tone stat tile.
  */
 export function StatTile({ label, value, icon }: IStatTileProps) {
     return (
-        <Card padding="sm" tone="muted">
+        <Card padding="xs" tone="muted" bordered={false}>
             <span className={`stat-card__label ${styles.tile_label}`}>
                 {icon}
                 {label}

@@ -322,6 +322,22 @@ export interface TronGridAccountResponse {
      * objects (TronGrid's wire shape), the raw balance a decimal string.
      */
     trc20?: Array<Record<string, string>>;
+    /**
+     * TRX (sun) this account froze for bandwidth but delegated OUT to another
+     * address to use. Still this account's own stake — it counts toward its
+     * net worth and its own TRON Power/votes — TronGrid just excludes it from
+     * `frozenV2` once delegated out. Mirrors protobuf
+     * `Account.delegated_frozenV2_balance_for_bandwidth`.
+     */
+    delegated_frozenV2_balance_for_bandwidth?: number;
+    /** Nested per protobuf `Account.account_resource`; carries the energy-side delegated-out counterpart. */
+    account_resource?: {
+        /**
+         * TRX (sun) this account froze for energy but delegated OUT to
+         * another address. Same ownership semantics as the bandwidth field above.
+         */
+        delegated_frozenV2_balance_for_energy?: number;
+    };
 }
 
 export class TronGridClient {
