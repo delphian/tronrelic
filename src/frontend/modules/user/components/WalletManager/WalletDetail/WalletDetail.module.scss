@@ -151,6 +151,12 @@
     color: var(--color-text);
 }
 
+/* Counterparties table's numeric columns pair Th's width="shrink" (column
+   sizing) with this on the Td (Td has no width prop) so values never wrap. */
+.counterparty_nowrap {
+    white-space: nowrap;
+}
+
 /* Directional value colours, shared by the flow legend and the feed amounts. */
 .value_in {
     color: var(--color-success);
