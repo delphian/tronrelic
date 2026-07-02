@@ -25,7 +25,6 @@ import { useMemo, useState } from 'react';
 import type { IPortfolioSummary, IPortfolioBalancePoint } from '@/types';
 import { Wallet, TrendingUp, TrendingDown, Hourglass, Coins } from 'lucide-react';
 import { LineChart, DonutChart, type DonutSlice } from '../../../../../features/charts';
-import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { Stack } from '../../../../../components/layout';
@@ -277,16 +276,18 @@ export function PortfolioHero({ summary }: IPortfolioHeroProps) {
                     </div>
                 </div>
 
+                <div className="divider" />
+
                 <div className={styles.portfolio_split}>
-                    <Card padding="md" className={styles.portfolio_donut}>
+                    <div className={styles.portfolio_donut}>
                         <DonutChart
                             slices={slices}
                             centerLabel={formatUsd(summary.netWorthUsd)}
                             centerCaption="Net worth"
                             emptyLabel="No priced holdings"
                         />
-                    </Card>
-                    <Card padding="md" className={styles.portfolio_holdings}>
+                    </div>
+                    <div className={styles.portfolio_holdings}>
                         <Table variant="compact">
                             <Thead>
                                 <Tr>
@@ -321,10 +322,12 @@ export function PortfolioHero({ summary }: IPortfolioHeroProps) {
                                 )}
                             </Tbody>
                         </Table>
-                    </Card>
+                    </div>
                 </div>
 
-                <Card padding="md">
+                <div className="divider" />
+
+                <div className={styles.portfolio_chart}>
                     <LineChart
                         series={balanceSeries}
                         title="Net worth over time"
@@ -348,7 +351,7 @@ export function PortfolioHero({ summary }: IPortfolioHeroProps) {
                             Some early history is beyond what data sources can reach, so PnL and cost basis are approximate. Net worth is exact — it comes from live balances.
                         </p>
                     )}
-                </Card>
+                </div>
 
                 {summary.unpricedAssets.length > 0 && (
                     <p className="text-muted">

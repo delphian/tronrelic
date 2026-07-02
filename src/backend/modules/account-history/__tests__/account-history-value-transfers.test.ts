@@ -272,3 +272,67 @@ describe('TronGridAccountHistoryProvider.fetchTokenTransferLegs', () => {
         expect(legs).toEqual([]);
     });
 });
+
+describe('TronGridAccountHistoryProvider.fetchAccountSnapshot', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    /**
+     * Stub the shared client's account/resource/reward calls so the snapshot
+     * builder reads canned `getaccount`/`getaccountresource` responses.
+     *
+     * @param account - Raw `getaccount`-shaped response.
+     * @param resource - Raw `getaccountresource`-shaped response.
+     */
+    function stubAccountClient(account: unknown, resource: unknown = {}): void {
+        vi.spyOn(TronGridClient, 'getInstance').mockReturnValue({
+            getAccount: vi.fn(async () => account),
+            getAccountResource: vi.fn(async () => resource),
+            getReward: vi.fn(async () => 0)
+        } as unknown as TronGridClient);
+    }
+
+    it('folds delegated-OUT energy (nested under account_resource) into stakedEnergySun', async () => {
+        // Regression for the account TBCH5NjugqyJwTRKh5fZxoAJ8nsnZtmzz1: this
+        // TRX is still this account's own stake (it counts toward net worth
+        // and TRON Power/votes) even though TronGrid drops it from `frozenV2`
+        // once delegated to another address for that address's own use.
+        stubAccountClient({
+            balance: 24_224_773,
+            frozenV2: [{ amount: 285_000_000 }, { type: 'ENERGY', amount: 4_136_700_000 }],
+            account_resource: { delegated_frozenV2_balance_for_energy: 6_847_300_000 }
+        });
+
+        const sample = await new TronGridAccountHistoryProvider().fetchAccountSnapshot('Taddr');
+
+        expect(sample.stakedEnergySun).toBe(4_136_700_000 + 6_847_300_000);
+        expect(sample.stakedBandwidthSun).toBe(285_000_000);
+    });
+
+    it('folds delegated-OUT bandwidth (top-level on the account response) into stakedBandwidthSun', async () => {
+        stubAccountClient({
+            balance: 0,
+            frozenV2: [{ amount: 100 }],
+            delegated_frozenV2_balance_for_bandwidth: 50
+        });
+
+        const sample = await new TronGridAccountHistoryProvider().fetchAccountSnapshot('Taddr');
+
+        expect(sample.stakedBandwidthSun).toBe(150);
+    });
+
+    it('does not count resource delegated IN from another account', async () => {
+        // `acquired_delegated_frozenV2_balance_for_*` is someone else's stake
+        // used by this account's resources — never this account's own TRX.
+        stubAccountClient({
+            balance: 0,
+            frozenV2: [],
+            account_resource: { acquired_delegated_frozenV2_balance_for_energy: 9_999_999 }
+        });
+
+        const sample = await new TronGridAccountHistoryProvider().fetchAccountSnapshot('Taddr');
+
+        expect(sample.stakedEnergySun).toBe(0);
+    });
+});
