@@ -433,6 +433,7 @@ export class AccountHistoryService implements IAccountHistoryService {
             ? new Date(completeWatermarks.reduce((min, t) => Math.min(min, t), Infinity))
             : undefined;
 
+        const todayUtc = new Date().toISOString().slice(0, 10);
         const stats: IAccountHistoryStats = {
             settings,
             accounts: accountStats,
@@ -443,9 +444,7 @@ export class AccountHistoryService implements IAccountHistoryService {
                 failedAccounts: accountStats.filter((a) => a.progress.status === 'failed').length,
                 catchingUpAccounts: accountStats.filter((a) => a.progress.catchingUp).length,
                 oldestNewestTimestamp,
-                snapshottedTodayAccounts: accountStats.filter(
-                    (a) => a.progress.lastSnapshotDay === new Date().toISOString().slice(0, 10)
-                ).length
+                snapshottedTodayAccounts: accountStats.filter((a) => a.progress.lastSnapshotDay === todayUtc).length
             }
         };
         return stats;
