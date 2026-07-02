@@ -97,15 +97,15 @@ export function decodeTronTransaction(tx: IBlockTransaction, wallet: string): ID
         case 'FreezeBalanceV2Contract':
             return { label: 'Staked TRX', direction, amount: formatSunAmount(tx.amountSun) };
         case 'UnfreezeBalanceV2Contract':
-            return { label: 'Unstaked TRX', direction, amount: '' };
+            return { label: 'Unstaked TRX', direction, amount: formatSunAmount(tx.amountSun) };
         case 'DelegateResourceContract':
             return { label: 'Delegated resources', direction, amount: formatSunAmount(tx.amountSun) };
         case 'UnDelegateResourceContract':
-            return { label: 'Reclaimed resources', direction, amount: '' };
+            return { label: 'Reclaimed resources', direction, amount: formatSunAmount(tx.amountSun) };
         case 'WithdrawExpireUnfreezeContract':
-            return { label: 'Withdrew unstaked TRX', direction, amount: '' };
+            return { label: 'Withdrew unstaked TRX', direction, amount: formatSunAmount(tx.amountSun) };
         case 'WithdrawBalanceContract':
-            return { label: 'Withdraw Balance', direction, amount: formatSunAmount(tx.amountSun) };
+            return { label: 'Claimed rewards', direction, amount: formatSunAmount(tx.amountSun) };
         default: {
             // Humanize an unmapped contract type: strip the trailing "Contract"
             // and space the PascalCase so it still reads, rather than dumping the
