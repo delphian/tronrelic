@@ -33,8 +33,14 @@ export class ZoneCssValidator {
     constructor(private readonly logger: ISystemLogService) {}
 
     /**
-     * Validate CSS declaration syntax by wrapping the input in a dummy
-     * selector and parsing it with PostCSS.
+     * Validate operator-authored zone CSS before it is injected verbatim into
+     * a `<style>` tag on public pages. Three defenses, in order: reject the
+     * literal `</style` sequence (the HTML parser closes the style element
+     * there and would execute any following markup), force a real PostCSS
+     * parse to catch syntax errors (a plugin-less `process()` is a lazy no-op
+     * until its tree is read), and walk the parsed tree to reject any rule
+     * that breaks out of the wrapper selector plus any at-rule other than the
+     * conditional-group forms a responsive tweak legitimately needs.
      *
      * @param css - Raw declarations as typed by the operator (no selector).
      * @returns Validation result with success flag and error messages.
@@ -43,8 +49,36 @@ export class ZoneCssValidator {
         if (css.length > ZONE_CSS_MAX_LENGTH) {
             return { valid: false, errors: [`CSS exceeds ${ZONE_CSS_MAX_LENGTH} characters.`] };
         }
+        // Injected verbatim into a <style> tag via dangerouslySetInnerHTML.
+        // The HTML parser closes a <style> block at the first literal `</style`
+        // — even inside a CSS comment or string — so a
+        // `/* </style><script>…</script> */` payload would break out and
+        // execute. Reject the sequence outright.
+        if (/<\/style/i.test(css)) {
+            return { valid: false, errors: ['CSS may not contain the sequence "</style".'] };
+        }
         try {
-            await postcss().process(`.zone-css-validate{${css}}`, { from: undefined });
+            const result = await postcss().process(`.zone-css-validate{${css}}`, { from: undefined });
+            // Reading `.root` forces the parse: process() with no plugins
+            // returns a lazily-evaluated NoWorkResult that never parses (and
+            // never surfaces a syntax error) unless the tree is walked.
+            const errors: string[] = [];
+            result.root.walkRules(rule => {
+                if (rule.selector !== '.zone-css-validate') {
+                    errors.push(`Selector "${rule.selector}" is not allowed; write declarations only.`);
+                }
+            });
+            // Permit only the conditional-group at-rules a responsive zone
+            // tweak needs; reject the rest (e.g. @import can pull remote CSS).
+            const allowedAtRules = new Set(['media', 'container', 'supports']);
+            result.root.walkAtRules(at => {
+                if (!allowedAtRules.has(at.name.toLowerCase())) {
+                    errors.push(`At-rule "@${at.name}" is not allowed.`);
+                }
+            });
+            if (errors.length > 0) {
+                return { valid: false, errors };
+            }
             return { valid: true, errors: [] };
         } catch (error: unknown) {
             this.logger.warn({ error, css: css.substring(0, 200) }, 'Zone custom CSS validation failed');
