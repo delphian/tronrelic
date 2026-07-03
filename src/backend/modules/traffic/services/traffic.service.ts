@@ -1455,7 +1455,7 @@ export class TrafficService {
                 argMin(utm_campaign, timestamp) AS utmCampaign,
                 argMin(utm_term, timestamp) AS utmTerm,
                 argMin(utm_content, timestamp) AS utmContent,
-                argMin(subnet_hash, timestamp) AS subnetHash,
+                argMin(tuple(subnet_hash), timestamp).1 AS subnetHash, -- tuple() preserves a NULL first-touch value; plain argMin skips NULL args
                 count() AS pageViews,
                 countIf(event_type = 'session_start') AS sessionsCount
             FROM ${TABLE_NAME}

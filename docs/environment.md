@@ -24,7 +24,11 @@ There are no `NEXT_PUBLIC_*` vars by design. Production builds inline build-time
 
 `SESSION_SECRET` is the secret `loaders/express.ts` hands to `cookie-parser`, so Express can verify `req.signedCookies`. It does not sign an identity cookie — identity rides the Better Auth session cookie, which Better Auth signs independently with `BETTER_AUTH_SECRET`. The analytics cookies (`tronrelic_tid`, `tronrelic_ref`) are unsigned by design. `SESSION_SECRET` is retained as a defensive keep so any future signed cookie is verifiable.
 
-If the variable is unset, production (`NODE_ENV=production` or `ENV=production`) refuses to start, while dev and test fall back to a placeholder and emit `console.warn`. Rotating it only affects signed cookies parsed by `cookie-parser`; it does not touch Better Auth sessions (those rotate with `BETTER_AUTH_SECRET`).
+If the variable is unset, production (`NODE_ENV=production` or `ENV=production`) refuses to start, while dev and test fall back to a placeholder and emit `console.warn`. Rotating it affects signed cookies parsed by `cookie-parser` and — when `TRAFFIC_IP_HASH_SALT` is unset — the analytics source hashes salted from it (see below); it does not touch Better Auth sessions (those rotate with `BETTER_AUTH_SECRET`).
+
+## TRAFFIC_IP_HASH_SALT
+
+Salt for the traffic module's keyed source hashes (`ip_hash` / `subnet_hash` in ClickHouse `traffic_events`). Unset, it falls back to `SESSION_SECRET`, so production needs no new wiring — but that couples the two: rotating `SESSION_SECRET` then also severs analytics source correlation across the boundary. Set a dedicated value when the analytics salt must rotate independently of cookie signing. Rotation is always safe (nothing breaks); it only splits "same source" continuity at the boundary.
 
 ## TronGrid Rate Limits
 
