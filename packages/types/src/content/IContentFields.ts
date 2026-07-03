@@ -32,8 +32,7 @@
 /**
  * The declared enrichment keys a content type may attach for sinks to read.
  * Every key is optional — a type writes only what it has, a sink reads only what
- * it needs. Seeded with the one key generic enough that any publish sink
- * benefits; new keys are added by a reviewed PR to this interface, never by a
+ * it needs. New keys are added by a reviewed PR to this interface, never by a
  * sink inventing a string.
  */
 export interface IContentFields {
@@ -41,10 +40,27 @@ export interface IContentFields {
      * The canonical public URL of the content, when it has a stable home a sink
      * can link back to (a published page, a permalink). Generic across publish
      * sinks — a tweet, a Telegram post, and a Reddit submission all benefit from
-     * linking to the source — which is why it is the seed key rather than a
+     * linking to the source — which is why it was the seed key rather than a
      * sink-specific one.
      */
     canonicalUrl?: string;
+
+    /**
+     * The reserved URL slug the content should publish at, when its type
+     * reserved one before review (a blog draft holding `/blog/<slug>`). A
+     * publish sink that owns that URL space uses it to publish the originating
+     * record itself instead of ingesting a slug-deduped copy; sinks without a
+     * URL space ignore it.
+     */
+    slug?: string;
+
+    /**
+     * Lowercase slug-shaped discovery tags the content carries. Publish sinks
+     * with a tagging/labelling concept (a blog, a forum flair) apply them;
+     * plain-text sinks ignore them. Carrying them here is what lets tags
+     * survive the descriptor seam — they are enrichment, not a renderable slot.
+     */
+    tags?: string[];
 }
 
 /**
