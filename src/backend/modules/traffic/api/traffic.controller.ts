@@ -42,6 +42,7 @@ const KNOWN_BOT_CLASSES = new Set([
     'ai_crawler',
     'social_unfurler',
     'uptime_probe',
+    'scanner',
     'bot_other',
     'unclassified'
 ]);

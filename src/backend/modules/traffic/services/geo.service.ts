@@ -230,6 +230,15 @@ export function getDeviceCategory(userAgent: string | undefined): DeviceCategory
  * @returns Client IP address
  */
 export function getClientIP(req: { ip?: string; headers: Record<string, string | string[] | undefined> }): string | undefined {
+    // Prefer Cloudflare's CF-Connecting-IP: it is set by the edge to the
+    // true client address and, unlike X-Forwarded-For, cannot be seeded by
+    // the client itself (Cloudflare strips/overwrites it on ingress).
+    const cfConnecting = req.headers['cf-connecting-ip'];
+    if (cfConnecting) {
+        const ip = Array.isArray(cfConnecting) ? cfConnecting[0] : cfConnecting;
+        return ip.trim();
+    }
+
     // Check X-Forwarded-For header (from reverse proxy)
     const forwarded = req.headers['x-forwarded-for'];
     if (forwarded) {

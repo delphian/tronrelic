@@ -41,7 +41,7 @@
 import type { Request } from 'express';
 import type { IClickHouseService, ISystemLogService } from '@/types';
 import { getClientIP, getCountryFromIP, getDeviceCategory } from './geo.service.js';
-import { classifyUserAgent, type BotClass } from './bot-classifier.js';
+import { classifyTrafficRequest, type BotClass } from './bot-classifier.js';
 import { UUID_V4_REGEX } from '../api/traffic-cookies.js';
 
 /**
@@ -127,6 +127,23 @@ export interface ITrafficEvent {
     sec_fetch_dest: string | null;
     sec_fetch_mode: string | null;
     sec_fetch_site: string | null;
+
+    /**
+     * Cloudflare ray id (`CF-Ray` header) when the request traversed the
+     * Cloudflare proxy, else `null`. A `null` here on production traffic
+     * means the request hit the origin directly, bypassing Cloudflare —
+     * the signal that distinguishes proxied scanners (a WAF-tuning
+     * problem) from direct-to-origin scanners (a firewall problem).
+     * Additive column (migration 014).
+     */
+    cf_ray: string | null;
+    /**
+     * Cloudflare's authoritative edge-derived country (`CF-IPCountry`
+     * header, ISO-3166 alpha-2), else `null`. Kept alongside the local
+     * GeoIP-derived `country` so the two sources can be compared.
+     * Additive column (migration 014).
+     */
+    cf_ipcountry: string | null;
 }
 
 /**
@@ -585,7 +602,9 @@ export class TrafficService {
                 sec_ch_ua_platform,
                 sec_fetch_dest,
                 sec_fetch_mode,
-                sec_fetch_site
+                sec_fetch_site,
+                cf_ray,
+                cf_ipcountry
             FROM ${TABLE_NAME}
             WHERE candidate_uid = {candidateUid:UUID}
             ${eventFilter}
@@ -1790,8 +1809,11 @@ export function buildTrafficEvent(
     const secFetchDest = readSingleHeader(headers['sec-fetch-dest']);
     const secFetchMode = readSingleHeader(headers['sec-fetch-mode']);
     const secFetchSite = readSingleHeader(headers['sec-fetch-site']);
+    const cfRay = readSingleHeader(headers['cf-ray']);
+    const cfIpCountry = normalizeCfCountry(readSingleHeader(headers['cf-ipcountry']));
 
     const utm = inputs.utm ?? {};
+    const path = inputs.landingPath ?? (typeof req.path === 'string' ? req.path : '/');
 
     return {
         event_type: eventType,
@@ -1801,16 +1823,18 @@ export function buildTrafficEvent(
         referral_code: inputs.referralCode ?? null,
         duration_ms: inputs.durationMs ?? null,
 
-        path: inputs.landingPath ?? (typeof req.path === 'string' ? req.path : '/'),
+        path,
         referer: referer ?? null,
         original_referrer: inputs.originalReferrer ?? null,
 
         user_agent: userAgent ?? null,
         accept_language: acceptLanguage ?? null,
 
-        country: getCountryFromIP(getClientIP({ ip: req.ip, headers })),
+        // Cloudflare's edge-derived country is authoritative when present;
+        // the local GeoIP lookup covers direct-to-origin and dev traffic.
+        country: cfIpCountry ?? getCountryFromIP(getClientIP({ ip: req.ip, headers })),
         device: getDeviceCategory(userAgent),
-        bot_class: classifyUserAgent(userAgent),
+        bot_class: classifyTrafficRequest({ userAgent, path, referer, secFetchSite }),
 
         utm_source: utm.source ?? null,
         utm_medium: utm.medium ?? null,
@@ -1823,8 +1847,31 @@ export function buildTrafficEvent(
         sec_ch_ua_platform: secChUaPlatform ?? null,
         sec_fetch_dest: secFetchDest ?? null,
         sec_fetch_mode: secFetchMode ?? null,
-        sec_fetch_site: secFetchSite ?? null
+        sec_fetch_site: secFetchSite ?? null,
+
+        cf_ray: cfRay ?? null,
+        cf_ipcountry: cfIpCountry
     };
+}
+
+/**
+ * Normalize the `CF-IPCountry` header into a storable ISO-3166 alpha-2
+ * code. Cloudflare emits `XX` (unknown) and `T1` (Tor) sentinels that are
+ * not countries — collapsing them to `null` keeps the geo dimension clean
+ * while the raw proxied/direct signal still lives in `cf_ray`.
+ *
+ * @param value - Raw `CF-IPCountry` header value.
+ * @returns Uppercase alpha-2 code, or `null` for sentinels/malformed input.
+ */
+function normalizeCfCountry(value: string | undefined): string | null {
+    let country: string | null = null;
+    if (value) {
+        const v = value.trim().toUpperCase();
+        if (/^[A-Z]{2}$/.test(v) && v !== 'XX' && v !== 'T1') {
+            country = v;
+        }
+    }
+    return country;
 }
 
 /**

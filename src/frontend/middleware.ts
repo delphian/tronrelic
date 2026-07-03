@@ -71,7 +71,15 @@ const FORWARDED_HEADERS = [
     'sec-ch-ua-platform',
     'sec-fetch-dest',
     'sec-fetch-mode',
-    'sec-fetch-site'
+    'sec-fetch-site',
+    // Cloudflare edge headers. `cf-ray` proves the request traversed the
+    // Cloudflare proxy (its absence on production traffic means a
+    // direct-to-origin hit), `cf-ipcountry` is the edge's authoritative
+    // geo, and `cf-connecting-ip` is the true client address the backend's
+    // getClientIP prefers over the spoofable X-Forwarded-For chain.
+    'cf-ray',
+    'cf-ipcountry',
+    'cf-connecting-ip'
 ] as const;
 
 /** UTM keys we accept from the URL. Anything else is dropped. */

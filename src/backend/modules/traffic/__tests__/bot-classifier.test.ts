@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { classifyUserAgent } from '../services/bot-classifier.js';
+import { classifyUserAgent, classifyTrafficRequest } from '../services/bot-classifier.js';
 
 describe('classifyUserAgent', () => {
     describe('search_engine', () => {
@@ -145,6 +145,102 @@ describe('classifyUserAgent', () => {
             // so a UA containing both `googlebot` and `gptbot` resolves
             // to ai_crawler. This documents the ordering choice.
             expect(classifyUserAgent('GPTBot/1.0 Googlebot/2.1')).toBe('ai_crawler');
+        });
+    });
+});
+
+describe('classifyTrafficRequest', () => {
+    /** Realistic browser UA scanners commonly present. */
+    const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+    describe('scanner via probe paths', () => {
+        it.each([
+            ['/.env'],
+            ['/app/.env'],
+            ['/wp-login.php'],
+            ['/wp'],
+            ['/cms/configuration.php'],
+            ['/..%c0%af..%c0%afvar/www/.git/config'],
+            ['/..%ef%bc%8f..%ef%bc%8f.aws/credentials'],
+            ['/%252e%252e/var/www/html/configuration.php'],
+            ['/..%ef%bc%8fetc/apache2/apache2.conf'],
+            ['/.:/WEB-INF/classes/application.properties']
+        ])('classifies probe path %s as scanner despite a browser UA', (path) => {
+            expect(classifyTrafficRequest({
+                userAgent: CHROME_UA,
+                path,
+                referer: null,
+                secFetchSite: null
+            })).toBe('scanner');
+        });
+
+        it('does not flag legitimate app paths', () => {
+            expect(classifyTrafficRequest({
+                userAgent: CHROME_UA,
+                path: '/markets/energy',
+                referer: null,
+                secFetchSite: null
+            })).toBe('human');
+        });
+
+        it('does not flag /wpsomething outside a probe pattern', () => {
+            // '/wp-' and '/wp' as a full segment are probes; but ensure
+            // ordinary content slugs that merely contain "wp" elsewhere pass.
+            expect(classifyTrafficRequest({
+                userAgent: CHROME_UA,
+                path: '/blog/how-to-swap-trx',
+                referer: null,
+                secFetchSite: null
+            })).toBe('human');
+        });
+    });
+
+    describe('scanner via spoofed search referrer', () => {
+        it('flags a google.com referrer with no Sec-Fetch-Site header', () => {
+            expect(classifyTrafficRequest({
+                userAgent: CHROME_UA,
+                path: '/',
+                referer: 'https://www.google.com/',
+                secFetchSite: null
+            })).toBe('scanner');
+        });
+
+        it('accepts a google.com referrer with Sec-Fetch-Site present', () => {
+            expect(classifyTrafficRequest({
+                userAgent: CHROME_UA,
+                path: '/',
+                referer: 'https://www.google.com/',
+                secFetchSite: 'cross-site'
+            })).toBe('human');
+        });
+
+        it('does not flag non-search referrers lacking Sec-Fetch headers', () => {
+            expect(classifyTrafficRequest({
+                userAgent: CHROME_UA,
+                path: '/',
+                referer: 'https://someblog.example.com/post',
+                secFetchSite: null
+            })).toBe('human');
+        });
+    });
+
+    describe('fallthrough to UA classification', () => {
+        it('still classifies honest bots by UA', () => {
+            expect(classifyTrafficRequest({
+                userAgent: 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+                path: '/',
+                referer: null,
+                secFetchSite: null
+            })).toBe('search_engine');
+        });
+
+        it('classifies a missing UA on a clean path as bot_other', () => {
+            expect(classifyTrafficRequest({
+                userAgent: null,
+                path: '/',
+                referer: null,
+                secFetchSite: null
+            })).toBe('bot_other');
         });
     });
 });
