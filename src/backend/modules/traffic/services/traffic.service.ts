@@ -1810,7 +1810,11 @@ export function buildTrafficEvent(
     const secFetchMode = readSingleHeader(headers['sec-fetch-mode']);
     const secFetchSite = readSingleHeader(headers['sec-fetch-site']);
     const cfRay = readSingleHeader(headers['cf-ray']);
-    const cfIpCountry = normalizeCfCountry(readSingleHeader(headers['cf-ipcountry']));
+    // Trust CF-IPCountry only when CF-Ray attests the hop was Cloudflare.
+    // A direct-to-origin client can spoof both together, so this is row
+    // consistency (cf columns populate as a set), not a security boundary —
+    // the real enforcement is the origin firewall allow-listing Cloudflare.
+    const cfIpCountry = cfRay ? normalizeCfCountry(readSingleHeader(headers['cf-ipcountry'])) : null;
 
     const utm = inputs.utm ?? {};
     const path = inputs.landingPath ?? (typeof req.path === 'string' ? req.path : '/');

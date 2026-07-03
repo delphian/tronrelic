@@ -230,13 +230,22 @@ export function getDeviceCategory(userAgent: string | undefined): DeviceCategory
  * @returns Client IP address
  */
 export function getClientIP(req: { ip?: string; headers: Record<string, string | string[] | undefined> }): string | undefined {
-    // Prefer Cloudflare's CF-Connecting-IP: it is set by the edge to the
-    // true client address and, unlike X-Forwarded-For, cannot be seeded by
-    // the client itself (Cloudflare strips/overwrites it on ingress).
+    // Prefer Cloudflare's CF-Connecting-IP: for traffic that transits the
+    // Cloudflare edge it is set to the true client address and, unlike
+    // X-Forwarded-For, cannot be forged by the client (the edge overwrites
+    // it on ingress). It is honored only when CF-Ray is also present —
+    // a spoofer can send both together, so this gate is consistency
+    // hygiene, not a security boundary; the real enforcement is
+    // allow-listing Cloudflare's published IP ranges at the origin
+    // firewall. Where that is not enforced the only exposure is poisoned
+    // analytics geo: this value feeds country derivation and an admin
+    // audit-log field, never rate limiting or geo-blocking.
     const cfConnecting = req.headers['cf-connecting-ip'];
-    if (cfConnecting) {
-        const ip = Array.isArray(cfConnecting) ? cfConnecting[0] : cfConnecting;
-        return ip.trim();
+    if (cfConnecting && req.headers['cf-ray']) {
+        const raw = Array.isArray(cfConnecting) ? cfConnecting[0] : cfConnecting;
+        // Defensive: the header is single-valued from Cloudflare, but a
+        // misbehaving hop could comma-join — take the first entry.
+        return raw.split(',')[0].trim();
     }
 
     // Check X-Forwarded-For header (from reverse proxy)
