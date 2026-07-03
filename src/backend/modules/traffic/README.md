@@ -11,7 +11,7 @@ Owns cookieless behavioral analytics: the ClickHouse `traffic_events` pipeline, 
 | Admin page | `/system/traffic` (menu item `Traffic`, order 26, registered in `run()`) |
 | Mounted routes | `/api/admin/users/traffic/*`, `/api/admin/users/analytics/*`, `/api/user/bootstrap`, `/api/user/track` |
 | Scheduled job | `gsc:fetch` (daily, `0 3 * * *`) |
-| ClickHouse table | `traffic_events` (migrations 010, 012, 013) |
+| ClickHouse table | `traffic_events` (migrations 010, 012, 013, 014) |
 | Event types | `bootstrap` (cookieless first touch, incl. bots) · `page` (interactive navigation) |
 | Mongo collections | `module_user_gsc_queries` (GSC keyword cache — physical name preserved) · `module_user_gsc_daily_totals` (date-only GSC daily totals) |
 | Analytics key | cookieless `tronrelic_tid` (`candidate_uid`), independent of identity |
@@ -30,13 +30,14 @@ Physical storage names are unchanged from when this code lived under the user mo
 | `TrafficModule.ts` | Two-phase lifecycle; constructs services, mounts the admin router, registers `gsc:fetch` |
 | `services/traffic.service.ts` | ClickHouse `traffic_events` writes + admin aggregate reads; `buildTrafficEvent`, `ITrafficEvent` |
 | `services/gsc.service.ts` | Google Search Console keyword fetch/store (`module_user_gsc_queries`) plus date-only daily totals (`module_user_gsc_daily_totals`) — GSC drops anonymized queries from keyword rows, so chart totals come from the date-only fetch |
-| `services/bot-classifier.ts` | User-Agent → `BotClass` (powers `traffic_events.bot_class`) |
+| `services/bot-classifier.ts` | Request → `BotClass` (powers `traffic_events.bot_class`). `classifyTrafficRequest` runs scanner heuristics first — probe paths (`/.env`, encoded traversal) and spoofed search-engine `Referer` with no `Sec-Fetch-Site` — then falls through to the UA-only `classifyUserAgent`; scanners fake browser UAs, so UA-only classification cannot catch them |
 | `services/geo.service.ts` | IP → country, referrer parsing, device derivation, `getClientIP`; defines `DeviceCategory` / `ScreenSizeCategory` |
 | `api/traffic.{controller,routes}.ts` | `/api/admin/users/traffic/*` raw-traffic reads **and** `/api/admin/users/analytics/*` dashboard aggregates (ClickHouse-backed), including the per-tid / per-user page-activity reads |
 | `api/bootstrap.{controller,routes}.ts` | Public ingestion: `POST /api/user/bootstrap` (first-touch `bootstrap`) and `POST /api/user/track` (navigation `page`) — both tid-keyed, account-attributed when logged in; no identity, no Mongo write |
 | `api/traffic-cookies.ts` | `tronrelic_tid` / `tronrelic_ref` resolve/mint/set helpers |
 | `migrations/010_create_traffic_events_table.ts` | Creates the ClickHouse table (18-month TTL) |
 | `migrations/012_traffic_events_user_referral_columns.ts` | Adds `user_id` + `referral_code` columns |
+| `migrations/014_traffic_events_cloudflare_columns.ts` | Adds `cf_ray` + `cf_ipcountry`; a NULL `cf_ray` on production traffic means the request bypassed Cloudflare (direct-to-origin) |
 
 ## REST Endpoints
 

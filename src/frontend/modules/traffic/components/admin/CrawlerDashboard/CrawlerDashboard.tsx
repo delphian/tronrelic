@@ -49,6 +49,7 @@ const BOT_CLASS_SERIES: Array<{ key: string; label: string; cssVar: string; fall
     { key: 'ai_crawler', label: 'AI crawler', cssVar: '--chart-color-5', fallback: '#8b5cf6' },
     { key: 'social_unfurler', label: 'Social unfurler', cssVar: '--chart-color-3', fallback: '#f59e0b' },
     { key: 'uptime_probe', label: 'Uptime probe', cssVar: '--chart-color-6', fallback: '#06b6d4' },
+    { key: 'scanner', label: 'Scanner', cssVar: '--chart-color-4', fallback: '#ef4444' },
     { key: 'bot_other', label: 'Other bots', cssVar: '--chart-color-8', fallback: '#f97316' },
     { key: 'unclassified', label: 'Unclassified', cssVar: '--chart-color-9', fallback: '#14b8a6' }
 ];
@@ -59,6 +60,7 @@ const PATH_BOT_CLASSES: Array<{ key: string; label: string }> = [
     { key: 'search_engine', label: 'Search engine' },
     { key: 'social_unfurler', label: 'Social unfurler' },
     { key: 'uptime_probe', label: 'Uptime probe' },
+    { key: 'scanner', label: 'Scanner' },
     { key: 'bot_other', label: 'Other bots' },
     { key: 'human', label: 'Human' }
 ];

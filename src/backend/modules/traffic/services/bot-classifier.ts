@@ -30,6 +30,11 @@
  * - `uptime_probe` — UptimeRobot, Pingdom, StatusCake, BetterUptime,
  *   New Relic synthetics. Synthetic monitoring; high cardinality with
  *   low analytic value, broken out so dashboards can subtract it.
+ * - `scanner` — vulnerability probes identified by *request* signals
+ *   rather than the UA (scanners lie in the UA): probe paths like
+ *   `/.env` / `/wp-login.php` / encoded path traversal, or a spoofed
+ *   search-engine `Referer` with no `Sec-Fetch-Site` header. Assigned
+ *   by `classifyTrafficRequest`, never by the UA-only classifier.
  * - `bot_other` — `isbot` returned true but no explicit rule matched.
  *   Captures the long tail without forcing it into a misleading family.
  *
@@ -73,6 +78,7 @@ export type BotClass =
     | 'ai_crawler'
     | 'social_unfurler'
     | 'uptime_probe'
+    | 'scanner'
     | 'bot_other';
 
 /**
@@ -210,4 +216,160 @@ export function classifyUserAgent(userAgent: string | null | undefined): BotClas
     }
 
     return 'human';
+}
+
+/**
+ * Request-level signals available only at the traffic-event write site.
+ * The UA alone cannot expose a scanner that fakes a browser UA — but the
+ * requested path and the referrer/Sec-Fetch consistency can.
+ */
+export interface ITrafficRequestSignals {
+    /** Raw `User-Agent` header value, or null/undefined. */
+    userAgent: string | null | undefined;
+    /** Sanitized landing path (query/hash already stripped). */
+    path: string | null | undefined;
+    /** Raw `Referer` header value, or null/undefined. */
+    referer: string | null | undefined;
+    /** Raw `Sec-Fetch-Site` header value, or null/undefined. */
+    secFetchSite: string | null | undefined;
+}
+
+/**
+ * Lowercased path fragments that identify vulnerability probes. TronRelic
+ * serves none of these — no PHP, no WordPress, no exposed dotfiles — so a
+ * request for any of them is a scanner by definition, regardless of how
+ * browser-like its UA looks. Match is `includes` on the lowercased path.
+ */
+const SCANNER_PATH_FRAGMENTS: readonly string[] = [
+    '/.env',
+    '/.git',
+    '/.aws',
+    '/.ssh',
+    '/.docker',
+    '/.vscode',
+    '/wp-',
+    '/wordpress',
+    '/xmlrpc',
+    '/phpmyadmin',
+    '/phpinfo',
+    '.php',
+    '.asp',
+    '.jsp',
+    '/web-inf',
+    '/etc/passwd',
+    '/etc/apache2',
+    '/var/www',
+    '.aws/credentials',
+    'application.properties',
+    '/cgi-bin',
+    '/actuator',
+    '/owa/',
+    '/vendor/phpunit',
+    '/wlwmanifest'
+];
+
+/**
+ * Exact-path probes (matched against the whole lowercased path, optionally
+ * with a trailing slash) that are too short to safely `includes`-match —
+ * `/wp` as a fragment would also hit legitimate slugs containing "wp".
+ */
+const SCANNER_EXACT_PATHS: ReadonlySet<string> = new Set([
+    '/wp',
+    '/cms',
+    '/backup',
+    '/old',
+    '/config'
+]);
+
+/**
+ * Path-traversal / encoding-evasion markers, checked against the *raw*
+ * (pre-decode) lowercased path. `../` never appears in a legitimate
+ * TronRelic route, and the encoded forms (`%2e%2e`, overlong UTF-8
+ * `%c0%af`, fullwidth-solidus `%ef%bc%8f`) exist solely to slip
+ * traversal past WAF pattern matching.
+ */
+const TRAVERSAL_FRAGMENTS: readonly string[] = [
+    '../',
+    '..%2f',
+    '%2e%2e',
+    '%252e',
+    '%c0%af',
+    '%ef%bc%8f'
+];
+
+/**
+ * Referrer domains scanners routinely spoof to masquerade as organic
+ * search traffic. Matched against the lowercased `Referer` value.
+ */
+const SPOOF_TARGET_REFERRERS: readonly string[] = [
+    'google.',
+    'bing.com',
+    'duckduckgo.com',
+    'yahoo.',
+    'baidu.com',
+    'yandex.'
+];
+
+/**
+ * True when the requested path pattern-matches a vulnerability probe.
+ *
+ * @param path - Sanitized landing path (may still carry encoded traversal).
+ * @returns True for probe paths (dotfiles, CMS probes, traversal encodings).
+ */
+function isScannerPath(path: string | null | undefined): boolean {
+    let hit = false;
+    if (path) {
+        const p = path.slice(0, MAX_UA_LENGTH).toLowerCase();
+        const exact = p.endsWith('/') && p.length > 1 ? p.slice(0, -1) : p;
+        hit =
+            SCANNER_EXACT_PATHS.has(exact) ||
+            SCANNER_PATH_FRAGMENTS.some(fragment => p.includes(fragment)) ||
+            TRAVERSAL_FRAGMENTS.some(fragment => p.includes(fragment));
+    }
+    return hit;
+}
+
+/**
+ * True when the `Referer` claims a search-engine origin but the request
+ * carries no `Sec-Fetch-Site` header. Every browser that has shipped since
+ * ~2023 sends `Sec-Fetch-Site: cross-site` on a genuine click-through from
+ * Google/Bing; curl-style scanners spoofing the Referer send no Sec-Fetch
+ * headers at all. Gated on search-engine referrers specifically (the
+ * domains scanners actually spoof) so a rare legacy browser arriving from
+ * an arbitrary site is not misclassified.
+ *
+ * @param referer - Raw `Referer` header value.
+ * @param secFetchSite - Raw `Sec-Fetch-Site` header value.
+ * @returns True when the referrer is a spoof-target domain and Sec-Fetch is absent.
+ */
+function isSpoofedSearchReferrer(
+    referer: string | null | undefined,
+    secFetchSite: string | null | undefined
+): boolean {
+    let spoofed = false;
+    if (referer && !secFetchSite) {
+        const ref = referer.slice(0, MAX_UA_LENGTH).toLowerCase();
+        spoofed = SPOOF_TARGET_REFERRERS.some(domain => ref.includes(domain));
+    }
+    return spoofed;
+}
+
+/**
+ * Classify a traffic event using the full request context. Scanner
+ * heuristics (probe paths, spoofed search referrers) run first because
+ * scanners deliberately defeat UA-based classification with fake browser
+ * UAs; everything that isn't a scanner falls through to the UA-only
+ * {@link classifyUserAgent} pipeline unchanged.
+ *
+ * @param signals - Request-level signals collected at the write site.
+ * @returns One of the seven `BotClass` enum values. Never null.
+ */
+export function classifyTrafficRequest(signals: ITrafficRequestSignals): BotClass {
+    let result: BotClass;
+    if (isScannerPath(signals.path) || isSpoofedSearchReferrer(signals.referer, signals.secFetchSite)) {
+        result = 'scanner';
+    } else {
+        result = classifyUserAgent(signals.userAgent);
+    }
+    return result;
 }

@@ -83,7 +83,9 @@ const sampleEvent: ITrafficEvent = {
     sec_ch_ua_platform: null,
     sec_fetch_dest: null,
     sec_fetch_mode: null,
-    sec_fetch_site: null
+    sec_fetch_site: null,
+    cf_ray: null,
+    cf_ipcountry: null
 };
 
 describe('TrafficService', () => {
