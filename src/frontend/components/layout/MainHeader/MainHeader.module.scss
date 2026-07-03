@@ -15,7 +15,8 @@
     display: flex;
     align-items: center;
     padding: var(--spacing-2) var(--spacing-15) 0;
-    width: min($breakpoint-desktop-lg, 100%);
+    max-width: $breakpoint-desktop-lg;
+    width: 100%;
     margin: 0 auto;
     gap: var(--spacing-6);
 }

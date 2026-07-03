@@ -13,11 +13,11 @@
  * stretch operating as expected — while center / flex-start / flex-end leave a
  * non-stretched flex item intrinsically sized, so --zone-justify-content /
  * --zone-align-items can still position it (an `auto` width yields to alignment;
- * a hardcoded width or `fit-content` would not, defeating stretch). The core
- * layout group owns the real width ceiling (per-row relative width /
- * collapseBelow); `max-width: 100%` here is only a safety cap so the bar can
- * never grow the page wider than its parent, while `.container` scrolls its
- * nowrap metrics internally on viewports too narrow to show them all.
+ * a hardcoded width or `fit-content` would not, defeating stretch). `.container`
+ * below owns the real width ceiling, capping and centering itself at
+ * $breakpoint-desktop-lg; `max-width: 100%` here is only a safety cap so the
+ * bar can never grow the page wider than its parent, while `.container` scrolls
+ * its nowrap metrics internally on viewports too narrow to show them all.
  */
 .ticker {
     background: var(--color-surface);
@@ -32,7 +32,8 @@
     align-items: center;
     gap: var(--gap-md);
     padding: var(--padding-xs) var(--container-padding-desktop);
-    width: min($breakpoint-desktop-lg, 100%);
+    max-width: $breakpoint-desktop-lg;
+    width: 100%;
     margin: 0 auto;
     font-size: var(--font-size-caption);
     line-height: var(--line-height-tight);
