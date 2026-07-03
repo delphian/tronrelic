@@ -54,6 +54,8 @@ export interface IZoneLayoutDocument {
      * drift.
      */
     collapseBelow?: IZoneLayoutConfig['collapseBelow'];
+    /** Operator-authored CSS declarations applied to the zone container. */
+    customCss?: string;
     updatedAt: Date;
 }
 

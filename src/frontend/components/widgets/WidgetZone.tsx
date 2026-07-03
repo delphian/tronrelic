@@ -354,6 +354,17 @@ export function WidgetZone({
     // `data-zone` hook unchanged.
     return (
         <div className={styles.zone_container}>
+            {effectiveLayout.customCss && effectiveLayout.customCss.trim().length > 0 && (
+                // Operator-authored declarations, admin-gated and PostCSS-validated
+                // server-side before persisting — mirrors how theme CSS is injected
+                // via dangerouslySetInnerHTML in app/layout.tsx. Scoped to this zone
+                // by wrapping the bare declarations in a `[data-zone="..."]` rule.
+                <style
+                    dangerouslySetInnerHTML={{
+                        __html: `[data-zone="${name}"]{${effectiveLayout.customCss}}`
+                    }}
+                />
+            )}
             <div
                 className={cn(styles.zone, collapseClassFor(effectiveLayout.collapseBelow))}
                 data-zone={name}

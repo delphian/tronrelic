@@ -187,11 +187,11 @@ export class ZoneLayoutService {
             updatedAt: now
         };
         // Optional fields use $set when present and $unset when omitted so a
-        // full-config write never leaves a stale breakpoint/preset behind:
-        // the persisted row, the returned config, and the in-memory cache
-        // stay identical, and a later load() cannot resurrect a value the
-        // caller dropped.
-        const unsetOps: Partial<Record<'preset' | 'collapseBelow', ''>> = {};
+        // full-config write never leaves a stale breakpoint/preset/CSS
+        // behind: the persisted row, the returned config, and the
+        // in-memory cache stay identical, and a later load() cannot
+        // resurrect a value the caller dropped.
+        const unsetOps: Partial<Record<'preset' | 'collapseBelow' | 'customCss', ''>> = {};
         if (config.preset !== undefined) {
             setOps.preset = config.preset;
         } else {
@@ -201,6 +201,11 @@ export class ZoneLayoutService {
             setOps.collapseBelow = config.collapseBelow;
         } else {
             unsetOps.collapseBelow = '';
+        }
+        if (config.customCss !== undefined) {
+            setOps.customCss = config.customCss;
+        } else {
+            unsetOps.customCss = '';
         }
 
         const update: Record<string, unknown> = { $set: setOps, $setOnInsert: { zoneId } };
@@ -216,7 +221,8 @@ export class ZoneLayoutService {
             alignItems: config.alignItems,
             flexWrap: config.flexWrap,
             gap: config.gap,
-            collapseBelow: config.collapseBelow
+            collapseBelow: config.collapseBelow,
+            customCss: config.customCss
         };
         this.cache.set(zoneId, stored);
 
@@ -259,6 +265,7 @@ function toConfig(doc: IZoneLayoutDocument): IZoneLayoutConfig {
         alignItems: doc.alignItems,
         flexWrap: doc.flexWrap,
         gap: doc.gap,
-        collapseBelow: doc.collapseBelow
+        collapseBelow: doc.collapseBelow,
+        customCss: doc.customCss
     };
 }

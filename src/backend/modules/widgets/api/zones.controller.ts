@@ -11,6 +11,7 @@
 import type { Request, Response } from 'express';
 import type { IWidgetsService, ISystemLogService, IZoneLayoutConfig } from '@/types';
 import { UnknownZoneError } from '../widgets.errors.js';
+import { ZoneCssValidator, ZONE_CSS_MAX_LENGTH } from '../zones/zone-css.validator.js';
 
 /** Allowed values per flex field — the body is operator input, never trusted. */
 const FLEX_DIRECTIONS = ['row', 'row-reverse', 'column', 'column-reverse'] as const;
@@ -64,6 +65,18 @@ function validateLayoutBody(body: unknown): { config?: IZoneLayoutConfig; error?
         const collapseBelow = check('collapseBelow', COLLAPSE_BREAKPOINTS);
         if (collapseBelow) config.collapseBelow = collapseBelow;
     }
+    // customCss is optional operator-authored declarations; type/length are
+    // checked here, syntax is validated separately (async) by the caller
+    // before the config is persisted.
+    if (b.customCss !== undefined) {
+        if (typeof b.customCss !== 'string') {
+            return { error: 'customCss must be a string.' };
+        }
+        if (b.customCss.length > ZONE_CSS_MAX_LENGTH) {
+            return { error: `customCss exceeds ${ZONE_CSS_MAX_LENGTH} characters.` };
+        }
+        if (b.customCss.trim().length > 0) config.customCss = b.customCss;
+    }
     return { config };
 }
 
@@ -74,7 +87,8 @@ function validateLayoutBody(body: unknown): { config?: IZoneLayoutConfig; error?
 export class ZonesController {
     constructor(
         private readonly widgets: IWidgetsService,
-        private readonly logger: ISystemLogService
+        private readonly logger: ISystemLogService,
+        private readonly cssValidator: ZoneCssValidator
     ) {}
 
     /**
@@ -106,6 +120,13 @@ export class ZonesController {
         if (!config) {
             res.status(400).json({ success: false, error });
             return;
+        }
+        if (config.customCss !== undefined) {
+            const cssResult = await this.cssValidator.validate(config.customCss);
+            if (!cssResult.valid) {
+                res.status(400).json({ success: false, error: `Invalid custom CSS: ${cssResult.errors.join('; ')}` });
+                return;
+            }
         }
         try {
             const stored = await this.widgets.setZoneLayout(zoneId, config);
