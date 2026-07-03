@@ -184,6 +184,14 @@ const RULES: ReadonlyArray<{ class: BotClass; fragments: readonly string[] }> = 
 const MAX_UA_LENGTH = 500;
 
 /**
+ * Cap for the other request-signal inputs (path, referrer) before
+ * lowercasing/matching. Same rationale as `MAX_UA_LENGTH` — bound CPU on
+ * hostile inputs in the request path — but a separate constant so scanner
+ * detection is not silently retuned by a future UA-specific change.
+ */
+const MAX_SIGNAL_LENGTH = 500;
+
+/**
  * Classify a User-Agent header value into one of the six `BotClass`
  * buckets.
  *
@@ -319,7 +327,7 @@ const SPOOF_TARGET_REFERRERS: readonly string[] = [
 function isScannerPath(path: string | null | undefined): boolean {
     let hit = false;
     if (path) {
-        const p = path.slice(0, MAX_UA_LENGTH).toLowerCase();
+        const p = path.slice(0, MAX_SIGNAL_LENGTH).toLowerCase();
         const exact = p.endsWith('/') && p.length > 1 ? p.slice(0, -1) : p;
         hit =
             SCANNER_EXACT_PATHS.has(exact) ||
@@ -331,12 +339,16 @@ function isScannerPath(path: string | null | undefined): boolean {
 
 /**
  * True when the `Referer` claims a search-engine origin but the request
- * carries no `Sec-Fetch-Site` header. Every browser that has shipped since
- * ~2023 sends `Sec-Fetch-Site: cross-site` on a genuine click-through from
- * Google/Bing; curl-style scanners spoofing the Referer send no Sec-Fetch
- * headers at all. Gated on search-engine referrers specifically (the
- * domains scanners actually spoof) so a rare legacy browser arriving from
- * an arbitrary site is not misclassified.
+ * carries no `Sec-Fetch-Site` header. Chromium (including Android WebView
+ * in-app browsers) has sent `Sec-Fetch-Site: cross-site` on genuine
+ * click-throughs since 2019, and WebKit since iOS 16.4 (2023); curl-style
+ * scanners spoofing the Referer send no Sec-Fetch headers at all. Gated on
+ * search-engine referrers specifically (the domains scanners actually
+ * spoof) so a legacy browser arriving from an arbitrary site is not
+ * misclassified. Accepted residual: a pre-16.4 iOS browser arriving from
+ * a real search click is mislabeled — the cost is one first-touch
+ * analytics label, and its same-origin `page` events still classify
+ * as human.
  *
  * @param referer - Raw `Referer` header value.
  * @param secFetchSite - Raw `Sec-Fetch-Site` header value.
@@ -348,7 +360,7 @@ function isSpoofedSearchReferrer(
 ): boolean {
     let spoofed = false;
     if (referer && !secFetchSite) {
-        const ref = referer.slice(0, MAX_UA_LENGTH).toLowerCase();
+        const ref = referer.slice(0, MAX_SIGNAL_LENGTH).toLowerCase();
         spoofed = SPOOF_TARGET_REFERRERS.some(domain => ref.includes(domain));
     }
     return spoofed;

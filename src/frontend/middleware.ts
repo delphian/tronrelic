@@ -72,11 +72,14 @@ const FORWARDED_HEADERS = [
     'sec-fetch-dest',
     'sec-fetch-mode',
     'sec-fetch-site',
-    // Cloudflare edge headers. `cf-ray` proves the request traversed the
-    // Cloudflare proxy (its absence on production traffic means a
-    // direct-to-origin hit), `cf-ipcountry` is the edge's authoritative
-    // geo, and `cf-connecting-ip` is the true client address the backend's
-    // getClientIP prefers over the spoofable X-Forwarded-For chain.
+    // Cloudflare edge headers, forwarded verbatim. `cf-ray` marks a request
+    // that traversed the Cloudflare proxy (absent on direct-to-origin hits),
+    // `cf-ipcountry` is the edge geo, and `cf-connecting-ip` is the client
+    // address the backend's getClientIP prefers over the spoofable
+    // X-Forwarded-For chain. These are unverified client-supplied headers a
+    // direct-to-origin client can forge, so cf-ray is consistency hygiene,
+    // not a trust boundary — the origin firewall allow-listing Cloudflare's
+    // ranges is authoritative.
     'cf-ray',
     'cf-ipcountry',
     'cf-connecting-ip'

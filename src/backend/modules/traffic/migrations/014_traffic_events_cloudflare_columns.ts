@@ -46,10 +46,7 @@ export const migration: IMigration = {
 
         await context.clickhouse.exec(`
             ALTER TABLE traffic_events
-                ADD COLUMN IF NOT EXISTS cf_ray Nullable(String) AFTER sec_fetch_site
-        `);
-        await context.clickhouse.exec(`
-            ALTER TABLE traffic_events
+                ADD COLUMN IF NOT EXISTS cf_ray Nullable(String) AFTER sec_fetch_site,
                 ADD COLUMN IF NOT EXISTS cf_ipcountry LowCardinality(Nullable(String)) AFTER cf_ray
         `);
 

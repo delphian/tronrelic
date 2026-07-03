@@ -183,12 +183,12 @@ describe('classifyTrafficRequest', () => {
             })).toBe('human');
         });
 
-        it('does not flag /wpsomething outside a probe pattern', () => {
-            // '/wp-' and '/wp' as a full segment are probes; but ensure
-            // ordinary content slugs that merely contain "wp" elsewhere pass.
+        it('does not flag paths that merely contain "wp" outside a probe pattern', () => {
+            // '/wp-' and the exact segment '/wp' are probes; ordinary content
+            // slugs embedding "wp" (here inside "newport") must pass.
             expect(classifyTrafficRequest({
                 userAgent: CHROME_UA,
-                path: '/blog/how-to-swap-trx',
+                path: '/blog/newport-energy-review',
                 referer: null,
                 secFetchSite: null
             })).toBe('human');
