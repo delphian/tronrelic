@@ -330,6 +330,53 @@ const WIDTH_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
 ];
 
 /**
+ * Local-buffered textarea for a zone's custom CSS. Local state (rather than
+ * committing on every keystroke like the granular selects) keeps CSS edits
+ * from firing a PATCH per character; the value commits to the parent's
+ * layout config on blur, only when it actually changed. Re-syncs from
+ * `value` when the server truth changes underneath it (e.g. another admin
+ * tab's edit lands via the websocket refetch).
+ *
+ * @param props.id - Element id for the textarea/label pairing.
+ * @param props.value - The zone's persisted `customCss`, or empty string.
+ * @param props.disabled - Whether the field is inert (busy write).
+ * @param props.onCommit - Called with the new value on blur, only on change.
+ */
+function ZoneCustomCssField({
+    id,
+    value,
+    disabled,
+    onCommit
+}: {
+    id: string;
+    value: string;
+    disabled: boolean;
+    onCommit: (css: string) => void;
+}) {
+    const [draft, setDraft] = useState(value);
+
+    useEffect(() => {
+        setDraft(value);
+    }, [value]);
+
+    return (
+        <Textarea
+            id={id}
+            rows={4}
+            value={draft}
+            maxLength={4000}
+            spellCheck={false}
+            placeholder={'background: var(--color-surface);\nborder-bottom: var(--border-width-thin) solid var(--color-border);'}
+            disabled={disabled}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => {
+                if (draft !== value) onCommit(draft);
+            }}
+        />
+    );
+}
+
+/**
  * Per-zone flexbox controls: a preset dropdown that sets the common
  * arrangements in one click, plus granular dropdowns (direction,
  * justify, align, wrap, gap) for fine-tuning. Selecting a preset applies
@@ -472,6 +519,23 @@ function ZoneLayoutControls({
                         </Select>
                     </div>
                 </div>
+            </div>
+
+            {/* Custom CSS: declarations only, applied to the zone container
+                as `[data-zone="<id>"] { <css> } }` at SSR — mirrors how theme
+                CSS is injected, validated server-side (PostCSS syntax check)
+                before it persists. */}
+            <div className={styles.zone_layout_advanced}>
+                <span className={styles.zone_layout_advanced_label}>Custom CSS</span>
+                <ZoneCustomCssField
+                    id={`zl-css-${zoneId}`}
+                    value={layout.customCss ?? ''}
+                    disabled={disabled}
+                    onCommit={(css) => onChange(zoneId, { ...layout, customCss: css.trim().length > 0 ? css : undefined })}
+                />
+                <span className={styles.filter_label}>
+                    Declarations only — no selector. Applied as <code>[data-zone=&quot;{zoneId}&quot;] {'{ ... }'}</code>.
+                </span>
             </div>
         </div>
     );

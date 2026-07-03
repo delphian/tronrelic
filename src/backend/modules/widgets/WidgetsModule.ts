@@ -36,6 +36,7 @@ import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 import { ZonesController } from './api/zones.controller.js';
 import { createZonesAdminRouter } from './api/zones.routes.js';
+import { ZoneCssValidator } from './zones/zone-css.validator.js';
 import { PlacementsController } from './api/placements.controller.js';
 import { createPlacementsAdminRouter } from './api/placements.routes.js';
 import { WidgetTypesController } from './api/widget-types.controller.js';
@@ -209,7 +210,11 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
         // Admin controllers consume the unified service exclusively —
         // they no longer reach into the registries or placement
         // service directly.
-        this.zonesController = new ZonesController(this.widgetsService, this.logger);
+        this.zonesController = new ZonesController(
+            this.widgetsService,
+            this.logger,
+            new ZoneCssValidator(this.logger)
+        );
         this.widgetTypesController = new WidgetTypesController(this.widgetsService, this.logger);
         this.placementsController = new PlacementsController(this.widgetsService, this.logger);
 

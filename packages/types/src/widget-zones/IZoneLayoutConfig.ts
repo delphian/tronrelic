@@ -111,4 +111,14 @@ export interface IZoneLayoutConfig {
      * {@link ZoneCollapseBreakpoint}.
      */
     collapseBelow?: ZoneCollapseBreakpoint;
+    /**
+     * Operator-authored CSS declarations (not a full stylesheet — no
+     * selectors) applied directly to the zone's flex container, e.g.
+     * `background: var(--color-surface); border-bottom: var(--border-width-thin) solid var(--color-border);`.
+     * The `WidgetZone` renderer wraps this as `[data-zone="<id>"] { <css> }`
+     * in a scoped `<style>` tag at SSR, mirroring how theme CSS is
+     * injected. Validated for syntax (not semantics) server-side before
+     * persisting. Optional; absent means no override.
+     */
+    customCss?: string;
 }
