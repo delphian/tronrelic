@@ -51,7 +51,7 @@ const SALT: string = env.TRAFFIC_IP_HASH_SALT || env.SESSION_SECRET || '';
 export function getIpHash(ip: string | undefined): string | null {
     let hash: string | null = null;
     if (ip && SALT) {
-        const cleanIP = ip.replace(/^::ffff:/, '');
+        const cleanIP = ip.replace(/^::ffff:/i, '');
         hash = createHash('sha256').update(`${SALT}|ip|${cleanIP}`).digest('hex').slice(0, 16);
     }
     return hash;
@@ -72,7 +72,7 @@ export function getIpHash(ip: string | undefined): string | null {
 export function getSubnetHash(ip: string | undefined): string | null {
     let hash: string | null = null;
     if (ip && SALT) {
-        const subnet = deriveSubnet(ip.replace(/^::ffff:/, ''));
+        const subnet = deriveSubnet(ip.replace(/^::ffff:/i, ''));
         if (subnet) {
             hash = createHash('sha256').update(`${SALT}|subnet|${subnet}`).digest('hex').slice(0, 16);
         }
@@ -90,14 +90,21 @@ export function getSubnetHash(ip: string | undefined): string | null {
  * garbage header cannot fail an inbound request.
  *
  * @param ip - Address already stripped of any `::ffff:` IPv4-mapping prefix.
- * @returns Prefix string like `203.0.113` or `2001:db8:1`, or `null`.
+ * @returns Prefix string like `203.0.113` or `2001:0db8:0001`, or `null`.
  */
 function deriveSubnet(ip: string): string | null {
     let subnet: string | null = null;
     if (ip.includes(':')) {
-        const parts = ip.split(':');
-        if (parts.length >= 3) {
-            subnet = parts.slice(0, 3).join(':').toLowerCase();
+        // Expand `::` to the full 8-hextet form and zero-pad before slicing so
+        // every address in one /48 yields an identical prefix — splitting the
+        // compressed text directly mis-groups when `::` falls in the first 48 bits.
+        const [left, right] = ip.split('::');
+        const leftParts = left ? left.split(':') : [];
+        const rightParts = right ? right.split(':') : [];
+        const missing = 8 - (leftParts.length + rightParts.length);
+        const parts = [...leftParts, ...Array(Math.max(0, missing)).fill('0'), ...rightParts];
+        if (parts.length === 8) {
+            subnet = parts.slice(0, 3).map(p => p.padStart(4, '0')).join(':').toLowerCase();
         }
     } else {
         const octets = ip.split('.');
