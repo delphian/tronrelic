@@ -32,6 +32,8 @@
     align-items: center;
     gap: var(--gap-md);
     padding: var(--padding-xs) var(--container-padding-desktop);
+    width: min($breakpoint-desktop-lg, 100%);
+    margin: 0 auto;
     font-size: var(--font-size-caption);
     line-height: var(--line-height-tight);
     overflow-x: auto;
