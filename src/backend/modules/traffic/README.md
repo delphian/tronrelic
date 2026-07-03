@@ -11,7 +11,7 @@ Owns cookieless behavioral analytics: the ClickHouse `traffic_events` pipeline, 
 | Admin page | `/system/traffic` (menu item `Traffic`, order 26, registered in `run()`) |
 | Mounted routes | `/api/admin/users/traffic/*`, `/api/admin/users/analytics/*`, `/api/user/bootstrap`, `/api/user/track` |
 | Scheduled job | `gsc:fetch` (daily, `0 3 * * *`) |
-| ClickHouse table | `traffic_events` (migrations 010, 012, 013, 014) |
+| ClickHouse table | `traffic_events` (migrations 010, 012, 013, 014, 015) |
 | Event types | `bootstrap` (cookieless first touch, incl. bots) · `page` (interactive navigation) |
 | Mongo collections | `module_user_gsc_queries` (GSC keyword cache — physical name preserved) · `module_user_gsc_daily_totals` (date-only GSC daily totals) |
 | Analytics key | cookieless `tronrelic_tid` (`candidate_uid`), independent of identity |
@@ -38,6 +38,8 @@ Physical storage names are unchanged from when this code lived under the user mo
 | `migrations/010_create_traffic_events_table.ts` | Creates the ClickHouse table (18-month TTL) |
 | `migrations/012_traffic_events_user_referral_columns.ts` | Adds `user_id` + `referral_code` columns |
 | `migrations/014_traffic_events_cloudflare_columns.ts` | Adds `cf_ray` + `cf_ipcountry`; a NULL `cf_ray` on production traffic means the request bypassed Cloudflare (direct-to-origin) |
+| `services/ip-hash.ts` | Keyed SHA-256 source hashes (`getIpHash`/`getSubnetHash`) — salt from `TRAFFIC_IP_HASH_SALT` falling back to `SESSION_SECRET`; raw IPs are never stored |
+| `migrations/015_traffic_events_source_hash_columns.ts` | Adds `ip_hash` (per-client) + `subnet_hash` (/24 v4, /48 v6) so analytics can answer "same source?" without PII; run before deploying code that writes them |
 
 ## REST Endpoints
 

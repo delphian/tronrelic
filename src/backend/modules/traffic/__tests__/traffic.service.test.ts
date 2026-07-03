@@ -85,7 +85,9 @@ const sampleEvent: ITrafficEvent = {
     sec_fetch_mode: null,
     sec_fetch_site: null,
     cf_ray: null,
-    cf_ipcountry: null
+    cf_ipcountry: null,
+    ip_hash: null,
+    subnet_hash: null
 };
 
 describe('TrafficService', () => {

@@ -31,6 +31,14 @@ const envSchema = z.object({
    */
   SESSION_SECRET: z.string().optional(),
   /**
+   * Salt for the traffic module's keyed IP hashes (`ip_hash` / `subnet_hash`
+   * in ClickHouse `traffic_events`). Optional — falls back to SESSION_SECRET,
+   * so no deployment wiring is required. Set a dedicated value only when the
+   * analytics salt must rotate independently of cookie signing; rotating it
+   * severs source correlation across the boundary but breaks nothing.
+   */
+  TRAFFIC_IP_HASH_SALT: z.string().optional(),
+  /**
    * Better Auth HMAC secret used to sign session tokens and the session cookie.
    * Required in production for the same reason as SESSION_SECRET — the absence
    * of a secret would let any caller mint a forged session token.
