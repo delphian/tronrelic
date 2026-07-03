@@ -522,7 +522,7 @@ function ZoneLayoutControls({
             </div>
 
             {/* Custom CSS: declarations only, applied to the zone container
-                as `[data-zone="<id>"] { <css> } }` at SSR — mirrors how theme
+                as `[data-zone="<id>"] { <css> }` at SSR — mirrors how theme
                 CSS is injected, validated server-side (PostCSS syntax check)
                 before it persists. */}
             <div className={styles.zone_layout_advanced}>
