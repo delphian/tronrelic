@@ -139,6 +139,7 @@ export function VisitorAnalytics({ period, customRange, includeBots }: IVisitorA
                                         <th>Country</th>
                                         <th>Original Referrer</th>
                                         <th>Landing Page</th>
+                                        <th>Source</th>
                                         <th>UTM</th>
                                         <th>Device</th>
                                         <th>Total Views</th>
@@ -162,6 +163,16 @@ export function VisitorAnalytics({ period, customRange, includeBots }: IVisitorA
                                                 </td>
                                                 <td className={styles.landing_cell} title={touch.landingPage ?? undefined}>
                                                     {touch.landingPage || <span className={styles.muted}>—</span>}
+                                                </td>
+                                                <td
+                                                    className={styles.source_cell}
+                                                    title={touch.subnetHash
+                                                        ? `Salted subnet hash ${touch.subnetHash} — rows sharing this value came from the same /24 (IPv4) or /48 (IPv6) network`
+                                                        : undefined}
+                                                >
+                                                    {touch.subnetHash
+                                                        ? <span className={styles.source_hash}>{touch.subnetHash.slice(0, 6)}</span>
+                                                        : <span className={styles.muted}>—</span>}
                                                 </td>
                                                 <td className={styles.utm_cell} title={utmDisplay ?? undefined}>
                                                     {utmDisplay || <span className={styles.muted}>—</span>}

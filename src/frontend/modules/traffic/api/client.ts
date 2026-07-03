@@ -60,6 +60,12 @@ export interface IVisitorOrigin {
     searchKeyword: string | null;
     sessionsCount: number;
     pageViews: number;
+    /**
+     * First-touch salted subnet hash — an opaque source-correlation key.
+     * Identical values mean the same /24 (IPv4) or /48 (IPv6) network;
+     * `null` for rows written before the column existed.
+     */
+    subnetHash: string | null;
 }
 
 // ============================================================================

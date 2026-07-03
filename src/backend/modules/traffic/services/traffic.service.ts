@@ -41,6 +41,7 @@
 import type { Request } from 'express';
 import type { IClickHouseService, ISystemLogService } from '@/types';
 import { getClientIP, getCountryFromIP, getDeviceCategory } from './geo.service.js';
+import { getIpHash, getSubnetHash } from './ip-hash.js';
 import { classifyTrafficRequest, type BotClass } from './bot-classifier.js';
 import { UUID_V4_REGEX } from '../api/traffic-cookies.js';
 
@@ -144,6 +145,20 @@ export interface ITrafficEvent {
      * Additive column (migration 014).
      */
     cf_ipcountry: string | null;
+
+    /**
+     * Keyed SHA-256 (16 hex chars) of the client IP, salted server-side —
+     * see `services/ip-hash.ts`. Correlates events from the same client
+     * without storing the address. Additive column (migration 015).
+     */
+    ip_hash: string | null;
+    /**
+     * Keyed SHA-256 (16 hex chars) of the client's containing network
+     * (/24 IPv4, /48 IPv6). Groups address rotation within one provider
+     * block — the signal that distinguishes one noisy source from a
+     * distributed scanner fleet. Additive column (migration 015).
+     */
+    subnet_hash: string | null;
 }
 
 /**
@@ -368,6 +383,13 @@ export interface INewVisitorOrigin {
     searchKeyword: string | null;
     sessionsCount: number;
     pageViews: number;
+    /**
+     * First-touch salted subnet hash (16 hex chars, migration 015) — the
+     * "same source?" correlation key. Identical values across rows mean the
+     * same /24 (IPv4) or /48 (IPv6); `null` for rows written before the
+     * column existed.
+     */
+    subnetHash: string | null;
 }
 
 /** A page of {@link INewVisitorOrigin} rows plus the unpaginated total. */
@@ -604,7 +626,9 @@ export class TrafficService {
                 sec_fetch_mode,
                 sec_fetch_site,
                 cf_ray,
-                cf_ipcountry
+                cf_ipcountry,
+                ip_hash,
+                subnet_hash
             FROM ${TABLE_NAME}
             WHERE candidate_uid = {candidateUid:UUID}
             ${eventFilter}
@@ -1431,6 +1455,7 @@ export class TrafficService {
                 argMin(utm_campaign, timestamp) AS utmCampaign,
                 argMin(utm_term, timestamp) AS utmTerm,
                 argMin(utm_content, timestamp) AS utmContent,
+                argMin(subnet_hash, timestamp) AS subnetHash,
                 count() AS pageViews,
                 countIf(event_type = 'session_start') AS sessionsCount
             FROM ${TABLE_NAME}
@@ -1457,6 +1482,7 @@ export class TrafficService {
                     landingPage: string; device: string;
                     utmSource: string | null; utmMedium: string | null; utmCampaign: string | null;
                     utmTerm: string | null; utmContent: string | null;
+                    subnetHash: string | null;
                     pageViews: string | number; sessionsCount: string | number;
                 }>(pageSql, { ...params, limit, skip }),
                 this.clickhouse.query<{ total: string | number }>(countSql, params)
@@ -1482,7 +1508,8 @@ export class TrafficService {
                         : null,
                     searchKeyword: null,
                     sessionsCount: Number(r.sessionsCount),
-                    pageViews: Number(r.pageViews)
+                    pageViews: Number(r.pageViews),
+                    subnetHash: r.subnetHash ?? null
                 };
             });
             return { visitors, total: Number(countRows[0]?.total ?? 0) };
@@ -1818,6 +1845,10 @@ export function buildTrafficEvent(
 
     const utm = inputs.utm ?? {};
     const path = inputs.landingPath ?? (typeof req.path === 'string' ? req.path : '/');
+    // Resolved once and shared by the country lookup and both source hashes;
+    // the raw address never leaves this scope (privacy design — only the
+    // derived country and keyed hashes are stored).
+    const clientIP = getClientIP({ ip: req.ip, headers });
 
     return {
         event_type: eventType,
@@ -1836,7 +1867,7 @@ export function buildTrafficEvent(
 
         // Cloudflare's edge-derived country is authoritative when present;
         // the local GeoIP lookup covers direct-to-origin and dev traffic.
-        country: cfIpCountry ?? getCountryFromIP(getClientIP({ ip: req.ip, headers })),
+        country: cfIpCountry ?? getCountryFromIP(clientIP),
         device: getDeviceCategory(userAgent),
         bot_class: classifyTrafficRequest({ userAgent, path, referer, secFetchSite }),
 
@@ -1854,7 +1885,10 @@ export function buildTrafficEvent(
         sec_fetch_site: secFetchSite ?? null,
 
         cf_ray: cfRay ?? null,
-        cf_ipcountry: cfIpCountry
+        cf_ipcountry: cfIpCountry,
+
+        ip_hash: getIpHash(clientIP),
+        subnet_hash: getSubnetHash(clientIP)
     };
 }
 
