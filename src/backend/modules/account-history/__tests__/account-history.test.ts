@@ -310,7 +310,7 @@ describe('AccountHistoryService', () => {
     });
 
     it('getWalletSummary reads the value ledger for monthly flow, not the transaction table', async () => {
-        // queryMonthlyFlow switched to account_value_transfers and filters USDT by
+        // queryFlow reads account_value_transfers and filters USDT by
         // contract address (asset_id), not by token_symbol. Assert the flow read so a
         // silent revert to the old table or symbol filter is caught. All summary reads
         // resolve to [] here; only the flow leg touches the value ledger and binds a
