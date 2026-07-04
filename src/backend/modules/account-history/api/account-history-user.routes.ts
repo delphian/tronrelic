@@ -20,6 +20,7 @@ export function createAccountHistoryUserRouter(controller: AccountHistoryUserCon
 
     router.get('/me/progress', controller.getMyProgress);
     router.get('/me/wallets/:address/summary', controller.getMyWalletSummary);
+    router.get('/me/wallets/:address/flow', controller.getMyWalletFlow);
     router.get('/me/wallets/:address/transactions', controller.getMyWalletTransactions);
 
     return router;

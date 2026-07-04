@@ -26,6 +26,7 @@ export type {
     IActivityCalendarBucket,
     IWalletActivityStats,
     IWalletResourceTotals,
+    FlowGranularity,
     IWalletFlowBucket,
     IWalletCounterparty,
     IWalletActivitySummary,

@@ -12,11 +12,20 @@
 
 import type { Request, Response } from 'express';
 import type {
+    FlowGranularity,
     IAccountHistoryService,
     IServiceRegistry,
     ISystemLogService,
     IWalletService
 } from '@/types';
+
+/**
+ * The granularity query values the flow endpoint accepts, guarding the string
+ * off the wire before it reaches the service. A closed set means an unknown or
+ * absent `?granularity=` falls back to the monthly view rather than reaching the
+ * SQL layer with an unvalidated value.
+ */
+const FLOW_GRANULARITIES: readonly FlowGranularity[] = ['month', 'week', 'day'];
 
 /**
  * Minimal structural view of the optional `'address-labels'` registry service
@@ -126,6 +135,44 @@ export class AccountHistoryUserController {
             this.logger.error({ error }, 'Failed to read wallet summary');
             res.status(500).json({
                 error: 'Failed to read wallet summary',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    };
+
+    /**
+     * GET /me/wallets/:address/flow — inflow/outflow buckets for ONE wallet the
+     * caller owns, at the `?granularity=` resolution (month/week/day). Split from
+     * the summary so the profile chart's precision selector re-buckets without
+     * re-fetching the whole summary. Same ownership gate as the summary route:
+     * an unowned `:address` returns 404, never the series. An unrecognized or
+     * missing granularity degrades to the monthly view rather than erroring.
+     *
+     * @param req - Express request; `req.userId` from `requireLogin`, `:address` the wallet, `granularity` query param.
+     * @param res - Express response; emits `{ flow }`.
+     */
+    getMyWalletFlow = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const userId = req.userId;
+            if (!userId) {
+                res.status(401).json({ error: 'Authentication required' });
+                return;
+            }
+
+            const address = String(req.params.address ?? '').trim();
+            if (!(await this.ownsWallet(userId, address))) {
+                res.status(404).json({ error: 'Wallet not found' });
+                return;
+            }
+
+            const requested = String(req.query.granularity ?? '') as FlowGranularity;
+            const granularity: FlowGranularity = FLOW_GRANULARITIES.includes(requested) ? requested : 'month';
+            const flow = await this.service.getWalletFlow(address, granularity);
+            res.json({ flow });
+        } catch (error) {
+            this.logger.error({ error }, 'Failed to read wallet flow');
+            res.status(500).json({
+                error: 'Failed to read wallet flow',
                 message: error instanceof Error ? error.message : 'Unknown error'
             });
         }

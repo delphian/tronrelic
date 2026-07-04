@@ -425,10 +425,21 @@ export interface IWalletResourceTotals {
 }
 
 /**
- * One month's inflow vs outflow for a single wallet, split by denomination.
+ * The time resolution the inflow/outflow chart buckets by. The profile chart's
+ * precision selector maps 1mo → `'month'`, 1week → `'week'`, 1day → `'day'`; the
+ * service translates each to the matching ClickHouse bucketing function. A closed
+ * literal set (never a free string) so the value can be interpolated into SQL
+ * safely — the granularity picks a fixed expression, it is not injected verbatim.
+ */
+export type FlowGranularity = 'month' | 'week' | 'day';
+
+/**
+ * One time-bucket's inflow vs outflow for a single wallet, split by denomination.
  *
- * Denominations stay on separate fields rather than summed into one number
- * because the module stores no USD valuation — TRX (`amount_sun`) and a token's
+ * The bucket width is the requested {@link FlowGranularity} (month/week/day); the
+ * shape is identical across resolutions so the chart consumes one type regardless
+ * of precision. Denominations stay on separate fields rather than summed into one
+ * number because the module stores no USD valuation — TRX (`amount_sun`) and a token's
  * raw amount have no common axis, so the frontend renders/totals each
  * independently. Values are smallest-unit integers carried as numbers: sun for
  * TRX, the raw 6-dp integer for USDT (the frontend divides by 1e6 for display).
@@ -437,15 +448,15 @@ export interface IWalletResourceTotals {
  * acceptable.
  */
 export interface IWalletFlowBucket {
-    /** Month start as `YYYY-MM-DD` (first of the month, UTC). */
+    /** Bucket start as `YYYY-MM-DD` (UTC): month start, week Monday, or day. */
     period: string;
-    /** TRX received this month (to_address = wallet), in sun. */
+    /** TRX received in this bucket (to_address = wallet), in sun. */
     trxInSun: number;
-    /** TRX sent this month (from_address = wallet), in sun. */
+    /** TRX sent in this bucket (from_address = wallet), in sun. */
     trxOutSun: number;
-    /** USDT received this month (to_address = wallet), raw 6-dp integer. */
+    /** USDT received in this bucket (to_address = wallet), raw 6-dp integer. */
     usdtInRaw: number;
-    /** USDT sent this month (from_address = wallet), raw 6-dp integer. */
+    /** USDT sent in this bucket (from_address = wallet), raw 6-dp integer. */
     usdtOutRaw: number;
 }
 
@@ -738,6 +749,20 @@ export interface IAccountHistoryService {
      * @returns The activity summary for the address.
      */
     getWalletSummary(address: string): Promise<IWalletActivitySummary>;
+
+    /**
+     * Read only the inflow/outflow buckets for one account at the requested time
+     * resolution. Split out from {@link getWalletSummary} so the profile chart's
+     * precision selector (1mo/1week/1day) can re-bucket without re-running the
+     * whole summary — the summary always carries the monthly view for the initial
+     * SSR render, and switching precision fetches just this series. Derived from
+     * the same ledger; authorization is the caller's responsibility.
+     *
+     * @param address - Base58 address to summarize.
+     * @param granularity - Bucket width: `'month'`, `'week'`, or `'day'`.
+     * @returns Flow buckets at the requested resolution, oldest first.
+     */
+    getWalletFlow(address: string, granularity: FlowGranularity): Promise<IWalletFlowBucket[]>;
 
     /**
      * Read the most recent on-chain balance/resource snapshot for an account,

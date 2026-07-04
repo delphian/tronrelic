@@ -97,6 +97,16 @@ interface BarChartProps {
      * key in a compact widget that no longer renders its own summary line.
      */
     showLegend?: boolean;
+    /**
+     * Column layout across series within a category (default: `'grouped'`).
+     *
+     * - `grouped` — one column per series, side by side within the category slot.
+     * - `stacked` — a single column per category; series stack from the zero
+     *   baseline, positive values accumulating upward and negative values
+     *   downward. This is what turns a signed in/out pair into one diverging
+     *   column (green up, red down) instead of two side-by-side bars.
+     */
+    layout?: 'grouped' | 'stacked';
 }
 
 /**
@@ -258,9 +268,12 @@ function resolveColor(color: string | undefined, index: number) {
  * BarChart - Responsive SVG grouped column chart with normal and widget modes.
  *
  * Renders one column per series for each shared category (typically a time
- * bucket), grouped side by side. Supports negative values (columns drop below a
- * zero baseline), fixed or auto Y-axis bounds, and a ResizeObserver-driven width
- * so it adapts to any container — full page, card, or compact widget zone.
+ * bucket). The `layout` prop selects `grouped` (series side by side) or `stacked`
+ * (a single column per category, series accumulating from the baseline). Supports
+ * negative values (columns drop below a zero baseline — and in `stacked` layout a
+ * signed pair becomes one diverging column), fixed or auto Y-axis bounds, and a
+ * ResizeObserver-driven width so it adapts to any container — full page, card, or
+ * compact widget zone.
  *
  * Structural chrome (axes, gridlines, baseline, labels) is styled through the
  * colocated CSS Module using design tokens; only data-driven column fills are
@@ -286,7 +299,8 @@ export function BarChart({
     emptyLabel = 'Not enough data to render a chart.',
     yAxisMin: fixedYMin,
     yAxisMax: fixedYMax,
-    showLegend
+    showLegend,
+    layout = 'grouped'
 }: BarChartProps) {
     const chrome = CHROME[mode];
     const height = propHeight ?? chrome.defaultHeight;
@@ -385,9 +399,37 @@ export function BarChart({
             return null;
         }
 
-        const allValues = visibleSeries.flatMap(item => item.data.map(point => point.value));
-        const dataMin = Math.min(...allValues);
-        const dataMax = Math.max(...allValues);
+        const isStacked = layout === 'stacked';
+
+        // Domain drivers differ by layout. Grouped bars are measured individually,
+        // so the extremes are the min/max of any single value. Stacked bars pile
+        // per category — positive values accumulate up, negative down — so the
+        // extremes are the tallest positive stack and deepest negative stack across
+        // categories; using individual values would clip a column that overflows
+        // its own axis.
+        let domainMin: number;
+        let domainMax: number;
+        if (isStacked) {
+            const posByTime = new Map<number, number>();
+            const negByTime = new Map<number, number>();
+            visibleSeries.forEach(item => item.data.forEach(point => {
+                const time = toDate(point.date).getTime();
+                if (Number.isNaN(time)) {
+                    return;
+                }
+                if (point.value >= 0) {
+                    posByTime.set(time, (posByTime.get(time) ?? 0) + point.value);
+                } else {
+                    negByTime.set(time, (negByTime.get(time) ?? 0) + point.value);
+                }
+            }));
+            domainMax = Math.max(0, ...posByTime.values());
+            domainMin = Math.min(0, ...negByTime.values());
+        } else {
+            const allValues = visibleSeries.flatMap(item => item.data.map(point => point.value));
+            domainMin = Math.min(...allValues);
+            domainMax = Math.max(...allValues);
+        }
 
         // Bars are measured against a zero baseline, so the default domain always
         // includes 0; callers can still pin either bound explicitly.
@@ -397,13 +439,13 @@ export function BarChart({
         if (fixedYMin !== undefined) {
             minY = fixedYMin;
         } else {
-            minY = Math.min(0, dataMin);
+            minY = Math.min(0, domainMin);
         }
 
         if (fixedYMax !== undefined) {
             maxY = fixedYMax;
         } else {
-            maxY = Math.max(0, dataMax);
+            maxY = Math.max(0, domainMax);
         }
 
         // Guard against a zero-height domain (all values equal / all zero).
@@ -460,9 +502,53 @@ export function BarChart({
             return { time, date: new Date(time), centerX: groupStart + groupInner / 2 };
         });
 
+        // Stacked columns fill the whole category slot (one column, not N slots).
+        const stackedWidth = Math.max(groupInner, chrome.minBarWidth);
+
         const bars: RenderBar[] = [];
         categoryTimes.forEach((time, categoryIndex) => {
             const groupStart = chrome.margin.left + categoryIndex * groupWidth + groupPad;
+            if (isStacked) {
+                // Accumulate in value space: positives climb from zero upward, negatives
+                // drop from zero downward, so each segment sits atop the previous same-sign
+                // run. A signed in/out pair therefore becomes one column split at the
+                // baseline (green above, red below).
+                let posCum = 0;
+                let negCum = 0;
+                seriesLookup.forEach(({ item, color, byTime }) => {
+                    const point = byTime.get(time);
+                    if (!point) {
+                        return;
+                    }
+                    let segmentStart: number;
+                    let segmentEnd: number;
+                    if (point.value >= 0) {
+                        segmentStart = posCum;
+                        segmentEnd = posCum + point.value;
+                        posCum = segmentEnd;
+                    } else {
+                        segmentStart = negCum;
+                        segmentEnd = negCum + point.value;
+                        negCum = segmentEnd;
+                    }
+                    const topY = scaleY(Math.max(segmentStart, segmentEnd));
+                    const bottomY = scaleY(Math.min(segmentStart, segmentEnd));
+                    const barHeight = Math.max(bottomY - topY, chrome.minBarWidth);
+                    bars.push({
+                        seriesId: item.id,
+                        label: item.label,
+                        color,
+                        categoryTime: time,
+                        x: groupStart,
+                        y: topY,
+                        width: stackedWidth,
+                        height: barHeight,
+                        value: point.value,
+                        metadata: point.metadata
+                    });
+                });
+                return;
+            }
             seriesLookup.forEach(({ item, color, byTime }, seriesIndex) => {
                 const point = byTime.get(time);
                 if (!point) {
@@ -516,7 +602,7 @@ export function BarChart({
             zeroInRange,
             seriesLookup
         };
-    }, [series, hiddenSeries, containerWidth, height, chrome, fixedYMin, fixedYMax, seriesColors]);
+    }, [series, hiddenSeries, containerWidth, height, chrome, fixedYMin, fixedYMax, seriesColors, layout]);
 
     // Optional header row shared by the empty and populated renders: the
     // operator-set title on the left, caller-supplied controls (e.g. a widget's

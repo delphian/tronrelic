@@ -213,6 +213,15 @@
     gap: var(--gap-2xs);
 }
 
+/* Chart header controls — the precision selector and the denomination toggle sit
+   on one row and wrap together when the header is narrow. */
+.flow_actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
 /* Stat tile body — composes the global .stat-card__* utilities with a small
    icon row; kept here only for the icon alignment the utilities don't cover. */
 .tile_label {

@@ -10,7 +10,7 @@
  * from hand-rolling fetches.
  */
 
-import type { IAccountTransactionPage, IWalletActivitySummary } from '@/types';
+import type { FlowGranularity, IAccountTransactionPage, IWalletActivitySummary, IWalletFlowBucket } from '@/types';
 import { parseJsonResponse } from './http';
 
 /**
@@ -52,6 +52,26 @@ export async function fetchWalletSummary(address: string): Promise<IWalletSummar
         await fetch(`/api/account-history/me/wallets/${encodeURIComponent(address)}/summary`, { cache: 'no-store' })
     );
     return { summary: body.summary, labels: body.labels ?? {} };
+}
+
+/**
+ * Fetch the inflow/outflow buckets for one wallet the caller owns at a chosen
+ * time resolution. Backs the flow chart's precision selector: the initial render
+ * uses the monthly `flow` already present in the summary, and switching to a
+ * finer resolution calls this rather than re-fetching the whole summary.
+ *
+ * @param address - The base58 wallet whose flow to load.
+ * @param granularity - Bucket width: `'month'`, `'week'`, or `'day'`.
+ * @returns The flow buckets at the requested resolution, oldest first.
+ */
+export async function fetchWalletFlow(address: string, granularity: FlowGranularity): Promise<IWalletFlowBucket[]> {
+    const params = new URLSearchParams({ granularity });
+    const body = await parseJsonResponse<{ flow: IWalletFlowBucket[] }>(
+        await fetch(`/api/account-history/me/wallets/${encodeURIComponent(address)}/flow?${params.toString()}`, {
+            cache: 'no-store'
+        })
+    );
+    return body.flow;
 }
 
 /**

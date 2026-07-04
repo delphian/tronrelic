@@ -32,6 +32,7 @@ import type {
     IWalletActivityStats,
     IWalletActivitySummary,
     IWalletCounterparty,
+    FlowGranularity,
     IWalletFlowBucket,
     IWalletResourceTotals,
     IAddTrackedAccountInput,
@@ -739,12 +740,38 @@ export class AccountHistoryService implements IAccountHistoryService {
             this.queryActivityCalendar(normalized),
             this.queryActivityStats(normalized),
             this.queryResourceTotals(normalized),
-            this.queryMonthlyFlow(normalized),
+            this.queryFlow(normalized, 'month'),
             this.queryTopCounterparties(normalized)
         ]);
 
         const summary: IWalletActivitySummary = { address: normalized, calendar, stats, resources, flow, counterparties };
         return summary;
+    }
+
+    /**
+     * Read only the inflow/outflow buckets at a chosen time resolution, backing
+     * the profile chart's precision selector (1mo/1week/1day) without re-running
+     * the whole activity summary. The summary still carries the monthly view for
+     * the initial SSR render; this method serves the re-bucket when the user
+     * switches precision. Mirrors {@link getWalletSummary}'s guards — validates the
+     * address and returns an empty series (never throws) on a ClickHouse-less
+     * deploy — so the chart degrades to "no data" rather than erroring. Authorization
+     * is the caller's responsibility; the service trusts the address it is given.
+     *
+     * @param address - Base58 account to summarize.
+     * @param granularity - Bucket width: `'month'`, `'week'`, or `'day'`.
+     * @returns Flow buckets at the requested resolution, oldest first.
+     */
+    public async getWalletFlow(address: string, granularity: FlowGranularity): Promise<IWalletFlowBucket[]> {
+        const normalized = String(address ?? '').trim();
+        if (!TRON_ADDRESS_PATTERN.test(normalized)) {
+            throw new Error('address must be a base58 TRON address (T...)');
+        }
+        if (!this.clickhouse) {
+            return [];
+        }
+        const flow = await this.queryFlow(normalized, granularity);
+        return flow;
     }
 
     /**
@@ -885,12 +912,26 @@ export class AccountHistoryService implements IAccountHistoryService {
      * symbol string, and the ledger carries no `tx`/`trc20` twin, so no dedupe filter
      * is needed either.
      *
+     * The bucket width is chosen by {@link FlowGranularity}: `toStartOfMonth`,
+     * `toMonday` (ISO week, Monday start), or `toDate` (calendar day) — each a
+     * `Date`-returning function so `toString` yields a stable `YYYY-MM-DD`. The
+     * expression is selected from a fixed map keyed by the closed granularity
+     * literal, never interpolated from a caller string, so no SQL injection surface
+     * is opened; an unrecognized value falls back to the monthly bucket.
+     *
      * @param address - Base58 account to summarize.
-     * @returns Monthly flow buckets ordered oldest first.
+     * @param granularity - Bucket width: `'month'`, `'week'`, or `'day'`.
+     * @returns Flow buckets ordered oldest first.
      */
-    private async queryMonthlyFlow(address: string): Promise<IWalletFlowBucket[]> {
+    private async queryFlow(address: string, granularity: FlowGranularity): Promise<IWalletFlowBucket[]> {
+        const bucketExpr: Record<FlowGranularity, string> = {
+            month: 'toStartOfMonth(timestamp)',
+            week: 'toMonday(timestamp)',
+            day: 'toDate(timestamp)'
+        };
+        const bucket = bucketExpr[granularity] ?? bucketExpr.month;
         const rows = await this.clickhouse!.query<Record<string, string | number>>(
-            `SELECT toString(toStartOfMonth(timestamp)) AS period,
+            `SELECT toString(${bucket}) AS period,
                     sumIf(toInt64OrZero(amount_raw), asset_type = 'TRX' AND to_address = {address:String}) AS trx_in_sun,
                     sumIf(toInt64OrZero(amount_raw), asset_type = 'TRX' AND from_address = {address:String}) AS trx_out_sun,
                     sumIf(toFloat64OrZero(amount_raw), asset_id = {usdt:String} AND to_address = {address:String}) AS usdt_in_raw,
