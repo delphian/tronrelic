@@ -147,6 +147,10 @@
 .review_rail {
     display: flex;
     flex-direction: column;
+    /* Honor the fixed rail track: a grid item defaults to min-width:auto, so a
+       long sink name (a Telegram channel title) would blow the column past its
+       max-width-sm track and defeat the .dest_label ellipsis. */
+    min-width: 0;
     padding-top: var(--gap-md);
     border-top: var(--border-width-thin) solid var(--color-border);
 }
@@ -176,6 +180,10 @@
     margin: 0;
     padding: 0;
     border: none;
+    /* A <fieldset> carries an intrinsic min-width:min-content that ignores flex
+       and grid shrinking; without this override the picker refuses to narrow
+       below its widest sink name, cascading the overflow up the rail. */
+    min-width: 0;
 }
 
 .picker_legend {
