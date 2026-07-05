@@ -507,6 +507,22 @@ describe('CurationService destination selection', () => {
         expect(type.onApprove).toHaveBeenCalledOnce();
     });
 
+    it('rejects a destination selection supplied for a classic (non-destination) type', async () => {
+        // A classic type has zero eligible sinks, so any supplied destination is
+        // invalid — the service fails fast before recording rather than silently
+        // dropping the selection and approving anyway.
+        const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
+        const { service } = makeDestinationService([sink]);
+        const type = spyCurationType(); // not publishesToDestinations
+        service.registerType(type, 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
+
+        await expect(service.approve(held.id, 'admin-1', [{ sinkId: 'core:internal-publish' }]))
+            .rejects.toThrow(/not an eligible publish destination/);
+        expect(type.onApprove).not.toHaveBeenCalled();
+        expect(await service.countPending()).toBe(1);
+    });
+
     it('does not auto-approve a destinations-routed type — it waits for an explicit destination selection', async () => {
         // Regression: an interactive `auto-approve` policy bypass supplies no
         // destination selection, so auto-approving a publishesToDestinations type

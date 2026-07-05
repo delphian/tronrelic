@@ -686,18 +686,26 @@ export class CurationService implements ICurationService {
                 // approval without leaving the item half-decided. Only an approval
                 // routes.
                 let selected: IResolvedDestination[] = [];
-                if (status === 'approved' && entry.type.publishesToDestinations) {
+                if (status === 'approved') {
+                    // Eligibility is [] for a classic (non-destinations) type, so the
+                    // block runs for every approval but only ever admits a selection
+                    // for a destinations type — the boundary is the eligible set, not
+                    // the flag.
                     const eligible = this.eligiblePublishSinks(entry.type, decisionPreview);
                     // Scoped empty-approval guard: an item with eligible publish
                     // sinks must target at least one — approving with none would
                     // record the decision while publishing nowhere. When zero sinks
                     // are eligible (a classic type, or a destinations type whose
-                    // transports are all disabled) there is nothing to select, so
-                    // approval proceeds and routes nowhere — never a deadlock. This
-                    // is the server half of the picker's Approve-button guard.
+                    // transports are all disabled) there is nothing to select, so an
+                    // empty approval proceeds and routes nowhere — never a deadlock.
+                    // This is the server half of the picker's Approve-button guard.
                     if (eligible.length > 0 && (!destinations || destinations.length === 0)) {
                         throw new Error('This item publishes to destinations; select at least one before approving.');
                     }
+                    // Any supplied selection is validated against the eligible set;
+                    // for a classic type that set is empty, so a caller that passes
+                    // destinations to a non-routing type fails fast here rather than
+                    // having the destinations silently dropped.
                     if (destinations && destinations.length > 0) {
                         selected = this.resolveSelectedDestinations(eligible, destinations);
                     }
@@ -875,18 +883,29 @@ export class CurationService implements ICurationService {
      */
     private async commit(type: ICurationType, item: ICurationItem): Promise<void> {
         const approved = item.status === 'approved';
-        const verb = approved ? type.onApprove : type.onReject;
+        // Bind to the type so a method-syntax (class-based) curation type keeps its
+        // `this` receiver — a bare extracted method would run with `this` undefined
+        // under strict-mode ESM. `?.bind` stays undefined when the verb is absent.
+        const verb = approved ? type.onApprove?.bind(type) : type.onReject?.bind(type);
         if (verb) {
             await verb(item);
             return;
         }
         // Declarative fallback: apply the type's declared status word as a neutral
-        // transition through its own content-mutation seam. Guarded on both the
-        // word and `applyEdit` so a type that declares neither is a deliberate
-        // no-op rather than a crash.
+        // transition through its own content-mutation seam. A type that declares no
+        // status word for this decision is a deliberate no-op; one that declares a
+        // word but never implemented the optional `applyEdit` seam is a
+        // misconfiguration surfaced as a warning rather than skipped silently.
         const targetStatus = approved ? type.decisionStatus?.approved : type.decisionStatus?.rejected;
-        if (targetStatus && type.applyEdit) {
-            await type.applyEdit(item.ref, { status: targetStatus });
+        if (targetStatus) {
+            if (type.applyEdit) {
+                await type.applyEdit(item.ref, { status: targetStatus });
+            } else {
+                this.logger.warn(
+                    { typeId: type.typeId, targetStatus },
+                    'Curation type declared decisionStatus but did not implement applyEdit; status transition skipped'
+                );
+            }
         }
     }
 
