@@ -181,6 +181,30 @@ describe('CurationService', () => {
         expect(type.onApprove).not.toHaveBeenCalled();
     });
 
+    it('commits a decision declaratively via applyEdit when the type omits the verbs', async () => {
+        const service = makeService();
+        // A type with no imperative verbs: core applies the declared status word
+        // through applyEdit. `approved` omitted, so approval is a no-op here.
+        const applyEdit = vi.fn(async () => undefined);
+        const type = spyCurationType({
+            onApprove: undefined,
+            onReject: undefined,
+            decisionStatus: { rejected: 'rejected' },
+            applyEdit
+        });
+        service.registerType(type, 'x-poster');
+
+        const approvedHeld = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'a' } });
+        const approved = await service.approve(approvedHeld.id, 'admin-1');
+        expect(approved?.status).toBe('approved');
+        // No `approved` word declared → no transition written on approval.
+        expect(applyEdit).not.toHaveBeenCalled();
+
+        const rejectedHeld = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'b' } });
+        await service.reject(rejectedHeld.id, 'admin-1');
+        expect(applyEdit).toHaveBeenCalledWith({ postId: 'b' }, { status: 'rejected' });
+    });
+
     it('blocks a decision when the owning type is unregistered, leaving the item pending', async () => {
         const service = makeService();
         const type = spyCurationType();
@@ -442,15 +466,45 @@ describe('CurationService destination selection', () => {
         expect(await service.getDestinationDefaults('media:post')).toEqual(['core:internal-publish']);
     });
 
-    it('a classic approve with no destinations leaves destinations unset', async () => {
+    it('blocks an empty approval when the item has an eligible publish sink', async () => {
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
         const { service } = makeDestinationService([sink]);
+        const type = postType();
+        service.registerType(type, 'media');
+        const held = await service.hold({ typeId: 'media:post', ref: {} });
+
+        // A destinations-enabled item with an eligible sink must target at least
+        // one — approving with none would record the decision while publishing
+        // nowhere. The item stays pending for a real selection.
+        await expect(service.approve(held.id, 'admin-1')).rejects.toThrow(/at least one/i);
+        expect(type.onApprove).not.toHaveBeenCalled();
+        expect(await service.countPending()).toBe(1);
+    });
+
+    it('allows an empty approval when no publish sink is eligible (no deadlock)', async () => {
+        // publishesToDestinations, but no sink registered → zero eligible, so the
+        // guard does not fire and approval routes nowhere (the only outcome).
+        const { service } = makeDestinationService([]);
         service.registerType(postType(), 'media');
         const held = await service.hold({ typeId: 'media:post', ref: {} });
 
         const decided = await service.approve(held.id, 'admin-1');
         expect(decided?.status).toBe('approved');
         expect(decided?.destinations).toBeUndefined();
+    });
+
+    it('does not block an empty approval for a classic (non-destination) type', async () => {
+        // An eligible sink exists in the router, but the type does not publish to
+        // destinations, so the guard must not fire — a classic approve is one effect.
+        const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
+        const { service } = makeDestinationService([sink]);
+        const type = spyCurationType(); // typeId x-poster:tweet, not publishesToDestinations
+        service.registerType(type, 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
+
+        const decided = await service.approve(held.id, 'admin-1');
+        expect(decided?.status).toBe('approved');
+        expect(type.onApprove).toHaveBeenCalledOnce();
     });
 
     it('does not auto-approve a destinations-routed type — it waits for an explicit destination selection', async () => {

@@ -315,7 +315,7 @@ function DestinationOption({ dest, external, checked, disabled, onToggle }: {
             {external
                 ? <Globe size={14} aria-hidden className={styles.dest_icon} />
                 : <Lock size={14} aria-hidden className={styles.dest_icon} />}
-            <span className={styles.dest_label}>{dest.label ?? dest.sinkId}</span>
+            <span className={styles.dest_label} title={dest.label ?? dest.sinkId}>{dest.label ?? dest.sinkId}</span>
             <Badge tone={external ? 'warning' : 'neutral'}>{dest.reach.egress}/{dest.reach.audience}</Badge>
         </label>
     );

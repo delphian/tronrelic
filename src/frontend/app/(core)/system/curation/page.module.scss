@@ -104,7 +104,9 @@
 
 @container review-card (min-width: #{$breakpoint-mobile-lg}) {
     .review_grid {
-        grid-template-columns: minmax(0, 1fr) var(--max-width-xs);
+        /* Wider decision rail so long sink names (Telegram channel titles) have
+           room before truncating — one step up from --max-width-xs. */
+        grid-template-columns: minmax(0, 1fr) var(--max-width-sm);
     }
 }
 
@@ -226,10 +228,16 @@
     color: var(--color-text-muted);
 }
 
-/* Sink label grows so the reach badge sits flush at the row's end. */
+/* Sink label grows so the reach badge sits flush at the row's end. Truncated to
+   a single line (min-width:0 lets it shrink inside the flex row) — long sink
+   names like the Telegram channel would otherwise wrap to many lines; the full
+   name shows on the element's hover title. */
 .dest_label {
     flex: 1 1 auto;
     min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Live summary of the current selection's blast radius, above the actions. */

@@ -51,7 +51,7 @@ Curation is a module, not a plugin, because the governed-tool path cannot run wi
 | `hasType(typeId)` / `getType(typeId)` / `listTypes()` | Binding checks + admin introspection |
 | `hold(input)` | Hold an effect for review (auto-approves when the interactive governor bypass is in scope) |
 | `listPending` / `countPending` / `listHistory` / `get` | Queue reads (pending shows a live `describe()`; history shows the frozen decision-time snapshot) |
-| `approve(id, by?, destinations?)` / `reject` / `edit` | Decide or inline-edit a pending item through its owning type; `approve` optionally fans the approved content to a selected publish subset, recording each outcome |
+| `approve(id, by?, destinations?)` / `reject` / `edit` | Decide or inline-edit a pending item through its owning type; `approve` fans the approved content to the selected publish subset, recording each outcome. Selection is **required** for a type with eligible sinks — an empty selection throws before the decision records; a type with zero eligible sinks approves to nowhere (no deadlock) |
 | `listEligibleDestinations(id)` | The gate-admitted `publish` sinks for a destinations-enabled pending item, each flagged `defaultSelected` — the picker's data |
 | `get` / `setDestinationDefaults(typeId[, sinkIds])` | Read/write the standing per-type default destinations the picker pre-selects |
 
@@ -69,7 +69,7 @@ All under `/api/admin/system/curation`, gated by `requireAdmin` + the curation a
 | GET | `/curations/:id/destinations` | Eligible publish destinations for a pending item (picker data) |
 | POST | `/curations/:id/destinations/defaults` | Set the standing default destinations for the item's content type (body `{ sinkIds }`) |
 | PATCH | `/curations/:id` | Inline-edit the neutral `body` through the owning type's `applyEdit` |
-| POST | `/curations/:id/approve` | Approve, fan to the selected `destinations` (body `{ destinations? }`), commit via the type |
+| POST | `/curations/:id/approve` | Approve, fan to the selected `destinations` (body `{ destinations? }`), commit via the type; **400** when the item has eligible sinks but no destination is selected |
 | POST | `/curations/:id/reject` | Reject + discard via the type |
 
 ## Lifecycle

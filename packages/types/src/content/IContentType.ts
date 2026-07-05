@@ -28,6 +28,18 @@ import type { IContentDescriptor } from './IContentDescriptor.js';
 export interface IContentEditPatch {
     /** Replacement body text for the content. */
     body?: string;
+
+    /**
+     * A lifecycle status transition to apply to the content's own record,
+     * expressed in the originator's own status vocabulary (e.g. `'published'`,
+     * `'rejected'`). Core writes this when a pipeline resolves a decision
+     * declaratively — a curation type that declares `decisionStatus` instead of
+     * imperative `onApprove`/`onReject` verbs — and the owning type maps the word
+     * onto its record, validating it and treating an already-decided record as a
+     * benign no-op rather than an error. Distinct from `body`: a body edit is the
+     * curator changing content, a status transition is the decision taking hold.
+     */
+    status?: string;
 }
 
 /**
