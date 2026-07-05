@@ -160,15 +160,37 @@ describe('createSocialPostCurationType', () => {
         expect(desc.title).toMatch(/unavailable/i);
     });
 
-    it('marks the draft published on approve and rejected on reject', async () => {
+    it('declares declarative decision bookkeeping, not imperative verbs', () => {
+        const type = createSocialPostCurationType(store, logger);
+        expect(type.onApprove).toBeUndefined();
+        expect(type.onReject).toBeUndefined();
+        expect(type.decisionStatus).toEqual({ approved: 'published', rejected: 'rejected' });
+    });
+
+    it('applies the decision status through applyEdit — published on approve, rejected on reject', async () => {
         const type = createSocialPostCurationType(store, logger);
         const approved = await store.create({ body: 'a' });
-        await type.onApprove({ ref: { postId: approved.id } } as never);
+        await type.applyEdit!({ postId: approved.id }, { status: 'published' });
         expect(collection._docs.get(approved.id)?.status).toBe('published');
 
         const rejected = await store.create({ body: 'b' });
-        await type.onReject({ ref: { postId: rejected.id } } as never);
+        await type.applyEdit!({ postId: rejected.id }, { status: 'rejected' });
         expect(collection._docs.get(rejected.id)?.status).toBe('rejected');
+    });
+
+    it('treats a status transition on an already-decided draft as a benign no-op', async () => {
+        const type = createSocialPostCurationType(store, logger);
+        const draft = await store.create({ body: 'c' });
+        await type.applyEdit!({ postId: draft.id }, { status: 'published' });
+        // The second transition finds no pending draft; it must not throw.
+        await expect(type.applyEdit!({ postId: draft.id }, { status: 'rejected' })).resolves.toBeUndefined();
+        expect(collection._docs.get(draft.id)?.status).toBe('published');
+    });
+
+    it('rejects an unsupported status transition', async () => {
+        const type = createSocialPostCurationType(store, logger);
+        const draft = await store.create({ body: 'd' });
+        await expect(type.applyEdit!({ postId: draft.id }, { status: 'archived' })).rejects.toThrow(/unsupported/i);
     });
 
     it('throws when an edit targets a missing draft', async () => {

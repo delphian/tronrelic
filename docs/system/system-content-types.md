@@ -19,7 +19,7 @@ Pipelines bind their own verbs onto a content type:
 - **Curation** registers a type as an `ICurationType` — an `IContentType` plus the review verbs `onApprove` / `onReject` — and mirrors the content facet into the shared registry. See [system-curation.md](./system-curation.md).
 - **Notifications** fires `notify({ category, typeId, ref })`; dispatch resolves the type, calls `describe(ref)`, and routes to the channels whose declared capabilities can render the descriptor's features. See [system-notifications.md](./system-notifications.md).
 
-The split is deliberate: generic operate-on-own-record operations (`describe`, `applyEdit`) live on `IContentType`; pipeline-decision semantics (curation's `onApprove`/`onReject`) stay on the binding, because "approve" only means something inside a review lifecycle.
+The split is deliberate: generic operate-on-own-record operations (`describe`, `applyEdit`) live on `IContentType`; pipeline-decision semantics (curation's `onApprove`/`onReject` verbs, or the declarative `decisionStatus` map core applies *through* the generic `applyEdit`) stay on the binding, because "approve" only means something inside a review lifecycle.
 
 ## The Contract
 
@@ -28,7 +28,7 @@ The split is deliberate: generic operate-on-own-record operations (`describe`, `
 | `IContentType.typeId` | Namespaced `<provider>:<name>` (e.g. `core:social-post`); the stable key every pipeline references |
 | `IContentType.label` | Human-readable label for listing and headings |
 | `IContentType.describe(ref)` | Flatten the record into a generic `IContentDescriptor`; safe to call repeatedly, must not mutate |
-| `IContentType.applyEdit?(ref, patch)` | Optional content self-mutation (today `{ body }`); the type validates and owns the write |
+| `IContentType.applyEdit?(ref, patch)` | Optional content self-mutation — a curator `{ body }` edit or a pipeline-applied lifecycle `{ status }` transition; the type validates and owns the write |
 | `IContentDescriptor` | `title` / `body` / `media` / `details` (render shape) / `fields` (governed typed enrichment map) / `editable` |
 | `IContentRegistry` | `register(type, providerId)` → disposer, `get`, `has`, `list` |
 | `IContentTypeInfo` | `typeId` / `label` / `providerId` — the listing record |

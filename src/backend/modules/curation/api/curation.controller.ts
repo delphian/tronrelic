@@ -215,15 +215,25 @@ export class CurationController {
             });
             return;
         }
-        // Pre-validate the selection against live eligibility so an ineligible
-        // sink is a clean 400 (client error), not the 502 the service's defensive
-        // post-decision throw would otherwise surface as.
-        if (action === 'approve' && destinations && destinations.length > 0) {
-            const eligible = new Set((await this.curation.listEligibleDestinations(id)).map((d) => d.sinkId));
-            const invalid = destinations.find((d) => !eligible.has(d.sinkId));
-            if (invalid) {
-                res.status(400).json({ error: `'${invalid.sinkId}' is not an eligible publish destination for this item.` });
-                return;
+        // Pre-validate the selection against live eligibility so a client error is
+        // a clean 400, not the 502 the service's defensive post-decision throw
+        // would otherwise surface as. Two client errors: an item with eligible
+        // publish sinks approved with no selection (would publish nowhere), and a
+        // selected sink that is not eligible. An item with zero eligible sinks
+        // skips both — it approves to nowhere, the only available outcome.
+        if (action === 'approve') {
+            const eligible = await this.curation.listEligibleDestinations(id);
+            if (eligible.length > 0) {
+                if (!destinations || destinations.length === 0) {
+                    res.status(400).json({ error: 'This item publishes to destinations; select at least one before approving.' });
+                    return;
+                }
+                const eligibleIds = new Set(eligible.map((d) => d.sinkId));
+                const invalid = destinations.find((d) => !eligibleIds.has(d.sinkId));
+                if (invalid) {
+                    res.status(400).json({ error: `'${invalid.sinkId}' is not an eligible publish destination for this item.` });
+                    return;
+                }
             }
         }
         try {

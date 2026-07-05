@@ -51,12 +51,16 @@ const RECOMMENDED_BODY_LIMIT = 280;
  *
  * The type is destination-neutral on purpose: `describe()` flattens a draft into
  * the generic descriptor every publish sink renders, and because the type
- * publishes to destinations, the approve-time fan-out is lifted out of
- * `onApprove` — routed delivery to the curator-selected sinks runs first, so
- * `onApprove` is left with only the draft's own bookkeeping (mark it published).
- * The `classification` of `{ external, public }` is what makes the external X
- * and Telegram publish sinks eligible in the picker; a lower ceiling would hide
- * them, so it is set explicitly rather than relying on the restrictive default.
+ * publishes to destinations, the approve-time fan-out is lifted out of the
+ * decision commit — routed delivery to the curator-selected sinks runs first, so
+ * the commit is left with only the draft's own bookkeeping (mark it published /
+ * rejected). That bookkeeping is declared, not coded: `decisionStatus` maps each
+ * decision to the store's own status word, which core writes through this type's
+ * `applyEdit({ status })` seam, so the terminal effect is readable data rather
+ * than an imperative `onApprove`/`onReject` callback. The `classification` of
+ * `{ external, public }` is what makes the external X and Telegram publish sinks
+ * eligible in the picker; a lower ceiling would hide them, so it is set
+ * explicitly rather than relying on the restrictive default.
  *
  * @param store - The draft store the opaque `{ postId }` ref resolves against.
  * @param logger - Scoped logger for decision diagnostics.
@@ -68,6 +72,11 @@ export function createSocialPostCurationType(store: SocialPostStore, logger: ISy
         label: 'Social Post',
         publishesToDestinations: true,
         classification: { egress: 'external', audience: 'public' },
+        // Declarative decision bookkeeping: both words map to the draft store's
+        // own status vocabulary, applied by core through `applyEdit({ status })`.
+        // Routed delivery to the curator-selected external sinks runs before the
+        // commit, so `approved` here is only the draft's own record-marking.
+        decisionStatus: { approved: 'published', rejected: 'rejected' },
 
         describe: async (ref): Promise<IContentDescriptor> => {
             const postId = String(ref.postId ?? '');
@@ -83,38 +92,31 @@ export function createSocialPostCurationType(store: SocialPostStore, logger: ISy
             };
         },
 
-        onApprove: async (item): Promise<void> => {
-            const postId = String(item.ref.postId ?? '');
-            // Routed delivery to the curator-selected sinks has already run by the
-            // time core invokes this, so the publish itself is not at stake here —
-            // this is the draft's own bookkeeping. A false return (draft gone or
-            // already decided) is therefore a benign no-op the contract permits,
-            // logged rather than thrown, so a stale-bookkeeping warning never reads
-            // as a failed publish to the curator.
-            const marked = await store.markPublished(postId);
-            if (!marked) {
-                logger.warn({ postId }, 'Social post approve bookkeeping no-op: draft missing or already decided');
-                return;
-            }
-            logger.info({ postId }, 'Curation approve → social post draft marked published');
-        },
-
-        onReject: async (item): Promise<void> => {
-            const postId = String(item.ref.postId ?? '');
-            const marked = await store.markRejected(postId);
-            if (!marked) {
-                logger.warn({ postId }, 'Social post reject bookkeeping no-op: draft missing or already decided');
-                return;
-            }
-            logger.info({ postId }, 'Curation reject → social post draft marked rejected');
-        },
-
         applyEdit: async (ref, patch): Promise<void> => {
+            const postId = String(ref.postId ?? '');
+            // Decision transition (core's declarative commit path). Routed delivery
+            // to the curator-selected sinks has already run for an approval, so this
+            // is only the draft's own record-marking. A false return (draft gone or
+            // already decided) is benign bookkeeping — log, never throw, so a stale
+            // transition never reads to the curator as a failed decision.
+            if (typeof patch.status === 'string') {
+                if (patch.status !== 'published' && patch.status !== 'rejected') {
+                    throw new Error(`Unsupported social post status transition: '${patch.status}'`);
+                }
+                const marked = patch.status === 'published'
+                    ? await store.markPublished(postId)
+                    : await store.markRejected(postId);
+                if (marked) {
+                    logger.info({ postId, status: patch.status }, `Curation decision → social post draft marked ${patch.status}`);
+                } else {
+                    logger.warn({ postId, status: patch.status }, `Social post ${patch.status} bookkeeping no-op: draft missing or already decided`);
+                }
+                return;
+            }
+            // Curator's inline body edit. editBody throws on an empty/oversized body
+            // and returns false when the draft is gone or no longer pending; throw
+            // so the queue shows the edit did not apply.
             if (typeof patch.body === 'string') {
-                const postId = String(ref.postId ?? '');
-                // editBody throws on an empty/oversized body and returns false when
-                // the draft is gone or no longer pending; throw so the queue shows
-                // the edit did not apply.
                 const updated = await store.editBody(postId, patch.body);
                 if (!updated) {
                     throw new Error('Failed to edit social post: draft not found or no longer pending');

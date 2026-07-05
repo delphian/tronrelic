@@ -586,9 +586,7 @@ export class CurationService implements ICurationService {
                 } catch (error) {
                     this.logger.warn({ error, id }, 'Destination eligibility preview resolution failed; using cached snapshot');
                 }
-                const present = presentDescriptorFeatures(descriptor);
-                const ceiling = entry.type.classification ?? DEFAULT_CONTENT_CEILING;
-                const publishSinks = this.contentRouter.route(ceiling, present).filter((sink) => sink.kind === 'publish');
+                const publishSinks = this.eligiblePublishSinks(entry.type, descriptor);
                 const defaults = await this.getDestinationDefaults(item.typeId);
                 result = publishSinks.map((sink) => ({
                     sinkId: sink.id,
@@ -684,11 +682,26 @@ export class CurationService implements ICurationService {
                     this.logger.warn({ error, id }, 'Decision-time preview resolution failed; recording cached snapshot in history');
                 }
                 // Resolve and validate the selected destinations BEFORE recording
-                // the decision, so an ineligible selection aborts the approval
-                // without leaving the item half-decided. Only an approval routes.
-                const selected = status === 'approved' && destinations && destinations.length > 0
-                    ? this.resolveSelectedDestinations(entry.type, decisionPreview, destinations)
-                    : [];
+                // the decision, so an empty or ineligible selection aborts the
+                // approval without leaving the item half-decided. Only an approval
+                // routes.
+                let selected: IResolvedDestination[] = [];
+                if (status === 'approved' && entry.type.publishesToDestinations) {
+                    const eligible = this.eligiblePublishSinks(entry.type, decisionPreview);
+                    // Scoped empty-approval guard: an item with eligible publish
+                    // sinks must target at least one — approving with none would
+                    // record the decision while publishing nowhere. When zero sinks
+                    // are eligible (a classic type, or a destinations type whose
+                    // transports are all disabled) there is nothing to select, so
+                    // approval proceeds and routes nowhere — never a deadlock. This
+                    // is the server half of the picker's Approve-button guard.
+                    if (eligible.length > 0 && (!destinations || destinations.length === 0)) {
+                        throw new Error('This item publishes to destinations; select at least one before approving.');
+                    }
+                    if (destinations && destinations.length > 0) {
+                        selected = this.resolveSelectedDestinations(eligible, destinations);
+                    }
+                }
                 const pendingOutcomes = selected.length > 0
                     ? selected.map((d): ICurationDestinationOutcome => ({ sinkId: d.sink.id, status: 'pending' }))
                     : undefined;
@@ -734,31 +747,47 @@ export class CurationService implements ICurationService {
     }
 
     /**
-     * Resolve a curator's destination selection to live publish sinks, validating
-     * each against the item's current eligibility. Throwing here — before the
-     * decision is recorded — is deliberate: an ineligible or stale selection must
-     * abort the approval rather than decide the item and then fail to deliver.
+     * The publish-kind sinks the content router admits for a type given a
+     * decision-time descriptor — the single computation behind destination
+     * eligibility, shared by the picker (`listEligibleDestinations`), the
+     * empty-approval guard in `decide`, and selection validation
+     * (`resolveSelectedDestinations`) so all three agree on what "eligible" means.
+     * Empty when the type does not publish to destinations or the router is
+     * absent, so a caller renders no picker and the guard treats the item as
+     * having nothing to select (no deadlock).
      *
-     * @param type - The owning curation type (carries the classification ceiling).
-     * @param descriptor - The decision-time descriptor (drives structural match).
+     * @param type - The owning curation type (supplies the classification ceiling).
+     * @param descriptor - The decision-time descriptor (supplies present features).
+     * @returns The eligible publish sinks, in router order.
+     */
+    private eligiblePublishSinks(type: ICurationType, descriptor: ICurationItem['preview']): IContentSink[] {
+        let sinks: IContentSink[] = [];
+        if (type.publishesToDestinations && this.contentRouter) {
+            const present = presentDescriptorFeatures(descriptor);
+            const ceiling = type.classification ?? DEFAULT_CONTENT_CEILING;
+            sinks = this.contentRouter.route(ceiling, present).filter((sink) => sink.kind === 'publish');
+        }
+        return sinks;
+    }
+
+    /**
+     * Validate a curator's destination selection against the item's already-
+     * computed eligible sinks, pairing each with its config. Throwing here —
+     * before the decision is recorded — is deliberate: an ineligible or stale
+     * selection must abort the approval rather than decide the item and then fail
+     * to deliver.
+     *
+     * @param eligibleSinks - The item's eligible publish sinks (from
+     *        {@link eligiblePublishSinks}); the selection is checked against these.
      * @param destinations - The curator's selection.
      * @returns The selected sinks paired with their destination config.
-     * @throws When the type does not publish to destinations, the router is
-     *         absent, or a selected sink is not an eligible publish destination.
+     * @throws When a selected sink is not among the eligible publish destinations.
      */
     private resolveSelectedDestinations(
-        type: ICurationType,
-        descriptor: ICurationItem['preview'],
+        eligibleSinks: IContentSink[],
         destinations: ICurationDestinationSelection[]
     ): IResolvedDestination[] {
-        if (!type.publishesToDestinations || !this.contentRouter) {
-            throw new Error('This content type does not support destination selection.');
-        }
-        const present = presentDescriptorFeatures(descriptor);
-        const ceiling = type.classification ?? DEFAULT_CONTENT_CEILING;
-        const eligible = new Map(
-            this.contentRouter.route(ceiling, present).filter((sink) => sink.kind === 'publish').map((sink) => [sink.id, sink])
-        );
+        const eligible = new Map(eligibleSinks.map((sink) => [sink.id, sink]));
         // Deduplicate by sinkId: delivery is non-idempotent (each publish leg is a
         // distinct external side effect with no outbox guard), so a repeated sink
         // in the selection would publish twice. Keep the first occurrence to
@@ -829,20 +858,35 @@ export class CurationService implements ICurationService {
     }
 
     /**
-     * Invoke the owning type's terminal callback. A failure propagates to the
-     * caller so the curator learns the provider-side effect did not complete; the
-     * decision is already recorded and is not rolled back (callbacks must be
-     * retry-safe).
+     * Commit the decision on the owning type. A type expresses its terminal
+     * bookkeeping one of two ways: imperatively via `onApprove`/`onReject`, or
+     * declaratively via `decisionStatus` — the originator's status word core
+     * writes through the type's own `applyEdit({ status })` seam. The imperative
+     * verb wins when present; otherwise the declared status word (if any) is
+     * applied, and a decision with neither is a deliberate no-op (e.g. an approval
+     * carried entirely by a routed publish sink, which has already run above). A
+     * failure propagates to the caller so the curator learns the provider-side
+     * effect did not complete; the decision is already recorded and is not rolled
+     * back (both paths must be retry-safe).
      *
      * @param type - The owning curation type.
      * @param item - The decided envelope.
-     * @returns Resolves once the callback settles; rejects if it throws.
+     * @returns Resolves once the commit settles; rejects if it throws.
      */
     private async commit(type: ICurationType, item: ICurationItem): Promise<void> {
-        if (item.status === 'approved') {
-            await type.onApprove(item);
-        } else {
-            await type.onReject(item);
+        const approved = item.status === 'approved';
+        const verb = approved ? type.onApprove : type.onReject;
+        if (verb) {
+            await verb(item);
+            return;
+        }
+        // Declarative fallback: apply the type's declared status word as a neutral
+        // transition through its own content-mutation seam. Guarded on both the
+        // word and `applyEdit` so a type that declares neither is a deliberate
+        // no-op rather than a crash.
+        const targetStatus = approved ? type.decisionStatus?.approved : type.decisionStatus?.rejected;
+        if (targetStatus && type.applyEdit) {
+            await type.applyEdit(item.ref, { status: targetStatus });
         }
     }
 
