@@ -218,16 +218,17 @@ export class CurationController {
         // Pre-validate the selection against live eligibility so a client error is
         // a clean 400, not the 502 the service's defensive post-decision throw
         // would otherwise surface as. Two client errors: an item with eligible
-        // publish sinks approved with no selection (would publish nowhere), and a
-        // selected sink that is not eligible. An item with zero eligible sinks
-        // skips both — it approves to nowhere, the only available outcome.
+        // publish sinks approved with no selection (would publish nowhere), and any
+        // selected sink that is not eligible — which covers every selection against
+        // an item with zero eligible sinks, since none can be valid. Zero eligible
+        // sinks with no selection approves to nowhere, the only available outcome.
         if (action === 'approve') {
             const eligible = await this.curation.listEligibleDestinations(id);
-            if (eligible.length > 0) {
-                if (!destinations || destinations.length === 0) {
-                    res.status(400).json({ error: 'This item publishes to destinations; select at least one before approving.' });
-                    return;
-                }
+            if (eligible.length > 0 && (!destinations || destinations.length === 0)) {
+                res.status(400).json({ error: 'This item publishes to destinations; select at least one before approving.' });
+                return;
+            }
+            if (destinations && destinations.length > 0) {
                 const eligibleIds = new Set(eligible.map((d) => d.sinkId));
                 const invalid = destinations.find((d) => !eligibleIds.has(d.sinkId));
                 if (invalid) {
@@ -246,11 +247,30 @@ export class CurationController {
             }
             res.json(serializeCurationItem(result));
         } catch (error) {
-            // The decision was recorded but the owning type could not complete the
-            // effect (publish/cleanup failed). The item has left the pending queue,
-            // so surface the failure rather than reporting a false success.
+            const message = error instanceof Error ? error.message : String(error);
+            // A throw can land on either side of the queue's atomic decision gate.
+            // The service's pre-decision guards — an empty selection, or a sink gone
+            // ineligible in the race between this handler's eligibility pre-check and
+            // the service's decide-time recheck — throw before the item leaves the
+            // pending queue, so nothing was recorded: surface that as a correctable
+            // 400 carrying the validation message. Only a no-longer-pending item means
+            // the decision committed and the provider-side effect (publish/cleanup)
+            // failed, the true 502. Re-read to tell them apart, and default to 502 if
+            // that read is inconclusive so a not-recorded decision is never reported
+            // as recorded.
+            let stillPending = false;
+            try {
+                const current = await this.curation.get(id);
+                stillPending = current?.status === 'pending';
+            } catch {
+                stillPending = false;
+            }
+            if (stillPending) {
+                res.status(400).json({ error: message });
+                return;
+            }
             res.status(502).json({
-                error: `Decision recorded, but the provider could not complete it: ${error instanceof Error ? error.message : String(error)}`
+                error: `Decision recorded, but the provider could not complete it: ${message}`
             });
         }
     };
