@@ -6,9 +6,19 @@
  * are operator-controlled per placement: the component sets the
  * `--world-clocks-*` custom properties from the SSR `instanceConfig`, and the
  * rules below consume them with fallbacks matching the schema defaults
- * (single non-wrapping, left-aligned row at the medium token gap). Because
- * spacing is now an explicit operator choice, there is no responsive gap
- * override — honouring the chosen value beats silently retightening it.
+ * (single non-wrapping, left-aligned row at the medium token gap).
+ *
+ * The operator's choice is honoured at every width except one: below the
+ * mobile breakpoint a `nowrap` row cannot fit a narrow phone and forces the
+ * whole page to scroll horizontally, distorting every zone the widget shares.
+ * Page integrity outranks the placement's spacing preference, so the container
+ * query at the foot of this file overrides `flex-wrap` to `wrap` (and tightens
+ * the gap) once the widget's zone is narrower than the breakpoint. That query
+ * targets the `widget-layout` container established by `WidgetZone`'s
+ * `.zone_container` / `.group_container` wrappers: a flex container cannot
+ * query its own width, so `.clocks` measures the zone that holds it, exactly
+ * as the zone-collapse rules do. (An earlier revision queried a `world-clocks`
+ * container that nothing ever established, so it never fired.)
  */
 
 @use '../../app/breakpoints' as *;
@@ -48,8 +58,15 @@
     white-space: nowrap;
 }
 
-@container world-clocks (max-width: #{$breakpoint-mobile-md}) {
+@container widget-layout (max-width: #{$breakpoint-mobile}) {
     .clocks {
+        /* Force wrapping below the mobile breakpoint regardless of the
+         * operator's `--world-clocks-wrap`: a single row that overflows a
+         * phone breaks the whole page, and reflowing onto multiple lines is
+         * the lesser evil. `.item { min-width: 0 }` in WidgetZone lets the row
+         * shrink so the clocks reflow to fill the width rather than collapsing
+         * one-per-line. */
+        flex-wrap: wrap;
         gap: var(--gap-sm);
     }
 }

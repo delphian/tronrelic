@@ -84,72 +84,68 @@
     flex: var(--item-grow, 1) 1 0;
 }
 
-// Responsive collapse. Each class flips the inner flex container to a
-// column once its wrapper is narrower than the named breakpoint, and resets
-// its own *direct* weighted children (the child combinator keeps a zone's
-// collapse from reaching into a nested group's children) to natural,
-// full-width stacking — `flex: 0 0 auto` undoes the zero-basis grow that
-// only makes sense on a row's main axis. `align-self: stretch` is the
-// load-bearing half: once the container is a column the cross axis is
-// horizontal, so item width is governed by alignment, not flex; without it a
-// row preset's `align-items: center` (or flex-start/flex-end) leaves the
-// collapsed weighted items at content width instead of spanning the column.
-// It is a no-op under the `stretch` default. The breakpoint variable must be
-// interpolated (`#{…}`) inside `@container` or Sass silently drops the
+// Responsive collapse. Each class flips the inner flex container to a column
+// once its wrapper is narrower than the named breakpoint. The five variants
+// differ only in the breakpoint, so they share one mixin — the breakpoint must
+// be interpolated (`#{…}`) inside `@container` or Sass silently drops the
 // condition.
-.collapse_mobile_sm {
-    @container widget-layout (max-width: #{$breakpoint-mobile-sm}) {
+//
+// Three declarations do the work once the container is a column:
+//
+// `flex: 0 0 auto` on the *direct* weighted children (the child combinator
+// keeps a zone's collapse from reaching into a nested group's children) undoes
+// the zero-basis grow that only makes sense on a row's main axis, letting each
+// stack at its natural height. `align-self: stretch` is the load-bearing half:
+// once the container is a column the cross axis is horizontal, so item width is
+// governed by alignment, not flex; without it a row preset's
+// `align-items: center` (or flex-start/flex-end) leaves the collapsed weighted
+// items at content width instead of spanning the column. It is a no-op under the
+// `stretch` default.
+//
+// `width: 100%` on *every* direct item is the fix for a subtle intrinsic-sizing
+// bug. `align-self: stretch` sizes an item to the column's width, but that width
+// is not *definite*. A widget whose root sets `container-type: inline-size` (to
+// run its own container queries — e.g. the dust-tracker chart) needs a definite
+// inline size, or the flex column's content-height pass lays that widget out at
+// a degenerate width, wraps its rows (chart header, legend), and inflates the
+// item ~100px past the height it actually renders — dead space below the widget.
+// An explicit `width: 100%` makes the inline size definite and the phantom
+// height vanishes. Harmless for plain widgets, and scoped to the collapsed
+// column so it never reaches the row layout, where full-width items would
+// collapse a side-by-side row into a stack.
+@mixin collapse-to-column($breakpoint) {
+    @container widget-layout (max-width: #{$breakpoint}) {
         flex-direction: column;
+
+        > .item {
+            width: 100%;
+        }
 
         > .item_weighted {
             flex: 0 0 auto;
             align-self: stretch;
         }
     }
+}
+
+.collapse_mobile_sm {
+    @include collapse-to-column($breakpoint-mobile-sm);
 }
 
 .collapse_mobile_md {
-    @container widget-layout (max-width: #{$breakpoint-mobile-md}) {
-        flex-direction: column;
-
-        > .item_weighted {
-            flex: 0 0 auto;
-            align-self: stretch;
-        }
-    }
+    @include collapse-to-column($breakpoint-mobile-md);
 }
 
 .collapse_mobile_lg {
-    @container widget-layout (max-width: #{$breakpoint-mobile-lg}) {
-        flex-direction: column;
-
-        > .item_weighted {
-            flex: 0 0 auto;
-            align-self: stretch;
-        }
-    }
+    @include collapse-to-column($breakpoint-mobile-lg);
 }
 
 .collapse_tablet {
-    @container widget-layout (max-width: #{$breakpoint-tablet}) {
-        flex-direction: column;
-
-        > .item_weighted {
-            flex: 0 0 auto;
-            align-self: stretch;
-        }
-    }
+    @include collapse-to-column($breakpoint-tablet);
 }
 
 .collapse_desktop {
-    @container widget-layout (max-width: #{$breakpoint-desktop}) {
-        flex-direction: column;
-
-        > .item_weighted {
-            flex: 0 0 auto;
-            align-self: stretch;
-        }
-    }
+    @include collapse-to-column($breakpoint-desktop);
 }
 
 .item_title {
