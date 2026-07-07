@@ -247,12 +247,10 @@ export interface ITrafficSourceDetails {
     conversion: { walletsConnected: number; walletsVerified: number; conversionRate: number };
 }
 
-/** Landing page entry with engagement metrics. */
+/** Landing page entry — first-touch entry paths with distinct visitors. */
 export interface ILandingPage {
     path: string;
     visitors: number;
-    avgSessions: number;
-    avgPageViews: number;
 }
 
 /** Country entry in geographic distribution. Visitors is the primary measure. */
@@ -280,14 +278,20 @@ export interface IScreenSizeEntry {
     percentage: number;
 }
 
-/** UTM campaign performance entry. */
+/**
+ * UTM campaign performance entry. First-touch attributed: `visitors` are the
+ * tids whose bootstrap row carried the campaign. `conversions` counts those
+ * visitors who were logged in at any point during the window (login
+ * attribution, not new signups) — the UI labels it accordingly.
+ */
 export interface ICampaignEntry {
     source: string;
     medium: string;
     campaign: string;
     visitors: number;
-    walletsConnected: number;
-    walletsVerified: number;
+    /** Distinct logged-in visitors attributed to the campaign. */
+    conversions: number;
+    /** conversions / visitors, whole percent. */
     conversionRate: number;
 }
 
@@ -353,13 +357,17 @@ export async function adminGetTrafficSources(period: AnalyticsPeriod = '30d',
     const response = await apiClient.get('/admin/users/analytics/traffic-sources', {
         params
     });
-    // Backend returns { data: [{ source, visitors, count }] }. Derive the
-    // category badge and percentage (of visitors) client-side.
-    const rows = (response.data as { data?: Array<{ source: string; visitors: number; count: number }> }).data ?? [];
+    // Backend returns { data: [{ source, visitors, count, channel }] }.
+    // `channel` is the server's canonical write-time classification
+    // (UTM-medium-aware: direct/organic/paid/social/email/ai/referral);
+    // the local regex remains only as a fallback for older backends.
+    const rows = (response.data as {
+        data?: Array<{ source: string; visitors: number; count: number; channel?: string }>
+    }).data ?? [];
     const total = rows.reduce((sum, r) => sum + (r.visitors ?? 0), 0);
     const sources: ITrafficSource[] = rows.map(r => ({
         source: r.source,
-        category: categorizeTrafficSource(r.source),
+        category: r.channel ?? categorizeTrafficSource(r.source),
         visitors: r.visitors,
         count: r.count,
         percentage: total > 0 ? Math.round((r.visitors / total) * 1000) / 10 : 0
@@ -409,11 +417,10 @@ export async function adminGetTopLandingPages(options?: { period?: AnalyticsPeri
     const response = await apiClient.get('/admin/users/analytics/top-landing-pages', {
         params
     });
-    // Backend returns { data: [{ path, visitors, count }] }. Per-page
-    // session/view averages no longer exist (session events land
-    // post-Phase-D), so they surface as 0.
+    // Backend returns { data: [{ path, visitors, count }] } restricted to
+    // first-touch bootstrap rows, so these are true entry pages.
     const rows = (response.data as { data?: Array<{ path: string; visitors: number; count: number }> }).data ?? [];
-    const pages: ILandingPage[] = rows.map(r => ({ path: r.path, visitors: r.visitors, avgSessions: 0, avgPageViews: 0 }));
+    const pages: ILandingPage[] = rows.map(r => ({ path: r.path, visitors: r.visitors }));
     return { pages, totalPages: pages.length, totalVisitors: rows.reduce((sum, r) => sum + (r.visitors ?? 0), 0) };
 }
 
@@ -490,8 +497,9 @@ export async function adminGetCampaignPerformance(options?: { period?: Analytics
         params
     });
     // Backend returns { data: [{ campaign, source, medium, visitors,
-    // conversions, conversionRate }] }. The legacy wallet-connected/-verified
-    // split collapses to a single binary conversion (BA login).
+    // conversions, conversionRate }] }, first-touch attributed (bootstrap
+    // rows define the cohort). `conversions` is logged-in visitors (any
+    // account, new or returning) — surfaced under that honest name.
     const rows = (response.data as {
         data?: Array<{ campaign: string; source: string; medium: string; visitors: number; conversions: number; conversionRate: number }>
     }).data ?? [];
@@ -500,8 +508,7 @@ export async function adminGetCampaignPerformance(options?: { period?: Analytics
         medium: r.medium,
         campaign: r.campaign,
         visitors: r.visitors,
-        walletsConnected: r.conversions,
-        walletsVerified: r.conversions,
+        conversions: r.conversions,
         conversionRate: Math.round((r.conversionRate ?? 0) * 100)
     }));
     return { campaigns, total: campaigns.length };
@@ -553,16 +560,24 @@ export async function adminGetConversionFunnel(period: AnalyticsPeriod = '30d',
         params
     });
     // Backend returns the binary funnel { distinctVisitors, converted,
-    // conversionRate (0-1) }. Render as two stages (visitors → logged in);
-    // the legacy four-stage wallet/verified shape is retired.
-    const d = response.data as { distinctVisitors: number; converted: number; conversionRate: number };
+    // conversionRate (0-1), newAccountVisitors }. Render as three stages:
+    // "Logged In (any)" includes returning account holders (login
+    // attribution); "New Accounts" isolates the acquisition signal —
+    // visitors attributed to accounts *created* during the window (Better
+    // Auth createdAt, composed server-side). All three stages count
+    // visitors (tids), so each stage is a subset of the one above and
+    // drop-offs are never negative.
+    const d = response.data as { distinctVisitors: number; converted: number; conversionRate: number; newAccountVisitors?: number };
     const visitors = d.distinctVisitors ?? 0;
     const converted = d.converted ?? 0;
+    const newAccounts = d.newAccountVisitors ?? 0;
     const convPct = Math.round((d.conversionRate ?? 0) * 100);
+    const newAccountsPct = visitors > 0 ? Math.round((newAccounts / visitors) * 100) : 0;
     return {
         stages: [
             { stage: 'Visitors', count: visitors, percentage: 100, dropOff: 0 },
-            { stage: 'Logged In', count: converted, percentage: convPct, dropOff: 100 - convPct }
+            { stage: 'Logged In (any account)', count: converted, percentage: convPct, dropOff: 100 - convPct },
+            { stage: 'New Accounts (created this window)', count: newAccounts, percentage: newAccountsPct, dropOff: convPct - newAccountsPct }
         ]
     };
 }
@@ -593,13 +608,24 @@ export async function adminGetRetention(period: AnalyticsPeriod = '30d',
 export interface IOverviewKpis {
     /** Distinct visitors (tids). */
     visitors: number;
+    /**
+     * Distinct tids on human-classified or unclassified rows — equals
+     * `visitors` when bots are excluded; the people half of the split when
+     * bots are included.
+     */
+    humanVisitors: number;
+    /**
+     * Distinct tids on bot-classified rows — effectively bot requests, since
+     * cookieless bots mint a fresh tid per hit. 0 when bots are excluded.
+     */
+    botVisitors: number;
     /** Interactive `page` events. */
     pageviews: number;
-    /** `session_start` events — 0 until session instrumentation ships. */
+    /** Derived sessions (30-minute inactivity rule over page events). */
     sessions: number;
-    /** Average session duration in ms — 0 until session instrumentation ships. */
+    /** Average derived-session duration in ms. */
     avgDurationMs: number;
-    /** Bounced sessions / sessions (0-1) — 0 until session instrumentation ships. */
+    /** Single-page sessions / sessions (0-1). */
     bounceRate: number;
 }
 

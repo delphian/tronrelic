@@ -188,6 +188,23 @@
     color: var(--color-warning);
 }
 
+.category_badge--paid {
+    background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+    color: var(--color-danger);
+}
+
+.category_badge--email {
+    background: color-mix(in srgb, var(--color-secondary) 15%, transparent);
+    color: var(--color-secondary);
+}
+
+/* AI-assistant referrals — a blend of two theme tokens keeps the hue distinct
+   from social (primary) and email (secondary) while remaining fully themable. */
+.category_badge--ai {
+    background: color-mix(in srgb, color-mix(in srgb, var(--color-primary) 50%, var(--color-success)) 18%, transparent);
+    color: color-mix(in srgb, var(--color-primary) 50%, var(--color-success));
+}
+
 /* Two-column grid for side-by-side sections */
 .split_grid {
     display: grid;

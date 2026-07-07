@@ -87,7 +87,8 @@ const sampleEvent: ITrafficEvent = {
     cf_ray: null,
     cf_ipcountry: null,
     ip_hash: null,
-    subnet_hash: null
+    subnet_hash: null,
+    channel: 'referral'
 };
 
 describe('TrafficService', () => {
@@ -583,7 +584,9 @@ describe('TrafficService', () => {
 
             expect(captured.sql).toContain('uniqExact(candidate_uid) AS visitors');
             expect(captured.sql).toContain('ORDER BY visitors DESC');
-            expect(out).toEqual([{ source: 'google.com', visitors: 17, count: 63 }]);
+            // No stored channel in the mock row → server-side fallback
+            // classifies the domain (google.com → organic).
+            expect(out).toEqual([{ source: 'google.com', visitors: 17, count: 63, channel: 'organic' }]);
         });
     });
 
@@ -644,11 +647,15 @@ describe('TrafficService', () => {
             });
 
             expect(out.granularity).toBe('day');
-            expect(calls[2].sql).toContain('toDate(timestamp)');
-            // Promise.all evaluates in order: current KPIs, previous KPIs, series.
+            const seriesCall = calls.find(c => c.sql.includes('GROUP BY bucket'));
+            expect(seriesCall?.sql).toContain('toDate(timestamp)');
             // The previous window slides back by the full 30-day window length.
-            expect(String(calls[1].params.since)).toContain('2026-04-03');
-            expect(String(calls[1].params.until)).toContain('2026-05-03');
+            // KPI reads now issue two queries per window (base + derived
+            // sessions), so locate the previous window by its params instead
+            // of call position.
+            const prevCall = calls.find(c => String(c.params?.since ?? '').includes('2026-04-03'));
+            expect(prevCall).toBeDefined();
+            expect(String(prevCall!.params.until)).toContain('2026-05-03');
             // 05-03 through 06-02 inclusive — 31 zero-filled daily buckets.
             expect(out.series).toHaveLength(31);
             expect(out.previous.visitors).toBe(5);

@@ -43,6 +43,7 @@ import type { IClickHouseService, ISystemLogService } from '@/types';
 import { getClientIP, getCountryFromIP, getDeviceCategory } from './geo.service.js';
 import { getIpHash, getSubnetHash } from './ip-hash.js';
 import { classifyTrafficRequest, type BotClass } from './bot-classifier.js';
+import { classifyChannel, refererDomainFromUrl, type TrafficChannel } from './channel-classifier.js';
 import { UUID_V4_REGEX } from '../api/traffic-cookies.js';
 
 /**
@@ -159,6 +160,16 @@ export interface ITrafficEvent {
      * distributed scanner fleet. Additive column (migration 015).
      */
     subnet_hash: string | null;
+
+    /**
+     * Acquisition channel classified at write time from the referrer, UTM
+     * parameters, and paid click-IDs — see `services/channel-classifier.ts`.
+     * Populated on `bootstrap` rows only: `page` rows carry the site's own
+     * origin as referrer, so a per-row classification would be noise; they
+     * store `null`, as do rows written before migration 016. Reads fall
+     * back to classifying the referrer domain. Additive column (016).
+     */
+    channel: TrafficChannel | null;
 }
 
 /**
@@ -253,6 +264,14 @@ export interface ITrafficSourceBucket {
     visitors: number;
     /** Raw event rows. */
     count: number;
+    /**
+     * Acquisition channel for the bucket — the most frequent stored
+     * write-time value among the bucket's rows, else classified server-side
+     * from the referrer domain when no row carries one (pre-migration-016
+     * data). A mixed bucket (google.com serving both organic and cpc) badges
+     * with its dominant channel.
+     */
+    channel: TrafficChannel;
 }
 
 /** Landing-path bucket: distinct visitors primary, raw event rows secondary. */
@@ -292,11 +311,33 @@ export interface IRetentionPoint {
 /**
  * Binary conversion funnel: distinct visitors (tids) vs. tids that ever carried
  * a non-null `user_id` (i.e. were logged in for at least one event).
+ *
+ * `converted` counts *any* logged-in visitor — including long-standing account
+ * holders returning — so it measures login attribution, not acquisition. The
+ * acquisition stage is composed by the controller from this funnel plus the
+ * identity module's account-creation dates — see {@link IConversionFunnelResponse}.
  */
 export interface IBinaryConversionFunnel {
     distinctVisitors: number;
     converted: number;
     conversionRate: number;
+}
+
+/**
+ * Wire shape of `GET /analytics/conversion-funnel`: the ClickHouse funnel plus
+ * the acquisition stage the controller composes against Better Auth account
+ * `createdAt` — the creation-date ground truth, immune to both re-login noise
+ * and the traffic table's 18-month TTL (a first-*event* proxy would re-mint
+ * long-standing accounts as "new" once their earliest rows expire).
+ */
+export interface IConversionFunnelResponse extends IBinaryConversionFunnel {
+    /**
+     * Distinct in-window visitors (tids) attributed to accounts *created*
+     * during the window. Counted in visitor units so the funnel stages nest
+     * (always a subset of `converted`); an account created outside traffic
+     * tracking contributes no tids and is not counted.
+     */
+    newAccountVisitors: number;
 }
 
 /** UTM-campaign aggregate joined to the binary conversion. */
@@ -327,13 +368,25 @@ export interface IEngagementMetrics {
  * "instrumentation not available", not as a measured zero.
  */
 export interface IOverviewKpis {
-    /** Distinct visitors (tids) in the window. */
+    /** Distinct visitors (tids) in the window, per the request's bot filter. */
     visitors: number;
+    /**
+     * Distinct tids on human-classified or unclassified rows. With bots
+     * excluded this equals `visitors`; with bots included it splits the
+     * people out of the request noise (cookieless bots mint a tid per hit).
+     */
+    humanVisitors: number;
+    /**
+     * Distinct tids on bot-classified rows — effectively bot *requests*,
+     * since cookieless bots mint a fresh tid per hit. 0 when the request
+     * excludes bots.
+     */
+    botVisitors: number;
     /** Interactive `page` events in the window. */
     pageviews: number;
-    /** `session_start` events in the window. */
+    /** Derived sessions attributed to the window by their start. */
     sessions: number;
-    /** Average `session_end` duration in ms. */
+    /** Average derived-session duration in ms. */
     avgDurationMs: number;
     /** Bounced sessions / sessions (0-1). */
     bounceRate: number;
@@ -367,9 +420,11 @@ export interface IOverviewTrend {
 /**
  * One row of the analytics new-arrivals table: a tid whose global first-seen
  * (across the full table) falls inside the window, with its first-touch
- * attribution and lifetime activity counts. Shaped to the frontend
- * `IVisitorOrigin` the `/system/traffic` panel renders directly. `searchKeyword`
- * is always null — `traffic_events` carries no keyword column.
+ * attribution, lifetime page-view count (`page` events only — bootstrap
+ * first touches are not views), and in-window derived-session count.
+ * Shaped to the frontend `IVisitorOrigin` the `/system/traffic` panel renders
+ * directly. `searchKeyword` is always null — `traffic_events` carries no
+ * keyword column.
  */
 export interface INewVisitorOrigin {
     userId: string;
@@ -495,6 +550,18 @@ const DEFAULT_AGGREGATE_LIMIT = 20;
  * to be bots.
  */
 const HUMAN_ROWS_FILTER = "(bot_class = 'human' OR bot_class IS NULL)";
+
+/**
+ * Inactivity gap that closes a derived session, in seconds. Thirty minutes
+ * is the industry-default session definition (GA4, Matomo, Plausible), so
+ * TronRelic's session counts stay comparable to external tooling. Sessions
+ * are *derived* in ClickHouse from the `page` event stream (see
+ * {@link TrafficService.derivedSessionsSql}) rather than emitted by client
+ * beacons — beacon-based session ends are lossy (tab kills, mobile
+ * backgrounding), and a derived model recomputes retroactively over the
+ * table's full history.
+ */
+const SESSION_GAP_SECONDS = 30 * 60;
 
 /**
  * ClickHouse-backed traffic events store.
@@ -628,7 +695,8 @@ export class TrafficService {
                 cf_ray,
                 cf_ipcountry,
                 ip_hash,
-                subnet_hash
+                subnet_hash,
+                channel
             FROM ${TABLE_NAME}
             WHERE candidate_uid = {candidateUid:UUID}
             ${eventFilter}
@@ -896,6 +964,85 @@ export class TrafficService {
     }
 
     /**
+     * Build the WHERE fragment, session-start HAVING, and params that scope
+     * derived sessions to a window with start-attribution semantics.
+     *
+     * The scan's lower bound is widened by one session gap so a session
+     * already running at the window boundary is seen with its true start —
+     * which the HAVING then excludes, attributing the session to the window
+     * containing its start (GA4's rule). Without the widening, the same
+     * boundary-straddling session would count once in each adjacent KPI
+     * window; without the HAVING, the widened rows would leak in.
+     *
+     * @param range - Inclusive date window.
+     * @param botFilter - Pre-built bot-filter fragment (may be empty).
+     * @returns WHERE for {@link derivedSessionsSql}, the HAVING fragment,
+     *   and the bound params (`sinceWidened` + the normal range params).
+     */
+    private sessionRangeParams(range: IAnalyticsDateRange, botFilter: string): { where: string; having: string; params: Record<string, unknown> } {
+        const { params } = this.rangeParams(range);
+        params.sinceWidened = formatClickHouseDateTime64Utc(new Date(range.since.getTime() - SESSION_GAP_SECONDS * 1000));
+        let where = 'timestamp >= parseDateTimeBestEffort({sinceWidened:String})';
+        if (range.until) {
+            where += ' AND timestamp <= parseDateTimeBestEffort({until:String})';
+        }
+        // session_start <= until holds automatically — the scan admits no row
+        // past the upper bound — so only the lower bound needs the HAVING.
+        return { where: `${where}${botFilter}`, having: 'session_start >= parseDateTimeBestEffort({since:String})', params };
+    }
+
+    /**
+     * Build the derived-session subquery: one row per (visitor, session)
+     * with page count and duration, sessionized from the `page` event
+     * stream by the {@link SESSION_GAP_SECONDS} inactivity rule.
+     *
+     * Sessions are derived at read time — never stored — so the definition
+     * lives in exactly one place and recomputes over historical rows. A
+     * session's duration is last-hit minus first-hit (a single-page session
+     * is 0s); a bounce is a single-page session, the standard definition.
+     *
+     * The window-function `lagInFrame` yields the type default (epoch) for
+     * each visitor's first row, which the gap test reads as "new session".
+     *
+     * @param where - WHERE fragment scoping which rows sessionize (range,
+     *   bot filter, cohort). The `event_type = 'page'` restriction is
+     *   appended here — only interactive navigations form sessions.
+     *   Windowed callers should pass {@link sessionRangeParams}'s widened
+     *   fragment so boundary sessions carry their true start.
+     * @param havingSessionStart - Optional HAVING fragment on the aggregated
+     *   `session_start`, used with the widened scan to attribute each
+     *   session to the window containing its start.
+     * @returns SELECT statement usable as a FROM subquery.
+     */
+    private derivedSessionsSql(where: string, havingSessionStart?: string): string {
+        return `
+            SELECT
+                candidate_uid,
+                session_seq,
+                min(timestamp) AS session_start,
+                max(timestamp) AS session_end,
+                count() AS page_count,
+                dateDiff('second', min(timestamp), max(timestamp)) AS duration_s
+            FROM (
+                SELECT
+                    candidate_uid,
+                    timestamp,
+                    sum(is_new) OVER (PARTITION BY candidate_uid ORDER BY timestamp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS session_seq
+                FROM (
+                    SELECT
+                        candidate_uid,
+                        timestamp,
+                        if(dateDiff('second', lagInFrame(timestamp) OVER (PARTITION BY candidate_uid ORDER BY timestamp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), timestamp) >= ${SESSION_GAP_SECONDS}, 1, 0) AS is_new
+                    FROM ${TABLE_NAME}
+                    WHERE ${where} AND event_type = 'page'
+                )
+            )
+            GROUP BY candidate_uid, session_seq
+            ${havingSessionStart ? `HAVING ${havingSessionStart}` : ''}
+        `;
+    }
+
+    /**
      * Distinct analytics visitors (tids) per calendar day over the window.
      *
      * @param range - Inclusive date window.
@@ -974,6 +1121,12 @@ export class TrafficService {
      * Referrer-domain breakdown. Null/empty referers collapse to `'direct'`.
      * Distinct visitors lead; raw event counts ride along.
      *
+     * Restricted to `bootstrap` rows so attribution is first-touch only.
+     * `page` events carry `document.referrer`, which after the first internal
+     * navigation is this site's own domain — without the restriction the site
+     * appears as its own referral source, internal navigations inflate the
+     * buckets, and one visitor lands in several source rows at once.
+     *
      * @param range - Inclusive date window.
      * @param excludeBots - Restrict to human-classified rows (NULL kept).
      * @returns Source-domain buckets, by visitors descending.
@@ -986,15 +1139,36 @@ export class TrafficService {
             SELECT
                 multiIf(referer IS NULL OR referer = '', 'direct', domain(referer)) AS source,
                 uniqExact(candidate_uid) AS visitors,
-                count() AS count
+                count() AS count,
+                topK(1)(channel)[1] AS storedChannel
             FROM ${TABLE_NAME}
-            WHERE ${clause}${botFilter}
+            WHERE ${clause}${botFilter} AND event_type = 'bootstrap'
             GROUP BY source
             ORDER BY visitors DESC, count DESC
         `;
+        // topK(1) rather than anyHeavy: anyHeavy is a >50%-majority estimator
+        // whose result is undefined when no value clears the threshold, so a
+        // mixed bucket (google.com carrying organic and cpc rows) would badge
+        // arbitrarily. topK counts frequencies — with only seven possible
+        // channel values its counters never evict, making the pick exact.
+        // NULLs are skipped by aggregation; an all-NULL bucket yields an
+        // empty array whose [1] is NULL, handled by the fallback below.
         try {
-            const rows = await this.clickhouse.query<{ source: string; visitors: string | number; count: string | number }>(sql, params);
-            return rows.map(r => ({ source: r.source, visitors: Number(r.visitors), count: Number(r.count) }));
+            const rows = await this.clickhouse.query<{
+                source: string; visitors: string | number; count: string | number; storedChannel: string | null;
+            }>(sql, params);
+            return rows.map(r => ({
+                source: r.source,
+                visitors: Number(r.visitors),
+                count: Number(r.count),
+                // Prefer the stored write-time classification; fall back to
+                // domain-only classification for pre-migration-016 rows. The
+                // falsy check (not ??) also covers a non-Nullable '' default
+                // should the array-element type ever lose its Nullable wrap.
+                channel: r.storedChannel
+                    ? (r.storedChannel as TrafficChannel)
+                    : classifyChannel({ refererDomain: r.source === 'direct' ? null : r.source })
+            }));
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read traffic sources');
             return [];
@@ -1003,6 +1177,10 @@ export class TrafficService {
 
     /**
      * Top landing paths. Distinct visitors lead; raw event counts ride along.
+     *
+     * Restricted to `bootstrap` rows so "landing" means the entry page of a
+     * first touch. Without the restriction every `page` navigation counts and
+     * the table silently becomes "most-viewed pages", not landing pages.
      *
      * @param range - Inclusive date window.
      * @param limit - Max rows.
@@ -1016,7 +1194,7 @@ export class TrafficService {
         const sql = `
             SELECT path AS path, uniqExact(candidate_uid) AS visitors, count() AS count
             FROM ${TABLE_NAME}
-            WHERE ${clause}${botFilter} AND path != ''
+            WHERE ${clause}${botFilter} AND event_type = 'bootstrap' AND path != ''
             GROUP BY path
             ORDER BY visitors DESC, count DESC
             LIMIT {limit:UInt32}
@@ -1139,6 +1317,12 @@ export class TrafficService {
      * Binary conversion funnel over the window: distinct visitors (tids) vs.
      * tids that ever carried a non-null `user_id`.
      *
+     * `converted` alone conflates a returning account holder logging back in
+     * with a genuinely acquired account. The acquisition stage is composed by
+     * the controller: {@link getActiveAccountIds} → identity `createdAt`
+     * filter → {@link countTidsForUsers}. Account creation dates live in
+     * MongoDB, not here — ClickHouse only knows login events.
+     *
      * @param range - Inclusive date window.
      * @param excludeBots - Restrict to human-classified rows (NULL kept).
      * @returns Distinct/converted counts and the derived rate.
@@ -1161,7 +1345,11 @@ export class TrafficService {
             if (!row) return empty;
             const distinctVisitors = Number(row.distinctVisitors);
             const converted = Number(row.converted);
-            return { distinctVisitors, converted, conversionRate: distinctVisitors > 0 ? converted / distinctVisitors : 0 };
+            return {
+                distinctVisitors,
+                converted,
+                conversionRate: distinctVisitors > 0 ? converted / distinctVisitors : 0
+            };
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read conversion funnel');
             return empty;
@@ -1169,8 +1357,71 @@ export class TrafficService {
     }
 
     /**
-     * UTM-campaign performance joined to the binary conversion. Only events
-     * carrying a campaign are counted.
+     * Distinct Better Auth account ids that appeared logged-in on any row in
+     * the window. First leg of the acquisition-stage composition: the
+     * controller filters these ids by account `createdAt` (identity module
+     * ground truth) and hands the survivors to {@link countTidsForUsers}.
+     *
+     * @param range - Inclusive date window.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept),
+     *   mirroring the funnel's `converted` so the composed stage nests.
+     * @returns Opaque BA user-id hex strings, empty when ClickHouse is off.
+     */
+    async getActiveAccountIds(range: IAnalyticsDateRange, excludeBots = false): Promise<string[]> {
+        if (!this.clickhouse) return [];
+        const { clause, params } = this.rangeParams(range);
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
+        const sql = `
+            SELECT DISTINCT user_id
+            FROM ${TABLE_NAME}
+            WHERE ${clause}${botFilter} AND user_id IS NOT NULL
+        `;
+        try {
+            const rows = await this.clickhouse.query<{ user_id: string }>(sql, params);
+            return rows.map(r => r.user_id);
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read active account ids');
+            return [];
+        }
+    }
+
+    /**
+     * Distinct visitors (tids) in the window attributed to any of the given
+     * accounts. One query across the whole id set so a tid shared by two
+     * accounts is not double-counted — summing per-account uniques would be.
+     *
+     * @param range - Inclusive date window.
+     * @param userIds - Opaque BA user-id hex strings (typically the
+     *   created-in-window survivors of {@link getActiveAccountIds}).
+     * @param excludeBots - Restrict to human-classified rows (NULL kept).
+     * @returns Distinct tid count; 0 for an empty id set or no ClickHouse.
+     */
+    async countTidsForUsers(range: IAnalyticsDateRange, userIds: string[], excludeBots = false): Promise<number> {
+        if (!this.clickhouse || userIds.length === 0) return 0;
+        const { clause, params } = this.rangeParams(range);
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
+        const sql = `
+            SELECT uniqExact(candidate_uid) AS tids
+            FROM ${TABLE_NAME}
+            WHERE ${clause}${botFilter} AND user_id IN ({userIds:Array(String)})
+        `;
+        try {
+            const rows = await this.clickhouse.query<{ tids: string | number }>(sql, { ...params, userIds });
+            return Number(rows[0]?.tids ?? 0);
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to count tids for users');
+            return 0;
+        }
+    }
+
+    /**
+     * UTM-campaign performance joined to the binary conversion.
+     *
+     * First-touch attributed, matching the Metrics Contract and the sources /
+     * landing-pages reads: a campaign's visitors are the tids whose
+     * `bootstrap` row carried it. Conversion still reads the cohort's full
+     * in-window clickstream (the login usually happens on a later `page`
+     * row, never on the first touch), via the IN-subquery of logged-in tids.
      *
      * @param range - Inclusive date window.
      * @param limit - Max campaigns.
@@ -1187,9 +1438,12 @@ export class TrafficService {
                 coalesce(utm_source, '(none)') AS source,
                 coalesce(utm_medium, '(none)') AS medium,
                 uniqExact(candidate_uid) AS visitors,
-                uniqExactIf(candidate_uid, user_id IS NOT NULL) AS conversions
+                uniqExactIf(candidate_uid, candidate_uid IN (
+                    SELECT DISTINCT candidate_uid FROM ${TABLE_NAME}
+                    WHERE ${clause}${botFilter} AND user_id IS NOT NULL
+                )) AS conversions
             FROM ${TABLE_NAME}
-            WHERE ${clause}${botFilter} AND utm_campaign IS NOT NULL
+            WHERE ${clause}${botFilter} AND event_type = 'bootstrap' AND utm_campaign IS NOT NULL
             GROUP BY campaign, source, medium
             ORDER BY visitors DESC
             LIMIT {limit:UInt32}
@@ -1218,10 +1472,9 @@ export class TrafficService {
     }
 
     /**
-     * Engagement metrics from `session_end` and `page` events: average session
-     * duration, pages per session, and bounce rate (sessions under 10s or with
-     * no recorded page activity). Reads near zero until Phase D wires session
-     * emission.
+     * Engagement metrics over derived sessions (see
+     * {@link derivedSessionsSql}): session count, average session duration,
+     * pages per session, and bounce rate (single-page sessions / sessions).
      *
      * @param range - Inclusive date window.
      * @param excludeBots - Restrict to human-classified rows (NULL kept).
@@ -1230,21 +1483,20 @@ export class TrafficService {
     async getEngagementMetrics(range: IAnalyticsDateRange, excludeBots = false): Promise<IEngagementMetrics> {
         const empty: IEngagementMetrics = { sessions: 0, avgDurationMs: 0, pagesPerSession: 0, bounceRate: 0 };
         if (!this.clickhouse) return empty;
-        const { clause, params } = this.rangeParams(range);
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
+        const { where, having, params } = this.sessionRangeParams(range, botFilter);
         const sql = `
             SELECT
-                countIf(event_type = 'session_start') AS sessions,
-                countIf(event_type = 'page') AS pageEvents,
-                avgIf(duration_ms, event_type = 'session_end' AND duration_ms IS NOT NULL) AS avgDurationMs,
-                countIf(event_type = 'session_end' AND (duration_ms IS NULL OR duration_ms < 10000)) AS bounces
-            FROM ${TABLE_NAME}
-            WHERE ${clause}${botFilter}
+                count() AS sessions,
+                sum(page_count) AS pageEvents,
+                avg(duration_s) AS avgDurationS,
+                countIf(page_count = 1) AS bounces
+            FROM (${this.derivedSessionsSql(where, having)})
         `;
         try {
             const rows = await this.clickhouse.query<{
                 sessions: string | number; pageEvents: string | number;
-                avgDurationMs: string | number | null; bounces: string | number;
+                avgDurationS: string | number | null; bounces: string | number;
             }>(sql, params);
             const row = rows[0];
             if (!row) return empty;
@@ -1253,7 +1505,7 @@ export class TrafficService {
             const bounces = Number(row.bounces);
             return {
                 sessions,
-                avgDurationMs: Number(row.avgDurationMs ?? 0),
+                avgDurationMs: Math.round(Number(row.avgDurationS ?? 0) * 1000),
                 pagesPerSession: sessions > 0 ? pageEvents / sessions : 0,
                 bounceRate: sessions > 0 ? bounces / sessions : 0
             };
@@ -1278,7 +1530,7 @@ export class TrafficService {
      * @returns Granularity, current/previous KPIs, and the bucket series.
      */
     async getOverviewTrend(range: IAnalyticsDateRange, excludeBots = false): Promise<IOverviewTrend> {
-        const emptyKpis = (): IOverviewKpis => ({ visitors: 0, pageviews: 0, sessions: 0, avgDurationMs: 0, bounceRate: 0 });
+        const emptyKpis = (): IOverviewKpis => ({ visitors: 0, humanVisitors: 0, botVisitors: 0, pageviews: 0, sessions: 0, avgDurationMs: 0, bounceRate: 0 });
         if (!this.clickhouse) {
             return { granularity: 'day', current: emptyKpis(), previous: emptyKpis(), series: [] };
         }
@@ -1300,36 +1552,57 @@ export class TrafficService {
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
 
         /**
-         * Build and run the KPI aggregate for one window.
+         * Build and run the KPI aggregate for one window. Session-derived
+         * KPIs (sessions, duration, bounce rate) come from the derived
+         * session model — bounce = single-page session.
          *
          * @param r - The window to aggregate.
          * @returns The window's headline KPIs.
          */
         const fetchKpis = async (r: IAnalyticsDateRange): Promise<IOverviewKpis> => {
             const { clause, params } = this.rangeParams(r);
+            // The human/bot split rides along regardless of the bot filter:
+            // with bots excluded the split is trivially (visitors, 0), and
+            // with bots included the UI renders the split so the headline
+            // "visitors" number cannot be mistaken for a people count.
             const sql = `
                 SELECT
                     uniqExact(candidate_uid) AS visitors,
-                    countIf(event_type = 'page') AS pageviews,
-                    countIf(event_type = 'session_start') AS sessions,
-                    avgIf(duration_ms, event_type = 'session_end' AND duration_ms IS NOT NULL) AS avgDurationMs,
-                    countIf(event_type = 'session_end' AND (duration_ms IS NULL OR duration_ms < 10000)) AS bounces
+                    uniqExactIf(candidate_uid, ${HUMAN_ROWS_FILTER}) AS humanVisitors,
+                    uniqExactIf(candidate_uid, bot_class IS NOT NULL AND bot_class != 'human') AS botVisitors,
+                    countIf(event_type = 'page') AS pageviews
                 FROM ${TABLE_NAME}
                 WHERE ${clause}${botFilter}
             `;
-            const rows = await this.clickhouse!.query<{
-                visitors: string | number; pageviews: string | number; sessions: string | number;
-                avgDurationMs: string | number | null; bounces: string | number;
-            }>(sql, params);
+            const sessionWindow = this.sessionRangeParams(r, botFilter);
+            const sessionsSql = `
+                SELECT
+                    count() AS sessions,
+                    avg(duration_s) AS avgDurationS,
+                    countIf(page_count = 1) AS bounces
+                FROM (${this.derivedSessionsSql(sessionWindow.where, sessionWindow.having)})
+            `;
+            const [rows, sessionRows] = await Promise.all([
+                this.clickhouse!.query<{
+                    visitors: string | number; humanVisitors: string | number;
+                    botVisitors: string | number; pageviews: string | number;
+                }>(sql, params),
+                this.clickhouse!.query<{
+                    sessions: string | number; avgDurationS: string | number | null; bounces: string | number;
+                }>(sessionsSql, sessionWindow.params)
+            ]);
             const row = rows[0];
             if (!row) return emptyKpis();
-            const sessions = Number(row.sessions);
-            const bounces = Number(row.bounces);
+            const sessionRow = sessionRows[0];
+            const sessions = Number(sessionRow?.sessions ?? 0);
+            const bounces = Number(sessionRow?.bounces ?? 0);
             return {
                 visitors: Number(row.visitors),
+                humanVisitors: Number(row.humanVisitors),
+                botVisitors: Number(row.botVisitors),
                 pageviews: Number(row.pageviews),
                 sessions,
-                avgDurationMs: Number(row.avgDurationMs ?? 0),
+                avgDurationMs: Math.round(Number(sessionRow?.avgDurationS ?? 0) * 1000),
                 bounceRate: sessions > 0 ? bounces / sessions : 0
             };
         };
@@ -1441,29 +1714,46 @@ export class TrafficService {
             firstSeenClause += ' AND firstSeen <= parseDateTimeBestEffort({until:String})';
         }
         const activeInWindow = `candidate_uid IN (SELECT DISTINCT candidate_uid FROM ${TABLE_NAME} WHERE ${clause}${botFilter})`;
+        const sessionWindow = this.sessionRangeParams(range, botFilter);
+        // In-window derived-session count per tid (see derivedSessionsSql,
+        // start-attributed via sessionRangeParams). The join's right side is
+        // time-bounded by the window clause rather than keyed off the paged
+        // rows: ClickHouse does not push join-key predicates into a joined
+        // subquery (it materializes the right side in full), so bounding by
+        // time is what actually caps the scan. For this view the semantics
+        // match — every listed visitor was first seen inside the window, so
+        // their sessions are in-window anyway.
         const pageSql = `
-            SELECT
-                candidate_uid AS userId,
-                min(timestamp) AS firstSeen,
-                max(timestamp) AS lastSeen,
-                argMin(country, timestamp) AS country,
-                argMin(multiIf(referer IS NULL OR referer = '', NULL, domain(referer)), timestamp) AS referrerDomain,
-                argMin(path, timestamp) AS landingPage,
-                argMin(device, timestamp) AS device,
-                argMin(utm_source, timestamp) AS utmSource,
-                argMin(utm_medium, timestamp) AS utmMedium,
-                argMin(utm_campaign, timestamp) AS utmCampaign,
-                argMin(utm_term, timestamp) AS utmTerm,
-                argMin(utm_content, timestamp) AS utmContent,
-                argMin(tuple(subnet_hash), timestamp).1 AS subnetHash, -- tuple() preserves a NULL first-touch value; plain argMin skips NULL args
-                count() AS pageViews,
-                countIf(event_type = 'session_start') AS sessionsCount
-            FROM ${TABLE_NAME}
-            WHERE ${activeInWindow}${botFilter}
-            GROUP BY candidate_uid
-            HAVING ${firstSeenClause}
+            SELECT base.*, s.sessionsCount AS sessionsCount
+            FROM (
+                SELECT
+                    candidate_uid AS userId,
+                    min(timestamp) AS firstSeen,
+                    max(timestamp) AS lastSeen,
+                    argMin(country, timestamp) AS country,
+                    argMin(multiIf(referer IS NULL OR referer = '', NULL, domain(referer)), timestamp) AS referrerDomain,
+                    argMin(path, timestamp) AS landingPage,
+                    argMin(device, timestamp) AS device,
+                    argMin(utm_source, timestamp) AS utmSource,
+                    argMin(utm_medium, timestamp) AS utmMedium,
+                    argMin(utm_campaign, timestamp) AS utmCampaign,
+                    argMin(utm_term, timestamp) AS utmTerm,
+                    argMin(utm_content, timestamp) AS utmContent,
+                    argMin(tuple(subnet_hash), timestamp).1 AS subnetHash, -- tuple() preserves a NULL first-touch value; plain argMin skips NULL args
+                    countIf(event_type = 'page') AS pageViews -- views are page events only: a bootstrap row is the same navigation as the first page beacon, so count() would add a phantom view per visit-start
+                FROM ${TABLE_NAME}
+                WHERE ${activeInWindow}${botFilter}
+                GROUP BY candidate_uid
+                HAVING ${firstSeenClause}
+                ORDER BY firstSeen DESC
+                LIMIT {limit:UInt32} OFFSET {skip:UInt32}
+            ) AS base
+            LEFT JOIN (
+                SELECT candidate_uid AS userId, count() AS sessionsCount
+                FROM (${this.derivedSessionsSql(sessionWindow.where, sessionWindow.having)})
+                GROUP BY candidate_uid
+            ) AS s USING (userId)
             ORDER BY firstSeen DESC
-            LIMIT {limit:UInt32} OFFSET {skip:UInt32}
         `;
         const countSql = `
             SELECT count() AS total FROM (
@@ -1484,7 +1774,7 @@ export class TrafficService {
                     utmTerm: string | null; utmContent: string | null;
                     subnetHash: string | null;
                     pageViews: string | number; sessionsCount: string | number;
-                }>(pageSql, { ...params, limit, skip }),
+                }>(pageSql, { ...params, ...sessionWindow.params, limit, skip }),
                 this.clickhouse.query<{ total: string | number }>(countSql, params)
             ]);
             const visitors: INewVisitorOrigin[] = rows.map(r => {
@@ -1524,9 +1814,12 @@ export class TrafficService {
      * `'direct'`): visitor count, top landing pages / countries / devices / UTM
      * campaigns, engagement, and the binary conversion proxy.
      *
-     * Percentages are each row's share of the source's total pageviews. The
-     * source is matched the same way {@link getTrafficSources} buckets it, so a
-     * value returned there round-trips here.
+     * The cohort is first-touch attributed: visitors whose `bootstrap` row's
+     * referrer matches the source. Attribution sections (landing pages,
+     * countries, devices, UTM) read the cohort's bootstrap rows; engagement
+     * and conversion read the cohort's full in-window clickstream. Matching
+     * mirrors {@link getTrafficSources}, so a value returned there round-trips
+     * here. Percentages are each row's share of the cohort's first touches.
      *
      * @param range - Inclusive date window.
      * @param source - Referrer domain (e.g. `'duckduckgo.com'`) or `'direct'`.
@@ -1550,49 +1843,73 @@ export class TrafficService {
         const { clause, params } = this.rangeParams(range);
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sourceExpr = `multiIf(referer IS NULL OR referer = '', 'direct', domain(referer))`;
-        const where = `${clause}${botFilter} AND ${sourceExpr} = {source:String}`;
-        const p = { ...params, source };
+        // First-touch rows for this source — the attribution ground truth.
+        const firstTouchWhere = `${clause}${botFilter} AND event_type = 'bootstrap' AND ${sourceExpr} = {source:String}`;
+        // The cohort's full in-window clickstream (all event types) — the
+        // engagement/conversion ground truth.
+        const where = `${clause}${botFilter} AND candidate_uid IN (
+            SELECT DISTINCT candidate_uid FROM ${TABLE_NAME} WHERE ${firstTouchWhere}
+        )`;
+        // Session scan: same cohort restriction, but time-widened by one gap
+        // with start-attribution (see sessionRangeParams) so boundary
+        // sessions land in exactly one window, matching the overview KPIs.
+        const sessionWindow = this.sessionRangeParams(range, botFilter);
+        const sessionsWhere = `${sessionWindow.where} AND candidate_uid IN (
+            SELECT DISTINCT candidate_uid FROM ${TABLE_NAME} WHERE ${firstTouchWhere}
+        )`;
+        const p = { ...params, ...sessionWindow.params, source };
         const round1 = (n: number): number => Math.round(n * 10) / 10;
         try {
-            const summaryRows = await this.clickhouse.query<{
-                visitors: string | number; sessions: string | number; events: string | number;
-                avgDuration: string | number | null; converted: string | number;
-            }>(`
-                SELECT
-                    uniqExact(candidate_uid) AS visitors,
-                    countIf(event_type = 'session_start') AS sessions,
-                    count() AS events,
-                    avgIf(duration_ms, event_type = 'session_end' AND duration_ms IS NOT NULL) AS avgDuration,
-                    uniqExactIf(candidate_uid, user_id IS NOT NULL) AS converted
-                FROM ${TABLE_NAME}
-                WHERE ${where}
-            `, p);
+            const [summaryRows, sessionRows] = await Promise.all([
+                this.clickhouse.query<{
+                    visitors: string | number; pageEvents: string | number;
+                    firstTouches: string | number; converted: string | number;
+                }>(`
+                    SELECT
+                        uniqExact(candidate_uid) AS visitors,
+                        countIf(event_type = 'page') AS pageEvents,
+                        countIf(event_type = 'bootstrap') AS firstTouches,
+                        uniqExactIf(candidate_uid, user_id IS NOT NULL) AS converted
+                    FROM ${TABLE_NAME}
+                    WHERE ${where}
+                `, p),
+                // Derived sessions over the cohort's clickstream — bounce and
+                // duration semantics identical to the overview KPIs.
+                this.clickhouse.query<{
+                    sessions: string | number; avgDurationS: string | number | null;
+                }>(`
+                    SELECT count() AS sessions, avg(duration_s) AS avgDurationS
+                    FROM (${this.derivedSessionsSql(sessionsWhere, sessionWindow.having)})
+                `, p)
+            ]);
             const summary = summaryRows[0];
             const visitors = summary ? Number(summary.visitors) : 0;
             if (!visitors) return empty;
-            const events = Number(summary.events);
-            const sessions = Number(summary.sessions);
+            const pageEvents = Number(summary.pageEvents);
+            const firstTouches = Number(summary.firstTouches);
+            const sessions = Number(sessionRows[0]?.sessions ?? 0);
+            const avgDurationS = Number(sessionRows[0]?.avgDurationS ?? 0);
             const converted = Number(summary.converted);
-            const pct = (count: number): number => (events > 0 ? round1((count / events) * 100) : 0);
+            const pct = (count: number): number => (firstTouches > 0 ? round1((count / firstTouches) * 100) : 0);
 
             const [landingRows, countryRows, deviceRows, utmRows] = await Promise.all([
                 this.clickhouse.query<{ path: string; count: string | number }>(`
-                    SELECT path, count() AS count FROM ${TABLE_NAME} WHERE ${where}
+                    SELECT path, count() AS count FROM ${TABLE_NAME} WHERE ${firstTouchWhere}
                     GROUP BY path ORDER BY count DESC LIMIT 10
                 `, p),
                 this.clickhouse.query<{ country: string; count: string | number }>(`
-                    SELECT country, count() AS count FROM ${TABLE_NAME} WHERE ${where} AND country IS NOT NULL
+                    SELECT country, count() AS count FROM ${TABLE_NAME} WHERE ${firstTouchWhere} AND country IS NOT NULL
                     GROUP BY country ORDER BY count DESC LIMIT 30
                 `, p),
                 this.clickhouse.query<{ device: string; count: string | number }>(`
-                    SELECT device, count() AS count FROM ${TABLE_NAME} WHERE ${where}
+                    SELECT device, count() AS count FROM ${TABLE_NAME} WHERE ${firstTouchWhere}
                     GROUP BY device ORDER BY count DESC
                 `, p),
                 this.clickhouse.query<{ source: string | null; medium: string | null; campaign: string; count: string | number }>(`
                     SELECT
                         utm_source AS source, utm_medium AS medium, utm_campaign AS campaign,
                         count() AS count
-                    FROM ${TABLE_NAME} WHERE ${where} AND utm_campaign IS NOT NULL
+                    FROM ${TABLE_NAME} WHERE ${firstTouchWhere} AND utm_campaign IS NOT NULL
                     GROUP BY source, medium, campaign ORDER BY count DESC LIMIT 10
                 `, p)
             ]);
@@ -1612,8 +1929,8 @@ export class TrafficService {
                 searchKeywords: [],
                 engagement: {
                     avgSessions: round1(sessions / visitors),
-                    avgPageViews: round1(events / visitors),
-                    avgDuration: Number(summary.avgDuration ?? 0)
+                    avgPageViews: round1(pageEvents / visitors),
+                    avgDuration: Math.round(avgDurationS)
                 },
                 conversion: {
                     walletsConnected: 0,
@@ -1786,6 +2103,13 @@ export interface ITrafficEventBuilderInputs {
      * `duration_ms` column; absent (→ null) for every other event type.
      */
     durationMs?: number | null;
+    /**
+     * Name of an ad-network click-ID query param the middleware detected on
+     * the landing URL (e.g. `'gclid'`). Auto-tagged ad clicks carry no UTM,
+     * so this is the channel classifier's only paid signal for them. The
+     * param's value is never forwarded or stored — only which param appeared.
+     */
+    clickId?: string | null;
 }
 
 /**
@@ -1888,7 +2212,22 @@ export function buildTrafficEvent(
         cf_ipcountry: cfIpCountry,
 
         ip_hash: getIpHash(clientIP),
-        subnet_hash: getSubnetHash(clientIP)
+        subnet_hash: getSubnetHash(clientIP),
+
+        // Classified at write time so channel is a stored dimension every
+        // consumer shares. Bootstrap rows only: they carry the true external
+        // attribution signal. A `page` row's Referer is this site's own
+        // origin after any internal navigation and would classify as
+        // 'referral' on every row — storing NULL instead keeps the column
+        // meaningful under a bare GROUP BY with no event_type filter.
+        channel: eventType === 'bootstrap'
+            ? classifyChannel({
+                refererDomain: refererDomainFromUrl(referer ?? null),
+                utmMedium: utm.medium ?? null,
+                utmSource: utm.source ?? null,
+                clickId: inputs.clickId ?? null
+            })
+            : null
     };
 }
 

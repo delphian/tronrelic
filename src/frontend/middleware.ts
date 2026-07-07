@@ -89,6 +89,16 @@ const FORWARDED_HEADERS = [
 const UTM_KEYS = ['source', 'medium', 'campaign', 'term', 'content'] as const;
 
 /**
+ * Ad-network click-ID query params that mark a paid landing (auto-tagged ads
+ * carry no UTM at all — a Google Ads click arrives with only `gclid`). Only
+ * the param *name* is forwarded to the backend, never its value. `fbclid` is
+ * deliberately absent: Facebook appends it to organic clicks too. Mirror of
+ * `PAID_CLICK_IDS` in the traffic module's `channel-classifier.ts` (frontend
+ * cannot import backend modules) — keep the two lists in sync.
+ */
+const PAID_CLICK_ID_KEYS = ['gclid', 'gbraid', 'wbraid', 'dclid', 'msclkid', 'ttclid', 'twclid', 'li_fat_id'] as const;
+
+/**
  * Build the JSON body for the backend bootstrap call.
  *
  * Carries the derived per-request context that the backend cannot see by
@@ -123,6 +133,13 @@ function buildBootstrapBody(request: NextRequest, tid: string, referralCode: str
     };
     if (Object.keys(utm).length > 0) {
         payload.utm = utm;
+    }
+    // Forward which paid click-ID param appeared (name only, never the value)
+    // so the backend channel classifier can mark auto-tagged ad landings as
+    // paid despite the absence of UTM parameters.
+    const clickId = PAID_CLICK_ID_KEYS.find(key => request.nextUrl.searchParams.has(key));
+    if (clickId) {
+        payload.clickId = clickId;
     }
     if (originalReferrer) {
         payload.originalReferrer = originalReferrer;
