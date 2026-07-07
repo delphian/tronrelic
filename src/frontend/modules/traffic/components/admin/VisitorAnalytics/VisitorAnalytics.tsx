@@ -142,8 +142,8 @@ export function VisitorAnalytics({ period, customRange, includeBots }: IVisitorA
                                         <th>Source</th>
                                         <th>UTM</th>
                                         <th>Device</th>
-                                        <th>Total Views</th>
-                                        <th>Total Sessions</th>
+                                        <th title="Client-side page views (page events only — server-recorded first touches are not views)">Total Views</th>
+                                        <th title="Derived sessions within the selected window (30-minute inactivity rule over page events)">Sessions</th>
                                     </tr>
                                 </thead>
                                 <tbody>

@@ -171,11 +171,28 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
                     className={metric === 'visitors' ? styles.kpi_active : styles.kpi}
                     onClick={() => setMetric('visitors')}
                     aria-pressed={metric === 'visitors'}
+                    title={includeBots
+                        ? 'Cookieless bots mint a fresh visitor id per request, so with bots included this approximates total requests, not people'
+                        : 'Distinct visitor ids (per-browser cookie): cookie clearing and multiple devices count the same person again'}
                 >
-                    <span className={styles.kpi_label}>Unique Visitors</span>
+                    <span className={styles.kpi_label}>
+                        {includeBots ? 'Unique Visitors (incl. bot requests)' : 'Unique Visitors'}
+                    </span>
                     <span className={styles.kpi_value}>{numberFormatter.format(current.visitors)}</span>
                     <Delta change={percentChange(current.visitors, previous.visitors)} />
                 </button>
+                {includeBots && (
+                    <div
+                        className={styles.kpi_static}
+                        title="Distinct visitor ids split by bot classification. Bot ids approximate requests — cookieless bots mint a fresh id per hit — so the two sides are not comparable units. Delta tracks the human side."
+                    >
+                        <span className={styles.kpi_label}>Human / Bot Split</span>
+                        <span className={styles.kpi_value}>
+                            {numberFormatter.format(current.humanVisitors ?? 0)} / {numberFormatter.format(current.botVisitors ?? 0)}
+                        </span>
+                        <Delta change={percentChange(current.humanVisitors ?? 0, previous.humanVisitors ?? 0)} />
+                    </div>
+                )}
                 <button
                     type="button"
                     className={metric === 'pageviews' ? styles.kpi_active : styles.kpi}
@@ -191,23 +208,29 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
                     <span className={styles.kpi_value}>{viewsPerVisit.toFixed(1)}</span>
                     <Delta change={percentChange(viewsPerVisit, prevViewsPerVisit)} />
                 </div>
-                <div className={styles.kpi_static}>
+                <div
+                    className={styles.kpi_static}
+                    title="Single-page sessions / sessions (derived, 30-minute inactivity rule)"
+                >
                     <span className={styles.kpi_label}>Bounce Rate</span>
                     <span className={styles.kpi_value}>
                         {sessionsAvailable ? `${Math.round(current.bounceRate * 100)}%` : '—'}
                     </span>
                     {sessionsAvailable
                         ? <Delta change={percentChange(current.bounceRate, previous.bounceRate)} invert />
-                        : <span className={styles.kpi_note}>awaiting sessions</span>}
+                        : <span className={styles.kpi_note}>no sessions in window</span>}
                 </div>
-                <div className={styles.kpi_static}>
+                <div
+                    className={styles.kpi_static}
+                    title="Average derived-session duration (last hit minus first hit)"
+                >
                     <span className={styles.kpi_label}>Visit Duration</span>
                     <span className={styles.kpi_value}>
                         {sessionsAvailable ? formatDurationMs(current.avgDurationMs) : '—'}
                     </span>
                     {sessionsAvailable
                         ? <Delta change={percentChange(current.avgDurationMs, previous.avgDurationMs)} />
-                        : <span className={styles.kpi_note}>awaiting sessions</span>}
+                        : <span className={styles.kpi_note}>no sessions in window</span>}
                 </div>
             </div>
 
@@ -220,7 +243,7 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
             />
             <p className={styles.footnote}>
                 {trend.granularity === 'hour' ? 'Hourly' : 'Daily'} buckets · deltas compare the
-                equal-length previous period{!sessionsAvailable && ' · bounce rate and visit duration await session instrumentation'}.
+                equal-length previous period · sessions derived from page events (30-minute inactivity rule).
             </p>
         </Card>
     );

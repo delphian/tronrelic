@@ -23,6 +23,7 @@ import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import type { ISystemLogService } from '@/types';
 import { TrafficService, buildTrafficEvent, type TrafficEventType } from '../services/traffic.service.js';
+import { PAID_CLICK_IDS } from '../services/channel-classifier.js';
 import {
     UUID_V4_REGEX,
     resolveTid,
@@ -212,12 +213,14 @@ export class BootstrapController {
         landingPath?: string;
         utm?: NonNullable<ReturnType<typeof clampUtm>>;
         originalReferrer?: string | null;
+        clickId?: string | null;
     } {
         const body = (req.body ?? {}) as Record<string, unknown>;
         const result: {
             landingPath?: string;
             utm?: NonNullable<ReturnType<typeof clampUtm>>;
             originalReferrer?: string | null;
+            clickId?: string | null;
         } = {};
 
         const landingPath = sanitizePath(body.landingPath);
@@ -231,6 +234,12 @@ export class BootstrapController {
         const utm = clampUtm(body.utm);
         if (utm) {
             result.utm = utm;
+        }
+        // Ad-network click-ID *name* forwarded by the middleware (never the
+        // value). Allow-list validated so this public endpoint cannot be used
+        // to persist arbitrary strings.
+        if (typeof body.clickId === 'string' && PAID_CLICK_IDS.has(body.clickId.toLowerCase())) {
+            result.clickId = body.clickId.toLowerCase();
         }
         return result;
     }

@@ -18,7 +18,7 @@
 
 import type { Request, Response } from 'express';
 import type { IServiceRegistry, IAccountDirectoryService, IWalletService, ISystemLogService } from '@/types';
-import type { TrafficService } from '../services/traffic.service.js';
+import type { TrafficService, IConversionFunnelResponse } from '../services/traffic.service.js';
 import { resolveAnalyticsRange } from '../services/traffic.service.js';
 import type { GscService } from '../services/gsc.service.js';
 import { parsePositiveInt, parseNonNegativeInt } from '../../../api/query-params.js';
@@ -441,13 +441,40 @@ export class TrafficController {
 
     /**
      * GET /api/admin/users/analytics/conversion-funnel?bots=exclude
-     * Binary conversion funnel (distinct tids → tids ever logged in).
+     * Binary conversion funnel (distinct tids → tids ever logged in), plus
+     * the composed acquisition stage (`newAccountVisitors`).
+     *
+     * The acquisition stage crosses two stores on purpose: ClickHouse knows
+     * which accounts appeared logged-in during the window, but only the
+     * identity module knows when an account was *created* (Better Auth
+     * `createdAt`) — the ground truth a first-login-event proxy cannot
+     * match (re-logins after TTL expiry of old rows would re-mint
+     * long-standing accounts as "new"). Resolved via the `'accounts'`
+     * registry service; when identity is unavailable the stage reads 0
+     * rather than failing the funnel.
      */
     async getConversionFunnel(req: Request, res: Response): Promise<void> {
         const range = resolveAnalyticsRange(req.query);
         const excludeBots = parseExcludeBots(req.query.bots);
         try {
-            res.json(await this.trafficService.getBinaryConversionFunnel(range, excludeBots));
+            const funnel = await this.trafficService.getBinaryConversionFunnel(range, excludeBots);
+            const response: IConversionFunnelResponse = { ...funnel, newAccountVisitors: 0 };
+            const accounts = this.serviceRegistry.get<IAccountDirectoryService>('accounts');
+            if (accounts && funnel.converted > 0) {
+                const activeIds = await this.trafficService.getActiveAccountIds(range, excludeBots);
+                const until = range.until ?? new Date();
+                // Per-id directory reads: the active set is the window's
+                // logged-in accounts (tens, not thousands, at admin-dashboard
+                // scale), and the directory exposes no bulk created-between
+                // query. Revisit if the active set outgrows this.
+                const summaries = await Promise.all(activeIds.map(id => accounts.getAccount(id)));
+                const newAccountIds = summaries
+                    .filter((account): account is NonNullable<typeof account> => account !== null)
+                    .filter(account => account.createdAt >= range.since && account.createdAt <= until)
+                    .map(account => account.id);
+                response.newAccountVisitors = await this.trafficService.countTidsForUsers(range, newAccountIds, excludeBots);
+            }
+            res.json(response);
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch conversion funnel');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch conversion funnel' });

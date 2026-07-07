@@ -7,7 +7,7 @@
  *
  * Sections:
  * 1. Overview headline — KPI strip with period deltas + unified trend chart
- * 2. Conversion funnel (visitors → logged in)
+ * 2. Conversion funnel (visitors → logged in → new accounts)
  * 3. Traffic sources breakdown (direct, organic, social, referral)
  * 4. Top landing pages
  * 5. Geographic distribution by country
@@ -93,7 +93,11 @@ function formatDuration(seconds: number): string {
 /**
  * Get CSS class for a traffic source category badge.
  *
- * @param category - Source category string
+ * Categories come from the backend's stored channel classification
+ * (direct/organic/paid/social/email/ai/referral); unknown values fall
+ * back to the referral style.
+ *
+ * @param category - Acquisition channel string
  * @returns CSS module class name
  */
 function getCategoryClass(category: string): string {
@@ -101,6 +105,9 @@ function getCategoryClass(category: string): string {
         case 'direct': return styles['category_badge--direct'];
         case 'organic': return styles['category_badge--organic'];
         case 'social': return styles['category_badge--social'];
+        case 'paid': return styles['category_badge--paid'];
+        case 'email': return styles['category_badge--email'];
+        case 'ai': return styles['category_badge--ai'];
         default: return styles['category_badge--referral'];
     }
 }
@@ -291,14 +298,15 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                     <div className={styles.split_grid}>
                         {/* Traffic Sources */}
                         <Card>
-                            <h3 className={styles.section_title}>
+                            <h3
+                                className={styles.section_title}
+                                title="First-touch attribution: each visitor credits the referrer of their first-ever visit, permanently — like GA4's 'First user source', not its session-scoped Traffic acquisition report"
+                            >
                                 <Globe size={16} className={styles.section_title__icon} />
                                 Traffic Sources
-                                {trafficTotal > 0 && (
-                                    <span className={`text-muted ${styles.section_title__subtitle}`}>
-                                        ({trafficTotal.toLocaleString()} visitors)
-                                    </span>
-                                )}
+                                <span className={`text-muted ${styles.section_title__subtitle}`}>
+                                    (first-touch{trafficTotal > 0 ? ` · ${trafficTotal.toLocaleString()} visitors` : ''})
+                                </span>
                             </h3>
                             <div>
                                 {trafficSources.length === 0 ? (
@@ -364,9 +372,16 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                                                                             <div className={styles.detail_loading}>Loading details...</div>
                                                                         ) : details ? (
                                                                             <div className={styles.detail_grid}>
-                                                                                {/* Engagement + Conversion cards */}
+                                                                                {/* Engagement + Conversion cards. Sessions are
+                                                                                    derived server-side from the page-event stream
+                                                                                    (30-minute inactivity rule), so these are real
+                                                                                    values; a zero means no interactive page views
+                                                                                    from this cohort in the window. */}
                                                                                 <div className={styles.detail_cards}>
-                                                                                    <div className={styles.detail_card}>
+                                                                                    <div
+                                                                                        className={styles.detail_card}
+                                                                                        title="Derived sessions per visitor (30-minute inactivity rule over page events)"
+                                                                                    >
                                                                                         <span className={styles.detail_card__value}>
                                                                                             {details.engagement.avgSessions}
                                                                                         </span>
@@ -378,17 +393,23 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                                                                                         </span>
                                                                                         <span className={styles.detail_card__label}>Avg Pages</span>
                                                                                     </div>
-                                                                                    <div className={styles.detail_card}>
+                                                                                    <div
+                                                                                        className={styles.detail_card}
+                                                                                        title="Average derived-session duration (last hit minus first hit; single-page sessions count as 0s)"
+                                                                                    >
                                                                                         <span className={styles.detail_card__value}>
                                                                                             {formatDuration(details.engagement.avgDuration)}
                                                                                         </span>
                                                                                         <span className={styles.detail_card__label}>Avg Duration</span>
                                                                                     </div>
-                                                                                    <div className={styles.detail_card}>
+                                                                                    <div
+                                                                                        className={styles.detail_card}
+                                                                                        title="Visitors from this source who were logged in at any point during the window (includes returning account holders)"
+                                                                                    >
                                                                                         <span className={styles.detail_card__value}>
                                                                                             {details.conversion.conversionRate}%
                                                                                         </span>
-                                                                                        <span className={styles.detail_card__label}>Wallet Conversion</span>
+                                                                                        <span className={styles.detail_card__label}>Logged-In Rate</span>
                                                                                     </div>
                                                                                 </div>
 
@@ -523,9 +544,15 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
 
                         {/* Top Landing Pages */}
                         <Card>
-                            <h3 className={styles.section_title}>
+                            <h3
+                                className={styles.section_title}
+                                title="First-touch attribution: the entry page of each visitor's first-ever visit — not the most-viewed pages"
+                            >
                                 <MousePointerClick size={16} className={styles.section_title__icon} />
                                 Top Landing Pages
+                                <span className={`text-muted ${styles.section_title__subtitle}`}>
+                                    (first-touch)
+                                </span>
                             </h3>
                             <div>
                                 {landingPages.length === 0 ? (
@@ -538,8 +565,6 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                                                     <th>Page</th>
                                                     <th className={styles.table__number}>Visitors</th>
                                                     <th className={styles.table__bar_cell}></th>
-                                                    <th className={styles.table__number}>Avg Sessions</th>
-                                                    <th className={styles.table__number}>Avg Views</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -553,8 +578,6 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                                                                 style={{ width: `${(p.visitors / maxPageVisitors) * 100}%` }}
                                                             />
                                                         </td>
-                                                        <td className={styles.table__number}>{p.avgSessions}</td>
-                                                        <td className={styles.table__number}>{p.avgPageViews}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -655,9 +678,18 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                                                 <th>Medium</th>
                                                 <th>Campaign</th>
                                                 <th className={styles.table__number}>Visitors</th>
-                                                <th className={styles.table__number}>Wallets</th>
-                                                <th className={styles.table__number}>Verified</th>
-                                                <th className={styles.table__number}>Conv %</th>
+                                                <th
+                                                    className={styles.table__number}
+                                                    title="Visitors logged in at any point during the window — includes returning account holders, not only new signups"
+                                                >
+                                                    Logged In
+                                                </th>
+                                                <th
+                                                    className={styles.table__number}
+                                                    title="Logged-in visitors / visitors"
+                                                >
+                                                    Login %
+                                                </th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -667,8 +699,7 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                                                     <td>{c.medium}</td>
                                                     <td>{c.campaign}</td>
                                                     <td className={styles.table__number}>{c.visitors.toLocaleString()}</td>
-                                                    <td className={styles.table__number}>{c.walletsConnected}</td>
-                                                    <td className={styles.table__number}>{c.walletsVerified}</td>
+                                                    <td className={styles.table__number}>{c.conversions}</td>
                                                     <td className={styles.table__number}>{c.conversionRate}%</td>
                                                 </tr>
                                             ))}
@@ -679,10 +710,16 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                         </Card>
                     )}
 
-                    {/* Retention Chart: New vs Returning */}
+                    {/* Retention Chart: New vs Returning. Identity is the
+                        tronrelic_tid cookie, so "new" is per-browser — cookie
+                        clearing and multi-device use overcount new visitors.
+                        The tooltip keeps that honesty ceiling visible. */}
                     {retention.length > 0 && (
                         <Card>
-                            <h3 className={styles.section_title}>
+                            <h3
+                                className={styles.section_title}
+                                title="Visitor identity is cookie-based: 'new' means a browser not seen before. Cleared cookies and multiple devices count the same person as new again."
+                            >
                                 <Users size={16} className={styles.section_title__icon} />
                                 New vs Returning Visitors
                             </h3>
