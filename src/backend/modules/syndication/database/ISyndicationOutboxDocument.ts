@@ -41,6 +41,20 @@ export interface ISyndicationOutboxDocument {
     /** What produced the request (e.g. `'curation'`); audit/grouping only. */
     originKind: string;
 
+    /**
+     * The owning content type id (e.g. the blog type). Frozen from the origin so
+     * a delivery-success subscriber can identify the provider without re-reading
+     * the source. With `ref`, the complete coordinate to load the full record.
+     */
+    typeId: string;
+
+    /**
+     * The opaque provider pointer the owning content type resolves back to its
+     * own record (e.g. `{ postId: '...' }`). Frozen at enqueue, never interpreted
+     * by syndication — forwarded verbatim to delivery-success subscribers.
+     */
+    ref: Record<string, unknown>;
+
     /** The content-router sink id this leg delivers to. */
     sinkId: string;
 

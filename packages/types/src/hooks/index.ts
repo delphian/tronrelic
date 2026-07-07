@@ -35,6 +35,8 @@ export type {
 
 export type { IPluginHooks } from './IPluginHooks.js';
 
-export type { ICoreHooks, ICoreSsrHooks, ICoreAiHooks, ICoreHttpHooks } from './ICoreHooks.js';
+export type { ICoreHooks, ICoreSsrHooks, ICoreAiHooks, ICoreHttpHooks, ICoreSchedulerHooks } from './ICoreHooks.js';
 
 export type { IWalletLinkedContext } from './IWalletLinkedContext.js';
+
+export type { ISyndicationDeliveredContext } from './ISyndicationDeliveredContext.js';

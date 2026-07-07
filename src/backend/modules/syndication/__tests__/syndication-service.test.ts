@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { IContentRouter, IContentSink, ISystemLogService } from '@/types';
+import type { IContentRouter, IContentSink, IHookRegistry, ISystemLogService } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { SyndicationService } from '../services/syndication-service.js';
 import { SYNDICATION_OUTBOX_COLLECTION } from '../database/ISyndicationOutboxDocument.js';
@@ -51,6 +51,17 @@ function makeSink(id: string, deliver: IContentSink['deliver']): IContentSink {
     return { id, kind: 'publish', accepts: ['body'], reach: { egress: 'external', audience: 'public' }, deliver };
 }
 
+/**
+ * A hook-registry stub exposing only `invoke` — the sole registry method the
+ * relay calls (to fire `scheduler.legDelivered` on success). Returned as a
+ * `vi.fn` so a test can assert the delivered-hook fired with its payload.
+ *
+ * @returns A hook-registry stub.
+ */
+function makeHookRegistry(): IHookRegistry {
+    return { invoke: vi.fn().mockResolvedValue(undefined) } as unknown as IHookRegistry;
+}
+
 describe('SyndicationService', () => {
     let db: ReturnType<typeof createMockDatabaseService>;
 
@@ -61,11 +72,13 @@ describe('SyndicationService', () => {
     describe('enqueue', () => {
         it('creates one pending leg per destination with a deterministic idempotency key', async () => {
             const { router } = makeRouter([]);
-            const service = new SyndicationService(makeLogger(), db, router);
+            const service = new SyndicationService(makeLogger(), db, router, makeHookRegistry());
 
             const result = await service.enqueue({
                 originId: 'item-1',
                 originKind: 'curation',
+                typeId: 'blog',
+                ref: { postId: 'p1' },
                 descriptor: { body: 'hello' },
                 legs: [{ sinkId: 'core:internal-publish' }, { sinkId: 'telegram-bot:channel-42', dest: { chatId: 42 } }]
             });
@@ -82,16 +95,16 @@ describe('SyndicationService', () => {
 
         it('is idempotent on a duplicate-key collision — no second row, existing id returned', async () => {
             const { router } = makeRouter([]);
-            const service = new SyndicationService(makeLogger(), db, router);
+            const service = new SyndicationService(makeLogger(), db, router, makeHookRegistry());
 
             const first = await service.enqueue({
-                originId: 'item-1', originKind: 'curation', descriptor: { body: 'x' }, legs: [{ sinkId: 'sink-a' }]
+                originId: 'item-1', originKind: 'curation', typeId: 'blog', ref: { postId: 'p1' }, descriptor: { body: 'x' }, legs: [{ sinkId: 'sink-a' }]
             });
 
             // Simulate the unique index rejecting the re-insert.
             db.injectError(SYNDICATION_OUTBOX_COLLECTION, 'insertOne', Object.assign(new Error('dup'), { code: 11000 }));
             const second = await service.enqueue({
-                originId: 'item-1', originKind: 'curation', descriptor: { body: 'x' }, legs: [{ sinkId: 'sink-a' }]
+                originId: 'item-1', originKind: 'curation', typeId: 'blog', ref: { postId: 'p1' }, descriptor: { body: 'x' }, legs: [{ sinkId: 'sink-a' }]
             });
 
             expect(db.getCollectionData(SYNDICATION_OUTBOX_COLLECTION)).toHaveLength(1);
@@ -103,8 +116,8 @@ describe('SyndicationService', () => {
         it('delivers a pending leg and marks it delivered, passing the idempotency key and attempt', async () => {
             const deliver = vi.fn().mockResolvedValue(undefined);
             const { router } = makeRouter([makeSink('sink-a', deliver)]);
-            const service = new SyndicationService(makeLogger(), db, router);
-            await service.enqueue({ originId: 'o1', originKind: 'curation', descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a', dest: { k: 1 } }] });
+            const service = new SyndicationService(makeLogger(), db, router, makeHookRegistry());
+            await service.enqueue({ originId: 'o1', originKind: 'curation', typeId: 'blog', ref: { postId: 'p1' }, descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a', dest: { k: 1 } }] });
 
             const attempted = await service.runRelayOnce();
 
@@ -115,23 +128,49 @@ describe('SyndicationService', () => {
             expect(row.attempts).toBe(1);
         });
 
-        it('records a sink refusal as refused (terminal), carrying the reason verbatim', async () => {
+        it('fires scheduler.legDelivered on success with the sink, descriptor, and provider coordinates', async () => {
+            const deliver = vi.fn().mockResolvedValue(undefined);
+            const { router } = makeRouter([makeSink('sink-a', deliver)]);
+            const hooks = makeHookRegistry();
+            const service = new SyndicationService(makeLogger(), db, router, hooks);
+            await service.enqueue({ originId: 'o1', originKind: 'curation', typeId: 'blog', ref: { postId: 'p1' }, descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a' }] });
+
+            await service.runRelayOnce();
+
+            expect(hooks.invoke).toHaveBeenCalledTimes(1);
+            const [descriptor, payload] = (hooks.invoke as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+            expect(descriptor.id).toBe('scheduler.legDelivered');
+            expect(payload).toMatchObject({
+                sinkId: 'sink-a',
+                typeId: 'blog',
+                ref: { postId: 'p1' },
+                descriptor: { body: 'hi' },
+                originId: 'o1',
+                originKind: 'curation',
+                idempotencyKey: 'o1::sink-a',
+                attempt: 1
+            });
+        });
+
+        it('records a sink refusal as refused (terminal), carrying the reason verbatim, and does not fire the delivered hook', async () => {
             const deliver = vi.fn().mockResolvedValue({ refused: true, reason: 'not for telegram' });
             const { router } = makeRouter([makeSink('sink-a', deliver)]);
-            const service = new SyndicationService(makeLogger(), db, router);
-            await service.enqueue({ originId: 'o1', originKind: 'curation', descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a' }] });
+            const hooks = makeHookRegistry();
+            const service = new SyndicationService(makeLogger(), db, router, hooks);
+            await service.enqueue({ originId: 'o1', originKind: 'curation', typeId: 'blog', ref: { postId: 'p1' }, descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a' }] });
 
             await service.runRelayOnce();
 
             const [row] = await service.getLegs('o1');
             expect(row.status).toBe('refused');
             expect(row.reason).toBe('not for telegram');
+            expect(hooks.invoke).not.toHaveBeenCalled();
         });
 
         it('treats an unregistered sink as a retryable failure, not a terminal one', async () => {
             const { router } = makeRouter([]); // no sink registered
-            const service = new SyndicationService(makeLogger(), db, router, { maxAttempts: 3 });
-            await service.enqueue({ originId: 'o1', originKind: 'curation', descriptor: { body: 'hi' }, legs: [{ sinkId: 'absent' }] });
+            const service = new SyndicationService(makeLogger(), db, router, makeHookRegistry(), { maxAttempts: 3 });
+            await service.enqueue({ originId: 'o1', originKind: 'curation', typeId: 'blog', ref: { postId: 'p1' }, descriptor: { body: 'hi' }, legs: [{ sinkId: 'absent' }] });
 
             await service.runRelayOnce();
 
@@ -145,8 +184,8 @@ describe('SyndicationService', () => {
         it('retries a failing leg with backoff and dead-letters it once the budget is exhausted', async () => {
             const deliver = vi.fn().mockRejectedValue(new Error('boom'));
             const { router } = makeRouter([makeSink('sink-a', deliver)]);
-            const service = new SyndicationService(makeLogger(), db, router, { maxAttempts: 3 });
-            await service.enqueue({ originId: 'o1', originKind: 'curation', descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a' }] });
+            const service = new SyndicationService(makeLogger(), db, router, makeHookRegistry(), { maxAttempts: 3 });
+            await service.enqueue({ originId: 'o1', originKind: 'curation', typeId: 'blog', ref: { postId: 'p1' }, descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a' }] });
 
             // Attempt 1 fails → failed with a future nextAttemptAt.
             await service.runRelayOnce();
@@ -178,8 +217,8 @@ describe('SyndicationService', () => {
         it('reclaims a leg stuck in delivering and delivers it', async () => {
             const deliver = vi.fn().mockResolvedValue(undefined);
             const { router } = makeRouter([makeSink('sink-a', deliver)]);
-            const service = new SyndicationService(makeLogger(), db, router, { claimStaleMs: 1000 });
-            await service.enqueue({ originId: 'o1', originKind: 'curation', descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a' }] });
+            const service = new SyndicationService(makeLogger(), db, router, makeHookRegistry(), { claimStaleMs: 1000 });
+            await service.enqueue({ originId: 'o1', originKind: 'curation', typeId: 'blog', ref: { postId: 'p1' }, descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a' }] });
 
             // Simulate a crash mid-delivery: status delivering, updatedAt long past.
             const rows = db.getCollectionData(SYNDICATION_OUTBOX_COLLECTION);
@@ -211,8 +250,8 @@ describe('SyndicationService', () => {
                 return undefined;
             });
             const { router } = makeRouter([makeSink('sink-a', deliver)]);
-            const service = new SyndicationService(makeLogger(), db, router);
-            await service.enqueue({ originId: 'o1', originKind: 'curation', descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a' }] });
+            const service = new SyndicationService(makeLogger(), db, router, makeHookRegistry());
+            await service.enqueue({ originId: 'o1', originKind: 'curation', typeId: 'blog', ref: { postId: 'p1' }, descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a' }] });
 
             await service.runRelayOnce();
 
@@ -229,8 +268,8 @@ describe('SyndicationService', () => {
         it('retry() requeues a dead-lettered leg and is a no-op for a live one', async () => {
             const deliver = vi.fn().mockRejectedValue(new Error('boom'));
             const { router } = makeRouter([makeSink('sink-a', deliver)]);
-            const service = new SyndicationService(makeLogger(), db, router, { maxAttempts: 1 });
-            const { legIds } = await service.enqueue({ originId: 'o1', originKind: 'curation', descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a' }] });
+            const service = new SyndicationService(makeLogger(), db, router, makeHookRegistry(), { maxAttempts: 1 });
+            const { legIds } = await service.enqueue({ originId: 'o1', originKind: 'curation', typeId: 'blog', ref: { postId: 'p1' }, descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a' }] });
             await service.runRelayOnce(); // maxAttempts 1 → dead immediately
 
             expect((await service.getLegs('o1'))[0].status).toBe('dead');
@@ -244,9 +283,9 @@ describe('SyndicationService', () => {
 
         it('getStats counts legs by status and getLegsForOrigins groups by origin', async () => {
             const { router } = makeRouter([]);
-            const service = new SyndicationService(makeLogger(), db, router);
-            await service.enqueue({ originId: 'o1', originKind: 'curation', descriptor: { body: 'a' }, legs: [{ sinkId: 's1' }, { sinkId: 's2' }] });
-            await service.enqueue({ originId: 'o2', originKind: 'curation', descriptor: { body: 'b' }, legs: [{ sinkId: 's1' }] });
+            const service = new SyndicationService(makeLogger(), db, router, makeHookRegistry());
+            await service.enqueue({ originId: 'o1', originKind: 'curation', typeId: 'blog', ref: { postId: 'p1' }, descriptor: { body: 'a' }, legs: [{ sinkId: 's1' }, { sinkId: 's2' }] });
+            await service.enqueue({ originId: 'o2', originKind: 'curation', typeId: 'blog', ref: { postId: 'p1' }, descriptor: { body: 'b' }, legs: [{ sinkId: 's1' }] });
 
             expect((await service.getStats()).pending).toBe(3);
             const grouped = await service.getLegsForOrigins(['o1', 'o2', 'absent']);

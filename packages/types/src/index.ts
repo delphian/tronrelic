@@ -199,7 +199,9 @@ export type {
     ICoreSsrHooks,
     ICoreAiHooks,
     ICoreHttpHooks,
-    IWalletLinkedContext
+    ICoreSchedulerHooks,
+    IWalletLinkedContext,
+    ISyndicationDeliveredContext
 } from './hooks/index.js';
 export { HookAbortError, isHookAbortError } from './hooks/index.js';
 export type { IHeadFragment, HeadFragmentTag, ISsrHeadContext } from './ssr/index.js';

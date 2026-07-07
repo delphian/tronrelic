@@ -734,6 +734,8 @@ export class CurationService implements ICurationService {
                             await syndication.enqueue({
                                 originId: id,
                                 originKind: 'curation',
+                                typeId: existing.typeId,
+                                ref: existing.ref,
                                 descriptor: decisionPreview,
                                 legs: selected.map((d) => ({ sinkId: d.sink.id, dest: d.dest }))
                             });
