@@ -13,7 +13,7 @@
  * is acceptable here.
  */
 
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { AiToolSensitivity, IPromptVariableInfo } from '@/types';
 import { Stack } from '../../../../../components/layout';
@@ -71,6 +71,11 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
     const [error, setError] = useState<string | null>(null);
     const [busyName, setBusyName] = useState<string | null>(null);
     const [revealed, setRevealed] = useState<Record<string, IRevealState>>({});
+    // Monotonic per-variable request token. Each expand bumps its slot before
+    // awaiting resolveVariable; the post-await commit drops any response whose
+    // captured token is no longer current, so an earlier fetch that resolves
+    // after a re-expand cannot overwrite the newer request's value.
+    const revealSeqRef = useRef<Record<string, number>>({});
     const [editingName, setEditingName] = useState<string | null>(null);
     const [formOpen, setFormOpen] = useState(false);
     const [form, setForm] = useState(EMPTY_FORM);
@@ -121,12 +126,22 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
             });
             return;
         }
+        const seq = (revealSeqRef.current[name] ?? 0) + 1;
+        revealSeqRef.current[name] = seq;
         setRevealed(prev => ({ ...prev, [name]: { loading: true } }));
         try {
             const resolved = await resolveVariable(name);
-            setRevealed(prev => ({ ...prev, [name]: { loading: false, content: resolved.content, sizeBytes: resolved.sizeBytes } }));
+            // Drop this response if a newer expand of the same row superseded it
+            // (`seq` no longer current) — otherwise an earlier fetch resolving
+            // after a re-expand would overwrite the newer request's value. The
+            // `?.loading` check additionally ignores a response for a row the
+            // admin collapsed mid-fetch, so a late promise cannot re-add and
+            // reopen a row they closed (possibly re-surfacing a secret).
+            if (revealSeqRef.current[name] !== seq) return;
+            setRevealed(prev => (prev[name]?.loading ? { ...prev, [name]: { loading: false, content: resolved.content, sizeBytes: resolved.sizeBytes } } : prev));
         } catch (err) {
-            setRevealed(prev => ({ ...prev, [name]: { loading: false, error: err instanceof Error ? err.message : String(err) } }));
+            if (revealSeqRef.current[name] !== seq) return;
+            setRevealed(prev => (prev[name]?.loading ? { ...prev, [name]: { loading: false, error: err instanceof Error ? err.message : String(err) } } : prev));
         }
     }, [revealed]);
 
