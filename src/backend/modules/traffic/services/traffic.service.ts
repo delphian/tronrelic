@@ -1140,19 +1140,30 @@ export class TrafficService {
                 multiIf(referer IS NULL OR referer = '', 'direct', domain(referer)) AS source,
                 uniqExact(candidate_uid) AS visitors,
                 count() AS count,
-                topK(1)(channel)[1] AS storedChannel
+                if(countIf(channel IS NOT NULL) = 0, NULL, arrayReduce('argMax',
+                    ['direct', 'organic', 'paid', 'social', 'email', 'ai', 'referral'],
+                    [countIf(channel = 'direct'), countIf(channel = 'organic'),
+                     countIf(channel = 'paid'), countIf(channel = 'social'),
+                     countIf(channel = 'email'), countIf(channel = 'ai'),
+                     countIf(channel = 'referral')])) AS storedChannel
             FROM ${TABLE_NAME}
             WHERE ${clause}${botFilter} AND event_type = 'bootstrap'
             GROUP BY source
             ORDER BY visitors DESC, count DESC
         `;
-        // topK(1) rather than anyHeavy: anyHeavy is a >50%-majority estimator
-        // whose result is undefined when no value clears the threshold, so a
-        // mixed bucket (google.com carrying organic and cpc rows) would badge
-        // arbitrarily. topK counts frequencies — with only seven possible
-        // channel values its counters never evict, making the pick exact.
-        // NULLs are skipped by aggregation; an all-NULL bucket yields an
-        // empty array whose [1] is NULL, handled by the fallback below.
+        // Exact most-frequent channel per source bucket. topK(1) was wrong
+        // here: it reserves only N*load_factor = 3 counter cells, so a bucket
+        // spanning more than three of the seven channels (google.com split
+        // across organic/paid/social/email) can evict and badge an approximate
+        // heavy-hitter. topK(1, 7) would reserve enough cells, but the
+        // load_factor argument postdates ClickHouse 24.3 (the pinned version)
+        // and would throw — silently blanking the panel via the catch below.
+        // Instead each of the seven channels is tallied with countIf and the
+        // max picked via argMax — exact on every version. The
+        // countIf(channel IS NOT NULL) guard returns NULL for an all-NULL
+        // (pre-migration-016) bucket so the domain-only fallback below still
+        // fires; without it argMax would return 'direct' at weight 0 and
+        // suppress the fallback.
         try {
             const rows = await this.clickhouse.query<{
                 source: string; visitors: string | number; count: string | number; storedChannel: string | null;

@@ -28,6 +28,12 @@ const MAX_SINCE_HOURS = 720; // 30 days
 const MAX_LIMIT = 200;
 const MAX_HISTORY_LIMIT = 200;
 const MAX_GSC_DAYS = 90;
+// Max concurrent directory reads when resolving the funnel's active
+// accounts. The active set is uncapped (a custom analytics range is not
+// window-bounded), so the per-id findOne fan-out is chunked to keep
+// concurrent Mongo reads bounded and avoid starving the pool on a large
+// window rather than firing the whole set at once.
+const ACCOUNT_LOOKUP_BATCH_SIZE = 25;
 
 /**
  * Allow-list for the `botClass` query param on per-bot-class reads. Mirrors
@@ -463,11 +469,18 @@ export class TrafficController {
             if (accounts && funnel.converted > 0) {
                 const activeIds = await this.trafficService.getActiveAccountIds(range, excludeBots);
                 const until = range.until ?? new Date();
-                // Per-id directory reads: the active set is the window's
-                // logged-in accounts (tens, not thousands, at admin-dashboard
-                // scale), and the directory exposes no bulk created-between
-                // query. Revisit if the active set outgrows this.
-                const summaries = await Promise.all(activeIds.map(id => accounts.getAccount(id)));
+                // Per-id directory reads, batched to bound concurrency. The
+                // active set is the window's logged-in accounts and is uncapped
+                // (a custom analytics range is not window-bounded), and the
+                // directory exposes no bulk created-between query. Rather than
+                // fire one findOne per account all at once — which starves the
+                // Mongo pool on a large window — the fan-out is chunked so at
+                // most ACCOUNT_LOOKUP_BATCH_SIZE reads are in flight at a time.
+                const summaries: Awaited<ReturnType<typeof accounts.getAccount>>[] = [];
+                for (let i = 0; i < activeIds.length; i += ACCOUNT_LOOKUP_BATCH_SIZE) {
+                    const batch = activeIds.slice(i, i + ACCOUNT_LOOKUP_BATCH_SIZE);
+                    summaries.push(...await Promise.all(batch.map(id => accounts.getAccount(id))));
+                }
                 const newAccountIds = summaries
                     .filter((account): account is NonNullable<typeof account> => account !== null)
                     .filter(account => account.createdAt >= range.since && account.createdAt <= until)
