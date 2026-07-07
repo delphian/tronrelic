@@ -312,6 +312,40 @@ export class AiToolsController {
     };
 
     /**
+     * GET /variables/:name/value — resolve a single variable to its *current*
+     * runtime value so an admin can inspect what a `{%name%}` token holds right
+     * now, without composing a query. A dynamic resolver runs live here, so the
+     * value reflects this instant; a static variable returns its stored constant.
+     *
+     * Kept off the bulk `listVariables` payload deliberately: a resolved value may
+     * be large or `secret`, so it is fetched only when an operator expands the row
+     * that needs it. Admin-gated and rate-limited by the router — the same posture
+     * that already lets an admin create, edit, and classify these variables.
+     *
+     * A resolver that currently throws is itself the "current state" the admin is
+     * inspecting, so its message is surfaced (502) rather than hidden; an unknown
+     * name is a 404.
+     */
+    revealVariable = async (req: Request, res: Response): Promise<void> => {
+        const name = req.params.name;
+        try {
+            const content = await this.promptVariables.resolve(name);
+            res.json({
+                variable: {
+                    name,
+                    pattern: `{%${name}%}`,
+                    content,
+                    sizeBytes: Buffer.byteLength(content, 'utf-8')
+                }
+            });
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Failed to resolve variable.';
+            const status = message.startsWith('Unknown prompt variable') ? 404 : 502;
+            res.status(status).json({ error: message });
+        }
+    };
+
+    /**
      * Map a prompt-variable failure to a response: a caller-actionable
      * {@link PromptVariableValidationError} carries its own status code (400/404/409);
      * anything else is a 500 with a generic message.

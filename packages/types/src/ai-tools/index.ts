@@ -33,6 +33,7 @@ export type {
     IPromptVariableDefinition,
     IStaticPromptVariable,
     IPromptVariableInfo,
+    IResolvedPromptVariable,
     IExpandedPromptVariable,
     PromptVariableKind
 } from './IPromptVariable.js';

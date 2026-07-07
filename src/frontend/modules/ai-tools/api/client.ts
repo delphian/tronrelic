@@ -22,6 +22,7 @@ import type {
     IAiQueryResult,
     IModelInfo,
     IPromptVariableInfo,
+    IResolvedPromptVariable,
     IStaticPromptVariableInput,
     IStaticPromptVariableUpdate,
     ISavedPrompt,
@@ -177,6 +178,23 @@ export async function listProviders(): Promise<IAiProviderInfo[]> {
 export async function listVariables(): Promise<IPromptVariableInfo[]> {
     const data = await parse<{ variables: IPromptVariableInfo[] }>(await fetch(`${BASE}/variables`), 'load variables');
     return data.variables;
+}
+
+/**
+ * Resolve one variable to its current runtime value for on-demand inspection —
+ * what a `{%name%}` token holds right now. Fetched per row when an admin expands
+ * it, kept off the bulk {@link listVariables} payload because the value may be
+ * large or `secret`.
+ *
+ * @param name - The variable name (without the `{%%}` delimiters).
+ * @returns The variable's live resolved value and its byte size.
+ */
+export async function resolveVariable(name: string): Promise<IResolvedPromptVariable> {
+    const data = await parse<{ variable: IResolvedPromptVariable }>(
+        await fetch(`${BASE}/variables/${encodeURIComponent(name)}/value`),
+        'reveal variable'
+    );
+    return data.variable;
 }
 
 /**

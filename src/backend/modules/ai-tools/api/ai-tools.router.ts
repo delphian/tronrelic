@@ -34,6 +34,7 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
     router.put('/screen-config', controller.setScreenConfig);
 
     router.get('/variables', controller.listVariables);
+    router.get('/variables/:name/value', controller.revealVariable);
     router.post('/variables', controller.createVariable);
     router.patch('/variables/:name', controller.updateVariable);
     router.delete('/variables/:name', controller.deleteVariable);
