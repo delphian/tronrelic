@@ -132,6 +132,30 @@ export interface IPromptVariableInfo {
 }
 
 /**
+ * One variable resolved to its *current* runtime value, returned when an admin
+ * expands a row in the variable panel to inspect what a `{%name%}` token holds
+ * right now. Unlike {@link IPromptVariableInfo} (metadata only, never the value),
+ * this carries the resolved `content` — the live text a `dynamic` resolver
+ * produces this instant, or a `static` variable's stored constant — so an
+ * operator can audit exactly what the model would receive without composing a
+ * query. Fetched on demand per row, never bulk-listed, because the value may be
+ * large or `secret`.
+ */
+export interface IResolvedPromptVariable {
+    /** Kebab-case identifier without the `{%%}` delimiters. */
+    name: string;
+
+    /** The `{%name%}` reference pattern, echoed for the UI header. */
+    pattern: string;
+
+    /** The variable's current resolved value at the moment of the request. */
+    content: string;
+
+    /** UTF-8 byte size of {@link content}. */
+    sizeBytes: number;
+}
+
+/**
  * One expanded variable's metadata, returned alongside the expanded text so the
  * query composer can show what each `{%name%}` resolved to and how large it is
  * before the prompt is sent.

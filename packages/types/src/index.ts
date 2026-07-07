@@ -111,6 +111,7 @@ export type {
     IPromptVariableDefinition,
     IStaticPromptVariable,
     IPromptVariableInfo,
+    IResolvedPromptVariable,
     IExpandedPromptVariable,
     PromptVariableKind,
     IPromptVariableRegistry,

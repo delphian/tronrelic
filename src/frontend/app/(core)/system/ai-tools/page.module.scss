@@ -423,6 +423,40 @@
     text-decoration: underline;
 }
 
+/* Variable row disclosure: the `{%name%}` pattern rendered as a bare, keyboard-
+ * focusable button with a leading chevron. Clicking it reveals the variable's
+ * current resolved value in an expanded row beneath. */
+.reveal_toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    color: var(--color-text);
+}
+
+.reveal_toggle:hover {
+    color: var(--color-primary);
+}
+
+/* The chevron hugs the pattern and stays muted so the identifier reads first. */
+.reveal_toggle svg {
+    flex: 0 0 auto;
+    color: var(--color-text-subtle);
+}
+
+/* Expanded-row body wrapping the resolved value: a caption line plus the value
+ * block, stacked with the same rhythm as the detail-panel sections. */
+.reveal_panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+}
+
 /* One-line description teaser: clamp to a single line with an ellipsis so a long
  * model-facing description never blows the row height — the full text lives in
  * the slide-over. */

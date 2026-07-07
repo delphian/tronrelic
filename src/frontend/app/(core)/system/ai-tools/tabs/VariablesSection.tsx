@@ -13,8 +13,8 @@
  * is acceptable here.
  */
 
-import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
+import { AlertCircle, ChevronDown, ChevronRight, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { AiToolSensitivity, IPromptVariableInfo } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Badge } from '../../../../../components/ui/Badge';
@@ -26,6 +26,7 @@ import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Ta
 import { useToast } from '../../../../../components/ui/ToastProvider';
 import {
     listVariables,
+    resolveVariable,
     createVariable,
     updateVariable,
     deleteVariable,
@@ -41,6 +42,23 @@ const SENSITIVITIES: AiToolSensitivity[] = ['public', 'internal', 'secret'];
 const EMPTY_FORM = { name: '', category: '', description: '', content: '', sensitivity: 'secret' as AiToolSensitivity };
 
 /**
+ * Per-row reveal state for an expanded variable. Holds the async lifecycle of the
+ * on-demand `resolveVariable` fetch so the expanded panel can show a spinner, the
+ * live value, or the resolver's own failure — a broken dynamic resolver is itself
+ * the "current state" the admin came to inspect, so its error is shown, not hidden.
+ */
+interface IRevealState {
+    /** True while the value is being fetched. */
+    loading: boolean;
+    /** The resolved live value, once fetched. */
+    content?: string;
+    /** UTF-8 byte size of the resolved value. */
+    sizeBytes?: number;
+    /** Failure message when the resolve (or its resolver) failed. */
+    error?: string;
+}
+
+/**
  * Variables management section.
  *
  * @param props.onChanged - Called after any mutation so the page refreshes the
@@ -52,6 +70,7 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [busyName, setBusyName] = useState<string | null>(null);
+    const [revealed, setRevealed] = useState<Record<string, IRevealState>>({});
     const [editingName, setEditingName] = useState<string | null>(null);
     const [formOpen, setFormOpen] = useState(false);
     const [form, setForm] = useState(EMPTY_FORM);
@@ -83,6 +102,33 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
             setBusyName(null);
         }
     }, [load, onChanged, push]);
+
+    /**
+     * Toggle the reveal panel for one variable. Collapsing simply drops the cached
+     * value; expanding fetches the *current* runtime value fresh every time (so a
+     * re-expand re-resolves — the point is "what does it hold right now"). The
+     * resolve is on-demand rather than part of the bulk list because a value may be
+     * large or `secret`, so it is fetched only for the row the admin opens.
+     *
+     * @param name - The variable whose live value to reveal or hide.
+     */
+    const toggleReveal = useCallback(async (name: string) => {
+        if (revealed[name]) {
+            setRevealed(prev => {
+                const next = { ...prev };
+                delete next[name];
+                return next;
+            });
+            return;
+        }
+        setRevealed(prev => ({ ...prev, [name]: { loading: true } }));
+        try {
+            const resolved = await resolveVariable(name);
+            setRevealed(prev => ({ ...prev, [name]: { loading: false, content: resolved.content, sizeBytes: resolved.sizeBytes } }));
+        } catch (err) {
+            setRevealed(prev => ({ ...prev, [name]: { loading: false, error: err instanceof Error ? err.message : String(err) } }));
+        }
+    }, [revealed]);
 
     const handleDelete = useCallback(async (name: string) => {
         setBusyName(name);
@@ -244,10 +290,23 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
                                     </Tr>
                                 </Thead>
                                 <Tbody>
-                                    {variables.map(variable => (
-                                        <Tr key={variable.name}>
+                                    {variables.map(variable => {
+                                        const reveal = revealed[variable.name];
+                                        const open = reveal !== undefined;
+                                        return (
+                                        <Fragment key={variable.name}>
+                                        <Tr>
                                             <Td>
-                                                <div className={styles.tool_name}>{variable.pattern}</div>
+                                                <button
+                                                    type="button"
+                                                    className={styles.reveal_toggle}
+                                                    onClick={() => void toggleReveal(variable.name)}
+                                                    aria-expanded={open}
+                                                    aria-label={`${open ? 'Hide' : 'Reveal'} current value of ${variable.name}`}
+                                                >
+                                                    {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                                    <span className={styles.tool_name}>{variable.pattern}</span>
+                                                </button>
                                                 <div className={styles.tool_desc}>{variable.description}</div>
                                             </Td>
                                             <Td muted>{variable.category}</Td>
@@ -291,7 +350,31 @@ export function VariablesSection({ onChanged }: { onChanged: () => void }) {
                                                 )}
                                             </Td>
                                         </Tr>
-                                    ))}
+                                        {open && (
+                                            <Tr isExpanded>
+                                                <Td colSpan={5}>
+                                                    {reveal.loading
+                                                        ? <span className={styles.placeholder}>Resolving current value…</span>
+                                                        : reveal.error
+                                                            ? (
+                                                                <div className="alert" role="alert">
+                                                                    <AlertCircle size={16} style={{ color: 'var(--color-danger)', verticalAlign: 'text-bottom' }} /> {reveal.error}
+                                                                </div>
+                                                            )
+                                                            : (
+                                                                <div className={styles.reveal_panel}>
+                                                                    <div className={styles.detail_section_title}>
+                                                                        Current value · {reveal.sizeBytes ?? 0} bytes · {variable.sensitivity}
+                                                                    </div>
+                                                                    <pre className={styles.args_block}>{reveal.content ? reveal.content : '(empty)'}</pre>
+                                                                </div>
+                                                            )}
+                                                </Td>
+                                            </Tr>
+                                        )}
+                                        </Fragment>
+                                        );
+                                    })}
                                 </Tbody>
                             </Table>
                         </div>
