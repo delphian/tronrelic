@@ -309,25 +309,34 @@ export class SyndicationService implements ISyndicationService {
                 // A settled "will not" — terminal, never retried.
                 await this.settleTerminal(leg._id, claimToken, 'refused', { reason: result.reason });
             } else {
-                await this.settleTerminal(leg._id, claimToken, 'delivered', {});
+                const settled = await this.settleTerminal(leg._id, claimToken, 'delivered', {});
                 // Announce the successful sinking so subscribers can audit, count,
                 // or fan out — carrying the sink, the delivered descriptor, and the
                 // provider coordinates (typeId + ref) needed to load the full
                 // record. Observer semantics isolate reactor failures: the invoke
                 // never throws back into the relay, so a misbehaving subscriber
                 // cannot re-open or duplicate a settled delivery.
-                await this.hookRegistry.invoke(HOOKS.scheduler.legDelivered, {
-                    sinkId: leg.sinkId,
-                    sinkLabel: sink.label,
-                    typeId: leg.typeId,
-                    ref: leg.ref,
-                    descriptor: leg.descriptor,
-                    legId: leg._id,
-                    originId: leg.originId,
-                    originKind: leg.originKind,
-                    idempotencyKey: leg.idempotencyKey,
-                    attempt
-                });
+                //
+                // Gate on the terminal CAS: fire only when this attempt actually
+                // settled the row (modified count 1). If its claim was reclaimed as
+                // stale and re-won by a later tick, the settle is a no-op and this
+                // losing attempt must stay silent — the winning tick fires the hook —
+                // so a slow-sink/multi-instance race cannot emit a duplicate or false
+                // delivered event.
+                if (settled === 1) {
+                    await this.hookRegistry.invoke(HOOKS.scheduler.legDelivered, {
+                        sinkId: leg.sinkId,
+                        sinkLabel: sink.label,
+                        typeId: leg.typeId,
+                        ref: leg.ref,
+                        descriptor: leg.descriptor,
+                        legId: leg._id,
+                        originId: leg.originId,
+                        originKind: leg.originKind,
+                        idempotencyKey: leg.idempotencyKey,
+                        attempt
+                    });
+                }
             }
         } catch (error) {
             await this.settleFailureOrDead(leg, claimToken, attempt, error instanceof Error ? error.message : String(error));
@@ -362,15 +371,18 @@ export class SyndicationService implements ISyndicationService {
      *        that scopes the write to the attempt that is still the live owner.
      * @param status - The terminal status to set.
      * @param patch - Extra fields (a `reason` for a refusal).
-     * @returns Resolves when the leg is updated.
+     * @returns The number of legs the CAS modified: 1 when this attempt was still
+     *        the live owner and settled the row, 0 when its claim had been
+     *        superseded (a stale-token no-op). The delivered branch gates its
+     *        `legDelivered` hook on this so a losing attempt stays silent.
      */
     private async settleTerminal(
         legId: string,
         claimToken: string,
         status: Extract<SyndicationLegStatus, 'delivered' | 'refused'>,
         patch: { reason?: string }
-    ): Promise<void> {
-        await this.database.updateMany<ISyndicationOutboxDocument>(
+    ): Promise<number> {
+        return this.database.updateMany<ISyndicationOutboxDocument>(
             SYNDICATION_OUTBOX_COLLECTION,
             { _id: legId, claimToken },
             { $set: { status, claimToken: undefined, updatedAt: new Date(), ...patch } }

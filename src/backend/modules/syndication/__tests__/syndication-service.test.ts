@@ -250,7 +250,8 @@ describe('SyndicationService', () => {
                 return undefined;
             });
             const { router } = makeRouter([makeSink('sink-a', deliver)]);
-            const service = new SyndicationService(makeLogger(), db, router, makeHookRegistry());
+            const hooks = makeHookRegistry();
+            const service = new SyndicationService(makeLogger(), db, router, hooks);
             await service.enqueue({ originId: 'o1', originKind: 'curation', typeId: 'blog', ref: { postId: 'p1' }, descriptor: { body: 'hi' }, legs: [{ sinkId: 'sink-a' }] });
 
             await service.runRelayOnce();
@@ -261,6 +262,9 @@ describe('SyndicationService', () => {
             expect(row.status).toBe('delivering');
             expect(row.attempts).toBe(5);
             expect(row.idempotencyKey).toBe('o1::sink-a');
+            // And because that settle was a CAS no-op, the losing attempt must not
+            // have fired the delivered hook — the winning tick will.
+            expect(hooks.invoke).not.toHaveBeenCalled();
         });
     });
 
