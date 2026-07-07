@@ -90,40 +90,50 @@
 // be interpolated (`#{…}`) inside `@container` or Sass silently drops the
 // condition.
 //
-// Three declarations do the work once the container is a column:
+// Once the container is a column the cross axis is horizontal, so an item's
+// width is governed by alignment, not flex. Two concerns are handled here:
 //
-// `flex: 0 0 auto` on the *direct* weighted children (the child combinator
-// keeps a zone's collapse from reaching into a nested group's children) undoes
-// the zero-basis grow that only makes sense on a row's main axis, letting each
-// stack at its natural height. `align-self: stretch` is the load-bearing half:
-// once the container is a column the cross axis is horizontal, so item width is
-// governed by alignment, not flex; without it a row preset's
-// `align-items: center` (or flex-start/flex-end) leaves the collapsed weighted
-// items at content width instead of spanning the column. It is a no-op under the
-// `stretch` default.
+// `flex: 0 0 auto` + `align-self: stretch` on the *direct* weighted children
+// (the child combinator keeps a zone's collapse from reaching into a nested
+// group's children) undoes the zero-basis grow that only makes sense on a
+// row's main axis and stretches each to the column so a row of weighted
+// widgets stacks full-width. Weighted items are always stretched, so they also
+// take the definite `width: 100%` the phantom-height fix below needs.
 //
-// `width: 100%` on *every* direct item is the fix for a subtle intrinsic-sizing
-// bug. `align-self: stretch` sizes an item to the column's width, but that width
-// is not *definite*. A widget whose root sets `container-type: inline-size` (to
-// run its own container queries — e.g. the dust-tracker chart) needs a definite
-// inline size, or the flex column's content-height pass lays that widget out at
-// a degenerate width, wraps its rows (chart header, legend), and inflates the
-// item ~100px past the height it actually renders — dead space below the widget.
-// An explicit `width: 100%` makes the inline size definite and the phantom
-// height vanishes. Harmless for plain widgets, and scoped to the collapsed
-// column so it never reaches the row layout, where full-width items would
-// collapse a side-by-side row into a stack.
+// The phantom-height fix — a `width: 100%` that makes a stretched item's width
+// *definite*. `align-self: stretch` sizes an item to the column's width, but
+// that width is not definite; a widget whose root sets `container-type:
+// inline-size` (to run its own container queries — e.g. the dust-tracker
+// chart) then lays out at a degenerate width during the column's content-height
+// pass, wraps its rows (chart header, legend), and inflates the item ~100px
+// past the height it actually renders — dead space below the widget. A definite
+// `width: 100%` makes the phantom height vanish.
+//
+// Crucially, that fix is gated on the operator's own alignment rather than
+// forced on everything — the old blanket rule bypassed the admin's per-zone
+// `align-items` choice and left every collapsed widget left-aligned. The
+// definite width is only needed when an item is actually stretched, so it rides
+// a *style* container query on `--zone-align-items` (the same custom property
+// `zoneStyle()` injects from the operator's config). Under `stretch` (the
+// default) items fill the column and get the definite width; under
+// `center`/`flex-start`/`flex-end` items keep content width and honor the
+// operator's alignment (e.g. a centered world-clocks widget). A style query
+// matches a custom-property value, not a breakpoint length, so it needs no
+// `#{…}` interpolation.
 @mixin collapse-to-column($breakpoint) {
     @container widget-layout (max-width: #{$breakpoint}) {
         flex-direction: column;
 
-        > .item {
-            width: 100%;
-        }
-
         > .item_weighted {
             flex: 0 0 auto;
             align-self: stretch;
+            width: 100%;
+        }
+
+        @container style(--zone-align-items: stretch) {
+            > .item:not(.item_weighted) {
+                width: 100%;
+            }
         }
     }
 }
