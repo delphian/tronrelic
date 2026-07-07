@@ -81,6 +81,20 @@ export interface ISyndicationRequest {
     /** What produced this request (e.g. `'curation'`); audit/grouping only. */
     originKind: string;
 
+    /**
+     * The owning content type id (e.g. the blog type). Frozen into every leg's
+     * row alongside `ref` so a delivery-success subscriber can identify the
+     * provider and load the full underlying record by hand.
+     */
+    typeId: string;
+
+    /**
+     * The opaque provider pointer the owning content type resolves back to its
+     * own record (e.g. `{ postId: '...' }`). Frozen into every leg's row; never
+     * interpreted by syndication.
+     */
+    ref: Record<string, unknown>;
+
     /** The canonical IR frozen into every leg's outbox row. */
     descriptor: IContentDescriptor;
 

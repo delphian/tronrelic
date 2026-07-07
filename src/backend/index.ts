@@ -441,7 +441,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // it instead of delivering inline best-effort; it resolves the service lazily
     // at decide-time, so init order relative to curation does not matter. Receives
     // the scheduler service so its relay job can register.
-    await syndicationModule.init({ database: coreDatabase, serviceRegistry, scheduler: schedulerService, app });
+    await syndicationModule.init({ database: coreDatabase, serviceRegistry, hookRegistry, scheduler: schedulerService, app });
     // The ai-tools module owns the built-in dynamic prompt variables (lifted out
     // of trp-ai-assistant), so it needs the core services those resolvers read.
     // All are singletons wired by initializeCoreServices() above; the resolvers

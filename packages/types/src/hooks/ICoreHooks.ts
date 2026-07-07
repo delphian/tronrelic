@@ -34,6 +34,7 @@ import type { IHeadFragment } from '../ssr/IHeadFragment.js';
 import type { IAiToolInvokeContext } from '../ai-tools/IAiToolHookContext.js';
 import type { IToolInvocationRecord } from '../ai-tools/IToolInvocationRecord.js';
 import type { IWalletLinkedContext } from './IWalletLinkedContext.js';
+import type { ISyndicationDeliveredContext } from './ISyndicationDeliveredContext.js';
 
 /**
  * SSR-phase declared seams. Mirrors the `HOOKS.ssr` object in core's
@@ -104,17 +105,34 @@ export interface ICoreHttpHooks {
 }
 
 /**
+ * Scheduler-phase declared seams. Mirrors the `HOOKS.scheduler` object in core's
+ * `registry.ts`. These seams fire from inside a scheduler job tick, so the admin
+ * timeline groups them under the `scheduler.tick` track.
+ */
+export interface ICoreSchedulerHooks {
+    /**
+     * Observer seam fired when the syndication relay successfully delivers a
+     * publish leg to its sink — one firing per leg, inside the
+     * `syndication:relay` tick. Carries the sink, the delivered descriptor, and
+     * the provider content coordinates (`typeId` + `ref`) so a subscriber can
+     * load the full underlying content by hand. A `refused` settle does not fire
+     * this; handlers cannot change the outcome.
+     */
+    readonly legDelivered: HookDescriptor<ISyndicationDeliveredContext, void, 'observer'>;
+}
+
+/**
  * Aggregate shape of every declared seam, grouped by pipeline phase.
  *
- * The remaining phases (`websocket`, `scheduler`, `observer`) are declared as
- * empty marker objects so adding the first seam in those phases is a one-line
- * interface extension instead of a structural surprise for existing consumers.
+ * The remaining phases (`websocket`, `observer`) are declared as empty marker
+ * objects so adding the first seam in those phases is a one-line interface
+ * extension instead of a structural surprise for existing consumers.
  */
 export interface ICoreHooks {
     readonly ssr: ICoreSsrHooks;
     readonly ai: ICoreAiHooks;
     readonly http: ICoreHttpHooks;
     readonly websocket: Readonly<Record<string, never>>;
-    readonly scheduler: Readonly<Record<string, never>>;
+    readonly scheduler: ICoreSchedulerHooks;
     readonly observer: Readonly<Record<string, never>>;
 }

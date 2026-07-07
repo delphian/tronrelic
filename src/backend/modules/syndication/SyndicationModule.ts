@@ -24,6 +24,7 @@ import type { Express } from 'express';
 import type {
     IContentRouter,
     IDatabaseService,
+    IHookRegistry,
     IModule,
     IModuleMetadata,
     ISchedulerService,
@@ -53,6 +54,8 @@ export interface ISyndicationModuleDependencies {
     database: IDatabaseService;
     /** Service registry to publish `'syndication'` on and to resolve the content router. */
     serviceRegistry: IServiceRegistry;
+    /** Core hook registry the relay invokes `scheduler.legDelivered` on after a successful delivery. */
+    hookRegistry: IHookRegistry;
     /**
      * Scheduler the relay job registers on. Nullable, matching the platform
      * convention: a deployment with the scheduler disabled (`ENABLE_SCHEDULER`
@@ -78,6 +81,7 @@ export class SyndicationModule implements IModule<ISyndicationModuleDependencies
 
     private database!: IDatabaseService;
     private serviceRegistry!: IServiceRegistry;
+    private hookRegistry!: IHookRegistry;
     private scheduler: ISchedulerService | null = null;
     private app!: Express;
 
@@ -97,6 +101,7 @@ export class SyndicationModule implements IModule<ISyndicationModuleDependencies
 
         this.database = dependencies.database;
         this.serviceRegistry = dependencies.serviceRegistry;
+        this.hookRegistry = dependencies.hookRegistry;
         this.scheduler = dependencies.scheduler;
         this.app = dependencies.app;
 
@@ -109,7 +114,7 @@ export class SyndicationModule implements IModule<ISyndicationModuleDependencies
             throw new Error("SyndicationModule requires the 'content-router' service to be published before init");
         }
 
-        this.service = new SyndicationService(this.logger, this.database, contentRouter);
+        this.service = new SyndicationService(this.logger, this.database, contentRouter, this.hookRegistry);
         await this.service.ensureIndexes();
         this.controller = new SyndicationController(this.service);
 

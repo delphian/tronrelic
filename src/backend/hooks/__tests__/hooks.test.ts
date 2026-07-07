@@ -530,4 +530,11 @@ describe('HOOKS registry — production seams', () => {
         expect(HOOKS.http.walletLinked.phase).toBe('http.api');
         expect(HOOKS.http.walletLinked.order).toBe(100);
     });
+
+    it('declares scheduler.legDelivered as an observer under scheduler.tick at order 100', () => {
+        expect(HOOKS.scheduler.legDelivered.id).toBe('scheduler.legDelivered');
+        expect(HOOKS.scheduler.legDelivered.kind).toBe('observer');
+        expect(HOOKS.scheduler.legDelivered.phase).toBe('scheduler.tick');
+        expect(HOOKS.scheduler.legDelivered.order).toBe(100);
+    });
 });

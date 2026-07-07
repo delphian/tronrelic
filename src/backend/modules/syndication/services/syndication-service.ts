@@ -34,6 +34,7 @@ import type {
     IContentRouter,
     IContentSink,
     IDatabaseService,
+    IHookRegistry,
     ISyndicationEnqueueResult,
     ISyndicationLegView,
     ISyndicationRequest,
@@ -46,6 +47,7 @@ import {
     SYNDICATION_OUTBOX_COLLECTION,
     type ISyndicationOutboxDocument
 } from '../database/ISyndicationOutboxDocument.js';
+import { HOOKS } from '../../../hooks/registry.js';
 import { backoffMs } from './syndication-backoff.js';
 
 /** Default retry budget — a leg dead-letters after this many attempts. */
@@ -88,12 +90,16 @@ export class SyndicationService implements ISyndicationService {
      * @param contentRouter - The live sink registry; the relay resolves a leg's
      *        sink by id at delivery time so a sink registered (or re-enabled)
      *        after enqueue still delivers.
+     * @param hookRegistry - The core hook registry the relay invokes
+     *        `scheduler.legDelivered` on after a successful delivery, so
+     *        subscribers can audit or react to the delivered content.
      * @param options - Optional tuning overrides; all default.
      */
     constructor(
         private readonly logger: ISystemLogService,
         private readonly database: IDatabaseService,
         private readonly contentRouter: IContentRouter,
+        private readonly hookRegistry: IHookRegistry,
         options?: ISyndicationServiceOptions
     ) {
         this.maxAttempts = options?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
@@ -151,6 +157,8 @@ export class SyndicationService implements ISyndicationService {
                 idempotencyKey: key,
                 originId: request.originId,
                 originKind: request.originKind,
+                typeId: request.typeId,
+                ref: request.ref,
                 sinkId: leg.sinkId,
                 descriptor: request.descriptor,
                 dest: leg.dest ?? {},
@@ -302,6 +310,24 @@ export class SyndicationService implements ISyndicationService {
                 await this.settleTerminal(leg._id, claimToken, 'refused', { reason: result.reason });
             } else {
                 await this.settleTerminal(leg._id, claimToken, 'delivered', {});
+                // Announce the successful sinking so subscribers can audit, count,
+                // or fan out — carrying the sink, the delivered descriptor, and the
+                // provider coordinates (typeId + ref) needed to load the full
+                // record. Observer semantics isolate reactor failures: the invoke
+                // never throws back into the relay, so a misbehaving subscriber
+                // cannot re-open or duplicate a settled delivery.
+                await this.hookRegistry.invoke(HOOKS.scheduler.legDelivered, {
+                    sinkId: leg.sinkId,
+                    sinkLabel: sink.label,
+                    typeId: leg.typeId,
+                    ref: leg.ref,
+                    descriptor: leg.descriptor,
+                    legId: leg._id,
+                    originId: leg.originId,
+                    originKind: leg.originKind,
+                    idempotencyKey: leg.idempotencyKey,
+                    attempt
+                });
             }
         } catch (error) {
             await this.settleFailureOrDead(leg, claimToken, attempt, error instanceof Error ? error.message : String(error));

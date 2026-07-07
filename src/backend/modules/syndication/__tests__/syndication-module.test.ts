@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Express } from 'express';
-import type { IContentRouter, ISchedulerService } from '@/types';
+import type { IContentRouter, IHookRegistry, ISchedulerService } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 import { CONTENT_ROUTER_SERVICE } from '../../../services/content-router.js';
@@ -27,8 +27,9 @@ function makeDeps(withScheduler = true) {
     const serviceRegistry = createMockServiceRegistry({ [CONTENT_ROUTER_SERVICE]: router });
     const scheduler = { register: vi.fn(), disable: vi.fn(), unregister: vi.fn() } as unknown as ISchedulerService;
     const app = { use: vi.fn() } as unknown as Express;
+    const hookRegistry = { invoke: vi.fn().mockResolvedValue(undefined) } as unknown as IHookRegistry;
     return {
-        deps: { database: createMockDatabaseService(), serviceRegistry, scheduler: withScheduler ? scheduler : null, app },
+        deps: { database: createMockDatabaseService(), serviceRegistry, hookRegistry, scheduler: withScheduler ? scheduler : null, app },
         scheduler,
         app,
         serviceRegistry

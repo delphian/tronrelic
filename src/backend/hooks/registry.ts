@@ -21,7 +21,7 @@
  * @module backend/hooks/registry
  */
 
-import type { IHeadFragment, ISsrHeadContext, IAiToolInvokeContext, IToolInvocationRecord, IWalletLinkedContext } from '@/types';
+import type { IHeadFragment, ISsrHeadContext, IAiToolInvokeContext, IToolInvocationRecord, IWalletLinkedContext, ISyndicationDeliveredContext } from '@/types';
 import { defineHook } from './define-hook.js';
 
 /**
@@ -140,7 +140,30 @@ export const HOOKS = {
         })
     },
     websocket: {} as Record<string, never>,
-    scheduler: {} as Record<string, never>,
+    scheduler: {
+        /**
+         * Observer fired when the syndication relay successfully delivers a
+         * publish leg to its sink — one firing per leg, inside the
+         * `syndication:relay` tick that won the claim. Carries the sink id and
+         * label, the delivered content descriptor (the decision-time snapshot
+         * frozen into the outbox row), and the provider content coordinates
+         * (`typeId` + `ref`) so a subscriber can load the full underlying record
+         * by hand. A `refused` settle is a settled "will not" and does NOT fire
+         * this — only a genuine delivery does. Observer semantics keep a
+         * reactor's failure isolated: it can never change or undo the delivery.
+         */
+        legDelivered: defineHook<ISyndicationDeliveredContext, void, 'observer'>({
+            id: 'scheduler.legDelivered',
+            kind: 'observer',
+            phase: 'scheduler.tick',
+            order: 100,
+            description:
+                'Fired when the syndication relay successfully delivers a publish leg to its sink. Carries ' +
+                'the sink, the delivered descriptor, and the provider content coordinates (typeId + ref) so ' +
+                'a subscriber can load the full content. For delivery audit, metrics, and downstream fan-out ' +
+                '— handlers cannot change the outcome.'
+        })
+    },
     observer: {} as Record<string, never>
 } as const;
 

@@ -12,7 +12,8 @@ Durable `publish`-family delivery for the content router. Curation (and any futu
 | Admin API base | `/api/admin/system/syndication` (admin-gated at mount) |
 | Owned collection | `module_syndication_outbox` |
 | Scheduler job | `syndication:relay` — `*/1 * * * *` (every minute) |
-| Types package | `@delphian/tronrelic-types` → `ISyndicationService`, `ISyndicationRequest`, `ISyndicationLeg`, `ISyndicationLegView`, `SyndicationLegStatus`, `SYNDICATION_SERVICE` |
+| Fires hook | `scheduler.legDelivered` (observer) once per leg on successful delivery |
+| Types package | `@delphian/tronrelic-types` → `ISyndicationService`, `ISyndicationRequest`, `ISyndicationLeg`, `ISyndicationLegView`, `SyndicationLegStatus`, `ISyndicationDeliveredContext`, `SYNDICATION_SERVICE` |
 | Bootstrap order | Inits after curation (resolved lazily, so order is non-binding); runs after curation and **before** scheduler (so the relay job registers before the scheduler ticks) |
 | Frontend | None yet — operator surface is REST-only |
 
@@ -43,7 +44,7 @@ The honest contract — and the rule every consumer **must** assume — is **at-
 | `retry(legId)` | Requeue a dead-lettered leg with a fresh budget. No-op (false) for any non-dead leg. |
 | `getStats()` | Per-status leg counts. |
 
-`ISyndicationRequest` = `{ originId, originKind, descriptor, legs: [{ sinkId, dest? }] }`. `originId` is the stable identity of the originating record (a curation item id) and **is** the idempotency base; `originKind` is audit/grouping metadata only and must never feed routing or authorization.
+`ISyndicationRequest` = `{ originId, originKind, typeId, ref, descriptor, legs: [{ sinkId, dest? }] }`. `originId` is the stable identity of the originating record (a curation item id) and **is** the idempotency base; `originKind` is audit/grouping metadata only and must never feed routing or authorization. `typeId` + `ref` are the provider content coordinates — the owning content type id and its opaque record pointer (e.g. `{ postId }`) — frozen so the delivery-success hook can hand subscribers what they need to load the full underlying record.
 
 ## Outbox Schema — `module_syndication_outbox`
 
@@ -52,6 +53,7 @@ The honest contract — and the rule every consumer **must** assume — is **at-
 | `_id` | Leg id (uuid). |
 | `idempotencyKey` | `${originId}::${sinkId}`. **Unique index** — the enqueue-dedupe and receiver-dedupe key. |
 | `originId` / `originKind` | Originating record id / producer label. |
+| `typeId` / `ref` | Provider content coordinates, **frozen at enqueue** — owning content type id and its opaque record pointer. Carried to the delivery-success hook; never interpreted here. |
 | `sinkId` | Content-router sink the leg delivers to. |
 | `descriptor` | The canonical IR, **frozen at enqueue** so delivery survives a later source edit. |
 | `dest` | Per-destination config handed verbatim to `deliver`. |
@@ -72,8 +74,8 @@ The honest contract — and the rule every consumer **must** assume — is **at-
 3. **Claim — CAS.** Each leg is claimed with an `updateMany` filtered on its current `(status, attempts)`, setting `delivering` and the next `attempts`. The filter is the concurrency guard: two overlapping ticks cannot both win — exactly one sees a modified count of 1. Atomicity comes from the CAS filter, not an `$inc`.
 4. **Deliver.** Resolve the sink from the **live** router by id and call `deliver(descriptor, dest, { idempotencyKey, attempt })`. A sink registered (or re-enabled) after enqueue still delivers.
 5. **Settle, one of:**
-   - resolves `void` → `delivered` (terminal).
-   - resolves `IContentSinkRefusal` → `refused` (terminal — a settled "will not", reason recorded, **never retried**).
+   - resolves `void` → `delivered` (terminal), then fires the `scheduler.legDelivered` hook (see below).
+   - resolves `IContentSinkRefusal` → `refused` (terminal — a settled "will not", reason recorded, **never retried**). Does **not** fire the delivered hook.
    - throws → `failed` with `nextAttemptAt = now + backoffMs(attempt)` while budget remains, else `dead` (dead-letter, terminal).
    - sink not currently registered → treated as a **retryable** failure (a disabled plugin may return), counting toward the budget.
 
@@ -84,6 +86,12 @@ Each leg's claim-and-deliver is isolated, so one fault never aborts the tick. Th
 ## Idempotency — the Receiver's Obligation
 
 The relay hands every `deliver` an `IContentDeliveryContext` (`{ idempotencyKey, attempt }`) as its optional third argument. A sink whose wire protocol supports a client-supplied idempotency key (or an upsert) **must** use it so a retried row cannot double-post. A sink whose protocol offers no such hook (Telegram `sendMessage`) ignores it, and the at-least-once guarantee stands — a retry may duplicate. The platform never inspects the key; it only supplies it. The third argument is optional, so every existing two-argument sink remains valid unchanged.
+
+## Delivery-Success Hook — `scheduler.legDelivered`
+
+On a successful `delivered` settle the relay fires the `scheduler.legDelivered` observer hook (phase `scheduler.tick`) once per leg, so modules and plugins can audit, count, or fan out from a confirmed sinking without the relay knowing about them. Observer semantics isolate a reactor's failure — the invoke never throws back into the relay, so a misbehaving subscriber cannot re-open or duplicate a settled delivery. A `refused` settle does **not** fire it.
+
+The payload (`ISyndicationDeliveredContext`) is self-sufficient for a subscriber that wants the full content by hand: `sinkId` (+ best-effort `sinkLabel`), the delivered `descriptor` (the decision-time snapshot), the provider coordinates `typeId` + `ref`, and `legId` / `originId` / `originKind` / `idempotencyKey` / `attempt`. A subscriber that knows the provider resolves `ref` (e.g. `{ postId }`) against that content type's own store to load the live record — core never interprets `ref`. See [system-hooks.md](../../../../docs/system/system-hooks.md) for the registry and observer contract.
 
 ## Curation Integration
 
