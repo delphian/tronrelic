@@ -82,6 +82,13 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
     const [trifecta, setTrifecta] = useState<ITrifectaStatus | null>(null);
     const [trifectaLoading, setTrifectaLoading] = useState(false);
     const prefilledRef = useRef(false);
+    // Whether the operator actually engaged the Tools picker this session. The
+    // prefill seeds the draft to the full enabled set for display, which is
+    // indistinguishable from a deliberate "select all"; this flag records real
+    // intent so an untouched save of an unset prompt reverts to the auto-updating
+    // state rather than freezing today's full set. Set only from the picker's
+    // onChange — never from the prefill effect.
+    const [toolsTouched, setToolsTouched] = useState(false);
 
     // Load the tool registry for the allowlist picker and seed the pre-fill.
     // Secondary data on a click-mounted surface, so a loading gap and a quiet
@@ -98,12 +105,16 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
                 if (prompt.toolAllowlist === undefined && !prefilledRef.current) {
                     setToolAllowlistDraft(list.filter(tool => tool.enabled).map(tool => tool.name));
                 }
+                // Only arm Save/preview once the registry actually loaded. On a failed
+                // load the draft is still the seed (`[]` when the prompt carried no
+                // allowlist), and enabling Save there would silently overwrite an
+                // "all enabled tools" prompt to "no tools" and break scheduled runs.
+                setToolsLoaded(true);
             } catch {
-                /* picker shows no options; the save still works */
+                /* picker shows no options; Save stays disabled until a load succeeds */
             } finally {
                 if (!cancelled) {
                     prefilledRef.current = true;
-                    setToolsLoaded(true);
                 }
             }
         })();
@@ -207,21 +218,39 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
     }, [prompt.id, nameDraft, bodyDraft, modelDraft, onSaved, onError]);
 
     /**
-     * Persist the tool allowlist. Sends the explicit selection so the three-state
-     * contract is unambiguous — a full selection is the full set, `[]` is "no
-     * tools". Other sections' fields are omitted so the server upsert preserves
-     * them.
+     * Record a real selection edit and update the draft. Wraps the picker's
+     * onChange so every checkbox toggle and bulk action marks the Tools section as
+     * engaged — distinguishing a deliberate selection from the display-only
+     * prefill, which the save path treats differently.
+     *
+     * @param names - The next selected tool names from the picker.
+     */
+    const handleToolSelectionChange = useCallback((names: string[]) => {
+        setToolsTouched(true);
+        setToolAllowlistDraft(names);
+    }, []);
+
+    /**
+     * Persist the tool allowlist while preserving the three-state contract. A
+     * prompt that already carries an explicit allowlist (including `[]`), or one
+     * whose Tools section the operator actually edited, saves the selection
+     * verbatim. An *unset* prompt left untouched saves `null` so the server
+     * `$unset`s the field back to "all enabled, auto-updating" — without this, the
+     * display-only prefill would freeze it to today's full set and silently
+     * exclude tools enabled later. Other sections' fields are omitted so the
+     * server upsert preserves them.
      */
     const handleSaveTools = useCallback(async () => {
         setToolsSaving(true);
         try {
-            onSaved(await saveSavedPrompt({ id: prompt.id, toolAllowlist: toolAllowlistDraft }));
+            const nextAllowlist = (toolsTouched || prompt.toolAllowlist !== undefined) ? toolAllowlistDraft : null;
+            onSaved(await saveSavedPrompt({ id: prompt.id, toolAllowlist: nextAllowlist }));
         } catch (err) {
             onError(err instanceof Error ? err.message : 'Failed to update tools');
         } finally {
             setToolsSaving(false);
         }
-    }, [prompt.id, toolAllowlistDraft, onSaved, onError]);
+    }, [prompt.id, prompt.toolAllowlist, toolsTouched, toolAllowlistDraft, onSaved, onError]);
 
     /**
      * Persist schedule edits. Name/body fields are omitted so a schedule save
@@ -309,7 +338,7 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
                 <ToolAllowlistPicker
                     tools={tools}
                     selected={toolAllowlistDraft}
-                    onChange={setToolAllowlistDraft}
+                    onChange={handleToolSelectionChange}
                     disabled={toolsSaving}
                 />
                 <RunTrifectaBadge status={trifecta} loading={trifectaLoading} />

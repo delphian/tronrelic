@@ -58,7 +58,7 @@ function LegLine({ label, names, tone }: { label: string; names: string[]; tone:
         <div className={styles.leg}>
             <span className={styles.leg_label}>{label}</span>
             <span className={styles.leg_names}>
-                {names.map(name => <Badge key={name} tone={tone}>{name}</Badge>)}
+                {names.map((name, index) => <Badge key={`${name}-${index}`} tone={tone}>{name}</Badge>)}
             </span>
         </div>
     );
