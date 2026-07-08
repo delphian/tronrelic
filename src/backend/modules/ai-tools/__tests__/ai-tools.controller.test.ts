@@ -13,7 +13,7 @@
  * branch) out of scope.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { AiToolsController } from '../api/ai-tools.controller.js';
 
 /**
@@ -135,6 +135,30 @@ describe('AiToolsController — toolAllowlist wiring', () => {
             const res = createMockResponse();
 
             await controller.query({ body: { prompt: 'hi', stream: false, toolAllowlist: ['ok', 7] } } as any, res);
+
+            expect(res._status).toBe(400);
+            expect(provider.query).not.toHaveBeenCalled();
+        });
+
+        it('rejects an allowlist with a blank / whitespace-only entry with 400', async () => {
+            const provider = { query: vi.fn(async (_opts: any) => ({ responseText: 'ok' })) };
+            const providers = { getActive: vi.fn(() => provider) };
+            const { controller } = makeController({ providers });
+            const res = createMockResponse();
+
+            await controller.query({ body: { prompt: 'hi', stream: false, toolAllowlist: ['ok', '  '] } } as any, res);
+
+            expect(res._status).toBe(400);
+            expect(provider.query).not.toHaveBeenCalled();
+        });
+
+        it('rejects an allowlist entry with leading/trailing whitespace with 400', async () => {
+            const provider = { query: vi.fn(async (_opts: any) => ({ responseText: 'ok' })) };
+            const providers = { getActive: vi.fn(() => provider) };
+            const { controller } = makeController({ providers });
+            const res = createMockResponse();
+
+            await controller.query({ body: { prompt: 'hi', stream: false, toolAllowlist: [' padded '] } } as any, res);
 
             expect(res._status).toBe(400);
             expect(provider.query).not.toHaveBeenCalled();

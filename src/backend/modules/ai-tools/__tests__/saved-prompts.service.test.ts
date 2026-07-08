@@ -478,6 +478,30 @@ describe('SavedPromptsService', () => {
             await expect(service.update(created.id, { toolAllowlist: ['ok', 5 as any] }))
                 .rejects.toBeInstanceOf(SavedPromptValidationError);
         });
+
+        it('rejects an allowlist with a blank / whitespace-only entry', async () => {
+            // A blank entry is never a valid tool name and would fail the whole
+            // allowlist at run time (auto-pausing a scheduled prompt), so it must
+            // fail closed at save. Guard both create and update.
+            await expect(service.create({ name: 'BlankCreate', prompt: 'p', toolAllowlist: ['ok', '  '] }))
+                .rejects.toBeInstanceOf(SavedPromptValidationError);
+
+            const created = await service.create({ name: 'BlankUpdate', prompt: 'p' });
+            await expect(service.update(created.id, { toolAllowlist: [''] }))
+                .rejects.toBeInstanceOf(SavedPromptValidationError);
+        });
+
+        it('rejects an allowlist entry with leading/trailing whitespace', async () => {
+            // A padded name (' get_transaction ') can never match the exact tool
+            // name at the registry, so it silently breaks the whole allowlist and
+            // auto-pauses the prompt — reject it at save on both create and update.
+            await expect(service.create({ name: 'PaddedCreate', prompt: 'p', toolAllowlist: [' ok '] }))
+                .rejects.toBeInstanceOf(SavedPromptValidationError);
+
+            const created = await service.create({ name: 'PaddedUpdate', prompt: 'p' });
+            await expect(service.update(created.id, { toolAllowlist: ['ok', 'trailing '] }))
+                .rejects.toBeInstanceOf(SavedPromptValidationError);
+        });
     });
 
     describe('list', () => {
