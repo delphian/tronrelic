@@ -242,17 +242,6 @@ export interface IBotClassDailyPoint {
     counts: Record<string, number>;
 }
 
-/** First-touch attribution for one analytics visitor (tid). */
-export interface ITrafficVisitorOrigin {
-    candidateUid: string;
-    firstSeen: string;
-    path: string;
-    referer: string | null;
-    utmSource: string | null;
-    utmMedium: string | null;
-    utmCampaign: string | null;
-}
-
 /**
  * Referrer-domain (or `'direct'`) bucket. `visitors` (distinct tids) is the
  * primary measure — the convention every analytics platform leads with —
@@ -368,18 +357,24 @@ export interface IEngagementMetrics {
  * "instrumentation not available", not as a measured zero.
  */
 export interface IOverviewKpis {
-    /** Distinct visitors (tids) in the window, per the request's bot filter. */
+    /**
+     * Distinct Unique Visitors — tids that emitted a `page` event (ran JS) in
+     * the window, per the request's bot filter. Cookieless bots never run JS,
+     * so this excludes them by construction, not by classification. See the
+     * canonical-visitor note by {@link SESSION_GAP_SECONDS}.
+     */
     visitors: number;
     /**
-     * Distinct tids on human-classified or unclassified rows. With bots
-     * excluded this equals `visitors`; with bots included it splits the
-     * people out of the request noise (cookieless bots mint a tid per hit).
+     * Visitors (page-event tids) whose page rows are human-classified or
+     * unclassified. With bots excluded this equals `visitors`; with bots
+     * included it separates real people from JS-running bots that slipped past
+     * the classifier. Non-JS bots are already absent from both sides.
      */
     humanVisitors: number;
     /**
-     * Distinct tids on bot-classified rows — effectively bot *requests*,
-     * since cookieless bots mint a fresh tid per hit. 0 when the request
-     * excludes bots.
+     * Visitors (page-event tids) whose page rows are bot-classified — a
+     * JavaScript-running bot (headless scraper) the classifier caught. 0 when
+     * the request excludes bots. Cookieless non-JS bots never reach this count.
      */
     botVisitors: number;
     /** Interactive `page` events in the window. */
@@ -451,6 +446,26 @@ export interface INewVisitorOrigin {
 export interface INewVisitorsPage {
     visitors: INewVisitorOrigin[];
     total: number;
+}
+
+/**
+ * One high-volume source network surfaced by {@link TrafficService.getHighVolumeSubnets}.
+ * `subnetHash` is the same salted /24 (IPv4) or /48 (IPv6) hash the New Visitors
+ * "Source" column shows, so the dashboard can flag matching rows. An annotation,
+ * never an exclusion — see {@link HIGH_VOLUME_SUBNET_MIN_REQUESTS}. `visitors`
+ * counts every tid from the network; `pageVisitors` the subset that ran JS
+ * (emitted a page event) — a network whose `visitors` far exceeds its
+ * `pageVisitors` is the cookieless-bot signature.
+ */
+export interface IHighVolumeSubnet {
+    /** Salted subnet hash (16 hex chars) — matches {@link INewVisitorOrigin.subnetHash}. */
+    subnetHash: string;
+    /** Total events from the network in the window. */
+    requests: number;
+    /** Distinct tids (candidate_uids) from the network in the window. */
+    visitors: number;
+    /** Distinct tids that emitted a `page` event (ran JS) — the human-leaning subset. */
+    pageVisitors: number;
 }
 
 /**
@@ -562,6 +577,31 @@ const HUMAN_ROWS_FILTER = "(bot_class = 'human' OR bot_class IS NULL)";
  * table's full history.
  */
 const SESSION_GAP_SECONDS = 30 * 60;
+
+/**
+ * Canonical Unique Visitor rule: a visitor is a tid that emitted at least one
+ * `page` event in the window — a client that ran JavaScript. Cookieless bots
+ * mint a fresh tid on every request but never run JS, so they never emit a
+ * `page` event; requiring one removes them from every visitor metric without
+ * depending on User-Agent classification, and it is simultaneously the "no-JS"
+ * bot signal for visitor counts. Bootstrap-only tids (no page event) still
+ * appear in the raw `bot_class` breakdowns on the Crawlers tab — they are
+ * simply not *visitors*. Reads that scan `page` rows express the rule inline as
+ * `uniqExactIf(candidate_uid, event_type = 'page')`; reads restricted to
+ * non-`page` rows (the `bootstrap`-only source/landing/campaign reads) AND in
+ * {@link TrafficService.pageVisitorMembership}.
+ */
+
+/**
+ * Minimum in-window request count from a single /24 (IPv4) or /48 (IPv6)
+ * network for {@link TrafficService.getHighVolumeSubnets} to flag it as a
+ * possible automated source. This is an *annotation* threshold only — flagged
+ * networks are surfaced to the operator, never auto-excluded from human visitor
+ * counts, because legitimate shared egress points (offices, VPNs, universities,
+ * mobile carriers) also concentrate many real visitors behind one network.
+ * Deliberately high so the flag reads as "worth a look", not "definitely a bot".
+ */
+const HIGH_VOLUME_SUBNET_MIN_REQUESTS = 500;
 
 /**
  * ClickHouse-backed traffic events store.
@@ -964,6 +1004,31 @@ export class TrafficService {
     }
 
     /**
+     * Membership WHERE fragment enforcing the canonical Unique Visitor rule:
+     * `candidate_uid` must have emitted a `page` event in the window (ran JS).
+     * AND this into a read whose scan is restricted to non-`page` rows — the
+     * `bootstrap`-only source/landing/campaign/source-details reads — so their
+     * visitor counts still drop cookieless bots. Reads that already scan `page`
+     * rows express the same rule inline as
+     * `uniqExactIf(candidate_uid, event_type = 'page')` and need no membership.
+     *
+     * The subquery reuses the caller's already-bound window params
+     * (`{since}`/`{until}`) and the same bot filter, so with bots excluded a
+     * visitor must have a *human* page event. See the canonical-visitor note by
+     * {@link SESSION_GAP_SECONDS} and {@link HUMAN_ROWS_FILTER}.
+     *
+     * @param windowClause - The timestamp window clause from {@link rangeParams}.
+     * @param botFilter - The pre-built bot-filter fragment (may be empty).
+     * @returns A `candidate_uid IN (…)` fragment (no leading AND).
+     */
+    private pageVisitorMembership(windowClause: string, botFilter: string): string {
+        return `candidate_uid IN (
+            SELECT candidate_uid FROM ${TABLE_NAME}
+            WHERE ${windowClause}${botFilter} AND event_type = 'page'
+        )`;
+    }
+
+    /**
      * Build the WHERE fragment, session-start HAVING, and params that scope
      * derived sessions to a window with start-attribution semantics.
      *
@@ -1054,7 +1119,7 @@ export class TrafficService {
         const { clause, params } = this.rangeParams(range);
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
-            SELECT toDate(timestamp) AS day, uniqExact(candidate_uid) AS visitors
+            SELECT toDate(timestamp) AS day, uniqExactIf(candidate_uid, event_type = 'page') AS visitors
             FROM ${TABLE_NAME}
             WHERE ${clause}${botFilter}
             GROUP BY day
@@ -1065,54 +1130,6 @@ export class TrafficService {
             return rows.map(r => ({ day: String(r.day), visitors: Number(r.visitors) }));
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read daily visitors');
-            return [];
-        }
-    }
-
-    /**
-     * First-touch attribution per tid: the path/referer/UTM of each visitor's
-     * earliest event in the window, newest-first by first-seen.
-     *
-     * @param range - Inclusive date window.
-     * @param limit - Page size.
-     * @param skip - Pagination offset.
-     * @returns First-touch origin rows.
-     */
-    async getVisitorOrigins(range: IAnalyticsDateRange, limit = 50, skip = 0): Promise<ITrafficVisitorOrigin[]> {
-        if (!this.clickhouse) return [];
-        const { clause, params } = this.rangeParams(range);
-        const sql = `
-            SELECT
-                candidate_uid AS candidateUid,
-                min(timestamp) AS firstSeen,
-                argMin(path, timestamp) AS path,
-                argMin(referer, timestamp) AS referer,
-                argMin(utm_source, timestamp) AS utmSource,
-                argMin(utm_medium, timestamp) AS utmMedium,
-                argMin(utm_campaign, timestamp) AS utmCampaign
-            FROM ${TABLE_NAME}
-            WHERE ${clause}
-            GROUP BY candidate_uid
-            ORDER BY firstSeen DESC
-            LIMIT {limit:UInt32} OFFSET {skip:UInt32}
-        `;
-        try {
-            const rows = await this.clickhouse.query<{
-                candidateUid: string; firstSeen: string; path: string;
-                referer: string | null; utmSource: string | null;
-                utmMedium: string | null; utmCampaign: string | null;
-            }>(sql, { ...params, limit, skip });
-            return rows.map(r => ({
-                candidateUid: r.candidateUid,
-                firstSeen: clickHouseDateToIso(String(r.firstSeen)),
-                path: r.path,
-                referer: r.referer,
-                utmSource: r.utmSource,
-                utmMedium: r.utmMedium,
-                utmCampaign: r.utmCampaign
-            }));
-        } catch (error) {
-            this.logger.warn({ error }, 'Failed to read visitor origins');
             return [];
         }
     }
@@ -1147,7 +1164,7 @@ export class TrafficService {
                      countIf(channel = 'email'), countIf(channel = 'ai'),
                      countIf(channel = 'referral')])) AS storedChannel
             FROM ${TABLE_NAME}
-            WHERE ${clause}${botFilter} AND event_type = 'bootstrap'
+            WHERE ${clause}${botFilter} AND event_type = 'bootstrap' AND ${this.pageVisitorMembership(clause, botFilter)}
             GROUP BY source
             ORDER BY visitors DESC, count DESC
         `;
@@ -1205,7 +1222,7 @@ export class TrafficService {
         const sql = `
             SELECT path AS path, uniqExact(candidate_uid) AS visitors, count() AS count
             FROM ${TABLE_NAME}
-            WHERE ${clause}${botFilter} AND event_type = 'bootstrap' AND path != ''
+            WHERE ${clause}${botFilter} AND event_type = 'bootstrap' AND path != '' AND ${this.pageVisitorMembership(clause, botFilter)}
             GROUP BY path
             ORDER BY visitors DESC, count DESC
             LIMIT {limit:UInt32}
@@ -1233,7 +1250,7 @@ export class TrafficService {
         const { clause, params } = this.rangeParams(range);
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
-            SELECT country, uniqExact(candidate_uid) AS visitors, count() AS count
+            SELECT country, uniqExactIf(candidate_uid, event_type = 'page') AS visitors, count() AS count
             FROM ${TABLE_NAME}
             WHERE ${clause}${botFilter} AND country IS NOT NULL
             GROUP BY country
@@ -1262,7 +1279,7 @@ export class TrafficService {
         const { clause, params } = this.rangeParams(range);
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
-            SELECT device, uniqExact(candidate_uid) AS visitors, count() AS count
+            SELECT device, uniqExactIf(candidate_uid, event_type = 'page') AS visitors, count() AS count
             FROM ${TABLE_NAME}
             WHERE ${clause}${botFilter}
             GROUP BY device
@@ -1278,10 +1295,11 @@ export class TrafficService {
     }
 
     /**
-     * New-vs-returning visitors per day. A tid is "new" on the day its global
-     * first-seen (across the full table) falls, "returning" otherwise. The
-     * full-table first-seen is computed in a subquery and joined to in-window
-     * day activity.
+     * New-vs-returning visitors per day. Only page-event days count (a visitor
+     * is a tid that ran JS), so bootstrap-only bot noise never appears here. A
+     * tid is "new" on the day its global first *page* event (across the full
+     * table) falls, "returning" otherwise. That full-table first-page day is
+     * computed in a subquery and joined to in-window day activity.
      *
      * @param range - Inclusive date window.
      * @param excludeBots - Restrict to human-classified rows (NULL kept).
@@ -1299,7 +1317,7 @@ export class TrafficService {
             FROM (
                 SELECT candidate_uid, toDate(timestamp) AS day
                 FROM ${TABLE_NAME}
-                WHERE ${clause}${botFilter}
+                WHERE ${clause}${botFilter} AND event_type = 'page'
                 GROUP BY candidate_uid, day
             ) AS d
             INNER JOIN (
@@ -1308,8 +1326,8 @@ export class TrafficService {
                 WHERE candidate_uid IN (
                     SELECT DISTINCT candidate_uid
                     FROM ${TABLE_NAME}
-                    WHERE ${clause}${botFilter}
-                )${botFilter}
+                    WHERE ${clause}${botFilter} AND event_type = 'page'
+                )${botFilter} AND event_type = 'page'
                 GROUP BY candidate_uid
             ) AS f USING (candidate_uid)
             GROUP BY day
@@ -1345,8 +1363,8 @@ export class TrafficService {
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
             SELECT
-                uniqExact(candidate_uid) AS distinctVisitors,
-                uniqExactIf(candidate_uid, user_id IS NOT NULL) AS converted
+                uniqExactIf(candidate_uid, event_type = 'page') AS distinctVisitors,
+                uniqExactIf(candidate_uid, event_type = 'page' AND user_id IS NOT NULL) AS converted
             FROM ${TABLE_NAME}
             WHERE ${clause}${botFilter}
         `;
@@ -1385,7 +1403,7 @@ export class TrafficService {
         const sql = `
             SELECT DISTINCT user_id
             FROM ${TABLE_NAME}
-            WHERE ${clause}${botFilter} AND user_id IS NOT NULL
+            WHERE ${clause}${botFilter} AND user_id IS NOT NULL AND ${this.pageVisitorMembership(clause, botFilter)}
         `;
         try {
             const rows = await this.clickhouse.query<{ user_id: string }>(sql, params);
@@ -1412,7 +1430,7 @@ export class TrafficService {
         const { clause, params } = this.rangeParams(range);
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
-            SELECT uniqExact(candidate_uid) AS tids
+            SELECT uniqExactIf(candidate_uid, event_type = 'page') AS tids
             FROM ${TABLE_NAME}
             WHERE ${clause}${botFilter} AND user_id IN ({userIds:Array(String)})
         `;
@@ -1454,7 +1472,7 @@ export class TrafficService {
                     WHERE ${clause}${botFilter} AND user_id IS NOT NULL
                 )) AS conversions
             FROM ${TABLE_NAME}
-            WHERE ${clause}${botFilter} AND event_type = 'bootstrap' AND utm_campaign IS NOT NULL
+            WHERE ${clause}${botFilter} AND event_type = 'bootstrap' AND utm_campaign IS NOT NULL AND ${this.pageVisitorMembership(clause, botFilter)}
             GROUP BY campaign, source, medium
             ORDER BY visitors DESC
             LIMIT {limit:UInt32}
@@ -1578,9 +1596,9 @@ export class TrafficService {
             // "visitors" number cannot be mistaken for a people count.
             const sql = `
                 SELECT
-                    uniqExact(candidate_uid) AS visitors,
-                    uniqExactIf(candidate_uid, ${HUMAN_ROWS_FILTER}) AS humanVisitors,
-                    uniqExactIf(candidate_uid, bot_class IS NOT NULL AND bot_class != 'human') AS botVisitors,
+                    uniqExactIf(candidate_uid, event_type = 'page') AS visitors,
+                    uniqExactIf(candidate_uid, event_type = 'page' AND ${HUMAN_ROWS_FILTER}) AS humanVisitors,
+                    uniqExactIf(candidate_uid, event_type = 'page' AND bot_class IS NOT NULL AND bot_class != 'human') AS botVisitors,
                     countIf(event_type = 'page') AS pageviews
                 FROM ${TABLE_NAME}
                 WHERE ${clause}${botFilter}
@@ -1624,9 +1642,9 @@ export class TrafficService {
             SELECT
                 ${bucketExpr} AS bucket,
                 uniqExact(candidate_uid) AS visitors,
-                countIf(event_type = 'page') AS pageviews
+                count() AS pageviews
             FROM ${TABLE_NAME}
-            WHERE ${clause}${botFilter}
+            WHERE ${clause}${botFilter} AND event_type = 'page'
             GROUP BY bucket
             ORDER BY bucket ASC
         `;
@@ -1682,7 +1700,7 @@ export class TrafficService {
         if (!this.clickhouse) return 0;
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sql = `
-            SELECT uniqExact(candidate_uid) AS visitors
+            SELECT uniqExactIf(candidate_uid, event_type = 'page') AS visitors
             FROM ${TABLE_NAME}
             WHERE timestamp > now() - INTERVAL 5 MINUTE${botFilter}
         `;
@@ -1696,6 +1714,52 @@ export class TrafficService {
     }
 
     /**
+     * Source networks (salted /24 or /48 hashes) whose in-window request volume
+     * exceeds {@link HIGH_VOLUME_SUBNET_MIN_REQUESTS}. Surfaced to the operator
+     * as an annotation on the Visitors tab — a "this network looks automated"
+     * hint the admin can act on — never used to drop visitors, because busy
+     * shared egress points (offices, VPNs, carriers) legitimately concentrate
+     * many real people. Not bot-filtered: the flag is about raw source volume,
+     * independent of any `bot_class` guess.
+     *
+     * @param range - Inclusive date window.
+     * @param limit - Max networks to return, highest volume first.
+     * @returns Flagged networks with request / visitor / page-visitor counts.
+     */
+    async getHighVolumeSubnets(range: IAnalyticsDateRange, limit = 20): Promise<IHighVolumeSubnet[]> {
+        if (!this.clickhouse) return [];
+        const { clause, params } = this.rangeParams(range);
+        const sql = `
+            SELECT
+                subnet_hash AS subnetHash,
+                count() AS requests,
+                uniqExact(candidate_uid) AS visitors,
+                uniqExactIf(candidate_uid, event_type = 'page') AS pageVisitors
+            FROM ${TABLE_NAME}
+            WHERE ${clause} AND subnet_hash IS NOT NULL
+            GROUP BY subnet_hash
+            HAVING requests >= ${HIGH_VOLUME_SUBNET_MIN_REQUESTS}
+            ORDER BY requests DESC
+            LIMIT {limit:UInt32}
+        `;
+        try {
+            const rows = await this.clickhouse.query<{
+                subnetHash: string; requests: string | number;
+                visitors: string | number; pageVisitors: string | number;
+            }>(sql, { ...params, limit });
+            return rows.map(r => ({
+                subnetHash: r.subnetHash,
+                requests: Number(r.requests),
+                visitors: Number(r.visitors),
+                pageVisitors: Number(r.pageVisitors)
+            }));
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read high-volume subnets');
+            return [];
+        }
+    }
+
+    /**
      * Visitors whose global first-seen (across the full table) falls inside the
      * window — the "new arrivals" of the period — newest first, with first-touch
      * attribution and lifetime activity counts.
@@ -1705,6 +1769,14 @@ export class TrafficService {
      * `HAVING` keeps only those whose global min timestamp lands in the window.
      * The inner `IN` filters which tids participate, not which of their rows
      * count, so `min`/`max`/`argMin` still see each tid's full history.
+     *
+     * A tid only qualifies once it has emitted a `page` event in the window
+     * (the canonical Unique Visitor rule — see the note by
+     * {@link SESSION_GAP_SECONDS}); the `HAVING countIf(event_type = 'page') > 0`
+     * enforces it on both the page and count queries, so cookieless bots that
+     * never run JS are absent regardless of the bot filter. First-touch
+     * attribution (referrer/landing/country) still reads each tid's earliest
+     * event, which is its `bootstrap` row.
      *
      * With `excludeBots`, both the participating-tid set and the grouped rows
      * are restricted to human-classified rows, so crawlers spoofing referrers
@@ -1755,7 +1827,7 @@ export class TrafficService {
                 FROM ${TABLE_NAME}
                 WHERE ${activeInWindow}${botFilter}
                 GROUP BY candidate_uid
-                HAVING ${firstSeenClause}
+                HAVING ${firstSeenClause} AND countIf(event_type = 'page') > 0
                 ORDER BY firstSeen DESC
                 LIMIT {limit:UInt32} OFFSET {skip:UInt32}
             ) AS base
@@ -1772,7 +1844,7 @@ export class TrafficService {
                 FROM ${TABLE_NAME}
                 WHERE ${activeInWindow}${botFilter}
                 GROUP BY candidate_uid
-                HAVING ${firstSeenClause}
+                HAVING ${firstSeenClause} AND countIf(event_type = 'page') > 0
             )
         `;
         try {
@@ -1855,7 +1927,7 @@ export class TrafficService {
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
         const sourceExpr = `multiIf(referer IS NULL OR referer = '', 'direct', domain(referer))`;
         // First-touch rows for this source — the attribution ground truth.
-        const firstTouchWhere = `${clause}${botFilter} AND event_type = 'bootstrap' AND ${sourceExpr} = {source:String}`;
+        const firstTouchWhere = `${clause}${botFilter} AND event_type = 'bootstrap' AND ${sourceExpr} = {source:String} AND ${this.pageVisitorMembership(clause, botFilter)}`;
         // The cohort's full in-window clickstream (all event types) — the
         // engagement/conversion ground truth.
         const where = `${clause}${botFilter} AND candidate_uid IN (

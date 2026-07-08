@@ -181,7 +181,7 @@ export default function SystemTrafficPage() {
                                 className={!includeBots ? styles.bot_btn__active : styles.bot_btn}
                                 onClick={() => setIncludeBots(false)}
                                 aria-pressed={!includeBots}
-                                title="Excludes rows the classifier identified as bots; unclassified rows are kept, so undetected bots may remain"
+                                title="Counts only visitors that loaded a page (ran JavaScript) and were not classified as bots. Cookieless bots that never run JS are already excluded from every visitor number; unclassified rows are kept, so JS-running bots that spoof a browser may remain."
                             >
                                 Exclude known bots
                             </button>
@@ -190,7 +190,7 @@ export default function SystemTrafficPage() {
                                 className={includeBots ? styles.bot_btn__active : styles.bot_btn}
                                 onClick={() => setIncludeBots(true)}
                                 aria-pressed={includeBots}
-                                title="Counts every event; cookieless bots mint a fresh visitor id per request, so bot 'visitors' approximate bot requests"
+                                title="Also counts JavaScript-running bots the classifier caught (headless scrapers). Cookieless bots that never run JS stay excluded regardless — a visitor must have loaded a page."
                             >
                                 Include bots
                             </button>

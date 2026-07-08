@@ -19,9 +19,10 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Button } from '../../../../../components/ui/Button';
-import { adminGetAnonymousFirstTouches } from '../../../api';
+import { adminGetAnonymousFirstTouches, adminGetFlaggedSubnets } from '../../../api';
 import type { AnalyticsPeriod, ICustomDateRange, IVisitorOrigin, VisitorPeriod } from '../../../api';
 import { getDeviceIcon } from '../../../lib/deviceIcon';
 import styles from './VisitorAnalytics.module.scss';
@@ -66,6 +67,11 @@ export function VisitorAnalytics({ period, customRange, includeBots }: IVisitorA
     const [firstTouchesTotal, setFirstTouchesTotal] = useState(0);
     const [firstTouchesLoading, setFirstTouchesLoading] = useState(true);
     const [firstTouchesPage, setFirstTouchesPage] = useState(1);
+    // Salted subnet hashes flagged as high-volume for the window — an
+    // annotation the Source column badges. Window-scoped, not page-scoped, and
+    // independent of the bot filter (the flag is about raw source volume, not a
+    // bot_class guess), so it refetches only when the window changes.
+    const [flaggedSubnets, setFlaggedSubnets] = useState<Set<string>>(new Set());
 
     // Window or filter changes invalidate the page cursor.
     useEffect(() => {
@@ -109,6 +115,27 @@ export function VisitorAnalytics({ period, customRange, includeBots }: IVisitorA
         return () => { active = false; };
     }, [period, customRange, includeBots, firstTouchesPage]);
 
+    useEffect(() => {
+        let active = true;
+        /**
+         * Load the window's flagged source networks so the Source column can
+         * badge rows from a high-volume network. Failures degrade to no
+         * badges — this is a hint, never load-bearing.
+         */
+        const fetchFlagged = async (): Promise<void> => {
+            try {
+                const rows = await adminGetFlaggedSubnets(
+                    period === 'custom' ? { customRange } : { period }
+                );
+                if (active) setFlaggedSubnets(new Set(rows.map(r => r.subnetHash)));
+            } catch {
+                if (active) setFlaggedSubnets(new Set());
+            }
+        };
+        fetchFlagged();
+        return () => { active = false; };
+    }, [period, customRange]);
+
     const totalFirstTouchesPages = firstTouchesTotal > 0 ? Math.ceil(firstTouchesTotal / PAGE_LIMIT) : 1;
 
     return (
@@ -118,12 +145,26 @@ export function VisitorAnalytics({ period, customRange, includeBots }: IVisitorA
                     <h2 className={styles.section_title}>New Visitors</h2>
                 </div>
                 <p className="text-muted">
-                    The first cookieless hit per visitor, server-recorded.{' '}
+                    New visitors first seen in this window. A visitor is a tid that loaded a page
+                    (ran JavaScript), so cookieless bots that never run JS are excluded here and from
+                    every visitor count; attribution (referrer, landing page) is read from the visitor's
+                    first server-recorded hit.{' '}
                     {includeBots
-                        ? 'Bots, crawlers, and unfurlers are included; referrers are client-supplied and often spoofed by crawlers.'
-                        : 'Showing human-classified visitors only — switch the page filter to "Include bots" to see crawler and unfurler first touches.'}
+                        ? 'JavaScript-running bots the classifier caught are included; referrers are client-supplied and often spoofed.'
+                        : 'Showing human-classified visitors only — switch the page filter to "Include bots" to also see JavaScript-running crawlers.'}
                     {' '}Per-page activity for cookied and registered visitors is on the Pages tab.
                 </p>
+
+                {flaggedSubnets.size > 0 && (
+                    <p className={styles.flagged_note}>
+                        <AlertTriangle size={14} aria-hidden="true" />
+                        {flaggedSubnets.size.toLocaleString()} high-volume source{' '}
+                        {flaggedSubnets.size === 1 ? 'network' : 'networks'} flagged as possible
+                        automated traffic — rows from a flagged network are marked in the Source
+                        column. These are not excluded from any count: a busy office, VPN, or mobile
+                        carrier can also concentrate many real visitors behind one network.
+                    </p>
+                )}
 
                 {firstTouchesLoading ? (
                     <div className={styles.loading}>Loading first touches...</div>
@@ -167,11 +208,22 @@ export function VisitorAnalytics({ period, customRange, includeBots }: IVisitorA
                                                 <td
                                                     className={styles.source_cell}
                                                     title={touch.subnetHash
-                                                        ? `Salted subnet hash ${touch.subnetHash} — rows sharing this value came from the same /24 (IPv4) or /48 (IPv6) network`
+                                                        ? `${touch.subnetHash && flaggedSubnets.has(touch.subnetHash) ? 'High-volume network (possible automated traffic) — ' : ''}Salted subnet hash ${touch.subnetHash} — rows sharing this value came from the same /24 (IPv4) or /48 (IPv6) network`
                                                         : undefined}
                                                 >
                                                     {touch.subnetHash
-                                                        ? <span className={styles.source_hash}>{touch.subnetHash.slice(0, 6)}</span>
+                                                        ? (
+                                                            <span className={styles.source_hash}>
+                                                                {flaggedSubnets.has(touch.subnetHash) && (
+                                                                    <AlertTriangle
+                                                                        size={12}
+                                                                        className={styles.flag_icon}
+                                                                        aria-label="High-volume network"
+                                                                    />
+                                                                )}
+                                                                {touch.subnetHash.slice(0, 6)}
+                                                            </span>
+                                                        )
                                                         : <span className={styles.muted}>—</span>}
                                                 </td>
                                                 <td className={styles.utm_cell} title={utmDisplay ?? undefined}>

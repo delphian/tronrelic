@@ -568,6 +568,100 @@ describe('TrafficService', () => {
         });
     });
 
+    describe('canonical visitor rule (page-event membership)', () => {
+        const range = { since: new Date('2026-06-01T00:00:00.000Z') };
+
+        /**
+         * Capture every generated SQL string so assertions can confirm the
+         * page-event rule is enforced. Mirrors the excludeBots helper.
+         *
+         * @returns The captured SQL list.
+         */
+        function captureSql(): { sqls: string[] } {
+            const captured = { sqls: [] as string[] };
+            const ch = createMockClickHouse();
+            ch.query = async <T>(sql: string): Promise<T[]> => {
+                captured.sqls.push(sql);
+                return [] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+            return captured;
+        }
+
+        it('getDailyVisitors counts only tids that ran JS (a page event)', async () => {
+            const captured = captureSql();
+            await TrafficService.getInstance().getDailyVisitors(range);
+            expect(captured.sqls.join('\n')).toContain("uniqExactIf(candidate_uid, event_type = 'page') AS visitors");
+        });
+
+        it('getLiveVisitorCount counts only page-event tids', async () => {
+            const captured = captureSql();
+            await TrafficService.getInstance().getLiveVisitorCount();
+            expect(captured.sqls.join('\n')).toContain("uniqExactIf(candidate_uid, event_type = 'page') AS visitors");
+        });
+
+        it('getTrafficSources gates its bootstrap-only visitor count on a page-event membership subquery', async () => {
+            // The source scan reads bootstrap rows, which carry no page event,
+            // so the rule can only be enforced via the IN-subquery.
+            const captured = captureSql();
+            await TrafficService.getInstance().getTrafficSources(range);
+            const sql = captured.sqls.join('\n');
+            expect(sql).toContain('candidate_uid IN (');
+            expect(sql).toContain("event_type = 'page'");
+        });
+
+        it('getNewVisitors requires a page event on both the page and count queries', async () => {
+            const captured = captureSql();
+            await TrafficService.getInstance().getNewVisitors(range, 50, 0);
+            expect(captured.sqls.length).toBeGreaterThanOrEqual(2);
+            for (const sql of captured.sqls) {
+                expect(sql).toContain("countIf(event_type = 'page') > 0");
+            }
+        });
+
+        it('getOverviewTrend measures page-event visitors and restricts the series to page rows', async () => {
+            const ch = createMockClickHouse();
+            const sqls: string[] = [];
+            ch.query = async <T>(sql: string): Promise<T[]> => {
+                sqls.push(sql);
+                return [] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            await TrafficService.getInstance().getOverviewTrend(range);
+            const joined = sqls.join('\n');
+            expect(joined).toContain("uniqExactIf(candidate_uid, event_type = 'page') AS visitors");
+            const seriesSql = sqls.find(s => s.includes('GROUP BY bucket'));
+            expect(seriesSql).toBeDefined();
+            expect(seriesSql!).toContain("AND event_type = 'page'");
+        });
+    });
+
+    describe('getHighVolumeSubnets()', () => {
+        it('returns [] when ClickHouse is unavailable', async () => {
+            TrafficService.setDependencies(undefined, createMockLogger());
+            expect(await TrafficService.getInstance().getHighVolumeSubnets({ since: new Date('2026-06-01T00:00:00.000Z') })).toEqual([]);
+        });
+
+        it('applies the volume threshold and maps request/visitor/page-visitor counts', async () => {
+            const ch = createMockClickHouse();
+            const captured: { sql?: string } = {};
+            ch.query = async <T>(sql: string): Promise<T[]> => {
+                captured.sql = sql;
+                return [{ subnetHash: 'abc123def4567890', requests: '812', visitors: '640', pageVisitors: '4' }] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            const out = await TrafficService.getInstance().getHighVolumeSubnets({ since: new Date('2026-06-01T00:00:00.000Z') });
+
+            // Threshold guard present, and the read is not bot-filtered.
+            expect(captured.sql).toContain('HAVING requests >=');
+            expect(captured.sql).toContain('subnet_hash IS NOT NULL');
+            expect(captured.sql).not.toContain("bot_class = 'human'");
+            expect(out).toEqual([{ subnetHash: 'abc123def4567890', requests: 812, visitors: 640, pageVisitors: 4 }]);
+        });
+    });
+
     describe('visitors-primary aggregates', () => {
         it('getTrafficSources counts distinct visitors alongside raw events', async () => {
             // Raw event counts overstate audiences (one visitor → many rows);

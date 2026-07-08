@@ -120,6 +120,41 @@ export async function adminGetAnonymousFirstTouches(options?: { period?: Visitor
     return response.data as { visitors: IVisitorOrigin[]; total: number };
 }
 
+/**
+ * One high-volume source network flagged as possible automated traffic. The
+ * `subnetHash` matches {@link IVisitorOrigin.subnetHash}, so the New Visitors
+ * table can badge rows from a flagged network. An annotation only — these are
+ * never excluded from visitor counts, because busy shared egress points
+ * (offices, VPNs, carriers) also concentrate real visitors.
+ */
+export interface IFlaggedSubnet {
+    /** Salted /24 (IPv4) or /48 (IPv6) hash — matches IVisitorOrigin.subnetHash. */
+    subnetHash: string;
+    /** Total events from the network in the window. */
+    requests: number;
+    /** Distinct tids from the network. */
+    visitors: number;
+    /** Distinct tids that ran JS (emitted a page event) — the human-leaning subset. */
+    pageVisitors: number;
+}
+
+/**
+ * Get source networks flagged as high-volume for the window (admin endpoint).
+ *
+ * Annotation surface for the Visitors tab — networks whose request volume
+ * suggests automation. Never filters visitor counts; the operator judges.
+ * @param options - Period / custom range and row limit
+ * @returns Flagged networks, highest request volume first
+ */
+export async function adminGetFlaggedSubnets(options?: { period?: AnalyticsPeriod; customRange?: ICustomDateRange; limit?: number }
+): Promise<IFlaggedSubnet[]> {
+    const { customRange, period, ...rest } = options ?? {};
+    const response = await apiClient.get('/admin/users/analytics/flagged-subnets', {
+        params: { ...rest, ...(customRange ? customRange : { period }) }
+    });
+    return (response.data as { data?: IFlaggedSubnet[] }).data ?? [];
+}
+
 /** Which subject a page-activity clickstream read keys on. */
 export type PageActivitySubject = 'tid' | 'user';
 
@@ -606,17 +641,21 @@ export async function adminGetRetention(period: AnalyticsPeriod = '30d',
 
 /** Headline KPIs for one window of the overview trend. */
 export interface IOverviewKpis {
-    /** Distinct visitors (tids). */
+    /**
+     * Unique Visitors — tids that loaded a page (ran JavaScript) in the window.
+     * Cookieless bots never run JS, so they are excluded by construction, not by
+     * classification.
+     */
     visitors: number;
     /**
-     * Distinct tids on human-classified or unclassified rows — equals
-     * `visitors` when bots are excluded; the people half of the split when
-     * bots are included.
+     * Visitors whose page rows are human-classified or unclassified — equals
+     * `visitors` when bots are excluded; the people half of the split when bots
+     * are included. Non-JS bots are already absent from both sides.
      */
     humanVisitors: number;
     /**
-     * Distinct tids on bot-classified rows — effectively bot requests, since
-     * cookieless bots mint a fresh tid per hit. 0 when bots are excluded.
+     * Visitors whose page rows are bot-classified — a JavaScript-running bot
+     * (headless scraper) the classifier caught. 0 when bots are excluded.
      */
     botVisitors: number;
     /** Interactive `page` events. */
