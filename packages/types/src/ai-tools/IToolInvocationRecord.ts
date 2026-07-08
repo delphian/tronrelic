@@ -47,6 +47,17 @@ export interface IToolInvocationRecord {
     /** Per-query id, when supplied — links the call to its run. */
     queryId?: string;
 
+    /**
+     * Per-call correlation id, when the provider supplied one — the id of the
+     * individual tool-call the model emitted. Provider-neutral: it is the same
+     * opaque id core models as `IAiTranscriptSegment` `tool_use.id` /
+     * `tool_result.toolUseId`, so a persisted transcript segment and this audit
+     * row can be joined exactly (matched on `toolUseId`) rather than by ordinal
+     * or tool name. Absent on legacy records and on any path a provider did not
+     * thread the id through.
+     */
+    toolUseId?: string;
+
     /** Arguments passed to the handler, redacted according to `capability.sensitivity`. */
     input: Record<string, unknown>;
 

@@ -643,6 +643,36 @@
     color: var(--color-text);
 }
 
+/* Pushes the "audit detail" affordance to the right of the tool-call header so a
+   governed call links to its exact invocation record. */
+.tool_call_action {
+    margin-left: auto;
+}
+
+/* Collapsible "tools used in this conversation" feed — the Activity-tab surface
+   scoped to the open chat, tucked into a disclosure so it never competes with the
+   transcript until an operator opens it. */
+.tools_used {
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    padding: var(--padding-sm);
+}
+
+.tools_used_summary {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    cursor: pointer;
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.tools_used_body {
+    margin-top: var(--gap-sm);
+}
+
 .tool_payload {
     margin: var(--gap-xs) 0 0 0;
     padding: var(--padding-xs);

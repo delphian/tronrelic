@@ -32,6 +32,14 @@ export interface IToolInvocationQuery {
     aiProviderId?: string;
     triggerPath?: ToolTriggerPath;
     status?: ToolInvocationStatus;
+    /**
+     * Scope to one conversation's tool calls. The Query tab's per-conversation
+     * "tools used" feed passes this so it can show the same audit rows the
+     * Activity tab does, filtered to the thread being viewed.
+     */
+    conversationId?: string;
+    /** Scope to one run's tool calls (a single query turn within a conversation). */
+    queryId?: string;
     limit?: number;
     offset?: number;
 }
@@ -82,6 +90,10 @@ export class ToolAuditStore {
         await this.database.createIndex(COLLECTION, { createdAt: -1 });
         await this.database.createIndex(COLLECTION, { toolName: 1, createdAt: -1 });
         await this.database.createIndex(COLLECTION, { status: 1, createdAt: -1 });
+        // Backs the Query tab's per-conversation "tools used" feed — a
+        // conversationId-scoped read newest-first. Sparse because only calls
+        // driven from a multi-turn chat carry a conversationId.
+        await this.database.createIndex(COLLECTION, { conversationId: 1, createdAt: -1 }, { sparse: true });
     }
 
     /**
@@ -126,6 +138,12 @@ export class ToolAuditStore {
         }
         if (query.status) {
             filter.status = query.status;
+        }
+        if (query.conversationId) {
+            filter.conversationId = query.conversationId;
+        }
+        if (query.queryId) {
+            filter.queryId = query.queryId;
         }
 
         const limit = Math.min(Math.max(1, query.limit ?? 50), 200);

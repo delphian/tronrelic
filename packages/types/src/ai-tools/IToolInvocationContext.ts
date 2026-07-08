@@ -86,6 +86,19 @@ export interface IToolInvocationContext {
     /** Per-query id, when one was supplied — links the call to its run. */
     queryId?: string;
 
+    /**
+     * Per-call correlation id, when the provider supplies one — the id of the
+     * individual tool-call the model emitted this turn. Provider-neutral: every
+     * tool-calling LLM issues an opaque id pairing a tool call with its result
+     * (the same value core already models as `IAiTranscriptSegment` `tool_use.id`
+     * / `tool_result.toolUseId`), so this is not vendor-specific. Unlike
+     * `conversationId` (run group) and `queryId` (run), this identifies a single
+     * call, so a provider must pass a per-call context rather than reuse one
+     * across the turn's calls. The governor copies it onto the audit record,
+     * which is what lets a transcript's tool segment link to its exact audit row.
+     */
+    toolUseId?: string;
+
     /** Plugin or module id that initiated a programmatic query, when applicable. */
     callerPluginId?: string;
 
