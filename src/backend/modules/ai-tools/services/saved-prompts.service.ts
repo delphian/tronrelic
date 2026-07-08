@@ -70,6 +70,14 @@ export interface ISavedPromptCreate {
     /** Optional model id the prompt runs on, within `providerId`'s catalog. */
     model?: string;
     /**
+     * Per-prompt tool allowlist, the least-privilege selector a scheduled run
+     * passes to the provider. Three-state: `undefined` (omitted) runs against
+     * every enabled tool; `[]` runs with no tools; a non-empty list restricts to
+     * exactly those names. Stored verbatim when an array is supplied; a `null`
+     * or non-array value is treated as "all tools" and leaves the field absent.
+     */
+    toolAllowlist?: string[] | null;
+    /**
      * Better Auth user id of the owner — the admin saving the prompt. Captured
      * once at create and never rewritten by an update: it is whose behalf a
      * scheduled run executes on, re-resolved to a live principal at fire time.
@@ -92,6 +100,15 @@ export interface ISavedPromptUpdate {
     scheduleEnabled?: boolean;
     providerId?: string | null;
     model?: string | null;
+    /**
+     * Per-prompt tool allowlist. Tri-state on update, mirroring the model pin:
+     * `undefined` omits the field (existing value preserved); `null` clears it
+     * back to "all enabled tools" (`$unset`, field absent); an array `$set`s it
+     * verbatim — `[]` meaning "no tools", a name list meaning that subset. The
+     * absent-vs-`[]` distinction is the sharp edge: `null` must not collapse to
+     * `[]`, and `[]` must round-trip as `[]` rather than being dropped.
+     */
+    toolAllowlist?: string[] | null;
 }
 
 /**
@@ -184,6 +201,7 @@ export class SavedPromptsService {
         const trimmedPrompt = assertNonEmptyString(input.prompt, 'prompt');
         const normalizedCron = validateCron(input.cron);
         validateScheduleEnabled(input.scheduleEnabled);
+        validateToolAllowlist(input.toolAllowlist);
 
         await assertNameUnique(this.database, trimmedName, null);
 
@@ -217,6 +235,15 @@ export class SavedPromptsService {
         }
         if (model) {
             created.model = model;
+        }
+
+        // Tool allowlist: attach only when the caller supplied a real array, so
+        // `[]` (no tools) and `[names]` (a subset) persist verbatim while
+        // `undefined`/`null` (all tools) leave the field absent. An empty array
+        // is a defined value, so the driver's `ignoreUndefined` default never
+        // strips it — the sharp edge is handled by the conditional, not the write.
+        if (Array.isArray(input.toolAllowlist)) {
+            created.toolAllowlist = input.toolAllowlist;
         }
 
         // Ownership is captured at create and immutable thereafter (no field on
@@ -274,6 +301,7 @@ export class SavedPromptsService {
             ? validateCron(input.cron)
             : undefined;
         validateScheduleEnabled(input.scheduleEnabled);
+        validateToolAllowlist(input.toolAllowlist);
 
         if (trimmedName !== undefined) {
             await assertNameUnique(this.database, trimmedName, id);
@@ -342,6 +370,19 @@ export class SavedPromptsService {
                 setFields.model = trimmed;
             } else {
                 unsetFields.model = '';
+            }
+        }
+
+        // Tool allowlist: like the model pin, `undefined` omits the field. But
+        // unlike the model pin, `[]` is a MEANINGFUL value ("no tools"), not a
+        // clear — so only `null` clears (via `$unset`, reverting to all tools),
+        // while any array (including `[]`) is `$set` verbatim. This is the edge
+        // the sharp comment on ISavedPromptUpdate.toolAllowlist warns about.
+        if (input.toolAllowlist !== undefined) {
+            if (input.toolAllowlist === null) {
+                unsetFields.toolAllowlist = '';
+            } else {
+                setFields.toolAllowlist = input.toolAllowlist;
             }
         }
 
@@ -519,6 +560,29 @@ function assertNonEmptyString(value: unknown, field: string): string {
 function validateScheduleEnabled(value: unknown): void {
     if (value !== undefined && typeof value !== 'boolean') {
         throw new SavedPromptValidationError('scheduleEnabled must be a boolean');
+    }
+}
+
+/**
+ * Validate the optional `toolAllowlist` selector. The three legal shapes are
+ * `undefined` (omit / all tools), `null` (clear back to all tools), and an array
+ * of strings (`[]` for no tools, a name list for a subset). Anything else — a
+ * non-array defined value, or an array holding a non-string — is rejected so a
+ * malformed selector never reaches the governor as a silent "all tools".
+ *
+ * @param value - The candidate allowlist from create/update input.
+ */
+function validateToolAllowlist(value: unknown): void {
+    if (value === undefined || value === null) {
+        return;
+    }
+    if (!Array.isArray(value)) {
+        throw new SavedPromptValidationError('toolAllowlist must be an array of tool-name strings');
+    }
+    for (const entry of value) {
+        if (typeof entry !== 'string') {
+            throw new SavedPromptValidationError('toolAllowlist entries must be strings');
+        }
     }
 }
 

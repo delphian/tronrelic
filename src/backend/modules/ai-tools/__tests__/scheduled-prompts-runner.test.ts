@@ -169,6 +169,56 @@ describe('runScheduledPrompts', () => {
         );
     });
 
+    it('forwards the prompt\'s toolAllowlist to the provider query', async () => {
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({
+                id: 'scoped',
+                cron: '* * * * *',
+                lastRunAt: minutesAgo(5),
+                prompt: 'run me',
+                toolAllowlist: ['tool-a', 'tool-b']
+            })
+        ]);
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+
+        // The least-privilege selector rides the programmatic query so the
+        // governor enforces it (undefined would mean "all enabled tools").
+        expect(provider.query).toHaveBeenCalledWith(
+            expect.objectContaining({ prompt: 'run me', mode: 'programmatic', toolAllowlist: ['tool-a', 'tool-b'] })
+        );
+    });
+
+    it('forwards an empty toolAllowlist ([] = no tools) rather than omitting it', async () => {
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({ id: 'toolless', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'run', toolAllowlist: [] })
+        ]);
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+
+        expect(provider.query).toHaveBeenCalledWith(
+            expect.objectContaining({ prompt: 'run', toolAllowlist: [] })
+        );
+    });
+
+    it('records the provider\'s precise unregistered-tool error verbatim as the failure reason', async () => {
+        // The provider fails the run before the model call when the allowlist
+        // names a tool that resolves to nothing (a disabled/renamed plugin). The
+        // runner must forward that precise message into recordRunFailure so it
+        // lands in lastRunError and counts toward auto-pause — not a generic error.
+        const preciseError = 'unregistered tool(s): "gone"';
+        provider.query.mockRejectedValueOnce(new Error(preciseError));
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({ id: 'bad-tool', cron: '* * * * *', lastRunAt: minutesAgo(5), toolAllowlist: ['gone'] })
+        ]);
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+
+        expect(savedPrompts.recordRunFailure).toHaveBeenCalledTimes(1);
+        const [, , reason] = savedPrompts.recordRunFailure.mock.calls[0];
+        expect(reason).toBe(preciseError);
+    });
+
     it('does not fire when the cron next-time is still in the future', async () => {
         const tenSecondsAgo = new Date(Date.now() - 10_000).toISOString();
         const savedPrompts = createMockSavedPrompts([
