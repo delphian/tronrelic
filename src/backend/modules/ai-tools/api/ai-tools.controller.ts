@@ -90,8 +90,9 @@ function validateMessages(messages: unknown[]): string | null {
  * hint — so a malformed value must be rejected before it reaches the provider,
  * where a non-array would otherwise be forwarded and silently read as "all
  * tools". Legal shapes on the query path are `undefined` (omit → all enabled
- * tools) or an array of strings (`[]` for none, a name list for a subset);
- * `null` and non-arrays are rejected. Returns a descriptive error string on the
+ * tools) or an array of non-empty strings (`[]` for none, a name list for a
+ * subset); `null`, non-arrays, blank entries, and entries with leading/trailing
+ * whitespace are rejected. Returns a descriptive error string on the
  * first problem, or null when valid.
  *
  * @param value - The raw `toolAllowlist` value from the request body.
@@ -105,8 +106,11 @@ function validateToolAllowlist(value: unknown): string | null {
         return 'Body field "toolAllowlist" must be an array of tool-name strings.';
     }
     for (let i = 0; i < value.length; i += 1) {
-        if (typeof value[i] !== 'string') {
-            return `toolAllowlist[${i}] must be a string.`;
+        if (typeof value[i] !== 'string' || !value[i].trim()) {
+            return `toolAllowlist[${i}] must be a non-empty string.`;
+        }
+        if (value[i] !== value[i].trim()) {
+            return `toolAllowlist[${i}] must not have leading or trailing whitespace.`;
         }
     }
     return null;

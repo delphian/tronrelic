@@ -71,10 +71,12 @@ export interface ISavedPromptCreate {
     model?: string;
     /**
      * Per-prompt tool allowlist, the least-privilege selector a scheduled run
-     * passes to the provider. Three-state: `undefined` (omitted) runs against
-     * every enabled tool; `[]` runs with no tools; a non-empty list restricts to
-     * exactly those names. Stored verbatim when an array is supplied; a `null`
-     * or non-array value is treated as "all tools" and leaves the field absent.
+     * passes to the provider. Three-state: `undefined` (omitted) and `null` both
+     * run against every enabled tool (field left absent); `[]` runs with no
+     * tools; a non-empty list restricts to exactly those names. An array is
+     * validated and stored verbatim; any other defined non-array value is
+     * rejected with `SavedPromptValidationError`, never silently treated as
+     * "all tools".
      */
     toolAllowlist?: string[] | null;
     /**
@@ -566,9 +568,13 @@ function validateScheduleEnabled(value: unknown): void {
 /**
  * Validate the optional `toolAllowlist` selector. The three legal shapes are
  * `undefined` (omit / all tools), `null` (clear back to all tools), and an array
- * of strings (`[]` for no tools, a name list for a subset). Anything else — a
- * non-array defined value, or an array holding a non-string — is rejected so a
- * malformed selector never reaches the governor as a silent "all tools".
+ * of non-empty strings (`[]` for no tools, a name list for a subset). Anything
+ * else — a non-array defined value, an array holding a non-string, a blank /
+ * whitespace-only entry, or an entry with leading/trailing whitespace — is
+ * rejected so a malformed selector never reaches the governor as a silent
+ * "all tools". A blank or padded entry is never a valid tool name
+ * (`^[a-zA-Z0-9_-]{1,64}$`) and would fail the whole allowlist at run time,
+ * auto-pausing a scheduled prompt — so it fails closed here at save instead.
  *
  * @param value - The candidate allowlist from create/update input.
  */
@@ -580,8 +586,11 @@ function validateToolAllowlist(value: unknown): void {
         throw new SavedPromptValidationError('toolAllowlist must be an array of tool-name strings');
     }
     for (const entry of value) {
-        if (typeof entry !== 'string') {
-            throw new SavedPromptValidationError('toolAllowlist entries must be strings');
+        if (typeof entry !== 'string' || !entry.trim()) {
+            throw new SavedPromptValidationError('toolAllowlist entries must be non-empty strings');
+        }
+        if (entry !== entry.trim()) {
+            throw new SavedPromptValidationError('toolAllowlist entries must not have leading or trailing whitespace');
         }
     }
 }
