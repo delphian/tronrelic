@@ -21,6 +21,13 @@ export interface IAiToolDeclaration {
     /** JSON Schema for the tool's input parameters. */
     inputSchema: IAiToolInputSchema;
 
+    /**
+     * Worked input examples forwarded to the model as Anthropic
+     * `input_examples`, when the tool declares any. Each satisfies
+     * `inputSchema`. See {@link IAiTool.inputExamples}.
+     */
+    inputExamples?: Array<Record<string, unknown>>;
+
     /** Governance classification, when the tool declares one. */
     capability?: IAiToolCapability;
 }
@@ -76,6 +83,20 @@ export interface IAiToolRegistry {
 
     /** Serializable metadata for every tool, for the admin registry view. */
     listToolInfo(): IAiToolInfo[];
+
+    /**
+     * Partition a per-query tool allowlist into names backed by a registered tool
+     * (`resolved`) and names with no registration (`missing`). A provider uses
+     * `missing` to fail a run before calling the model when a saved prompt names a
+     * tool from a disabled or renamed plugin. Enabled state is deliberately
+     * irrelevant: a registered-but-disabled tool is not `missing` — it simply will
+     * not be advertised and would deny at invoke — so only a genuinely absent
+     * registration fails the run.
+     *
+     * @param names - The requested tool-name allowlist.
+     * @returns `resolved` names (a tool is registered) and `missing` names (none is).
+     */
+    resolveAllowlist(names: string[]): { resolved: string[]; missing: string[] };
 
     /**
      * Set a tool's enabled state and persist it.

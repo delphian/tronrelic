@@ -263,6 +263,19 @@ export class AiToolGovernor implements IAiToolGovernor {
             return this.fail(name, providerId, input, ctx, cap, 'denied', `Tool "${name}" is currently disabled.`);
         }
 
+        // Per-query allowlist enforcement. Filtering the advertised set is only an
+        // accuracy optimization — a confused or injected model can still emit a
+        // tool_use for a name the query never advertised — so the allowlist is
+        // enforced here too. It can only narrow: a name absent from a present list
+        // is denied. Checked after the global enabled-check (so a platform-disabled
+        // tool reports "disabled", the more fundamental state) and before schema
+        // validation and policy (so the autonomous default-deny still applies
+        // independently). The three deny reasons stay distinct in the audit record,
+        // which is what makes "why didn't this tool fire?" answerable per gate.
+        if (ctx.toolAllowlist && !ctx.toolAllowlist.includes(name)) {
+            return this.fail(name, providerId, input, ctx, cap, 'denied', `Tool "${name}" is not in this query's tool allowlist.`);
+        }
+
         const schemaError = validateInput(input, tool.inputSchema);
         if (schemaError) {
             return this.fail(name, providerId, input, ctx, cap, 'denied', schemaError);

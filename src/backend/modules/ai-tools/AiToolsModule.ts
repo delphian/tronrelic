@@ -382,6 +382,14 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
                 required: ['title'],
                 additionalProperties: false
             },
+            // Worked examples so the model reliably shapes the optional tone
+            // enum and duration: a persistent warning (duration 0), a
+            // default-duration success, and the title-only minimum.
+            inputExamples: [
+                { title: 'Scheduled maintenance at 02:00 UTC', description: 'The platform will be briefly unavailable for about 10 minutes while we deploy an update.', tone: 'warning', duration: 0 },
+                { title: 'Blockchain sync restored', description: 'Indexing has caught up to the chain head.', tone: 'success' },
+                { title: 'Read-only mode enabled' }
+            ],
             capability: { sideEffect: 'external', reversible: true, sensitivity: 'public' },
             handler: async (input) => {
                 // Re-validate model input: the schema is a hint, not a guarantee.

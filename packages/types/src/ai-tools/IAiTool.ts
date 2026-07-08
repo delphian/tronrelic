@@ -113,6 +113,20 @@ export interface IAiTool {
     /** JSON Schema defining the tool's expected input parameters. */
     inputSchema: IAiToolInputSchema;
     /**
+     * Optional worked examples of valid tool input, forwarded to the model as
+     * Anthropic `input_examples`. Each entry must satisfy `inputSchema` — a
+     * non-conforming example is rejected by the API with a 400, so keep them in
+     * lockstep with the schema. Examples raise selection and parameter accuracy
+     * on tools with array / enum / nested or optional, format-sensitive
+     * parameters (Anthropic measured 72%→90% on complex inputs) and matter most
+     * for smaller models such as Haiku, which otherwise infer missing
+     * parameters. Show the useful shapes — a minimal required-only call, and one
+     * or two that exercise the optional and enum fields — rather than every
+     * permutation. Omit entirely for trivial single-scalar or zero-parameter
+     * tools, where examples only add prompt tokens.
+     */
+    inputExamples?: Array<Record<string, unknown>>;
+    /**
      * Governance classification — the tool's side effect, reversibility, spend,
      * data sensitivity, and approval requirement. The governor derives the
      * guardrails (rate limit, quota, cost cap, approval, audit redaction) from

@@ -112,4 +112,21 @@ export interface IToolInvocationContext {
      * {@link IToolEndUserPrincipal}.
      */
     endUser?: IToolEndUserPrincipal;
+
+    /**
+     * Per-query tool allowlist enforced at invocation time. When present, the
+     * governor denies any tool whose name is not in the list — after the global
+     * enabled-check, before schema validation — so a confused or injected model
+     * cannot invoke a tool the query's advertised set excluded. `undefined` means
+     * no per-query restriction (global-enabled governs alone); `[]` denies every
+     * tool. It can only narrow, never widen: it never re-enables a
+     * globally-disabled tool and composes with the autonomous external-tool
+     * default-deny rather than replacing it.
+     *
+     * The provider copies it verbatim from {@link IAiQueryOptions.toolAllowlist}
+     * onto this context. Trusted-caller-only for the same reason the query field
+     * is — the model never sets query options, so it cannot forge or widen the
+     * allowlist.
+     */
+    toolAllowlist?: string[];
 }

@@ -37,7 +37,7 @@ import type { IContentScreenVerdict } from './IContentScreenVerdict.js';
  *     const detailed = await ai.query({
  *         prompt: 'Analyze {%system-status%}',
  *         maxTokens: 8192,
- *         includeTools: false
+ *         toolAllowlist: []
  *     });
  * }
  * ```
@@ -50,9 +50,9 @@ export interface IAiProvider {
      * Execute a non-streaming AI query with explicit parameter overrides.
      *
      * Only `prompt` is required. Omitted parameters fall back to the provider's
-     * configured defaults. Registered (enabled) tools are included unless
-     * `includeTools` is set to false. Template variables are expanded unless
-     * `expandVariables` is false.
+     * configured defaults. Every enabled tool is advertised and governed unless
+     * `toolAllowlist` narrows the set (`[]` for none, a name list for a subset).
+     * Template variables are expanded unless `expandVariables` is false.
      *
      * @param options - Query options with prompt and optional overrides.
      * @returns Complete response with text, model, stop reason, and usage.

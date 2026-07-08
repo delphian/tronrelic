@@ -296,6 +296,28 @@ describe('AiToolsModule', () => {
         });
     });
 
+    describe('allowlist resolution', () => {
+        it('partitions requested names into resolved and missing', () => {
+            const registry = module.getRegistry();
+            registry.registerTool(readTool(), 'test');
+
+            const { resolved, missing } = registry.resolveAllowlist(['test-read', 'ghost']);
+            expect(resolved).toEqual(['test-read']);
+            expect(missing).toEqual(['ghost']);
+        });
+
+        it('treats a registered-but-disabled tool as resolved, not missing', () => {
+            // Fail-the-run keys on registration, not enabled state: an external tool
+            // ships disabled but is still registered, so naming it must not fail a run.
+            const registry = module.getRegistry();
+            registry.registerTool(externalTool(), 'test');
+
+            const { resolved, missing } = registry.resolveAllowlist(['test-external']);
+            expect(resolved).toEqual(['test-external']);
+            expect(missing).toEqual([]);
+        });
+    });
+
     describe('governor', () => {
         it('denies an unknown tool', async () => {
             const result = await module.getGovernor().invoke('nope', {}, interactiveCtx);
@@ -344,6 +366,37 @@ describe('AiToolsModule', () => {
             await registry.setEnabled('test-read', false);
 
             const result = await module.getGovernor().invoke('test-read', {}, interactiveCtx);
+            expect(result.status).toBe('denied');
+        });
+
+        it('denies an enabled tool the query allowlist excludes', async () => {
+            const handler = vi.fn(async () => ({ ok: true }));
+            module.getRegistry().registerTool(readTool(handler), 'test');
+
+            const ctx = { ...interactiveCtx, toolAllowlist: ['some-other-tool'] };
+            const result = await module.getGovernor().invoke('test-read', {}, ctx);
+
+            expect(result.status).toBe('denied');
+            expect(result.error).toMatch(/allowlist/i);
+            expect(handler).not.toHaveBeenCalled();
+        });
+
+        it('runs an enabled tool the query allowlist includes', async () => {
+            const handler = vi.fn(async () => ({ ok: true }));
+            module.getRegistry().registerTool(readTool(handler), 'test');
+
+            const ctx = { ...interactiveCtx, toolAllowlist: ['test-read'] };
+            const result = await module.getGovernor().invoke('test-read', {}, ctx);
+
+            expect(result.status).toBe('ok');
+            expect(handler).toHaveBeenCalledTimes(1);
+        });
+
+        it('denies every tool under an empty query allowlist', async () => {
+            module.getRegistry().registerTool(readTool(), 'test');
+
+            const ctx = { ...interactiveCtx, toolAllowlist: [] };
+            const result = await module.getGovernor().invoke('test-read', {}, ctx);
             expect(result.status).toBe('denied');
         });
 

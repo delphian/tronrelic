@@ -27,7 +27,7 @@ import type { IToolEndUserPrincipal } from './IToolInvocationContext.js';
  *     prompt: 'Analyze {%system-status%}',
  *     maxTokens: 8192,
  *     thinkingBudget: 4000,
- *     includeTools: false
+ *     toolAllowlist: []
  * });
  * ```
  */
@@ -92,8 +92,31 @@ export interface IAiQueryOptions {
     /** Whether to expand {%variable%} template patterns in the prompt. Default: true. */
     expandVariables?: boolean;
 
-    /** Whether to include registered (enabled) tools in the request. Default: true. */
-    includeTools?: boolean;
+    /**
+     * Per-query allowlist of tool names the model may see and invoke — the
+     * least-privilege selector that narrows the global-enabled set for one run
+     * (most valuable on autonomous saved/scheduled prompts). Three-state:
+     * `undefined` advertises and governs every enabled tool (the default, and the
+     * only meaning an absent field can carry for prompts and callers that predate
+     * this field); `[]` advertises and governs none; a non-empty list restricts to
+     * exactly those names.
+     *
+     * The list can only ever *narrow*: the resolved set is
+     * `global-enabled ∩ autonomous-allowed ∩ toolAllowlist`, so it never
+     * re-enables a globally-disabled tool, widens the set, or defeats the
+     * external-tool autonomous default-deny. Filtering the advertised `tools`
+     * array is an accuracy/token optimization only — the same list is enforced at
+     * `governor.invoke()` (rides {@link IToolInvocationContext.toolAllowlist}), so
+     * a confused or injected model cannot invoke a name outside it. The provider
+     * fails the whole run before calling the model when a listed name resolves to
+     * no registered tool.
+     *
+     * Trusted-caller-only, like {@link endUser} and {@link injectedSystemPrompt}:
+     * set by the admin query route, the scheduled-prompts runner (from the saved
+     * prompt's persisted list), or code callers. The model never sets query
+     * options, so this is not a model-spoofable surface.
+     */
+    toolAllowlist?: string[];
 
     /**
      * Client-generated UUID for WebSocket streaming. When provided,
