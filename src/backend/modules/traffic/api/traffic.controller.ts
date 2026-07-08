@@ -256,22 +256,6 @@ export class TrafficController {
     }
 
     /**
-     * GET /api/admin/users/analytics/visitor-origins?limit=&skip=
-     * First-touch attribution per tid.
-     */
-    async getVisitorOrigins(req: Request, res: Response): Promise<void> {
-        const range = resolveAnalyticsRange(req.query);
-        const limit = parsePositiveInt(req.query.limit, 50, MAX_LIMIT);
-        const skip = parseNonNegativeInt(req.query.skip, 0);
-        try {
-            res.json({ data: await this.trafficService.getVisitorOrigins(range, limit, skip) });
-        } catch (error) {
-            this.logger.error({ err: error }, 'Failed to fetch visitor origins');
-            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch visitor origins' });
-        }
-    }
-
-    /**
      * GET /api/admin/users/analytics/traffic-sources?bots=exclude
      * Referrer-domain breakdown.
      */
@@ -302,6 +286,24 @@ export class TrafficController {
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch new users');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch new users' });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/flagged-subnets?period=&limit=
+     * Source networks whose in-window request volume flags them as possible
+     * automated traffic. An annotation surface only — never used to exclude
+     * visitors (busy shared networks legitimately concentrate real people), so
+     * it takes no `bots` param. Returns `{ data }` with the flagged networks.
+     */
+    async getFlaggedSubnets(req: Request, res: Response): Promise<void> {
+        const range = resolveAnalyticsRange(req.query);
+        const limit = parsePositiveInt(req.query.limit, 20, MAX_LIMIT);
+        try {
+            res.json({ data: await this.trafficService.getHighVolumeSubnets(range, limit) });
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to fetch flagged subnets');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch flagged subnets' });
         }
     }
 

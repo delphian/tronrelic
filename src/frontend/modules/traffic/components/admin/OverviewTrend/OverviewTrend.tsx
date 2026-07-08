@@ -172,11 +172,11 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
                     onClick={() => setMetric('visitors')}
                     aria-pressed={metric === 'visitors'}
                     title={includeBots
-                        ? 'Cookieless bots mint a fresh visitor id per request, so with bots included this approximates total requests, not people'
-                        : 'Distinct visitor ids (per-browser cookie): cookie clearing and multiple devices count the same person again'}
+                        ? 'Distinct visitors that loaded a page (ran JavaScript), including JS-running bots the classifier caught. Cookieless non-JS bots are excluded — a visitor must have loaded a page. Per-browser cookie: cleared cookies and multiple devices recount the same person.'
+                        : 'Distinct visitors that loaded a page (ran JavaScript), known bots excluded. Cookieless non-JS bots never count. Per-browser cookie: cleared cookies and multiple devices recount the same person.'}
                 >
                     <span className={styles.kpi_label}>
-                        {includeBots ? 'Unique Visitors (incl. bot requests)' : 'Unique Visitors'}
+                        {includeBots ? 'Unique Visitors (incl. JS bots)' : 'Unique Visitors'}
                     </span>
                     <span className={styles.kpi_value}>{numberFormatter.format(current.visitors)}</span>
                     <Delta change={percentChange(current.visitors, previous.visitors)} />
@@ -184,7 +184,7 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
                 {includeBots && (
                     <div
                         className={styles.kpi_static}
-                        title="Distinct visitor ids split by bot classification. Bot ids approximate requests — cookieless bots mint a fresh id per hit — so the two sides are not comparable units. Delta tracks the human side."
+                        title="Page-loading visitors split by bot classification. The bot side is JavaScript-running bots the classifier caught (headless scrapers); cookieless non-JS bots are excluded from both sides. Delta tracks the human side."
                     >
                         <span className={styles.kpi_label}>Human / Bot Split</span>
                         <span className={styles.kpi_value}>
@@ -242,7 +242,8 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
                 emptyLabel="No traffic recorded in this period."
             />
             <p className={styles.footnote}>
-                {trend.granularity === 'hour' ? 'Hourly' : 'Daily'} buckets · deltas compare the
+                A visitor is a tid that loaded a page (ran JavaScript); cookieless bots are excluded from every count.
+                {' '}{trend.granularity === 'hour' ? 'Hourly' : 'Daily'} buckets · deltas compare the
                 equal-length previous period · sessions derived from page events (30-minute inactivity rule).
             </p>
         </Card>

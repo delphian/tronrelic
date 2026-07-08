@@ -25,6 +25,7 @@ export {
     adminGetAnalyticsOverview,
     adminGetOverviewTrend,
     adminGetLiveVisitors,
+    adminGetFlaggedSubnets,
     // Google Search Console functions
     adminGetGscStatus,
     adminSaveGscCredentials,
@@ -41,6 +42,7 @@ export type {
     IDailyVisitorData,
     IVisitorOrigin,
     IUtmParams,
+    IFlaggedSubnet,
     VisitorPeriod,
     PageActivitySubject,
     IPageActivityRow,

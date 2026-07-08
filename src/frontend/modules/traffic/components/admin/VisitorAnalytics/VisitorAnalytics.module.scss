@@ -120,10 +120,29 @@
 
 /* Opaque source-correlation key — monospace chip so identical sources are scannable down the column. */
 .source_hash {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
     font-family: var(--font-mono);
     background: var(--color-surface-muted);
     border-radius: var(--radius-xs);
     padding: 0 var(--padding-2xs);
+}
+
+/* Marks a Source whose network was flagged high-volume (possible automation). */
+.flag_icon {
+    color: var(--color-warning);
+    flex-shrink: 0;
+}
+
+/* Inline annotation summarizing how many source networks were flagged. */
+.flagged_note {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    margin: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-warning-text);
 }
 
 .device_cell {
