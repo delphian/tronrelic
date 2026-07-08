@@ -152,6 +152,7 @@ export class AiToolRegistry implements IAiToolRegistry {
             name: tool.name,
             description: tool.description,
             inputSchema: tool.inputSchema,
+            inputExamples: tool.inputExamples,
             capability: tool.capability
         }));
     }
@@ -167,10 +168,25 @@ export class AiToolRegistry implements IAiToolRegistry {
             name: tool.name,
             description: tool.description,
             inputSchema: tool.inputSchema,
+            inputExamples: tool.inputExamples,
             capability: tool.capability,
             enabled: this.toolStates[tool.name] !== false,
             provider: this.providers.get(tool.name) ?? UNKNOWN_PROVIDER
         }));
+    }
+
+    /** @inheritdoc */
+    resolveAllowlist(names: string[]): { resolved: string[]; missing: string[] } {
+        const resolved: string[] = [];
+        const missing: string[] = [];
+        for (const name of names) {
+            if (this.tools.has(name)) {
+                resolved.push(name);
+            } else {
+                missing.push(name);
+            }
+        }
+        return { resolved, missing };
     }
 
     /** @inheritdoc */

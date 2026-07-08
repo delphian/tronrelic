@@ -200,6 +200,13 @@ export function createSocialPostTool(deps: ISocialPostToolDependencies): IAiTool
             required: ['body'],
             additionalProperties: false
         },
+        // Worked examples: the body-only minimum, and a full draft that
+        // exercises the optional title plus a public http(s) imageUrl so the
+        // model learns the media-URL shape rather than inventing one.
+        inputExamples: [
+            { body: 'TRON energy prices just dropped 18% in the last hour — the cheapest rentals in a week. Live data on TronRelic.' },
+            { body: 'Whale watch: 12.4M TRX moved to a fresh wallet minutes ago. Follow the flow on TronRelic.', title: 'Whale movement — 12.4M TRX', imageUrl: 'https://tronrelic.com/media/whale-alert.png' }
+        ],
         handler: async (input) => {
             // The schema is a hint to the model, not a guarantee — re-validate.
             const payload = input as { body?: unknown; title?: unknown; imageUrl?: unknown };

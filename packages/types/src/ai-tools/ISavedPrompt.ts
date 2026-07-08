@@ -38,6 +38,20 @@ export interface ISavedPrompt {
      */
     model?: string;
     /**
+     * Per-prompt tool allowlist — the least-privilege selector a scheduled run
+     * passes to the provider as {@link IAiQueryOptions.toolAllowlist}. Three-state:
+     * `undefined` runs against every enabled tool (the only meaning an absent
+     * field can carry for prompts saved before this field existed); `[]` runs with
+     * no tools; a non-empty list restricts to exactly those names, intersected
+     * with the enabled and autonomous-allowed sets at fire time. A listed name
+     * that resolves to no registered tool fails the run (recorded in
+     * `lastRunError`, counted toward `failureCount`), so a prompt naming a tool
+     * from a disabled plugin auto-pauses rather than running degraded. The
+     * new-prompt editor pre-fills the full enabled set; narrowing is the operator's
+     * choice.
+     */
+    toolAllowlist?: string[];
+    /**
      * Better Auth user id of the prompt's owner — the admin who saved it today,
      * an end user once a non-admin authoring path exists. A scheduled run
      * re-resolves this id to a live end-user principal at fire time and runs the
