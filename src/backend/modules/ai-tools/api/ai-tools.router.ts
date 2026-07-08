@@ -28,6 +28,7 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
     router.patch('/tools/:name', controller.setToolEnabled);
 
     router.get('/trifecta', controller.getTrifecta);
+    router.post('/trifecta/preview', controller.previewTrifecta);
     router.get('/providers', controller.listProviders);
 
     router.get('/screen-config', controller.getScreenConfig);

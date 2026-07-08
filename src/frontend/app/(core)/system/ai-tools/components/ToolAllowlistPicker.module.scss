@@ -1,0 +1,110 @@
+/**
+ * Styles for ToolAllowlistPicker — the saved-prompt editor's tool multiselect.
+ * A bounded, scrollable checkbox list with a count header and bulk actions;
+ * tokens only, no hardcoded values. Sits inside the modal's edit section, so it
+ * inherits that width and only owns its own internal layout.
+ */
+
+.picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+.count {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.header_actions {
+    display: flex;
+    gap: var(--gap-sm);
+}
+
+/* Text-style action buttons for bulk select/clear — lighter than a full Button. */
+.link_btn {
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--color-primary);
+    font-size: var(--font-size-caption);
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+        text-decoration: underline;
+    }
+
+    &:disabled {
+        color: var(--color-text-subtle);
+        cursor: not-allowed;
+    }
+
+    &:focus-visible {
+        outline: var(--focus-outline-width) solid var(--focus-outline-color);
+        outline-offset: var(--focus-outline-offset);
+        border-radius: var(--radius-xs);
+    }
+}
+
+/* Bounded height so a long tool registry scrolls inside the picker instead of
+ * pushing the modal's save button off-screen. */
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    list-style: none;
+    margin: 0;
+    padding: var(--padding-xs);
+    max-height: 14rem;
+    overflow-y: auto;
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+}
+
+.check_label {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    cursor: pointer;
+
+    input:disabled {
+        cursor: not-allowed;
+    }
+}
+
+.tool_name {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+}
+
+.disabled_tag {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-caption);
+}
+
+.empty {
+    margin: 0;
+    padding: var(--padding-sm);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.warning {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    margin: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-warning-text);
+}

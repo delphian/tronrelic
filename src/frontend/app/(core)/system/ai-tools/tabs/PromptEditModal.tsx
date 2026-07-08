@@ -12,15 +12,17 @@
  * states and Date-based countdowns are appropriate here.
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Save, Clock, AlertCircle, CheckCircle } from 'lucide-react';
-import type { ISavedPrompt } from '@/types';
+import type { ISavedPrompt, IAiToolInfo, ITrifectaStatus } from '@/types';
 import { Button } from '../../../../../components/ui/Button';
 import { Input } from '../../../../../components/ui/Input';
 import { Textarea } from '../../../../../components/ui/Textarea';
 import { Select } from '../../../../../components/ui/Select';
 import { Switch } from '../../../../../components/ui/Switch';
-import { saveSavedPrompt, getQueryProviders, type IAiProviderModels } from '../../../../../modules/ai-tools';
+import { saveSavedPrompt, getQueryProviders, listTools, getTrifectaPreview, type IAiProviderModels } from '../../../../../modules/ai-tools';
+import { ToolAllowlistPicker } from '../components/ToolAllowlistPicker';
+import { RunTrifectaBadge } from '../components/RunTrifectaBadge';
 import {
     CRON_PRESETS,
     describeCron,
@@ -67,6 +69,77 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
     });
     const [bodySaving, setBodySaving] = useState(false);
     const [scheduleSaving, setScheduleSaving] = useState(false);
+
+    // Tool allowlist section. `toolsLoaded` gates the trifecta preview so it
+    // never fires against the transient pre-seed selection. A prompt that already
+    // carries an explicit allowlist (including `[]`) seeds from it verbatim;
+    // one with none (undefined) is pre-filled with every enabled tool once the
+    // registry loads — least privilege is opt-in narrowing, not the default.
+    const [tools, setTools] = useState<IAiToolInfo[]>([]);
+    const [toolsLoaded, setToolsLoaded] = useState(false);
+    const [toolAllowlistDraft, setToolAllowlistDraft] = useState<string[]>(prompt.toolAllowlist ?? []);
+    const [toolsSaving, setToolsSaving] = useState(false);
+    const [trifecta, setTrifecta] = useState<ITrifectaStatus | null>(null);
+    const [trifectaLoading, setTrifectaLoading] = useState(false);
+    const prefilledRef = useRef(false);
+
+    // Load the tool registry for the allowlist picker and seed the pre-fill.
+    // Secondary data on a click-mounted surface, so a loading gap and a quiet
+    // failure (picker shows empty) are both acceptable.
+    useEffect(() => {
+        let cancelled = false;
+        void (async () => {
+            try {
+                const list = await listTools();
+                if (cancelled) {
+                    return;
+                }
+                setTools(list);
+                if (prompt.toolAllowlist === undefined && !prefilledRef.current) {
+                    setToolAllowlistDraft(list.filter(tool => tool.enabled).map(tool => tool.name));
+                }
+            } catch {
+                /* picker shows no options; the save still works */
+            } finally {
+                if (!cancelled) {
+                    prefilledRef.current = true;
+                    setToolsLoaded(true);
+                }
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [prompt.toolAllowlist]);
+
+    // Recompute the scoped trifecta whenever the selection settles. Debounced so
+    // rapid toggling issues one request, not one per checkbox. The verdict is
+    // server-computed (it depends on live curation/policy state and provider
+    // server-tools that the client cannot see), so this only renders the result.
+    useEffect(() => {
+        if (!toolsLoaded) {
+            return;
+        }
+        let cancelled = false;
+        setTrifectaLoading(true);
+        const timer = setTimeout(() => {
+            void (async () => {
+                try {
+                    const status = await getTrifectaPreview(toolAllowlistDraft);
+                    if (!cancelled) {
+                        setTrifecta(status);
+                    }
+                } catch {
+                    if (!cancelled) {
+                        setTrifecta(null);
+                    }
+                } finally {
+                    if (!cancelled) {
+                        setTrifectaLoading(false);
+                    }
+                }
+            })();
+        }, 350);
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [toolAllowlistDraft, toolsLoaded]);
 
     // Load the model catalog across every registered provider for the picker.
     // Secondary data on a click-mounted surface, so a loading gap and a quiet
@@ -132,6 +205,23 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
             setBodySaving(false);
         }
     }, [prompt.id, nameDraft, bodyDraft, modelDraft, onSaved, onError]);
+
+    /**
+     * Persist the tool allowlist. Sends the explicit selection so the three-state
+     * contract is unambiguous — a full selection is the full set, `[]` is "no
+     * tools". Other sections' fields are omitted so the server upsert preserves
+     * them.
+     */
+    const handleSaveTools = useCallback(async () => {
+        setToolsSaving(true);
+        try {
+            onSaved(await saveSavedPrompt({ id: prompt.id, toolAllowlist: toolAllowlistDraft }));
+        } catch (err) {
+            onError(err instanceof Error ? err.message : 'Failed to update tools');
+        } finally {
+            setToolsSaving(false);
+        }
+    }, [prompt.id, toolAllowlistDraft, onSaved, onError]);
 
     /**
      * Persist schedule edits. Name/body fields are omitted so a schedule save
@@ -204,6 +294,33 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
                         disabled={bodySaving || !bodyDraft.trim() || !nameDraft.trim()}
                     >
                         <Save size={14} /> {bodySaving ? 'Saving…' : 'Save prompt'}
+                    </Button>
+                </div>
+            </div>
+
+            {/* Tools */}
+            <div className={styles.edit_section}>
+                <p className={styles.section_label}>Tools</p>
+                <p className={styles.field_hint}>
+                    Tools this prompt may call. New prompts start with every enabled tool — narrow to the
+                    least set the prompt needs. An empty selection runs the prompt with no tools. Naming a
+                    tool that is later disabled or removed fails the run, so keep the list current.
+                </p>
+                <ToolAllowlistPicker
+                    tools={tools}
+                    selected={toolAllowlistDraft}
+                    onChange={setToolAllowlistDraft}
+                    disabled={toolsSaving}
+                />
+                <RunTrifectaBadge status={trifecta} loading={trifectaLoading} />
+                <div className={styles.edit_actions}>
+                    <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => { void handleSaveTools(); }}
+                        disabled={toolsSaving || !toolsLoaded}
+                    >
+                        <Save size={14} /> {toolsSaving ? 'Saving…' : 'Save tools'}
                     </Button>
                 </div>
             </div>

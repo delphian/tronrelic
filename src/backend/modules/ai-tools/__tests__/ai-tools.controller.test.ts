@@ -54,23 +54,26 @@ function makeController(overrides: Record<string, any> = {}) {
     const history = overrides.history ?? { append: vi.fn(async () => {}) };
     const systemPrompts = overrides.systemPrompts ?? { compose: vi.fn(async () => 'SYS') };
     const resolveEndUser = overrides.resolveEndUser ?? vi.fn(async () => null);
+    const registry = overrides.registry ?? { listToolInfo: vi.fn(() => []) };
+    const policy = overrides.policy ?? { isEgressGated: vi.fn(() => false) };
+    const promptVariables = overrides.promptVariables ?? { getSecretVariableNames: vi.fn(() => []) };
 
     const controller = new AiToolsController(
-        {} as any, // registry
-        {} as any, // policy
+        registry as any,
+        policy as any,
         {} as any, // audit
         {} as any, // approvals
         {} as any, // governor
         providers as any,
         history as any,
         savedPrompts as any,
-        {} as any, // promptVariables
+        promptVariables as any,
         systemPrompts as any,
         resolveEndUser as any,
         {} as any // screenConfig
     );
 
-    return { controller, savedPrompts, providers, history, systemPrompts, resolveEndUser };
+    return { controller, savedPrompts, providers, history, systemPrompts, resolveEndUser, registry, policy, promptVariables };
 }
 
 describe('AiToolsController — toolAllowlist wiring', () => {
@@ -186,6 +189,78 @@ describe('AiToolsController — toolAllowlist wiring', () => {
 
             expect(provider.query).toHaveBeenCalledTimes(1);
             expect(provider.query.mock.calls[0][0].toolAllowlist).toBeUndefined();
+        });
+    });
+
+    describe('previewTrifecta', () => {
+        /**
+         * Build a minimal enabled tool-info double with the given capability.
+         *
+         * @param name - Tool name.
+         * @param cap - Capability flags driving trifecta legs.
+         * @returns An IAiToolInfo-shaped object.
+         */
+        function tool(name: string, cap: Record<string, unknown>): any {
+            return { name, description: '', inputSchema: { type: 'object' }, capability: cap, enabled: true, provider: 'core' };
+        }
+
+        const SECRET = tool('sec', { sideEffect: 'read', reversible: true, sensitivity: 'secret' });
+        const UNTRUSTED = tool('web', { sideEffect: 'read', reversible: true, sensitivity: 'public', surfacesUntrustedContent: true });
+        const EXTERNAL = tool('post', { sideEffect: 'external', reversible: false, sensitivity: 'public' });
+
+        /**
+         * A controller whose registry exposes the three trifecta-leg tools, no
+         * provider server tools, and no secret variables — so the verdict is
+         * driven entirely by the previewed allowlist.
+         *
+         * @returns The controller and its doubles.
+         */
+        function trifectaController() {
+            return makeController({
+                registry: { listToolInfo: vi.fn(() => [SECRET, UNTRUSTED, EXTERNAL]) },
+                policy: { isEgressGated: vi.fn(() => false) }, // egress is open
+                promptVariables: { getSecretVariableNames: vi.fn(() => []) },
+                providers: { getActive: vi.fn(() => null) }
+            });
+        }
+
+        it('rejects a malformed toolAllowlist with 400', async () => {
+            const { controller } = trifectaController();
+            const res = createMockResponse();
+
+            await controller.previewTrifecta({ body: { toolAllowlist: 'nope' } } as any, res);
+
+            expect(res._status).toBe(400);
+        });
+
+        it('reports lethal when the allowlist spans all three legs with open egress', async () => {
+            const { controller } = trifectaController();
+            const res = createMockResponse();
+
+            await controller.previewTrifecta({ body: { toolAllowlist: ['sec', 'web', 'post'] } } as any, res);
+
+            expect(res._json.severity).toBe('lethal');
+        });
+
+        it('reports safe when the allowlist drops the egress leg', async () => {
+            const { controller } = trifectaController();
+            const res = createMockResponse();
+
+            // Narrowing away the external tool breaks the chain — exactly the
+            // opt-in-narrowing behaviour the per-run badge exists to surface.
+            await controller.previewTrifecta({ body: { toolAllowlist: ['sec', 'web'] } } as any, res);
+
+            expect(res._json.severity).toBe('safe');
+            expect(res._json.exfiltration).toEqual([]);
+        });
+
+        it('reports safe for an empty allowlist (no governed tools in play)', async () => {
+            const { controller } = trifectaController();
+            const res = createMockResponse();
+
+            await controller.previewTrifecta({ body: { toolAllowlist: [] } } as any, res);
+
+            expect(res._json.severity).toBe('safe');
         });
     });
 });

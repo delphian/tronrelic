@@ -1,0 +1,60 @@
+/**
+ * Styles for RunTrifectaBadge — the saved-prompt editor's per-run trifecta
+ * indicator. A single tone-coded badge plus, when a trifecta is present, a
+ * compact list of the contributing legs. Tokens only.
+ */
+
+.wrap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+}
+
+.badge {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+}
+
+.legs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.leg {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.leg_label {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    min-width: 9rem;
+}
+
+.leg_names {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--gap-2xs);
+}
+
+.pending {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.spin {
+    animation: run-trifecta-spin 1s linear infinite;
+}
+
+@keyframes run-trifecta-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
