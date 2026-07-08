@@ -615,7 +615,9 @@ describe('TrafficService', () => {
             await TrafficService.getInstance().getNewVisitors(range, 50, 0);
             expect(captured.sqls.length).toBeGreaterThanOrEqual(2);
             for (const sql of captured.sqls) {
-                expect(sql).toContain("countIf(event_type = 'page') > 0");
+                // The guard is window-scoped so a page beacon after a custom
+                // range's end cannot retroactively qualify a new visitor.
+                expect(sql).toMatch(/countIf\(event_type = 'page' AND .+\) > 0/);
             }
         });
 
