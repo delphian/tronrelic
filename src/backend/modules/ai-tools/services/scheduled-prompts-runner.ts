@@ -311,7 +311,11 @@ export async function runScheduledPrompts(
             // `endUser`, when the prompt records an owner, is the live principal
             // the run acts on behalf of. `model` is the optional per-query
             // override (undefined → provider's configured default).
-            const result = (await provider.query({ prompt: p.prompt, model: p.model, mode: 'programmatic', endUser, injectedSystemPrompt })) as IAiQueryResult;
+            // `toolAllowlist` is the prompt's least-privilege selector (undefined
+            // → all enabled tools, `[]` → none, a name list → that subset); a
+            // listed name that resolves to no registered tool fails the run,
+            // which the catch below records and counts toward the auto-pause.
+            const result = (await provider.query({ prompt: p.prompt, model: p.model, mode: 'programmatic', endUser, injectedSystemPrompt, toolAllowlist: p.toolAllowlist })) as IAiQueryResult;
             // Record the run in the core query history so it surfaces in the
             // Query tab beside interactive queries. Tagged `scheduled` to mark
             // it autonomous; the provider transport above stays `programmatic`,

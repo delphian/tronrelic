@@ -115,6 +115,15 @@ function applyUpdate(target: any, update: any): void {
             target[k] = (target[k] ?? 0) + (v as number);
         }
     }
+    if (update.$unset) {
+        // `$unset` removes the field entirely (reverting it to absent/undefined),
+        // which is how the service clears a model pin or a toolAllowlist back to
+        // "all tools". The value the driver ships (`''`) is ignored — presence of
+        // the key is the instruction.
+        for (const k of Object.keys(update.$unset)) {
+            delete target[k];
+        }
+    }
 }
 
 /**
@@ -394,6 +403,83 @@ describe('SavedPromptsService', () => {
         });
     });
 
+    describe('toolAllowlist (three-state persistence)', () => {
+        it('create omits the field when no allowlist is supplied (undefined = all tools)', async () => {
+            const created = await service.create({ name: 'AllTools', prompt: 'p' });
+            expect('toolAllowlist' in created).toBe(false);
+
+            // Read back through get() to confirm nothing was persisted.
+            const persisted = await service.get(created.id);
+            expect(persisted?.toolAllowlist).toBeUndefined();
+        });
+
+        it('create round-trips an empty array as [] (no tools), not dropped or coerced', async () => {
+            const created = await service.create({ name: 'NoTools', prompt: 'p', toolAllowlist: [] });
+            expect(created.toolAllowlist).toEqual([]);
+
+            const persisted = await service.get(created.id);
+            // The sharp edge: `[]` must survive as `[]`, distinct from an absent
+            // field. The driver's ignoreUndefined never strips a real array.
+            expect(persisted?.toolAllowlist).toEqual([]);
+        });
+
+        it('create round-trips a name list verbatim', async () => {
+            const created = await service.create({ name: 'Subset', prompt: 'p', toolAllowlist: ['tool-a', 'tool-b'] });
+            expect(created.toolAllowlist).toEqual(['tool-a', 'tool-b']);
+
+            const persisted = await service.get(created.id);
+            expect(persisted?.toolAllowlist).toEqual(['tool-a', 'tool-b']);
+        });
+
+        it('create treats null as "all tools" and leaves the field absent', async () => {
+            const created = await service.create({ name: 'NullList', prompt: 'p', toolAllowlist: null });
+            expect(created.toolAllowlist).toBeUndefined();
+        });
+
+        it('update sets [] on an all-tools prompt (round-trips as [])', async () => {
+            const created = await service.create({ name: 'ToEmpty', prompt: 'p' });
+            const updated = await service.update(created.id, { toolAllowlist: [] });
+            expect(updated.toolAllowlist).toEqual([]);
+
+            const persisted = await service.get(created.id);
+            expect(persisted?.toolAllowlist).toEqual([]);
+        });
+
+        it('update sets a name list on an all-tools prompt', async () => {
+            const created = await service.create({ name: 'ToSubset', prompt: 'p' });
+            const updated = await service.update(created.id, { toolAllowlist: ['x'] });
+            expect(updated.toolAllowlist).toEqual(['x']);
+        });
+
+        it('update with null clears the allowlist back to absent (all tools)', async () => {
+            const created = await service.create({ name: 'ClearToAll', prompt: 'p', toolAllowlist: ['x', 'y'] });
+            const cleared = await service.update(created.id, { toolAllowlist: null });
+            // `null` clears via $unset — the field is absent, meaning "all tools",
+            // NOT `[]` (which would mean "no tools").
+            expect(cleared.toolAllowlist).toBeUndefined();
+
+            const persisted = await service.get(created.id);
+            expect(persisted?.toolAllowlist).toBeUndefined();
+        });
+
+        it('update preserves the allowlist when the field is omitted', async () => {
+            const created = await service.create({ name: 'Preserve', prompt: 'p', toolAllowlist: ['keep'] });
+            const updated = await service.update(created.id, { name: 'Renamed' });
+            expect(updated.toolAllowlist).toEqual(['keep']);
+        });
+
+        it('rejects a non-array allowlist on create', async () => {
+            await expect(service.create({ name: 'Bad', prompt: 'p', toolAllowlist: 'nope' as any }))
+                .rejects.toBeInstanceOf(SavedPromptValidationError);
+        });
+
+        it('rejects an allowlist with a non-string entry on update', async () => {
+            const created = await service.create({ name: 'BadEntry', prompt: 'p' });
+            await expect(service.update(created.id, { toolAllowlist: ['ok', 5 as any] }))
+                .rejects.toBeInstanceOf(SavedPromptValidationError);
+        });
+    });
+
     describe('list', () => {
         it('returns newest-updated first', async () => {
             const first = await service.create({ name: 'First', prompt: 'a' });
@@ -465,6 +551,29 @@ describe('SavedPromptsService', () => {
             const after = await service.get(created.id);
             expect(after?.scheduleEnabled).toBe(false);
             expect(after?.failureCount).toBe(5);
+            expect(after?.lastRunError).toContain('schedule paused');
+        });
+
+        it('auto-pauses with the precise upstream error when a prompt names an unregistered tool', async () => {
+            // End-to-end of the toolAllowlist failure contract: the provider fails
+            // the run before the model call when a listed tool is unregistered, and
+            // the runner forwards that precise message here verbatim. After the
+            // threshold the schedule auto-pauses, and the pause banner must still
+            // carry the precise reason so an admin sees WHY it stopped.
+            const created = await service.create({ name: 'BadTool', prompt: 'p', cron: '* * * * *', toolAllowlist: ['gone'] });
+            const preciseError = 'unregistered tool(s): "gone"';
+
+            let disabled = false;
+            for (let i = 0; i < 5; i += 1) {
+                ({ disabled } = await service.recordRunFailure(created.id, new Date().toISOString(), preciseError));
+            }
+
+            expect(disabled).toBe(true);
+            const after = await service.get(created.id);
+            expect(after?.scheduleEnabled).toBe(false);
+            expect(after?.failureCount).toBe(5);
+            // Both the precise upstream cause and the pause annotation survive.
+            expect(after?.lastRunError).toContain(preciseError);
             expect(after?.lastRunError).toContain('schedule paused');
         });
 

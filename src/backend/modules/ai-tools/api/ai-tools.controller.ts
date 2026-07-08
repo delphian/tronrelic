@@ -52,6 +52,7 @@ interface IQueryRequestBody {
     stream?: unknown;
     messages?: unknown;
     conversationId?: unknown;
+    toolAllowlist?: unknown;
 }
 
 /**
@@ -78,6 +79,34 @@ function validateMessages(messages: unknown[]): string | null {
         }
         if (typeof content !== 'string') {
             return `messages[${i}].content must be a string.`;
+        }
+    }
+    return null;
+}
+
+/**
+ * Validate a client-supplied `toolAllowlist` from a query body. The selector is
+ * a model-independent guarantee — the schema advertised to the model is only a
+ * hint — so a malformed value must be rejected before it reaches the provider,
+ * where a non-array would otherwise be forwarded and silently read as "all
+ * tools". Legal shapes on the query path are `undefined` (omit → all enabled
+ * tools) or an array of strings (`[]` for none, a name list for a subset);
+ * `null` and non-arrays are rejected. Returns a descriptive error string on the
+ * first problem, or null when valid.
+ *
+ * @param value - The raw `toolAllowlist` value from the request body.
+ * @returns An error message, or null when valid.
+ */
+function validateToolAllowlist(value: unknown): string | null {
+    if (value === undefined) {
+        return null;
+    }
+    if (!Array.isArray(value)) {
+        return 'Body field "toolAllowlist" must be an array of tool-name strings.';
+    }
+    for (let i = 0; i < value.length; i += 1) {
+        if (typeof value[i] !== 'string') {
+            return `toolAllowlist[${i}] must be a string.`;
         }
     }
     return null;
@@ -499,6 +528,18 @@ export class AiToolsController {
             messages = body.messages as IAiConversationMessage[];
         }
 
+        // `toolAllowlist` is the least-privilege selector for this run. Re-check
+        // it here — the provider forwards it straight into governor enforcement,
+        // so a malformed value must fail as a 400 rather than degrade to "all
+        // tools". undefined → omit (all enabled tools); `[]` → none; a name list
+        // → that subset (enforced at governor.invoke()).
+        const allowlistError = validateToolAllowlist(body.toolAllowlist);
+        if (allowlistError) {
+            res.status(400).json({ error: allowlistError });
+            return;
+        }
+        const toolAllowlist = body.toolAllowlist as string[] | undefined;
+
         // The admin driving this query is its end-user principal: on the
         // interactive path the operator queries on their own behalf. requireAdmin
         // set req.userId on the session path (undefined for a service-token call,
@@ -545,7 +586,7 @@ export class AiToolsController {
             // promise settles.
             provider
                 .queryStream(
-                    { prompt, queryId, model, messages, conversationId, mode: 'stream', endUser, injectedSystemPrompt },
+                    { prompt, queryId, model, messages, conversationId, mode: 'stream', endUser, injectedSystemPrompt, toolAllowlist },
                     (chunk: IAiStreamChunk) => {
                         WebSocketService.getInstance().emitToSocket(socketId, QUERY_STREAM_EVENT, chunk);
                     }
@@ -586,7 +627,7 @@ export class AiToolsController {
         // Non-streaming path: await the result and surface it directly.
         const createdAt = new Date().toISOString();
         try {
-            const result = await provider.query({ prompt, model, messages, conversationId, mode: 'programmatic', endUser, injectedSystemPrompt });
+            const result = await provider.query({ prompt, model, messages, conversationId, mode: 'programmatic', endUser, injectedSystemPrompt, toolAllowlist });
             await this.history.append(
                 buildAiQueryRecord('programmatic', prompt, conversationId, createdAt, randomUUID(), result, null)
             );
@@ -699,7 +740,7 @@ export class AiToolsController {
      * client's shared state stays current without a second round-trip.
      */
     savePrompt = async (req: Request, res: Response): Promise<void> => {
-        const { id, name, prompt, cron, scheduleEnabled, providerId, model } = (req.body ?? {}) as {
+        const { id, name, prompt, cron, scheduleEnabled, providerId, model, toolAllowlist } = (req.body ?? {}) as {
             id?: unknown;
             name?: unknown;
             prompt?: unknown;
@@ -707,6 +748,7 @@ export class AiToolsController {
             scheduleEnabled?: unknown;
             providerId?: unknown;
             model?: unknown;
+            toolAllowlist?: unknown;
         };
         try {
             const hasId = typeof id === 'string' && id.trim().length > 0;
@@ -717,7 +759,11 @@ export class AiToolsController {
                     cron: cron as string | null | undefined,
                     scheduleEnabled: scheduleEnabled as boolean | undefined,
                     providerId: providerId as string | null | undefined,
-                    model: model as string | null | undefined
+                    model: model as string | null | undefined,
+                    // Forwarded raw (undefined omit / null clear-to-all / array
+                    // set); the service's validateToolAllowlist rejects a
+                    // malformed value as a SavedPromptValidationError → 400.
+                    toolAllowlist: toolAllowlist as string[] | null | undefined
                 });
             } else {
                 // Stamp ownership from the saving admin. requireAdmin set
@@ -741,6 +787,10 @@ export class AiToolsController {
                     scheduleEnabled: scheduleEnabled as boolean | undefined,
                     providerId: typeof providerId === 'string' ? providerId : undefined,
                     model: typeof model === 'string' ? model : undefined,
+                    // Forwarded raw; the service stores an array verbatim
+                    // (`[]`/`[names]`) and treats null/undefined as "all tools"
+                    // (absent), rejecting a malformed value as a 400.
+                    toolAllowlist: toolAllowlist as string[] | null | undefined,
                     ownerUserId,
                     ownerLabel
                 });
