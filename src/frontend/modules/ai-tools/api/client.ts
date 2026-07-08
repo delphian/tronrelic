@@ -164,6 +164,25 @@ export async function getTrifecta(): Promise<ITrifectaStatus> {
 }
 
 /**
+ * Fetch the lethal-trifecta status scoped to a hypothetical tool allowlist, for
+ * the saved-prompt editor's per-run badge. The allowlist narrows only the
+ * governed registry tools; provider server-tools and secret prompt variables
+ * still fold in (a per-prompt allowlist cannot disable them), so the badge
+ * reflects the true posture a run with this selection would carry.
+ *
+ * @param toolAllowlist - The tool names the run would be allowed to call
+ *        (`[]` = no tools; a list = that subset).
+ * @returns The trifecta status for the scoped set.
+ */
+export async function getTrifectaPreview(toolAllowlist: string[]): Promise<ITrifectaStatus> {
+    return parse<ITrifectaStatus>(await fetch(`${BASE}/trifecta/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toolAllowlist })
+    }), 'load trifecta preview');
+}
+
+/**
  * List installed AI provider plugins for the Provider panel.
  *
  * @returns The registered provider metadata.
@@ -493,6 +512,12 @@ export interface ISavePromptRequest {
     providerId?: string | null;
     /** Model id the prompt runs on; `''`/`null` clears the pin. Omit to leave unchanged. */
     model?: string | null;
+    /**
+     * Tools the prompt may call. Three-state: omit to leave unchanged; `[]` for
+     * no tools; a name list for that subset. `null` clears the restriction back
+     * to all enabled tools. The editor sends the explicit selection.
+     */
+    toolAllowlist?: string[] | null;
 }
 
 /**

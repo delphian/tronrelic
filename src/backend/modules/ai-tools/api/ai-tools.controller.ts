@@ -17,6 +17,7 @@ import type {
     IModelInfo,
     IStaticPromptVariable,
     IToolPolicy,
+    ITrifectaStatus,
     IUntrustedScreenConfig,
     ToolInvocationStatus,
     ToolTriggerPath
@@ -181,23 +182,62 @@ export class AiToolsController {
     };
 
     /**
-     * GET /trifecta — lethal-trifecta status over the enabled tool set.
+     * GET /trifecta — lethal-trifecta status over the whole enabled tool set.
+     * The dashboard's page-level banner; scoping is the preview endpoint below.
+     */
+    getTrifecta = async (_req: Request, res: Response): Promise<void> => {
+        res.json(await this.computeTrifecta());
+    };
+
+    /**
+     * POST /trifecta/preview — lethal-trifecta status scoped to a hypothetical
+     * tool allowlist, backing the saved-prompt editor's per-run badge.
+     *
+     * The body's `toolAllowlist` narrows only the governed registry tools — the
+     * set an allowlist actually controls. Provider server-tools and secret prompt
+     * variables are folded in unchanged, because a per-prompt allowlist cannot
+     * disable them (they run/inject regardless of which governed tools a run
+     * selects), so an honest per-run verdict must still count their legs. The
+     * selector is re-validated with the same guard the query and save paths use.
+     */
+    previewTrifecta = async (req: Request, res: Response): Promise<void> => {
+        const raw = (req.body as { toolAllowlist?: unknown })?.toolAllowlist;
+        const allowlistError = validateToolAllowlist(raw);
+        if (allowlistError) {
+            res.status(400).json({ error: allowlistError });
+            return;
+        }
+        res.json(await this.computeTrifecta(raw as string[] | undefined));
+    };
+
+    /**
+     * Compute the lethal-trifecta verdict, optionally scoped to a tool allowlist.
      *
      * Folds the active provider's enabled server-side tools (Anthropic's
      * `web_search` / `web_fetch`) in alongside the governed registry tools. Those
      * tools execute outside `governor.invoke()`, so the registry cannot see them;
-     * counting them here keeps the verdict honest — a `web_fetch` contributes both
-     * an untrusted-content ingress and an open egress leg, which turns an
-     * otherwise-`safe` posture `lethal` when a secret reader is also enabled.
+     * counting them keeps the verdict honest — a `web_fetch` contributes both an
+     * untrusted-content ingress and an open egress leg, which turns an otherwise
+     * `safe` posture `lethal` when a secret reader is also present.
+     *
+     * @param allowlist - When provided, restricts the governed registry tools to
+     *        these names (`undefined` = every registered tool, the global posture;
+     *        `[]` = no governed tools; a list = that subset). Server-tools and
+     *        secret variables are always included — the allowlist does not gate
+     *        them, and a saved prompt runs with them regardless of its selection.
+     * @returns The trifecta status for the resulting tool set.
      */
-    getTrifecta = async (_req: Request, res: Response): Promise<void> => {
+    private async computeTrifecta(allowlist?: string[]): Promise<ITrifectaStatus> {
         const registryTools = this.registry.listToolInfo();
+        const scoped = allowlist === undefined
+            ? registryTools
+            : registryTools.filter(tool => allowlist.includes(tool.name));
         // The provider half ships in a separate repo and deploys independently,
         // so a version-skewed active provider may predate listActiveServerTools
         // (the provider registry does not validate the instance shape), and the
         // call itself reads provider state that can throw. Guard both — a missing
         // method or a throw degrades to a registry-only verdict instead of 500ing
-        // the dashboard's trifecta panel.
+        // the caller.
         let serverTools: IAiToolInfo[] = [];
         try {
             const provider = this.providers.getActive();
@@ -207,12 +247,12 @@ export class AiToolsController {
         } catch {
             serverTools = [];
         }
-        res.json(detectTrifecta(
-            [...registryTools, ...serverTools],
+        return detectTrifecta(
+            [...scoped, ...serverTools],
             (name, cap) => this.policy.isEgressGated(name, cap),
             this.promptVariables.getSecretVariableNames()
-        ));
-    };
+        );
+    }
 
     /** GET /providers — installed AI provider plugins for the Provider panel. */
     listProviders = async (_req: Request, res: Response): Promise<void> => {
