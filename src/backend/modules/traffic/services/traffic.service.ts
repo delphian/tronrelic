@@ -1023,7 +1023,7 @@ export class TrafficService {
      */
     private pageVisitorMembership(windowClause: string, botFilter: string): string {
         return `candidate_uid IN (
-            SELECT candidate_uid FROM ${TABLE_NAME}
+            SELECT DISTINCT candidate_uid FROM ${TABLE_NAME}
             WHERE ${windowClause}${botFilter} AND event_type = 'page'
         )`;
     }
@@ -1364,7 +1364,7 @@ export class TrafficService {
         const sql = `
             SELECT
                 uniqExactIf(candidate_uid, event_type = 'page') AS distinctVisitors,
-                uniqExactIf(candidate_uid, event_type = 'page' AND user_id IS NOT NULL) AS converted
+                uniqExactIf(candidate_uid, user_id IS NOT NULL AND ${this.pageVisitorMembership(clause, botFilter)}) AS converted
             FROM ${TABLE_NAME}
             WHERE ${clause}${botFilter}
         `;
@@ -1770,11 +1770,14 @@ export class TrafficService {
      * The inner `IN` filters which tids participate, not which of their rows
      * count, so `min`/`max`/`argMin` still see each tid's full history.
      *
-     * A tid only qualifies once it has emitted a `page` event in the window
-     * (the canonical Unique Visitor rule — see the note by
-     * {@link SESSION_GAP_SECONDS}); the `HAVING countIf(event_type = 'page') > 0`
-     * enforces it on both the page and count queries, so cookieless bots that
-     * never run JS are absent regardless of the bot filter. First-touch
+     * A tid only qualifies once it has emitted a `page` event *inside the
+     * window* (the canonical Unique Visitor rule — see the note by
+     * {@link SESSION_GAP_SECONDS}); the `HAVING countIf(event_type = 'page' AND
+     * <window>) > 0` guard enforces it on both the page and count queries. The
+     * window predicate matters for custom past-dated ranges: the outer scan is
+     * full-history (so `argMin` sees each tid's earliest event), so an unscoped
+     * page count would wrongly qualify a tid whose bootstrap is in-window but
+     * whose only page beacon arrives after the range end. First-touch
      * attribution (referrer/landing/country) still reads each tid's earliest
      * event, which is its `bootstrap` row.
      *
@@ -1827,7 +1830,7 @@ export class TrafficService {
                 FROM ${TABLE_NAME}
                 WHERE ${activeInWindow}${botFilter}
                 GROUP BY candidate_uid
-                HAVING ${firstSeenClause} AND countIf(event_type = 'page') > 0
+                HAVING ${firstSeenClause} AND countIf(event_type = 'page' AND ${clause}) > 0
                 ORDER BY firstSeen DESC
                 LIMIT {limit:UInt32} OFFSET {skip:UInt32}
             ) AS base
@@ -1844,7 +1847,7 @@ export class TrafficService {
                 FROM ${TABLE_NAME}
                 WHERE ${activeInWindow}${botFilter}
                 GROUP BY candidate_uid
-                HAVING ${firstSeenClause} AND countIf(event_type = 'page') > 0
+                HAVING ${firstSeenClause} AND countIf(event_type = 'page' AND ${clause}) > 0
             )
         `;
         try {

@@ -16,6 +16,7 @@ export type {
     ITrafficEventBuilderInputs,
     IAnalyticsDateRange,
     IDailyVisitorPoint,
+    IHighVolumeSubnet,
     ITrafficSourceBucket,
     ILandingPageBucket,
     IGeoBucket,
