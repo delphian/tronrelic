@@ -481,7 +481,11 @@ export function QueryTab() {
     const refreshConversationActivity = useCallback(async (conversationId: string) => {
         try {
             const page = await listActivity({ conversationId, limit: 200 });
-            if (isMountedRef.current) {
+            // Drop out-of-order responses: a slower fetch for a conversation the
+            // operator has since navigated away from must not overwrite the
+            // active conversation's records (which back the "Tools used" feed and
+            // the transcript's per-call "Details" deep-links).
+            if (isMountedRef.current && conversationId === conversationIdRef.current) {
                 setConversationRecords(page.records);
             }
         } catch {
@@ -793,6 +797,13 @@ export function QueryTab() {
             activeQueryIdRef.current = null;
             conversationIdRef.current = conversationId;
             setMessages(rebuilt);
+            // Drop the previous conversation's audit records up front so the
+            // "Tools used" summary and the transcript's tool-detail lookup never
+            // show the prior thread's tools during this conversation's in-flight
+            // activity fetch — or permanently, if that fetch fails. The clear
+            // lives here, not in refreshConversationActivity, because the live
+            // streaming `done` path shares that refresh and must not flash empty.
+            setConversationRecords([]);
             setSelectedRecord(null);
             setView('chat');
             // Load this conversation's tool-call audit records so the transcript's

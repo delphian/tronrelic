@@ -54,7 +54,15 @@ export function InvocationTable({ records, onSelect }: {
                             onClick={() => onSelect(record)}
                         >
                             <Td muted className={styles.col_time}><ClientTime date={record.createdAt} format="datetime" /></Td>
-                            <Td><span className={styles.tool_name}>{record.toolName}</span></Td>
+                            <Td>
+                                <button
+                                    type="button"
+                                    className={styles.tool_name_button}
+                                    onClick={(event) => { event.stopPropagation(); onSelect(record); }}
+                                >
+                                    {record.toolName}
+                                </button>
+                            </Td>
                             <Td muted>{record.aiProviderId}</Td>
                             <Td muted>{record.actor.kind}{record.actor.id ? ` · ${record.actor.id}` : ''}</Td>
                             <Td muted>{record.triggerPath}</Td>
