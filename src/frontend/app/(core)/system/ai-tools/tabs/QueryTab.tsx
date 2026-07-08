@@ -14,14 +14,14 @@
  */
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { Send, Bot, User, AlertCircle, X, Copy, CheckCircle, Plus, History, MessageSquare, RefreshCw, ChevronDown, ChevronRight, Brain, Wrench, CornerDownRight } from 'lucide-react';
+import { Send, Bot, User, AlertCircle, X, Copy, CheckCircle, Plus, History, MessageSquare, RefreshCw, ChevronDown, ChevronRight, Brain, Wrench, CornerDownRight, Info } from 'lucide-react';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
-import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IAiTranscriptSegment, IModelInfo, ISavedPrompt } from '@/types';
+import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IAiTranscriptSegment, IModelInfo, ISavedPrompt, IToolInvocationRecord } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
@@ -31,15 +31,19 @@ import { Badge } from '../../../../../components/ui/Badge';
 import { IconButton } from '../../../../../components/ui/IconButton';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { getSocket } from '../../../../../lib/socketClient';
+import { SlideOver } from '../../../../../components/ui/SlideOver';
 import {
     submitQuery,
     cancelQuery,
     getQueryHistory,
     getConversation,
     getQueryModels,
+    listActivity,
     type IStreamAck
 } from '../../../../../modules/ai-tools';
 import { SavedPromptsPanel } from './SavedPromptsPanel';
+import { InvocationDetailPanel } from '../components/InvocationDetailPanel';
+import { InvocationTable } from '../components/InvocationTable';
 import pageStyles from '../page.module.scss';
 import styles from './QueryTab.module.scss';
 
@@ -211,9 +215,19 @@ function formatToolPayload(value: unknown): string {
  * the prose reads identically whether live or replayed.
  *
  * @param segments - The turn's ordered transcript segments.
+ * @param recordsById - The conversation's audit records keyed by their `toolUseId`,
+ *   so a tool_use segment can resolve its exact invocation record. Absent (or a
+ *   miss) simply renders the call without a detail affordance — legacy records and
+ *   the pre-`toolUseId` provider degrade gracefully rather than breaking.
+ * @param onSelectRecord - Opens the matched record's detail panel. Omitted when the
+ *   host has no detail surface (nothing becomes clickable).
  * @returns The rendered transcript.
  */
-function AssistantSegments({ segments }: { segments: IAiTranscriptSegment[] }) {
+function AssistantSegments({ segments, recordsById, onSelectRecord }: {
+    segments: IAiTranscriptSegment[];
+    recordsById?: Map<string, IToolInvocationRecord>;
+    onSelectRecord?: (record: IToolInvocationRecord) => void;
+}) {
     return (
         <div className={styles.segments}>
             {segments.map((segment, index) => {
@@ -228,12 +242,28 @@ function AssistantSegments({ segments }: { segments: IAiTranscriptSegment[] }) {
                     );
                 }
                 if (segment.type === 'tool_use') {
+                    // Resolve this call's exact audit record by the provider-neutral
+                    // toolUseId. A hit turns the header into a link to the full
+                    // invocation detail (status, duration, cost, forensic error,
+                    // screen verdict) the transcript alone can't show.
+                    const auditRecord = segment.id ? recordsById?.get(segment.id) : undefined;
                     return (
                         <div key={index} className={styles.tool_call}>
                             <div className={styles.tool_call_header}>
                                 <Wrench size={14} />
                                 <span className={styles.tool_call_name}>{segment.name || 'tool'}</span>
                                 {segment.server && <Badge tone="info">server</Badge>}
+                                {auditRecord && onSelectRecord && (
+                                    <Button
+                                        variant="ghost"
+                                        size="xs"
+                                        className={styles.tool_call_action}
+                                        onClick={() => onSelectRecord(auditRecord)}
+                                        aria-label={`View the audit record for the ${segment.name || 'tool'} call`}
+                                    >
+                                        <Info size={14} /> Details
+                                    </Button>
+                                )}
                             </div>
                             <pre className={styles.tool_payload}>{formatToolPayload(segment.input)}</pre>
                         </div>
@@ -353,6 +383,29 @@ export function QueryTab() {
     const [savedPrompts, setSavedPrompts] = useState<ISavedPrompt[]>([]);
     /** Conversation ids whose full opening prompt is expanded inline in the history list. */
     const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+    /**
+     * Tool-invocation audit records for the open conversation, loaded from the
+     * Activity feed scoped by conversationId. Backs the transcript's per-call
+     * "Details" deep-links and the "tools used" summary feed.
+     */
+    const [conversationRecords, setConversationRecords] = useState<IToolInvocationRecord[]>([]);
+    /** The audit record whose detail slide-over is open, or null when closed. */
+    const [selectedRecord, setSelectedRecord] = useState<IToolInvocationRecord | null>(null);
+    /**
+     * Audit records keyed by their provider-neutral `toolUseId`, so a transcript
+     * tool_use segment resolves to its exact invocation record in O(1). Records
+     * without a `toolUseId` (legacy, or the pre-`toolUseId` provider) are skipped
+     * — their calls simply render without a detail link.
+     */
+    const toolRecordsById = useMemo(() => {
+        const map = new Map<string, IToolInvocationRecord>();
+        for (const record of conversationRecords) {
+            if (record.toolUseId) {
+                map.set(record.toolUseId, record);
+            }
+        }
+        return map;
+    }, [conversationRecords]);
 
     /** The queryId whose stream chunks the handler currently accepts. */
     const activeQueryIdRef = useRef<string | null>(null);
@@ -417,6 +470,26 @@ export function QueryTab() {
     }, []);
 
     /**
+     * Load a conversation's tool-invocation audit records so the transcript's tool
+     * calls can deep-link to their exact invocation detail and the "tools used"
+     * feed can list them. Secondary data — a failure just leaves the audit
+     * affordances absent, never blocks the chat. Reads the same admin-gated feed
+     * the Activity tab uses, scoped by conversationId.
+     *
+     * @param conversationId - The conversation whose tool calls to load.
+     */
+    const refreshConversationActivity = useCallback(async (conversationId: string) => {
+        try {
+            const page = await listActivity({ conversationId, limit: 200 });
+            if (isMountedRef.current) {
+                setConversationRecords(page.records);
+            }
+        } catch {
+            /* secondary data — the transcript still renders without audit links */
+        }
+    }, []);
+
+    /**
      * Route an incoming stream chunk to the pending assistant turn. Filters by
      * the active queryId so a stale or unrelated query's chunks are ignored —
      * the backend broadcasts `ai-tools:query-stream` globally, so this client
@@ -448,13 +521,20 @@ export function QueryTab() {
             });
             streamingTurnIdRef.current = null;
             activeQueryIdRef.current = null;
+            // The turn produced its audit records as it ran; pull them so the
+            // just-completed tool calls gain their "Details" deep-link and the
+            // tools-used feed reflects this turn without reopening from history.
+            const settledConversationId = conversationIdRef.current;
+            if (settledConversationId) {
+                void refreshConversationActivity(settledConversationId);
+            }
         } else if (chunk.type === 'error') {
             setStreaming(false);
             updateTurn(turnId, { pending: false, error: chunk.error || 'An unknown error occurred' });
             streamingTurnIdRef.current = null;
             activeQueryIdRef.current = null;
         }
-    }, [updateTurn]);
+    }, [updateTurn, refreshConversationActivity]);
 
     // Subscribe to the global stream event once; correlation happens in the
     // handler. The shared socket is reused across the app, so only detach our
@@ -585,6 +665,8 @@ export function QueryTab() {
         streamingTurnIdRef.current = null;
         activeQueryIdRef.current = null;
         conversationIdRef.current = null;
+        setConversationRecords([]);
+        setSelectedRecord(null);
     }, [streaming]);
 
     /**
@@ -711,13 +793,18 @@ export function QueryTab() {
             activeQueryIdRef.current = null;
             conversationIdRef.current = conversationId;
             setMessages(rebuilt);
+            setSelectedRecord(null);
             setView('chat');
+            // Load this conversation's tool-call audit records so the transcript's
+            // tool calls link to their exact invocation detail and the tools-used
+            // feed populates. Fire-and-forget: it must not gate reopening the chat.
+            void refreshConversationActivity(conversationId);
         } catch (err) {
             if (isMountedRef.current) {
                 setHistoryError(err instanceof Error ? err.message : 'Failed to open conversation');
             }
         }
-    }, []);
+    }, [refreshConversationActivity]);
 
     /**
      * Ctrl/Cmd+Enter submits from the composer.
@@ -855,7 +942,8 @@ export function QueryTab() {
                                             ) : turn.segments && turn.segments.length > 0 ? (
                                                 // A settled turn (live `done` or reopened from history) renders its
                                                 // full transcript — thinking, tool calls, results, and text in order.
-                                                <AssistantSegments segments={turn.segments} />
+                                                // The audit-record map lets each tool call deep-link to its record.
+                                                <AssistantSegments segments={turn.segments} recordsById={toolRecordsById} onSelectRecord={setSelectedRecord} />
                                             ) : (
                                                 <div
                                                     className={styles.turn_markdown}
@@ -954,6 +1042,16 @@ export function QueryTab() {
                         </div>
                     </div>
                 </Card>
+                {conversationRecords.length > 0 && (
+                    <details className={styles.tools_used}>
+                        <summary className={styles.tools_used_summary}>
+                            <Wrench size={16} /> Tools used in this conversation ({conversationRecords.length})
+                        </summary>
+                        <div className={styles.tools_used_body}>
+                            <InvocationTable records={conversationRecords} onSelect={setSelectedRecord} />
+                        </div>
+                    </details>
+                )}
                 <SavedPromptsPanel
                     prompts={savedPrompts}
                     onPromptsChange={setSavedPrompts}
@@ -1042,6 +1140,15 @@ export function QueryTab() {
                         )}
                 </Stack>
             )}
+
+            <SlideOver
+                open={selectedRecord !== null}
+                onClose={() => setSelectedRecord(null)}
+                label={selectedRecord ? `Invocation ${selectedRecord.toolName}` : undefined}
+                title={selectedRecord ? <span className={styles.tool_call_name}>{selectedRecord.toolName}</span> : null}
+            >
+                {selectedRecord && <InvocationDetailPanel record={selectedRecord} />}
+            </SlideOver>
         </div>
     );
 }

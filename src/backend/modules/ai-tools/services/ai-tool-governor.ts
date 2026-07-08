@@ -635,6 +635,13 @@ export class AiToolGovernor implements IAiToolGovernor {
         if (ctx.queryId) {
             record.queryId = ctx.queryId;
         }
+        if (ctx.toolUseId) {
+            // The provider-neutral per-call id, when the provider threaded one
+            // through. It pairs this audit row to its transcript tool_use/
+            // tool_result segment so a UI can deep-link a specific call to its
+            // exact record instead of guessing by ordinal or tool name.
+            record.toolUseId = ctx.toolUseId;
+        }
         if (ctx.endUser?.userId?.trim()) {
             // Attribute the call to the end user it ran on behalf of, distinct
             // from the actor that drove it — so a user-scoped tool's audit trail

@@ -15,14 +15,12 @@ import type { IToolInvocationRecord, IAiToolInfo, ToolInvocationStatus, ToolTrig
 import { Stack } from '../../../../../components/layout';
 import { Button } from '../../../../../components/ui/Button';
 import { Select } from '../../../../../components/ui/Select';
-import { Badge } from '../../../../../components/ui/Badge';
-import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { Pagination } from '../../../../../components/ui/Pagination';
 import { SlideOver } from '../../../../../components/ui/SlideOver';
-import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { getSocket } from '../../../../../lib/socketClient';
 import { listActivity, listTools, type IActivityQuery } from '../../../../../modules/ai-tools';
-import { InvocationDetailPanel, statusTone } from '../components/InvocationDetailPanel';
+import { InvocationDetailPanel } from '../components/InvocationDetailPanel';
+import { InvocationTable } from '../components/InvocationTable';
 import styles from '../page.module.scss';
 
 /** Page size for the feed. */
@@ -166,39 +164,7 @@ export function ActivityTab() {
                 ? <div className={styles.placeholder}>No invocations match the current filters.</div>
                 : (
                     <>
-                        <div className="table-scroll">
-                            <Table>
-                                <Thead>
-                                    <Tr>
-                                        <Th width="shrink" className={styles.col_time}>Time</Th>
-                                        <Th>Tool</Th>
-                                        <Th width="shrink">AI Provider</Th>
-                                        <Th width="shrink">Actor</Th>
-                                        <Th width="shrink">Trigger</Th>
-                                        <Th width="shrink">Status</Th>
-                                        <Th width="shrink">Duration</Th>
-                                    </Tr>
-                                </Thead>
-                                <Tbody>
-                                    {items.map(record => (
-                                        <Tr
-                                            key={record.id}
-                                            className={styles.tool_row}
-                                            hasError={record.status === 'error'}
-                                            onClick={() => setSelectedRecord(record)}
-                                        >
-                                            <Td muted className={styles.col_time}><ClientTime date={record.createdAt} format="datetime" /></Td>
-                                            <Td><span className={styles.tool_name}>{record.toolName}</span></Td>
-                                            <Td muted>{record.aiProviderId}</Td>
-                                            <Td muted>{record.actor.kind}{record.actor.id ? ` · ${record.actor.id}` : ''}</Td>
-                                            <Td muted>{record.triggerPath}</Td>
-                                            <Td><Badge tone={statusTone(record.status)}>{record.status}</Badge></Td>
-                                            <Td muted>{record.durationMs}ms</Td>
-                                        </Tr>
-                                    ))}
-                                </Tbody>
-                            </Table>
-                        </div>
+                        <InvocationTable records={items} onSelect={setSelectedRecord} />
                         <div className={styles.pager}>
                             <Pagination
                                 total={total}

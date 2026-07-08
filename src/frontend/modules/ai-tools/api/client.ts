@@ -71,6 +71,10 @@ export interface IActivityQuery {
     aiProviderId?: string;
     triggerPath?: ToolTriggerPath;
     status?: ToolInvocationStatus;
+    /** Scope to one conversation's tool calls — backs the Query tab's per-conversation feed. */
+    conversationId?: string;
+    /** Scope to one run's tool calls. */
+    queryId?: string;
     limit?: number;
     offset?: number;
 }

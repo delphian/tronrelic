@@ -787,6 +787,12 @@ export class AiToolsController {
         if (typeof req.query.status === 'string') {
             query.status = req.query.status as ToolInvocationStatus;
         }
+        if (typeof req.query.conversationId === 'string') {
+            query.conversationId = req.query.conversationId;
+        }
+        if (typeof req.query.queryId === 'string') {
+            query.queryId = req.query.queryId;
+        }
         if (typeof req.query.limit === 'string') {
             const parsed = Number.parseInt(req.query.limit, 10);
             if (!Number.isNaN(parsed)) {
