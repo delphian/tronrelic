@@ -14,7 +14,8 @@
  * baked-in effect but the curator's mandated-subset selection: core computes the
  * eligible publish sinks for the draft's descriptor (within the type's
  * `classification` ceiling), the curator ticks the destinations, and routed
- * delivery runs through syndication before `onApprove`. The tool never names a
+ * delivery runs through syndication before the declarative `applyEdit` commit.
+ * The tool never names a
  * destination — destination choice is the human's, at the gate — which is both
  * the safer egress posture and what lets a new transport appear with zero tool
  * or model change.
@@ -57,7 +58,7 @@ const RECOMMENDED_BODY_LIMIT = 280;
  * rejected). That bookkeeping is declared, not coded: `decisionStatus` maps each
  * decision to the store's own status word, which core writes through this type's
  * `applyEdit({ status })` seam, so the terminal effect is readable data rather
- * than an imperative `onApprove`/`onReject` callback. The `classification` of
+ * than an imperative approve/reject callback. The `classification` of
  * `{ external, public }` is what makes the external X and Telegram publish sinks
  * eligible in the picker; a lower ceiling would hide them, so it is set
  * explicitly rather than relying on the restrictive default.

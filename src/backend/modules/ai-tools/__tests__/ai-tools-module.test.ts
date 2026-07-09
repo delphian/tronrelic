@@ -134,14 +134,14 @@ function boundCuratedTool(curationTypeId: string, handler = vi.fn(async () => ({
     };
 }
 
-/** Build a curation type whose callbacks are spies, overridable per test. */
+/** Build a declarative curation type whose seams are spies, overridable per test. */
 function spyCurationType(over: Partial<ICurationType> = {}): ICurationType {
     return {
         typeId: 'x-poster:tweet',
         label: 'Tweet',
         describe: vi.fn(async (ref: Record<string, unknown>) => ({ body: `draft ${String(ref.postId ?? '')}` })),
-        onApprove: vi.fn(async () => undefined),
-        onReject: vi.fn(async () => undefined),
+        decisionStatus: { approved: 'published', rejected: 'rejected' },
+        applyEdit: vi.fn(async () => undefined),
         ...over
     };
 }
@@ -839,8 +839,8 @@ describe('AiToolsModule', () => {
         }
 
         it('releases a held effect without manual review on the interactive path when policy is auto-approve', async () => {
-            const onApprove = vi.fn(async () => undefined);
-            curation.registerType(spyCurationType({ onApprove }), 'x-poster');
+            const applyEdit = vi.fn(async () => undefined);
+            curation.registerType(spyCurationType({ applyEdit }), 'x-poster');
             const registry = module.getRegistry();
             registry.registerTool(holdingTool(curation), 'test');
             await registry.setEnabled('test-bound', true);
@@ -848,19 +848,19 @@ describe('AiToolsModule', () => {
             // Default (require): the handler runs and drafts, but the effect waits.
             const held = await module.getGovernor().invoke('test-bound', {}, interactiveCtx);
             expect(held.status).toBe('ok');
-            expect(onApprove).not.toHaveBeenCalled();
+            expect(applyEdit).not.toHaveBeenCalled();
             expect(await curation.countPending()).toBe(1);
 
-            // Admin flips the bypass: the next held effect auto-approves and runs.
+            // Admin flips the bypass: the next held effect auto-approves and commits.
             await module.getPolicy().setOverride('test-bound', { curation: 'auto-approve' });
             const released = await module.getGovernor().invoke('test-bound', {}, interactiveCtx);
             expect(released.status).toBe('ok');
-            expect(onApprove).toHaveBeenCalledOnce();
+            expect(applyEdit).toHaveBeenCalledOnce();
         });
 
         it('ignores auto-approve on autonomous paths — the effect falls back to a manual hold', async () => {
-            const onApprove = vi.fn(async () => undefined);
-            curation.registerType(spyCurationType({ onApprove }), 'x-poster');
+            const applyEdit = vi.fn(async () => undefined);
+            curation.registerType(spyCurationType({ applyEdit }), 'x-poster');
             const registry = module.getRegistry();
             registry.registerTool(holdingTool(curation), 'test');
             await registry.setEnabled('test-bound', true);
@@ -871,7 +871,7 @@ describe('AiToolsModule', () => {
             // path, so the effect stays pending for a human.
             const result = await module.getGovernor().invoke('test-bound', {}, scheduledCtx);
             expect(result.status).toBe('ok');
-            expect(onApprove).not.toHaveBeenCalled();
+            expect(applyEdit).not.toHaveBeenCalled();
             expect(await curation.countPending()).toBe(1);
         });
     });

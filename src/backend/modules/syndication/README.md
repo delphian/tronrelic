@@ -98,7 +98,7 @@ The payload (`ISyndicationDeliveredContext`) is self-sufficient for a subscriber
 On approving a `publishesToDestinations` item, `CurationService.decide()` enqueues the selected publish legs into `'syndication'` (resolved lazily, so a boot without the module degrades to the legacy best-effort path). Consequences a consumer **must** account for:
 
 - **Outcomes become eventual.** The item's destination outcomes are recorded `pending` at decision time and advanced by the relay out-of-band. The outbox is the single source of truth; curation overlays live leg state onto its outcomes on read (`get`, `listHistory`) — it does not duplicate terminal state.
-- **`onApprove` sees `pending`, not terminal results.** External delivery is now asynchronous and must not block the decision. A type's `onApprove` is for its own bookkeeping, not for observing where content landed.
+- **Approval does not observe where content landed.** External delivery is asynchronous and must not block the decision, so an approval's routed publish leg is delivered out-of-band by the relay. A type commits only its declarative `decisionStatus` bookkeeping via `applyEdit`; that commit neither waits on nor observes the destination outcomes.
 - **Status mapping.** Curation's four-state outcome collapses syndication's six: `delivered`→`delivered`, `refused`→`refused`, `dead`→`failed`, and `pending`/`delivering`/(retryable)`failed`→`pending` (still in flight).
 
 ## Invariants

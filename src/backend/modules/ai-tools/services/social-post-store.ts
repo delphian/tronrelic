@@ -161,9 +161,10 @@ export class SocialPostStore {
 
     /**
      * Mark a draft published as approve-time bookkeeping. Routed delivery to the
-     * selected sinks has already run by the time the curation type's `onApprove`
-     * calls this, so a draft that is missing or already decided is a benign
-     * no-op, not a delivery failure — hence a boolean rather than a throw.
+     * selected sinks has already run by the time core commits the curation type's
+     * approved `decisionStatus` word through `applyEdit`, which calls this, so a
+     * draft that is missing or already decided is a benign no-op, not a delivery
+     * failure — hence a boolean rather than a throw.
      *
      * @param postId - The draft id.
      * @returns True when a pending draft was transitioned.

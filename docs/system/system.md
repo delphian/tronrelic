@@ -96,7 +96,7 @@ The central registry of provider-owned content — the reusable noun the platfor
 
 ### Curation
 
-One core admin surface (`/system/curation`, owned by the Curation module) for every effect held for human review before it takes hold. Plugins register an `ICurationType` — a [content type](./system-content-types.md) plus `onApprove`/`onReject` verbs; core owns the decision and a pointer-plus-preview envelope while the type owns the payload and what approval does. It also hardens a tool's `forcesCuratorReview` into a verifiable `curationTypeId` binding the AI tool governor checks live against the published `'curation'` service. See [system-curation.md](./system-curation.md).
+One core admin surface (`/system/curation`, owned by the Curation module) for every effect held for human review before it takes hold. Plugins register an `ICurationType` — a [content type](./system-content-types.md) plus required declarative `decisionStatus` bookkeeping (committed through `applyEdit`); core owns the decision and a pointer-plus-preview envelope while the type owns the payload and what approval does. It also hardens a tool's `forcesCuratorReview` into a verifiable `curationTypeId` binding the AI tool governor checks live against the published `'curation'` service. See [system-curation.md](./system-curation.md).
 
 ### Notifications
 

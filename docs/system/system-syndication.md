@@ -26,7 +26,7 @@ There is no two-phase commit across Twitter, Telegram, and Reddit, so the N legs
 
 ### Outcomes become eventual
 
-Delivery is asynchronous, which reshapes what an originator may observe. The outbox is the single source of truth; an originator records each destination outcome as `pending` at decision time and overlays the live leg state on read rather than duplicating terminal state. An originator's commit-time callback (curation's `onApprove`) therefore sees `pending` intent, never where content landed — it is for the type's own bookkeeping, not for observing delivery.
+Delivery is asynchronous, which reshapes what an originator may observe. The outbox is the single source of truth; an originator records each destination outcome as `pending` at decision time and overlays the live leg state on read rather than duplicating terminal state. An originator's commit-time bookkeeping (curation's own `decisionStatus`/`applyEdit` record) therefore sees `pending` intent, never where content landed — it is for the type's own bookkeeping, not for observing delivery.
 
 ## The Contract
 

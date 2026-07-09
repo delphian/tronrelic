@@ -46,7 +46,7 @@ export interface ICurationRegistry {
     /**
      * Register a reviewable content type.
      *
-     * @param type - The type contract (describe / onApprove / onReject).
+     * @param type - The type contract (describe / applyEdit / decisionStatus).
      * @param providerId - Id of the registering plugin or module.
      */
     registerType(type: ICurationType, providerId: string): void;
@@ -116,14 +116,14 @@ export interface ICurationService extends ICurationRegistry {
 
     /**
      * Approve a pending item: record the decision, deliver to any selected
-     * destinations, then invoke the owning type's `onApprove`. Returns null when
-     * the item is missing or no longer pending, or when the owning type is
-     * unregistered (decision blocked).
+     * destinations, then commit the decision through the type's
+     * `applyEdit({ status })` seam. Returns null when the item is missing or no
+     * longer pending, or when the owning type is unregistered (decision blocked).
      *
      * `destinations` is the curator's mandated subset for a type that publishes
      * to destinations: each entry must be one of the item's eligible publish
      * sinks (see {@link listEligibleDestinations}). The selection is persisted
-     * with the decision and delivered before `onApprove`; per-destination
+     * with the decision and delivered before the decision commits; per-destination
      * outcomes land on the returned item's `destinations`. Omit it for the
      * classic single-effect approval.
      *
@@ -170,8 +170,9 @@ export interface ICurationService extends ICurationRegistry {
     setDestinationDefaults(typeId: string, sinkIds: string[]): Promise<void>;
 
     /**
-     * Reject a pending item: record the decision, then invoke the owning type's
-     * `onReject`. Returns null under the same conditions as `approve`.
+     * Reject a pending item: record the decision, then commit it through the
+     * type's `applyEdit({ status })` seam. Returns null under the same conditions
+     * as `approve`.
      *
      * @param id - The envelope id.
      * @param decidedBy - Better Auth user id of the deciding curator.

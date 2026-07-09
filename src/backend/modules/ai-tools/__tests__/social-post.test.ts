@@ -160,10 +160,8 @@ describe('createSocialPostCurationType', () => {
         expect(desc.title).toMatch(/unavailable/i);
     });
 
-    it('declares declarative decision bookkeeping, not imperative verbs', () => {
+    it('declares declarative decision bookkeeping', () => {
         const type = createSocialPostCurationType(store, logger);
-        expect(type.onApprove).toBeUndefined();
-        expect(type.onReject).toBeUndefined();
         expect(type.decisionStatus).toEqual({ approved: 'published', rejected: 'rejected' });
     });
 
