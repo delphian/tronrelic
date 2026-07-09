@@ -168,7 +168,11 @@ export class CurationController {
             res.status(409).json({ error: 'The owning provider is unavailable; this item cannot be edited until it is re-enabled.' });
             return;
         }
-        if (!this.curation.getType(item.typeId)?.applyEdit) {
+        // Body-editability is signalled by the descriptor's `editable` flag, not by
+        // `applyEdit` presence (now required on every curation type, so a presence
+        // check would always pass). `get()` re-derived a live preview above, so this
+        // reflects the type's current descriptor.
+        if (item.preview?.editable !== true) {
             res.status(409).json({ error: 'This content type does not support inline editing.' });
             return;
         }
