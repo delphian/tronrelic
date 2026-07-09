@@ -95,7 +95,7 @@
 
 /* Content beside decision rail. Single column by default (narrow containers);
    the rail drops below the content. Widens to two columns once the card has the
-   room, giving the destination picker a column of its own. */
+   room, giving the sink picker a column of its own. */
 .review_grid {
     display: grid;
     grid-template-columns: 1fr;
@@ -149,7 +149,7 @@
     flex-direction: column;
     /* Honor the fixed rail track: a grid item defaults to min-width:auto, so a
        long sink name (a Telegram channel title) would blow the column past its
-       max-width-sm track and defeat the .dest_label ellipsis. */
+       max-width-sm track and defeat the .sink_label ellipsis. */
     min-width: 0;
     padding-top: var(--gap-md);
     border-top: var(--border-width-thin) solid var(--color-border);
@@ -164,14 +164,14 @@
     }
 }
 
-/* Secondary hint while a card's eligible destinations are still loading. */
+/* Secondary hint while a card's eligible sinks are still loading. */
 .rail_hint {
     font-size: var(--font-size-caption);
     color: var(--color-text-muted);
 }
 
-/* Destination picker: the publish sinks a curator selects when approving a
-   destinations-enabled item. Grouped in a fieldset for accessible labelling,
+/* Sink picker: the publish sinks a curator selects when approving a
+   publishes-to-sinks item. Grouped in a fieldset for accessible labelling,
    then split into internal and external sub-groups so exposure is preattentive. */
 .picker {
     display: flex;
@@ -194,7 +194,7 @@
 }
 
 /* One reach group (internal or external). The external variant is tinted amber
-   so a public destination never reads as a calm, default-safe choice. */
+   so a public sink never reads as a calm, default-safe choice. */
 .picker_group {
     display: flex;
     flex-direction: column;
@@ -218,7 +218,7 @@
     color: var(--color-text-muted);
 }
 
-.dest_option {
+.sink_option {
     display: flex;
     align-items: center;
     gap: var(--gap-xs);
@@ -227,11 +227,11 @@
     cursor: pointer;
 }
 
-.dest_option input {
+.sink_option input {
     accent-color: var(--color-primary);
 }
 
-.dest_icon {
+.sink_icon {
     flex: 0 0 auto;
     color: var(--color-text-muted);
 }
@@ -240,7 +240,7 @@
    a single line (min-width:0 lets it shrink inside the flex row) — long sink
    names like the Telegram channel would otherwise wrap to many lines; the full
    name shows on the element's hover title. */
-.dest_label {
+.sink_label {
     flex: 1 1 auto;
     min-width: 0;
     white-space: nowrap;
@@ -303,8 +303,8 @@
     color: var(--color-text);
 }
 
-/* Per-destination delivery outcomes shown on a decided item in history. */
-.destination_outcomes {
+/* Per-sink delivery outcomes shown on a decided item in history. */
+.sink_outcomes {
     display: flex;
     flex-wrap: wrap;
     gap: var(--gap-xs);

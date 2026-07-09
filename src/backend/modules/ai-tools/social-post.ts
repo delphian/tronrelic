@@ -3,22 +3,20 @@
  *
  * The provider-neutral social-posting primitive: one core content type
  * (`core:social-post`) and one AI tool (`propose-social-post`) that together let
- * a model draft a destination-agnostic post and a curator fan it out to whatever
- * publish sinks an operator selects (X, Telegram, a future Mastodon). This is the
- * deliberate inversion of the old per-destination model — where each transport
- * plugin owned its own send tool and single-destination curation type — into
- * "core owns the noun and the proposing verb; plugins are pure transport
- * adapters registering publish sinks on the content router."
+ * a model draft a sink-agnostic post and a curator fan it out to whatever publish
+ * sinks an operator selects (X, Telegram, a future Mastodon). This is the
+ * deliberate inversion of the old per-sink model — where each transport plugin
+ * owned its own send tool and single-sink curation type — into "core owns the
+ * noun and the proposing verb; plugins are pure transport adapters registering
+ * publish sinks on the content router."
  *
- * The type sets `publishesToDestinations: true`, so approval is not a single
- * baked-in effect but the curator's mandated-subset selection: core computes the
- * eligible publish sinks for the draft's descriptor (within the type's
- * `classification` ceiling), the curator ticks the destinations, and routed
- * delivery runs through syndication before the declarative `applyEdit` commit.
- * The tool never names a
- * destination — destination choice is the human's, at the gate — which is both
- * the safer egress posture and what lets a new transport appear with zero tool
- * or model change.
+ * The type sets `publishesToSinks: true`, so approval is not a single baked-in
+ * effect but the curator's mandated-subset selection: core computes the eligible
+ * publish sinks for the draft's descriptor (within the type's `classification`
+ * ceiling), the curator ticks the sinks, and routed delivery runs through
+ * syndication before the declarative `applyEdit` commit. The tool never names a
+ * sink — sink choice is the human's, at the gate — which is both the safer egress
+ * posture and what lets a new transport appear with zero tool or model change.
  */
 
 import type {
@@ -41,19 +39,19 @@ export const SOCIAL_POST_CURATION_TYPE_ID = 'core:social-post';
 
 /**
  * Recommended upper bound on body length surfaced to the model. Not a hard limit
- * — each destination enforces its own ceiling at delivery via an
- * `IContentSinkRefusal` (a tweet's 280, Telegram's 4096) — but steering the
- * model toward short copy keeps a single body usable across every destination.
+ * — each sink enforces its own ceiling at delivery via an `IContentSinkRefusal`
+ * (a tweet's 280, Telegram's 4096) — but steering the model toward short copy
+ * keeps a single body usable across every sink.
  */
 const RECOMMENDED_BODY_LIMIT = 280;
 
 /**
  * Build the `core:social-post` curation type bound to the draft store.
  *
- * The type is destination-neutral on purpose: `describe()` flattens a draft into
- * the generic descriptor every publish sink renders, and because the type
- * publishes to destinations, the approve-time fan-out is lifted out of the
- * decision commit — routed delivery to the curator-selected sinks runs first, so
+ * The type is sink-neutral on purpose: `describe()` flattens a draft into the
+ * generic descriptor every publish sink renders, and because the type publishes
+ * to sinks, the approve-time fan-out is lifted out of the decision commit —
+ * routed delivery to the curator-selected sinks runs first, so
  * the commit is left with only the draft's own bookkeeping (mark it published /
  * rejected). That bookkeeping is declared, not coded: `decisionStatus` maps each
  * decision to the store's own status word, which core writes through this type's
@@ -71,7 +69,7 @@ export function createSocialPostCurationType(store: SocialPostStore, logger: ISy
     return {
         typeId: SOCIAL_POST_CURATION_TYPE_ID,
         label: 'Social Post',
-        publishesToDestinations: true,
+        publishesToSinks: true,
         classification: { egress: 'external', audience: 'public' },
         // Declarative decision bookkeeping: both words map to the draft store's
         // own status vocabulary, applied by core through `applyEdit({ status })`.
@@ -164,12 +162,12 @@ const PROPOSE_SOCIAL_POST_CAPABILITY: IAiToolCapability = {
 /**
  * Build the provider-neutral `propose-social-post` AI tool.
  *
- * The tool drafts a destination-agnostic post and holds it in the central
- * curation queue; it never publishes and never picks a destination — the curator
- * selects which publish sinks (X, Telegram) fire at approval. Replaces the
- * per-destination `x-post-tweet` / `telegram-send-message` / `telegram-send-photo`
- * tools with one verb, so the model learns a single posting capability and a new
- * transport needs no new tool.
+ * The tool drafts a sink-agnostic post and holds it in the central curation
+ * queue; it never publishes and never picks a sink — the curator selects which
+ * publish sinks (X, Telegram) fire at approval. Replaces the per-sink
+ * `x-post-tweet` / `telegram-send-message` / `telegram-send-photo` tools with one
+ * verb, so the model learns a single posting capability and a new transport needs
+ * no new tool.
  *
  * @param deps - The draft store, a lazy curation-service resolver, and a logger.
  * @returns The tool to register on the core `'ai-tools'` registry.
@@ -184,7 +182,7 @@ export function createSocialPostTool(deps: ISocialPostToolDependencies): IAiTool
             'chooses which connected channels (e.g. X/Twitter, Telegram) to publish it to — or rejects it. ' +
             'Use when asked to draft, share, or announce something on social media. ' +
             'The "body" parameter is required and is the post text; keep it under ' +
-            `${RECOMMENDED_BODY_LIMIT} characters so it fits every destination (longer text may be refused by ` +
+            `${RECOMMENDED_BODY_LIMIT} characters so it fits every channel (longer text may be refused by ` +
             'shorter-limit channels at delivery). Optionally pass "title" for an internal heading and "imageUrl" ' +
             '(a public http/https image URL) for channels that render media — text-only channels ignore it. ' +
             'Returns a pending-review confirmation with a postId, never a published link. ' +
@@ -194,7 +192,7 @@ export function createSocialPostTool(deps: ISocialPostToolDependencies): IAiTool
             type: 'object',
             description: 'The social post draft to hold for curator review.',
             properties: {
-                body: { type: 'string', description: `Post text (required). Keep under ${RECOMMENDED_BODY_LIMIT} characters to fit every destination.` },
+                body: { type: 'string', description: `Post text (required). Keep under ${RECOMMENDED_BODY_LIMIT} characters to fit every channel.` },
                 title: { type: 'string', description: 'Optional internal heading shown in the review queue.' },
                 imageUrl: { type: 'string', description: 'Optional public http/https image URL for channels that render media.' }
             },

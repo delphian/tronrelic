@@ -3,18 +3,17 @@
 /**
  * @fileoverview Curation queue — the central inbox of effects held for human
  * review across every content type. Pending items render as focused review
- * cards: the content on one side, a decision rail on the other holding the
- * destination picker and Approve / Edit / Reject. Approving commits the effect
- * through its owning plugin, rejecting discards it; an item whose owning plugin
- * is disabled returns a 409 the toast surfaces, since it cannot be decided until
- * re-enabled.
+ * cards: the content on one side, a decision rail on the other holding the sink
+ * picker and Approve / Edit / Reject. Approving commits the effect through its
+ * owning plugin, rejecting discards it; an item whose owning plugin is disabled
+ * returns a 409 the toast surfaces, since it cannot be decided until re-enabled.
  *
  * The decision rail is built around one risk: an approval that fans content to a
- * public destination cannot be undone. So the picker separates the calm
- * internal/admin sinks from the amber external/public ones, and any approval
- * whose selection includes an external destination is gated behind an explicit
- * confirmation — internal-only approval and rejection stay one click, the fast
- * path the queue depends on.
+ * public sink cannot be undone. So the picker separates the calm internal/admin
+ * sinks from the amber external/public ones, and any approval whose selection
+ * includes an external sink is gated behind an explicit confirmation —
+ * internal-only approval and rejection stay one click, the fast path the queue
+ * depends on.
  *
  * A Pending/History toggle switches between the live queue and the read-only
  * audit of past decisions. Decisions never delete a record, so History is just
@@ -41,15 +40,15 @@ import { getSocket } from '../../../../lib/socketClient';
 import {
     listCurations,
     listCurationHistory,
-    listDestinations,
-    setDestinationDefaults,
+    listSinks,
+    setSinkDefaults,
     approveCuration,
     rejectCuration,
     editCuration,
     type ICurationItemView,
-    type ICurationEligibleDestination,
-    type ICurationDestinationOutcome,
-    type ICurationDestinationSelection
+    type ICurationEligibleSink,
+    type ICurationSinkOutcome,
+    type ICurationSinkSelection
 } from '../../../../modules/curation';
 import styles from './page.module.scss';
 
@@ -62,18 +61,18 @@ function truncate(text: string, max = 160): string {
 }
 
 /**
- * Decide whether a destination's reach leaves the safe internal/admin zone —
- * the single predicate that drives the picker's amber grouping and the
- * publish-confirmation gate. A sink counts as external when it either leaves the
- * platform (`egress` past `internal`) or widens to the public (`audience` is
- * `public`); both are exposures an operator must not trigger by reflex. Erring
- * toward "external" is deliberate: a false amber costs one confirmation click, a
- * false calm costs an irreversible public publish.
+ * Decide whether a sink's reach leaves the safe internal/admin zone — the single
+ * predicate that drives the picker's amber grouping and the publish-confirmation
+ * gate. A sink counts as external when it either leaves the platform (`egress`
+ * past `internal`) or widens to the public (`audience` is `public`); both are
+ * exposures an operator must not trigger by reflex. Erring toward "external" is
+ * deliberate: a false amber costs one confirmation click, a false calm costs an
+ * irreversible public publish.
  *
- * @param reach - The destination's reach classification.
+ * @param reach - The sink's reach classification.
  * @returns True when delivering to this sink is an external/public exposure.
  */
-function destinationIsExternal(reach: ICurationEligibleDestination['reach']): boolean {
+function sinkIsExternal(reach: ICurationEligibleSink['reach']): boolean {
     return reach.egress !== 'internal' || reach.audience === 'public';
 }
 
@@ -124,18 +123,18 @@ function CurationEditForm({ initialBody, onCancel, onSave }: {
 
 /**
  * Confirmation body shown before an approval that would fan content to one or
- * more external/public destinations. Restating exactly which public channels
- * will fire — and that the effect cannot be undone — is the deliberate friction
- * that turns a reflex click into a decision; the default focus sits on Cancel so
- * the dangerous path is never the one a stray Enter takes.
+ * more external/public sinks. Restating exactly which public channels will fire —
+ * and that the effect cannot be undone — is the deliberate friction that turns a
+ * reflex click into a decision; the default focus sits on Cancel so the dangerous
+ * path is never the one a stray Enter takes.
  *
- * @param props.channels - The selected external/public destinations to name.
- * @param props.onConfirm - Proceed with the approval and its destination fan-out.
+ * @param props.channels - The selected external/public sinks to name.
+ * @param props.onConfirm - Proceed with the approval and its sink fan-out.
  * @param props.onCancel - Dismiss without approving, returning to the rail.
  * @returns The confirmation form.
  */
 function PublishConfirm({ channels, onConfirm, onCancel }: {
-    channels: ICurationEligibleDestination[];
+    channels: ICurationEligibleSink[];
     onConfirm: () => void;
     onCancel: () => void;
 }) {
@@ -149,7 +148,7 @@ function PublishConfirm({ channels, onConfirm, onCancel }: {
                 {channels.map(channel => (
                     <li key={channel.sinkId} className={styles.confirm_item}>
                         <Globe size={14} aria-hidden />
-                        <span className={styles.dest_label}>{channel.label ?? channel.sinkId}</span>
+                        <span className={styles.sink_label}>{channel.label ?? channel.sinkId}</span>
                         <Badge tone="warning">{channel.reach.egress}/{channel.reach.audience}</Badge>
                     </li>
                 ))}
@@ -216,16 +215,15 @@ function CurationPreview({ preview, expandable = false }: { preview: ICurationIt
 }
 
 /**
- * Map a destination delivery status to a Badge tone, so an operator reads where
- * approved content landed at a glance: delivered succeeds, failed alarms, refused
- * warns (the sink deliberately declined — not an error to chase, but not a
- * delivery either), pending is neutral (the leg was committed but not yet
- * settled).
+ * Map a sink delivery status to a Badge tone, so an operator reads where approved
+ * content landed at a glance: delivered succeeds, failed alarms, refused warns
+ * (the sink deliberately declined — not an error to chase, but not a delivery
+ * either), pending is neutral (the leg was committed but not yet settled).
  *
- * @param status - The per-destination delivery status.
+ * @param status - The per-sink delivery status.
  * @returns The Badge tone for that status.
  */
-function outcomeTone(status: ICurationDestinationOutcome['status']): 'success' | 'danger' | 'warning' | 'neutral' {
+function outcomeTone(status: ICurationSinkOutcome['status']): 'success' | 'danger' | 'warning' | 'neutral' {
     if (status === 'delivered') {
         return 'success';
     }
@@ -236,23 +234,23 @@ function outcomeTone(status: ICurationDestinationOutcome['status']): 'success' |
 }
 
 /**
- * Render the per-destination delivery outcomes of an approved item as toned
- * badges — the audit of which publish sinks a curator's approval reached, which
- * failed, and which the sink refused. A failed leg carries its error and a
- * refused leg its reason in the badge's `title`, so the detail is one hover away
- * without cluttering the row. Renders nothing when the item fanned out to no
- * destinations (a classic single-effect approval).
+ * Render the per-sink delivery outcomes of an approved item as toned badges — the
+ * audit of which publish sinks a curator's approval reached, which failed, and
+ * which the sink refused. A failed leg carries its error and a refused leg its
+ * reason in the badge's `title`, so the detail is one hover away without
+ * cluttering the row. Renders nothing when the item fanned out to no sinks (a
+ * classic single-effect approval).
  *
- * @param props.destinations - The recorded destination outcomes, if any.
+ * @param props.sinks - The recorded sink outcomes, if any.
  * @returns The outcomes badges, or null when there are none.
  */
-function CurationOutcomes({ destinations }: { destinations?: ICurationDestinationOutcome[] }) {
-    if (!destinations || destinations.length === 0) {
+function CurationOutcomes({ sinks }: { sinks?: ICurationSinkOutcome[] }) {
+    if (!sinks || sinks.length === 0) {
         return null;
     }
     return (
-        <div className={styles.destination_outcomes}>
-            {destinations.map((outcome) => (
+        <div className={styles.sink_outcomes}>
+            {sinks.map((outcome) => (
                 <Badge key={outcome.sinkId} tone={outcomeTone(outcome.status)}>
                     <span title={outcome.error ?? outcome.reason}>{outcome.sinkId}: {outcome.status}</span>
                 </Badge>
@@ -263,8 +261,8 @@ function CurationOutcomes({ destinations }: { destinations?: ICurationDestinatio
 
 /**
  * Render a decided item's outcome for the history view: the terminal status as a
- * toned badge, the per-destination delivery outcomes (when the approval fanned
- * out), when it was decided, and the deciding curator's Better Auth id. Read-only
+ * toned badge, the per-sink delivery outcomes (when the approval fanned out), when
+ * it was decided, and the deciding curator's Better Auth id. Read-only
  * by design — a history row offers no actions because its effect already
  * committed or was discarded, and the record exists only as an audit trail.
  *
@@ -275,7 +273,7 @@ function CurationDecision({ item }: { item: ICurationItemView }) {
     return (
         <div className={styles.curation_preview}>
             <Badge tone={item.status === 'approved' ? 'success' : 'danger'}>{item.status}</Badge>
-            <CurationOutcomes destinations={item.destinations} />
+            <CurationOutcomes sinks={item.sinks} />
             {item.decidedAt && (
                 <div className={styles.tool_desc}><ClientTime date={item.decidedAt} format="datetime" /></div>
             )}
@@ -285,69 +283,69 @@ function CurationDecision({ item }: { item: ICurationItemView }) {
 }
 
 /**
- * One sink rendered as a labelled checkbox row inside the destination picker.
- * The exposure icon and the reach badge are toned to the row's group — a lock
- * and a neutral badge for internal, a globe and a warning badge for external —
- * so an external destination never visually reads as calm.
+ * One sink rendered as a labelled checkbox row inside the sink picker. The
+ * exposure icon and the reach badge are toned to the row's group — a lock and a
+ * neutral badge for internal, a globe and a warning badge for external — so an
+ * external sink never visually reads as calm.
  *
- * @param props.dest - The eligible destination to render.
+ * @param props.sink - The eligible sink to render.
  * @param props.external - Whether this row belongs to the external/public group.
  * @param props.checked - Whether the sink is in the current selection.
  * @param props.disabled - Whether the input is locked (a decision is in flight).
  * @param props.onToggle - Toggle this sink's membership in the selection.
- * @returns The destination option row.
+ * @returns The sink option row.
  */
-function DestinationOption({ dest, external, checked, disabled, onToggle }: {
-    dest: ICurationEligibleDestination;
+function SinkOption({ sink, external, checked, disabled, onToggle }: {
+    sink: ICurationEligibleSink;
     external: boolean;
     checked: boolean;
     disabled: boolean;
     onToggle: (sinkId: string) => void;
 }) {
     return (
-        <label className={styles.dest_option}>
+        <label className={styles.sink_option}>
             <input
                 type="checkbox"
                 checked={checked}
                 disabled={disabled}
-                onChange={() => onToggle(dest.sinkId)}
+                onChange={() => onToggle(sink.sinkId)}
             />
             {external
-                ? <Globe size={14} aria-hidden className={styles.dest_icon} />
-                : <Lock size={14} aria-hidden className={styles.dest_icon} />}
-            <span className={styles.dest_label} title={dest.label ?? dest.sinkId}>{dest.label ?? dest.sinkId}</span>
-            <Badge tone={external ? 'warning' : 'neutral'}>{dest.reach.egress}/{dest.reach.audience}</Badge>
+                ? <Globe size={14} aria-hidden className={styles.sink_icon} />
+                : <Lock size={14} aria-hidden className={styles.sink_icon} />}
+            <span className={styles.sink_label} title={sink.label ?? sink.sinkId}>{sink.label ?? sink.sinkId}</span>
+            <Badge tone={external ? 'warning' : 'neutral'}>{sink.reach.egress}/{sink.reach.audience}</Badge>
         </label>
     );
 }
 
 /**
- * The destination picker for a held item that publishes to destinations. The
- * sinks are split into an internal/admin group and an external/public group so
- * the exposure of each choice is preattentive — a lock and a calm row versus a
- * globe, an amber panel, and a warning-toned reach badge — rather than text the
- * eye has to parse. A live summary names how many internal and external sinks
- * the current selection will fire, the same count the confirmation gate keys
- * off, so the operator sees the blast radius before committing.
+ * The sink picker for a held item that publishes to sinks. The sinks are split
+ * into an internal/admin group and an external/public group so the exposure of
+ * each choice is preattentive — a lock and a calm row versus a globe, an amber
+ * panel, and a warning-toned reach badge — rather than text the eye has to parse.
+ * A live summary names how many internal and external sinks the current selection
+ * will fire, the same count the confirmation gate keys off, so the operator sees
+ * the blast radius before committing.
  *
- * @param props.destinations - The item's eligible publish destinations.
+ * @param props.sinks - The item's eligible publish sinks.
  * @param props.selected - The currently selected sink ids.
  * @param props.busy - Whether this item's decision is in flight (locks inputs).
  * @param props.onToggle - Toggle one sink's membership in the selection.
  * @param props.onSetDefault - Persist the current selection as the type's default.
- * @returns The grouped destination picker.
+ * @returns The grouped sink picker.
  */
-function DestinationPicker({ destinations, selected, busy, onToggle, onSetDefault }: {
-    destinations: ICurationEligibleDestination[];
+function SinkPicker({ sinks, selected, busy, onToggle, onSetDefault }: {
+    sinks: ICurationEligibleSink[];
     selected: Set<string>;
     busy: boolean;
     onToggle: (sinkId: string) => void;
     onSetDefault: () => void;
 }) {
-    const internal = destinations.filter(dest => !destinationIsExternal(dest.reach));
-    const external = destinations.filter(dest => destinationIsExternal(dest.reach));
-    const selectedInternal = internal.filter(dest => selected.has(dest.sinkId)).length;
-    const selectedExternal = external.filter(dest => selected.has(dest.sinkId)).length;
+    const internal = sinks.filter(sink => !sinkIsExternal(sink.reach));
+    const external = sinks.filter(sink => sinkIsExternal(sink.reach));
+    const selectedInternal = internal.filter(sink => selected.has(sink.sinkId)).length;
+    const selectedExternal = external.filter(sink => selected.has(sink.sinkId)).length;
 
     return (
         <fieldset className={styles.picker}>
@@ -355,12 +353,12 @@ function DestinationPicker({ destinations, selected, busy, onToggle, onSetDefaul
             {internal.length > 0 && (
                 <div className={styles.picker_group}>
                     <div className={styles.picker_group_title}>Internal / Admin</div>
-                    {internal.map(dest => (
-                        <DestinationOption
-                            key={dest.sinkId}
-                            dest={dest}
+                    {internal.map(sink => (
+                        <SinkOption
+                            key={sink.sinkId}
+                            sink={sink}
                             external={false}
-                            checked={selected.has(dest.sinkId)}
+                            checked={selected.has(sink.sinkId)}
                             disabled={busy}
                             onToggle={onToggle}
                         />
@@ -370,12 +368,12 @@ function DestinationPicker({ destinations, selected, busy, onToggle, onSetDefaul
             {external.length > 0 && (
                 <div className={`${styles.picker_group} ${styles.picker_group_external}`}>
                     <div className={styles.picker_group_title}>External / Public</div>
-                    {external.map(dest => (
-                        <DestinationOption
-                            key={dest.sinkId}
-                            dest={dest}
+                    {external.map(sink => (
+                        <SinkOption
+                            key={sink.sinkId}
+                            sink={sink}
                             external
-                            checked={selected.has(dest.sinkId)}
+                            checked={selected.has(sink.sinkId)}
                             disabled={busy}
                             onToggle={onToggle}
                         />
@@ -384,7 +382,7 @@ function DestinationPicker({ destinations, selected, busy, onToggle, onSetDefaul
             )}
             <div className={styles.publish_summary}>
                 {selectedInternal === 0 && selectedExternal === 0
-                    ? 'No destinations selected'
+                    ? 'No sinks selected'
                     : (
                         <>
                             {selectedExternal > 0 && <AlertTriangle size={14} aria-hidden className={styles.summary_warn} />}
@@ -400,20 +398,20 @@ function DestinationPicker({ destinations, selected, busy, onToggle, onSetDefaul
 }
 
 /**
- * The decision rail of a pending review card: the destination picker (when the
- * item's type publishes to destinations and sinks are eligible) plus the Approve
- * / Edit / Reject actions. The eligible destinations are SECONDARY data, lazily
- * fetched per card after mount, so they never block the queue render; an item
- * with no eligible destinations shows the plain Approve action unchanged. The
- * selection seeds from standing policy (`defaultSelected`) — the operator's saved
- * per-type default — which the curator confirms or overrides before approving,
- * the human gate doubling as the mandated-subset selector. An approval whose
- * selection includes any external/public sink is routed through a confirmation
- * modal first; internal-only approval and rejection commit immediately.
+ * The decision rail of a pending review card: the sink picker (when the item's
+ * type publishes to sinks and sinks are eligible) plus the Approve / Edit /
+ * Reject actions. The eligible sinks are SECONDARY data, lazily fetched per card
+ * after mount, so they never block the queue render; an item with no eligible
+ * sinks shows the plain Approve action unchanged. The selection seeds from
+ * standing policy (`defaultSelected`) — the operator's saved per-type default —
+ * which the curator confirms or overrides before approving, the human gate
+ * doubling as the mandated-subset selector. An approval whose selection includes
+ * any external/public sink is routed through a confirmation modal first;
+ * internal-only approval and rejection commit immediately.
  *
  * @param props.item - The pending curation envelope.
  * @param props.busyId - The id of the card currently deciding, or null.
- * @param props.onApprove - Approve the item with the curator's selected destinations.
+ * @param props.onApprove - Approve the item with the curator's selected sinks.
  * @param props.onReject - Reject the item.
  * @param props.onEdit - Open the inline editor for the item.
  * @param props.onSetDefault - Save the current selection as the type's default.
@@ -422,34 +420,34 @@ function DestinationPicker({ destinations, selected, busy, onToggle, onSetDefaul
 function PendingActions({ item, busyId, onApprove, onReject, onEdit, onSetDefault }: {
     item: ICurationItemView;
     busyId: string | null;
-    onApprove: (id: string, destinations?: ICurationDestinationSelection[]) => void;
+    onApprove: (id: string, sinks?: ICurationSinkSelection[]) => void;
     onReject: (id: string) => void;
     onEdit: (item: ICurationItemView) => void;
     onSetDefault: (id: string, sinkIds: string[]) => void;
 }) {
     // null while the lazy fetch is in flight; an empty array means "no picker".
-    const [destinations, setDestinations] = useState<ICurationEligibleDestination[] | null>(null);
+    const [sinks, setSinks] = useState<ICurationEligibleSink[] | null>(null);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const { open, close } = useModal();
 
-    // Fetch the item's eligible destinations once after mount and seed the
-    // selection from standing policy. A `cancelled` guard drops a late resolve if
-    // the card unmounts (e.g. the queue refetched) so it cannot set stale state.
+    // Fetch the item's eligible sinks once after mount and seed the selection from
+    // standing policy. A `cancelled` guard drops a late resolve if the card
+    // unmounts (e.g. the queue refetched) so it cannot set stale state.
     useEffect(() => {
         let cancelled = false;
-        listDestinations(item.id)
+        listSinks(item.id)
             .then((eligible) => {
                 if (cancelled) {
                     return;
                 }
-                setDestinations(eligible);
+                setSinks(eligible);
                 setSelected(new Set(eligible.filter((d) => d.defaultSelected).map((d) => d.sinkId)));
             })
             .catch(() => {
-                // Destinations are secondary; on failure fall back to the plain
-                // approve flow rather than blocking the decision.
+                // Sinks are secondary; on failure fall back to the plain approve
+                // flow rather than blocking the decision.
                 if (!cancelled) {
-                    setDestinations([]);
+                    setSinks([]);
                 }
             });
         return () => { cancelled = true; };
@@ -469,30 +467,30 @@ function PendingActions({ item, busyId, onApprove, onReject, onEdit, onSetDefaul
 
     const busy = busyId === item.id;
     const blockedByOther = busyId !== null && busyId !== item.id;
-    const hasPicker = destinations !== null && destinations.length > 0;
-    // Eligibility is unknown until this card's fetch settles (destinations === null);
+    const hasPicker = sinks !== null && sinks.length > 0;
+    // Eligibility is unknown until this card's fetch settles (sinks === null);
     // block approval during that window so a fast click cannot take the classic
-    // path and silently skip the publish destinations the picker would have selected.
-    const destinationsLoading = destinations === null;
-    // A destinations-enabled item must target at least one sink: approving with an
+    // path and silently skip the publish sinks the picker would have selected.
+    const sinksLoading = sinks === null;
+    // A publishes-to-sinks item must target at least one sink: approving with an
     // empty selection would commit the decision while publishing nowhere — a silent
-    // no-op the operator did not intend. Block Approve until a destination is picked.
-    const noDestinationSelected = hasPicker && selected.size === 0;
+    // no-op the operator did not intend. Block Approve until a sink is picked.
+    const noSinkSelected = hasPicker && selected.size === 0;
 
     // The external/public sinks in the current selection — the channels the
     // confirmation gate names, and the test for whether the gate fires at all.
     const selectedExternal = useMemo(
-        () => (destinations ?? []).filter(dest => selected.has(dest.sinkId) && destinationIsExternal(dest.reach)),
-        [destinations, selected]
+        () => (sinks ?? []).filter(sink => selected.has(sink.sinkId) && sinkIsExternal(sink.reach)),
+        [sinks, selected]
     );
 
     // Commit the approval with the curator's selection (or undefined when there
     // is no picker, preserving the classic single-effect approve).
     const commitApprove = useCallback(() => {
-        const approveDestinations = hasPicker
-            ? Array.from(selected).map((sinkId): ICurationDestinationSelection => ({ sinkId }))
+        const approveSinks = hasPicker
+            ? Array.from(selected).map((sinkId): ICurationSinkSelection => ({ sinkId }))
             : undefined;
-        onApprove(item.id, approveDestinations);
+        onApprove(item.id, approveSinks);
     }, [hasPicker, selected, onApprove, item.id]);
 
     // Approve, but gate any external/public fan-out behind explicit confirmation.
@@ -520,10 +518,10 @@ function PendingActions({ item, busyId, onApprove, onReject, onEdit, onSetDefaul
 
     return (
         <Stack gap="md">
-            {destinationsLoading && <div className={styles.rail_hint}>Loading destinations…</div>}
+            {sinksLoading && <div className={styles.rail_hint}>Loading sinks…</div>}
             {hasPicker && (
-                <DestinationPicker
-                    destinations={destinations}
+                <SinkPicker
+                    sinks={sinks}
                     selected={selected}
                     busy={busy}
                     onToggle={toggle}
@@ -531,7 +529,7 @@ function PendingActions({ item, busyId, onApprove, onReject, onEdit, onSetDefaul
                 />
             )}
             <div className={styles.actions}>
-                <Button variant="primary" size="sm" loading={busy} disabled={blockedByOther || destinationsLoading || noDestinationSelected} onClick={handleApprove}>
+                <Button variant="primary" size="sm" loading={busy} disabled={blockedByOther || sinksLoading || noSinkSelected} onClick={handleApprove}>
                     <Check size={16} /> Approve
                 </Button>
                 {item.preview.editable && (
@@ -550,14 +548,14 @@ function PendingActions({ item, busyId, onApprove, onReject, onEdit, onSetDefaul
 /**
  * One pending item as a focused review card: the content (title, provider/source
  * metadata, held-since, and the expandable preview) beside a decision rail. The
- * two-region split gives the content readable width and hands the destination
- * picker a column of its own, the room the old table cell never had — which is
- * why the multilingual sink labels no longer wrap to eight lines. On a narrow
- * container the regions stack, the rail dropping below the content.
+ * two-region split gives the content readable width and hands the sink picker a
+ * column of its own, the room the old table cell never had — which is why the
+ * multilingual sink labels no longer wrap to eight lines. On a narrow container
+ * the regions stack, the rail dropping below the content.
  *
  * @param props.item - The pending curation envelope.
  * @param props.busyId - The id of the card currently deciding, or null.
- * @param props.onApprove - Approve the item with the curator's selected destinations.
+ * @param props.onApprove - Approve the item with the curator's selected sinks.
  * @param props.onReject - Reject the item.
  * @param props.onEdit - Open the inline editor for the item.
  * @param props.onSetDefault - Save the current selection as the type's default.
@@ -566,7 +564,7 @@ function PendingActions({ item, busyId, onApprove, onReject, onEdit, onSetDefaul
 function PendingCard({ item, busyId, onApprove, onReject, onEdit, onSetDefault }: {
     item: ICurationItemView;
     busyId: string | null;
-    onApprove: (id: string, destinations?: ICurationDestinationSelection[]) => void;
+    onApprove: (id: string, sinks?: ICurationSinkSelection[]) => void;
     onReject: (id: string) => void;
     onEdit: (item: ICurationItemView) => void;
     onSetDefault: (id: string, sinkIds: string[]) => void;
@@ -659,15 +657,15 @@ export function CurationQueue({ onChanged }: { onChanged: () => void }) {
         return () => { socket.off('curation:changed', handler); };
     }, [load, onChanged]);
 
-    const resolve = useCallback(async (id: string, action: 'approve' | 'reject', destinations?: ICurationDestinationSelection[]) => {
+    const resolve = useCallback(async (id: string, action: 'approve' | 'reject', sinks?: ICurationSinkSelection[]) => {
         setBusyId(id);
         try {
-            await (action === 'approve' ? approveCuration(id, destinations) : rejectCuration(id));
-            const fanned = action === 'approve' && destinations !== undefined && destinations.length > 0;
+            await (action === 'approve' ? approveCuration(id, sinks) : rejectCuration(id));
+            const fanned = action === 'approve' && sinks !== undefined && sinks.length > 0;
             push({
                 tone: action === 'approve' ? 'success' : 'info',
                 title: action === 'approve' ? 'Approved' : 'Rejected',
-                description: fanned ? `Publishing to ${destinations.length} destination${destinations.length === 1 ? '' : 's'}.` : undefined
+                description: fanned ? `Publishing to ${sinks.length} sink${sinks.length === 1 ? '' : 's'}.` : undefined
             });
             await load();
             onChanged();
@@ -684,8 +682,8 @@ export function CurationQueue({ onChanged }: { onChanged: () => void }) {
     // approval flow is unaffected.
     const setDefault = useCallback(async (id: string, sinkIds: string[]) => {
         try {
-            await setDestinationDefaults(id, sinkIds);
-            push({ tone: 'success', title: 'Saved as default', description: `${sinkIds.length} destination${sinkIds.length === 1 ? '' : 's'} will be pre-selected for this type.` });
+            await setSinkDefaults(id, sinkIds);
+            push({ tone: 'success', title: 'Saved as default', description: `${sinkIds.length} sink${sinkIds.length === 1 ? '' : 's'} will be pre-selected for this type.` });
         } catch (err) {
             push({ tone: 'danger', title: 'Failed to save default', description: err instanceof Error ? err.message : String(err) });
         }
@@ -774,7 +772,7 @@ export function CurationQueue({ onChanged }: { onChanged: () => void }) {
                                         key={item.id}
                                         item={item}
                                         busyId={busyId}
-                                        onApprove={(id, destinations) => { void resolve(id, 'approve', destinations); }}
+                                        onApprove={(id, sinks) => { void resolve(id, 'approve', sinks); }}
                                         onReject={(id) => { void resolve(id, 'reject'); }}
                                         onEdit={openEditor}
                                         onSetDefault={(id, sinkIds) => { void setDefault(id, sinkIds); }}

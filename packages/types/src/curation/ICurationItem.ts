@@ -9,7 +9,7 @@
  */
 
 import type { ICurationPreview } from './ICurationPreview.js';
-import type { ICurationDestinationOutcome } from './ICurationDestination.js';
+import type { ICurationSinkOutcome } from './ICurationSink.js';
 
 /**
  * Lifecycle status of a held item. Core advances `pending` to a terminal
@@ -71,12 +71,12 @@ export interface ICurationItem {
     decidedBy?: string;
 
     /**
-     * The destinations a curator selected at approval, with their delivery
-     * outcomes. Present only for an approved item of a type that publishes to
-     * destinations; absent for rejected items, pending items, and types without
-     * destination selection. Written `pending` in the same atomic transition as
-     * the decision, then advanced to `delivered`/`failed` as each leg is sent —
-     * the audit of exactly where the approved content landed.
+     * The sinks a curator selected at approval, with their delivery outcomes.
+     * Present only for an approved item of a type that publishes to sinks; absent
+     * for rejected items, pending items, and types without sink selection.
+     * Written `pending` in the same atomic transition as the decision, then
+     * advanced to `delivered`/`failed` as each leg is sent — the audit of exactly
+     * where the approved content landed.
      */
-    destinations?: ICurationDestinationOutcome[];
+    sinks?: ICurationSinkOutcome[];
 }

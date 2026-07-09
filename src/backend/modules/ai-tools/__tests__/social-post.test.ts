@@ -137,10 +137,10 @@ describe('createSocialPostCurationType', () => {
         store = new SocialPostStore(createMockDatabase(collection), logger);
     });
 
-    it('declares the destination-routing contract', () => {
+    it('declares the sink-routing contract', () => {
         const type = createSocialPostCurationType(store, logger);
         expect(type.typeId).toBe(SOCIAL_POST_CURATION_TYPE_ID);
-        expect(type.publishesToDestinations).toBe(true);
+        expect(type.publishesToSinks).toBe(true);
         expect(type.classification).toEqual({ egress: 'external', audience: 'public' });
     });
 

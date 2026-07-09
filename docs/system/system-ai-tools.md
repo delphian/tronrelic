@@ -76,7 +76,7 @@ Mandatory for every tool; scale to the class. A read-only lookup needs little, a
 
 **Bound side-effecting and paid tools.** Rate-limit, quota, and cap cost. A looping or injected model must not drain an API budget or flood a channel. `TransactionToolGuard` is the reference limiter.
 
-**Require human approval for irreversible or public effects.** Either let the governor park the action for admin approval, or declare `forcesCuratorReview: true` when the tool holds every effect in its own review queue. The core `propose-social-post` tool is the reference: it declares `forcesCuratorReview`, binds `curationTypeId: 'core:social-post'`, and holds every drafted post in the [central curation queue](./system-curation.md), where a curator picks which publish destinations (X, Telegram) it fans out to on approval.
+**Require human approval for irreversible or public effects.** Either let the governor park the action for admin approval, or declare `forcesCuratorReview: true` when the tool holds every effect in its own review queue. The core `propose-social-post` tool is the reference: it declares `forcesCuratorReview`, binds `curationTypeId: 'core:social-post'`, and holds every drafted post in the [central curation queue](./system-curation.md), where a curator picks which publish sinks (X, Telegram) it fans out to on approval.
 
 **Audit every invocation.** Record who triggered it (interactive admin / scheduled / programmatic), the arguments, the outcome, and the cost — enough to reconstruct what happened. `trp-image-gen`'s per-call history is the reference shape.
 
@@ -124,7 +124,7 @@ const tool: IAiTool = {
 |---|---|---|
 | `tronrelic-get-transaction` (blockchain) | read / internal | Input regex; global rate limiter (`TransactionToolGuard`) + usage stats |
 | logs `tronrelic-query-system-logs` | read / secret | Result + context caps; truncate-and-point-to-detail |
-| `propose-social-post` (core) | external / irreversible / forces-curator-review | `curationTypeId` binding; `publishesToDestinations` fan-out to curator-selected sinks |
+| `propose-social-post` (core) | external / irreversible / forces-curator-review | `curationTypeId` binding; `publishesToSinks` fan-out to curator-selected sinks |
 | `trp-image-gen` | external / spends money | Per-call forensic history; sanitized vs raw error split |
 
 ## Pre-Ship Checklist

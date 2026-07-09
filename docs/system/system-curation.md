@@ -18,7 +18,7 @@ A decision mutates an item in place rather than deleting it, so the queue double
 
 ### Accountability Record
 
-Every decision is a durable forensic record — the blame trail for an approved, routed effect — not a fire-and-forget action. Because the decision mutates the item in place, the decided envelope permanently captures **who** decided (`decidedBy`, the curator's Better Auth user id), **when** (`decidedAt`), **what produced it** (`source`, e.g. `ai-tool:propose-social-post`), the content **as approved** (the frozen `preview` — curator edits included, and it outlives the owning plugin being disabled), and **where it went** (`destinations[]`, each selected sink with its settled outcome — `delivered` / `failed` / `refused` — carrying the error or refusal reason). The everything-is-a-sink model governs only *where a terminal effect executes* (routed legs versus a decision callback), never *whether it is recorded*: routing is the mechanism, this envelope is the audit, and both always exist.
+Every decision is a durable forensic record — the blame trail for an approved, routed effect — not a fire-and-forget action. Because the decision mutates the item in place, the decided envelope permanently captures **who** decided (`decidedBy`, the curator's Better Auth user id), **when** (`decidedAt`), **what produced it** (`source`, e.g. `ai-tool:propose-social-post`), the content **as approved** (the frozen `preview` — curator edits included, and it outlives the owning plugin being disabled), and **where it went** (`sinks[]`, each selected sink with its settled outcome — `delivered` / `failed` / `refused` — carrying the error or refusal reason). The everything-is-a-sink model governs only *where a terminal effect executes* (routed legs versus a decision callback), never *whether it is recorded*: routing is the mechanism, this envelope is the audit, and both always exist.
 
 Retention is permanent by design. `module_curation_curations` carries no TTL index, no cleanup job, and no delete route, and curation is a core module with no uninstall — a decided item is never pruned (deliberately unlike the [notifications audit](./system-notifications.md), which sets an `audit_ttl`). The trade is an unbounded collection; a bounded retention policy would be an explicit future addition, never a silent default.
 
@@ -37,9 +37,9 @@ Both `decisionStatus` and `applyEdit` are required on every curation type — th
 
 `applyEdit` being unconditional also means a type is never "non-editable by omission" — the body's editability is signalled by the descriptor's `editable` flag, not by the method's presence.
 
-**For a `publishesToDestinations` type, approval routes to the curator-selected destinations.** Delivery — publishing to a surface, posting to a channel — belongs exclusively to the curator-selected publish destinations (see [content routing](./system-content-routing.md#selecting-the-mandated-subset-at-the-gate)); routed fan-out runs first, then core marks the type's own record via `decisionStatus`/`applyEdit`. Such a type omits `decisionStatus.approved` so the routed sink alone flips the record — declaring it too would double-publish the moment a curator (or a saved destination default) selects that sink, the defect that forced the blog plugin's migration to this pattern. A classic type that omits the `publishesToDestinations` flag has no destinations, so the `decisionStatus.approved` word is the only approval effect — it *does* commit the one thing (release an AI action, apply a moderation decision). When a type's content must reach the type's own surface with full fidelity, carry the needed enrichment (a reserved slug, tags) through the descriptor's governed `fields` so the sink can publish the originating record itself; seed the sink as the type's destination default so the ordinary approval publishes without extra clicks.
+**For a `publishesToSinks` type, approval routes to the curator-selected sinks.** Delivery — publishing to a surface, posting to a channel — belongs exclusively to the curator-selected publish sinks (see [content routing](./system-content-routing.md#selecting-the-mandated-subset-at-the-gate)); routed fan-out runs first, then core marks the type's own record via `decisionStatus`/`applyEdit`. Such a type omits `decisionStatus.approved` so the routed sink alone flips the record — declaring it too would double-publish the moment a curator (or a saved sink default) selects that sink, the defect that forced the blog plugin's migration to this pattern. A classic type that omits the `publishesToSinks` flag has no sinks, so the `decisionStatus.approved` word is the only approval effect — it *does* commit the one thing (release an AI action, apply a moderation decision). When a type's content must reach the type's own surface with full fidelity, carry the needed enrichment (a reserved slug, tags) through the descriptor's governed `fields` so the sink can publish the originating record itself; seed the sink as the type's sink default so the ordinary approval publishes without extra clicks.
 
-A `publishesToDestinations` type with any eligible sink must have at least one destination selected on approval: curation blocks an empty-selection approval at the service (mirrored by the picker's disabled Approve button), so a decision can never record while publishing nowhere. A type with zero eligible sinks — a classic type, or a destinations type whose transports are all disabled — approves to nowhere, the only available outcome, so the guard never deadlocks a queue.
+A `publishesToSinks` type with any eligible sink must have at least one sink selected on approval: curation blocks an empty-selection approval at the service (mirrored by the picker's disabled Approve button), so a decision can never record while publishing nowhere. A type with zero eligible sinks — a classic type, or a sinks type whose transports are all disabled — approves to nowhere, the only available outcome, so the guard never deadlocks a queue.
 
 ### The Verifiable Binding
 
@@ -81,12 +81,12 @@ A provider registers its type and routes held effects in:
 
 ```typescript
 // On init, via the registry (watch covers boot-order + churn). `core:social-post`
-// is the reference type: a destination-routable post the curator fans out.
+// is the reference type: a sink-routable post the curator fans out.
 context.services.watch<ICurationService>('curation', {
     onAvailable: (curation) => curation.registerType({
         typeId: 'core:social-post',
         label: 'Social Post',
-        publishesToDestinations: true,                              // curator picks publish sinks on approval
+        publishesToSinks: true,                                     // curator picks publish sinks on approval
         classification: { egress: 'external', audience: 'public' }, // ceiling the picker stays under
         describe: async (ref) => ({ body: (await store.getById(String(ref.postId)))?.body }),
         // Declarative decision bookkeeping — core writes the mapped word via applyEdit; routed delivery ran first.
@@ -104,6 +104,6 @@ await curation.hold({ typeId: 'core:social-post', ref: { postId }, source: 'ai-t
 - [system-content-types.md](./system-content-types.md) — the central content registry; `ICurationType` is an `IContentType` plus curation's declarative `decisionStatus`
 - [system-ai-tools.md](./system-ai-tools.md) — the AI tool standard; `forcesCuratorReview` and the capability vocabulary the binding hardens
 - [Curation Module README](../../src/backend/modules/curation/README.md) — the module that owns the curation service, queue, and `/system/curation` admin surface
-- [AI Tools Module README](../../src/backend/modules/ai-tools/README.md) — the governor that verifies a tool's `curationTypeId` against the curation service, plus `core:social-post` (the reference `publishesToDestinations` type) and the `propose-social-post` tool that holds into it
+- [AI Tools Module README](../../src/backend/modules/ai-tools/README.md) — the governor that verifies a tool's `curationTypeId` against the curation service, plus `core:social-post` (the reference `publishesToSinks` type) and the `propose-social-post` tool that holds into it
 - [trp-x-poster README](../../src/plugins/trp-x-poster/README.md) — the `x-poster:account` content-router publish sink an approved `core:social-post` fans out to
 - [plugins-service-registry.md](../plugins/plugins-service-registry.md) — `watch()` vs `get()` for registering a type and discovering `'curation'`

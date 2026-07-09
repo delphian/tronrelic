@@ -21,7 +21,7 @@ Durable `publish`-family delivery for the content router. Curation (and any futu
 
 An external publish is a real side effect. The prior shipped path delivered curation's selected publish legs inline, best-effort: a crash mid-fan-out lost the legs with no record to retry from — a **dual-write hazard** (decision durable, effect not). For a real external outlet (`trp-telegram-bot` ships one), that is a defect, not a placeholder. This module closes it by making the *intent* durable (one outbox row per leg, committed before delivery) and the *delivery* durable and observable (a relay drains, retries, and dead-letters out of the request path).
 
-The honest contract — and the rule every consumer **must** assume — is **at-least-once plus idempotency, which is effectively-once**. There is no two-phase commit across external HTTP APIs, so the N legs of one approval are **independent at-least-once deliveries**, never an atomic saga. A retried leg can re-hit a destination; the per-leg idempotency key is what lets a sink that can dedupe avoid a double-post. "All-or-nothing across destinations" is not on offer.
+The honest contract — and the rule every consumer **must** assume — is **at-least-once plus idempotency, which is effectively-once**. There is no two-phase commit across external HTTP APIs, so the N legs of one approval are **independent at-least-once deliveries**, never an atomic saga. A retried leg can re-hit a sink; the per-leg idempotency key is what lets a sink that can dedupe avoid a double-post. "All-or-nothing across sinks" is not on offer.
 
 ## Source Map
 
@@ -56,7 +56,7 @@ The honest contract — and the rule every consumer **must** assume — is **at-
 | `typeId` / `ref` | Provider content coordinates, **frozen at enqueue** — owning content type id and its opaque record pointer. Carried to the delivery-success hook; never interpreted here. |
 | `sinkId` | Content-router sink the leg delivers to. |
 | `descriptor` | The canonical IR, **frozen at enqueue** so delivery survives a later source edit. |
-| `dest` | Per-destination config handed verbatim to `deliver`. |
+| `dest` | Per-sink config handed verbatim to `deliver`. |
 | `status` | `pending \| delivering \| delivered \| refused \| failed \| dead`. |
 | `attempts` / `maxAttempts` | Attempts made / retry budget. |
 | `nextAttemptAt` | When a `pending`/`failed` leg becomes due. |
@@ -95,10 +95,10 @@ The payload (`ISyndicationDeliveredContext`) is self-sufficient for a subscriber
 
 ## Curation Integration
 
-On approving a `publishesToDestinations` item, `CurationService.decide()` enqueues the selected publish legs into `'syndication'` (resolved lazily, so a boot without the module degrades to the legacy best-effort path). Consequences a consumer **must** account for:
+On approving a `publishesToSinks` item, `CurationService.decide()` enqueues the selected publish legs into `'syndication'` (resolved lazily, so a boot without the module degrades to the legacy best-effort path). Consequences a consumer **must** account for:
 
-- **Outcomes become eventual.** The item's destination outcomes are recorded `pending` at decision time and advanced by the relay out-of-band. The outbox is the single source of truth; curation overlays live leg state onto its outcomes on read (`get`, `listHistory`) — it does not duplicate terminal state.
-- **Approval does not observe where content landed.** External delivery is asynchronous and must not block the decision, so an approval's routed publish leg is delivered out-of-band by the relay. A type commits only its declarative `decisionStatus` bookkeeping via `applyEdit`; that commit neither waits on nor observes the destination outcomes.
+- **Outcomes become eventual.** The item's sink outcomes are recorded `pending` at decision time and advanced by the relay out-of-band. The outbox is the single source of truth; curation overlays live leg state onto its outcomes on read (`get`, `listHistory`) — it does not duplicate terminal state.
+- **Approval does not observe where content landed.** External delivery is asynchronous and must not block the decision, so an approval's routed publish leg is delivered out-of-band by the relay. A type commits only its declarative `decisionStatus` bookkeeping via `applyEdit`; that commit neither waits on nor observes the sink outcomes.
 - **Status mapping.** Curation's four-state outcome collapses syndication's six: `delivered`→`delivered`, `refused`→`refused`, `dead`→`failed`, and `pending`/`delivering`/(retryable)`failed`→`pending` (still in flight).
 
 ## Invariants
@@ -109,7 +109,7 @@ On approving a `publishesToDestinations` item, `CurationService.decide()` enqueu
 4. `refused` is terminal and distinct from `failed` (retryable) — a refusal is never retried.
 5. A leg dead-letters only after exhausting `maxAttempts`; dead-letter is terminal until an operator `retry()`s it.
 6. Delivery is at-least-once; only the sink's use of the idempotency key makes it effectively-once.
-7. No cross-destination atomicity — legs are independent; partial success stands.
+7. No cross-sink atomicity — legs are independent; partial success stands.
 
 ## Tuning Constants
 
@@ -135,5 +135,5 @@ All under `/api/admin/system/syndication` (`requireAdmin`):
 
 - [system-content-routing.md](../../../../docs/system/system-content-routing.md) — the durable-delivery design and the sink-family model this realizes.
 - [system-curation.md](../../../../docs/system/system-curation.md) — the gate-sink family that originates into syndication.
-- [Curation Module README](../curation/README.md) — the destination picker that selects the publish legs enqueued here.
+- [Curation Module README](../curation/README.md) — the sink picker that selects the publish legs enqueued here.
 - [system-database.md](../../../../docs/system/system-database.md) — the `IDatabaseService` surface the engine is built on.

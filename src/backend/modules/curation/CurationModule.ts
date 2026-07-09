@@ -38,7 +38,7 @@ import { CONTENT_ROUTER_SERVICE } from '../../services/content-router.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { CurationQueue } from './services/curation-queue.js';
 import { CurationService } from './services/curation-service.js';
-import { CurationDestinationDefaults } from './services/curation-destination-defaults.js';
+import { CurationSinkDefaults } from './services/curation-sink-defaults.js';
 import { createCurationGateSink, CURATION_GATE_SINK_ID } from './services/curation-gate-sink.js';
 import { CurationController } from './api/curation.controller.js';
 import { createCurationAdminRouter } from './api/curation.router.js';
@@ -103,13 +103,13 @@ export class CurationModule implements IModule<ICurationModuleDependencies> {
     private queue!: CurationQueue;
     private curation!: CurationService;
     private controller!: CurationController;
-    private destinationDefaults!: CurationDestinationDefaults;
+    private sinkDefaults!: CurationSinkDefaults;
 
     /**
      * The content router, resolved once in init (it is published before module
      * init) and reused in run for both gate-sink registration and the service's
-     * destination computation. Optional so a test boot without it degrades to no
-     * destination selection rather than failing.
+     * sink computation. Optional so a test boot without it degrades to no sink
+     * selection rather than failing.
      */
     private contentRouter?: IContentRouter;
 
@@ -143,20 +143,20 @@ export class CurationModule implements IModule<ICurationModuleDependencies> {
 
         // Resolve the content router (published before module init) so the
         // service can compute publish-sink eligibility and deliver to selected
-        // destinations. Optional-guarded so a test harness without it degrades to
-        // no destination selection rather than failing.
+        // sinks. Optional-guarded so a test harness without it degrades to no sink
+        // selection rather than failing.
         this.contentRouter = this.serviceRegistry.get<IContentRouter>(CONTENT_ROUTER_SERVICE);
 
-        // Standing per-type default-destination policy the picker pre-selects.
-        this.destinationDefaults = new CurationDestinationDefaults(this.logger, this.database);
-        await this.destinationDefaults.ensureIndexes();
+        // Standing per-type default-sink policy the picker pre-selects.
+        this.sinkDefaults = new CurationSinkDefaults(this.logger, this.database);
+        await this.sinkDefaults.ensureIndexes();
 
         this.curation = new CurationService(
             this.logger,
             this.queue,
             contentRegistry,
             this.contentRouter,
-            this.destinationDefaults
+            this.sinkDefaults
         );
         this.controller = new CurationController(this.curation);
 
