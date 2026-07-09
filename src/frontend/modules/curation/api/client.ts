@@ -9,15 +9,15 @@
 
 import type {
     ICurationPreview,
-    ICurationEligibleDestination,
-    ICurationDestinationOutcome,
-    ICurationDestinationSelection
+    ICurationEligibleSink,
+    ICurationSinkOutcome,
+    ICurationSinkSelection
 } from '@/types';
 
 /** Base path for every curation admin endpoint. */
 const BASE = '/api/admin/system/curation';
 
-export type { ICurationEligibleDestination, ICurationDestinationOutcome, ICurationDestinationSelection } from '@/types';
+export type { ICurationEligibleSink, ICurationSinkOutcome, ICurationSinkSelection } from '@/types';
 
 /**
  * Parse a fetch response, throwing a descriptive error on a non-2xx status so
@@ -52,7 +52,7 @@ export interface ICurationItemView {
     createdAt: string;
     decidedAt?: string;
     decidedBy?: string;
-    destinations?: ICurationDestinationOutcome[];
+    sinks?: ICurationSinkOutcome[];
 }
 
 /**
@@ -106,55 +106,55 @@ export async function editCuration(id: string, patch: { body: string }): Promise
 
 /**
  * Approve a held curation item, committing it through its owning type. When the
- * item's type publishes to destinations, the curator's selected publish sinks
- * ride along and the backend fans the approved content out to each. Omitting
- * `destinations` is the classic single-effect approval, so the no-body POST is
- * preserved for items without a picker.
+ * item's type publishes to sinks, the curator's selected publish sinks ride along
+ * and the backend fans the approved content out to each. Omitting `sinks` is the
+ * classic single-effect approval, so the no-body POST is preserved for items
+ * without a picker.
  *
  * @param id - The curation envelope id.
- * @param destinations - The curator-selected publish destinations, if any.
+ * @param sinks - The curator-selected publish sinks, if any.
  * @returns Resolves when the item resolves.
  */
-export async function approveCuration(id: string, destinations?: ICurationDestinationSelection[]): Promise<void> {
-    const hasDestinations = destinations !== undefined && destinations.length > 0;
-    const init: RequestInit = hasDestinations
-        ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ destinations }) }
+export async function approveCuration(id: string, sinks?: ICurationSinkSelection[]): Promise<void> {
+    const hasSinks = sinks !== undefined && sinks.length > 0;
+    const init: RequestInit = hasSinks
+        ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sinks }) }
         : { method: 'POST' };
     await parse(await fetch(`${BASE}/curations/${encodeURIComponent(id)}/approve`, init), 'approve curation item');
 }
 
 /**
- * List the publish destinations the content router admits for a pending item —
- * the data behind the destination picker. Returns an empty array when the item's
- * type does not publish to destinations or nothing is eligible, so the caller
- * renders no picker. Each entry flags whether standing policy pre-selects it.
+ * List the publish sinks the content router admits for a pending item — the data
+ * behind the sink picker. Returns an empty array when the item's type does not
+ * publish to sinks or nothing is eligible, so the caller renders no picker. Each
+ * entry flags whether standing policy pre-selects it.
  *
  * @param id - The pending curation envelope id.
- * @returns The eligible publish destinations.
+ * @returns The eligible publish sinks.
  */
-export async function listDestinations(id: string): Promise<ICurationEligibleDestination[]> {
-    const data = await parse<{ destinations: ICurationEligibleDestination[] }>(
-        await fetch(`${BASE}/curations/${encodeURIComponent(id)}/destinations`),
-        'load curation destinations'
+export async function listSinks(id: string): Promise<ICurationEligibleSink[]> {
+    const data = await parse<{ sinks: ICurationEligibleSink[] }>(
+        await fetch(`${BASE}/curations/${encodeURIComponent(id)}/sinks`),
+        'load curation sinks'
     );
-    return data.destinations;
+    return data.sinks;
 }
 
 /**
- * Save the standing default destinations for the item's content type — the
- * subset the picker pre-checks on future items of that type. Lets an operator
- * redirect a type's default destinations as policy data without a code change.
+ * Save the standing default sinks for the item's content type — the subset the
+ * picker pre-checks on future items of that type. Lets an operator redirect a
+ * type's default sinks as policy data without a code change.
  *
  * @param id - A curation envelope id; the backend resolves its content type.
  * @param sinkIds - The sink ids to pre-select by default.
  * @returns Resolves when the defaults are saved.
  */
-export async function setDestinationDefaults(id: string, sinkIds: string[]): Promise<void> {
-    await parse(await fetch(`${BASE}/curations/${encodeURIComponent(id)}/destinations/defaults`, {
+export async function setSinkDefaults(id: string, sinkIds: string[]): Promise<void> {
+    await parse(await fetch(`${BASE}/curations/${encodeURIComponent(id)}/sinks/defaults`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sinkIds })
-    }), 'set curation destination defaults');
+    }), 'set curation sink defaults');
 }
 
 /**

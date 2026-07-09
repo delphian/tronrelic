@@ -29,7 +29,7 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 | File | Responsibility |
 |------|----------------|
 | `AiToolsModule.ts` | Two-phase lifecycle; constructs services, mounts the admin router, publishes `'ai-tools'` + `'ai-tool-governor'`; registers the core built-in tools via `registerBuiltinTools()` — `send-toast` (external/reversible/public; a site-wide `'toast'` WebSocket broadcast) and `propose-social-post` (external/irreversible/forces-curator-review) — plus, on the `'curation'` watch, the `core:social-post` curation type the latter holds into. All provider-neutral, so they survive a provider swap |
-| `social-post.ts` | The provider-neutral `core:social-post` curation type (`publishesToDestinations`, `{ external, public }` ceiling) and the `propose-social-post` tool factory — drafts a destination-agnostic post and holds it in curation for the curator to fan out to publish sinks (X, Telegram) |
+| `social-post.ts` | The provider-neutral `core:social-post` curation type (`publishesToSinks`, `{ external, public }` ceiling) and the `propose-social-post` tool factory — drafts a sink-agnostic post and holds it in curation for the curator to fan out to publish sinks (X, Telegram) |
 | `services/social-post-store.ts` | `module_ai-tools_social_posts` — the draft lifecycle (`create` / `getById` / `markPublished` / `markRejected` / `editBody`) the `core:social-post` type resolves its opaque `ref` against |
 | `services/ai-tool-registry.ts` | `IAiToolRegistry`: registration, enabled-state (capability-driven default-deny), declarations for a provider |
 | `services/ai-tool-governor.ts` | `IAiToolGovernor`: the invoke pipeline + approve/reject |

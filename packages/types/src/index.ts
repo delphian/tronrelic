@@ -164,10 +164,10 @@ export type {
     ICurationRegistry,
     ICurationTypeInfo,
     ICurationHoldInput,
-    ICurationEligibleDestination,
-    ICurationDestinationSelection,
-    ICurationDestinationOutcome,
-    CurationDestinationStatus
+    ICurationEligibleSink,
+    ICurationSinkSelection,
+    ICurationSinkOutcome,
+    CurationSinkStatus
 } from './curation/index.js';
 export { SYNDICATION_SERVICE, SYNDICATION_LEG_STATUSES } from './syndication/index.js';
 export type {

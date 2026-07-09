@@ -9,7 +9,7 @@
  */
 
 import type { Request, Response } from 'express';
-import type { ICurationItem, ICurationDestinationSelection } from '@/types';
+import type { ICurationItem, ICurationSinkSelection } from '@/types';
 import type { CurationService } from '../services/curation-service.js';
 
 /**
@@ -32,29 +32,29 @@ function serializeCurationItem(item: ICurationItem): Record<string, unknown> {
         createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
         decidedAt: item.decidedAt instanceof Date ? item.decidedAt.toISOString() : item.decidedAt,
         decidedBy: item.decidedBy,
-        destinations: item.destinations
+        sinks: item.sinks
     };
 }
 
 /**
- * Parse and validate the optional `destinations` array on an approve request
- * body. Returns the typed selection when well-formed, `undefined` when the field
- * is absent (a classic approval), or `null` when present but malformed — which
- * the caller turns into a 400. Validates shape only; the service and controller
+ * Parse and validate the optional `sinks` array on an approve request body.
+ * Returns the typed selection when well-formed, `undefined` when the field is
+ * absent (a classic approval), or `null` when present but malformed — which the
+ * caller turns into a 400. Validates shape only; the service and controller
  * check eligibility against the live router.
  *
  * @param body - The request body.
  * @returns The selection, `undefined` when absent, or `null` when malformed.
  */
-function parseDestinations(body: unknown): ICurationDestinationSelection[] | undefined | null {
-    const raw = (body as { destinations?: unknown })?.destinations;
+function parseSinks(body: unknown): ICurationSinkSelection[] | undefined | null {
+    const raw = (body as { sinks?: unknown })?.sinks;
     if (raw === undefined) {
         return undefined;
     }
     if (!Array.isArray(raw)) {
         return null;
     }
-    const result: ICurationDestinationSelection[] = [];
+    const result: ICurationSinkSelection[] = [];
     for (const entry of raw) {
         if (!entry || typeof entry !== 'object') {
             return null;
@@ -110,17 +110,17 @@ export class CurationController {
         res.json({ curations: items.map(serializeCurationItem) });
     };
 
-    /** GET /curations/:id/destinations — the eligible publish destinations for a pending item. */
-    listDestinations = async (req: Request, res: Response): Promise<void> => {
-        const destinations = await this.curation.listEligibleDestinations(req.params.id);
-        res.json({ destinations });
+    /** GET /curations/:id/sinks — the eligible publish sinks for a pending item. */
+    listSinks = async (req: Request, res: Response): Promise<void> => {
+        const sinks = await this.curation.listEligibleSinks(req.params.id);
+        res.json({ sinks });
     };
 
     /**
-     * POST /curations/:id/destinations/defaults — set the standing default
-     * destinations for the item's content type, the subset the picker pre-checks.
+     * POST /curations/:id/sinks/defaults — set the standing default sinks for the
+     * item's content type, the subset the picker pre-checks.
      */
-    setDestinationDefaults = async (req: Request, res: Response): Promise<void> => {
+    setSinkDefaults = async (req: Request, res: Response): Promise<void> => {
         const id = req.params.id;
         const sinkIds = (req.body as { sinkIds?: unknown })?.sinkIds;
         if (!Array.isArray(sinkIds) || !sinkIds.every((s) => typeof s === 'string')) {
@@ -132,18 +132,18 @@ export class CurationController {
             res.status(404).json({ error: 'No curation item matched that id.' });
             return;
         }
-        await this.curation.setDestinationDefaults(item.typeId, sinkIds);
+        await this.curation.setSinkDefaults(item.typeId, sinkIds);
         res.json({ success: true, typeId: item.typeId, sinkIds });
     };
 
-    /** POST /curations/:id/approve — approve a held item, fan to selected destinations, commit via its type. */
+    /** POST /curations/:id/approve — approve a held item, fan to selected sinks, commit via its type. */
     approveCuration = async (req: Request, res: Response): Promise<void> => {
-        const destinations = parseDestinations(req.body);
-        if (destinations === null) {
-            res.status(400).json({ error: 'destinations must be an array of { sinkId: string, dest?: object }.' });
+        const sinks = parseSinks(req.body);
+        if (sinks === null) {
+            res.status(400).json({ error: 'sinks must be an array of { sinkId: string, dest?: object }.' });
             return;
         }
-        await this.decideCuration(req, res, 'approve', destinations);
+        await this.decideCuration(req, res, 'approve', sinks);
     };
 
     /** POST /curations/:id/reject — reject a held item and discard it via its type. */
@@ -198,14 +198,14 @@ export class CurationController {
      * @param req - The admin request (`:id` param, admin actor).
      * @param res - The response.
      * @param action - Which terminal decision to apply.
-     * @param destinations - Curator-selected publish destinations (approval only).
+     * @param sinks - Curator-selected publish sinks (approval only).
      * @returns Resolves once a response is sent.
      */
     private decideCuration = async (
         req: Request,
         res: Response,
         action: 'approve' | 'reject',
-        destinations?: ICurationDestinationSelection[]
+        sinks?: ICurationSinkSelection[]
     ): Promise<void> => {
         const id = req.params.id;
         const item = await this.curation.get(id);
@@ -227,23 +227,23 @@ export class CurationController {
         // an item with zero eligible sinks, since none can be valid. Zero eligible
         // sinks with no selection approves to nowhere, the only available outcome.
         if (action === 'approve') {
-            const eligible = await this.curation.listEligibleDestinations(id);
-            if (eligible.length > 0 && (!destinations || destinations.length === 0)) {
-                res.status(400).json({ error: 'This item publishes to destinations; select at least one before approving.' });
+            const eligible = await this.curation.listEligibleSinks(id);
+            if (eligible.length > 0 && (!sinks || sinks.length === 0)) {
+                res.status(400).json({ error: 'This item publishes to sinks; select at least one before approving.' });
                 return;
             }
-            if (destinations && destinations.length > 0) {
+            if (sinks && sinks.length > 0) {
                 const eligibleIds = new Set(eligible.map((d) => d.sinkId));
-                const invalid = destinations.find((d) => !eligibleIds.has(d.sinkId));
+                const invalid = sinks.find((d) => !eligibleIds.has(d.sinkId));
                 if (invalid) {
-                    res.status(400).json({ error: `'${invalid.sinkId}' is not an eligible publish destination for this item.` });
+                    res.status(400).json({ error: `'${invalid.sinkId}' is not an eligible publish sink for this item.` });
                     return;
                 }
             }
         }
         try {
             const result = action === 'approve'
-                ? await this.curation.approve(id, actorId(req), destinations)
+                ? await this.curation.approve(id, actorId(req), sinks)
                 : await this.curation.reject(id, actorId(req));
             if (!result) {
                 res.status(409).json({ error: 'Curation item could not be decided; it may have just been resolved.' });

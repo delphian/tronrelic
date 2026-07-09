@@ -19,7 +19,7 @@ import type {
 import { CurationModule } from '../CurationModule.js';
 import { CurationService } from '../services/curation-service.js';
 import { CurationQueue } from '../services/curation-queue.js';
-import { CurationDestinationDefaults } from '../services/curation-destination-defaults.js';
+import { CurationSinkDefaults } from '../services/curation-sink-defaults.js';
 import { runWithCurationAutoApprove, shouldAutoApproveCuration } from '../services/curation-auto-approve-context.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
@@ -291,7 +291,7 @@ describe('CurationService', () => {
     // non-editable type (missing applyEdit) is no longer representable.
 });
 
-describe('CurationService destination selection', () => {
+describe('CurationService sink selection', () => {
     /** Build a publish-kind sink with a spy `deliver` for fan-out assertions. */
     function makePublishSink(
         id: string,
@@ -306,7 +306,7 @@ describe('CurationService destination selection', () => {
      * Build a curation service wired with a real content router (seeded with the
      * given sinks) and a real defaults store, both over one mock database.
      */
-    function makeDestinationService(sinks: IContentSink[]): { service: CurationService } {
+    function makeSinkService(sinks: IContentSink[]): { service: CurationService } {
         const logger = createMockLogger();
         const db = createMockDatabaseService();
         const queue = new CurationQueue(logger, db);
@@ -314,73 +314,73 @@ describe('CurationService destination selection', () => {
         for (const sink of sinks) {
             router.register(sink, 'core');
         }
-        const defaults = new CurationDestinationDefaults(logger, db);
+        const defaults = new CurationSinkDefaults(logger, db);
         const service = new CurationService(logger, queue, new ContentRegistry(logger), router, defaults);
         return { service };
     }
 
-    /** A destinations-enabled type rendering a body; ceiling overridable per test. */
+    /** A sinks-enabled type rendering a body; ceiling overridable per test. */
     function postType(over: Partial<ICurationType> = {}): ICurationType {
         return spyCurationType({
             typeId: 'media:post',
             label: 'Media Post',
-            publishesToDestinations: true,
+            publishesToSinks: true,
             describe: vi.fn(async () => ({ body: 'hello world' })),
             ...over
         });
     }
 
-    it('lists eligible publish destinations for a destinations-enabled type', async () => {
+    it('lists eligible publish sinks for a sinks-enabled type', async () => {
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn(async () => undefined));
-        const { service } = makeDestinationService([sink]);
+        const { service } = makeSinkService([sink]);
         service.registerType(postType(), 'media');
         const held = await service.hold({ typeId: 'media:post', ref: {} });
 
-        const eligible = await service.listEligibleDestinations(held.id);
+        const eligible = await service.listEligibleSinks(held.id);
         expect(eligible.map((d) => d.sinkId)).toEqual(['core:internal-publish']);
         expect(eligible[0].defaultSelected).toBe(false);
     });
 
-    it('lists no destinations for a type that does not publish to destinations', async () => {
+    it('lists no sinks for a type that does not publish to sinks', async () => {
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
-        const { service } = makeDestinationService([sink]);
-        service.registerType(spyCurationType(), 'x-poster'); // no publishesToDestinations
+        const { service } = makeSinkService([sink]);
+        service.registerType(spyCurationType(), 'x-poster'); // no publishesToSinks
         const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
 
-        expect(await service.listEligibleDestinations(held.id)).toEqual([]);
+        expect(await service.listEligibleSinks(held.id)).toEqual([]);
     });
 
     it('excludes a publish sink whose reach exceeds the type ceiling (gate bounds the picker)', async () => {
         const external = makePublishSink('x:tweet', ['body'], { egress: 'external', audience: 'public' }, vi.fn());
-        const { service } = makeDestinationService([external]);
+        const { service } = makeSinkService([external]);
         service.registerType(postType(), 'media'); // no classification → restrictive {internal,admin} ceiling
         const held = await service.hold({ typeId: 'media:post', ref: {} });
 
-        expect(await service.listEligibleDestinations(held.id)).toEqual([]);
+        expect(await service.listEligibleSinks(held.id)).toEqual([]);
     });
 
     it('includes an external publish sink once the type raises its classification ceiling', async () => {
         const external = makePublishSink('x:tweet', ['body'], { egress: 'external', audience: 'public' }, vi.fn());
-        const { service } = makeDestinationService([external]);
+        const { service } = makeSinkService([external]);
         service.registerType(postType({ classification: { egress: 'external', audience: 'public' } }), 'media');
         const held = await service.hold({ typeId: 'media:post', ref: {} });
 
-        expect((await service.listEligibleDestinations(held.id)).map((d) => d.sinkId)).toEqual(['x:tweet']);
+        expect((await service.listEligibleSinks(held.id)).map((d) => d.sinkId)).toEqual(['x:tweet']);
     });
 
     it('excludes a publish sink whose required feature is absent (structural floor)', async () => {
         const mediaSink = makePublishSink('core:media', ['media'], { egress: 'internal', audience: 'admin' }, vi.fn());
-        const { service } = makeDestinationService([mediaSink]);
+        const { service } = makeSinkService([mediaSink]);
         service.registerType(postType(), 'media'); // body present, no media
         const held = await service.hold({ typeId: 'media:post', ref: {} });
 
-        expect(await service.listEligibleDestinations(held.id)).toEqual([]);
+        expect(await service.listEligibleSinks(held.id)).toEqual([]);
     });
 
-    it('approve fans out to the selected destination and records the outcome', async () => {
+    it('approve fans out to the selected sink and records the outcome', async () => {
         const deliver = vi.fn(async () => undefined);
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, deliver);
-        const { service } = makeDestinationService([sink]);
+        const { service } = makeSinkService([sink]);
         const type = postType();
         service.registerType(type, 'media');
         const held = await service.hold({ typeId: 'media:post', ref: {} });
@@ -388,15 +388,15 @@ describe('CurationService destination selection', () => {
         const decided = await service.approve(held.id, 'admin-1', [{ sinkId: 'core:internal-publish' }]);
 
         expect(deliver).toHaveBeenCalledOnce();
-        expect(decided?.destinations).toEqual([{ sinkId: 'core:internal-publish', status: 'delivered' }]);
+        expect(decided?.sinks).toEqual([{ sinkId: 'core:internal-publish', status: 'delivered' }]);
         // The outcomes are persisted on the item.
-        expect((await service.get(held.id))?.destinations).toEqual([{ sinkId: 'core:internal-publish', status: 'delivered' }]);
+        expect((await service.get(held.id))?.sinks).toEqual([{ sinkId: 'core:internal-publish', status: 'delivered' }]);
     });
 
-    it('records a failed destination without blocking the decision or its commit', async () => {
+    it('records a failed sink without blocking the decision or its commit', async () => {
         const deliver = vi.fn(async () => { throw new Error('boom'); });
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, deliver);
-        const { service } = makeDestinationService([sink]);
+        const { service } = makeSinkService([sink]);
         const type = postType();
         service.registerType(type, 'media');
         const held = await service.hold({ typeId: 'media:post', ref: {} });
@@ -404,16 +404,16 @@ describe('CurationService destination selection', () => {
         const decided = await service.approve(held.id, 'admin-1', [{ sinkId: 'core:internal-publish' }]);
 
         expect(decided?.status).toBe('approved');
-        expect(decided?.destinations?.[0]).toMatchObject({ sinkId: 'core:internal-publish', status: 'failed', error: 'boom' });
+        expect(decided?.sinks?.[0]).toMatchObject({ sinkId: 'core:internal-publish', status: 'failed', error: 'boom' });
         expect(type.applyEdit).toHaveBeenCalledOnce(); // the decision still commits
     });
 
-    it('records a refused destination distinctly from a failure (sink declined, decision still commits)', async () => {
+    it('records a refused sink distinctly from a failure (sink declined, decision still commits)', async () => {
         // A returned refusal — not a throw — is the sink's settled "will not render this",
         // recorded as `refused` with the reason verbatim rather than as a `failed` error.
         const deliver = vi.fn(async () => ({ refused: true as const, reason: 'cannot render this faithfully' }));
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, deliver);
-        const { service } = makeDestinationService([sink]);
+        const { service } = makeSinkService([sink]);
         const type = postType();
         service.registerType(type, 'media');
         const held = await service.hold({ typeId: 'media:post', ref: {} });
@@ -421,47 +421,47 @@ describe('CurationService destination selection', () => {
         const decided = await service.approve(held.id, 'admin-1', [{ sinkId: 'core:internal-publish' }]);
 
         expect(decided?.status).toBe('approved');
-        expect(decided?.destinations?.[0]).toMatchObject({
+        expect(decided?.sinks?.[0]).toMatchObject({
             sinkId: 'core:internal-publish',
             status: 'refused',
             reason: 'cannot render this faithfully'
         });
-        expect(decided?.destinations?.[0]).not.toHaveProperty('error'); // a refusal is not a failure
+        expect(decided?.sinks?.[0]).not.toHaveProperty('error'); // a refusal is not a failure
         expect(type.applyEdit).toHaveBeenCalledOnce(); // a refusal does not undo the decision
     });
 
-    it('rejects an ineligible destination before recording the decision (item stays pending)', async () => {
+    it('rejects an ineligible sink before recording the decision (item stays pending)', async () => {
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
-        const { service } = makeDestinationService([sink]);
+        const { service } = makeSinkService([sink]);
         const type = postType();
         service.registerType(type, 'media');
         const held = await service.hold({ typeId: 'media:post', ref: {} });
 
-        await expect(service.approve(held.id, 'admin-1', [{ sinkId: 'core:nonexistent' }])).rejects.toThrow(/not an eligible publish destination/);
+        await expect(service.approve(held.id, 'admin-1', [{ sinkId: 'core:nonexistent' }])).rejects.toThrow(/not an eligible publish sink/);
         expect(type.applyEdit).not.toHaveBeenCalled();
         expect(await service.countPending()).toBe(1);
     });
 
-    it('pre-selects a destination saved as the type default', async () => {
+    it('pre-selects a sink saved as the type default', async () => {
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
-        const { service } = makeDestinationService([sink]);
+        const { service } = makeSinkService([sink]);
         service.registerType(postType(), 'media');
-        await service.setDestinationDefaults('media:post', ['core:internal-publish']);
+        await service.setSinkDefaults('media:post', ['core:internal-publish']);
         const held = await service.hold({ typeId: 'media:post', ref: {} });
 
-        const eligible = await service.listEligibleDestinations(held.id);
+        const eligible = await service.listEligibleSinks(held.id);
         expect(eligible[0]).toMatchObject({ sinkId: 'core:internal-publish', defaultSelected: true });
-        expect(await service.getDestinationDefaults('media:post')).toEqual(['core:internal-publish']);
+        expect(await service.getSinkDefaults('media:post')).toEqual(['core:internal-publish']);
     });
 
     it('blocks an empty approval when the item has an eligible publish sink', async () => {
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
-        const { service } = makeDestinationService([sink]);
+        const { service } = makeSinkService([sink]);
         const type = postType();
         service.registerType(type, 'media');
         const held = await service.hold({ typeId: 'media:post', ref: {} });
 
-        // A destinations-enabled item with an eligible sink must target at least
+        // A sinks-enabled item with an eligible sink must target at least
         // one — approving with none would record the decision while publishing
         // nowhere. The item stays pending for a real selection.
         await expect(service.approve(held.id, 'admin-1')).rejects.toThrow(/at least one/i);
@@ -470,23 +470,23 @@ describe('CurationService destination selection', () => {
     });
 
     it('allows an empty approval when no publish sink is eligible (no deadlock)', async () => {
-        // publishesToDestinations, but no sink registered → zero eligible, so the
+        // publishesToSinks, but no sink registered → zero eligible, so the
         // guard does not fire and approval routes nowhere (the only outcome).
-        const { service } = makeDestinationService([]);
+        const { service } = makeSinkService([]);
         service.registerType(postType(), 'media');
         const held = await service.hold({ typeId: 'media:post', ref: {} });
 
         const decided = await service.approve(held.id, 'admin-1');
         expect(decided?.status).toBe('approved');
-        expect(decided?.destinations).toBeUndefined();
+        expect(decided?.sinks).toBeUndefined();
     });
 
-    it('does not block an empty approval for a classic (non-destination) type', async () => {
+    it('does not block an empty approval for a classic (non-sink) type', async () => {
         // An eligible sink exists in the router, but the type does not publish to
-        // destinations, so the guard must not fire — a classic approve is one effect.
+        // sinks, so the guard must not fire — a classic approve is one effect.
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
-        const { service } = makeDestinationService([sink]);
-        const type = spyCurationType(); // typeId x-poster:tweet, not publishesToDestinations
+        const { service } = makeSinkService([sink]);
+        const type = spyCurationType(); // typeId x-poster:tweet, not publishesToSinks
         service.registerType(type, 'x-poster');
         const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
 
@@ -495,29 +495,29 @@ describe('CurationService destination selection', () => {
         expect(type.applyEdit).toHaveBeenCalledOnce();
     });
 
-    it('rejects a destination selection supplied for a classic (non-destination) type', async () => {
-        // A classic type has zero eligible sinks, so any supplied destination is
+    it('rejects a sink selection supplied for a classic (non-sink) type', async () => {
+        // A classic type has zero eligible sinks, so any supplied sink is
         // invalid — the service fails fast before recording rather than silently
         // dropping the selection and approving anyway.
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
-        const { service } = makeDestinationService([sink]);
-        const type = spyCurationType(); // not publishesToDestinations
+        const { service } = makeSinkService([sink]);
+        const type = spyCurationType(); // not publishesToSinks
         service.registerType(type, 'x-poster');
         const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
 
         await expect(service.approve(held.id, 'admin-1', [{ sinkId: 'core:internal-publish' }]))
-            .rejects.toThrow(/not an eligible publish destination/);
+            .rejects.toThrow(/not an eligible publish sink/);
         expect(type.applyEdit).not.toHaveBeenCalled();
         expect(await service.countPending()).toBe(1);
     });
 
-    it('does not auto-approve a destinations-routed type — it waits for an explicit destination selection', async () => {
+    it('does not auto-approve a sinks-routed type — it waits for an explicit sink selection', async () => {
         // Regression: an interactive `auto-approve` policy bypass supplies no
-        // destination selection, so auto-approving a publishesToDestinations type
+        // sink selection, so auto-approving a publishesToSinks type
         // would route to zero sinks while marking the effect published. The hold
-        // must instead leave the item pending for a human to pick destinations.
+        // must instead leave the item pending for a human to pick sinks.
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, vi.fn());
-        const { service } = makeDestinationService([sink]);
+        const { service } = makeSinkService([sink]);
         const type = postType();
         service.registerType(type, 'media');
 
@@ -528,9 +528,9 @@ describe('CurationService destination selection', () => {
         expect(await service.countPending()).toBe(1);
     });
 
-    it('still auto-approves a non-destinations type under the same bypass (the guard is specific to routed types)', async () => {
-        const { service } = makeDestinationService([]);
-        const type = spyCurationType(); // no publishesToDestinations
+    it('still auto-approves a non-sinks type under the same bypass (the guard is specific to routed types)', async () => {
+        const { service } = makeSinkService([]);
+        const type = spyCurationType(); // no publishesToSinks
         service.registerType(type, 'x-poster');
 
         const held = await runWithCurationAutoApprove(true, () => service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } }));

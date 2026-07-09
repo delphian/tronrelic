@@ -11,7 +11,7 @@
 
 import type {
     CurationItemStatus,
-    ICurationDestinationOutcome,
+    ICurationSinkOutcome,
     ICurationItem,
     ICurationPreview,
     IDatabaseService,
@@ -136,9 +136,9 @@ export class CurationQueue {
      * @param status - The terminal state.
      * @param decidedBy - Better Auth user id of the deciding curator.
      * @param preview - Decision-time preview to freeze into history.
-     * @param destinations - Selected destinations, recorded `pending` in the same
-     *        atomic write so the publish intent commits with the decision and is
-     *        never lost to a crash before the delivery relay runs.
+     * @param sinks - Selected sinks, recorded `pending` in the same atomic write
+     *        so the publish intent commits with the decision and is never lost to
+     *        a crash before the delivery relay runs.
      * @returns The updated envelope, or null when no pending envelope matched.
      */
     async resolve(
@@ -146,7 +146,7 @@ export class CurationQueue {
         status: Exclude<CurationItemStatus, 'pending'>,
         decidedBy?: string,
         preview?: ICurationPreview,
-        destinations?: ICurationDestinationOutcome[]
+        sinks?: ICurationSinkOutcome[]
     ): Promise<ICurationItem | null> {
         const existing = await this.database.findOne<ICurationItem>(COLLECTION, { id, status: 'pending' });
         let resolved: ICurationItem | null = null;
@@ -163,11 +163,11 @@ export class CurationQueue {
             if (preview !== undefined) {
                 setFields.preview = preview;
             }
-            // Persist the selected destinations (each `pending`) inside the same
-            // atomic transition, so the publish intent and the decision commit
-            // together — the dual-write gap closed at the decision boundary.
-            if (destinations !== undefined) {
-                setFields.destinations = destinations;
+            // Persist the selected sinks (each `pending`) inside the same atomic
+            // transition, so the publish intent and the decision commit together —
+            // the dual-write gap closed at the decision boundary.
+            if (sinks !== undefined) {
+                setFields.sinks = sinks;
             }
             const modified = await this.database.updateMany(COLLECTION, { id, status: 'pending' }, { $set: setFields });
             if (modified > 0) {
@@ -177,7 +177,7 @@ export class CurationQueue {
                     decidedAt,
                     decidedBy,
                     preview: preview ?? existing.preview,
-                    destinations: destinations ?? existing.destinations
+                    sinks: sinks ?? existing.sinks
                 };
                 this.logger.info({ id, status, decidedBy }, `Curation item ${status}: ${existing.typeId}`);
             }
@@ -186,17 +186,17 @@ export class CurationQueue {
     }
 
     /**
-     * Record the per-destination delivery outcomes after the relay has run,
-     * replacing the `pending` destinations written at decision time. Scoped to an
-     * already-`approved` item so a concurrent re-decision cannot have it overwrite
-     * a different lifecycle state.
+     * Record the per-sink delivery outcomes after the relay has run, replacing
+     * the `pending` sinks written at decision time. Scoped to an already-
+     * `approved` item so a concurrent re-decision cannot have it overwrite a
+     * different lifecycle state.
      *
      * @param id - The envelope id.
-     * @param destinations - The settled outcomes (delivered/failed per sink).
+     * @param sinks - The settled outcomes (delivered/failed per sink).
      * @returns Resolves when the outcomes are persisted.
      */
-    async updateDestinationOutcomes(id: string, destinations: ICurationDestinationOutcome[]): Promise<void> {
-        await this.database.updateMany(COLLECTION, { id, status: 'approved' }, { $set: { destinations } });
+    async updateSinkOutcomes(id: string, sinks: ICurationSinkOutcome[]): Promise<void> {
+        await this.database.updateMany(COLLECTION, { id, status: 'approved' }, { $set: { sinks } });
 
         return;
     }

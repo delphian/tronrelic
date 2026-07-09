@@ -39,37 +39,35 @@ export type ICurationEditPatch = IContentEditPatch;
  * A decision resolves through the `decisionStatus` word core writes via
  * `applyEdit({ status })`. `rejected` is required — rejection is intrinsic to
  * being reviewable and nothing else can carry it. `approved` is optional: a
- * `publishesToDestinations` type omits it when a routed publish sink carries the
+ * `publishesToSinks` type omits it when a routed publish sink carries the
  * approval, so an approve-time status write would double-publish. `applyEdit` is
  * required (narrowed from optional on `IContentType`) because it is the sole
  * commit seam every decision lands through.
  */
 export interface ICurationType extends IContentType {
     /**
-     * Opt this type into interactive destination selection on approval. When
-     * true, the review surface computes the content router's `publish` sinks
-     * admitted for the item (within this type's `classification` ceiling) and
-     * lets the curator pick which fire on approval — the human review gate
-     * doubling as the mandated-subset selector. "Destination" is curation's
-     * curator-facing name for a content-router publish sink: the same target
-     * named at two layers — the router owns which sinks are *eligible*, curation
-     * owns which the human *picked*.
+     * Opt this type into interactive sink selection on approval. When true, the
+     * review surface computes the content router's `publish` sinks admitted for
+     * the item (within this type's `classification` ceiling) and lets the curator
+     * pick which fire on approval — the human review gate doubling as the
+     * mandated-subset selector. The router owns which sinks are *eligible*;
+     * curation owns which the human *picked*.
      *
      * The selection is required, not optional. When the item has at least one
      * eligible publish sink, curation blocks an approval that selects none (at
      * the service, mirrored by the picker's disabled Approve button) — a decision
      * must never record while publishing nowhere. When zero sinks are eligible (a
-     * classic type, or a destinations type whose transports are all disabled)
-     * there is nothing to select, so approval proceeds and routes nowhere — the
-     * guard never deadlocks a queue.
+     * classic type, or a publishes-to-sinks type whose transports are all
+     * disabled) there is nothing to select, so approval proceeds and routes
+     * nowhere — the guard never deadlocks a queue.
      *
      * When false or omitted, the type is "classic": approval has no picker and is
      * the single commit its `decisionStatus.approved` word performs (release an AI
      * action, apply a moderation decision), unaffected by the selection guard. The
      * flag is the explicit boundary between "approve = do the one thing" and
-     * "approve = route to chosen destinations".
+     * "approve = route to chosen sinks".
      */
-    publishesToDestinations?: boolean;
+    publishesToSinks?: boolean;
 
     /**
      * The content's exposure ceiling, used by the router's classification gate to
@@ -77,7 +75,7 @@ export interface ICurationType extends IContentType {
      * that omits it is treated as the most restrictive ceiling
      * (`{ internal, admin }`), so a type publishes externally only by explicitly
      * raising its ceiling — fail-safe, never accidental external egress. Ignored
-     * unless `publishesToDestinations` is true.
+     * unless `publishesToSinks` is true.
      */
     classification?: IContentClassification;
 
@@ -88,7 +86,7 @@ export interface ICurationType extends IContentType {
      *
      * `rejected` is required: every reviewable item can be rejected, persist-then-
      * hold guarantees a record to mark, and nothing else carries a rejection.
-     * `approved` is optional — omit it on a `publishesToDestinations` type whose
+     * `approved` is optional — omit it on a `publishesToSinks` type whose
      * approval is carried entirely by its routed publish sink, so core writes no
      * approve-time transition and the sink flips the record itself.
      */
