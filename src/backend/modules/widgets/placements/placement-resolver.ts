@@ -223,6 +223,7 @@ export class PlacementResolver {
                 layoutWeight: placement.layoutWeight,
                 title: placement.title,
                 titleUrl: placement.titleUrl,
+                titleSize: placement.titleSize,
                 data,
                 // Forward the same instance config the fetcher received so
                 // the frontend component can branch on it. Mirror the

@@ -5,6 +5,8 @@
  * rendering. This structure is used both internally by the widget service
  * and as the API response format for SSR widget fetching.
  */
+import type { WidgetTitleSize } from '../widget-placements/IWidgetPlacement.js';
+
 export interface IWidgetData {
     /**
      * Unique widget identifier.
@@ -50,6 +52,13 @@ export interface IWidgetData {
      * the title text.
      */
     titleUrl?: string;
+
+    /**
+     * Optional semantic heading size for the chrome `title`, carried verbatim
+     * from the resolved placement. Absent renders at the default `heading-md`.
+     * Only meaningful when `title` is present.
+     */
+    titleSize?: WidgetTitleSize;
 
     /**
      * Pre-fetched data for SSR rendering.

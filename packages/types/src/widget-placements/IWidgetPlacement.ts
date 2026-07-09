@@ -32,6 +32,14 @@
 export type PlacementSource = 'plugin' | 'operator';
 
 /**
+ * Semantic heading-size token for a placement's chrome title — the operator
+ * `title` the zone renderer draws above the widget. Each value maps to a
+ * `--font-size-heading-*` step; the renderer resolves it to that token. Absent
+ * on a placement means the default, `heading-md`.
+ */
+export type WidgetTitleSize = 'heading-xs' | 'heading-sm' | 'heading-md' | 'heading-lg' | 'heading-xl';
+
+/**
  * Public-facing placement record. The Mongo document interface
  * extends this with `_id`; the API surface uses the string `id` form.
  */
@@ -80,6 +88,13 @@ export interface IWidgetPlacement {
      */
     readonly titleUrl?: string;
     /**
+     * Semantic heading size for the chrome {@link title}, one of the
+     * `--font-size-heading-*` steps. Operator-only; absent renders at the
+     * default `heading-md`. Only meaningful when {@link title} is set, since
+     * it sizes the title text.
+     */
+    readonly titleSize?: WidgetTitleSize;
+    /**
      * Per-instance configuration the widget type's data fetcher /
      * component may consume. Validated against the type's
      * `configSchema` if provided (admin UI concern, forthcoming).
@@ -122,6 +137,8 @@ export interface IPlacementInput {
     title?: string;
     /** Optional root-relative link target for the heading. See {@link IWidgetPlacement.titleUrl}. */
     titleUrl?: string;
+    /** Optional heading-size token for the chrome title. See {@link IWidgetPlacement.titleSize}. */
+    titleSize?: WidgetTitleSize;
     instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }

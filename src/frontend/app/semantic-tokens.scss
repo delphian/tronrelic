@@ -44,9 +44,11 @@
 
     /* Typography — purpose-named font sizes */
     --font-size-caption:    var(--font-size-xs);    /* 0.72rem - labels, table headers, footnotes */
+    --font-size-body-xs:    var(--font-size-xs);    /* 0.72rem - dense secondary body, widget snippets */
     --font-size-body-sm:    var(--font-size-sm);    /* 0.85rem - secondary body */
     --font-size-body:       var(--font-size-base);  /* 0.9375rem - default body, buttons */
     --font-size-body-lg:    var(--font-size-md);    /* 1rem    - emphasized body */
+    --font-size-heading-xs: var(--font-size-sm);    /* 0.85rem - compact headings, widget titles */
     --font-size-heading-sm: var(--font-size-lg);    /* 1.05rem - small headings */
     --font-size-heading-md: var(--font-size-xl);    /* 1.6rem  - default heading, stat values */
     --font-size-heading-lg: var(--font-size-2xl);   /* 1.8rem  - large heading, page title min */

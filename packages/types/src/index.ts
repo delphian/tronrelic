@@ -242,6 +242,7 @@ export type {
     IWidgetPlacement,
     IPlacementInput,
     PlacementSource,
+    WidgetTitleSize,
     IPlacementListFilter,
     IPlacementPatch,
     // Internal — used only by widgets-module implementation. Consumers

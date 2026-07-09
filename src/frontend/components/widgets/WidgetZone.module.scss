@@ -160,7 +160,14 @@
 
 .item_title {
     margin: 0 0 var(--gap-sm);
-    font-size: var(--font-size-heading-md);
     font-weight: var(--font-weight-semibold);
     line-height: var(--line-height-tight);
 }
+
+/* Chrome-title size overrides — semantic heading scale; heading-md is the
+ * default the renderer falls back to when a placement sets no size. */
+.item_title_xs { font-size: var(--font-size-heading-xs); }
+.item_title_sm { font-size: var(--font-size-heading-sm); }
+.item_title_md { font-size: var(--font-size-heading-md); }
+.item_title_lg { font-size: var(--font-size-heading-lg); }
+.item_title_xl { font-size: var(--font-size-heading-xl); }
