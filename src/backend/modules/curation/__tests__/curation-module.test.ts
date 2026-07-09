@@ -180,8 +180,8 @@ describe('CurationService', () => {
 
     it('omits the approve transition when the type declares no approved status word', async () => {
         const service = makeService();
-        // A type that declares only a rejection word: approval writes nothing (its
-        // routed publish sink carries the approval), rejection writes its word.
+        // A type that declares only a rejection word: with no `approved` word,
+        // approval writes nothing; rejection writes its word.
         const applyEdit = vi.fn(async () => undefined);
         const type = spyCurationType({
             decisionStatus: { rejected: 'rejected' },
