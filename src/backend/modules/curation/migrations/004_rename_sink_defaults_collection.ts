@@ -66,23 +66,31 @@ export const migration: IMigration = {
             }
         }
 
-        if (docs.length > 0) {
-            try {
-                await source.drop();
-            } catch (error) {
-                const code = (error as { code?: number } | undefined)?.code;
-                const message = error instanceof Error ? error.message : String(error);
-                // Code 26 — NamespaceNotFound. The legacy collection is already
-                // gone (a prior run dropped it); nothing more to do.
-                if (code !== 26 && !/ns not found/i.test(message)) {
-                    throw error;
-                }
+        // Drop the legacy collection unconditionally. The old module's
+        // `ensureIndexes()` created `module_curation_destination_defaults` at
+        // every boot, so it sits present-but-empty on any deployment that never
+        // saved a default — a case a `docs.length > 0` guard would orphan. A
+        // fresh install with no legacy collection throws NamespaceNotFound
+        // (code 26), which the catch swallows, so the unconditional drop stays
+        // idempotent. `drop()` resolves `true` only when it removed an existing
+        // collection, which drives an accurate log below.
+        let legacyDropped = false;
+        try {
+            legacyDropped = await source.drop();
+        } catch (error) {
+            const code = (error as { code?: number } | undefined)?.code;
+            const message = error instanceof Error ? error.message : String(error);
+            // Code 26 — NamespaceNotFound. The legacy collection is already
+            // gone (a prior run dropped it, or a fresh install never had it);
+            // nothing more to do.
+            if (code !== 26 && !/ns not found/i.test(message)) {
+                throw error;
             }
         }
 
         console.log(
             `[Migration] Migrated ${migrated} sink-default row(s) into ${TARGET} from ${SOURCE}` +
-            (docs.length > 0 ? '; dropped the legacy collection' : ' (legacy collection absent)')
+            (legacyDropped ? '; dropped the legacy collection' : ' (legacy collection absent)')
         );
     }
 };
