@@ -4,6 +4,8 @@
  * Mirrors the IWidgetData interface from @/types but without
  * the fetchData function (which only exists on the backend).
  */
+import type { WidgetTitleSize } from '@/types';
+
 export interface WidgetData {
     /**
      * Unique widget identifier.
@@ -50,7 +52,7 @@ export interface WidgetData {
      * resolved placement. One of the `--font-size-heading-*` steps
      * (`heading-xs|sm|md|lg|xl`); absent renders at the default `heading-md`.
      */
-    titleSize?: 'heading-xs' | 'heading-sm' | 'heading-md' | 'heading-lg' | 'heading-xl';
+    titleSize?: WidgetTitleSize;
 
     /**
      * Pre-fetched data for SSR rendering.
