@@ -32,6 +32,21 @@ const DEFAULT_LAYOUT: IZoneLayoutConfig = {
 const LAYOUT_GROUP_TYPE_ID = 'core:layout-group';
 
 /**
+ * Chrome-title heading size → scoped class. Keyed by the `WidgetTitleSize`
+ * literals an operator picks per placement, so a validated choice always
+ * resolves to a class; an absent value falls back to `heading-md`, the size the
+ * chrome title rendered at before this control existed. Each class binds the
+ * matching `--font-size-heading-*` token — never a hardcoded size.
+ */
+const TITLE_SIZE_CLASS: Record<string, string> = {
+    'heading-xs': styles.item_title_xs,
+    'heading-sm': styles.item_title_sm,
+    'heading-md': styles.item_title_md,
+    'heading-lg': styles.item_title_lg,
+    'heading-xl': styles.item_title_xl
+};
+
+/**
  * Map a token gap size to the CSS value the container's `gap` resolves
  * to. Sizes map to the `--gap-*` design tokens (never a raw length) so
  * zone spacing stays on the token scale; `none` is a literal `0`.
@@ -269,7 +284,7 @@ function WidgetItem({ widget, route, params }: WidgetRendererProps) {
             data-plugin-id={widget.pluginId}
         >
             {widget.title && (
-                <h2 className={styles.item_title}>
+                <h2 className={cn(styles.item_title, TITLE_SIZE_CLASS[widget.titleSize ?? 'heading-md'] ?? styles.item_title_md)}>
                     {widget.titleUrl ? (
                         <Link href={widget.titleUrl}>{widget.title}</Link>
                     ) : (

@@ -23,6 +23,7 @@ import type {
     ISystemLogService,
     IWidgetsService,
     PlacementSource,
+    WidgetTitleSize,
     IPlacementListFilter
 } from '@/types';
 import { normaliseRoutePattern } from '../placements/route-matcher.js';
@@ -95,6 +96,20 @@ const MAX_TITLE_URL_LENGTH = 512;
  * structurally impossible, so no separate scheme blocklist is needed.
  */
 const INTERNAL_PATH_PATTERN = /^\/(?![/\\])(?!.*\/\/)(?!.*\.\.)[^\s\\]*$/;
+
+/**
+ * Allowed semantic heading sizes for a placement's chrome title. The
+ * `WidgetTitleSize` union keeps this array honest — a typo here is a compile
+ * error. A placement omitting the field renders at `heading-md` (the default
+ * the zone renderer falls back to), so absence is valid and stores nothing.
+ */
+const WIDGET_TITLE_SIZES: readonly WidgetTitleSize[] = [
+    'heading-xs',
+    'heading-sm',
+    'heading-md',
+    'heading-lg',
+    'heading-xl'
+];
 
 /**
  * Format gate for zone ids. Lowercase-dotted (letters, digits,
@@ -407,7 +422,7 @@ export class PlacementsController {
     };
 
     private parseCreateBody(body: unknown):
-        | { input: { typeId: string; zoneId: string; parentId?: string; routes: string[]; order?: number; layoutWeight?: number; title?: string; titleUrl?: string; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
+        | { input: { typeId: string; zoneId: string; parentId?: string; routes: string[]; order?: number; layoutWeight?: number; title?: string; titleUrl?: string; titleSize?: WidgetTitleSize; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
         | { error: string } {
         if (!body || typeof body !== 'object') {
             return { error: 'Request body must be an object' };
@@ -446,6 +461,9 @@ export class PlacementsController {
         const titleUrlResult = this.parseTitleUrl(b.titleUrl);
         if ('error' in titleUrlResult) return titleUrlResult;
 
+        const titleSizeResult = this.parseTitleSize(b.titleSize);
+        if ('error' in titleSizeResult) return titleSizeResult;
+
         const instanceConfigResult = this.parseInstanceConfig(b.instanceConfig);
         if ('error' in instanceConfigResult) return instanceConfigResult;
 
@@ -461,6 +479,7 @@ export class PlacementsController {
                 layoutWeight: layoutWeightResult.layoutWeight,
                 title: titleResult.title,
                 titleUrl: titleUrlResult.titleUrl,
+                titleSize: titleSizeResult.titleSize,
                 instanceConfig: instanceConfigResult.instanceConfig,
                 enabled
             }
@@ -468,13 +487,13 @@ export class PlacementsController {
     }
 
     private parsePatchBody(body: unknown):
-        | { patch: { zoneId?: string; routes?: string[]; order?: number; layoutWeight?: number | null; title?: string | null; titleUrl?: string | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
+        | { patch: { zoneId?: string; routes?: string[]; order?: number; layoutWeight?: number | null; title?: string | null; titleUrl?: string | null; titleSize?: WidgetTitleSize | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } }
         | { error: string } {
         if (!body || typeof body !== 'object') {
             return { error: 'Request body must be an object' };
         }
         const b = body as Record<string, unknown>;
-        const patch: { zoneId?: string; parentId?: string | null; routes?: string[]; order?: number; layoutWeight?: number | null; title?: string | null; titleUrl?: string | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } = {};
+        const patch: { zoneId?: string; parentId?: string | null; routes?: string[]; order?: number; layoutWeight?: number | null; title?: string | null; titleUrl?: string | null; titleSize?: WidgetTitleSize | null; instanceConfig?: Record<string, unknown>; enabled?: boolean } = {};
 
         if (b.zoneId !== undefined) {
             if (typeof b.zoneId !== 'string' || b.zoneId.length === 0) {
@@ -540,6 +559,17 @@ export class PlacementsController {
                 const result = this.parseTitleUrl(b.titleUrl);
                 if ('error' in result) return result;
                 patch.titleUrl = result.titleUrl;
+            }
+        }
+
+        if (b.titleSize !== undefined) {
+            if (b.titleSize === null) {
+                // Explicit clear — revert the chrome title to the default heading-md.
+                patch.titleSize = null;
+            } else {
+                const result = this.parseTitleSize(b.titleSize);
+                if ('error' in result) return result;
+                patch.titleSize = result.titleSize;
             }
         }
 
@@ -673,6 +703,20 @@ export class PlacementsController {
             return { error: "titleUrl must be a root-relative path beginning with '/' (e.g. '/markets'); absolute or off-site URLs are not allowed" };
         }
         return { titleUrl: trimmed };
+    }
+
+    /**
+     * Validate an optional chrome-title heading size against the allowed
+     * {@link WIDGET_TITLE_SIZES} set. Returns the value, or a structured error
+     * the caller maps to a 400. Absence is valid — the placement then renders
+     * at the default `heading-md`.
+     */
+    private parseTitleSize(value: unknown): { titleSize?: WidgetTitleSize } | { error: string } {
+        if (value === undefined) return { titleSize: undefined };
+        if (typeof value !== 'string' || !WIDGET_TITLE_SIZES.includes(value as WidgetTitleSize)) {
+            return { error: `titleSize must be one of: ${WIDGET_TITLE_SIZES.join(', ')}` };
+        }
+        return { titleSize: value as WidgetTitleSize };
     }
 
     private parseInstanceConfig(value: unknown):

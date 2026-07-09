@@ -373,6 +373,64 @@ describe('PlacementsController titleUrl validation', () => {
     });
 });
 
+describe('PlacementsController titleSize validation', () => {
+    let widgets: IWidgetsService;
+    let controller: PlacementsController;
+    let logger: ISystemLogService;
+    let res: ReturnType<typeof buildResponseStub>;
+
+    beforeEach(() => {
+        logger = buildLoggerStub();
+        res = buildResponseStub();
+    });
+
+    it('rejects an unknown titleSize with 400 and never reaches the service', async () => {
+        widgets = buildWidgetsServiceStub({ createPlacement: vi.fn() });
+        controller = new PlacementsController(widgets, logger);
+
+        const req = { body: { ...validCreateBody, titleSize: 'heading-huge' } } as Request;
+        await controller.createPlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json.mock.calls[0][0].error).toMatch(/titleSize/);
+        expect(widgets.createPlacement).not.toHaveBeenCalled();
+    });
+
+    it('accepts a valid titleSize and forwards it to the service', async () => {
+        widgets = buildWidgetsServiceStub({
+            createPlacement: vi.fn(async () => ({ id: 'new-id' } as IWidgetPlacement))
+        });
+        controller = new PlacementsController(widgets, logger);
+
+        const req = { body: { ...validCreateBody, titleSize: 'heading-lg' } } as Request;
+        await controller.createPlacement(req, res);
+
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(widgets.createPlacement).toHaveBeenCalledWith(
+            expect.objectContaining({ titleSize: 'heading-lg' })
+        );
+    });
+
+    it('forwards titleSize: null on patch as an explicit revert-to-default signal', async () => {
+        widgets = buildWidgetsServiceStub({
+            updatePlacement: vi.fn(async () => ({ id: 'p1' } as IWidgetPlacement))
+        });
+        controller = new PlacementsController(widgets, logger);
+
+        const req = {
+            params: { id: 'p1' },
+            body: { titleSize: null }
+        } as unknown as Request;
+
+        await controller.updatePlacement(req, res);
+
+        expect(widgets.updatePlacement).toHaveBeenCalledWith(
+            'p1',
+            expect.objectContaining({ titleSize: null })
+        );
+    });
+});
+
 describe('PlacementsController layoutWeight validation', () => {
     let widgets: IWidgetsService;
     let logger: ISystemLogService;

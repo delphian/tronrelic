@@ -11,7 +11,8 @@ export type {
     IWidgetPlacement,
     IPlacementInput,
     IPluginPlacementInput,
-    PlacementSource
+    PlacementSource,
+    WidgetTitleSize
 } from './IWidgetPlacement.js';
 
 export type {

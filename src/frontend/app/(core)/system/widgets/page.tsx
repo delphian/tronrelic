@@ -76,6 +76,13 @@ import { getSocket } from '../../../../lib/socketClient';
 import styles from './page.module.scss';
 
 /**
+ * Semantic heading-size token for a placement's chrome title. Mirrors the
+ * backend `WidgetTitleSize`; declared inline so this admin module stays
+ * self-contained. `heading-md` is the render default when a placement omits it.
+ */
+type WidgetTitleSize = 'heading-xs' | 'heading-sm' | 'heading-md' | 'heading-lg' | 'heading-xl';
+
+/**
  * Public-facing placement record returned by the admin list endpoint.
  * Mirrors `IWidgetPlacement` from the backend types package but
  * declared inline here so the frontend module is self-contained.
@@ -99,6 +106,7 @@ interface IPlacement {
     layoutWeight?: number;
     title?: string;
     titleUrl?: string;
+    titleSize?: WidgetTitleSize;
     instanceConfig?: Record<string, unknown>;
     enabled: boolean;
     source: 'plugin' | 'operator';
@@ -129,6 +137,11 @@ interface IPlacementPatch {
     layoutWeight?: number | null | undefined;
     title?: string | null | undefined;
     titleUrl?: string | null | undefined;
+    /**
+     * Set the chrome title's heading size, clear it back to the default
+     * (`heading-md`) with `null`, or omit to leave it unchanged.
+     */
+    titleSize?: WidgetTitleSize | null | undefined;
     instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }
@@ -146,6 +159,7 @@ interface IPlacementCreate {
     order?: number;
     title?: string;
     titleUrl?: string;
+    titleSize?: WidgetTitleSize;
     instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }
@@ -2739,6 +2753,10 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, placements,
     const [order, setOrder] = useState<number>(initial?.order ?? 100);
     const [title, setTitle] = useState<string>(initial?.title ?? '');
     const [titleUrl, setTitleUrl] = useState<string>(initial?.titleUrl ?? '');
+    // Chrome-title heading size. Absent on the row means the default, so the
+    // select seeds to 'heading-md' and the submit logic omits/clears the
+    // default rather than persisting it.
+    const [titleSize, setTitleSize] = useState<WidgetTitleSize>(initial?.titleSize ?? 'heading-md');
     const [enabled, setEnabled] = useState<boolean>(initial?.enabled ?? true);
     const [saving, setSaving] = useState<boolean>(false);
     const [routeError, setRouteError] = useState<string | null>(null);
@@ -2952,6 +2970,9 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, placements,
                         order,
                         title: title.trim().length > 0 ? title.trim() : undefined,
                         titleUrl: titleUrl.trim().length > 0 ? titleUrl.trim() : undefined,
+                        // Persist only a non-default size; heading-md is the render
+                        // fallback, so storing it would just be noise.
+                        titleSize: titleSize !== 'heading-md' ? titleSize : undefined,
                         instanceConfig: parsedInstanceConfig,
                         enabled
                     };
@@ -2995,6 +3016,17 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, placements,
                             : hadInitialParent
                                 ? null
                                 : undefined;
+                    // titleSize three-state against the effective initial value
+                    // (a bare row reads as heading-md): unchanged → omit;
+                    // changed to the default → null ($unset back to heading-md);
+                    // changed to a non-default → set.
+                    const initialTitleSize: WidgetTitleSize = initial?.titleSize ?? 'heading-md';
+                    const titleSizePatch: WidgetTitleSize | null | undefined =
+                        titleSize === initialTitleSize
+                            ? undefined
+                            : titleSize === 'heading-md'
+                                ? null
+                                : titleSize;
                     const payload: IPlacementPatch = {
                         zoneId,
                         parentId: parentIdPatch,
@@ -3002,6 +3034,7 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, placements,
                         order,
                         title: titlePatch,
                         titleUrl: titleUrlPatch,
+                        titleSize: titleSizePatch,
                         instanceConfig: parsedInstanceConfig,
                         enabled
                     };
@@ -3011,7 +3044,7 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, placements,
                 setSaving(false);
             }
         },
-        [configFields, configValue, enabled, initial?.title, initial?.titleUrl, initial?.parentId, isLayoutGroup, mode, onSubmit, order, parentId, rawMode, rawText, routes, title, titleUrl, typeId, zoneId]
+        [configFields, configValue, enabled, initial?.title, initial?.titleUrl, initial?.titleSize, initial?.parentId, isLayoutGroup, mode, onSubmit, order, parentId, rawMode, rawText, routes, title, titleUrl, titleSize, typeId, zoneId]
     );
 
     const canSubmit = typeId.length > 0 && zoneId.length > 0;
@@ -3156,6 +3189,22 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, placements,
                         maxLength={80}
                         disabled={saving}
                     />
+                </div>
+                <div className={styles.field}>
+                    <label htmlFor="wp-title-size">Title size</label>
+                    <Select
+                        id="wp-title-size"
+                        value={titleSize}
+                        onChange={(e) => setTitleSize(e.target.value as WidgetTitleSize)}
+                        disabled={saving}
+                    >
+                        <option value="heading-xs">Extra small</option>
+                        <option value="heading-sm">Small</option>
+                        <option value="heading-md">Medium (default)</option>
+                        <option value="heading-lg">Large</option>
+                        <option value="heading-xl">Extra large</option>
+                    </Select>
+                    <span className={styles.field_hint}>Heading size of the title above the widget.</span>
                 </div>
                 <div className={styles.field}>
                     <label htmlFor="wp-title-url">Title link</label>

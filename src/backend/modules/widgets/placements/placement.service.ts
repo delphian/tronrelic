@@ -304,6 +304,7 @@ export class PlacementService implements IPlacementService {
         if (input.layoutWeight !== undefined) doc.layoutWeight = input.layoutWeight;
         if (input.title !== undefined) doc.title = input.title;
         if (input.titleUrl !== undefined) doc.titleUrl = input.titleUrl;
+        if (input.titleSize !== undefined) doc.titleSize = input.titleSize;
         if (input.instanceConfig !== undefined) doc.instanceConfig = input.instanceConfig;
         if (source === 'plugin' && options.pluginId !== undefined) doc.pluginId = options.pluginId;
 
@@ -354,6 +355,13 @@ export class PlacementService implements IPlacementService {
             unsetOps.titleUrl = '';
         } else if (patch.titleUrl !== undefined) {
             setOps.titleUrl = patch.titleUrl;
+        }
+        if (patch.titleSize === null) {
+            // Explicit clear — drop the size so the title renders at the
+            // default heading-md again.
+            unsetOps.titleSize = '';
+        } else if (patch.titleSize !== undefined) {
+            setOps.titleSize = patch.titleSize;
         }
         if (patch.instanceConfig !== undefined) setOps.instanceConfig = patch.instanceConfig;
         if (patch.enabled !== undefined) setOps.enabled = patch.enabled;
@@ -512,6 +520,7 @@ function toPublic(doc: IWidgetPlacementDocument): IWidgetPlacement {
         layoutWeight: doc.layoutWeight,
         title: doc.title,
         titleUrl: doc.titleUrl,
+        titleSize: doc.titleSize,
         instanceConfig: doc.instanceConfig,
         enabled: doc.enabled,
         source: doc.source,

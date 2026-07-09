@@ -19,7 +19,8 @@
 import type {
     IWidgetPlacement,
     IPlacementInput,
-    IPluginPlacementInput
+    IPluginPlacementInput,
+    WidgetTitleSize
 } from './IWidgetPlacement.js';
 
 /**
@@ -68,6 +69,12 @@ export interface IPlacementPatch {
     layoutWeight?: number | null;
     title?: string | null;
     titleUrl?: string | null;
+    /**
+     * Set the chrome title's heading size, or clear it back to the default
+     * (`heading-md`) with `null` (`$unset`). Omission leaves it unchanged —
+     * the same three-state convention as `title`/`titleUrl`.
+     */
+    titleSize?: WidgetTitleSize | null;
     instanceConfig?: Record<string, unknown>;
     enabled?: boolean;
 }

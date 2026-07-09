@@ -15,7 +15,7 @@
  */
 
 import type { ObjectId } from 'mongodb';
-import type { PlacementSource } from '@/types';
+import type { PlacementSource, WidgetTitleSize } from '@/types';
 
 /**
  * Widget placement document as stored in MongoDB.
@@ -55,6 +55,8 @@ export interface IWidgetPlacementDocument {
     title?: string;
     /** Optional root-relative URL linking the heading. Operator-only. */
     titleUrl?: string;
+    /** Optional heading-size token for the chrome title. Operator-only; absent renders `heading-md`. */
+    titleSize?: WidgetTitleSize;
     /** Per-instance configuration. */
     instanceConfig?: Record<string, unknown>;
     /** Whether the placement currently renders. */

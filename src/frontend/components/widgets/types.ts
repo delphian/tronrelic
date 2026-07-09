@@ -46,6 +46,13 @@ export interface WidgetData {
     titleUrl?: string;
 
     /**
+     * Optional semantic heading size for the chrome `title`, carried from the
+     * resolved placement. One of the `--font-size-heading-*` steps
+     * (`heading-xs|sm|md|lg|xl`); absent renders at the default `heading-md`.
+     */
+    titleSize?: 'heading-xs' | 'heading-sm' | 'heading-md' | 'heading-lg' | 'heading-xl';
+
+    /**
      * Pre-fetched data for SSR rendering.
      *
      * The structure is defined by the individual plugin and can be any

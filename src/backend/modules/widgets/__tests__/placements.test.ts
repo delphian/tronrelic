@@ -380,6 +380,25 @@ describe('PlacementService CRUD', () => {
         expect(cleared?.title).toBe('Operator Title');
     });
 
+    it('persists titleSize on create and reverts it to the default with titleSize: null', async () => {
+        const placement = await service.create({
+            typeId: 't',
+            zoneId: 'main-after',
+            routes: ['/'],
+            title: 'Operator Title',
+            titleSize: 'heading-lg'
+        });
+        expect(placement.titleSize).toBe('heading-lg');
+
+        const updated = await service.update(placement.id, { titleSize: 'heading-xs' });
+        expect(updated?.titleSize).toBe('heading-xs');
+
+        const cleared = await service.update(placement.id, { titleSize: null });
+        // Cleared back to the default (absent → renders heading-md); title intact.
+        expect(cleared?.titleSize).toBeUndefined();
+        expect(cleared?.title).toBe('Operator Title');
+    });
+
     it('persists layoutWeight on create and clears it with layoutWeight: null', async () => {
         const placement = await service.create({
             typeId: 't',
