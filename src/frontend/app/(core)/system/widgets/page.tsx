@@ -55,7 +55,8 @@ import type {
     IZoneSnapshot,
     IWidgetTypeSnapshot,
     IZoneLayoutConfig,
-    ZoneLayoutPreset
+    ZoneLayoutPreset,
+    WidgetTitleSize
 } from '@/types';
 import type { JSONSchema7, JSONSchema7Definition } from 'json-schema';
 
@@ -74,13 +75,6 @@ import { cn } from '../../../../lib/cn';
 import { getSocket } from '../../../../lib/socketClient';
 
 import styles from './page.module.scss';
-
-/**
- * Semantic heading-size token for a placement's chrome title. Mirrors the
- * backend `WidgetTitleSize`; declared inline so this admin module stays
- * self-contained. `heading-md` is the render default when a placement omits it.
- */
-type WidgetTitleSize = 'heading-xs' | 'heading-sm' | 'heading-md' | 'heading-lg' | 'heading-xl';
 
 /**
  * Public-facing placement record returned by the admin list endpoint.

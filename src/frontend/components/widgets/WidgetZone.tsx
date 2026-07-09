@@ -38,7 +38,7 @@ const LAYOUT_GROUP_TYPE_ID = 'core:layout-group';
  * chrome title rendered at before this control existed. Each class binds the
  * matching `--font-size-heading-*` token — never a hardcoded size.
  */
-const TITLE_SIZE_CLASS: Record<string, string> = {
+const TITLE_SIZE_CLASS: Record<NonNullable<WidgetData['titleSize']>, string> = {
     'heading-xs': styles.item_title_xs,
     'heading-sm': styles.item_title_sm,
     'heading-md': styles.item_title_md,
