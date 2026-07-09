@@ -1,21 +1,23 @@
 /**
  * @file ICurationType.ts
  *
- * The curation **binding**: the review verbs a provider adds onto a reusable
- * {@link IContentType} to make its content reviewable in the central queue. The
- * content half — `typeId`, `label`, `describe()` — is inherited from
- * `IContentType` and is shared with every other pipeline; only `onApprove`,
- * `onReject`, and the optional `applyEdit` are curation-specific, because only
- * curation has an approve/reject lifecycle. A provider still passes one object
- * to `registerType`; the registry separates the content facet from the binding.
+ * The curation **binding**: the declarative decision bookkeeping a provider adds
+ * onto a reusable {@link IContentType} to make its content reviewable in the
+ * central queue. The content half — `typeId`, `label`, `describe()` — is
+ * inherited from `IContentType` and shared with every other pipeline; only
+ * `decisionStatus` (which status word to write per decision) is curation-specific,
+ * because only curation has an approve/reject lifecycle. A provider still passes
+ * one object to `registerType`; the registry separates the content facet from the
+ * binding.
  *
- * Editing routes through the provider's own record — core passes a neutral
- * patch and the type owns the write — so `applyEdit` stays on the curation
- * binding rather than the content type until a second pipeline needs content
- * mutation.
+ * Decisions are declarative only. Core resolves a decision to `approved` /
+ * `rejected`, looks up the type's declared status word, and applies it through the
+ * inherited `applyEdit({ status })` seam — so the terminal bookkeeping is data the
+ * platform can read and introspect, never opaque callback code. There is no
+ * imperative approve/reject verb: a type that needs a side effect on approval
+ * routes it through a content-router publish sink, not through the binding.
  */
 
-import type { ICurationItem } from './ICurationItem.js';
 import type { IContentType, IContentEditPatch } from '../content/IContentType.js';
 import type { IContentClassification } from '../content/IContentClassification.js';
 
@@ -28,20 +30,19 @@ import type { IContentClassification } from '../content/IContentClassification.j
 export type ICurationEditPatch = IContentEditPatch;
 
 /**
- * A reviewable content type: a content type plus the curation lifecycle verbs.
- * One provider may register several — a tweet, a generated image — each with its
- * own namespaced `typeId` inherited from {@link IContentType}. `describe` and
- * `applyEdit` are inherited too — both operate on the originator's own record —
- * leaving only the approve/reject decision semantics curation-specific.
+ * A reviewable content type: a content type plus curation's declarative decision
+ * bookkeeping. One provider may register several — a tweet, a generated image —
+ * each with its own namespaced `typeId` inherited from {@link IContentType}.
+ * `describe` and `applyEdit` are inherited too — both operate on the originator's
+ * own record — leaving only the `decisionStatus` map curation-specific.
  *
- * A type expresses those decision semantics one of two ways. The imperative form
- * supplies `onApprove`/`onReject` callbacks. The declarative form omits them and
- * supplies `decisionStatus` — the originator's status word per decision — which
- * core applies through the inherited `applyEdit({ status })` seam, so the
- * terminal bookkeeping is data the platform can read and introspect rather than
- * opaque callback code. Both verbs are optional; a type that declares neither a
- * verb nor a `decisionStatus` word for a decision makes that decision a
- * deliberate no-op (e.g. an approval carried entirely by a routed publish sink).
+ * A decision resolves through the `decisionStatus` word core writes via
+ * `applyEdit({ status })`. `rejected` is required — rejection is intrinsic to
+ * being reviewable and nothing else can carry it. `approved` is optional: a
+ * `publishesToDestinations` type omits it when a routed publish sink carries the
+ * approval, so an approve-time status write would double-publish. `applyEdit` is
+ * required (narrowed from optional on `IContentType`) because it is the sole
+ * commit seam every decision lands through.
  */
 export interface ICurationType extends IContentType {
     /**
@@ -63,10 +64,10 @@ export interface ICurationType extends IContentType {
      * guard never deadlocks a queue.
      *
      * When false or omitted, the type is "classic": approval has no picker and is
-     * the single commit its `onApprove` verb or `decisionStatus.approved` word
-     * performs (release an AI action, apply a moderation decision), unaffected by
-     * the selection guard. The flag is the explicit boundary between "approve =
-     * do the one thing" and "approve = route to chosen destinations".
+     * the single commit its `decisionStatus.approved` word performs (release an AI
+     * action, apply a moderation decision), unaffected by the selection guard. The
+     * flag is the explicit boundary between "approve = do the one thing" and
+     * "approve = route to chosen destinations".
      */
     publishesToDestinations?: boolean;
 
@@ -81,47 +82,35 @@ export interface ICurationType extends IContentType {
     classification?: IContentClassification;
 
     /**
-     * Declarative alternative to the imperative `onApprove`/`onReject` verbs: the
-     * originator's own status word to write when core resolves each decision. When
-     * a type omits the matching verb, core applies the mapped word through the
-     * inherited `applyEdit({ status })` seam — so the decision's terminal
-     * bookkeeping is readable data, not a callback. Omit a key to make that
-     * decision a no-op: a `publishesToDestinations` type whose approval is carried
-     * entirely by its routed publish sink declares only `rejected`. Ignored for a
-     * decision whose imperative verb is present — the verb wins.
+     * The originator's own status word core writes when it resolves each decision,
+     * applied through the inherited `applyEdit({ status })` seam so the decision's
+     * terminal bookkeeping is readable data rather than a callback.
+     *
+     * `rejected` is required: every reviewable item can be rejected, persist-then-
+     * hold guarantees a record to mark, and nothing else carries a rejection.
+     * `approved` is optional — omit it on a `publishesToDestinations` type whose
+     * approval is carried entirely by its routed publish sink, so core writes no
+     * approve-time transition and the sink flips the record itself.
      */
-    decisionStatus?: {
+    decisionStatus: {
         /** Status word written to the record on approval; omit when a routed sink carries the publish. */
         approved?: string;
 
-        /** Status word written to the record on rejection. */
-        rejected?: string;
+        /** Status word written to the record on rejection. Required. */
+        rejected: string;
     };
 
     /**
-     * Commit the held effect imperatively. Optional — a type may instead declare
-     * `decisionStatus.approved` and let core apply it through `applyEdit`. When
-     * present, core records the approval first, then calls this; the provider does
-     * whatever "approved" means for the type (release for publication, enqueue,
-     * schedule). When the type publishes to destinations, routed fan-out is lifted
-     * *out* of this verb — it runs before `onApprove`, and the decided `item` it
-     * receives carries the per-destination outcomes — so `onApprove` is left for
-     * the type's own bookkeeping (mark its record published, decrement a quota).
-     * Throwing surfaces the failure to the admin but does not roll the recorded
-     * decision back — design `onApprove` to be safe to retry.
+     * Apply a generic, payload-agnostic edit to the content's own record. Required
+     * on a curation type (narrowed from optional on `IContentType`) because it is
+     * the sole seam every decision commits through — core writes the
+     * `decisionStatus` word here as a `{ status }` patch — and also carries a
+     * curator's inline `{ body }` edit. The type maps the patch onto its record,
+     * enforces its own validation, and throws a descriptive Error the consumer
+     * surfaces. Addressed by the same opaque `ref` as `describe()`.
      *
-     * @param item - The decided envelope, including `ref`, metadata, and (when
-     *   the type publishes to destinations) the `destinations` outcomes.
+     * @param ref - The opaque pointer identifying the record to edit.
+     * @param patch - The generic edit to apply — a `{ status }` transition or a `{ body }` edit.
      */
-    onApprove?(item: ICurationItem): void | Promise<void>;
-
-    /**
-     * Discard the held effect imperatively. Optional — a type may instead declare
-     * `decisionStatus.rejected` and let core apply it through `applyEdit`. When
-     * present, core records the rejection first, then calls this so the provider
-     * can clean up its own record.
-     *
-     * @param item - The decided envelope, including `ref` and metadata.
-     */
-    onReject?(item: ICurationItem): void | Promise<void>;
+    applyEdit(ref: Record<string, unknown>, patch: IContentEditPatch): void | Promise<void>;
 }

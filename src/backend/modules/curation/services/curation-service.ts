@@ -3,13 +3,15 @@
  *
  * The central curation service: the registry of reviewable content types and
  * the orchestration of the held-item lifecycle. It is the single `'curation'`
- * service core publishes. Providers register a type (describe / onApprove /
- * onReject); producers `hold()` effects into the queue; the admin surface lists
- * and decides them. Core owns the decision and the envelope; the owning type
- * owns the payload, the preview, and what approval does.
+ * service core publishes. Providers register a type (describe / applyEdit /
+ * decisionStatus); producers `hold()` effects into the queue; the admin surface
+ * lists and decides them. Core owns the decision and the envelope; the owning
+ * type owns the payload, the preview, and the declarative status its decisions
+ * write.
  *
  * Decision flow records the terminal state first (the queue's atomic gate),
- * then invokes the owning type's callback. A disabled owner — its type no longer
+ * then commits the decision declaratively through the owning type's
+ * `applyEdit({ status })` seam. A disabled owner — its type no longer
  * registered — blocks the decision rather than dropping the effect, so a held
  * item simply waits for its provider to return.
  */
@@ -169,6 +171,15 @@ export class CurationService implements ICurationService {
      * @param providerId - Id of the registering plugin or module.
      */
     registerType(type: ICurationType, providerId: string): void {
+        // Coherence guard — backstop for a plugin compiled against the older,
+        // pre-collapse interface where these were optional. A curation type must
+        // declare its required rejection word and the applyEdit commit seam.
+        if (!type.decisionStatus?.rejected) {
+            throw new Error(`Curation type '${type.typeId}' must declare decisionStatus.rejected`);
+        }
+        if (typeof type.applyEdit !== 'function') {
+            throw new Error(`Curation type '${type.typeId}' must implement applyEdit (the decision commit seam)`);
+        }
         // A replacing registration must dispose the prior content-registry
         // mirror before installing the new one, so the shared registry never
         // accumulates a stale facet for the same id.
@@ -236,9 +247,10 @@ export class CurationService implements ICurationService {
      * When the active governed invocation opted its held effects into
      * auto-approval (an interactive admin policy bypass — see
      * {@link shouldAutoApproveCuration}), the freshly held item is approved
-     * immediately under {@link CURATION_AUTO_APPROVE_DECIDED_BY}, running the
-     * owning type's `onApprove` before this returns. A bypass that fails to
-     * commit propagates exactly as a manual approval's failure would.
+     * immediately under {@link CURATION_AUTO_APPROVE_DECIDED_BY}, committing the
+     * owning type's declared approval status via `applyEdit` before this returns.
+     * A bypass that fails to commit propagates exactly as a manual approval's
+     * failure would.
      *
      * A `publishesToDestinations` type is exempt from the bypass: approval of a
      * routed type *is* the curator's destination selection, which auto-approve
@@ -488,8 +500,8 @@ export class CurationService implements ICurationService {
      * @returns The decided envelope, or null when blocked (missing, no longer
      *          pending, or owner unregistered).
      * @throws When a selected destination is not eligible (before any decision is
-     *         recorded), or when the owning type's `onApprove` fails (after the
-     *         decision is recorded, so the caller surfaces the failure).
+     *         recorded), or when the owning type's `applyEdit` commit fails (after
+     *         the decision is recorded, so the caller surfaces the failure).
      */
     async approve(
         id: string,
@@ -505,8 +517,8 @@ export class CurationService implements ICurationService {
      * @param id - The envelope id.
      * @param decidedBy - Better Auth user id of the deciding curator.
      * @returns The decided envelope, or null under the same conditions as approve.
-     * @throws When the owning type's `onReject` fails; the decision is still
-     *         recorded.
+     * @throws When the owning type's `applyEdit` commit fails; the decision is
+     *         still recorded.
      */
     async reject(id: string, decidedBy?: string): Promise<ICurationItem | null> {
         return this.decide(id, 'rejected', decidedBy);
@@ -630,13 +642,12 @@ export class CurationService implements ICurationService {
 
     /**
      * Record a terminal decision, deliver to any selected destinations, then
-     * invoke the owning type's callback. The decision is persisted (with the
-     * selected destinations as `pending`) and broadcast first; destinations are
-     * then delivered best-effort and their outcomes recorded; finally the owning
-     * type's callback runs with the decided item — its `destinations` outcomes
-     * attached — so the type's own bookkeeping can observe where the content
-     * landed. A callback failure propagates (the item stays decided and won't
-     * reappear). Callbacks must be retry-safe.
+     * commit the decision declaratively through the owning type. The decision is
+     * persisted (with the selected destinations as `pending`) and broadcast first;
+     * destinations are then delivered best-effort and their outcomes recorded;
+     * finally the decision commits by writing the type's declared `decisionStatus`
+     * word via its `applyEdit({ status })` seam. A commit failure propagates (the
+     * item stays decided and won't reappear). `applyEdit` must be retry-safe.
      *
      * @param id - The envelope id.
      * @param status - The terminal state.
@@ -644,7 +655,8 @@ export class CurationService implements ICurationService {
      * @param destinations - Curator-selected publish sinks (approval only).
      * @returns The decided envelope, or null when the decision cannot proceed.
      * @throws When a selected destination is ineligible (before any decision is
-     *         recorded), or when the owning type's callback fails (after it is).
+     *         recorded), or when the owning type's `applyEdit` commit fails (after
+     *         it is).
      */
     private async decide(
         id: string,
@@ -723,9 +735,9 @@ export class CurationService implements ICurationService {
                     // transactional outbox: the intent is now durable, the relay
                     // delivers each leg with idempotent retry and dead-lettering,
                     // and the recorded outcomes stay `pending` — live leg state is
-                    // overlaid on read. onApprove therefore sees `pending` intent,
-                    // not terminal results, because external delivery is now
-                    // asynchronous and must not block the decision. Absent
+                    // overlaid on read. External delivery is asynchronous and must
+                    // not block the decision, so the declarative `applyEdit` commit
+                    // that follows never waits on where the content lands. Absent
                     // syndication (a test boot), fall back to the in-process best-
                     // effort fan-out, recording settled outcomes inline.
                     if (selected.length > 0) {
@@ -830,9 +842,9 @@ export class CurationService implements ICurationService {
      * "could not", a refusal is a settled "will not" — so the audit does not read
      * a deliberate decline as an error. No leg ever throws out of this method, so
      * one destination's outcome neither blocks the others nor undoes the decision.
-     * This is the best-effort, at-least-once-per-leg posture curation already
-     * carries for its single `onApprove`; the durable outbox relay is the proposed
-     * syndication upgrade, not this slice.
+     * This is the best-effort, at-least-once-per-leg posture curation carries for
+     * its inline destination fan-out; the durable outbox relay is the syndication
+     * upgrade that supersedes it when wired.
      *
      * @param descriptor - The decision-time descriptor delivered to each sink.
      * @param resolved - The selected sinks paired with their destination config.
@@ -868,16 +880,16 @@ export class CurationService implements ICurationService {
     }
 
     /**
-     * Commit the decision on the owning type. A type expresses its terminal
-     * bookkeeping one of two ways: imperatively via `onApprove`/`onReject`, or
-     * declaratively via `decisionStatus` — the originator's status word core
-     * writes through the type's own `applyEdit({ status })` seam. The imperative
-     * verb wins when present; otherwise the declared status word (if any) is
-     * applied, and a decision with neither is a deliberate no-op (e.g. an approval
-     * carried entirely by a routed publish sink, which has already run above). A
+     * Commit the decision on the owning type — declaratively only. Core resolves
+     * the decision to a `decisionStatus` word and writes it through the type's own
+     * `applyEdit({ status })` seam, the sole commit seam every decision lands
+     * through. `rejected` is always declared, so a rejection always writes its
+     * transition; `approved` may be omitted (a `publishesToDestinations` type
+     * whose routed publish sink carries the approval), in which case no
+     * approve-time status is written and the commit is a deliberate no-op. A
      * failure propagates to the caller so the curator learns the provider-side
      * effect did not complete; the decision is already recorded and is not rolled
-     * back (both paths must be retry-safe).
+     * back, so `applyEdit` must be retry-safe.
      *
      * @param type - The owning curation type.
      * @param item - The decided envelope.
@@ -885,29 +897,9 @@ export class CurationService implements ICurationService {
      */
     private async commit(type: ICurationType, item: ICurationItem): Promise<void> {
         const approved = item.status === 'approved';
-        // Bind to the type so a method-syntax (class-based) curation type keeps its
-        // `this` receiver — a bare extracted method would run with `this` undefined
-        // under strict-mode ESM. `?.bind` stays undefined when the verb is absent.
-        const verb = approved ? type.onApprove?.bind(type) : type.onReject?.bind(type);
-        if (verb) {
-            await verb(item);
-            return;
-        }
-        // Declarative fallback: apply the type's declared status word as a neutral
-        // transition through its own content-mutation seam. A type that declares no
-        // status word for this decision is a deliberate no-op; one that declares a
-        // word but never implemented the optional `applyEdit` seam is a
-        // misconfiguration surfaced as a warning rather than skipped silently.
-        const targetStatus = approved ? type.decisionStatus?.approved : type.decisionStatus?.rejected;
+        const targetStatus = approved ? type.decisionStatus.approved : type.decisionStatus.rejected;
         if (targetStatus) {
-            if (type.applyEdit) {
-                await type.applyEdit(item.ref, { status: targetStatus });
-            } else {
-                this.logger.warn(
-                    { typeId: type.typeId, targetStatus },
-                    'Curation type declared decisionStatus but did not implement applyEdit; status transition skipped'
-                );
-            }
+            await type.applyEdit(item.ref, { status: targetStatus });
         }
     }
 

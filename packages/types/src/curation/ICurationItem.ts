@@ -13,10 +13,10 @@ import type { ICurationDestinationOutcome } from './ICurationDestination.js';
 
 /**
  * Lifecycle status of a held item. Core advances `pending` to a terminal
- * `approved` or `rejected`; the owning type's `onApprove` / `onReject` runs
- * after the decision is recorded and owns whatever happens next (publish,
- * schedule, discard). Downstream states (scheduled, posted, failed) belong to
- * the provider, not to core.
+ * `approved` or `rejected`, then commits the type's declared `decisionStatus`
+ * word through its `applyEdit({ status })` seam after the decision is recorded.
+ * Downstream states (scheduled, posted, failed) belong to the provider, not to
+ * core.
  */
 export type CurationItemStatus = 'pending' | 'approved' | 'rejected';
 
@@ -40,7 +40,7 @@ export interface ICurationItem {
     /**
      * Opaque pointer the owning type resolves back to its own record (e.g.
      * `{ postId: '...' }`). Core never interprets it — it is passed verbatim to
-     * `describe()`, `onApprove()`, and `onReject()`.
+     * `describe()` and `applyEdit()`.
      */
     ref: Record<string, unknown>;
 

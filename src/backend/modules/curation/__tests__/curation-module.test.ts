@@ -12,7 +12,6 @@ import type {
     ContentDescriptorFeature,
     IContentClassification,
     IContentSink,
-    ICurationItem,
     ICurationType,
     IMenuService,
     ISystemLogService
@@ -42,14 +41,14 @@ function createMockMenuService(): IMenuService {
     return { create: vi.fn(async () => ({ _id: 'menu-curation' })) } as unknown as IMenuService;
 }
 
-/** Build a curation type whose callbacks are spies, overridable per test. */
+/** Build a declarative curation type whose seams are spies, overridable per test. */
 function spyCurationType(over: Partial<ICurationType> = {}): ICurationType {
     return {
         typeId: 'x-poster:tweet',
         label: 'Tweet',
         describe: vi.fn(async (ref: Record<string, unknown>) => ({ body: `draft ${String(ref.postId ?? '')}` })),
-        onApprove: vi.fn(async () => undefined),
-        onReject: vi.fn(async () => undefined),
+        decisionStatus: { approved: 'published', rejected: 'rejected' },
+        applyEdit: vi.fn(async () => undefined),
         ...over
     };
 }
@@ -153,7 +152,7 @@ describe('CurationService', () => {
         await expect(service.hold({ typeId: 'nope:thing', ref: {} })).rejects.toThrow(/nope:thing/);
     });
 
-    it('approve records the decision then commits via onApprove', async () => {
+    it('approve records the decision then commits via applyEdit', async () => {
         const service = makeService();
         const type = spyCurationType();
         service.registerType(type, 'x-poster');
@@ -163,12 +162,11 @@ describe('CurationService', () => {
 
         expect(decided?.status).toBe('approved');
         expect(decided?.decidedBy).toBe('admin-1');
-        expect(type.onApprove).toHaveBeenCalledOnce();
-        expect(type.onReject).not.toHaveBeenCalled();
+        expect(type.applyEdit).toHaveBeenCalledWith({ postId: 'p1' }, { status: 'published' });
         expect(await service.countPending()).toBe(0);
     });
 
-    it('reject records the decision then discards via onReject', async () => {
+    it('reject records the decision then commits via applyEdit', async () => {
         const service = makeService();
         const type = spyCurationType();
         service.registerType(type, 'x-poster');
@@ -177,18 +175,15 @@ describe('CurationService', () => {
         const decided = await service.reject(held.id, 'admin-1');
 
         expect(decided?.status).toBe('rejected');
-        expect(type.onReject).toHaveBeenCalledOnce();
-        expect(type.onApprove).not.toHaveBeenCalled();
+        expect(type.applyEdit).toHaveBeenCalledWith({}, { status: 'rejected' });
     });
 
-    it('commits a decision declaratively via applyEdit when the type omits the verbs', async () => {
+    it('omits the approve transition when the type declares no approved status word', async () => {
         const service = makeService();
-        // A type with no imperative verbs: core applies the declared status word
-        // through applyEdit. `approved` omitted, so approval is a no-op here.
+        // A type that declares only a rejection word: approval writes nothing (its
+        // routed publish sink carries the approval), rejection writes its word.
         const applyEdit = vi.fn(async () => undefined);
         const type = spyCurationType({
-            onApprove: undefined,
-            onReject: undefined,
             decisionStatus: { rejected: 'rejected' },
             applyEdit
         });
@@ -215,13 +210,13 @@ describe('CurationService', () => {
         const decided = await service.approve(held.id, 'admin-1');
 
         expect(decided).toBeNull();
-        expect(type.onApprove).not.toHaveBeenCalled();
+        expect(type.applyEdit).not.toHaveBeenCalled();
         expect(await service.countPending()).toBe(1); // not lost — waits for the owner to return
     });
 
     it('surfaces a failed commit to the caller while leaving the decision recorded', async () => {
         const service = makeService();
-        const type = spyCurationType({ onApprove: vi.fn(async () => { throw new Error('publish failed'); }) });
+        const type = spyCurationType({ applyEdit: vi.fn(async () => { throw new Error('publish failed'); }) });
         service.registerType(type, 'x-poster');
         const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
 
@@ -291,13 +286,9 @@ describe('CurationService', () => {
         expect(await service.countPending()).toBe(1); // edit does not decide the item
     });
 
-    it('edit returns null for a type that is not editable', async () => {
-        const service = makeService();
-        service.registerType(spyCurationType(), 'x-poster'); // no applyEdit
-        const held = await service.hold({ typeId: 'x-poster:tweet', ref: {} });
-
-        expect(await service.edit(held.id, { body: 'x' })).toBeNull();
-    });
+    // Removed: "edit returns null for a type that is not editable". Under the
+    // collapsed contract applyEdit is required on every curation type, so a
+    // non-editable type (missing applyEdit) is no longer representable.
 });
 
 describe('CurationService destination selection', () => {
@@ -386,12 +377,11 @@ describe('CurationService destination selection', () => {
         expect(await service.listEligibleDestinations(held.id)).toEqual([]);
     });
 
-    it('approve fans out to the selected destination, records the outcome, and onApprove observes it', async () => {
+    it('approve fans out to the selected destination and records the outcome', async () => {
         const deliver = vi.fn(async () => undefined);
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, deliver);
         const { service } = makeDestinationService([sink]);
-        let onApproveItem: ICurationItem | undefined;
-        const type = postType({ onApprove: vi.fn(async (item: ICurationItem) => { onApproveItem = item; }) });
+        const type = postType();
         service.registerType(type, 'media');
         const held = await service.hold({ typeId: 'media:post', ref: {} });
 
@@ -399,13 +389,11 @@ describe('CurationService destination selection', () => {
 
         expect(deliver).toHaveBeenCalledOnce();
         expect(decided?.destinations).toEqual([{ sinkId: 'core:internal-publish', status: 'delivered' }]);
-        // onApprove runs after fan-out, with the outcomes attached for its bookkeeping.
-        expect(onApproveItem?.destinations).toEqual([{ sinkId: 'core:internal-publish', status: 'delivered' }]);
         // The outcomes are persisted on the item.
         expect((await service.get(held.id))?.destinations).toEqual([{ sinkId: 'core:internal-publish', status: 'delivered' }]);
     });
 
-    it('records a failed destination without blocking the decision or onApprove', async () => {
+    it('records a failed destination without blocking the decision or its commit', async () => {
         const deliver = vi.fn(async () => { throw new Error('boom'); });
         const sink = makePublishSink('core:internal-publish', ['body'], { egress: 'internal', audience: 'admin' }, deliver);
         const { service } = makeDestinationService([sink]);
@@ -417,7 +405,7 @@ describe('CurationService destination selection', () => {
 
         expect(decided?.status).toBe('approved');
         expect(decided?.destinations?.[0]).toMatchObject({ sinkId: 'core:internal-publish', status: 'failed', error: 'boom' });
-        expect(type.onApprove).toHaveBeenCalledOnce(); // the decision still commits
+        expect(type.applyEdit).toHaveBeenCalledOnce(); // the decision still commits
     });
 
     it('records a refused destination distinctly from a failure (sink declined, decision still commits)', async () => {
@@ -439,7 +427,7 @@ describe('CurationService destination selection', () => {
             reason: 'cannot render this faithfully'
         });
         expect(decided?.destinations?.[0]).not.toHaveProperty('error'); // a refusal is not a failure
-        expect(type.onApprove).toHaveBeenCalledOnce(); // a refusal does not undo the decision
+        expect(type.applyEdit).toHaveBeenCalledOnce(); // a refusal does not undo the decision
     });
 
     it('rejects an ineligible destination before recording the decision (item stays pending)', async () => {
@@ -450,7 +438,7 @@ describe('CurationService destination selection', () => {
         const held = await service.hold({ typeId: 'media:post', ref: {} });
 
         await expect(service.approve(held.id, 'admin-1', [{ sinkId: 'core:nonexistent' }])).rejects.toThrow(/not an eligible publish destination/);
-        expect(type.onApprove).not.toHaveBeenCalled();
+        expect(type.applyEdit).not.toHaveBeenCalled();
         expect(await service.countPending()).toBe(1);
     });
 
@@ -477,7 +465,7 @@ describe('CurationService destination selection', () => {
         // one — approving with none would record the decision while publishing
         // nowhere. The item stays pending for a real selection.
         await expect(service.approve(held.id, 'admin-1')).rejects.toThrow(/at least one/i);
-        expect(type.onApprove).not.toHaveBeenCalled();
+        expect(type.applyEdit).not.toHaveBeenCalled();
         expect(await service.countPending()).toBe(1);
     });
 
@@ -504,7 +492,7 @@ describe('CurationService destination selection', () => {
 
         const decided = await service.approve(held.id, 'admin-1');
         expect(decided?.status).toBe('approved');
-        expect(type.onApprove).toHaveBeenCalledOnce();
+        expect(type.applyEdit).toHaveBeenCalledOnce();
     });
 
     it('rejects a destination selection supplied for a classic (non-destination) type', async () => {
@@ -519,7 +507,7 @@ describe('CurationService destination selection', () => {
 
         await expect(service.approve(held.id, 'admin-1', [{ sinkId: 'core:internal-publish' }]))
             .rejects.toThrow(/not an eligible publish destination/);
-        expect(type.onApprove).not.toHaveBeenCalled();
+        expect(type.applyEdit).not.toHaveBeenCalled();
         expect(await service.countPending()).toBe(1);
     });
 
@@ -536,7 +524,7 @@ describe('CurationService destination selection', () => {
         const held = await runWithCurationAutoApprove(true, () => service.hold({ typeId: 'media:post', ref: {} }));
 
         expect(held.status).toBe('pending');
-        expect(type.onApprove).not.toHaveBeenCalled();
+        expect(type.applyEdit).not.toHaveBeenCalled();
         expect(await service.countPending()).toBe(1);
     });
 
@@ -548,7 +536,7 @@ describe('CurationService destination selection', () => {
         const held = await runWithCurationAutoApprove(true, () => service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } }));
 
         expect(held.status).toBe('approved');
-        expect(type.onApprove).toHaveBeenCalledOnce();
+        expect(type.applyEdit).toHaveBeenCalledOnce();
         expect(await service.countPending()).toBe(0);
     });
 });

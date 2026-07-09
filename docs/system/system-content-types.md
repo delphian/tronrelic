@@ -16,10 +16,10 @@ A provider registers an `IContentType` once on the central registry. The type kn
 
 Pipelines bind their own verbs onto a content type:
 
-- **Curation** registers a type as an `ICurationType` — an `IContentType` plus the review verbs `onApprove` / `onReject` — and mirrors the content facet into the shared registry. See [system-curation.md](./system-curation.md).
+- **Curation** registers a type as an `ICurationType` — an `IContentType` plus the required declarative `decisionStatus` bookkeeping — and mirrors the content facet into the shared registry. See [system-curation.md](./system-curation.md).
 - **Notifications** fires `notify({ category, typeId, ref })`; dispatch resolves the type, calls `describe(ref)`, and routes to the channels whose declared capabilities can render the descriptor's features. See [system-notifications.md](./system-notifications.md).
 
-The split is deliberate: generic operate-on-own-record operations (`describe`, `applyEdit`) live on `IContentType`; pipeline-decision semantics (curation's `onApprove`/`onReject` verbs, or the declarative `decisionStatus` map core applies *through* the generic `applyEdit`) stay on the binding, because "approve" only means something inside a review lifecycle.
+The split is deliberate: generic operate-on-own-record operations (`describe`, `applyEdit`) live on `IContentType`; pipeline-decision semantics (curation's declarative `decisionStatus` map, applied *through* the generic `applyEdit`) stay on the binding, because "approve" only means something inside a review lifecycle.
 
 ## The Contract
 
