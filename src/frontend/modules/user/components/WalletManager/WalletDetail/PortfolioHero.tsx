@@ -11,10 +11,9 @@
  * they mean different things (realized is taxable, unrealized is not). The
  * balance chart carries a 1M/3M/1Y/All range selector that filters the returned
  * series client-side — an honest zoom over data actually present, not a
- * fabricated live range. The series itself defaults to a trailing year and
- * only reaches further back when an admin has widened that specific wallet to
- * unbounded, so "All" is not always longer than "1Y" — it is whatever the
- * backend actually returned. A warning banner appears under the chart when
+ * fabricated live range. The series itself is unbounded, reaching as far back
+ * as the wallet's ledger backfill has reconstructed, so "All" shows the full
+ * available history. A warning banner appears under the chart when
  * `summary.historyBackfillComplete` is false, since an in-progress ledger
  * backfill can shift the reconstructed curve, not just shorten it. Pure
  * presentation: it receives a fully-computed {@link IPortfolioSummary} and
@@ -44,9 +43,9 @@ interface IBalanceRange {
 
 /**
  * Selectable ranges for the balance-over-time chart. These are honest
- * client-side zooms over whatever series the backend returned — a trailing
- * year by default, or the wallet's full reconstructable history once an admin
- * widens it — never a claim of finer or live resolution.
+ * client-side zooms over the full series the backend returns — reaching as far
+ * back as the wallet's reconstructable history — never a claim of finer or live
+ * resolution.
  */
 const BALANCE_RANGES: ReadonlyArray<IBalanceRange> = [
     { id: '1m', label: '1M', days: 30 },

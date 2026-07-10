@@ -84,7 +84,10 @@
     display: inline-flex;
     flex-direction: column;
     gap: var(--spacing-2);
-    min-width: 160px;
+    width: var(--max-width-xs);
+    /* Never wider than the chart it overlays — on containers narrower than the
+       nominal width the box shrinks so it can be clamped fully into view. */
+    max-width: 100%;
     padding: 0.6rem 0.8rem;
     border-radius: var(--radius-md);
     background: rgba(7, 12, 24, 0.95);
