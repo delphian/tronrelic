@@ -222,12 +222,94 @@
     gap: var(--gap-sm);
 }
 
+/* Y-axis range controls. Inline on a wide header; on a narrow container they would
+   crowd the counterparty and toggle controls off the row, so they collapse to a single
+   button that opens the range modal instead (see the container query below). */
+.range_inline {
+    display: inline-flex;
+}
+
+.range_button {
+    display: none;
+}
+
+.range_fields {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.range_field {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.range_label {
+    white-space: nowrap;
+}
+
+.range_input {
+    width: 5rem;
+}
+
+/* Modal body housing the range fields on narrow containers. */
+.range_dialog {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.range_dialog_actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+}
+
+@container wallet-detail (max-width: #{$breakpoint-mobile-md}) {
+    .range_inline {
+        display: none;
+    }
+
+    .range_button {
+        display: inline-flex;
+    }
+}
+
 /* Stat tile body — composes the global .stat-card__* utilities with a small
    icon row; kept here only for the icon alignment the utilities don't cover. */
 .tile_label {
     display: flex;
     align-items: center;
     gap: var(--gap-2xs);
+}
+
+/* Compact stat strip for the merged Activity + resources section. Narrower auto-fit
+   floor packs the ten metrics into small tiles instead of a few large ones; overriding
+   the custom property the global .stat-grid rule already reads keeps the shrink local
+   without restyling the shared utility. */
+.stat_grid_compact {
+    --stat-grid-min: 140px;
+}
+
+/* Reduced-density tile label/value, used only in the compact strip. They replicate the
+   global .stat-card__* look at a smaller scale so the tiles read the same, just denser —
+   the local classes avoid targeting the global utility with :global. */
+.tile_label_compact {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+}
+
+.tile_value_compact {
+    font-size: var(--font-size-body-lg);
+    font-weight: var(--font-weight-bold);
 }
 
 /* Snapshot-pending notice — shown in place of the zeroed hero until the first

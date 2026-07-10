@@ -111,26 +111,39 @@ interface IStatTileProps {
     value: ReactNode;
     /** Optional leading icon shown beside the label. */
     icon?: ReactNode;
+    /**
+     * Render at reduced density — smaller label and value type — so a grid packed
+     * with many metrics (the merged Activity + resources strip) stays compact instead
+     * of each tile carrying the full-size stat treatment. Off by default so existing
+     * callers are unchanged.
+     */
+    compact?: boolean;
 }
 
 /**
- * One labelled metric tile, composing the global `stat-card__*` utilities inside
- * a muted card so a grid of these reads as a stat strip. Always nested inside a
- * {@link WalletDetailSection} card, so it renders flat (no border/shadow) —
- * the section already owns the boxed boundary; the tile only needs the muted
- * tone to read as a distinct metric within the grid.
+ * One labelled metric tile inside a muted card so a grid of these reads as a stat
+ * strip. Always nested inside a {@link WalletDetailSection} card, so it renders flat
+ * (no border/shadow) — the section already owns the boxed boundary; the tile only
+ * needs the muted tone to read as a distinct metric within the grid.
+ *
+ * The default treatment composes the global `stat-card__*` utilities. `compact` swaps
+ * those for the local reduced-size classes rather than reaching into the global
+ * utility with `:global` (a pattern this codebase avoids), keeping the shrink scoped
+ * to the wallet detail.
  *
  * @param props - {@link IStatTileProps}.
  * @returns A flat, muted-tone stat tile.
  */
-export function StatTile({ label, value, icon }: IStatTileProps) {
+export function StatTile({ label, value, icon, compact }: IStatTileProps) {
+    const labelClass = compact ? styles.tile_label_compact : `stat-card__label ${styles.tile_label}`;
+    const valueClass = compact ? styles.tile_value_compact : 'stat-card__value';
     return (
         <Card padding="xs" tone="muted" bordered={false}>
-            <span className={`stat-card__label ${styles.tile_label}`}>
+            <span className={labelClass}>
                 {icon}
                 {label}
             </span>
-            <div className="stat-card__value">{value}</div>
+            <div className={valueClass}>{value}</div>
         </Card>
     );
 }
