@@ -158,10 +158,18 @@ function formatUsd(value: number, signed = false): string {
  * precision: the default `minimumFractionDigits` of 0 leaves whole amounts
  * unpadded, so a sub-1 balance rounds to two places while `1234` stays `1,234`.
  *
+ * A real sub-0.005 holding (a small slice of a high-unit-value token) would
+ * round to `"0"` beside a positive Value and PnL in the same row — a visible
+ * contradiction. It floors to `"<0.01"` instead, showing real activity without
+ * a third decimal, keeping the two-place cap intact.
+ *
  * @param value - Quantity in human units.
  * @returns A formatted quantity string.
  */
 function formatQty(value: number): string {
+    if (value > 0 && value < 0.005) {
+        return '<0.01';
+    }
     return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
