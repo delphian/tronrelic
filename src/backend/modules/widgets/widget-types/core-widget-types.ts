@@ -674,7 +674,10 @@ function buildNetworkActivityFetcher(deps: ICoreWidgetTypeDeps): WidgetDataFetch
  * Every field is optional with an enum/default so an operator can place the
  * widget with no configuration. `title` overrides the chart heading;
  * `defaultWindow` seeds the initial window toggle; `display` selects chart
- * density ('normal' full chrome vs. 'widget' compact sparkline).
+ * density ('normal' full chrome vs. 'widget' compact sparkline). `rotate` and
+ * `rotateSeconds` drive the client-side metric auto-rotation — the component
+ * reads all of these off `instanceConfig` directly, so they never touch the
+ * SSR data fetcher.
  */
 export const NETWORK_ACTIVITY_CONFIG_SCHEMA: JSONSchema7 = {
     type: 'object',
@@ -698,6 +701,22 @@ export const NETWORK_ACTIVITY_CONFIG_SCHEMA: JSONSchema7 = {
             default: 'normal',
             title: 'Display density',
             description: "'normal' shows axes, legend, and tooltips; 'widget' is a compact sparkline."
+        },
+        rotate: {
+            type: 'boolean',
+            default: false,
+            title: 'Auto-rotate metric',
+            description:
+                'Cycle the chart through transactions, transfers, and volume on a timer until the visitor clicks a metric, which stops rotation for the rest of the session.'
+        },
+        rotateSeconds: {
+            type: 'integer',
+            minimum: 10,
+            maximum: 300,
+            default: 30,
+            title: 'Rotation interval (seconds)',
+            description:
+                'Seconds each metric is shown before advancing. Only applies when auto-rotate is enabled. Bounded 10–300.'
         }
     }
 };
