@@ -17,6 +17,12 @@
  * this: it auto-prefixes event names with the owner id and so cannot subscribe
  * to the un-prefixed global `block:new` event.
  *
+ * Metric auto-rotation: when the operator enables `rotate` in the placement
+ * config, the widget advances the metric on a timer (default 30s, bounded
+ * 10–300s) so an unattended chart cycles transactions → transfers → volume. The
+ * advance pauses while the tab is hidden and stops permanently the moment the
+ * visitor clicks a metric, honouring explicit interaction over the timer.
+ *
  * @module frontend/components/widgets/NetworkActivityWidget
  */
 
@@ -59,6 +65,8 @@ interface NetworkActivityConfig {
     title?: string;
     defaultWindow?: ActivityWindow;
     display?: 'normal' | 'widget';
+    rotate?: boolean;
+    rotateSeconds?: number;
 }
 
 /** Window toggle options, in display order. */
@@ -81,6 +89,12 @@ const METRICS: ReadonlyArray<{ id: ActivityMetric; label: string; color: string;
 
 /** Minimum gap between block-driven live refetches of the active window. */
 const LIVE_REFRESH_THROTTLE_MS = 60_000;
+
+/** Rotation cadence, in seconds, when config enables rotation without a value. */
+const DEFAULT_ROTATE_SECONDS = 30;
+/** Lower/upper rotation bounds mirroring the config schema, clamped defensively. */
+const MIN_ROTATE_SECONDS = 10;
+const MAX_ROTATE_SECONDS = 300;
 
 /**
  * Format a large count/volume into a compact K/M/B string for the Y-axis.
@@ -155,6 +169,10 @@ export function NetworkActivityWidget({ data, context, instanceConfig }: IWidget
     );
     const [metric, setMetric] = useState<ActivityMetric>('transactions');
     const [refreshing, setRefreshing] = useState(false);
+    // Set true the first time the visitor clicks a metric, permanently stopping
+    // auto-rotation for the session (until reload). An explicit pick outranks the
+    // timer — the operator's "rotate until touched" intent.
+    const [userPinned, setUserPinned] = useState(false);
 
     // Ref mirror of the active window so the block-driven live effect always
     // refetches the visible window without re-subscribing on every toggle, and
@@ -243,6 +261,36 @@ export function NetworkActivityWidget({ data, context, instanceConfig }: IWidget
         };
     }, [latestBlockNumber, fetchSeries]);
 
+    // Resolved rotation cadence, clamped to the schema bounds so a hand-edited
+    // placement can't set an absurd interval that slips past server validation.
+    const rotateEnabled = config.rotate === true;
+    const rotateIntervalMs = Math.min(
+        MAX_ROTATE_SECONDS,
+        Math.max(MIN_ROTATE_SECONDS, config.rotateSeconds ?? DEFAULT_ROTATE_SECONDS)
+    ) * 1000;
+
+    // Auto-rotate the metric on a timer when the operator enabled rotation and the
+    // visitor hasn't taken manual control. The advance is skipped while the tab is
+    // hidden (no point cycling an unseen chart) and the effect tears down its timer
+    // once `userPinned` flips, so a click stops rotation for the session. The
+    // functional update reads METRICS in display order without listing `metric` as
+    // a dependency, keeping the timer stable across metric changes.
+    useEffect(() => {
+        if (!rotateEnabled || userPinned) {
+            return;
+        }
+        const timer = setInterval(() => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+                return;
+            }
+            setMetric(current => {
+                const index = METRICS.findIndex(item => item.id === current);
+                return METRICS[(index + 1) % METRICS.length].id;
+            });
+        }, rotateIntervalMs);
+        return () => clearInterval(timer);
+    }, [rotateEnabled, userPinned, rotateIntervalMs]);
+
     // Single series for the selected metric. The toggle re-slices the same
     // points rather than refetching, mirroring the resource widget.
     const series = useMemo(() => [{
@@ -293,7 +341,7 @@ export function NetworkActivityWidget({ data, context, instanceConfig }: IWidget
                         key={item.id}
                         type="button"
                         className={metric === item.id ? 'is-active' : undefined}
-                        onClick={() => setMetric(item.id)}
+                        onClick={() => { setMetric(item.id); setUserPinned(true); }}
                         aria-pressed={metric === item.id}
                     >
                         {item.label}
