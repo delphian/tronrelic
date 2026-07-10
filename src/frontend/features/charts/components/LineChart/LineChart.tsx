@@ -545,11 +545,16 @@ export function LineChart({
     let tooltipLeftPx = 0;
     let tooltipTopPx = 0;
     if (tooltip) {
-        // The SVG scales uniformly to its container, so both axes share the factor
-        // chartWidthPx / width. tooltip.x and tooltip.y are viewBox units; multiply
-        // both by chartWidthPx / width to land in on-screen CSS pixels.
-        const centerPx = (tooltip.x / width) * tooltip.chartWidthPx;
-        tooltipTopPx = (tooltip.y / width) * tooltip.chartWidthPx;
+        // `preserveAspectRatio="xMinYMid meet"` scales the viewBox uniformly to fit the
+        // SVG box, but the fixed pixel height (equal to the viewBox height) caps that
+        // factor at 1: a container wider than the viewBox leaves empty space on the
+        // right rather than scaling the content up. Clamp to 1 so that before the
+        // ResizeObserver matches `width` to the rendered pixel width — or on sub-pixel
+        // rounding — the conversion never overscales. tooltip.x and tooltip.y are
+        // viewBox units; multiply both by the real scale to reach on-screen CSS pixels.
+        const scale = Math.min(tooltip.chartWidthPx / width, 1);
+        const centerPx = tooltip.x * scale;
+        tooltipTopPx = tooltip.y * scale;
         const halfWidth = tooltipWidth / 2;
         const minLeft = TOOLTIP_EDGE_GUTTER + halfWidth;
         const maxLeft = tooltip.chartWidthPx - TOOLTIP_EDGE_GUTTER - halfWidth;

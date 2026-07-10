@@ -789,17 +789,17 @@ export function QueryTab() {
             return next;
         });
         // Fetch this row's tool calls once, on first expand. Skip when a prior
-        // fetch already succeeded, failed (the inline error offers a retry path via
-        // re-expand only after the error clears), or is still in flight.
+        // fetch already succeeded or is still in flight. A prior *failure* does not
+        // skip: re-expanding retries the fetch, and loadHistoryToolRecords clears
+        // the stale error at the start of the new request.
         if (
             willExpand &&
             !historyToolRecords.has(conversationId) &&
-            !historyToolError.has(conversationId) &&
             !historyToolLoading.has(conversationId)
         ) {
             void loadHistoryToolRecords(conversationId);
         }
-    }, [expandedIds, historyToolRecords, historyToolError, historyToolLoading, loadHistoryToolRecords]);
+    }, [expandedIds, historyToolRecords, historyToolLoading, loadHistoryToolRecords]);
 
     /** Load the grouped conversation history for the History view. */
     const loadHistory = useCallback(async () => {
