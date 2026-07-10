@@ -448,9 +448,20 @@ export function BarChart({
             maxY = Math.max(0, domainMax);
         }
 
-        // Guard against a zero-height domain (all values equal / all zero).
-        if (minY === maxY) {
-            maxY = minY + 1;
+        // Guard against a non-ascending domain. Two ways it arises: a zero-height
+        // domain (all values equal / all zero), or a one-sided pinned bound that
+        // inverts the axis — a yAxisMin pinned above the data (auto maxY lands below
+        // it) or a yAxisMax pinned below it (auto minY lands above it). A negative
+        // rangeY would flip every tick and bar, so restore ascending order by
+        // expanding whichever edge is auto, honoring the pinned bound where possible.
+        if (minY >= maxY) {
+            if (fixedYMax === undefined) {
+                maxY = minY + 1;
+            } else if (fixedYMin === undefined) {
+                minY = maxY - 1;
+            } else {
+                maxY = minY + 1;
+            }
         }
 
         const rangeY = maxY - minY || 1;

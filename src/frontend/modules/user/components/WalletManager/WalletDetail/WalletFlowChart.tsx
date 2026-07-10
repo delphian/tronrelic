@@ -148,7 +148,14 @@ function fillFlowGaps(buckets: IWalletFlowBucket[], granularity: FlowGranularity
     };
     const lastKey = buckets[buckets.length - 1].period;
     const filled: IWalletFlowBucket[] = [];
+    // Bail if the first period can't be parsed to a real date. `toKey` below calls
+    // `toISOString()`, which throws `RangeError: Invalid time value` on an Invalid Date
+    // and would crash this render-time memo. Backend periods are always well-formed, so
+    // this only hardens the frontend/backend trust boundary against a malformed string.
     let cursor = parse(buckets[0].period);
+    if (Number.isNaN(cursor.getTime())) {
+        return buckets;
+    }
     let guard = 0;
     while (toKey(cursor) <= lastKey && guard < FLOW_GAP_FILL_LIMIT) {
         const key = toKey(cursor);
