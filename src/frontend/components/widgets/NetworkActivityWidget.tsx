@@ -263,10 +263,16 @@ export function NetworkActivityWidget({ data, context, instanceConfig }: IWidget
 
     // Resolved rotation cadence, clamped to the schema bounds so a hand-edited
     // placement can't set an absurd interval that slips past server validation.
+    // `instanceConfig` is an unchecked cast, so a non-finite value (a string, an
+    // object, a BSON NaN from a DB edit) would survive `??` and clamp to NaN —
+    // and `setInterval(NaN)` coerces to 0, a hot loop that pegs the UI thread. The
+    // finite fallback closes that path before the numeric clamp.
     const rotateEnabled = config.rotate === true;
+    const requestedRotateSeconds = Number(config.rotateSeconds ?? DEFAULT_ROTATE_SECONDS);
+    const safeRotateSeconds = Number.isFinite(requestedRotateSeconds) ? requestedRotateSeconds : DEFAULT_ROTATE_SECONDS;
     const rotateIntervalMs = Math.min(
         MAX_ROTATE_SECONDS,
-        Math.max(MIN_ROTATE_SECONDS, config.rotateSeconds ?? DEFAULT_ROTATE_SECONDS)
+        Math.max(MIN_ROTATE_SECONDS, safeRotateSeconds)
     ) * 1000;
 
     // Auto-rotate the metric on a timer when the operator enabled rotation and the
