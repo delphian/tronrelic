@@ -209,7 +209,12 @@ export function WalletDetailPanel({ address, progress }: IWalletDetailPanelProps
                             <WalletActivityStats stats={summary.stats} />
                             <WalletActivityCalendar calendar={summary.calendar} />
                             <WalletResourcePanel resources={summary.resources} />
-                            <WalletFlowChart address={address} flow={summary.flow} />
+                            <WalletFlowChart
+                                address={address}
+                                flow={summary.flow}
+                                counterparties={summary.counterparties}
+                                labels={summaryLabels}
+                            />
                             <WalletCounterparties counterparties={summary.counterparties} labels={summaryLabels} />
                         </>
                     )

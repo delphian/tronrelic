@@ -148,7 +148,11 @@ export class AccountHistoryUserController {
      * an unowned `:address` returns 404, never the series. An unrecognized or
      * missing granularity degrades to the monthly view rather than erroring.
      *
-     * @param req - Express request; `req.userId` from `requireLogin`, `:address` the wallet, `granularity` query param.
+     * An optional `?counterparty=` query param scopes the series to money moved
+     * with that one address, backing the chart's counterparty dropdown. The service
+     * validates and ignores a malformed value, so it is forwarded as-is.
+     *
+     * @param req - Express request; `req.userId` from `requireLogin`, `:address` the wallet, `granularity`/`counterparty` query params.
      * @param res - Express response; emits `{ flow }`.
      */
     getMyWalletFlow = async (req: Request, res: Response): Promise<void> => {
@@ -167,7 +171,8 @@ export class AccountHistoryUserController {
 
             const requested = String(req.query.granularity ?? '') as FlowGranularity;
             const granularity: FlowGranularity = FLOW_GRANULARITIES.includes(requested) ? requested : 'month';
-            const flow = await this.service.getWalletFlow(address, granularity);
+            const counterparty = String(req.query.counterparty ?? '').trim() || undefined;
+            const flow = await this.service.getWalletFlow(address, granularity, counterparty);
             res.json({ flow });
         } catch (error) {
             this.logger.error({ error }, 'Failed to read wallet flow');

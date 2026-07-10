@@ -758,11 +758,17 @@ export class AccountHistoryService implements IAccountHistoryService {
      * deploy — so the chart degrades to "no data" rather than erroring. Authorization
      * is the caller's responsibility; the service trusts the address it is given.
      *
+     * An optional `counterparty` scopes the series to legs moved with that one
+     * address; it is normalized and only applied when it is itself a base58 TRON
+     * address, so a malformed or empty value silently degrades to the unfiltered
+     * (all-counterparties) series rather than erroring.
+     *
      * @param address - Base58 account to summarize.
      * @param granularity - Bucket width: `'month'`, `'week'`, or `'day'`.
+     * @param counterparty - Optional base58 address to scope the series to; omit for all counterparties.
      * @returns Flow buckets at the requested resolution, oldest first.
      */
-    public async getWalletFlow(address: string, granularity: FlowGranularity): Promise<IWalletFlowBucket[]> {
+    public async getWalletFlow(address: string, granularity: FlowGranularity, counterparty?: string): Promise<IWalletFlowBucket[]> {
         const normalized = String(address ?? '').trim();
         if (!TRON_ADDRESS_PATTERN.test(normalized)) {
             throw new Error('address must be a base58 TRON address (T...)');
@@ -770,7 +776,9 @@ export class AccountHistoryService implements IAccountHistoryService {
         if (!this.clickhouse) {
             return [];
         }
-        const flow = await this.queryFlow(normalized, granularity);
+        const normalizedCounterparty = String(counterparty ?? '').trim();
+        const scopedCounterparty = TRON_ADDRESS_PATTERN.test(normalizedCounterparty) ? normalizedCounterparty : undefined;
+        const flow = await this.queryFlow(normalized, granularity, scopedCounterparty);
         return flow;
     }
 
@@ -919,17 +927,32 @@ export class AccountHistoryService implements IAccountHistoryService {
      * literal, never interpolated from a caller string, so no SQL injection surface
      * is opened; an unrecognized value falls back to the monthly bucket.
      *
+     * An optional `counterparty` narrows the ledger to legs whose *other* side is
+     * that address — `account = {address}` already restricts every row to a leg the
+     * wallet is a party to, so `(from_address = cp OR to_address = cp)` leaves only
+     * money moved between the wallet and that one counterparty, and the in/out split
+     * still keys on the wallet's own side. It is passed as a bind param (no
+     * interpolation), so it opens no injection surface; the caller only forwards
+     * a value it has already validated as a base58 address.
+     *
      * @param address - Base58 account to summarize.
      * @param granularity - Bucket width: `'month'`, `'week'`, or `'day'`.
+     * @param counterparty - Optional base58 address to scope the series to; omit for all counterparties.
      * @returns Flow buckets ordered oldest first.
      */
-    private async queryFlow(address: string, granularity: FlowGranularity): Promise<IWalletFlowBucket[]> {
+    private async queryFlow(address: string, granularity: FlowGranularity, counterparty?: string): Promise<IWalletFlowBucket[]> {
         const bucketExpr: Record<FlowGranularity, string> = {
             month: 'toStartOfMonth(timestamp)',
             week: 'toMonday(timestamp)',
             day: 'toDate(timestamp)'
         };
         const bucket = bucketExpr[granularity] ?? bucketExpr.month;
+        const counterpartyFilter = counterparty
+            ? ' AND (from_address = {counterparty:String} OR to_address = {counterparty:String})'
+            : '';
+        const params: Record<string, string> = counterparty
+            ? { address, usdt: USDT_CONTRACT_ADDRESS, counterparty }
+            : { address, usdt: USDT_CONTRACT_ADDRESS };
         const rows = await this.clickhouse!.query<Record<string, string | number>>(
             `SELECT toString(${bucket}) AS period,
                     sumIf(toInt64OrZero(amount_raw), asset_type = 'TRX' AND to_address = {address:String}) AS trx_in_sun,
@@ -937,10 +960,10 @@ export class AccountHistoryService implements IAccountHistoryService {
                     sumIf(toFloat64OrZero(amount_raw), asset_id = {usdt:String} AND to_address = {address:String}) AS usdt_in_raw,
                     sumIf(toFloat64OrZero(amount_raw), asset_id = {usdt:String} AND from_address = {address:String}) AS usdt_out_raw
              FROM ${VALUE_TRANSFERS_TABLE} FINAL
-             WHERE account = {address:String}
+             WHERE account = {address:String}${counterpartyFilter}
              GROUP BY period
              ORDER BY period ASC`,
-            { address, usdt: USDT_CONTRACT_ADDRESS }
+            params
         );
         const flow = rows.map((row) => ({
             period: String(row.period),

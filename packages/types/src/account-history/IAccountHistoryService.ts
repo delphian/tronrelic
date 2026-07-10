@@ -758,11 +758,18 @@ export interface IAccountHistoryService {
      * SSR render, and switching precision fetches just this series. Derived from
      * the same ledger; authorization is the caller's responsibility.
      *
+     * An optional `counterparty` scopes the series to money moved *with that one
+     * address* — the profile chart's counterparty dropdown supplies it so the same
+     * green-up/red-down flow answers "how much did I send to / receive from this
+     * exchange?". Legs to any other address are excluded; an absent, empty, or
+     * malformed value leaves the series unfiltered (all counterparties).
+     *
      * @param address - Base58 address to summarize.
      * @param granularity - Bucket width: `'month'`, `'week'`, or `'day'`.
+     * @param counterparty - Optional base58 address to scope the series to; omit for all counterparties.
      * @returns Flow buckets at the requested resolution, oldest first.
      */
-    getWalletFlow(address: string, granularity: FlowGranularity): Promise<IWalletFlowBucket[]>;
+    getWalletFlow(address: string, granularity: FlowGranularity, counterparty?: string): Promise<IWalletFlowBucket[]>;
 
     /**
      * Read the most recent on-chain balance/resource snapshot for an account,
