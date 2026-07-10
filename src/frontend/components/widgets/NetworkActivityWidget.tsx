@@ -83,7 +83,7 @@ const WINDOWS: ReadonlyArray<{ id: ActivityWindow; label: string }> = [
  */
 const METRICS: ReadonlyArray<{ id: ActivityMetric; label: string; color: string; kind: 'count' | 'trx' }> = [
     { id: 'transactions', label: 'Transactions', color: 'var(--chart-color-1)', kind: 'count' },
-    { id: 'transfers', label: 'Transfers', color: 'var(--chart-color-2)', kind: 'count' },
+    { id: 'transfers', label: 'Transfers', color: 'var(--chart-color-1)', kind: 'count' },
     { id: 'volume', label: 'Volume (TRX)', color: 'var(--chart-color-3)', kind: 'trx' }
 ];
 

@@ -293,9 +293,10 @@ describe('ValuationService.getPortfolio', () => {
         expect(summary.realizedPnlUsd).toBeCloseTo(0, 6);
     });
 
-    it('clips the balance series to the default trailing year absent an admin override', async () => {
-        // The snapshot anchors at 2024-02-01; a deposit almost two years earlier is
-        // far outside the default 365-day window, so the series must not reach it.
+    it('reconstructs the balance series back to the earliest ledger delta (always unbounded)', async () => {
+        // The snapshot anchors at 2024-02-01; a deposit almost two years earlier
+        // must still appear — the series is unbounded, so "All" reaches the true
+        // deposit day for every user with no admin gate involved.
         const service = buildService(
             fakeAccountHistory({ [WALLET_A]: [trxLeg(EXTERNAL, WALLET_A, 100, '2022-01-01')] }, { [WALLET_A]: 100 }),
             fakePriceHistory({}, 0.2)
@@ -303,26 +304,7 @@ describe('ValuationService.getPortfolio', () => {
 
         const summary = await service.getPortfolio({ userId: USER_ID, addresses: [WALLET_A], ownedAddresses: [WALLET_A], scope: 'wallet' });
 
-        expect(summary.balanceSeriesUsd[0]?.day).toBe('2023-02-01'); // trailing-year floor, not the 2022 deposit
-    });
-
-    it("widens the balance series to the full ledger when an admin sets a wallet's range to 'all'", async () => {
-        resetService();
-        const registry = createMockServiceRegistry({
-            'account-history': fakeAccountHistory({ [WALLET_A]: [trxLeg(EXTERNAL, WALLET_A, 100, '2022-01-01')] }, { [WALLET_A]: 100 }),
-            'price-history': fakePriceHistory({}, 0.2),
-            'user-settings': { getNamespace: vi.fn(async () => ({ [WALLET_A]: 'all' })) }
-        });
-        ValuationService.setDependencies({ serviceRegistry: registry, logger: silentLogger() });
-
-        const summary = await ValuationService.getInstance().getPortfolio({
-            userId: USER_ID,
-            addresses: [WALLET_A],
-            ownedAddresses: [WALLET_A],
-            scope: 'wallet'
-        });
-
-        expect(summary.balanceSeriesUsd[0]?.day).toBe('2022-01-01'); // the admin override reaches the true deposit day
+        expect(summary.balanceSeriesUsd[0]?.day).toBe('2022-01-01'); // reaches the true deposit day, no trailing-year floor
     });
 
     it('flags historyBackfillComplete true when every in-scope address has finished backfill', async () => {

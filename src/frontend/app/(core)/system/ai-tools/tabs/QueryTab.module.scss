@@ -569,6 +569,22 @@
     color: var(--color-text-muted);
 }
 
+/* Expanded tool-call detail — spans all three subgrid tracks so the invocation
+ * table gets the row's full width, set off from the summary line above by a top
+ * rule. Rendered only while the row is expanded. */
+.history_item_tools {
+    grid-column: 1 / -1;
+    margin-top: var(--gap-2xs);
+    padding-top: var(--padding-sm);
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+/* Loading / empty / error line shown in place of the table. */
+.history_item_tools_note {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
 /*
  * ===========================================================================
  * ASSISTANT TRANSCRIPT SEGMENTS — thinking, tool calls, tool results, text

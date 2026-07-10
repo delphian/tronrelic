@@ -123,12 +123,25 @@ interface TooltipState {
     y: number;
     date: Date;
     items: TooltipDatum[];
+    /**
+     * Displayed (CSS pixel) width of the chart at hover time. Captured from the
+     * SVG's bounding box so the tooltip can be clamped into the chart's on-screen
+     * bounds regardless of how the viewBox is scaled to its container.
+     */
+    chartWidthPx: number;
 }
 
 /**
  * Default color palette for series (cycles if more series than colors).
  */
 const DEFAULT_COLORS = ['#7C9BFF', '#5CE1E6', '#FF9F6E', '#F06EF0'];
+
+/**
+ * Gutter, in CSS pixels, kept between the tooltip box and either edge of the
+ * chart when its center is clamped. Mirrors the BarChart constant so both charts
+ * hold the tooltip off the edge identically — a small layout literal, not a token.
+ */
+const TOOLTIP_EDGE_GUTTER = 8;
 
 /**
  * Chart margins for axis labels and padding.
@@ -216,7 +229,21 @@ export function LineChart({
     const containerRef = useRef<HTMLElement | null>(null);
     const [containerWidth, setContainerWidth] = useState(SSR_DEFAULT_WIDTH);
     const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+    const [tooltipNode, setTooltipNode] = useState<HTMLDivElement | null>(null);
+    const [tooltipWidth, setTooltipWidth] = useState(0);
     const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+
+    /**
+     * Measures the rendered tooltip's width so its center can be clamped to keep
+     * the whole box inside the chart. The tooltip mounts only on hover (never
+     * during SSR), so this never runs on the server and cannot cause a hydration
+     * mismatch. Re-measures whenever the node identity changes (mount/unmount).
+     */
+    useEffect(() => {
+        if (tooltipNode) {
+            setTooltipWidth(tooltipNode.getBoundingClientRect().width);
+        }
+    }, [tooltipNode]);
 
     /**
      * Observes container width changes and updates chart responsively.
@@ -498,7 +525,8 @@ export function LineChart({
             x: nearest.x,
             y: anchorY,
             date: nearest.date,
-            items
+            items,
+            chartWidthPx: bounds.width
         });
     };
 
@@ -508,6 +536,27 @@ export function LineChart({
     const handlePointerLeave = () => {
         setTooltip(null);
     };
+
+    // Clamp the tooltip's center so the whole box stays within the chart's
+    // on-screen bounds — at an edge it would otherwise overflow by half its width,
+    // spilling past the chart and, on a wide chart, the screen. When the chart is
+    // too narrow to fit the box plus both gutters, fall back to centering (the box
+    // itself caps at the chart width via `max-width: 100%`). Mirrors BarChart.
+    let tooltipLeftPx = 0;
+    let tooltipTopPx = 0;
+    if (tooltip) {
+        // The SVG scales uniformly to its container, so both axes share the factor
+        // chartWidthPx / width. tooltip.x and tooltip.y are viewBox units; multiply
+        // both by chartWidthPx / width to land in on-screen CSS pixels.
+        const centerPx = (tooltip.x / width) * tooltip.chartWidthPx;
+        tooltipTopPx = (tooltip.y / width) * tooltip.chartWidthPx;
+        const halfWidth = tooltipWidth / 2;
+        const minLeft = TOOLTIP_EDGE_GUTTER + halfWidth;
+        const maxLeft = tooltip.chartWidthPx - TOOLTIP_EDGE_GUTTER - halfWidth;
+        tooltipLeftPx = minLeft <= maxLeft
+            ? Math.min(Math.max(centerPx, minLeft), maxLeft)
+            : tooltip.chartWidthPx / 2;
+    }
 
     return (
         <figure ref={containerRef} className={cn(styles.chart, className)}>
@@ -655,8 +704,9 @@ export function LineChart({
 
             {tooltip && (
                 <div
+                    ref={setTooltipNode}
                     className={styles.tooltip}
-                    style={{ left: tooltip.x, top: tooltip.y }}
+                    style={{ left: `${tooltipLeftPx}px`, top: `${tooltipTopPx}px`, opacity: tooltipWidth === 0 ? 0 : 1 }}
                     role="presentation"
                 >
                     <span className={styles.tooltip__label}>{(tooltipDateFormatter ?? xAxisFormatter)(tooltip.date)}</span>

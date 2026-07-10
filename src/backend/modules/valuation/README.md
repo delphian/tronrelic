@@ -9,9 +9,9 @@ Computes per-user **portfolio** summaries — net worth, holdings, allocation, r
 | Module id | `valuation` |
 | Module class | `src/backend/modules/valuation/ValuationModule.ts` |
 | Service registry name | `'valuation'` → `IValuationService` |
-| Mounted routes | `/api/valuation/me/*` (`createRateLimiter` + `requireLogin`, ownership-scoped); `/api/admin/system/valuation/*` (`createAdminRateLimiter` + `requireAdmin`) |
+| Mounted routes | `/api/valuation/me/*` (`createRateLimiter` + `requireLogin`, ownership-scoped) |
 | Scheduler jobs | none (compute-on-read) |
-| Owned storage | none — joins `'account-history'`, `'price-history'`, identity `'wallets'`, and identity `'user-settings'` (balance-range override only) |
+| Owned storage | none — joins `'account-history'`, `'price-history'`, and identity `'wallets'` |
 | Types package | `@delphian/tronrelic-types` → `IValuationService`, `IPortfolioSummary`, `IPortfolioHolding`, `IPortfolioQuery` |
 | Bootstrap order | Inits after price-history; resolves its data services lazily from the registry, so order is not load-bearing |
 
@@ -32,14 +32,12 @@ Each wallet's ledger read is uncapped, newest-first, paged by a keyset cursor un
 | `lib/lot-engine.ts` | Pure FIFO cost-basis (`computeLots`) + snapshot-anchored balance reconstruction (`reconstructTrxBalanceSeries`); no I/O |
 | `api/valuation-user.controller.ts` | Login-gated handlers; resolves the owned set, enforces the 404-on-unowned gate |
 | `api/valuation-user.routes.ts` | Router factory (guards applied at mount) |
-| `api/valuation-admin.controller.ts` | Admin handlers for the per-wallet balance-range override |
-| `api/valuation-admin.routes.ts` | Admin router factory (guards applied at mount) |
 
 ## Published Contract — `'valuation'` → `IValuationService`
 
 | Method | Purpose |
 |--------|---------|
-| `getPortfolio({ userId, addresses, ownedAddresses, scope })` | The full `IPortfolioSummary` for a scope. Trusts the addresses; the caller authorizes. `userId` resolves the balance-range override below, never authorization. |
+| `getPortfolio({ userId, addresses, ownedAddresses, scope })` | The full `IPortfolioSummary` for a scope. Trusts the addresses; the caller authorizes. |
 
 ## REST Endpoints (`requireLogin`)
 
@@ -48,20 +46,11 @@ Each wallet's ledger read is uncapped, newest-first, paged by a keyset cursor un
 | GET | `/api/valuation/me/portfolio` | Aggregate portfolio across the caller's verified wallets (scope `user`) |
 | GET | `/api/valuation/me/wallets/:address/portfolio` | One owned wallet (scope `wallet`); 404 if unowned |
 
-## REST Endpoints (`requireAdmin`)
+## Balance-Chart Range
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/api/admin/system/valuation/users/:userId/wallets/:address/balance-range` | Effective range for one wallet — the stored override, or `'1y'`. 404s if `userId` doesn't exist or doesn't own `address` |
-| PATCH | `/api/admin/system/valuation/users/:userId/wallets/:address/balance-range` | Body `{ range: '1y' \| 'all' }`. Setting `'1y'` clears the override; setting `'all'` stores it. Same 404 ownership check as the GET |
+The balance-over-time series is **unbounded**: it starts at the earliest ledger delta (or the snapshot anchor when the wallet has no activity), an honest "as far back as this ledger reaches," never a claim of the account's true genesis (TronGrid's own fingerprint paging cannot reach the deepest history of very large accounts regardless). The frontend's 1M/3M/1Y/All selector zooms this single reconstructed curve client-side, so the backend never trims what "All" can show.
 
-## Balance-Chart Range: Default and Admin Override
-
-The balance-over-time chart defaults every wallet to a trailing year (`DEFAULT_BALANCE_WINDOW_DAYS = 365` in `valuation.service.ts`). An admin can widen a specific wallet to unbounded — the series then starts at the earliest ledger delta instead of a fixed floor, an honest "as far back as this ledger reaches," never a claim of the account's true genesis (TronGrid's own fingerprint paging cannot reach the deepest history of very large accounts regardless of this setting).
-
-The override is stored in the identity module's `'user-settings'` store — namespace `'valuation'`, keyed by wallet address, value `'1y' | 'all'` — through the *trusted* programmatic `set`/`get`/`delete` path, never the self-service `/api/user/settings` surface. That distinction is deliberate: it keeps the override admin-only, since a user widening their own window would defeat the point of a default. One resolved window covers the whole query (aggregate or zoom) because the series is a single reconstructed curve, not stitched per wallet — if any wallet in scope is set to `'all'`, the combined view widens too, which never exposes data the caller was not already entitled to see.
-
-`IPortfolioSummary.historyBackfillComplete` flags whether every report-scope address has finished account-history's ledger backfill (`getProgressFor` status `'complete'`). The back-solve reconstructs from today's snapshot across whatever deltas the ledger holds, so a day missing purely because ingestion hasn't reached it yet — not because nothing happened — still shifts the whole curve, widened window or not. The frontend caveats the chart when this is `false` rather than presenting an in-progress backfill as a settled history.
+`IPortfolioSummary.historyBackfillComplete` flags whether every report-scope address has finished account-history's ledger backfill (`getProgressFor` status `'complete'`). The back-solve reconstructs from today's snapshot across whatever deltas the ledger holds, so a day missing purely because ingestion hasn't reached it yet — not because nothing happened — still shifts the whole curve. The frontend caveats the chart when this is `false` rather than presenting an in-progress backfill as a settled history.
 
 ## Division of Truth (and Its Limits)
 

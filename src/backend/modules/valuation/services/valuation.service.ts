@@ -20,7 +20,6 @@ import type {
     ISystemLogService,
     IAccountHistoryService,
     IPriceHistoryService,
-    IUserSettingsService,
     IValuationService,
     IPortfolioQuery,
     IPortfolioSummary,
@@ -36,15 +35,6 @@ import { computeLots, reconstructTrxBalanceSeries, type ILedgerMove, type IDaily
  *  full ledger is always read, so an internal transfer's counterpart leg is never
  *  split across a window (see the removed split-migration repair this replaced). */
 const LEDGER_PAGE = 500;
-
-/** Default trailing days of the USD balance series absent an admin override. */
-const DEFAULT_BALANCE_WINDOW_DAYS = 365;
-
-/** Namespace under which the per-wallet balance-range override is stored in `'user-settings'`. */
-const BALANCE_RANGE_NAMESPACE = 'valuation';
-
-/** The only two admin-settable balance-chart ranges: the default trailing year, or unbounded. */
-export type BalanceRangeSetting = '1y' | 'all';
 
 /** How many days back to accept as the "current" price when today is unbackfilled. */
 const CURRENT_PRICE_LOOKBACK = 7;
@@ -188,40 +178,6 @@ export class ValuationService implements IValuationService {
             cursor = { timestamp: last.timestamp, txId: last.txId, origin: last.origin, legKey: last.legKey, assetId: last.assetId };
         }
         return all;
-    }
-
-    /**
-     * Resolve the balance-over-time chart's trailing window for a query: the
-     * default trailing year, widened to unbounded if an admin has set any
-     * in-scope wallet's stored override to `'all'`. One window covers the whole
-     * query because the series is a single reconstructed curve, not one stitched
-     * per wallet — widening it for a wallet the caller is already viewing never
-     * exposes data they are not entitled to see.
-     *
-     * Degrades to the default when `'user-settings'` is unavailable (mirrors how
-     * the rest of this service treats an absent optional dependency).
-     *
-     * @param userId - Better Auth id whose stored overrides to check.
-     * @param addresses - The report-scope addresses for this query.
-     * @returns Trailing window in days, or `null` for unbounded.
-     */
-    private async resolveBalanceWindowDays(userId: string, addresses: string[]): Promise<number | null> {
-        const userSettings = this.serviceRegistry.get<IUserSettingsService>('user-settings');
-        if (!userSettings) {
-            return DEFAULT_BALANCE_WINDOW_DAYS;
-        }
-        try {
-            const stored = await userSettings.getNamespace(userId, BALANCE_RANGE_NAMESPACE);
-            const unboundedRange: BalanceRangeSetting = 'all';
-            const hasUnboundedOverride = addresses.some((address) => stored[address] === unboundedRange);
-            return hasUnboundedOverride ? null : DEFAULT_BALANCE_WINDOW_DAYS;
-        } catch (error) {
-            this.logger.warn(
-                { error, userId },
-                'valuation: balance-range override read failed; falling back to default window'
-            );
-            return DEFAULT_BALANCE_WINDOW_DAYS;
-        }
     }
 
     /**
@@ -616,14 +572,15 @@ export class ValuationService implements IValuationService {
             .filter((m) => m.asset === PRICE_ASSET_TRX && reportSet.has(m.wallet))
             .map((m) => ({ day: m.day, signedQty: m.direction === 'in' ? m.quantity : -m.quantity }));
         const anchorDay = capturedAt ? capturedAt.toISOString().slice(0, 10) : today;
-        const windowDays = await this.resolveBalanceWindowDays(query.userId, query.addresses);
+        // The series is always unbounded: it starts at the earliest ledger delta
+        // (or the anchor when the wallet has no activity) — an honest "as far back
+        // as this ledger reaches." The frontend range selector zooms this single
+        // curve client-side, so the backend never trims what "All" can show.
         const earliestDeltaDay = trxDeltas.reduce<string | null>(
             (min, d) => (!min || d.day < min ? d.day : min),
             null
         );
-        const priceFloorDay = windowDays === null
-            ? (earliestDeltaDay ?? anchorDay)
-            : ValuationService.shiftDay(anchorDay, -windowDays);
+        const priceFloorDay = earliestDeltaDay ?? anchorDay;
         const trxSeries = await priceHistory.getSeries(PRICE_ASSET_TRX, priceFloorDay, anchorDay);
         const trxPriceByDay = new Map(trxSeries.map((p) => [p.day, p.priceUsd]));
         const balanceSeriesUsd = reconstructTrxBalanceSeries(
@@ -631,7 +588,7 @@ export class ValuationService implements IValuationService {
             trxQty,
             trxDeltas,
             (day) => trxPriceByDay.get(day) ?? null,
-            windowDays
+            null
         );
         const historyBackfillComplete = await this.resolveHistoryBackfillComplete(accountHistory, query.addresses);
 

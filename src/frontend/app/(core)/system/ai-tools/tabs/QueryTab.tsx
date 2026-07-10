@@ -384,6 +384,19 @@ export function QueryTab() {
     /** Conversation ids whose full opening prompt is expanded inline in the history list. */
     const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
     /**
+     * Per-conversation tool-invocation audit records for the history list, keyed
+     * by conversationId and loaded lazily the first time a row is expanded. Kept
+     * separate from {@link conversationRecords} (which backs the open chat) so an
+     * expanded history row and the active conversation never overwrite each other.
+     * Cached across collapse/re-expand and across a history Refresh because a past
+     * conversation's tool calls are immutable — no point refetching them.
+     */
+    const [historyToolRecords, setHistoryToolRecords] = useState<Map<string, IToolInvocationRecord[]>>(() => new Map());
+    /** Conversation ids whose history-row tool records are currently loading. */
+    const [historyToolLoading, setHistoryToolLoading] = useState<Set<string>>(() => new Set());
+    /** Conversation ids whose history-row tool-record fetch failed, mapped to the error. */
+    const [historyToolError, setHistoryToolError] = useState<Map<string, string>>(() => new Map());
+    /**
      * Tool-invocation audit records for the open conversation, loaded from the
      * Activity feed scoped by conversationId. Backs the transcript's per-call
      * "Details" deep-links and the "tools used" summary feed.
@@ -490,6 +503,61 @@ export function QueryTab() {
             }
         } catch {
             /* secondary data — the transcript still renders without audit links */
+        }
+    }, []);
+
+    /**
+     * Lazily load one history row's tool-invocation audit records the first time
+     * it is expanded, so the row can reveal exactly which tools that conversation
+     * ran without reopening the whole thread. Reads the same admin-gated Activity
+     * feed the chat view uses, scoped by conversationId. Secondary data on a user
+     * action — a failure is captured per-row and shown inline rather than blocking
+     * the list. Idempotent: callers gate on the cache so a record set is fetched
+     * once and reused across collapse/re-expand.
+     *
+     * @param conversationId - The conversation whose tool calls to load.
+     */
+    const loadHistoryToolRecords = useCallback(async (conversationId: string) => {
+        setHistoryToolLoading(prev => {
+            const next = new Set(prev);
+            next.add(conversationId);
+            return next;
+        });
+        setHistoryToolError(prev => {
+            if (!prev.has(conversationId)) {
+                return prev;
+            }
+            const next = new Map(prev);
+            next.delete(conversationId);
+            return next;
+        });
+        try {
+            const page = await listActivity({ conversationId, limit: 200 });
+            if (!isMountedRef.current) {
+                return;
+            }
+            setHistoryToolRecords(prev => {
+                const next = new Map(prev);
+                next.set(conversationId, page.records);
+                return next;
+            });
+        } catch (err) {
+            if (!isMountedRef.current) {
+                return;
+            }
+            setHistoryToolError(prev => {
+                const next = new Map(prev);
+                next.set(conversationId, err instanceof Error ? err.message : 'Failed to load tool calls');
+                return next;
+            });
+        } finally {
+            if (isMountedRef.current) {
+                setHistoryToolLoading(prev => {
+                    const next = new Set(prev);
+                    next.delete(conversationId);
+                    return next;
+                });
+            }
         }
     }, []);
 
@@ -708,6 +776,9 @@ export function QueryTab() {
      * @param conversationId - Id of the conversation row to expand or collapse.
      */
     const toggleExpanded = useCallback((conversationId: string) => {
+        // Decide direction from the current set before mutating it, so the fetch
+        // is triggered only on the expand edge — never on collapse.
+        const willExpand = !expandedIds.has(conversationId);
         setExpandedIds(prev => {
             const next = new Set(prev);
             if (next.has(conversationId)) {
@@ -717,7 +788,18 @@ export function QueryTab() {
             }
             return next;
         });
-    }, []);
+        // Fetch this row's tool calls once, on first expand. Skip when a prior
+        // fetch already succeeded, failed (the inline error offers a retry path via
+        // re-expand only after the error clears), or is still in flight.
+        if (
+            willExpand &&
+            !historyToolRecords.has(conversationId) &&
+            !historyToolError.has(conversationId) &&
+            !historyToolLoading.has(conversationId)
+        ) {
+            void loadHistoryToolRecords(conversationId);
+        }
+    }, [expandedIds, historyToolRecords, historyToolError, historyToolLoading, loadHistoryToolRecords]);
 
     /** Load the grouped conversation history for the History view. */
     const loadHistory = useCallback(async () => {
@@ -1144,6 +1226,28 @@ export function QueryTab() {
                                                 <MessageSquare size={16} /> Open in chat
                                             </Button>
                                         </div>
+                                        {isExpanded && (
+                                            // Full-width tool-call detail beneath the row (spans all three
+                                            // grid tracks). Fetched lazily on first expand: a spinner while
+                                            // loading, the inline error on failure, the invocation table when
+                                            // the conversation ran tools, or a plain note when it ran none.
+                                            <div className={styles.history_item_tools}>
+                                                {historyToolLoading.has(group.conversationId) ? (
+                                                    <span className={styles.history_item_tools_note}>Loading tool calls…</span>
+                                                ) : historyToolError.has(group.conversationId) ? (
+                                                    <span className={styles.history_item_tools_note} role="alert">
+                                                        {historyToolError.get(group.conversationId)}
+                                                    </span>
+                                                ) : (historyToolRecords.get(group.conversationId)?.length ?? 0) > 0 ? (
+                                                    <InvocationTable
+                                                        records={historyToolRecords.get(group.conversationId) as IToolInvocationRecord[]}
+                                                        onSelect={setSelectedRecord}
+                                                    />
+                                                ) : (
+                                                    <span className={styles.history_item_tools_note}>No tool calls in this conversation.</span>
+                                                )}
+                                            </div>
+                                        )}
                                     </li>
                                     );
                                 })}
