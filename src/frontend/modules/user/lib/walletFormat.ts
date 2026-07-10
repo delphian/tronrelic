@@ -13,15 +13,19 @@
 const SUN_PER_TRX = 1_000_000;
 
 /**
- * Format a sun amount as a human TRX string. Up to six fraction digits (TRX's
- * full precision) but trailing zeros trimmed, so whole amounts read cleanly.
+ * Format a sun amount as a human TRX string. Capped at two fraction digits — the
+ * wallet tab reads as a ledger, and TRX's full six-place precision is noise there:
+ * long tails misalign columns and bury the magnitude that actually matters. This
+ * only ever *reduces* precision: `maximumFractionDigits` rounds a long tail to two
+ * places while the default `minimumFractionDigits` of 0 leaves whole amounts
+ * unpadded, so `1234` stays `"1,234 TRX"` and `1234.5678` reads `"1,234.57 TRX"`.
  *
  * @param sun - The amount in sun.
- * @returns A grouped TRX string, e.g. `"1,234.5 TRX"`.
+ * @returns A grouped TRX string, e.g. `"1,234.57 TRX"`.
  */
 export function formatTrxFromSun(sun: number): string {
     const trx = sun / SUN_PER_TRX;
-    return `${trx.toLocaleString(undefined, { maximumFractionDigits: 6 })} TRX`;
+    return `${trx.toLocaleString(undefined, { maximumFractionDigits: 2 })} TRX`;
 }
 
 /**

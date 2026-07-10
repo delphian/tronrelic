@@ -152,13 +152,17 @@ function formatUsd(value: number, signed = false): string {
 }
 
 /**
- * Format a token quantity, trimming to a readable precision.
+ * Format a token quantity for the holdings table. Capped at two fraction digits
+ * so the column reads as a scannable ledger — long six-place tails (TRX and
+ * TRC20 alike) misalign the rows and bury magnitude. This only ever reduces
+ * precision: the default `minimumFractionDigits` of 0 leaves whole amounts
+ * unpadded, so a sub-1 balance rounds to two places while `1234` stays `1,234`.
  *
  * @param value - Quantity in human units.
  * @returns A formatted quantity string.
  */
 function formatQty(value: number): string {
-    return value.toLocaleString('en-US', { maximumFractionDigits: value >= 1 ? 2 : 6 });
+    return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 /**

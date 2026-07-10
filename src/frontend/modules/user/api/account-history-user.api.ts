@@ -60,12 +60,25 @@ export async function fetchWalletSummary(address: string): Promise<IWalletSummar
  * uses the monthly `flow` already present in the summary, and switching to a
  * finer resolution calls this rather than re-fetching the whole summary.
  *
+ * An optional `counterparty` scopes the series to money moved with that one
+ * address, backing the chart's counterparty dropdown. Because the summary's
+ * `flow` is always unfiltered, selecting a counterparty must re-fetch through
+ * here even for the monthly view.
+ *
  * @param address - The base58 wallet whose flow to load.
  * @param granularity - Bucket width: `'month'`, `'week'`, or `'day'`.
+ * @param counterparty - Optional base58 address to scope the series to; omit for all counterparties.
  * @returns The flow buckets at the requested resolution, oldest first.
  */
-export async function fetchWalletFlow(address: string, granularity: FlowGranularity): Promise<IWalletFlowBucket[]> {
+export async function fetchWalletFlow(
+    address: string,
+    granularity: FlowGranularity,
+    counterparty?: string
+): Promise<IWalletFlowBucket[]> {
     const params = new URLSearchParams({ granularity });
+    if (counterparty) {
+        params.set('counterparty', counterparty);
+    }
     const body = await parseJsonResponse<{ flow: IWalletFlowBucket[] }>(
         await fetch(`/api/account-history/me/wallets/${encodeURIComponent(address)}/flow?${params.toString()}`, {
             cache: 'no-store'
