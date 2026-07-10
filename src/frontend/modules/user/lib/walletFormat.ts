@@ -20,11 +20,19 @@ const SUN_PER_TRX = 1_000_000;
  * places while the default `minimumFractionDigits` of 0 leaves whole amounts
  * unpadded, so `1234` stays `"1,234 TRX"` and `1234.5678` reads `"1,234.57 TRX"`.
  *
+ * A genuine nonzero amount below the two-decimal floor (under 0.005 TRX — dust
+ * transfers, tiny reward or ledger legs) would otherwise round to a misleading
+ * `"0 TRX"`; it renders as `"<0.01 TRX"` instead, which never presents real
+ * activity as zero yet adds no third decimal, keeping the two-place cap intact.
+ *
  * @param sun - The amount in sun.
  * @returns A grouped TRX string, e.g. `"1,234.57 TRX"`.
  */
 export function formatTrxFromSun(sun: number): string {
     const trx = sun / SUN_PER_TRX;
+    if (trx > 0 && trx < 0.005) {
+        return '<0.01 TRX';
+    }
     return `${trx.toLocaleString(undefined, { maximumFractionDigits: 2 })} TRX`;
 }
 
