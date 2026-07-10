@@ -24,7 +24,6 @@ import { describeHistoryStatus } from '../../../lib/walletHistoryStatus';
 import { formatCount } from '../../../lib/walletFormat';
 import { WalletActivityStats } from './WalletActivityStats';
 import { WalletActivityCalendar } from './WalletActivityCalendar';
-import { WalletResourcePanel } from './WalletResourcePanel';
 import { WalletFlowChart } from './WalletFlowChart';
 import { WalletCounterparties } from './WalletCounterparties';
 import { WalletTransactionFeed } from './WalletTransactionFeed';
@@ -206,9 +205,8 @@ export function WalletDetailPanel({ address, progress }: IWalletDetailPanelProps
                         <ActivitySkeleton />
                     ) : (
                         <>
-                            <WalletActivityStats stats={summary.stats} />
+                            <WalletActivityStats stats={summary.stats} resources={summary.resources} />
                             <WalletActivityCalendar calendar={summary.calendar} />
-                            <WalletResourcePanel resources={summary.resources} />
                             <WalletFlowChart
                                 address={address}
                                 flow={summary.flow}

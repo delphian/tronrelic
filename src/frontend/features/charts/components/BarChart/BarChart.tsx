@@ -462,6 +462,15 @@ export function BarChart({
         const scaleY = (value: number) =>
             chrome.margin.top + innerHeight - ((value - minY) / rangeY) * innerHeight;
 
+        // A viewer-pinned domain (yAxisMin/yAxisMax) can sit inside the data's true
+        // range, so a value may map above the plot top or below its bottom. Clamp every
+        // derived y to the plot rectangle so an out-of-range bar stops flush at the axis
+        // edge instead of overflowing into the header, gridlines, or tick labels. In
+        // auto-fit mode the domain already covers the data, so this is a no-op there.
+        const plotTop = chrome.margin.top;
+        const plotBottom = chrome.margin.top + innerHeight;
+        const clampY = (value: number) => Math.min(Math.max(value, plotTop), plotBottom);
+
         // The baseline sits at zero when zero is in range, otherwise at the floor.
         const zeroInRange = minY <= 0 && maxY >= 0;
         const baselineY = scaleY(zeroInRange ? 0 : minY);
@@ -531,8 +540,8 @@ export function BarChart({
                         segmentEnd = negCum + point.value;
                         negCum = segmentEnd;
                     }
-                    const topY = scaleY(Math.max(segmentStart, segmentEnd));
-                    const bottomY = scaleY(Math.min(segmentStart, segmentEnd));
+                    const topY = clampY(scaleY(Math.max(segmentStart, segmentEnd)));
+                    const bottomY = clampY(scaleY(Math.min(segmentStart, segmentEnd)));
                     const barHeight = Math.max(bottomY - topY, chrome.minBarWidth);
                     bars.push({
                         seriesId: item.id,
@@ -554,7 +563,7 @@ export function BarChart({
                 if (!point) {
                     return;
                 }
-                const valueY = scaleY(point.value);
+                const valueY = clampY(scaleY(point.value));
                 const top = Math.min(valueY, baselineY);
                 const barHeight = Math.max(Math.abs(valueY - baselineY), chrome.minBarWidth);
                 bars.push({
