@@ -733,6 +733,21 @@ async function registerPluginsAdminMenu(menuService: IMenuService): Promise<void
         enabled: true
     });
 
+    // Snapshot every System container child that exists right now — the core and module
+    // nodes (Overview, Hooks, Content Types, Content Router, Logs, Scheduler, Pages), any
+    // plugin public nav nodes, and the Plugins link just created above. This is the
+    // protected set: reconcile never updates or deletes a node whose URL is in it, so a
+    // plugin whose adminUrl collides with a core /system/* URL can neither hijack a core
+    // node (via update) nor delete it (via plugin territory). Captured once here — after
+    // loadPlugins and registerTemporaryMenuItems have run, before any plugin admin entry
+    // is reconciled — so it holds exactly the non-plugin-managed System nodes and never
+    // grows to include the plugin entries the reconciler itself creates.
+    const protectedUrls = new Set<string>(
+        menuService.getChildren(MAIN_SYSTEM_CONTAINER_ID, 'main')
+            .map(child => child.url)
+            .filter((url): url is string => typeof url === 'string' && url.length > 0)
+    );
+
     const pluginManager = PluginManagerService.getInstance();
 
     // Plugin settings entries sort after the fixed core/module System items (highest is the
@@ -752,15 +767,17 @@ async function registerPluginsAdminMenu(menuService: IMenuService): Promise<void
         // Compute the desired order for every eligible plugin up front so inserting a
         // new plugin that sorts before an existing child rewrites that child's order
         // instead of colliding with it.
-        const desiredChildren = eligible.map((manifest, index) => ({
-            namespace: 'main' as const,
-            label: manifest.title,
-            url: manifest.adminUrl,
-            icon: 'Settings',
-            order: PLUGIN_ENTRY_ORDER_BASE + index * 10,
-            parent: MAIN_SYSTEM_CONTAINER_ID,
-            enabled: true
-        }));
+        const desiredChildren = eligible
+            .filter(manifest => !protectedUrls.has(manifest.adminUrl))
+            .map((manifest, index) => ({
+                namespace: 'main' as const,
+                label: manifest.title,
+                url: manifest.adminUrl,
+                icon: 'Settings',
+                order: PLUGIN_ENTRY_ORDER_BASE + index * 10,
+                parent: MAIN_SYSTEM_CONTAINER_ID,
+                enabled: true
+            }));
         const desiredByUrl = new Map(desiredChildren.map(child => [child.url, child]));
 
         // "Plugin territory": every admin URL any discovered plugin could own, enabled or
@@ -779,6 +796,13 @@ async function registerPluginsAdminMenu(menuService: IMenuService): Promise<void
         const existingByUrl = new Map<string, IMenuNode>();
         for (const child of existing) {
             if (!child.url) {
+                continue;
+            }
+            // Never touch a protected core/module System node, even if an enabled plugin's
+            // adminUrl or a disabled plugin's territory claims the same URL. This is what
+            // stops a colliding adminUrl from deleting (or, with the desired-set filter
+            // above, hijacking) Hooks, Pages, the Plugins link, and their siblings.
+            if (protectedUrls.has(child.url)) {
                 continue;
             }
             if (desiredByUrl.has(child.url)) {
