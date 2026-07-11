@@ -652,7 +652,7 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
         // Pages (40) registered by PagesModule
         // Files (42) registered by trp-files plugin
         // Markets (50) registered by resource-markets plugin
-        // Plugins (65) registered by registerPluginsAdminMenu — dropdown of enabled plugin settings
+        // Plugins (65) link + per-plugin settings entries (70+) registered by registerPluginsAdminMenu
         // All admin items live under the System container; requiresAdmin is auto-applied
     ];
 
@@ -692,15 +692,25 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
 }
 
 /**
- * Register the admin "Plugins" dropdown and keep its children synced to enabled plugins.
+ * Register plugin admin settings entries directly under the System container and keep them
+ * synced to enabled plugins.
  *
- * Creates a parent menu node whose top link points at /system/plugins and whose children
- * are generated from each enabled plugin's `manifest.adminUrl` — the same value the cog
- * icon uses on the plugin management page. The dropdown stays current with plugin state
- * by subscribing to PluginManagerService lifecycle events; any enable or disable triggers
- * a diff-based reconciliation of the child list that creates missing nodes, updates
- * existing nodes whose label/icon/order have drifted, and removes nodes for disabled
- * plugins.
+ * Historically these entries were nested under a dedicated "Plugins" dropdown; they now sit
+ * as direct children of the System container, siblings of Hooks, Pages, Markets, and the
+ * like. A plain "Plugins" link to the /system/plugins management table is still registered
+ * so the install/enable/disable surface stays reachable — it is no longer a dropdown parent.
+ *
+ * Each enabled plugin that declares a `manifest.adminUrl` — the same value the cog icon uses
+ * on the plugin management page — gets one menu node. The list stays current with plugin
+ * state by subscribing to PluginManagerService lifecycle events; any enable or disable
+ * triggers a diff-based reconciliation that creates missing nodes, updates nodes whose
+ * label/icon/order have drifted, and removes nodes for plugins that are no longer enabled.
+ *
+ * Because the plugin entries now share the System container with core and module nodes, the
+ * reconciler must never delete a non-plugin sibling. It scopes deletion to "plugin
+ * territory" — the admin URLs across ALL discovered plugins (enabled or not) reported by
+ * getAllManifests() — so a disabled plugin's stale node is pruned while Hooks, Pages,
+ * Markets, and the Plugins management link are left untouched.
  *
  * Must run after loadPlugins so PluginMetadataService.setDependencies() has been called
  * and the initial reconciliation can enumerate plugins activated during bootstrap.
@@ -711,7 +721,9 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
  * @param menuService - Menu service for creating/updating/deleting menu nodes
  */
 async function registerPluginsAdminMenu(menuService: IMenuService): Promise<void> {
-    const container = await menuService.create({
+    // A plain link to the plugin management table. No longer a dropdown parent — the
+    // per-plugin settings entries are registered as direct System children below.
+    await menuService.create({
         namespace: 'main',
         label: 'Plugins',
         url: '/system/plugins',
@@ -721,15 +733,14 @@ async function registerPluginsAdminMenu(menuService: IMenuService): Promise<void
         enabled: true
     });
 
-    const parentId = container._id?.toString();
-    if (!parentId) {
-        throw new Error('Plugins admin menu container created without an _id');
-    }
-
     const pluginManager = PluginManagerService.getInstance();
 
+    // Plugin settings entries sort after the fixed core/module System items (highest is the
+    // Plugins management link at 65), keeping every plugin grouped at the tail of System.
+    const PLUGIN_ENTRY_ORDER_BASE = 70;
+
     // Serialize reconciliation so bursts of lifecycle events (e.g. multiple plugins
-    // enabling during bootstrap) never race on create/delete against the same parent.
+    // enabling during bootstrap) never race on create/delete against the same container.
     let queue: Promise<void> = Promise.resolve();
 
     const reconcile = async (): Promise<void> => {
@@ -746,22 +757,37 @@ async function registerPluginsAdminMenu(menuService: IMenuService): Promise<void
             label: manifest.title,
             url: manifest.adminUrl,
             icon: 'Settings',
-            order: (index + 1) * 10,
-            parent: parentId,
+            order: PLUGIN_ENTRY_ORDER_BASE + index * 10,
+            parent: MAIN_SYSTEM_CONTAINER_ID,
             enabled: true
         }));
         const desiredByUrl = new Map(desiredChildren.map(child => [child.url, child]));
 
-        const existing: IMenuNode[] = menuService.getChildren(parentId, 'main');
+        // "Plugin territory": every admin URL any discovered plugin could own, enabled or
+        // not. The reconciler may delete a System child only if its URL falls in this set,
+        // so a disabled plugin's stale node is pruned while core and module System siblings
+        // are never touched. Plugin menu nodes are memory-only, so a plugin removed from
+        // disk drops out of getAllManifests() and its node simply never returns after the
+        // next boot.
+        const pluginTerritory = new Set(
+            pluginManager.getAllManifests()
+                .map(manifest => manifest.adminUrl)
+                .filter((url): url is string => typeof url === 'string' && url.length > 0)
+        );
+
+        const existing: IMenuNode[] = menuService.getChildren(MAIN_SYSTEM_CONTAINER_ID, 'main');
         const existingByUrl = new Map<string, IMenuNode>();
         for (const child of existing) {
-            if (!child.url || !desiredByUrl.has(child.url)) {
-                if (child._id) {
-                    await menuService.delete(child._id.toString());
-                }
+            if (!child.url) {
                 continue;
             }
-            existingByUrl.set(child.url, child);
+            if (desiredByUrl.has(child.url)) {
+                existingByUrl.set(child.url, child);
+                continue;
+            }
+            if (pluginTerritory.has(child.url) && child._id) {
+                await menuService.delete(child._id.toString());
+            }
         }
 
         for (const desiredChild of desiredChildren) {
@@ -792,7 +818,7 @@ async function registerPluginsAdminMenu(menuService: IMenuService): Promise<void
         queue = queue
             .then(reconcile)
             .catch(error => {
-                logger.error({ error }, 'Failed to sync plugins admin dropdown');
+                logger.error({ error }, 'Failed to sync plugin admin menu entries');
             });
         return queue;
     };
