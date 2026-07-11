@@ -179,6 +179,28 @@ export interface IUIComponents {
         'aria-label'?: string;
     }>;
 
+    /**
+     * Select — themed dropdown matching the Input treatment (shared input
+     * tokens plus a Lucide chevron), wrapping a native `<select>` so keyboard,
+     * accessibility, and mobile-picker behavior are preserved. Pass
+     * `<option>` / `<optgroup>` children as usual; width is intrinsic by
+     * default (sized to the selected option) — pass a `width: 100%` class to
+     * fill a container. Use instead of a bare `<select>` so plugin dropdowns
+     * match core admin surfaces.
+     */
+    Select: ComponentType<{
+        value?: string;
+        onChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+        children?: React.ReactNode;
+        variant?: 'default' | 'ghost';
+        disabled?: boolean;
+        required?: boolean;
+        className?: string;
+        id?: string;
+        name?: string;
+        'aria-label'?: string;
+    }>;
+
     /** Client-side time rendering component (prevents SSR hydration mismatches) */
     ClientTime: ComponentType<{
         date: Date | string | null | undefined;
@@ -840,7 +862,7 @@ export interface IFrontendPluginContext {
     /** Plugin identifier used for namespacing events and API routes */
     pluginId: string;
 
-    /** UI component library (Card, Badge, Button, IconButton, Switch, Input, Skeleton, ClientTime, Tooltip, IconPickerModal, Table family) */
+    /** UI component library (Card, Badge, Button, IconButton, Switch, Input, Select, Skeleton, ClientTime, Tooltip, IconPickerModal, Table family) */
     ui: IUIComponents;
 
     /** Layout component library (Page, PageHeader, Stack, Grid, Section, SubMenu) */
