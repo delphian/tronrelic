@@ -18,6 +18,7 @@ import { Button } from '../components/ui/Button';
 import { IconButton } from '../components/ui/IconButton';
 import { Switch } from '../components/ui/Switch';
 import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
 import { ClientTime } from '../components/ui/ClientTime';
 import { Tooltip } from '../components/ui/Tooltip';
 import { LazyIconPickerModal as IconPickerModal } from '../components/ui/IconPickerModal';
@@ -338,6 +339,7 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             // the contract advertises, so the cast is sound and contains a TS-only
             // metadata quirk without widening the published plugin contract.
             Input: Input as IUIComponents['Input'],
+            Select,
             ClientTime,
             Tooltip,
             IconPickerModal,
@@ -439,6 +441,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         // trips the invariant check against the narrowed contract; the runtime
         // component is fully compatible, so the cast is sound.
         Input: Input as IUIComponents['Input'],
+        Select,
         ClientTime,
         Tooltip,
         IconPickerModal,
