@@ -222,14 +222,17 @@
     gap: var(--gap-sm);
 }
 
-/* Y-axis range controls. Inline on a wide header; on a narrow container they would
-   crowd the counterparty and toggle controls off the row, so they collapse to a single
-   button that opens the range modal instead (see the container query below). */
-.range_inline {
+/* Flow filters — the counterparty scope dropdown and the y-axis min/max fields,
+   displayed together on a wide header. On a narrow container they would crowd the
+   precision and denomination toggles off the row, so the whole group collapses to a
+   single button that opens the filters modal instead (see the container query below). */
+.filters_inline {
     display: inline-flex;
+    align-items: center;
+    gap: var(--gap-sm);
 }
 
-.range_button {
+.filters_button {
     display: none;
 }
 
@@ -255,25 +258,39 @@
     width: 5rem;
 }
 
-/* Modal body housing the range fields on narrow containers. */
-.range_dialog {
+/* Modal body housing the counterparty scope and range fields on narrow containers. */
+.filters_dialog {
     display: flex;
     flex-direction: column;
     gap: var(--gap-md);
 }
 
-.range_dialog_actions {
+/* Stacked label + control for the counterparty dropdown inside the modal. */
+.filters_dialog_field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+/* The counterparty dropdown fills the modal width rather than sizing to its option. */
+.filters_dialog_select {
+    width: 100%;
+}
+
+.filters_dialog_actions {
     display: flex;
     justify-content: flex-end;
     gap: var(--gap-sm);
 }
 
 @container wallet-detail (max-width: #{$breakpoint-mobile-md}) {
-    .range_inline {
+    .filters_inline {
         display: none;
     }
 
-    .range_button {
+    .filters_button {
         display: inline-flex;
     }
 }

@@ -166,8 +166,8 @@ function fillFlowGaps(buckets: IWalletFlowBucket[], granularity: FlowGranularity
     return filled;
 }
 
-/** Stable id for the mobile y-axis range modal so re-opening replaces it in place. */
-const RANGE_MODAL_ID = 'wallet-flow-axis-range';
+/** Stable id for the mobile flow-filters modal so re-opening replaces it in place. */
+const FILTERS_MODAL_ID = 'wallet-flow-filters';
 
 /**
  * Parse a viewer-typed axis bound into a chart domain number. An empty field means
@@ -186,6 +186,56 @@ function parseAxisBound(raw: string): number | undefined {
     }
     const value = Number(trimmed);
     return Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * Props for {@link CounterpartyFilter}.
+ */
+interface ICounterpartyFilterProps {
+    /** The wallet's top counterparties, rendered as scoping options. */
+    counterparties: IWalletCounterparty[];
+    /** Address → friendly-label map so an option reads as the table's name. */
+    labels?: Record<string, string>;
+    /** Currently selected counterparty address; empty means all counterparties. */
+    value: string;
+    /** Disable the control while a fetch is in flight (live header placement only). */
+    disabled?: boolean;
+    /** Optional class forwarded to the Select wrapper (e.g. full-width in the modal). */
+    className?: string;
+    /** Notified with the newly chosen counterparty address (or '' for all). */
+    onChange: (value: string) => void;
+}
+
+/**
+ * The counterparty scoping dropdown, extracted so the live inline header placement
+ * and the mobile filters modal render the exact same option list and accessible name
+ * from one source. Purely controlled — the caller decides whether the value binds
+ * straight to the live filter (desktop) or to a modal draft (mobile, commit-on-Apply).
+ *
+ * @param props - {@link ICounterpartyFilterProps}.
+ * @returns The counterparty select, or nothing when the wallet has no counterparties.
+ */
+function CounterpartyFilter({ counterparties, labels, value, disabled, className, onChange }: ICounterpartyFilterProps) {
+    if (counterparties.length === 0) {
+        return null;
+    }
+    return (
+        <Select
+            variant="ghost"
+            className={className}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            disabled={disabled}
+            aria-label="Filter flow by counterparty"
+        >
+            <option value="">All counterparties</option>
+            {counterparties.map((option) => (
+                <option key={option.address} value={option.address}>
+                    {labels?.[option.address] ?? truncateAddress(option.address)}
+                </option>
+            ))}
+        </Select>
+    );
 }
 
 /**
@@ -248,42 +298,64 @@ function AxisRangeFields({ min, max, unit, onMinChange, onMaxChange }: IAxisRang
 }
 
 /**
- * Props for {@link AxisRangeDialog}.
+ * Props for {@link FlowFiltersDialog}.
  */
-interface IAxisRangeDialogProps {
+interface IFlowFiltersDialogProps {
+    /** Counterparty options rendered in the modal's scoping dropdown. */
+    counterparties: IWalletCounterparty[];
+    /** Address → friendly-label map shared with the counterparties table. */
+    labels?: Record<string, string>;
+    /** Counterparty address to seed the draft from; empty means all counterparties. */
+    initialCounterparty: string;
     /** Min-bound text to seed the draft from. */
     initialMin: string;
     /** Max-bound text to seed the draft from. */
     initialMax: string;
     /** Active denomination unit label for the field accessible names and hint. */
     unit: string;
-    /** Commit the edited bounds to the chart. */
-    onApply: (min: string, max: string) => void;
+    /** Commit the edited counterparty scope and bounds to the chart. */
+    onApply: (counterparty: string, min: string, max: string) => void;
     /** Dismiss the modal. */
     onClose: () => void;
 }
 
 /**
- * The mobile modal body for the y-axis range. It holds its own draft state because the
- * modal system snapshots content at open time — live parent-controlled inputs would
- * freeze — so the fields edit a local copy and push it up only on Apply. Clear empties
- * both bounds (back to auto-fit); Apply commits the draft and closes.
+ * The mobile modal body gathering every flow filter — counterparty scope plus the
+ * y-axis min/max — that the header row can't fit on a narrow container. It holds its
+ * own draft state because the modal system snapshots content at open time, so live
+ * parent-controlled inputs would freeze; the fields edit a local copy and push it up
+ * only on Apply. Committing the counterparty here rather than live also avoids a
+ * re-fetch on every intermediate pick. Clear resets to all-counterparties + auto-fit;
+ * Apply commits the draft and closes.
  *
- * @param props - {@link IAxisRangeDialogProps}.
- * @returns The modal body with the range fields and its actions.
+ * @param props - {@link IFlowFiltersDialogProps}.
+ * @returns The modal body with the counterparty and range fields and its actions.
  */
-function AxisRangeDialog({ initialMin, initialMax, unit, onApply, onClose }: IAxisRangeDialogProps) {
+function FlowFiltersDialog({ counterparties, labels, initialCounterparty, initialMin, initialMax, unit, onApply, onClose }: IFlowFiltersDialogProps) {
+    const [counterparty, setCounterparty] = useState(initialCounterparty);
     const [min, setMin] = useState(initialMin);
     const [max, setMax] = useState(initialMax);
     return (
-        <div className={styles.range_dialog}>
+        <div className={styles.filters_dialog}>
+            {counterparties.length > 0 && (
+                <label className={styles.filters_dialog_field}>
+                    <span className={styles.range_label}>Counterparty</span>
+                    <CounterpartyFilter
+                        counterparties={counterparties}
+                        labels={labels}
+                        value={counterparty}
+                        className={styles.filters_dialog_select}
+                        onChange={setCounterparty}
+                    />
+                </label>
+            )}
             <AxisRangeFields min={min} max={max} unit={unit} onMinChange={setMin} onMaxChange={setMax} />
             <p className="text-muted">Leave a field blank to auto-fit that edge. Values are in {unit}.</p>
-            <div className={styles.range_dialog_actions}>
-                <Button variant="ghost" size="sm" onClick={() => { setMin(''); setMax(''); }}>
+            <div className={styles.filters_dialog_actions}>
+                <Button variant="ghost" size="sm" onClick={() => { setCounterparty(''); setMin(''); setMax(''); }}>
                     Clear
                 </Button>
-                <Button variant="primary" size="sm" onClick={() => { onApply(min, max); onClose(); }}>
+                <Button variant="primary" size="sm" onClick={() => { onApply(counterparty, min, max); onClose(); }}>
                     Apply
                 </Button>
             </div>
@@ -409,26 +481,31 @@ export function WalletFlowChart({ address, flow, counterparties, labels }: IWall
     };
 
     /**
-     * Open the mobile modal that houses the y-axis range fields. On narrow containers
-     * the inline min/max inputs are hidden — they crowd the counterparty and toggle
-     * controls off the header row — so this button is the only way in. The modal seeds
-     * its draft from the current bounds and commits them on Apply.
+     * Open the mobile modal that houses every flow filter — counterparty scope and the
+     * y-axis min/max. On narrow containers the inline counterparty dropdown and min/max
+     * inputs are hidden — together they crowd the precision and denomination toggles off
+     * the header row — so this button is the only way in. The modal seeds its draft from
+     * the current selection and commits it on Apply.
      */
-    const openRangeModal = () => {
+    const openFiltersModal = () => {
         open({
-            id: RANGE_MODAL_ID,
-            title: 'Y-axis range',
+            id: FILTERS_MODAL_ID,
+            title: 'Flow filters',
             size: 'sm',
             content: (
-                <AxisRangeDialog
+                <FlowFiltersDialog
+                    counterparties={counterparties}
+                    labels={labels}
+                    initialCounterparty={counterparty}
                     initialMin={rangeMin}
                     initialMax={rangeMax}
                     unit={unit}
-                    onApply={(min, max) => {
+                    onApply={(nextCounterparty, min, max) => {
+                        setCounterparty(nextCounterparty);
                         setRangeMin(min);
                         setRangeMax(max);
                     }}
-                    onClose={() => close(RANGE_MODAL_ID)}
+                    onClose={() => close(FILTERS_MODAL_ID)}
                 />
             )
         });
@@ -436,22 +513,6 @@ export function WalletFlowChart({ address, flow, counterparties, labels }: IWall
 
     const actions = (
         <span className={styles.flow_actions}>
-            {counterparties.length > 0 && (
-                <Select
-                    variant="ghost"
-                    value={counterparty}
-                    onChange={(event) => setCounterparty(event.target.value)}
-                    disabled={loading}
-                    aria-label="Filter flow by counterparty"
-                >
-                    <option value="">All counterparties</option>
-                    {counterparties.map((option) => (
-                        <option key={option.address} value={option.address}>
-                            {labels?.[option.address] ?? truncateAddress(option.address)}
-                        </option>
-                    ))}
-                </Select>
-            )}
             <span className={styles.flow_toggle}>
                 {GRANULARITIES.map((option) => (
                     <Button
@@ -473,7 +534,14 @@ export function WalletFlowChart({ address, flow, counterparties, labels }: IWall
                     USDT
                 </Button>
             </span>
-            <span className={styles.range_inline}>
+            <span className={styles.filters_inline}>
+                <CounterpartyFilter
+                    counterparties={counterparties}
+                    labels={labels}
+                    value={counterparty}
+                    disabled={loading}
+                    onChange={setCounterparty}
+                />
                 <AxisRangeFields
                     min={rangeMin}
                     max={rangeMax}
@@ -482,9 +550,9 @@ export function WalletFlowChart({ address, flow, counterparties, labels }: IWall
                     onMaxChange={setRangeMax}
                 />
             </span>
-            <span className={styles.range_button}>
-                <Button variant="ghost" size="xs" onClick={openRangeModal} aria-label="Set Y-axis range">
-                    <SlidersHorizontal size={14} aria-hidden /> Range
+            <span className={styles.filters_button}>
+                <Button variant="ghost" size="xs" onClick={openFiltersModal} aria-label="Open flow filters">
+                    <SlidersHorizontal size={14} aria-hidden /> Filters
                 </Button>
             </span>
         </span>
