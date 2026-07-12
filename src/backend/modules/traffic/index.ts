@@ -28,6 +28,8 @@ export type {
 } from './services/traffic.service.js';
 export { GscService } from './services/gsc.service.js';
 export type { IGscStatus, IGscKeyword, IGscQueryDocument } from './services/gsc.service.js';
+export { IgnoredUsersService } from './services/ignored-users.service.js';
+export type { IIgnoredUserDocument } from './services/ignored-users.service.js';
 export { classifyUserAgent } from './services/bot-classifier.js';
 export type { BotClass } from './services/bot-classifier.js';
 export {

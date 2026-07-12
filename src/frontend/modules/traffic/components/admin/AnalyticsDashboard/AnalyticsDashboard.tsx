@@ -277,7 +277,11 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                             </h3>
                             <div className={styles.funnel}>
                                 {funnel.map(stage => (
-                                    <div key={stage.stage} className={styles.funnel_stage}>
+                                    <div
+                                        key={stage.stage}
+                                        className={styles.funnel_stage}
+                                        title="Counts are unique visitors (browser identities / tids), not accounts. One person logged in from two browsers or devices counts as two logged-in visitors but one account, so these stages nest under Visitors and never exceed it."
+                                    >
                                         <span className={styles.funnel_stage__label}>{stage.stage}</span>
                                         <div className={styles.funnel_stage__bar_wrapper}>
                                             <div

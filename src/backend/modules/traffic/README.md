@@ -13,7 +13,7 @@ Owns cookieless behavioral analytics: the ClickHouse `traffic_events` pipeline, 
 | Scheduled job | `gsc:fetch` (daily, `0 3 * * *`) |
 | ClickHouse table | `traffic_events` (migrations 010, 012, 013, 014, 015) |
 | Event types | `bootstrap` (cookieless first touch, incl. bots) · `page` (interactive navigation) |
-| Mongo collections | `module_user_gsc_queries` (GSC keyword cache — physical name preserved) · `module_user_gsc_daily_totals` (date-only GSC daily totals) |
+| Mongo collections | `module_user_gsc_queries` (GSC keyword cache — physical name preserved) · `module_user_gsc_daily_totals` (date-only GSC daily totals) · `module_traffic_ignored_users` (operator ignore list) |
 | Analytics key | cookieless `tronrelic_tid` (`candidate_uid`), independent of identity |
 | Bootstrap order | Inits/runs **before** `IdentityModule` so its `/api/admin/users/{traffic,analytics}` routers mount ahead of the accounts `/api/admin/users` catch-all |
 
@@ -28,7 +28,8 @@ Physical storage names are unchanged from when this code lived under the user mo
 | Path | Responsibility |
 |------|----------------|
 | `TrafficModule.ts` | Two-phase lifecycle; constructs services, mounts the admin router, registers `gsc:fetch` |
-| `services/traffic.service.ts` | ClickHouse `traffic_events` writes + admin aggregate reads; `buildTrafficEvent`, `ITrafficEvent` |
+| `services/traffic.service.ts` | ClickHouse `traffic_events` writes + admin aggregate reads; `buildTrafficEvent`, `ITrafficEvent`. Also owns the always-on ignore-list exclusion: `setIgnoredUserIds` caches the id set and `rangeParams` (plus `getLiveVisitorCount`) appends the whole-person `candidate_uid NOT IN (…)` subquery |
+| `services/ignored-users.service.ts` | `IgnoredUsersService` — Mongo-backed operator ignore list (`module_traffic_ignored_users`); persists id + denormalized email/name, exposes `list`/`getIds`/`add`/`remove`. Persistence only; the query-time filtering is TrafficService's |
 | `services/gsc.service.ts` | Google Search Console keyword fetch/store (`module_user_gsc_queries`) plus date-only daily totals (`module_user_gsc_daily_totals`) — GSC drops anonymized queries from keyword rows, so chart totals come from the date-only fetch |
 | `services/bot-classifier.ts` | Request → `BotClass` (powers `traffic_events.bot_class`). `classifyTrafficRequest` runs scanner heuristics first — probe paths (`/.env`, encoded traversal) and spoofed search-engine `Referer` with no `Sec-Fetch-Site` — then falls through to the UA-only `classifyUserAgent`; scanners fake browser UAs, so UA-only classification cannot catch them |
 | `services/geo.service.ts` | IP → country, referrer parsing, device derivation, `getClientIP`; defines `DeviceCategory` / `ScreenSizeCategory` |
@@ -59,6 +60,7 @@ Canonical definitions every dashboard, query, and AI tool must conform to. Metri
 | New accounts | Distinct tids in the window attributed to accounts *created* during the window (Better Auth `createdAt`, resolved through the identity module's `'accounts'` service). Creation date is ground truth — a first-login-event proxy would re-mint long-standing accounts as "new" once their earliest rows roll off the table's 18-month TTL. Counted in visitor units so the funnel stages nest. |
 | Bot filter (`bots=exclude`) | Excludes rows classified as bots; NULL (unclassified) rows are kept — "exclude known bots", not "humans only". Because a visitor must have a `page` event, cookieless non-JS bots are already absent from visitor counts regardless of this filter; its residual effect on visitor counts is limited to JavaScript-running bots the classifier caught. |
 | High-volume source (annotation) | A `subnet_hash` whose in-window request count exceeds `HIGH_VOLUME_SUBNET_MIN_REQUESTS`, surfaced by `getHighVolumeSubnets` (`/analytics/flagged-subnets`) and flagged in the Visitors-tab Source column. An operator hint only — **never** excluded from any count, because legitimate shared egress (offices, VPNs, universities, mobile carriers) also concentrates real visitors behind one network. Not bot-filtered: the flag is about raw source volume, not a `bot_class` guess. |
+| Ignored account (always-on) | A Better Auth account on the operator ignore list (`module_traffic_ignored_users`). Excluded from **every** read, unconditionally — no toggle. Whole-person: the exclusion is `candidate_uid NOT IN (SELECT candidate_uid FROM traffic_events WHERE user_id IN …)`, an unwindowed subquery, so every tid that *ever* logged in as an ignored account drops out entirely — including that tid's anonymous, pre-login rows — not just its logged-in rows. Read-time filter only: rows are always recorded and retained, so removing an account restores its full history to every stat immediately. Applied via `TrafficService.rangeParams` (the 18-read chokepoint) plus `getLiveVisitorCount`; the bot-focused Crawlers-tab aggregates and the source-volume `flagged-subnets` read are not filtered (no meaningful registered-user signal there). |
 
 **Attribution doctrine: first-touch.** The `tronrelic_ref` cookie is never overwritten and sources/channels attribute from the bootstrap row, so a visitor who arrives direct and returns later via a campaign link credits "direct" permanently. This is a deliberate choice, not an accident; last-touch or per-session attribution would require sessionized re-attribution and is a future decision, not a bug fix.
 
@@ -79,6 +81,8 @@ The `/api/admin/users/analytics/*` router (also `requireAdmin`) serves the `/sys
 
 Per-page clickstream reads live on the same router: `tid-activity` and `user-activity` summarize `page` events by anonymous tid (`user_id IS NULL`) and registered account (`user_id IS NOT NULL`) respectively, and `page-hits?subject=tid|user&id=` returns one subject's ordered page hits — "every page they hit".
 
+The ignore list is managed on the same router: `GET/POST /ignored-users` and `DELETE /ignored-users/:userId` read and edit `module_traffic_ignored_users` (each mutation refreshes `TrafficService`'s cached id set so the always-on exclusion takes effect at once), and `account-search?q=` resolves accounts to add — an exact Better Auth id via the `'accounts'` service's `getAccount`, otherwise an email/name substring via `listAccounts`. See the "Ignored account" row in the Metrics Contract for the exclusion semantics.
+
 Two public ingestion endpoints (no auth) write rows; both resolve the tid from the unsigned `tronrelic_tid` cookie and attribute to the Better Auth account when one is present:
 
 - `POST /api/user/bootstrap` — one first-touch `bootstrap` row. Called server-to-server by the Next.js middleware, so it captures cookieless bots and crawlers; this is the noise that powers the "Anonymous First Touches" table.
@@ -88,7 +92,7 @@ When ClickHouse is unavailable every read returns empty with `clickhouseEnabled:
 
 ## Lifecycle
 
-**`init()`** runs `initGeoIP()`, then constructs `GscService` (creates indexes) and `TrafficService` (no-ops without ClickHouse), then builds the traffic + bootstrap controllers. **`run()`** registers the `Traffic` menu item under the System container, mounts the traffic, analytics, and bootstrap routers — the `/api/admin/users/*` routers ahead of the identity module's accounts `/api/admin/users` catch-all — and registers the daily `gsc:fetch` job.
+**`init()`** runs `initGeoIP()`, then constructs `GscService` (creates indexes) and `TrafficService` (no-ops without ClickHouse), then `IgnoredUsersService` (creates indexes) and seeds `TrafficService`'s ignore cache from it so the exclusion is live from the first read, then builds the traffic + bootstrap controllers. **`run()`** registers the `Traffic` menu item under the System container, mounts the traffic, analytics, and bootstrap routers — the `/api/admin/users/*` routers ahead of the identity module's accounts `/api/admin/users` catch-all — and registers the daily `gsc:fetch` job.
 
 ## Related
 

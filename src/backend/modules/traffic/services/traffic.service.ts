@@ -387,6 +387,14 @@ export interface IOverviewKpis {
     bounceRate: number;
 }
 
+/** One landing path and its interactive hit count within a trend bucket. */
+export interface IOverviewTrendPath {
+    /** The `page`-event path (URL) hit. */
+    path: string;
+    /** Interactive `page` events on this path in the bucket. */
+    hits: number;
+}
+
 /** One time bucket of the overview trend series. */
 export interface IOverviewTrendPoint {
     /** Bucket start — ISO-8601 UTC for hour buckets, `YYYY-MM-DD` for days. */
@@ -395,6 +403,13 @@ export interface IOverviewTrendPoint {
     visitors: number;
     /** Interactive `page` events in the bucket. */
     pageviews: number;
+    /**
+     * The bucket's most-hit paths (top 3 by `page`-event count, descending) so
+     * the chart tooltip can answer "what did they hit?" without a drill-down
+     * request. Empty for zero-traffic buckets. Page-hit counts, not distinct
+     * visitors — a path is the URL a `page` beacon reported.
+     */
+    topPaths: IOverviewTrendPath[];
 }
 
 /**
@@ -612,10 +627,54 @@ const HIGH_VOLUME_SUBNET_MIN_REQUESTS = 500;
 export class TrafficService {
     private static instance: TrafficService | null = null;
 
+    /**
+     * Cached Better Auth ids of registered accounts to exclude from every read
+     * (the operator ignore list). Held as a plain array so the hot query path
+     * ({@link rangeParams}) stays synchronous — the authoritative list lives in
+     * `IgnoredUsersService` (Mongo) and is pushed here at bootstrap and after
+     * each mutation via {@link setIgnoredUserIds}. Empty means "exclude nobody".
+     */
+    private ignoredUserIds: string[] = [];
+
     private constructor(
         private readonly clickhouse: IClickHouseService | undefined,
         private readonly logger: ISystemLogService
     ) {}
+
+    /**
+     * Replace the cached ignore-list ids. Called by the traffic module at
+     * bootstrap and by the admin controller after an add/remove, so the
+     * always-on exclusion reflects the persisted list without a per-query Mongo
+     * read. Idempotent and cheap; the ids feed {@link ignoredUsersExclusion}.
+     *
+     * @param ids - The full set of Better Auth account ids to exclude.
+     */
+    public setIgnoredUserIds(ids: string[]): void {
+        this.ignoredUserIds = ids;
+    }
+
+    /**
+     * The always-on "whole person" exclusion for the ignore list. Excludes every
+     * row whose tid ever logged in as an ignored account — including that tid's
+     * anonymous, pre-login rows — so an ignored operator disappears from visitor
+     * counts entirely, not just from their logged-in rows. The subquery is
+     * deliberately unwindowed: a tid that logged in as an ignored account at any
+     * point is excluded across the whole read, regardless of when that login
+     * fell. Returns an empty fragment when nobody is ignored (an `IN ()` would be
+     * invalid SQL), so the common path adds no cost.
+     *
+     * @returns The ` AND candidate_uid NOT IN (…)` fragment and its bound param,
+     *   ready to append to any `traffic_events` WHERE clause.
+     */
+    private ignoredUsersExclusion(): { fragment: string; params: Record<string, unknown> } {
+        if (this.ignoredUserIds.length === 0) {
+            return { fragment: '', params: {} };
+        }
+        return {
+            fragment: ` AND candidate_uid NOT IN (SELECT candidate_uid FROM ${TABLE_NAME} WHERE user_id IN ({ignoredUserIds:Array(String)}))`,
+            params: { ignoredUserIds: this.ignoredUserIds }
+        };
+    }
 
     /**
      * Initialize the singleton with dependencies.
@@ -1000,6 +1059,14 @@ export class TrafficService {
             params.until = formatClickHouseDateTime64Utc(range.until);
             clause += ' AND timestamp <= parseDateTimeBestEffort({until:String})';
         }
+        // The ignore-list exclusion rides on every read that funnels through
+        // rangeParams — the whole analytics/visitors surface — so ignored
+        // accounts vanish from all of it in one place. The membership subquery
+        // in pageVisitorMembership inherits it too: it reuses this clause, so a
+        // tid excluded here cannot re-qualify as a visitor there.
+        const excluded = this.ignoredUsersExclusion();
+        clause += excluded.fragment;
+        Object.assign(params, excluded.params);
         return { clause, params };
     }
 
@@ -1240,6 +1307,16 @@ export class TrafficService {
      * Geographic distribution (ISO-3166 alpha-2). Null country excluded.
      * Distinct visitors lead; raw event counts ride along.
      *
+     * Scoped to `page` rows so the panel only surfaces countries that produced
+     * a real visitor (a client that ran JavaScript). Without the restriction,
+     * grouping runs over `bootstrap` first-touches too — cookieless bots,
+     * crawlers, unfurlers, and probes that carry an IP-derived country but
+     * never emit a `page` event — so a bot-only country forms a group whose
+     * `uniqExactIf(candidate_uid, event_type = 'page')` visitor measure is 0,
+     * cluttering the visitor-sorted table with 0-visitor rows. Every `page`
+     * row carries a country ({@link buildTrafficEvent} sets it identically for
+     * both event types), so the restriction loses no real visitor.
+     *
      * @param range - Inclusive date window.
      * @param limit - Max rows.
      * @param excludeBots - Restrict to human-classified rows (NULL kept).
@@ -1252,7 +1329,7 @@ export class TrafficService {
         const sql = `
             SELECT country, uniqExactIf(candidate_uid, event_type = 'page') AS visitors, count() AS count
             FROM ${TABLE_NAME}
-            WHERE ${clause}${botFilter} AND country IS NOT NULL
+            WHERE ${clause}${botFilter} AND country IS NOT NULL AND event_type = 'page'
             GROUP BY country
             ORDER BY visitors DESC, count DESC
             LIMIT {limit:UInt32}
@@ -1270,6 +1347,13 @@ export class TrafficService {
      * Device-category breakdown. Distinct visitors lead; raw event counts
      * ride along.
      *
+     * Scoped to `page` rows for the same reason as {@link getGeoDistribution}:
+     * grouping over `bootstrap` first-touches surfaces device categories that
+     * exist only for cookieless bots (which still carry a UA-derived device but
+     * never run JavaScript), producing 0-visitor rows in this visitor-sorted
+     * panel. Every `page` row carries a device, so the restriction loses no
+     * real visitor.
+     *
      * @param range - Inclusive date window.
      * @param excludeBots - Restrict to human-classified rows (NULL kept).
      * @returns Device buckets, by visitors descending.
@@ -1281,7 +1365,7 @@ export class TrafficService {
         const sql = `
             SELECT device, uniqExactIf(candidate_uid, event_type = 'page') AS visitors, count() AS count
             FROM ${TABLE_NAME}
-            WHERE ${clause}${botFilter}
+            WHERE ${clause}${botFilter} AND event_type = 'page'
             GROUP BY device
             ORDER BY visitors DESC, count DESC
         `;
@@ -1648,12 +1732,25 @@ export class TrafficService {
             GROUP BY bucket
             ORDER BY bucket ASC
         `;
+        // Top 3 paths per bucket for the tooltip. `LIMIT 3 BY bucket` keeps the
+        // three highest-hit paths of each bucket server-side, so the payload is
+        // bounded (3 × bucket count) regardless of how many distinct URLs a
+        // bucket saw — no client-side trimming of an unbounded path list.
+        const pathsSql = `
+            SELECT ${bucketExpr} AS bucket, path, count() AS hits
+            FROM ${TABLE_NAME}
+            WHERE ${clause}${botFilter} AND event_type = 'page'
+            GROUP BY bucket, path
+            ORDER BY bucket ASC, hits DESC, path ASC
+            LIMIT 3 BY bucket
+        `;
 
         try {
-            const [current, previous, seriesRows] = await Promise.all([
+            const [current, previous, seriesRows, pathRows] = await Promise.all([
                 fetchKpis(currentRange),
                 fetchKpis(previousRange),
-                this.clickhouse.query<{ bucket: string; visitors: string | number; pageviews: string | number }>(seriesSql, params)
+                this.clickhouse.query<{ bucket: string; visitors: string | number; pageviews: string | number }>(seriesSql, params),
+                this.clickhouse.query<{ bucket: string; path: string; hits: string | number }>(pathsSql, params)
             ]);
 
             // Zero-fill every bucket in the window, then overlay the rows.
@@ -1669,7 +1766,7 @@ export class TrafficService {
             const buckets = new Map<string, IOverviewTrendPoint>();
             for (let ms = floorUtc; ms <= until.getTime(); ms += stepMs) {
                 const key = keyFor(ms);
-                buckets.set(key, { bucket: key, visitors: 0, pageviews: 0 });
+                buckets.set(key, { bucket: key, visitors: 0, pageviews: 0, topPaths: [] });
             }
             for (const row of seriesRows) {
                 const key = granularity === 'hour'
@@ -1679,6 +1776,18 @@ export class TrafficService {
                 if (point) {
                     point.visitors = Number(row.visitors);
                     point.pageviews = Number(row.pageviews);
+                }
+            }
+            // Overlay the per-bucket top paths. Rows arrive pre-sorted
+            // (hits desc) and appending preserves that order, so each point's
+            // topPaths stays ranked.
+            for (const row of pathRows) {
+                const key = granularity === 'hour'
+                    ? clickHouseDateToIso(String(row.bucket))
+                    : String(row.bucket);
+                const point = buckets.get(key);
+                if (point) {
+                    point.topPaths.push({ path: String(row.path), hits: Number(row.hits) });
                 }
             }
 
@@ -1699,13 +1808,17 @@ export class TrafficService {
     async getLiveVisitorCount(excludeBots = false): Promise<number> {
         if (!this.clickhouse) return 0;
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
+        // "Online now" builds its own 5-minute window rather than going through
+        // rangeParams, so apply the ignore-list exclusion directly — otherwise
+        // an ignored operator refreshing the dashboard shows up in the counter.
+        const excluded = this.ignoredUsersExclusion();
         const sql = `
             SELECT uniqExactIf(candidate_uid, event_type = 'page') AS visitors
             FROM ${TABLE_NAME}
-            WHERE timestamp > now() - INTERVAL 5 MINUTE${botFilter}
+            WHERE timestamp > now() - INTERVAL 5 MINUTE${botFilter}${excluded.fragment}
         `;
         try {
-            const rows = await this.clickhouse.query<{ visitors: string | number }>(sql, {});
+            const rows = await this.clickhouse.query<{ visitors: string | number }>(sql, { ...excluded.params });
             return Number(rows[0]?.visitors ?? 0);
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read live visitor count');

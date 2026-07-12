@@ -60,6 +60,11 @@ export function createAdminAnalyticsRouter(controller: TrafficController): Route
     router.get('/engagement', controller.getEngagementMetrics.bind(controller));
     router.get('/overview', controller.getOverview.bind(controller));
 
+    router.get('/ignored-users', controller.getIgnoredUsers.bind(controller));
+    router.post('/ignored-users', controller.addIgnoredUser.bind(controller));
+    router.delete('/ignored-users/:userId', controller.removeIgnoredUser.bind(controller));
+    router.get('/account-search', controller.searchAccounts.bind(controller));
+
     router.get('/gsc/status', controller.getGscStatus.bind(controller));
     router.post('/gsc/credentials', controller.saveGscCredentials.bind(controller));
     router.delete('/gsc/credentials', controller.removeGscCredentials.bind(controller));

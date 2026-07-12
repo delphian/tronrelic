@@ -40,7 +40,7 @@ const HITS_LIMIT = 200;
  * The resolved lookback window passed to the API client: either a preset
  * period or a custom date range, derived from the page-level controls.
  */
-interface IActivityWindow {
+export interface IActivityWindow {
     period?: VisitorPeriod;
     customRange?: ICustomDateRange;
 }
@@ -128,7 +128,7 @@ function PageHitsRow({ subject, id, window }: IPageHitsRowProps) {
     );
 }
 
-interface IPageActivityTableProps {
+export interface IPageActivityTableProps {
     subject: PageActivitySubject;
     title: string;
     description: string;
@@ -140,11 +140,14 @@ interface IPageActivityTableProps {
 
 /**
  * One subject's page-activity table with a per-row clickstream drill-down.
+ * Exported so the combined Visitors explorer can render a single subject at a
+ * time behind its subject selector, rather than the two stacked tables the
+ * {@link PageActivity} wrapper renders.
  *
  * @param props - Table configuration and the global window.
  * @returns The rendered activity section.
  */
-function PageActivityTable({ subject, title, description, subjectHeading, window }: IPageActivityTableProps) {
+export function PageActivityTable({ subject, title, description, subjectHeading, window }: IPageActivityTableProps) {
     const [rows, setRows] = useState<IPageActivityRow[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);

@@ -595,13 +595,16 @@ export async function adminGetConversionFunnel(period: AnalyticsPeriod = '30d',
         params
     });
     // Backend returns the binary funnel { distinctVisitors, converted,
-    // conversionRate (0-1), newAccountVisitors }. Render as three stages:
-    // "Logged In (any)" includes returning account holders (login
-    // attribution); "New Accounts" isolates the acquisition signal —
-    // visitors attributed to accounts *created* during the window (Better
-    // Auth createdAt, composed server-side). All three stages count
-    // visitors (tids), so each stage is a subset of the one above and
-    // drop-offs are never negative.
+    // conversionRate (0-1), newAccountVisitors }. Render as three stages,
+    // every count in visitor (tid) units — never account units — so each
+    // stage is a strict subset of the one above and drop-offs are never
+    // negative. This is why the labels say "Visitors", not "Accounts": one
+    // account logged in from two browsers/devices is two logged-in tids but
+    // one account, so an account-worded label would mislead (and would not
+    // nest under the tid-based Visitors stage). "Logged-In Visitors" includes
+    // returning account holders (login attribution); "New-Account Visitors"
+    // isolates the acquisition signal — tids attributed to accounts *created*
+    // during the window (Better Auth createdAt, composed server-side).
     const d = response.data as { distinctVisitors: number; converted: number; conversionRate: number; newAccountVisitors?: number };
     const visitors = d.distinctVisitors ?? 0;
     const converted = d.converted ?? 0;
@@ -611,8 +614,8 @@ export async function adminGetConversionFunnel(period: AnalyticsPeriod = '30d',
     return {
         stages: [
             { stage: 'Visitors', count: visitors, percentage: 100, dropOff: 0 },
-            { stage: 'Logged In (any account)', count: converted, percentage: convPct, dropOff: 100 - convPct },
-            { stage: 'New Accounts (created this window)', count: newAccounts, percentage: newAccountsPct, dropOff: convPct - newAccountsPct }
+            { stage: 'Logged-In Visitors', count: converted, percentage: convPct, dropOff: 100 - convPct },
+            { stage: 'New-Account Visitors', count: newAccounts, percentage: newAccountsPct, dropOff: convPct - newAccountsPct }
         ]
     };
 }
@@ -668,12 +671,22 @@ export interface IOverviewKpis {
     bounceRate: number;
 }
 
+/** One landing path and its interactive hit count within a trend bucket. */
+export interface IOverviewTrendPath {
+    /** The `page`-event path (URL) hit. */
+    path: string;
+    /** Interactive `page` events on this path in the bucket. */
+    hits: number;
+}
+
 /** One time bucket of the overview trend series. */
 export interface IOverviewTrendPoint {
     /** Bucket start — ISO-8601 UTC for hours, `YYYY-MM-DD` for days. */
     bucket: string;
     visitors: number;
     pageviews: number;
+    /** Top 3 most-hit paths in the bucket (hits desc); [] when zero-traffic. */
+    topPaths: IOverviewTrendPath[];
 }
 
 /** Unified dashboard headline: KPIs + previous window + zero-filled series. */
@@ -763,6 +776,70 @@ export interface IGscStatus {
  * Get GSC configuration status (admin endpoint).
  * @returns GSC configuration status
  */
+/** One registered account on the always-on analytics ignore list. */
+export interface IIgnoredUser {
+    /** Better Auth user id — the exclusion key. */
+    userId: string;
+    /** Account email at add time, for display; null when unresolved. */
+    email: string | null;
+    /** Account display name at add time; null when unset/unresolved. */
+    name: string | null;
+    /** ISO timestamp the account was ignored. */
+    addedAt: string;
+}
+
+/** An account match returned by the ignore-list add search. */
+export interface IAccountMatch {
+    /** Better Auth user id. */
+    id: string;
+    /** Account email. */
+    email: string;
+    /** Display name, or null. */
+    name: string | null;
+}
+
+/**
+ * List the registered accounts currently excluded from every stat.
+ * @returns The ignore list, newest addition first.
+ */
+export async function adminGetIgnoredUsers(): Promise<IIgnoredUser[]> {
+    const response = await apiClient.get('/admin/users/analytics/ignored-users');
+    return (response.data as { users?: IIgnoredUser[] }).users ?? [];
+}
+
+/**
+ * Add an account to the ignore list. The exclusion applies to all stats
+ * immediately and retroactively.
+ * @param userId - Better Auth user id to ignore.
+ * @returns The updated ignore list.
+ */
+export async function adminAddIgnoredUser(userId: string): Promise<IIgnoredUser[]> {
+    const response = await apiClient.post('/admin/users/analytics/ignored-users', { userId });
+    return (response.data as { users?: IIgnoredUser[] }).users ?? [];
+}
+
+/**
+ * Remove an account from the ignore list; its full history returns to every
+ * stat at once (rows were only filtered, never deleted).
+ * @param userId - Better Auth user id to stop ignoring.
+ * @returns The updated ignore list.
+ */
+export async function adminRemoveIgnoredUser(userId: string): Promise<IIgnoredUser[]> {
+    const response = await apiClient.delete(`/admin/users/analytics/ignored-users/${encodeURIComponent(userId)}`);
+    return (response.data as { users?: IIgnoredUser[] }).users ?? [];
+}
+
+/**
+ * Search accounts to add to the ignore list — by email/name substring, or an
+ * exact Better Auth user id.
+ * @param q - The search term.
+ * @returns Up to ten matching accounts.
+ */
+export async function adminSearchAccounts(q: string): Promise<IAccountMatch[]> {
+    const response = await apiClient.get('/admin/users/analytics/account-search', { params: { q } });
+    return (response.data as { accounts?: IAccountMatch[] }).accounts ?? [];
+}
+
 export async function adminGetGscStatus(): Promise<IGscStatus> {
     const response = await apiClient.get('/admin/users/analytics/gsc/status');
     return response.data as IGscStatus;
