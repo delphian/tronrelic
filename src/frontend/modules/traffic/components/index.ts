@@ -7,8 +7,10 @@
 export {
     VisitorAnalytics,
     PageActivity,
+    VisitorsExplorer,
     AnalyticsDashboard,
     GscSettings,
+    IgnoredUsers,
     GscKeywords,
     TrafficDashboard,
     CrawlerDashboard,
@@ -16,3 +18,4 @@ export {
     PeriodPicker,
     toDateInputValue
 } from './admin';
+export type { VisitorsView } from './admin';

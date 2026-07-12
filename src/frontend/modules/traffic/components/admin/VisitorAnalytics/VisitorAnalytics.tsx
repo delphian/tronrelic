@@ -152,7 +152,7 @@ export function VisitorAnalytics({ period, customRange, includeBots }: IVisitorA
                     {includeBots
                         ? 'JavaScript-running bots the classifier caught are included; referrers are client-supplied and often spoofed.'
                         : 'Showing human-classified visitors only — switch the page filter to "Include bots" to also see JavaScript-running crawlers.'}
-                    {' '}Per-page activity for cookied and registered visitors is on the Pages tab.
+                    {' '}Switch to the Anonymous or Registered view for per-page activity by cookied and signed-in visitors.
                 </p>
 
                 {flaggedSubnets.size > 0 && (

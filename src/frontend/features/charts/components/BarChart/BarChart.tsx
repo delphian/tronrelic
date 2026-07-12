@@ -83,6 +83,15 @@ interface BarChartProps {
      * so locale-dependent time output is hydration-safe here.
      */
     tooltipDateFormatter?: (value: Date) => string;
+    /**
+     * Optional renderer for a hovered bar's `metadata`, appended below the
+     * series rows in the tooltip. Injected (not hardcoded) so the chart stays
+     * generic: a caller that attaches domain metadata to its data points —
+     * e.g. the analytics overview attaching each bucket's top paths — owns how
+     * that metadata reads, while charts that attach none render an unchanged
+     * tooltip. Called once per hovered series-point that carries metadata.
+     */
+    tooltipMetadataFormatter?: (metadata: Record<string, any>) => ReactNode;
     /** Additional CSS class names */
     className?: string;
     /** Message to show when no data is available */
@@ -295,6 +304,7 @@ export function BarChart({
     yAxisFormatter = value => value.toLocaleString(),
     xAxisFormatter = value => value.toLocaleDateString(),
     tooltipDateFormatter = defaultTooltipDateFormatter,
+    tooltipMetadataFormatter,
     className,
     emptyLabel = 'Not enough data to render a chart.',
     yAxisMin: fixedYMin,
@@ -854,6 +864,11 @@ export function BarChart({
                             </span>
                             <span>{yAxisFormatter(item.value)}</span>
                         </div>
+                    ))}
+                    {tooltipMetadataFormatter && tooltip.items.map(item => (
+                        item.metadata
+                            ? <div key={`${item.id}-meta`}>{tooltipMetadataFormatter(item.metadata)}</div>
+                            : null
                     ))}
                 </div>
             )}

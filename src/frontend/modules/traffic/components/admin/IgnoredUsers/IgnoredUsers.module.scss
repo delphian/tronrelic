@@ -1,0 +1,160 @@
+/**
+ * IgnoredUsers settings panel styles.
+ *
+ * A search box with a results dropdown for adding accounts, above the list of
+ * currently-ignored accounts. Scoped to this component; references design
+ * tokens only.
+ */
+
+.container {
+    container-type: inline-size;
+    container-name: ignored-users;
+}
+
+.error {
+    color: var(--color-danger-text);
+    background: var(--color-danger-alpha-10);
+    padding: var(--padding-xs) var(--padding-sm);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-body-sm);
+}
+
+/* Search box + dropdown are a positioning context for the results list. */
+.search {
+    position: relative;
+}
+
+.search_input {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.search_icon {
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+}
+
+.search_field {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Results dropdown floats over the list below so it does not shift layout. */
+.results {
+    position: absolute;
+    z-index: var(--z-index-dropdown);
+    left: 0;
+    right: 0;
+    margin: var(--gap-2xs) 0 0;
+    padding: 0;
+    list-style: none;
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+}
+
+.results_note {
+    padding: var(--padding-xs) var(--padding-sm);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+.result {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--gap-2xs);
+    width: 100%;
+    padding: var(--padding-xs) var(--padding-sm);
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.result:hover:not(:disabled) {
+    background: var(--color-surface-muted);
+}
+
+.result:disabled {
+    cursor: default;
+    opacity: var(--opacity-60);
+}
+
+.result_email {
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+}
+
+.result_name {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.result_already {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-caption);
+}
+
+.empty {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+/* Current ignore list. */
+.list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    padding: var(--padding-xs) var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+}
+
+.item_icon {
+    display: inline-flex;
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+}
+
+.item_main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.item_email {
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.item_name {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.item_added {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-caption);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}

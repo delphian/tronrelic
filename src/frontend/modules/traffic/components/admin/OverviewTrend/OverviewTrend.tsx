@@ -6,9 +6,16 @@
  * Duration) with period-over-period deltas, above a single large time-series
  * whose metric switches when a clickable KPI is selected.
  *
+ * The series renders as a bar chart, not a line: each bucket is a distinct
+ * count over a discrete interval, so a connecting line would imply
+ * interpolation between buckets and invite readers to sum the trend — but a
+ * per-bucket unique-visitor count is not additive across buckets (a visitor
+ * active in three hours counts once in the headline yet once per hourly bar).
+ * Bars encode "this bucket had N" without suggesting cross-axis totals.
+ *
  * Buckets are hourly for windows ≤ 48h and daily otherwise (decided
- * server-side), zero-filled so quiet periods read as flat lines rather than
- * missing segments. Bounce Rate and Visit Duration depend on session events
+ * server-side), zero-filled so quiet periods read as empty (zero-height)
+ * bars rather than missing bars. Bounce Rate and Visit Duration depend on session events
  * that are not yet emitted (Phase D) — until then they render as "—" with an
  * annotation instead of false zeros.
  */
@@ -17,11 +24,11 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react';
-import { LineChart } from '../../../../../features/charts/components/LineChart';
-import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
+import { BarChart } from '../../../../../features/charts/components/BarChart';
+import type { BarChartSeries } from '../../../../../features/charts/components/BarChart';
 import { Card } from '../../../../../components/ui/Card';
 import { adminGetOverviewTrend } from '../../../api';
-import type { AnalyticsPeriod, ICustomDateRange, IOverviewTrend } from '../../../api';
+import type { AnalyticsPeriod, ICustomDateRange, IOverviewTrend, IOverviewTrendPath } from '../../../api';
 import styles from './OverviewTrend.module.scss';
 
 /** Chart-switchable metrics. */
@@ -137,7 +144,7 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
         return () => { active = false; };
     }, [period, customRange, includeBots]);
 
-    const series: ChartSeries[] = useMemo(() => {
+    const series: BarChartSeries[] = useMemo(() => {
         if (!trend || trend.series.length === 0) return [];
         return [{
             id: metric,
@@ -145,8 +152,11 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
             color: metric === 'visitors'
                 ? resolveCSSColor('--color-primary', '#4b8cff')
                 : resolveCSSColor('--color-success', '#57d48c'),
-            fill: true,
-            data: trend.series.map(p => ({ date: p.bucket, value: p[metric] }))
+            // Carry each bucket's top paths as point metadata so the shared
+            // BarChart tooltip can surface "what did they hit?" via our
+            // renderer. The paths are page-hit counts and identical for both
+            // metric modes (a bucket's URLs don't change with the y-measure).
+            data: trend.series.map(p => ({ date: p.bucket, value: p[metric], metadata: { topPaths: p.topPaths } }))
         }];
     }, [trend, metric]);
 
@@ -162,6 +172,31 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
     const viewsPerVisit = current.visitors > 0 ? current.pageviews / current.visitors : 0;
     const prevViewsPerVisit = previous.visitors > 0 ? previous.pageviews / previous.visitors : 0;
     const numberFormatter = new Intl.NumberFormat();
+
+    /**
+     * Render a hovered bucket's most-hit paths inside the chart tooltip.
+     * Surfaces "what did they hit?" in place so an operator reading the trend
+     * need not cross-reference the landing-pages panel for the same window.
+     *
+     * @param metadata - The hovered bar's point metadata; its `topPaths` is the
+     *   server-ranked path list the series attached for this bucket.
+     * @returns The ranked path block, or null for a bucket that recorded no hits.
+     */
+    const renderTooltipPaths = (metadata: Record<string, any>): React.ReactNode => {
+        const paths = (metadata?.topPaths ?? []) as IOverviewTrendPath[];
+        if (paths.length === 0) return null;
+        return (
+            <div className={styles.tooltip_paths}>
+                <span className={styles.tooltip_paths__heading}>Top pages</span>
+                {paths.map(p => (
+                    <div key={p.path} className={styles.tooltip_paths__row}>
+                        <span className={styles.tooltip_paths__path}>{p.path}</span>
+                        <span className={styles.tooltip_paths__hits}>{numberFormatter.format(p.hits)}</span>
+                    </div>
+                ))}
+            </div>
+        );
+    };
 
     return (
         <Card padding="md" className={isFetching ? `${styles.container} ${styles.container_fetching}` : styles.container} aria-busy={isFetching}>
@@ -234,11 +269,12 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
                 </div>
             </div>
 
-            <LineChart
+            <BarChart
                 series={series}
                 height={280}
                 yAxisMin={0}
                 yAxisFormatter={(v) => numberFormatter.format(Math.round(v))}
+                tooltipMetadataFormatter={renderTooltipPaths}
                 emptyLabel="No traffic recorded in this period."
             />
             <p className={styles.footnote}>

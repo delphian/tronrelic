@@ -120,6 +120,53 @@
     color: var(--color-danger);
 }
 
+/*
+ * Top-paths block appended to the chart tooltip. Rendered inside the shared
+ * BarChart tooltip via the injected metadata formatter; a top border separates
+ * it from the series value row above. The BarChart tooltip is a bounded-width
+ * flex column, so the path truncates via flex (min-width:0) rather than a
+ * fixed max-width.
+ */
+.tooltip_paths {
+    margin-top: var(--gap-2xs);
+    padding-top: var(--gap-2xs);
+    border-top: var(--border-width-thin) solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.tooltip_paths__heading {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+}
+
+.tooltip_paths__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+    font-size: var(--font-size-caption);
+}
+
+/* Long URLs truncate within the bounded tooltip rather than widening it. */
+.tooltip_paths__path {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-text);
+}
+
+.tooltip_paths__hits {
+    flex: 0 0 auto;
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
 /* Visually hidden text for screen readers on delta direction. */
 .sr_only {
     position: absolute;

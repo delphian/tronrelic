@@ -26,6 +26,11 @@ export {
     adminGetOverviewTrend,
     adminGetLiveVisitors,
     adminGetFlaggedSubnets,
+    // Ignore-list functions
+    adminGetIgnoredUsers,
+    adminAddIgnoredUser,
+    adminRemoveIgnoredUser,
+    adminSearchAccounts,
     // Google Search Console functions
     adminGetGscStatus,
     adminSaveGscCredentials,
@@ -62,8 +67,11 @@ export type {
     IRetentionEntry,
     IAnalyticsOverview,
     IOverviewKpis,
+    IOverviewTrendPath,
     IOverviewTrendPoint,
     IOverviewTrend,
+    IIgnoredUser,
+    IAccountMatch,
     IGscStatus,
     IGscKeyword,
     IGscKeywordsResult,

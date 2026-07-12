@@ -8,8 +8,11 @@
 
 export { VisitorAnalytics } from './VisitorAnalytics';
 export { PageActivity } from './PageActivity';
+export { VisitorsExplorer } from './VisitorsExplorer';
+export type { VisitorsView } from './VisitorsExplorer';
 export { AnalyticsDashboard } from './AnalyticsDashboard';
 export { GscSettings } from './GscSettings';
+export { IgnoredUsers } from './IgnoredUsers';
 export { GscKeywords } from './GscKeywords';
 export { TrafficDashboard } from './TrafficDashboard';
 export { CrawlerDashboard } from './CrawlerDashboard';

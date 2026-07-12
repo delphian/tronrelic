@@ -23,6 +23,7 @@ import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { GscService } from './services/gsc.service.js';
 import { TrafficService } from './services/traffic.service.js';
+import { IgnoredUsersService } from './services/ignored-users.service.js';
 import { initGeoIP } from './services/geo.service.js';
 import { TrafficController } from './api/traffic.controller.js';
 import { BootstrapController } from './api/bootstrap.controller.js';
@@ -81,6 +82,7 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
 
     private gscService!: GscService;
     private trafficService!: TrafficService;
+    private ignoredUsersService!: IgnoredUsersService;
     private trafficController!: TrafficController;
     private bootstrapController!: BootstrapController;
 
@@ -112,12 +114,21 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         TrafficService.setDependencies(dependencies.clickhouse, this.logger);
         this.trafficService = TrafficService.getInstance();
 
+        // Ignore list — registered accounts excluded from every stat. Load the
+        // persisted ids into TrafficService's cache now so the always-on
+        // exclusion is live from the first read, not the first mutation.
+        IgnoredUsersService.setDependencies(dependencies.database, this.logger);
+        this.ignoredUsersService = IgnoredUsersService.getInstance();
+        await this.ignoredUsersService.createIndexes();
+        this.trafficService.setIgnoredUserIds(await this.ignoredUsersService.getIds());
+
         // Admin dashboard reads against traffic_events aggregates, plus the
         // analytics + GSC surface. Resolves account/wallet services from the
         // registry at request time.
         this.trafficController = new TrafficController(
             this.trafficService,
             this.gscService,
+            this.ignoredUsersService,
             dependencies.serviceRegistry,
             this.logger
         );

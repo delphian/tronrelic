@@ -703,6 +703,11 @@ describe('TrafficService', () => {
             const sqls: string[] = [];
             ch.query = async <T>(sql: string): Promise<T[]> => {
                 sqls.push(sql);
+                // The top-paths query is the more specific `GROUP BY bucket, path`
+                // and must be matched before the series' `GROUP BY bucket`.
+                if (sql.includes('GROUP BY bucket, path')) {
+                    return [{ bucket: '2026-06-01 05:00:00', path: '/markets', hits: '4' }] as T[];
+                }
                 if (sql.includes('GROUP BY bucket')) {
                     return [{ bucket: '2026-06-01 05:00:00', visitors: '3', pageviews: '7' }] as T[];
                 }
@@ -717,10 +722,16 @@ describe('TrafficService', () => {
 
             expect(out.granularity).toBe('hour');
             expect(sqls.some(s => s.includes('toStartOfHour(timestamp)'))).toBe(true);
+            // The top-paths query is scoped to interactive page rows, same as
+            // the series, so bot-only bootstrap paths never surface.
+            expect(sqls.some(s => s.includes('GROUP BY bucket, path') && s.includes("event_type = 'page'"))).toBe(true);
             // 00:00 through 24:00 inclusive — 25 hourly buckets, one populated.
             expect(out.series).toHaveLength(25);
+            // The populated bucket carries its ranked top paths as metadata.
             expect(out.series.find(p => p.bucket === '2026-06-01T05:00:00.000Z'))
-                .toEqual({ bucket: '2026-06-01T05:00:00.000Z', visitors: 3, pageviews: 7 });
+                .toEqual({ bucket: '2026-06-01T05:00:00.000Z', visitors: 3, pageviews: 7, topPaths: [{ path: '/markets', hits: 4 }] });
+            // Zero-traffic buckets carry an empty path list, never undefined.
+            expect(out.series.find(p => p.bucket === '2026-06-01T02:00:00.000Z')?.topPaths).toEqual([]);
             expect(out.series.filter(p => p.visitors === 0)).toHaveLength(24);
             expect(out.current.visitors).toBe(10);
             // sessions = 0 → bounce rate is 0, not NaN.
@@ -778,6 +789,66 @@ describe('TrafficService', () => {
             expect(captured.sql).toContain('INTERVAL 5 MINUTE');
             expect(captured.sql).toContain("(bot_class = 'human' OR bot_class IS NULL)");
             expect(count).toBe(4);
+        });
+    });
+
+    describe('ignore list exclusion', () => {
+        const IGNORED = ['665f00000000000000000001', '665f00000000000000000002'];
+
+        it('excludes the whole person for ignored accounts on a rangeParams read', async () => {
+            const ch = createMockClickHouse();
+            const captured: { sql?: string; params?: Record<string, unknown> } = {};
+            ch.query = async <T>(sql: string, params?: unknown): Promise<T[]> => {
+                captured.sql = sql;
+                captured.params = params as Record<string, unknown>;
+                return [] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+            const svc = TrafficService.getInstance();
+            svc.setIgnoredUserIds(IGNORED);
+
+            await svc.getGeoDistribution({ since: new Date('2026-06-01T00:00:00.000Z') });
+
+            // Whole-person: exclude every tid that ever logged in as an ignored
+            // account, via the unwindowed candidate_uid subquery.
+            expect(captured.sql).toContain('candidate_uid NOT IN (SELECT candidate_uid FROM');
+            expect(captured.sql).toContain('user_id IN ({ignoredUserIds:Array(String)})');
+            expect(captured.params?.ignoredUserIds).toEqual(IGNORED);
+        });
+
+        it('adds no exclusion when the ignore list is empty', async () => {
+            const ch = createMockClickHouse();
+            const captured: { sql?: string; params?: Record<string, unknown> } = {};
+            ch.query = async <T>(sql: string, params?: unknown): Promise<T[]> => {
+                captured.sql = sql;
+                captured.params = params as Record<string, unknown>;
+                return [] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            await TrafficService.getInstance().getGeoDistribution({ since: new Date('2026-06-01T00:00:00.000Z') });
+
+            expect(captured.sql).not.toContain('ignoredUserIds');
+            expect(captured.params?.ignoredUserIds).toBeUndefined();
+        });
+
+        it('excludes ignored accounts from the live visitor count (own WHERE path)', async () => {
+            const ch = createMockClickHouse();
+            const captured: { sql?: string; params?: Record<string, unknown> } = {};
+            ch.query = async <T>(sql: string, params?: unknown): Promise<T[]> => {
+                captured.sql = sql;
+                captured.params = params as Record<string, unknown>;
+                return [{ visitors: '3' }] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+            const svc = TrafficService.getInstance();
+            svc.setIgnoredUserIds(IGNORED);
+
+            await svc.getLiveVisitorCount();
+
+            expect(captured.sql).toContain('INTERVAL 5 MINUTE');
+            expect(captured.sql).toContain('candidate_uid NOT IN (SELECT candidate_uid FROM');
+            expect(captured.params?.ignoredUserIds).toEqual(IGNORED);
         });
     });
 });

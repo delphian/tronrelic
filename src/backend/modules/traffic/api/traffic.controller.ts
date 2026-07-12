@@ -21,7 +21,14 @@ import type { IServiceRegistry, IAccountDirectoryService, IWalletService, ISyste
 import type { TrafficService, IConversionFunnelResponse } from '../services/traffic.service.js';
 import { resolveAnalyticsRange } from '../services/traffic.service.js';
 import type { GscService } from '../services/gsc.service.js';
+import type { IgnoredUsersService } from '../services/ignored-users.service.js';
 import { parsePositiveInt, parseNonNegativeInt } from '../../../api/query-params.js';
+
+/** Max account matches returned by the ignore-list account search. */
+const ACCOUNT_SEARCH_LIMIT = 10;
+
+/** Better Auth user ids are 24-char hex ObjectId strings; used to route search by id vs email. */
+const BA_USER_ID_PATTERN = /^[0-9a-f]{24}$/i;
 
 /** Hard upper bounds on user-supplied query params. Keeps ClickHouse query cost predictable. */
 const MAX_SINCE_HOURS = 720; // 30 days
@@ -75,9 +82,25 @@ export class TrafficController {
     constructor(
         private readonly trafficService: TrafficService,
         private readonly gscService: GscService,
+        private readonly ignoredUsersService: IgnoredUsersService,
         private readonly serviceRegistry: IServiceRegistry,
         private readonly logger: ISystemLogService
     ) { }
+
+    /**
+     * Push the persisted ignore list into TrafficService's cache so the
+     * always-on exclusion reflects the latest add/remove without a per-query
+     * Mongo read. Called after every mutation; failures are logged, not thrown,
+     * because the Mongo write already succeeded — the cache re-syncs on next
+     * boot regardless.
+     */
+    private async refreshIgnoredUsersCache(): Promise<void> {
+        try {
+            this.trafficService.setIgnoredUserIds(await this.ignoredUsersService.getIds());
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to refresh ignored-users cache');
+        }
+    }
 
     // ────────────────────────────────────────────────────────────────────────
     // Raw traffic aggregates (/api/admin/users/traffic/*)
@@ -547,6 +570,110 @@ export class TrafficController {
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch account overview');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch overview' });
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Ignore list (/api/admin/users/analytics/ignored-users, /account-search)
+    // ────────────────────────────────────────────────────────────────────────
+
+    /**
+     * GET /api/admin/users/analytics/ignored-users
+     * The registered accounts currently excluded from every stat.
+     */
+    async getIgnoredUsers(_req: Request, res: Response): Promise<void> {
+        try {
+            res.json({ users: await this.ignoredUsersService.list() });
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to list ignored users');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to list ignored users' });
+        }
+    }
+
+    /**
+     * POST /api/admin/users/analytics/ignored-users  Body: { userId }.
+     * Add an account to the always-on ignore list. Resolves the account's
+     * email/name from the identity directory for display, adds it, then
+     * refreshes TrafficService's cache so the exclusion takes effect at once.
+     * The account need not exist in the directory (it may have been deleted),
+     * so an unresolved id is still accepted — the id, not the email, is what
+     * filters the stats.
+     */
+    async addIgnoredUser(req: Request, res: Response): Promise<void> {
+        const userId = typeof req.body?.userId === 'string' ? req.body.userId.trim() : '';
+        if (!userId) {
+            res.status(400).json({ error: 'ValidationError', message: 'userId is required' });
+            return;
+        }
+        try {
+            const accounts = this.serviceRegistry.get<IAccountDirectoryService>('accounts');
+            const account = accounts && BA_USER_ID_PATTERN.test(userId)
+                ? await accounts.getAccount(userId)
+                : null;
+            await this.ignoredUsersService.add({
+                userId,
+                email: account?.email ?? null,
+                name: account?.name ?? null
+            });
+            await this.refreshIgnoredUsersCache();
+            res.json({ users: await this.ignoredUsersService.list() });
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to add ignored user');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to add ignored user' });
+        }
+    }
+
+    /**
+     * DELETE /api/admin/users/analytics/ignored-users/:userId
+     * Remove an account from the ignore list; its full history returns to every
+     * stat immediately (the rows were only ever filtered, never deleted).
+     */
+    async removeIgnoredUser(req: Request, res: Response): Promise<void> {
+        const userId = typeof req.params.userId === 'string' ? req.params.userId.trim() : '';
+        if (!userId) {
+            res.status(400).json({ error: 'ValidationError', message: 'userId is required' });
+            return;
+        }
+        try {
+            await this.ignoredUsersService.remove(userId);
+            await this.refreshIgnoredUsersCache();
+            res.json({ users: await this.ignoredUsersService.list() });
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to remove ignored user');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to remove ignored user' });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/account-search?q=
+     * Resolve accounts for the ignore-list add box. A query that looks like a
+     * Better Auth user id resolves that account directly; anything else is a
+     * case-insensitive email/name search through the identity directory. Returns
+     * an empty list (not an error) when the accounts service is unavailable, so
+     * the add box degrades to paste-a-user-id rather than breaking.
+     */
+    async searchAccounts(req: Request, res: Response): Promise<void> {
+        const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+        if (!q) {
+            res.json({ accounts: [] });
+            return;
+        }
+        try {
+            const directory = this.serviceRegistry.get<IAccountDirectoryService>('accounts');
+            if (!directory) {
+                res.json({ accounts: [] });
+                return;
+            }
+            if (BA_USER_ID_PATTERN.test(q)) {
+                const account = await directory.getAccount(q);
+                res.json({ accounts: account ? [{ id: account.id, email: account.email, name: account.name }] : [] });
+                return;
+            }
+            const { accounts } = await directory.listAccounts({ search: q, limit: ACCOUNT_SEARCH_LIMIT });
+            res.json({ accounts: accounts.map(a => ({ id: a.id, email: a.email, name: a.name })) });
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to search accounts');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to search accounts' });
         }
     }
 
