@@ -703,14 +703,17 @@ describe('TrafficService', () => {
             const sqls: string[] = [];
             ch.query = async <T>(sql: string): Promise<T[]> => {
                 sqls.push(sql);
-                // The top-paths/top-countries queries are the more specific
-                // `GROUP BY bucket, <dim>` and must be matched before the
+                // The top-paths/top-countries/top-sources queries are the more
+                // specific `GROUP BY bucket, <dim>` and must be matched before the
                 // series' plain `GROUP BY bucket`.
                 if (sql.includes('GROUP BY bucket, path')) {
                     return [{ bucket: '2026-06-01 05:00:00', path: '/markets', hits: '4' }] as T[];
                 }
                 if (sql.includes('GROUP BY bucket, country')) {
                     return [{ bucket: '2026-06-01 05:00:00', country: 'US', hits: '5' }] as T[];
+                }
+                if (sql.includes('GROUP BY bucket, source')) {
+                    return [{ bucket: '2026-06-01 05:00:00', source: 'google.com', hits: '6' }] as T[];
                 }
                 if (sql.includes('GROUP BY bucket')) {
                     return [{ bucket: '2026-06-01 05:00:00', visitors: '3', pageviews: '7' }] as T[];
@@ -731,14 +734,18 @@ describe('TrafficService', () => {
             // never surface.
             expect(sqls.some(s => s.includes('GROUP BY bucket, path') && s.includes("event_type = 'page'"))).toBe(true);
             expect(sqls.some(s => s.includes('GROUP BY bucket, country') && s.includes("event_type = 'page'") && s.includes('country IS NOT NULL'))).toBe(true);
+            // The sources query attributes bucket page views to each viewer's
+            // first-touch bootstrap origin via a join (argMin over bootstrap rows).
+            expect(sqls.some(s => s.includes('GROUP BY bucket, source') && s.includes("event_type = 'bootstrap'") && s.includes('argMin'))).toBe(true);
             // 00:00 through 24:00 inclusive — 25 hourly buckets, one populated.
             expect(out.series).toHaveLength(25);
-            // The populated bucket carries its ranked top paths and countries as metadata.
+            // The populated bucket carries its ranked paths, countries, and sources as metadata.
             expect(out.series.find(p => p.bucket === '2026-06-01T05:00:00.000Z'))
-                .toEqual({ bucket: '2026-06-01T05:00:00.000Z', visitors: 3, pageviews: 7, topPaths: [{ path: '/markets', hits: 4 }], topCountries: [{ country: 'US', hits: 5 }] });
+                .toEqual({ bucket: '2026-06-01T05:00:00.000Z', visitors: 3, pageviews: 7, topPaths: [{ path: '/markets', hits: 4 }], topCountries: [{ country: 'US', hits: 5 }], topSources: [{ source: 'google.com', hits: 6 }] });
             // Zero-traffic buckets carry empty breakdown lists, never undefined.
             expect(out.series.find(p => p.bucket === '2026-06-01T02:00:00.000Z')?.topPaths).toEqual([]);
             expect(out.series.find(p => p.bucket === '2026-06-01T02:00:00.000Z')?.topCountries).toEqual([]);
+            expect(out.series.find(p => p.bucket === '2026-06-01T02:00:00.000Z')?.topSources).toEqual([]);
             expect(out.series.filter(p => p.visitors === 0)).toHaveLength(24);
             expect(out.current.visitors).toBe(10);
             // sessions = 0 → bounce rate is 0, not NaN.

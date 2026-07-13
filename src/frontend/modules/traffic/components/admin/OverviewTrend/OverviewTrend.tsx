@@ -28,7 +28,7 @@ import { BarChart } from '../../../../../features/charts/components/BarChart';
 import type { BarChartSeries } from '../../../../../features/charts/components/BarChart';
 import { Card } from '../../../../../components/ui/Card';
 import { adminGetOverviewTrend } from '../../../api';
-import type { AnalyticsPeriod, ICustomDateRange, IOverviewTrend, IOverviewTrendPath, IOverviewTrendCountry } from '../../../api';
+import type { AnalyticsPeriod, ICustomDateRange, IOverviewTrend, IOverviewTrendPath, IOverviewTrendCountry, IOverviewTrendSource } from '../../../api';
 import styles from './OverviewTrend.module.scss';
 
 /** Chart-switchable metrics. */
@@ -152,12 +152,12 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
             color: metric === 'visitors'
                 ? resolveCSSColor('--color-primary', '#4b8cff')
                 : resolveCSSColor('--color-success', '#57d48c'),
-            // Carry each bucket's top paths and countries as point metadata so
-            // the shared BarChart tooltip can surface "what did they view, and
-            // from where?" via our renderer. Both are page-view counts and
-            // identical for both metric modes (a bucket's breakdown doesn't
-            // change with the y-measure).
-            data: trend.series.map(p => ({ date: p.bucket, value: p[metric], metadata: { topPaths: p.topPaths, topCountries: p.topCountries } }))
+            // Carry each bucket's top paths, countries, and sources as point
+            // metadata so the shared BarChart tooltip can surface "what did they
+            // view, from where, and how did they arrive?" via our renderer. All
+            // three are page-view counts and identical for both metric modes (a
+            // bucket's breakdown doesn't change with the y-measure).
+            data: trend.series.map(p => ({ date: p.bucket, value: p[metric], metadata: { topPaths: p.topPaths, topCountries: p.topCountries, topSources: p.topSources } }))
         }];
     }, [trend, metric]);
 
@@ -182,24 +182,27 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
     const bucketScopeLabel = trend.granularity === 'hour' ? 'this hour' : 'this day';
 
     /**
-     * Render a hovered bucket's most-viewed paths and most-active countries
-     * inside the chart tooltip. Surfaces "what did they view, and from where?"
-     * in place so an operator reading the trend need not cross-reference the
-     * landing-pages or geo panels — while each heading names the metric (views)
-     * and its bucket scope so neither count is misread as a window total, a
-     * first-touch landing count, or the geo panel's distinct-visitor figure.
-     * Both breakdowns share the bucket's page-view measure, so they are
-     * commensurable with the bar and with each other.
+     * Render a hovered bucket's most-viewed paths, most-active countries, and
+     * top acquisition sources inside the chart tooltip. Surfaces "what did they
+     * view, from where, and how did they arrive?" in place so an operator
+     * reading the trend need not cross-reference the landing-pages, geo, or
+     * traffic-sources panels — while each heading names the metric (views) and
+     * its bucket scope so no count is misread as a window total, a first-touch
+     * landing count, or a panel's distinct-visitor figure. All three blocks
+     * share the bucket's page-view measure (sources attribute each view to the
+     * viewer's first-touch origin), so they stay commensurable with the bar and
+     * with each other.
      *
-     * @param metadata - The hovered bar's point metadata; `topPaths` and
-     *   `topCountries` are the server-ranked lists the series attached for this
-     *   bucket.
-     * @returns The ranked breakdown blocks, or null for a bucket with neither.
+     * @param metadata - The hovered bar's point metadata; `topPaths`,
+     *   `topCountries`, and `topSources` are the server-ranked lists the series
+     *   attached for this bucket.
+     * @returns The ranked breakdown blocks, or null for a bucket with none.
      */
     const renderTooltipMetadata = (metadata: Record<string, any>): React.ReactNode => {
         const paths = (metadata?.topPaths ?? []) as IOverviewTrendPath[];
         const countries = (metadata?.topCountries ?? []) as IOverviewTrendCountry[];
-        if (paths.length === 0 && countries.length === 0) return null;
+        const sources = (metadata?.topSources ?? []) as IOverviewTrendSource[];
+        if (paths.length === 0 && countries.length === 0 && sources.length === 0) return null;
         return (
             <>
                 {paths.length > 0 && (
@@ -220,6 +223,17 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
                             <div key={c.country} className={styles.tooltip_paths__row}>
                                 <span className={styles.tooltip_paths__path}>{c.country}</span>
                                 <span className={styles.tooltip_paths__hits}>{numberFormatter.format(c.hits)}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                {sources.length > 0 && (
+                    <div className={styles.tooltip_paths}>
+                        <span className={styles.tooltip_paths__heading}>Top sources · {bucketScopeLabel}</span>
+                        {sources.map(s => (
+                            <div key={s.source} className={styles.tooltip_paths__row}>
+                                <span className={styles.tooltip_paths__path}>{s.source}</span>
+                                <span className={styles.tooltip_paths__hits}>{numberFormatter.format(s.hits)}</span>
                             </div>
                         ))}
                     </div>

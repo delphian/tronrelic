@@ -403,6 +403,14 @@ export interface IOverviewTrendCountry {
     hits: number;
 }
 
+/** One acquisition source and its attributed page-view count within a trend bucket. */
+export interface IOverviewTrendSource {
+    /** First-touch referrer domain (or `direct`) the bucket's views are attributed to. */
+    source: string;
+    /** Bucket `page` events whose visitor first-touched from this source. */
+    hits: number;
+}
+
 /** One time bucket of the overview trend series. */
 export interface IOverviewTrendPoint {
     /** Bucket start — ISO-8601 UTC for hour buckets, `YYYY-MM-DD` for days. */
@@ -425,6 +433,15 @@ export interface IOverviewTrendPoint {
      * windowed distinct-visitor count by design. Empty for zero-traffic buckets.
      */
     topCountries: IOverviewTrendCountry[];
+    /**
+     * The bucket's top acquisition sources (top 3, descending), measured as
+     * `page` views attributed to each viewer's first-touch source — the same
+     * page-view unit as {@link topPaths}/{@link topCountries}, so all three
+     * blocks stay commensurable. Source can only come from the first-touch
+     * `bootstrap` row (a `page` row's referrer is the site's own domain), so
+     * this is a join, not a plain group-by. Empty for zero-traffic buckets.
+     */
+    topSources: IOverviewTrendSource[];
 }
 
 /**
@@ -1806,14 +1823,44 @@ export class TrafficService {
             ORDER BY bucket ASC, hits DESC, country ASC
             LIMIT 3 BY bucket
         `;
+        // Top 3 sources per bucket, attributed as page VIEWS by origin. Source
+        // lives only on the first-touch `bootstrap` row (a `page` row's referrer
+        // is the site's own domain), so each bucket page view is joined to its
+        // visitor's earliest bootstrap source — `argMin(domain, timestamp)`,
+        // matching getTrafficSources' `domain(referer)`/`direct` derivation. The
+        // bootstrap side is bounded to visitors who viewed a page in the window,
+        // and page-view counts keep this commensurable with the paths/countries
+        // blocks. `LIMIT 3 BY bucket` bounds the payload.
+        const sourcesSql = `
+            SELECT bucket, source, count() AS hits
+            FROM (
+                SELECT ${bucketExpr} AS bucket, candidate_uid
+                FROM ${TABLE_NAME}
+                WHERE ${clause}${botFilter} AND event_type = 'page'
+            ) AS pv
+            INNER JOIN (
+                SELECT candidate_uid,
+                    argMin(multiIf(referer IS NULL OR referer = '', 'direct', domain(referer)), timestamp) AS source
+                FROM ${TABLE_NAME}
+                WHERE event_type = 'bootstrap' AND candidate_uid IN (
+                    SELECT candidate_uid FROM ${TABLE_NAME}
+                    WHERE ${clause}${botFilter} AND event_type = 'page'
+                )
+                GROUP BY candidate_uid
+            ) AS src USING (candidate_uid)
+            GROUP BY bucket, source
+            ORDER BY bucket ASC, hits DESC, source ASC
+            LIMIT 3 BY bucket
+        `;
 
         try {
-            const [current, previous, seriesRows, pathRows, countryRows] = await Promise.all([
+            const [current, previous, seriesRows, pathRows, countryRows, sourceRows] = await Promise.all([
                 fetchKpis(currentRange),
                 fetchKpis(previousRange),
                 this.clickhouse.query<{ bucket: string; visitors: string | number; pageviews: string | number }>(seriesSql, params),
                 this.clickhouse.query<{ bucket: string; path: string; hits: string | number }>(pathsSql, params),
-                this.clickhouse.query<{ bucket: string; country: string; hits: string | number }>(countriesSql, params)
+                this.clickhouse.query<{ bucket: string; country: string; hits: string | number }>(countriesSql, params),
+                this.clickhouse.query<{ bucket: string; source: string; hits: string | number }>(sourcesSql, params)
             ]);
 
             // Zero-fill every bucket in the window, then overlay the rows.
@@ -1829,7 +1876,7 @@ export class TrafficService {
             const buckets = new Map<string, IOverviewTrendPoint>();
             for (let ms = floorUtc; ms <= until.getTime(); ms += stepMs) {
                 const key = keyFor(ms);
-                buckets.set(key, { bucket: key, visitors: 0, pageviews: 0, topPaths: [], topCountries: [] });
+                buckets.set(key, { bucket: key, visitors: 0, pageviews: 0, topPaths: [], topCountries: [], topSources: [] });
             }
             for (const row of seriesRows) {
                 const key = granularity === 'hour'
@@ -1862,6 +1909,16 @@ export class TrafficService {
                 const point = buckets.get(key);
                 if (point) {
                     point.topCountries.push({ country: String(row.country), hits: Number(row.hits) });
+                }
+            }
+            // Overlay the per-bucket top sources — same ordering guarantee.
+            for (const row of sourceRows) {
+                const key = granularity === 'hour'
+                    ? clickHouseDateToIso(String(row.bucket))
+                    : String(row.bucket);
+                const point = buckets.get(key);
+                if (point) {
+                    point.topSources.push({ source: String(row.source), hits: Number(row.hits) });
                 }
             }
 

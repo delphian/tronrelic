@@ -32,6 +32,7 @@ import {
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
 import { Card } from '../../../../../components/ui/Card';
+import { Grid } from '../../../../../components/layout';
 import { OverviewTrend } from '../OverviewTrend';
 import {
     adminGetTrafficSources,
@@ -269,7 +270,7 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
             ) : (
                 <>
                     {/* Conversion Funnel + Traffic Sources side by side */}
-                    <div className={styles.split_grid}>
+                    <Grid columns="responsive">
                         {/* Conversion Funnel */}
                         {funnel.length > 0 && (
                             <Card>
@@ -545,10 +546,10 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                                 )}
                             </div>
                         </Card>
-                    </div>
+                    </Grid>
 
                     {/* Top Landing Pages + Geographic Distribution side by side */}
-                    <div className={styles.split_grid}>
+                    <Grid columns="responsive">
                         {/* Top Landing Pages */}
                         <Card>
                             <h3
@@ -634,7 +635,7 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                                 )}
                             </div>
                         </Card>
-                    </div>
+                    </Grid>
 
                     {/* Device Breakdown */}
                     <Card>

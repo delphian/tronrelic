@@ -687,6 +687,14 @@ export interface IOverviewTrendCountry {
     hits: number;
 }
 
+/** One acquisition source and its attributed page-view count within a trend bucket. */
+export interface IOverviewTrendSource {
+    /** First-touch referrer domain (or `direct`) the bucket's views are attributed to. */
+    source: string;
+    /** Bucket `page` events whose visitor first-touched from this source. */
+    hits: number;
+}
+
 /** One time bucket of the overview trend series. */
 export interface IOverviewTrendPoint {
     /** Bucket start — ISO-8601 UTC for hours, `YYYY-MM-DD` for days. */
@@ -697,6 +705,8 @@ export interface IOverviewTrendPoint {
     topPaths: IOverviewTrendPath[];
     /** Top 3 most-active countries in the bucket (hits desc); [] when zero-traffic. */
     topCountries: IOverviewTrendCountry[];
+    /** Top 3 acquisition sources by attributed page views (hits desc); [] when zero-traffic. */
+    topSources: IOverviewTrendSource[];
 }
 
 /** Unified dashboard headline: KPIs + previous window + zero-filled series. */

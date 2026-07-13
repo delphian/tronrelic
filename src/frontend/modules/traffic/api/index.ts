@@ -69,6 +69,7 @@ export type {
     IOverviewKpis,
     IOverviewTrendPath,
     IOverviewTrendCountry,
+    IOverviewTrendSource,
     IOverviewTrendPoint,
     IOverviewTrend,
     IIgnoredUser,
