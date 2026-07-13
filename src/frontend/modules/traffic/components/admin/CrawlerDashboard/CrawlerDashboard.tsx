@@ -20,7 +20,7 @@
  * client-only.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Route } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
@@ -78,11 +78,23 @@ function resolveCSSColor(varName: string, fallback: string): string {
     return value || fallback;
 }
 
+interface ICrawlerDashboardProps {
+    /**
+     * Page-level auto-refresh signal. Each increment refreshes both panels in
+     * place — no loading blank, and a transient failure keeps the prior data
+     * rather than flashing an error. Omitted disables periodic refresh.
+     */
+    refreshSignal?: number;
+}
+
 /**
  * Crawler visibility dashboard — bot-class trend chart plus the top paths
  * fetched by a selected bot class.
+ *
+ * @param props - The shared auto-refresh signal driving periodic in-place
+ *   reloads of both panels.
  */
-export function CrawlerDashboard() {
+export function CrawlerDashboard({ refreshSignal }: ICrawlerDashboardProps) {
     const [sinceHours, setSinceHours] = useState<number>(168);
     const [pathBotClass, setPathBotClass] = useState<string>('ai_crawler');
 
@@ -95,39 +107,83 @@ export function CrawlerDashboard() {
     const [pathsError, setPathsError] = useState<string | null>(null);
     const [pathsLoading, setPathsLoading] = useState(true);
 
-    // Trend fetch — re-runs when the window changes. Cleanup flag guards
-    // against a slower earlier response landing after a faster later one.
-    useEffect(() => {
-        let active = true;
-        setTrendLoading(true);
-        setTrendError(null);
-
-        adminGetBotTrend(sinceHours)
-            .then(data => {
-                if (active) {
-                    setTrend(data.points);
-                    setClickhouseEnabled(data.clickhouseEnabled);
-                }
-            })
-            .catch(err => { if (active) setTrendError(err instanceof Error ? err.message : 'Failed to load'); })
-            .finally(() => { if (active) setTrendLoading(false); });
-
-        return () => { active = false; };
+    // Trend fetch. A request-id ref supersedes stale in-flight responses so a
+    // slower earlier request cannot overwrite a faster later one (the guard the
+    // previous cleanup flag provided). A `background` refresh swaps data in
+    // place: no loading blank, and a transient failure keeps the prior chart
+    // rather than flashing an error over good data.
+    const trendReqId = useRef(0);
+    const fetchTrend = useCallback(async (background = false): Promise<void> => {
+        const reqId = ++trendReqId.current;
+        if (!background) {
+            setTrendLoading(true);
+            setTrendError(null);
+        }
+        try {
+            const data = await adminGetBotTrend(sinceHours);
+            if (reqId === trendReqId.current) {
+                setTrend(data.points);
+                setClickhouseEnabled(data.clickhouseEnabled);
+            }
+        } catch (err) {
+            if (reqId === trendReqId.current && !background) {
+                setTrendError(err instanceof Error ? err.message : 'Failed to load');
+            }
+        } finally {
+            if (reqId === trendReqId.current && !background) {
+                setTrendLoading(false);
+            }
+        }
     }, [sinceHours]);
 
-    // Paths fetch — re-runs when the window or selected bot class changes.
-    useEffect(() => {
-        let active = true;
-        setPathsLoading(true);
-        setPathsError(null);
+    // Foreground trend load: mount and window changes.
+    useEffect(() => { fetchTrend(); }, [fetchTrend]);
 
-        adminGetBotPaths(pathBotClass, { sinceHours, limit: 15 })
-            .then(data => { if (active) setPaths(data.buckets); })
-            .catch(err => { if (active) setPathsError(err instanceof Error ? err.message : 'Failed to load'); })
-            .finally(() => { if (active) setPathsLoading(false); });
-
-        return () => { active = false; };
+    // Paths fetch — same request-id / background contract as the trend fetch,
+    // re-running when the window or selected bot class changes.
+    const pathsReqId = useRef(0);
+    const fetchPaths = useCallback(async (background = false): Promise<void> => {
+        const reqId = ++pathsReqId.current;
+        if (!background) {
+            setPathsLoading(true);
+            setPathsError(null);
+        }
+        try {
+            const data = await adminGetBotPaths(pathBotClass, { sinceHours, limit: 15 });
+            if (reqId === pathsReqId.current) {
+                setPaths(data.buckets);
+            }
+        } catch (err) {
+            if (reqId === pathsReqId.current && !background) {
+                setPathsError(err instanceof Error ? err.message : 'Failed to load');
+            }
+        } finally {
+            if (reqId === pathsReqId.current && !background) {
+                setPathsLoading(false);
+            }
+        }
     }, [pathBotClass, sinceHours]);
+
+    // Foreground paths load: mount, window changes, and bot-class changes.
+    useEffect(() => { fetchPaths(); }, [fetchPaths]);
+
+    // Background auto-refresh: refresh both panels in place on each page-level
+    // tick. Latest fetchers read via refs so this depends only on refreshSignal
+    // (avoids double-fetch on control changes and stale-window ticks); the mount
+    // guard leaves the first load to the foreground effects.
+    const fetchTrendRef = useRef(fetchTrend);
+    fetchTrendRef.current = fetchTrend;
+    const fetchPathsRef = useRef(fetchPaths);
+    fetchPathsRef.current = fetchPaths;
+    const didMountRef = useRef(false);
+    useEffect(() => {
+        if (!didMountRef.current) {
+            didMountRef.current = true;
+            return;
+        }
+        fetchTrendRef.current(true);
+        fetchPathsRef.current(true);
+    }, [refreshSignal]);
 
     // Build one chart series per bot class that has at least one event in
     // the window — all-zero series only add legend noise. Color resolution

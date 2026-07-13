@@ -11,7 +11,8 @@ import {
     GscSettings,
     IgnoredUsers,
     PeriodPicker,
-    toDateInputValue
+    toDateInputValue,
+    useAutoRefresh
 } from '../../../../modules/traffic';
 import type { VisitorsView } from '../../../../modules/traffic';
 import { adminGetLiveVisitors } from '../../../../modules/traffic/api';
@@ -33,6 +34,16 @@ const VISITOR_VIEWS: ReadonlyArray<{ id: VisitorsView; label: string; title: str
 
 /** Polling interval for the live-visitor counter (ms). */
 const LIVE_POLL_MS = 30_000;
+
+/**
+ * Auto-refresh cadence for the aggregate dashboards (ms). Slower than the live
+ * counter: these are heavier ClickHouse aggregations and their numbers move on
+ * a coarser timescale, so a minute keeps them current without adding query
+ * pressure. The Visitors explorer and SEO tabs are intentionally excluded —
+ * the former holds pagination/drill-down state a refresh would disrupt, the
+ * latter serves daily, multi-day-lagged data that cannot change within a tick.
+ */
+const DASHBOARD_REFRESH_MS = 60_000;
 
 /**
  * System traffic administration page with tabbed interface.
@@ -85,6 +96,12 @@ export default function SystemTrafficPage() {
 
     // Live visitors (last 5 minutes), polled while the page is open.
     const [liveVisitors, setLiveVisitors] = useState<number | null>(null);
+
+    // Shared refresh clock for the aggregate dashboards. Ticking here (once, at
+    // the page level) and threading the signal down as a prop keeps a single
+    // timer driving every aggregate surface instead of each panel owning its
+    // own; it pauses while the tab is hidden.
+    const dashboardRefresh = useAutoRefresh(DASHBOARD_REFRESH_MS);
 
     /**
      * Memoized custom date range built from the date input values.
@@ -233,7 +250,7 @@ export default function SystemTrafficPage() {
 
             <div className={styles.content}>
                 {activeTab === 'analytics' && (
-                    <AnalyticsDashboard period={period} customRange={customRange} includeBots={includeBots} />
+                    <AnalyticsDashboard period={period} customRange={customRange} includeBots={includeBots} refreshSignal={dashboardRefresh} />
                 )}
                 {activeTab === 'visitors' && (
                     <VisitorsExplorer
@@ -245,8 +262,8 @@ export default function SystemTrafficPage() {
                 )}
                 {activeTab === 'crawlers' && (
                     <div className={styles.crawler_stack}>
-                        <CrawlerDashboard />
-                        <TrafficDashboard />
+                        <CrawlerDashboard refreshSignal={dashboardRefresh} />
+                        <TrafficDashboard refreshSignal={dashboardRefresh} />
                     </div>
                 )}
                 {activeTab === 'seo' && <GscKeywords />}
