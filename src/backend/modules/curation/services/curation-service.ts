@@ -23,6 +23,7 @@ import type {
     IContentRegistry,
     IContentRouter,
     IContentSink,
+    IHookRegistry,
     ICurationSinkOutcome,
     ICurationSinkSelection,
     ICurationEditPatch,
@@ -38,6 +39,7 @@ import type {
     CurationItemStatus
 } from '@/types';
 import { presentDescriptorFeatures } from '../../../services/content-classification.js';
+import { HOOKS } from '../../../hooks/registry.js';
 import { shouldAutoApproveCuration } from './curation-auto-approve-context.js';
 import type { CurationQueue } from './curation-queue.js';
 import type { CurationSinkDefaults } from './curation-sink-defaults.js';
@@ -115,13 +117,18 @@ export class CurationService implements ICurationService {
      * @param sinkDefaults - Standing per-type default-sink policy the picker
      *        pre-selects. Optional for the same degrade-gracefully reason;
      *        absent, defaults read empty and cannot be saved.
+     * @param hookRegistry - Core hook registry used to fire the
+     *        `content.published` observer seam when an approved item's canonical
+     *        content goes live. Optional so a test boot without it simply fires
+     *        no seam rather than failing.
      */
     constructor(
         private readonly logger: ISystemLogService,
         private readonly queue: CurationQueue,
         private readonly contentRegistry: IContentRegistry,
         private readonly contentRouter?: IContentRouter,
-        private readonly sinkDefaults?: CurationSinkDefaults
+        private readonly sinkDefaults?: CurationSinkDefaults,
+        private readonly hookRegistry?: IHookRegistry
     ) {}
 
     /**
@@ -757,6 +764,20 @@ export class CurationService implements ICurationService {
                     // the pending queue and won't reappear, so the curator must be
                     // told the provider-side effect did not complete.
                     await this.commit(entry.type, resolved);
+
+                    // Canonical content is now live — the approved-status applyEdit
+                    // committed above. A rejected decision, or a commit that threw,
+                    // never reaches here, so the seam signals only a genuine publish.
+                    // Fire the content.published observer so downstream reactors act
+                    // on the live record; observer semantics isolate any reactor's
+                    // failure from the decision.
+                    if (status === 'approved' && this.hookRegistry) {
+                        await this.hookRegistry.invoke(HOOKS.content.published, {
+                            typeId: existing.typeId,
+                            ref: existing.ref,
+                            descriptor: decisionPreview
+                        });
+                    }
                 }
                 result = resolved;
             }

@@ -13,6 +13,7 @@ import type {
     IContentClassification,
     IContentSink,
     ICurationType,
+    IHookRegistry,
     IMenuService,
     ISystemLogService
 } from '@/types';
@@ -26,6 +27,7 @@ import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-r
 import { ContentRegistry, CONTENT_TYPES_SERVICE } from '../../../services/content-registry.js';
 import { ContentRouter, CONTENT_ROUTER_SERVICE } from '../../../services/content-router.js';
 import { ClassificationGate, AllowAllRoutingPolicy } from '../../../services/content-routing-gate.js';
+import { HOOKS } from '../../../hooks/registry.js';
 
 /** Minimal logger that swallows every level and returns itself for `child()`. */
 function createMockLogger(): ISystemLogService {
@@ -39,6 +41,20 @@ function createMockLogger(): ISystemLogService {
 /** Minimal menu service whose `create` records the admin nav registration. */
 function createMockMenuService(): IMenuService {
     return { create: vi.fn(async () => ({ _id: 'menu-curation' })) } as unknown as IMenuService;
+}
+
+/**
+ * Minimal hook registry whose `invoke` is a spy — lets a test assert curation
+ * fired the `content.published` seam on approval without wiring the real
+ * registry. `register`/`snapshot`/`disposeForPlugin` are inert stubs.
+ */
+function createMockHookRegistry(): IHookRegistry {
+    return {
+        invoke: vi.fn(async () => undefined),
+        register: vi.fn(() => () => undefined),
+        snapshot: vi.fn(() => ({ phases: [] })),
+        disposeForPlugin: vi.fn()
+    } as unknown as IHookRegistry;
 }
 
 /** Build a declarative curation type whose seams are spies, overridable per test. */
@@ -71,6 +87,7 @@ describe('CurationModule', () => {
         mockMenu = createMockMenuService();
         await module.init({
             database: createMockDatabaseService(),
+            hookRegistry: createMockHookRegistry(),
             serviceRegistry: mockRegistry,
             menuService: mockMenu,
             app: mockApp as never
@@ -115,11 +132,14 @@ describe('CurationModule', () => {
 });
 
 describe('CurationService', () => {
-    /** Build a curation service over a fresh mock database. */
-    function makeService(): CurationService {
+    /**
+     * Build a curation service over a fresh mock database. An optional hook
+     * registry lets a test assert the `content.published` seam fires on approval.
+     */
+    function makeService(hookRegistry?: IHookRegistry): CurationService {
         const logger = createMockLogger();
         const queue = new CurationQueue(logger, createMockDatabaseService());
-        return new CurationService(logger, queue, new ContentRegistry(logger));
+        return new CurationService(logger, queue, new ContentRegistry(logger), undefined, undefined, hookRegistry);
     }
 
     it('registers types and reports them', () => {
@@ -176,6 +196,31 @@ describe('CurationService', () => {
 
         expect(decided?.status).toBe('rejected');
         expect(type.applyEdit).toHaveBeenCalledWith({}, { status: 'rejected' });
+    });
+
+    it('fires content.published on approval with the type, ref, and decision-time descriptor', async () => {
+        const hookRegistry = createMockHookRegistry();
+        const service = makeService(hookRegistry);
+        service.registerType(spyCurationType(), 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+
+        await service.approve(held.id, 'admin-1');
+
+        expect(hookRegistry.invoke).toHaveBeenCalledWith(
+            HOOKS.content.published,
+            { typeId: 'x-poster:tweet', ref: { postId: 'p1' }, descriptor: { body: 'draft p1' } }
+        );
+    });
+
+    it('does not fire content.published on rejection', async () => {
+        const hookRegistry = createMockHookRegistry();
+        const service = makeService(hookRegistry);
+        service.registerType(spyCurationType(), 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+
+        await service.reject(held.id, 'admin-1');
+
+        expect(hookRegistry.invoke).not.toHaveBeenCalled();
     });
 
     it('omits the approve transition when the type declares no approved status word', async () => {
