@@ -16,6 +16,7 @@ import { execSync } from 'node:child_process';
 import { writeSync } from 'node:fs';
 import http from 'node:http';
 import { env } from './config/env.js';
+import { QueueService } from './services/queue.service.js';
 import { createExpressApp } from './loaders/express.js';
 import { connectDatabase } from './loaders/database.js';
 import { createRedisClient, disconnectRedis, getRedisClient } from './loaders/redis.js';
@@ -449,6 +450,11 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await aiToolsModule.init({
         ...sharedDeps,
         scheduler: schedulerService,
+        // Durable queue+worker for hook-bound saved prompts: the hook
+        // subscription enqueues, the worker runs the prompt off the hook's
+        // commit path. Injected as a factory because the BullMQ constructor
+        // opens a Redis connection eagerly, which tests must avoid.
+        hookQueueFactory: (processor) => new QueueService('ai-tools:hook-prompts', processor),
         blockchainService: BlockchainService.getInstance(),
         observerRegistry: BlockchainObserverService.getInstance(),
         chainParameters: ChainParametersService.getInstance(),

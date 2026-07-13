@@ -1,16 +1,18 @@
 /**
  * @file saved-prompts.service.test.ts
  *
- * Contract tests for the core SavedPromptsService: CRUD, validation, cron
- * parsing, case-insensitive name uniqueness, the cron clear semantics that
- * depend on writing `null` rather than `undefined`, and the scheduler-friendly
+ * Contract tests for the core SavedPromptsService: CRUD, validation, the
+ * unified `triggers[]` array (cron parsing, declared-hook binding, the
+ * bookkeeping-preserving merge on update), case-insensitive name uniqueness,
+ * the deprecated flat schedule projection, and the trigger-scoped
  * `recordRunResult` / `recordRunFailure` writes.
  *
  * The mock IDatabaseService backs `getCollection` with an in-memory Map keyed by
  * document id, so atomicity guarantees are not modelled — this is a contract
  * test, not a race-condition test. The actual race safety comes from Mongo's
  * per-document update atomicity, which only an integration test against a live
- * mongod would verify.
+ * mongod would verify. The mock does model the array-filtered (`$[t]`) update
+ * paths and `$elemMatch` queries the trigger bookkeeping depends on.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -68,16 +70,16 @@ function createMockCollection() {
             docs.set(doc.id, { ...doc });
             return { insertedId: doc.id };
         }),
-        updateOne: vi.fn(async (filter: any, update: any) => {
+        updateOne: vi.fn(async (filter: any, update: any, options?: any) => {
             const target = [...docs.values()].find(buildPredicate(filter));
             if (!target) return { matchedCount: 0, modifiedCount: 0 };
-            applyUpdate(target, update);
+            applyUpdate(target, update, options);
             return { matchedCount: 1, modifiedCount: 1 };
         }),
-        findOneAndUpdate: vi.fn(async (filter: any, update: any, _options?: any) => {
+        findOneAndUpdate: vi.fn(async (filter: any, update: any, options?: any) => {
             const target = [...docs.values()].find(buildPredicate(filter));
             if (!target) return null;
-            applyUpdate(target, update);
+            applyUpdate(target, update, options);
             // The service requests `returnDocument: 'after'` everywhere; mirror
             // that behaviour rather than branching on options for a mode the
             // codebase doesn't use.
@@ -96,40 +98,70 @@ function createMockCollection() {
  * Apply a Mongo-style update document to a target. Mirrors the Node driver's
  * `ignoreUndefined: true` default — undefined-valued `$set` fields are dropped
  * before the BSON payload ships, so they MUST NOT silently overwrite the
- * existing value in this in-memory mock either. Catching that mismatch is
- * exactly what the clearing-cron regression cost us; the assertion-friendly
- * Object.assign form would have masked it.
+ * existing value in this in-memory mock either.
+ *
+ * Also models the array-filtered positional operator the trigger bookkeeping
+ * uses: a path like `triggers.$[t].lastRunAt` resolves `t` through
+ * `options.arrayFilters` (e.g. `[{ 't.id': 'abc' }]`) and applies the write to
+ * every matching array element.
  *
  * @param target - The in-memory document to mutate.
- * @param update - The Mongo update operator document (`$set` / `$inc`).
+ * @param update - The Mongo update operator document (`$set` / `$inc` / `$unset`).
+ * @param options - The update options, read for `arrayFilters`.
  */
-function applyUpdate(target: any, update: any): void {
+function applyUpdate(target: any, update: any, options?: any): void {
+    const arrayFilters: Record<string, any>[] = options?.arrayFilters ?? [];
+
+    const resolveTargets = (key: string): Array<{ obj: any; field: string }> => {
+        const positional = key.match(/^([^.]+)\.\$\[([^\]]+)\]\.(.+)$/);
+        if (!positional) {
+            return [{ obj: target, field: key }];
+        }
+        const [, arrayField, ident, subField] = positional;
+        const filter = arrayFilters.find(f => Object.keys(f).some(k => k.startsWith(`${ident}.`)));
+        const elements: any[] = Array.isArray(target[arrayField]) ? target[arrayField] : [];
+        const matches = elements.filter(el => {
+            if (!filter) return true;
+            return Object.entries(filter).every(([fk, fv]) => {
+                const sub = fk.slice(ident.length + 1);
+                return el[sub] === fv;
+            });
+        });
+        return matches.map(obj => ({ obj, field: subField }));
+    };
+
     if (update.$set) {
         for (const [k, v] of Object.entries(update.$set)) {
             if (v === undefined) continue;
-            target[k] = v;
+            for (const { obj, field } of resolveTargets(k)) {
+                obj[field] = v;
+            }
         }
     }
     if (update.$inc) {
         for (const [k, v] of Object.entries(update.$inc)) {
-            target[k] = (target[k] ?? 0) + (v as number);
+            for (const { obj, field } of resolveTargets(k)) {
+                obj[field] = (obj[field] ?? 0) + (v as number);
+            }
         }
     }
     if (update.$unset) {
-        // `$unset` removes the field entirely (reverting it to absent/undefined),
-        // which is how the service clears a model pin or a toolAllowlist back to
-        // "all tools". The value the driver ships (`''`) is ignored — presence of
-        // the key is the instruction.
+        // `$unset` removes the field entirely (reverting it to absent/undefined).
+        // The value the driver ships (`''`) is ignored — presence of the key is
+        // the instruction.
         for (const k of Object.keys(update.$unset)) {
-            delete target[k];
+            for (const { obj, field } of resolveTargets(k)) {
+                delete obj[field];
+            }
         }
     }
 }
 
 /**
  * Tiny predicate compiler. Handles the operators the service actually uses:
- * equality, $ne, $regex, $exists, $nin, $or. Composes $or with sibling keys as
- * AND rather than letting $or short-circuit the rest of the filter.
+ * equality, $ne, $regex, $exists, $nin, $in, $elemMatch, $or. Composes $or
+ * with sibling keys as AND rather than letting $or short-circuit the rest of
+ * the filter.
  *
  * @param filter - The Mongo filter document.
  * @returns A predicate over a document.
@@ -170,6 +202,11 @@ function matchConstraint(value: any, constraint: any): boolean {
             }
             if (op === '$nin' && constraint.$nin.includes(value)) return false;
             if (op === '$in' && !constraint.$in.includes(value)) return false;
+            if (op === '$elemMatch') {
+                if (!Array.isArray(value)) return false;
+                const elementPredicate = buildPredicate(constraint.$elemMatch);
+                if (!value.some(elementPredicate)) return false;
+            }
             if (op === '$regex') {
                 if (value === undefined || value === null) return false;
                 const flags = constraint.$options ?? '';
@@ -201,6 +238,9 @@ function createMockDatabase() {
     };
 }
 
+/** The declared-hook set fixtures bind against. */
+const KNOWN_HOOKS = new Set(['content.published']);
+
 /* ---------- tests ---------- */
 
 describe('SavedPromptsService', () => {
@@ -209,7 +249,7 @@ describe('SavedPromptsService', () => {
 
     beforeEach(() => {
         database = createMockDatabase();
-        service = new SavedPromptsService(database as any);
+        service = new SavedPromptsService(database as any, { knownHookIds: KNOWN_HOOKS });
     });
 
     describe('create', () => {
@@ -239,33 +279,69 @@ describe('SavedPromptsService', () => {
                 .rejects.toBeInstanceOf(DuplicatePromptNameError);
         });
 
-        it('rejects an invalid cron expression', async () => {
-            await expect(service.create({ name: 'n', prompt: 'p', cron: 'not-a-cron' }))
+        it('rejects an invalid cron expression on a cron trigger', async () => {
+            await expect(service.create({ name: 'n', prompt: 'p', triggers: [{ kind: 'cron', cron: 'not-a-cron' }] }))
                 .rejects.toBeInstanceOf(SavedPromptValidationError);
         });
 
-        it('accepts a valid cron and defaults scheduleEnabled to true', async () => {
-            const created = await service.create({ name: 'Scheduled', prompt: 'run', cron: '0 0 * * *' });
+        it('accepts a cron trigger, assigns an id, and defaults enabled to true', async () => {
+            const created = await service.create({ name: 'Scheduled', prompt: 'run', triggers: [{ kind: 'cron', cron: '0 0 * * *' }] });
+            expect(created.triggers).toHaveLength(1);
+            const trigger = created.triggers![0];
+            expect(trigger.kind).toBe('cron');
+            expect(trigger.id).toBeTruthy();
+            expect(trigger.enabled).toBe(true);
+            expect((trigger as any).cron).toBe('0 0 * * *');
+        });
+
+        it('projects the first cron trigger onto the deprecated flat fields', async () => {
+            const created = await service.create({ name: 'Projected', prompt: 'run', triggers: [{ kind: 'cron', cron: '0 0 * * *' }] });
+            // Transitional read-time projection for the pre-triggers editor UI.
             expect(created.cron).toBe('0 0 * * *');
             expect(created.scheduleEnabled).toBe(true);
         });
 
-        it('treats empty cron as cleared (no schedule fields)', async () => {
-            const created = await service.create({ name: 'NoCron', prompt: 'run', cron: '' });
-            expect(created.cron).toBeUndefined();
-            expect(created.scheduleEnabled).toBeUndefined();
+        it('leaves triggers absent when the array is empty or omitted', async () => {
+            const omitted = await service.create({ name: 'NoTriggers', prompt: 'run' });
+            expect(omitted.triggers).toBeUndefined();
+            const empty = await service.create({ name: 'EmptyTriggers', prompt: 'run', triggers: [] });
+            expect(empty.triggers).toBeUndefined();
         });
 
-        it('rejects non-boolean scheduleEnabled', async () => {
-            await expect(service.create({ name: 'n', prompt: 'p', scheduleEnabled: 'yes' as any }))
+        it('rejects a non-boolean trigger enabled flag', async () => {
+            await expect(service.create({ name: 'n', prompt: 'p', triggers: [{ kind: 'cron', cron: '* * * * *', enabled: 'yes' as any }] }))
                 .rejects.toBeInstanceOf(SavedPromptValidationError);
         });
 
-        it('anchors the schedule at creation when a cron is supplied', async () => {
-            const created = await service.create({ name: 'Anchored', prompt: 'p', cron: '0 9 * * *' });
-            // scheduleAnchorAt seeds the runner's "next occurrence" anchor so a
-            // freshly scheduled prompt counts from now, never retroactively.
-            expect(created.scheduleAnchorAt).toBe(created.createdAt);
+        it('anchors a new cron trigger at creation', async () => {
+            const created = await service.create({ name: 'Anchored', prompt: 'p', triggers: [{ kind: 'cron', cron: '0 9 * * *' }] });
+            // anchorAt seeds the runner's "next occurrence" anchor so a freshly
+            // scheduled prompt counts from now, never retroactively.
+            expect((created.triggers![0] as any).anchorAt).toBe(created.createdAt);
+        });
+
+        it('accepts a hook trigger bound to a declared hook, with an optional typeIdFilter', async () => {
+            const created = await service.create({
+                name: 'Hooked',
+                prompt: 'announce {%hook.title%}',
+                triggers: [{ kind: 'hook', hookId: 'content.published', typeIdFilter: 'blog:post' }]
+            });
+            const trigger = created.triggers![0] as any;
+            expect(trigger.kind).toBe('hook');
+            expect(trigger.hookId).toBe('content.published');
+            expect(trigger.typeIdFilter).toBe('blog:post');
+        });
+
+        it('rejects a hook trigger bound to an undeclared hook id', async () => {
+            await expect(service.create({ name: 'BadHook', prompt: 'p', triggers: [{ kind: 'hook', hookId: 'not.a.hook' }] }))
+                .rejects.toBeInstanceOf(SavedPromptValidationError);
+        });
+
+        it('rejects a hook trigger with no hookId and an unknown kind', async () => {
+            await expect(service.create({ name: 'NoHookId', prompt: 'p', triggers: [{ kind: 'hook' }] }))
+                .rejects.toBeInstanceOf(SavedPromptValidationError);
+            await expect(service.create({ name: 'BadKind', prompt: 'p', triggers: [{ kind: 'nope' as any }] }))
+                .rejects.toBeInstanceOf(SavedPromptValidationError);
         });
 
         it('persists ownerUserId and ownerLabel when supplied, omits them when absent', async () => {
@@ -313,28 +389,15 @@ describe('SavedPromptsService', () => {
             expect(updated.prompt).toBe('body');
         });
 
-        it('clears cron when given an empty string', async () => {
-            const created = await service.create({ name: 'WithCron', prompt: 'p', cron: '* * * * *' });
-            const cleared = await service.update(created.id, { cron: '' });
+        it('clears every trigger when given null or an empty array', async () => {
+            const created = await service.create({ name: 'WithCron', prompt: 'p', triggers: [{ kind: 'cron', cron: '* * * * *' }] });
+            const cleared = await service.update(created.id, { triggers: null });
+            expect(cleared.triggers).toBeUndefined();
+            expect(cleared.cron).toBeUndefined();
 
-            // Cleared schedules write `null`, not `undefined`. The Node driver's
-            // ignoreUndefined default would strip an undefined $set field,
-            // leaving the prior cron in place — the regression this guards.
-            expect(cleared.cron).toBeNull();
-        });
-
-        it('clears cron when given null', async () => {
-            const created = await service.create({ name: 'WithCronNull', prompt: 'p', cron: '* * * * *' });
-            const cleared = await service.update(created.id, { cron: null });
-            expect(cleared.cron).toBeNull();
-        });
-
-        it('clears lastRunError when cron changes', async () => {
-            const created = await service.create({ name: 'P', prompt: 'p', cron: '0 0 * * *' });
-            await service.recordRunResult(created.id, new Date().toISOString(), 'previous error');
-
-            const updated = await service.update(created.id, { cron: '0 12 * * *' });
-            expect(updated.lastRunError).toBeNull();
+            const again = await service.create({ name: 'WithCron2', prompt: 'p', triggers: [{ kind: 'cron', cron: '* * * * *' }] });
+            const emptied = await service.update(again.id, { triggers: [] });
+            expect(emptied.triggers).toBeUndefined();
         });
 
         it('rejects when no prompt with that id exists', async () => {
@@ -356,35 +419,78 @@ describe('SavedPromptsService', () => {
                 .rejects.toBeInstanceOf(DuplicatePromptNameError);
         });
 
-        it('re-anchors the schedule when the cron value changes', async () => {
-            const created = await service.create({ name: 'Reanchor', prompt: 'p', cron: '0 9 * * *' });
+        it('re-anchors a cron trigger when its expression changes, resetting error state', async () => {
+            const created = await service.create({ name: 'Reanchor', prompt: 'p', triggers: [{ kind: 'cron', cron: '0 9 * * *' }] });
+            const triggerId = created.triggers![0].id;
+            await service.recordRunFailure(created.id, triggerId, new Date().toISOString(), 'previous error');
             await new Promise(r => setTimeout(r, 2));
-            const updated = await service.update(created.id, { cron: '0 12 * * *' });
+
+            const updated = await service.update(created.id, { triggers: [{ id: triggerId, kind: 'cron', cron: '0 12 * * *' }] });
+            const trigger = updated.triggers![0] as any;
 
             // A real cron change resets the anchor to the edit time so the runner
-            // waits for the next future occurrence rather than firing retroactively.
-            expect(updated.scheduleAnchorAt).toBe(updated.updatedAt);
-            expect(updated.scheduleAnchorAt).not.toBe(created.scheduleAnchorAt);
+            // waits for the next future occurrence rather than firing
+            // retroactively — and wipes the stale failure state.
+            expect(trigger.anchorAt).toBe(updated.updatedAt);
+            expect(trigger.failureCount).toBe(0);
+            expect(trigger.lastRunError).toBeNull();
         });
 
-        it('does not re-anchor when the same cron is re-saved', async () => {
-            const created = await service.create({ name: 'NoReanchor', prompt: 'p', cron: '0 9 * * *' });
+        it('does not re-anchor when the same cron is re-saved with the same trigger id', async () => {
+            const created = await service.create({ name: 'NoReanchor', prompt: 'p', triggers: [{ kind: 'cron', cron: '0 9 * * *' }] });
+            const original = created.triggers![0] as any;
             await new Promise(r => setTimeout(r, 2));
-            // The editor always sends the cron field on a schedule save, so a
-            // pause/resume or no-op re-save must NOT shift the cadence.
-            const updated = await service.update(created.id, { cron: '0 9 * * *', scheduleEnabled: false });
-            expect(updated.scheduleAnchorAt).toBe(created.scheduleAnchorAt);
+            // The editor sends the whole array on every save, so a pause/resume
+            // or no-op re-save must NOT shift the cadence.
+            const updated = await service.update(created.id, { triggers: [{ id: original.id, kind: 'cron', cron: '0 9 * * *', enabled: false }] });
+            const trigger = updated.triggers![0] as any;
+            expect(trigger.anchorAt).toBe(original.anchorAt);
+            expect(trigger.enabled).toBe(false);
         });
 
-        it('leaves the anchor and lastRunAt untouched on a body-only edit', async () => {
-            const created = await service.create({ name: 'BodyEdit', prompt: 'old', cron: '0 9 * * *' });
-            await service.recordRunResult(created.id, '2026-05-18T12:00:00Z', null);
+        it('preserves a trigger\'s run bookkeeping across an id-matched re-save', async () => {
+            const created = await service.create({ name: 'Bookkeeping', prompt: 'p', triggers: [{ kind: 'cron', cron: '0 9 * * *' }] });
+            const triggerId = created.triggers![0].id;
+            await service.recordRunResult(created.id, triggerId, '2026-05-18T12:00:00Z', null);
+
+            const updated = await service.update(created.id, { triggers: [{ id: triggerId, kind: 'cron', cron: '0 9 * * *' }] });
+            expect((updated.triggers![0] as any).lastRunAt).toBe('2026-05-18T12:00:00Z');
+        });
+
+        it('resets the failure streak when a paused trigger is re-enabled', async () => {
+            const created = await service.create({ name: 'Reenable', prompt: 'p', triggers: [{ kind: 'cron', cron: '0 9 * * *', enabled: false }] });
+            const triggerId = created.triggers![0].id;
+            await service.recordRunFailure(created.id, triggerId, new Date().toISOString(), 'boom');
+
+            const updated = await service.update(created.id, { triggers: [{ id: triggerId, kind: 'cron', cron: '0 9 * * *', enabled: true }] });
+            const trigger = updated.triggers![0] as any;
+            // Re-enable starts a fresh streak; otherwise the very next failure
+            // would immediately re-pause.
+            expect(trigger.failureCount).toBe(0);
+            expect(trigger.enabled).toBe(true);
+        });
+
+        it('rejects duplicate trigger ids within one save', async () => {
+            const created = await service.create({ name: 'DupIds', prompt: 'p' });
+            await expect(service.update(created.id, {
+                triggers: [
+                    { id: 'same', kind: 'cron', cron: '* * * * *' },
+                    { id: 'same', kind: 'hook', hookId: 'content.published' }
+                ]
+            })).rejects.toBeInstanceOf(SavedPromptValidationError);
+        });
+
+        it('leaves triggers and their bookkeeping untouched on a body-only edit', async () => {
+            const created = await service.create({ name: 'BodyEdit', prompt: 'old', triggers: [{ kind: 'cron', cron: '0 9 * * *' }] });
+            const triggerId = created.triggers![0].id;
+            await service.recordRunResult(created.id, triggerId, '2026-05-18T12:00:00Z', null);
             const updated = await service.update(created.id, { prompt: 'new body' });
 
             expect(updated.prompt).toBe('new body');
-            expect(updated.scheduleAnchorAt).toBe(created.scheduleAnchorAt);
+            const trigger = updated.triggers![0] as any;
+            expect(trigger.anchorAt).toBe((created.triggers![0] as any).anchorAt);
             // lastRunAt stays the genuine last-run time — a body edit is not a run.
-            expect(updated.lastRunAt).toBe('2026-05-18T12:00:00Z');
+            expect(trigger.lastRunAt).toBe('2026-05-18T12:00:00Z');
         });
 
         it('maps a duplicate-key findOneAndUpdate error to DuplicatePromptNameError (rename race)', async () => {
@@ -481,8 +587,8 @@ describe('SavedPromptsService', () => {
 
         it('rejects an allowlist with a blank / whitespace-only entry', async () => {
             // A blank entry is never a valid tool name and would fail the whole
-            // allowlist at run time (auto-pausing a scheduled prompt), so it must
-            // fail closed at save. Guard both create and update.
+            // allowlist at run time (auto-pausing a trigger), so it must fail
+            // closed at save. Guard both create and update.
             await expect(service.create({ name: 'BlankCreate', prompt: 'p', toolAllowlist: ['ok', '  '] }))
                 .rejects.toBeInstanceOf(SavedPromptValidationError);
 
@@ -532,82 +638,116 @@ describe('SavedPromptsService', () => {
     });
 
     describe('listScheduled', () => {
-        it('returns only prompts with a cron and not explicitly paused', async () => {
-            await service.create({ name: 'NoCron', prompt: 'p' });
-            await service.create({ name: 'Scheduled', prompt: 'p', cron: '* * * * *' });
-            const paused = await service.create({ name: 'Paused', prompt: 'p', cron: '* * * * *' });
-            await service.update(paused.id, { scheduleEnabled: false });
+        it('returns only prompts with an enabled cron trigger', async () => {
+            await service.create({ name: 'NoTriggers', prompt: 'p' });
+            await service.create({ name: 'Scheduled', prompt: 'p', triggers: [{ kind: 'cron', cron: '* * * * *' }] });
+            await service.create({ name: 'Paused', prompt: 'p', triggers: [{ kind: 'cron', cron: '* * * * *', enabled: false }] });
+            await service.create({ name: 'HookOnly', prompt: 'p', triggers: [{ kind: 'hook', hookId: 'content.published' }] });
 
             const scheduled = await service.listScheduled();
             expect(scheduled.map(p => p.name).sort()).toEqual(['Scheduled']);
         });
     });
 
-    describe('recordRunResult', () => {
-        it('updates lastRunAt and lastRunError without touching other fields', async () => {
-            const created = await service.create({ name: 'P', prompt: 'original body', cron: '* * * * *' });
+    describe('listHookBound', () => {
+        it('returns only prompts with an enabled hook trigger on the given hook', async () => {
+            await service.create({ name: 'CronOnly', prompt: 'p', triggers: [{ kind: 'cron', cron: '* * * * *' }] });
+            await service.create({ name: 'Bound', prompt: 'p', triggers: [{ kind: 'hook', hookId: 'content.published' }] });
+            await service.create({ name: 'BoundPaused', prompt: 'p', triggers: [{ kind: 'hook', hookId: 'content.published', enabled: false }] });
 
-            await service.recordRunResult(created.id, '2026-05-18T12:00:00Z', 'failed');
+            const bound = await service.listHookBound('content.published');
+            expect(bound.map(p => p.name)).toEqual(['Bound']);
+        });
+
+        it('returns nothing for a hook no prompt binds', async () => {
+            await service.create({ name: 'Bound', prompt: 'p', triggers: [{ kind: 'hook', hookId: 'content.published' }] });
+            expect(await service.listHookBound('scheduler.legDelivered')).toEqual([]);
+        });
+    });
+
+    describe('recordRunResult', () => {
+        it('updates the firing trigger\'s lastRunAt/lastRunError without touching siblings or other fields', async () => {
+            const created = await service.create({
+                name: 'P',
+                prompt: 'original body',
+                triggers: [
+                    { kind: 'cron', cron: '* * * * *' },
+                    { kind: 'hook', hookId: 'content.published' }
+                ]
+            });
+            const [cronTrigger, hookTrigger] = created.triggers!;
+
+            await service.recordRunResult(created.id, cronTrigger.id, '2026-05-18T12:00:00Z', 'failed');
 
             const after = await service.get(created.id);
-            expect(after?.lastRunAt).toBe('2026-05-18T12:00:00Z');
-            expect(after?.lastRunError).toBe('failed');
+            const afterCron = after!.triggers!.find(t => t.id === cronTrigger.id) as any;
+            const afterHook = after!.triggers!.find(t => t.id === hookTrigger.id) as any;
+            expect(afterCron.lastRunAt).toBe('2026-05-18T12:00:00Z');
+            expect(afterCron.lastRunError).toBe('failed');
+            // The sibling trigger's bookkeeping is untouched — writes are
+            // addressed by trigger id.
+            expect(afterHook.lastRunAt).toBeUndefined();
             expect(after?.prompt).toBe('original body');
             expect(after?.name).toBe('P');
         });
 
         it('silently no-ops when the prompt was deleted mid-run', async () => {
-            await service.recordRunResult('ghost-id', new Date().toISOString(), null);
+            await service.recordRunResult('ghost-id', 't1', new Date().toISOString(), null);
             // No throw — caller doesn't need to special-case the race.
         });
     });
 
     describe('recordRunFailure', () => {
-        it('auto-pauses the schedule after the failure threshold', async () => {
-            const created = await service.create({ name: 'Breaks', prompt: 'p', cron: '* * * * *' });
+        it('auto-pauses the trigger after the failure threshold', async () => {
+            const created = await service.create({ name: 'Breaks', prompt: 'p', triggers: [{ kind: 'cron', cron: '* * * * *' }] });
+            const triggerId = created.triggers![0].id;
 
             let disabled = false;
             for (let i = 0; i < 5; i += 1) {
-                ({ disabled } = await service.recordRunFailure(created.id, new Date().toISOString(), 'boom'));
+                ({ disabled } = await service.recordRunFailure(created.id, triggerId, new Date().toISOString(), 'boom'));
             }
 
             expect(disabled).toBe(true);
             const after = await service.get(created.id);
-            expect(after?.scheduleEnabled).toBe(false);
-            expect(after?.failureCount).toBe(5);
-            expect(after?.lastRunError).toContain('schedule paused');
+            const trigger = after!.triggers![0] as any;
+            expect(trigger.enabled).toBe(false);
+            expect(trigger.failureCount).toBe(5);
+            expect(trigger.lastRunError).toContain('trigger paused');
         });
 
         it('auto-pauses with the precise upstream error when a prompt names an unregistered tool', async () => {
             // End-to-end of the toolAllowlist failure contract: the provider fails
             // the run before the model call when a listed tool is unregistered, and
-            // the runner forwards that precise message here verbatim. After the
-            // threshold the schedule auto-pauses, and the pause banner must still
+            // the executor forwards that precise message here verbatim. After the
+            // threshold the trigger auto-pauses, and the pause banner must still
             // carry the precise reason so an admin sees WHY it stopped.
-            const created = await service.create({ name: 'BadTool', prompt: 'p', cron: '* * * * *', toolAllowlist: ['gone'] });
+            const created = await service.create({ name: 'BadTool', prompt: 'p', triggers: [{ kind: 'cron', cron: '* * * * *' }], toolAllowlist: ['gone'] });
+            const triggerId = created.triggers![0].id;
             const preciseError = 'unregistered tool(s): "gone"';
 
             let disabled = false;
             for (let i = 0; i < 5; i += 1) {
-                ({ disabled } = await service.recordRunFailure(created.id, new Date().toISOString(), preciseError));
+                ({ disabled } = await service.recordRunFailure(created.id, triggerId, new Date().toISOString(), preciseError));
             }
 
             expect(disabled).toBe(true);
             const after = await service.get(created.id);
-            expect(after?.scheduleEnabled).toBe(false);
-            expect(after?.failureCount).toBe(5);
+            const trigger = after!.triggers![0] as any;
+            expect(trigger.enabled).toBe(false);
+            expect(trigger.failureCount).toBe(5);
             // Both the precise upstream cause and the pause annotation survive.
-            expect(after?.lastRunError).toContain(preciseError);
-            expect(after?.lastRunError).toContain('schedule paused');
+            expect(trigger.lastRunError).toContain(preciseError);
+            expect(trigger.lastRunError).toContain('trigger paused');
         });
 
         it('resetRunFailures clears the streak', async () => {
-            const created = await service.create({ name: 'Flaky', prompt: 'p', cron: '* * * * *' });
-            await service.recordRunFailure(created.id, new Date().toISOString(), 'boom');
-            await service.resetRunFailures(created.id);
+            const created = await service.create({ name: 'Flaky', prompt: 'p', triggers: [{ kind: 'cron', cron: '* * * * *' }] });
+            const triggerId = created.triggers![0].id;
+            await service.recordRunFailure(created.id, triggerId, new Date().toISOString(), 'boom');
+            await service.resetRunFailures(created.id, triggerId);
 
             const after = await service.get(created.id);
-            expect(after?.failureCount).toBe(0);
+            expect((after!.triggers![0] as any).failureCount).toBe(0);
         });
     });
 });
