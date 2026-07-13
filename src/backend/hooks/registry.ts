@@ -21,7 +21,7 @@
  * @module backend/hooks/registry
  */
 
-import type { IHeadFragment, ISsrHeadContext, IAiToolInvokeContext, IToolInvocationRecord, IWalletLinkedContext, ISyndicationDeliveredContext } from '@/types';
+import type { IHeadFragment, ISsrHeadContext, IAiToolInvokeContext, IToolInvocationRecord, IWalletLinkedContext, ISyndicationDeliveredContext, IContentPublishedContext } from '@/types';
 import { defineHook } from './define-hook.js';
 
 /**
@@ -162,6 +162,30 @@ export const HOOKS = {
                 'the sink, the delivered descriptor, and the provider content coordinates (typeId + ref) so ' +
                 'a subscriber can load the full content. For delivery audit, metrics, and downstream fan-out ' +
                 '— handlers cannot change the outcome.'
+        })
+    },
+    content: {
+        /**
+         * Observer fired when an approved curation item's decision is committed
+         * and its canonical content is live — one firing per approved item, from
+         * inside curation's decision commit. Carries the owning `typeId`, the
+         * opaque `ref`, and the decision-time `descriptor` so a subscriber can
+         * load the full record and react (announce it, index it, warm a cache)
+         * without curation depending on them. Fires only after the approved-status
+         * `applyEdit` commit succeeds — never for a rejected decision, never when
+         * the commit throws. Observer semantics keep a reactor's failure isolated:
+         * it can never change or undo the publish.
+         */
+        published: defineHook<IContentPublishedContext, void, 'observer'>({
+            id: 'content.published',
+            kind: 'observer',
+            phase: 'content.lifecycle',
+            order: 100,
+            description:
+                'Fired when an approved curation item is committed and its canonical content is live. Carries ' +
+                'the owning typeId, the opaque ref, and the decision-time descriptor so a subscriber can load ' +
+                'the full record and react. Fires only after a successful approved-status applyEdit commit — ' +
+                'handlers cannot change the outcome.'
         })
     },
     observer: {} as Record<string, never>

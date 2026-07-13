@@ -23,6 +23,7 @@ import type {
     IContentRouter,
     ICurationItem,
     IDatabaseService,
+    IHookRegistry,
     IMenuService,
     IModule,
     IModuleMetadata,
@@ -76,6 +77,12 @@ const CURATION_HELD_CONTENT_TYPE = 'curation:held';
 export interface ICurationModuleDependencies {
     /** Core database for the curations collection. */
     database: IDatabaseService;
+    /**
+     * Core hook registry. Curation fires the `content.published` observer seam
+     * through it when an approved item's canonical content goes live, so
+     * downstream reactors act without curation depending on them.
+     */
+    hookRegistry: IHookRegistry;
     /** Service registry to publish `'curation'` on and to resolve content-types / notifications. */
     serviceRegistry: IServiceRegistry;
     /** Menu service for registering the `/system/curation` admin nav item. */
@@ -96,6 +103,7 @@ export class CurationModule implements IModule<ICurationModuleDependencies> {
     };
 
     private database!: IDatabaseService;
+    private hookRegistry!: IHookRegistry;
     private serviceRegistry!: IServiceRegistry;
     private menuService!: IMenuService;
     private app!: Express;
@@ -125,6 +133,7 @@ export class CurationModule implements IModule<ICurationModuleDependencies> {
         this.logger.info('Initializing curation module...');
 
         this.database = dependencies.database;
+        this.hookRegistry = dependencies.hookRegistry;
         this.serviceRegistry = dependencies.serviceRegistry;
         this.menuService = dependencies.menuService;
         this.app = dependencies.app;
@@ -156,7 +165,8 @@ export class CurationModule implements IModule<ICurationModuleDependencies> {
             this.queue,
             contentRegistry,
             this.contentRouter,
-            this.sinkDefaults
+            this.sinkDefaults,
+            this.hookRegistry
         );
         this.controller = new CurationController(this.curation);
 

@@ -44,7 +44,8 @@ export type HookPhase =
     | 'websocket.event'
     | 'scheduler.tick'
     | 'observer.dispatch'
-    | 'ai.tool';
+    | 'ai.tool'
+    | 'content.lifecycle';
 
 /**
  * Optional predicate badges surfaced in the admin UI. Predicates document

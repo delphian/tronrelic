@@ -35,6 +35,7 @@ import type { IAiToolInvokeContext } from '../ai-tools/IAiToolHookContext.js';
 import type { IToolInvocationRecord } from '../ai-tools/IToolInvocationRecord.js';
 import type { IWalletLinkedContext } from './IWalletLinkedContext.js';
 import type { ISyndicationDeliveredContext } from './ISyndicationDeliveredContext.js';
+import type { IContentPublishedContext } from './IContentPublishedContext.js';
 
 /**
  * SSR-phase declared seams. Mirrors the `HOOKS.ssr` object in core's
@@ -122,6 +123,23 @@ export interface ICoreSchedulerHooks {
 }
 
 /**
+ * Content-lifecycle-phase declared seams. Mirrors the `HOOKS.content` object in
+ * core's `registry.ts`. These seams fire from inside the curation decision
+ * commit, so the admin timeline groups them under the `content.lifecycle` track.
+ */
+export interface ICoreContentHooks {
+    /**
+     * Observer seam fired when an approved curation item is committed and its
+     * canonical content is live — one firing per approved item. Carries the
+     * owning `typeId`, the opaque `ref`, and the decision-time `descriptor` so a
+     * subscriber can load the full record and react (announce it, index it) by
+     * hand. Fires only after a successful approved-status `applyEdit` commit;
+     * handlers cannot change the outcome.
+     */
+    readonly published: HookDescriptor<IContentPublishedContext, void, 'observer'>;
+}
+
+/**
  * Aggregate shape of every declared seam, grouped by pipeline phase.
  *
  * The remaining phases (`websocket`, `observer`) are declared as empty marker
@@ -134,5 +152,6 @@ export interface ICoreHooks {
     readonly http: ICoreHttpHooks;
     readonly websocket: Readonly<Record<string, never>>;
     readonly scheduler: ICoreSchedulerHooks;
+    readonly content: ICoreContentHooks;
     readonly observer: Readonly<Record<string, never>>;
 }
