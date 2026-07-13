@@ -723,6 +723,21 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
                     this.logger.info({ promptId, triggerId, hookId }, 'Hook-prompt job dropped: prompt or trigger no longer bound');
                     return;
                 }
+                // Mirror the cron tick's no-provider guard exactly: when no AI
+                // provider is registered at all (a provider swap or a
+                // disabled-provider deployment), drop the job untouched rather
+                // than claiming and executing. executeSavedPrompt would
+                // otherwise record a provider-unavailable failure that counts
+                // toward the trigger's 5-failure auto-pause, permanently pausing
+                // a hook trigger the cron path would merely leave waiting. Gate
+                // only on *zero* providers, never on an *active* one: a prompt
+                // may pin a specific (inactive) provider, and that pinned-absent
+                // case must still record a failure so the admin sees why it did
+                // not fire.
+                if (this.providerRegistry.listProviders().length === 0) {
+                    this.logger.info({ promptId, triggerId, hookId }, 'Hook-prompt job dropped: no AI provider installed');
+                    return;
+                }
                 // Claim mirrors the cron runner: stamp lastRunAt before the
                 // query so the trigger row shows the attempt even if the
                 // process dies mid-run. The queue's at-least-once delivery
