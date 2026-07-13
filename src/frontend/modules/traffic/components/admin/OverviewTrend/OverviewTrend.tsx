@@ -28,7 +28,7 @@ import { BarChart } from '../../../../../features/charts/components/BarChart';
 import type { BarChartSeries } from '../../../../../features/charts/components/BarChart';
 import { Card } from '../../../../../components/ui/Card';
 import { adminGetOverviewTrend } from '../../../api';
-import type { AnalyticsPeriod, ICustomDateRange, IOverviewTrend, IOverviewTrendPath } from '../../../api';
+import type { AnalyticsPeriod, ICustomDateRange, IOverviewTrend, IOverviewTrendPath, IOverviewTrendCountry } from '../../../api';
 import styles from './OverviewTrend.module.scss';
 
 /** Chart-switchable metrics. */
@@ -152,11 +152,12 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
             color: metric === 'visitors'
                 ? resolveCSSColor('--color-primary', '#4b8cff')
                 : resolveCSSColor('--color-success', '#57d48c'),
-            // Carry each bucket's top paths as point metadata so the shared
-            // BarChart tooltip can surface "what did they hit?" via our
-            // renderer. The paths are page-hit counts and identical for both
-            // metric modes (a bucket's URLs don't change with the y-measure).
-            data: trend.series.map(p => ({ date: p.bucket, value: p[metric], metadata: { topPaths: p.topPaths } }))
+            // Carry each bucket's top paths and countries as point metadata so
+            // the shared BarChart tooltip can surface "what did they view, and
+            // from where?" via our renderer. Both are page-view counts and
+            // identical for both metric modes (a bucket's breakdown doesn't
+            // change with the y-measure).
+            data: trend.series.map(p => ({ date: p.bucket, value: p[metric], metadata: { topPaths: p.topPaths, topCountries: p.topCountries } }))
         }];
     }, [trend, metric]);
 
@@ -172,29 +173,58 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
     const viewsPerVisit = current.visitors > 0 ? current.pageviews / current.visitors : 0;
     const prevViewsPerVisit = previous.visitors > 0 ? previous.pageviews / previous.visitors : 0;
     const numberFormatter = new Intl.NumberFormat();
+    // Phrase the bucket granularity for the tooltip heading so the ranked paths
+    // read as a single-bar slice ("this hour"/"this day"), not a window-wide or
+    // first-touch total. This is the metric-disambiguation the landing-pages
+    // panel already carries via its "(first-touch)" subtitle: these counts are
+    // page *views* within just the hovered bucket, a different measure from the
+    // panel's distinct first-touch visitors, so they are not meant to reconcile.
+    const bucketScopeLabel = trend.granularity === 'hour' ? 'this hour' : 'this day';
 
     /**
-     * Render a hovered bucket's most-hit paths inside the chart tooltip.
-     * Surfaces "what did they hit?" in place so an operator reading the trend
-     * need not cross-reference the landing-pages panel for the same window.
+     * Render a hovered bucket's most-viewed paths and most-active countries
+     * inside the chart tooltip. Surfaces "what did they view, and from where?"
+     * in place so an operator reading the trend need not cross-reference the
+     * landing-pages or geo panels — while each heading names the metric (views)
+     * and its bucket scope so neither count is misread as a window total, a
+     * first-touch landing count, or the geo panel's distinct-visitor figure.
+     * Both breakdowns share the bucket's page-view measure, so they are
+     * commensurable with the bar and with each other.
      *
-     * @param metadata - The hovered bar's point metadata; its `topPaths` is the
-     *   server-ranked path list the series attached for this bucket.
-     * @returns The ranked path block, or null for a bucket that recorded no hits.
+     * @param metadata - The hovered bar's point metadata; `topPaths` and
+     *   `topCountries` are the server-ranked lists the series attached for this
+     *   bucket.
+     * @returns The ranked breakdown blocks, or null for a bucket with neither.
      */
-    const renderTooltipPaths = (metadata: Record<string, any>): React.ReactNode => {
+    const renderTooltipMetadata = (metadata: Record<string, any>): React.ReactNode => {
         const paths = (metadata?.topPaths ?? []) as IOverviewTrendPath[];
-        if (paths.length === 0) return null;
+        const countries = (metadata?.topCountries ?? []) as IOverviewTrendCountry[];
+        if (paths.length === 0 && countries.length === 0) return null;
         return (
-            <div className={styles.tooltip_paths}>
-                <span className={styles.tooltip_paths__heading}>Top pages</span>
-                {paths.map(p => (
-                    <div key={p.path} className={styles.tooltip_paths__row}>
-                        <span className={styles.tooltip_paths__path}>{p.path}</span>
-                        <span className={styles.tooltip_paths__hits}>{numberFormatter.format(p.hits)}</span>
+            <>
+                {paths.length > 0 && (
+                    <div className={styles.tooltip_paths}>
+                        <span className={styles.tooltip_paths__heading}>Most viewed · {bucketScopeLabel}</span>
+                        {paths.map(p => (
+                            <div key={p.path} className={styles.tooltip_paths__row}>
+                                <span className={styles.tooltip_paths__path}>{p.path}</span>
+                                <span className={styles.tooltip_paths__hits}>{numberFormatter.format(p.hits)}</span>
+                            </div>
+                        ))}
                     </div>
-                ))}
-            </div>
+                )}
+                {countries.length > 0 && (
+                    <div className={styles.tooltip_paths}>
+                        <span className={styles.tooltip_paths__heading}>Top countries · {bucketScopeLabel}</span>
+                        {countries.map(c => (
+                            <div key={c.country} className={styles.tooltip_paths__row}>
+                                <span className={styles.tooltip_paths__path}>{c.country}</span>
+                                <span className={styles.tooltip_paths__hits}>{numberFormatter.format(c.hits)}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </>
         );
     };
 
@@ -274,7 +304,7 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
                 height={280}
                 yAxisMin={0}
                 yAxisFormatter={(v) => numberFormatter.format(Math.round(v))}
-                tooltipMetadataFormatter={renderTooltipPaths}
+                tooltipMetadataFormatter={renderTooltipMetadata}
                 emptyLabel="No traffic recorded in this period."
             />
             <p className={styles.footnote}>
