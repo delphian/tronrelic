@@ -58,4 +58,10 @@ export type {
 export type { IAiQueryOptions } from './IAiQueryOptions.js';
 export type { IAiQueryResult } from './IAiQueryResult.js';
 export type { IModelInfo } from './IModelInfo.js';
-export type { ISavedPrompt } from './ISavedPrompt.js';
+export type {
+    ISavedPrompt,
+    ISavedPromptTrigger,
+    ISavedPromptTriggerBase,
+    ISavedPromptCronTrigger,
+    ISavedPromptHookTrigger
+} from './ISavedPrompt.js';

@@ -75,7 +75,7 @@ export type { AccountIngestionStatus, AccountHistoryTickKind, AccountHistoryTick
 export { PRICE_ASSET_TRX } from './price-history/index.js';
 export type { PriceAsset, IPricePoint, IPriceHistorySettings, IPriceAssetCoverage, IPriceHistoryStats, IPriceCoverageDiagnostics, IPriceHistoryService } from './price-history/index.js';
 export type { PortfolioScope, IPortfolioQuery, IPortfolioHolding, IPortfolioAllocationSlice, IPortfolioBalancePoint, IPortfolioSummary, IValuationService } from './valuation/index.js';
-export type { IAiTool, IAiToolInputSchema, IAiConversationMessage, IAiProvider, IAiStreamChunk, IAiQueryRecord, AiQueryMode, IAiQueryOptions, IAiQueryResult, IModelInfo, ISavedPrompt, IAiTranscriptSegment, IAiThinkingSegment, IAiTextSegment, IAiToolUseSegment, IAiToolResultSegment } from './ai-tools/index.js';
+export type { IAiTool, IAiToolInputSchema, IAiConversationMessage, IAiProvider, IAiStreamChunk, IAiQueryRecord, AiQueryMode, IAiQueryOptions, IAiQueryResult, IModelInfo, ISavedPrompt, ISavedPromptTrigger, ISavedPromptTriggerBase, ISavedPromptCronTrigger, ISavedPromptHookTrigger, IAiTranscriptSegment, IAiThinkingSegment, IAiTextSegment, IAiToolUseSegment, IAiToolResultSegment } from './ai-tools/index.js';
 export { AI_TOOL_NAME_PATTERN } from './ai-tools/index.js';
 export { UNTRUSTED_CONTENT_NOTICE, UNTRUSTED_CONTENT_SYSTEM_CLAUSE, wrapUntrustedToolResult } from './ai-tools/index.js';
 export { DEFAULT_UNTRUSTED_SCREEN_CONFIG } from './ai-tools/index.js';

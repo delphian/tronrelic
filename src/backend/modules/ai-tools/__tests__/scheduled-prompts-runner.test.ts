@@ -1,14 +1,16 @@
 /**
  * @file scheduled-prompts-runner.test.ts
  *
- * Tests for runScheduledPrompts. Covers per-tick cron evaluation, the
- * provider-neutral execution path (`query({ mode: 'programmatic' })`), per-prompt
- * run-metadata write-back, error isolation between prompts, and the skip/fire
- * branch decisions that drive the scheduled-prompts feature.
+ * Tests for runScheduledPrompts. Covers per-tick cron-trigger evaluation, the
+ * provider-neutral execution path (`query({ mode: 'programmatic' })`),
+ * per-trigger run-metadata write-back, error isolation between prompts, and
+ * the skip/fire branch decisions that drive the scheduled-prompts feature.
  *
  * The runner consumes a SavedPromptsService and a provider resolver (mapping a
  * prompt's optional providerId to an executable provider), so these tests mock
- * both directly.
+ * both directly. Prompts carry their schedule as a `triggers[]` cron element
+ * (id `t1` in these fixtures); bookkeeping writes are addressed by
+ * (promptId, triggerId).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runScheduledPrompts, type IScheduledPromptRunner } from '../services/scheduled-prompts-runner.js';
@@ -17,13 +19,14 @@ import type { IAiQueryRecord, ISavedPrompt } from '@/types';
 /* ---------- mock factories ---------- */
 
 interface IRunResult {
+    triggerId: string;
     lastRunAt: string;
     lastRunError: string | null;
 }
 
 /**
- * Mock SavedPromptsService that tracks run-metadata writes and filters by
- * `scheduleEnabled` the same way the real service does.
+ * Mock SavedPromptsService that tracks per-trigger run-metadata writes and
+ * filters by enabled cron triggers the same way the real service does.
  *
  * @param initialPrompts - Prompts the mock should surface from `listScheduled`.
  * @returns A mock with spies and exposed `_runResults` / `_failureCounts`.
@@ -33,13 +36,13 @@ function createMockSavedPrompts(initialPrompts: ISavedPrompt[]) {
     const failureCounts = new Map<string, number>();
     return {
         listScheduled: vi.fn(async () => initialPrompts.filter(
-            p => p.cron && p.cron.trim().length > 0 && p.scheduleEnabled !== false
+            p => p.triggers?.some(t => t.kind === 'cron' && t.enabled !== false)
         )),
-        recordRunResult: vi.fn(async (id: string, lastRunAt: string, lastRunError: string | null) => {
-            runResults.set(id, { lastRunAt, lastRunError });
+        recordRunResult: vi.fn(async (id: string, triggerId: string, lastRunAt: string, lastRunError: string | null) => {
+            runResults.set(id, { triggerId, lastRunAt, lastRunError });
         }),
-        recordRunFailure: vi.fn(async (id: string, lastRunAt: string, errorMessage: string) => {
-            runResults.set(id, { lastRunAt, lastRunError: errorMessage });
+        recordRunFailure: vi.fn(async (id: string, triggerId: string, lastRunAt: string, errorMessage: string) => {
+            runResults.set(id, { triggerId, lastRunAt, lastRunError: errorMessage });
             failureCounts.set(id, (failureCounts.get(id) ?? 0) + 1);
             return { disabled: false };
         }),
@@ -67,22 +70,46 @@ function createMockProvider(): IScheduledPromptRunner & { query: ReturnType<type
     return { query: vi.fn().mockResolvedValue({ responseText: 'ok' }) };
 }
 
+/** Flat schedule knobs makePrompt folds into a single `t1` cron trigger. */
+interface IScheduleOverrides {
+    cron?: string;
+    scheduleEnabled?: boolean;
+    lastRunAt?: string;
+    scheduleAnchorAt?: string;
+}
+
 /**
- * Build a saved prompt with sensible defaults and optional overrides.
+ * Build a saved prompt with sensible defaults and optional overrides. The flat
+ * schedule knobs (`cron` / `scheduleEnabled` / `lastRunAt` / `scheduleAnchorAt`)
+ * are folded into a single cron trigger element with the fixed id `t1`, so
+ * test bodies read like the pre-triggers fixtures while exercising the real
+ * `triggers[]` shape.
  *
  * @param overrides - Fields to override on the default prompt.
  * @returns A saved prompt.
  */
-function makePrompt(overrides: Partial<ISavedPrompt> = {}): ISavedPrompt {
+function makePrompt(overrides: Partial<ISavedPrompt> & IScheduleOverrides = {}): ISavedPrompt {
     const now = new Date().toISOString();
-    return {
-        id: overrides.id ?? 'p1',
-        name: overrides.name ?? 'Test Prompt',
-        prompt: overrides.prompt ?? 'What is the current block height?',
-        createdAt: overrides.createdAt ?? now,
-        updatedAt: overrides.updatedAt ?? now,
-        ...overrides
+    const { cron, scheduleEnabled, lastRunAt, scheduleAnchorAt, ...rest } = overrides;
+    const prompt: ISavedPrompt = {
+        id: rest.id ?? 'p1',
+        name: rest.name ?? 'Test Prompt',
+        prompt: rest.prompt ?? 'What is the current block height?',
+        createdAt: rest.createdAt ?? now,
+        updatedAt: rest.updatedAt ?? now,
+        ...rest
     };
+    if (cron !== undefined) {
+        prompt.triggers = [{
+            id: 't1',
+            kind: 'cron',
+            enabled: scheduleEnabled !== false,
+            cron,
+            ...(lastRunAt !== undefined ? { lastRunAt } : {}),
+            ...(scheduleAnchorAt !== undefined ? { anchorAt: scheduleAnchorAt } : {})
+        }];
+    }
+    return prompt;
 }
 
 /**
@@ -113,7 +140,7 @@ describe('runScheduledPrompts', () => {
         expect(savedPrompts.recordRunResult).not.toHaveBeenCalled();
     });
 
-    it('skips prompts with invalid cron strings and logs a warning', async () => {
+    it('skips triggers with invalid cron strings and logs a warning', async () => {
         const savedPrompts = createMockSavedPrompts([
             makePrompt({ id: 'bad', cron: 'not-a-cron', lastRunAt: minutesAgo(10) })
         ]);
@@ -143,9 +170,47 @@ describe('runScheduledPrompts', () => {
         // default-deny applies (triggerPath !== 'interactive').
         expect(provider.query).toHaveBeenCalledWith({ prompt: 'run me', mode: 'programmatic' });
         expect(savedPrompts.recordRunResult).toHaveBeenCalledTimes(1);
-        const [id, , err] = savedPrompts.recordRunResult.mock.calls[0];
+        const [id, triggerId, , err] = savedPrompts.recordRunResult.mock.calls[0];
         expect(id).toBe('due');
+        expect(triggerId).toBe('t1');
         expect(err).toBeNull();
+    });
+
+    it('skips a paused (enabled: false) cron trigger even when its sibling fires', async () => {
+        const savedPrompts = createMockSavedPrompts([
+            {
+                ...makePrompt({ id: 'mixed', prompt: 'run' }),
+                triggers: [
+                    { id: 'paused', kind: 'cron', enabled: false, cron: '* * * * *', lastRunAt: minutesAgo(5) },
+                    { id: 'live', kind: 'cron', enabled: true, cron: '* * * * *', lastRunAt: minutesAgo(5) }
+                ]
+            }
+        ]);
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+
+        expect(provider.query).toHaveBeenCalledTimes(1);
+        expect(savedPrompts.recordRunResult).toHaveBeenCalledTimes(1);
+        expect(savedPrompts.recordRunResult.mock.calls[0][1]).toBe('live');
+    });
+
+    it('never fires a hook trigger from the cron tick', async () => {
+        const savedPrompts = createMockSavedPrompts([
+            {
+                ...makePrompt({ id: 'hooky', prompt: 'run' }),
+                triggers: [
+                    { id: 'h1', kind: 'hook', enabled: true, hookId: 'content.published' },
+                    { id: 'c1', kind: 'cron', enabled: true, cron: '* * * * *', lastRunAt: minutesAgo(5) }
+                ]
+            }
+        ]);
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+
+        // Only the cron element fires on the tick; the hook binding waits for
+        // its hook.
+        expect(provider.query).toHaveBeenCalledTimes(1);
+        expect(savedPrompts.recordRunResult.mock.calls[0][1]).toBe('c1');
     });
 
     it('forwards the composed system prompt as injectedSystemPrompt', async () => {
@@ -215,7 +280,7 @@ describe('runScheduledPrompts', () => {
         await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
 
         expect(savedPrompts.recordRunFailure).toHaveBeenCalledTimes(1);
-        const [, , reason] = savedPrompts.recordRunFailure.mock.calls[0];
+        const [, , , reason] = savedPrompts.recordRunFailure.mock.calls[0];
         expect(reason).toBe(preciseError);
     });
 
@@ -230,7 +295,7 @@ describe('runScheduledPrompts', () => {
         expect(savedPrompts.recordRunResult).not.toHaveBeenCalled();
     });
 
-    it('falls back to createdAt when lastRunAt is absent', async () => {
+    it('falls back to createdAt when the trigger has never run', async () => {
         const savedPrompts = createMockSavedPrompts([
             makePrompt({ id: 'first-run', cron: '* * * * *', createdAt: minutesAgo(10) })
         ]);
@@ -240,7 +305,7 @@ describe('runScheduledPrompts', () => {
         expect(savedPrompts.recordRunResult).toHaveBeenCalledTimes(1);
     });
 
-    it('anchors on scheduleAnchorAt over an older lastRunAt so a just-edited schedule does not fire retroactively', async () => {
+    it('anchors on anchorAt over an older lastRunAt so a just-edited schedule does not fire retroactively', async () => {
         const savedPrompts = createMockSavedPrompts([
             makePrompt({
                 id: 'rescheduled',
@@ -274,9 +339,9 @@ describe('runScheduledPrompts', () => {
         expect(savedPrompts.recordRunFailure).toHaveBeenCalledTimes(1);
         expect(logger.error).toHaveBeenCalled();
 
-        const [, , claimErr] = savedPrompts.recordRunResult.mock.calls[0];
+        const [, , , claimErr] = savedPrompts.recordRunResult.mock.calls[0];
         expect(claimErr).toBeNull();
-        const [, , err] = savedPrompts.recordRunFailure.mock.calls[0];
+        const [, , , err] = savedPrompts.recordRunFailure.mock.calls[0];
         expect(err).toBe('Provider down');
     });
 
@@ -286,7 +351,7 @@ describe('runScheduledPrompts', () => {
         ]);
 
         await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
-        expect(savedPrompts.resetRunFailures).toHaveBeenCalledWith('ok');
+        expect(savedPrompts.resetRunFailures).toHaveBeenCalledWith('ok', 't1');
     });
 
     it('logs when a failure trips the auto-pause', async () => {
@@ -364,11 +429,11 @@ describe('runScheduledPrompts', () => {
         // The run is claimed, then recorded as failed with a descriptive reason.
         expect(savedPrompts.recordRunResult).toHaveBeenCalledTimes(1);
         expect(savedPrompts.recordRunFailure).toHaveBeenCalledTimes(1);
-        const [, , reason] = savedPrompts.recordRunFailure.mock.calls[0];
+        const [, , , reason] = savedPrompts.recordRunFailure.mock.calls[0];
         expect(reason).toContain('missing-provider');
     });
 
-    it('writes run metadata per-prompt rather than as a single batch', async () => {
+    it('writes run metadata per-trigger rather than as a single batch', async () => {
         const tenSecondsAgo = new Date(Date.now() - 10_000).toISOString();
         const savedPrompts = createMockSavedPrompts([
             makePrompt({ id: 'due', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'run' }),
@@ -380,7 +445,7 @@ describe('runScheduledPrompts', () => {
 
         expect(provider.query).toHaveBeenCalledTimes(1);
         expect(provider.query).toHaveBeenCalledWith({ prompt: 'run', mode: 'programmatic' });
-        // Only the fired prompt writes back — skipped/invalid ones don't churn the DB.
+        // Only the fired trigger writes back — skipped/invalid ones don't churn the DB.
         expect(savedPrompts.recordRunResult).toHaveBeenCalledTimes(1);
         expect(savedPrompts.recordRunResult.mock.calls[0][0]).toBe('due');
     });
@@ -416,7 +481,7 @@ describe('runScheduledPrompts', () => {
         // Never executes under no/stale authority; records the failed run instead.
         expect(provider.query).not.toHaveBeenCalled();
         expect(savedPrompts.recordRunFailure).toHaveBeenCalledTimes(1);
-        const [, , reason] = savedPrompts.recordRunFailure.mock.calls[0];
+        const [, , , reason] = savedPrompts.recordRunFailure.mock.calls[0];
         expect(reason).toContain('gone');
     });
 
@@ -522,7 +587,7 @@ describe('runScheduledPrompts', () => {
         // The query still ran and its success was committed; the recorder throw
         // was swallowed and logged, never surfaced to the run loop.
         expect(provider.query).toHaveBeenCalledTimes(1);
-        expect(savedPrompts.resetRunFailures).toHaveBeenCalledWith('noisy');
+        expect(savedPrompts.resetRunFailures).toHaveBeenCalledWith('noisy', 't1');
         expect(logger.warn).toHaveBeenCalledWith(
             expect.objectContaining({ promptId: 'noisy' }),
             expect.stringContaining('query history')

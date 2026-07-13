@@ -18,6 +18,7 @@ import type { Express } from 'express';
 import type {
     IAccountDirectoryService,
     IAiTool,
+    IContentPublishedContext,
     IBlockchainObserverService,
     IBlockchainService,
     ICacheService,
@@ -37,6 +38,7 @@ import type {
 } from '@/types';
 import { ADMIN_GROUP_ID } from '@/types';
 import { logger } from '../../lib/logger.js';
+import { HOOKS } from '../../hooks/registry.js';
 import { getRedisClient } from '../../loaders/redis.js';
 import { WebSocketService } from '../../services/websocket.service.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
@@ -54,6 +56,7 @@ import { PromptVariableRegistry } from './services/prompt-variable-registry.js';
 import { SystemPromptsService } from './services/system-prompts.service.js';
 import { registerBuiltinVariables } from './variables/index.js';
 import { runScheduledPrompts, type ScheduledPromptNotifier } from './services/scheduled-prompts-runner.js';
+import { executeSavedPrompt } from './services/execute-saved-prompt.js';
 import { createAccountEndUserResolver, type EndUserResolver } from './services/end-user-resolver.js';
 import { AiToolsController } from './api/ai-tools.controller.js';
 import { createAiToolsAdminRouter } from './api/ai-tools.router.js';
@@ -122,6 +125,85 @@ const NOTIFICATIONS_SERVICE = 'notifications';
 const SCHEDULED_PROMPTS_SCHEDULE = '0 */2 * * * *';
 
 /**
+ * The hook seams a saved prompt's `kind: 'hook'` trigger may bind to, each with
+ * a mapper that flattens its payload into the `{%hook.*%}` variables the
+ * executor substitutes into the prompt text. Deliberately an explicit
+ * allowlist — not "every declared hook" — because binding only makes sense on
+ * observer seams whose payload a prompt can consume as text; the saved-prompts
+ * service validates a trigger's `hookId` against exactly this set.
+ */
+const BINDABLE_HOOKS = [
+    {
+        descriptor: HOOKS.content.published,
+        /**
+         * Flatten a `content.published` payload into per-run prompt variables:
+         * the owning type id, the opaque ref (JSON), the full decision-time
+         * descriptor (JSON), and its title/body for prompts that only need the
+         * rendered snapshot.
+         *
+         * @param ctx - The hook payload carried by the firing.
+         * @returns The `{%hook.*%}` variable map for this run.
+         */
+        toVariables: (ctx: IContentPublishedContext): Record<string, string> => ({
+            'hook.type-id': ctx.typeId,
+            'hook.ref': JSON.stringify(ctx.ref),
+            'hook.descriptor': JSON.stringify(ctx.descriptor),
+            'hook.title': ctx.descriptor.title ?? '',
+            'hook.body': ctx.descriptor.body ?? ''
+        }),
+        /**
+         * Extract the payload's content-type id so a trigger's optional
+         * `typeIdFilter` can scope the binding to one published type.
+         *
+         * @param ctx - The hook payload carried by the firing.
+         * @returns The owning content type id.
+         */
+        typeIdOf: (ctx: IContentPublishedContext): string | undefined => ctx.typeId
+    }
+] as const;
+
+/** The declared-hook ids a hook trigger may bind to, for save-time validation. */
+export const BINDABLE_HOOK_IDS: ReadonlySet<string> = new Set(BINDABLE_HOOKS.map(h => h.descriptor.id));
+
+/**
+ * One enqueued hook-trigger run: the prompt and trigger to fire plus the
+ * flattened `{%hook.*%}` variables from the firing's payload. Durable job data
+ * — everything the worker needs, since the hook context itself cannot outlive
+ * the firing.
+ */
+export interface IHookPromptJob {
+    /** Saved-prompt id to run (re-read fresh by the worker). */
+    promptId: string;
+    /** The hook trigger element that matched the firing. */
+    triggerId: string;
+    /** The declared hook id that fired, for logging and a stale-binding check. */
+    hookId: string;
+    /** Flattened per-run prompt variables from the hook payload. */
+    variables: Record<string, string>;
+}
+
+/**
+ * Minimum queue contract the module needs for hook-fired prompt runs. The
+ * bootstrap supplies a factory backed by the BullMQ `QueueService` (queue +
+ * worker on one name); tests omit the factory entirely, which disables the
+ * hook-trigger path without touching Redis.
+ */
+export interface IHookPromptQueue {
+    /** Enqueue one durable hook-prompt run. */
+    enqueue(name: string, data: IHookPromptJob): Promise<unknown>;
+}
+
+/**
+ * Builds the durable queue+worker pair for hook-fired prompt runs. Injected —
+ * rather than the module constructing `QueueService` itself — because the
+ * BullMQ constructor opens a Redis connection eagerly, which a unit-tested or
+ * Redis-less boot must be able to avoid.
+ */
+export type HookPromptQueueFactory = (
+    processor: (job: { data: IHookPromptJob }) => Promise<void>
+) => IHookPromptQueue;
+
+/**
  * Dependencies the AI tools module needs at bootstrap. A subset of the shared
  * module dependency bundle, so the bootstrap can inject `sharedDeps` directly.
  */
@@ -157,6 +239,13 @@ export interface IAiToolsModuleDependencies {
      * job simply is not registered and the audit collection is not auto-trimmed.
      */
     scheduler?: ISchedulerService | null;
+    /**
+     * Factory for the durable hook-prompt queue+worker. Optional/nullable so
+     * tests and a Redis-less boot still run the module; when absent the
+     * `content.published` hook subscription is not registered and hook-bound
+     * triggers simply never fire (they remain editable and inert).
+     */
+    hookQueueFactory?: HookPromptQueueFactory | null;
 }
 
 /**
@@ -182,6 +271,8 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private systemConfig!: ISystemConfigService;
     private app!: Express;
     private scheduler: ISchedulerService | null = null;
+    private hookQueueFactory: HookPromptQueueFactory | null = null;
+    private hookPromptQueue: IHookPromptQueue | null = null;
 
     private registry!: AiToolRegistry;
     private policy!: ToolPolicyEngine;
@@ -221,6 +312,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.systemConfig = dependencies.systemConfig;
         this.app = dependencies.app;
         this.scheduler = dependencies.scheduler ?? null;
+        this.hookQueueFactory = dependencies.hookQueueFactory ?? null;
 
         this.registry = new AiToolRegistry(this.logger, this.database);
         await this.registry.loadStates();
@@ -293,7 +385,10 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.queryHistory = new AiQueryHistoryService(this.logger, this.database);
         await this.queryHistory.ensureIndexes();
 
-        this.savedPrompts = new SavedPromptsService(this.database);
+        // Hook triggers may only bind to the explicit bindable-hook allowlist,
+        // so a saved prompt can never reference a seam that does not exist (or
+        // one whose payload a prompt cannot consume).
+        this.savedPrompts = new SavedPromptsService(this.database, { knownHookIds: BINDABLE_HOOK_IDS });
         await this.savedPrompts.ensureIndexes();
 
         this.promptVariables = new PromptVariableRegistry(this.logger, this.database);
@@ -591,6 +686,85 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             this.logger.info({ job: SCHEDULED_PROMPTS_JOB }, 'AI tool scheduled-prompts job registered');
         } else {
             this.logger.info('Scheduler disabled — AI tool audit retention and scheduled-prompts jobs not registered');
+        }
+
+        // Hook-fired saved prompts. A `kind: 'hook'` trigger binds a prompt to a
+        // declared observer seam (BINDABLE_HOOKS — today `content.published`);
+        // the subscription below ENQUEUES the run on a durable queue and returns
+        // immediately, never awaiting the AI call inline — the hook fires
+        // in-process during another pipeline's commit (curation's decision
+        // commit), and an inline multi-minute query there would block it. The
+        // worker re-reads the prompt fresh, re-checks the binding, claims the
+        // run, and executes through the same shared path as the cron runner.
+        if (this.hookQueueFactory) {
+            const execDeps = {
+                savedPrompts: this.savedPrompts,
+                logger: this.logger,
+                resolveProvider: (providerId?: string) => providerId
+                    ? this.providerRegistry.getProvider(providerId)
+                    : this.providerRegistry.getActive(),
+                resolveEndUser: this.resolveEndUser,
+                composeSystemPrompt: (principal?: Parameters<SystemPromptsService['compose']>[0]) =>
+                    this.systemPrompts.compose(principal),
+                notify: notifyScheduledRun,
+                recordQuery: (record: Parameters<AiQueryHistoryService['append']>[0]) =>
+                    this.queryHistory.append(record)
+            };
+
+            this.hookPromptQueue = this.hookQueueFactory(async (job) => {
+                const { promptId, triggerId, hookId, variables } = job.data;
+                // Re-read fresh: the prompt may have been edited or deleted
+                // between enqueue and processing. A missing prompt or a removed/
+                // disabled/re-typed trigger makes the job a silent no-op rather
+                // than running stale configuration.
+                const prompt = await this.savedPrompts.get(promptId);
+                const trigger = prompt?.triggers?.find(t => t.id === triggerId);
+                if (!prompt || !trigger || trigger.kind !== 'hook' || trigger.enabled === false || trigger.hookId !== hookId) {
+                    this.logger.info({ promptId, triggerId, hookId }, 'Hook-prompt job dropped: prompt or trigger no longer bound');
+                    return;
+                }
+                // Claim mirrors the cron runner: stamp lastRunAt before the
+                // query so the trigger row shows the attempt even if the
+                // process dies mid-run. The queue's at-least-once delivery
+                // means a crash can redeliver, which re-runs the prompt — an
+                // accepted trade for a notification-style run.
+                const claimedAt = new Date().toISOString();
+                await this.savedPrompts.recordRunResult(promptId, triggerId, claimedAt, null);
+                await executeSavedPrompt(prompt, execDeps, { triggerId, claimedAt, variables });
+            });
+
+            for (const bindable of BINDABLE_HOOKS) {
+                this.hookRegistry.register('core', bindable.descriptor, async (ctx) => {
+                    // Observer handler inside another pipeline's commit: do the
+                    // minimum — find bound prompts, filter, enqueue — and let
+                    // every failure surface only as a log line.
+                    try {
+                        const bound = await this.savedPrompts.listHookBound(bindable.descriptor.id);
+                        const eventTypeId = bindable.typeIdOf(ctx);
+                        for (const prompt of bound) {
+                            const triggers = (prompt.triggers ?? []).filter(t =>
+                                t.kind === 'hook'
+                                && t.enabled !== false
+                                && t.hookId === bindable.descriptor.id
+                                && (!t.typeIdFilter || t.typeIdFilter === eventTypeId)
+                            );
+                            for (const trigger of triggers) {
+                                await this.hookPromptQueue!.enqueue('hook-prompt-run', {
+                                    promptId: prompt.id,
+                                    triggerId: trigger.id,
+                                    hookId: bindable.descriptor.id,
+                                    variables: bindable.toVariables(ctx)
+                                });
+                            }
+                        }
+                    } catch (error) {
+                        this.logger.error({ error, hook: bindable.descriptor.id }, 'Failed to enqueue hook-bound prompt runs');
+                    }
+                });
+            }
+            this.logger.info({ hooks: [...BINDABLE_HOOK_IDS] }, 'Hook-bound saved-prompt subscriptions registered');
+        } else {
+            this.logger.info('No hook-prompt queue factory injected — hook-bound saved-prompt triggers will not fire');
         }
 
         // Admin nav item under the System container. Memory-only (re-created each
