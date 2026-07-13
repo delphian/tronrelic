@@ -679,6 +679,14 @@ export interface IOverviewTrendPath {
     hits: number;
 }
 
+/** One country and its interactive hit count within a trend bucket. */
+export interface IOverviewTrendCountry {
+    /** ISO-3166 alpha-2 country of the `page` events. */
+    country: string;
+    /** Interactive `page` events from this country in the bucket. */
+    hits: number;
+}
+
 /** One time bucket of the overview trend series. */
 export interface IOverviewTrendPoint {
     /** Bucket start — ISO-8601 UTC for hours, `YYYY-MM-DD` for days. */
@@ -687,6 +695,8 @@ export interface IOverviewTrendPoint {
     pageviews: number;
     /** Top 3 most-hit paths in the bucket (hits desc); [] when zero-traffic. */
     topPaths: IOverviewTrendPath[];
+    /** Top 3 most-active countries in the bucket (hits desc); [] when zero-traffic. */
+    topCountries: IOverviewTrendCountry[];
 }
 
 /** Unified dashboard headline: KPIs + previous window + zero-filled series. */

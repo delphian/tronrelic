@@ -148,6 +148,31 @@
     font-variant-numeric: tabular-nums;
 }
 
+/*
+ * Numeric headers must right-align over their right-aligned cells. The base
+ * `.table th { text-align: left }` rule outranks a bare `.table__number`
+ * (both single-class, but `.table th` also matches the element, giving it the
+ * higher specificity), so without this the header sat left while the numbers
+ * sat right — header and content visibly out of column. Re-qualify with the
+ * table ancestor to win the cascade.
+ */
+.table th.table__number {
+    text-align: right;
+}
+
+/*
+ * Truncate an overflowing cell to one ellipsized line instead of wrapping.
+ * `max-width: 0` lets the auto table layout hand this column only the space
+ * left after the fixed numeric and bar columns, then clip the overflow — used
+ * by the landing-pages path column, whose URLs would otherwise wrap.
+ */
+.table__truncate {
+    max-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .table__bar_cell {
     width: 4.5rem;
 }

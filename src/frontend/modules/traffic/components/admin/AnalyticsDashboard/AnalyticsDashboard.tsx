@@ -268,38 +268,38 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                 <div className={styles.loading}>Loading analytics data...</div>
             ) : (
                 <>
-                    {/* Conversion Funnel */}
-                    {funnel.length > 0 && (
-                        <Card>
-                            <h3 className={styles.section_title}>
-                                <Target size={16} className={styles.section_title__icon} />
-                                Conversion Funnel
-                            </h3>
-                            <div className={styles.funnel}>
-                                {funnel.map(stage => (
-                                    <div
-                                        key={stage.stage}
-                                        className={styles.funnel_stage}
-                                        title="Counts are unique visitors (browser identities / tids), not accounts. One person logged in from two browsers or devices counts as two logged-in visitors but one account, so these stages nest under Visitors and never exceed it."
-                                    >
-                                        <span className={styles.funnel_stage__label}>{stage.stage}</span>
-                                        <div className={styles.funnel_stage__bar_wrapper}>
-                                            <div
-                                                className={styles.funnel_stage__bar}
-                                                style={{ width: `${stage.percentage}%` }}
-                                            />
-                                        </div>
-                                        <span className={styles.funnel_stage__stats}>
-                                            {stage.count.toLocaleString()} ({stage.percentage}%)
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
-                        </Card>
-                    )}
-
-                    {/* Traffic Sources + Top Landing Pages side by side */}
+                    {/* Conversion Funnel + Traffic Sources side by side */}
                     <div className={styles.split_grid}>
+                        {/* Conversion Funnel */}
+                        {funnel.length > 0 && (
+                            <Card>
+                                <h3 className={styles.section_title}>
+                                    <Target size={16} className={styles.section_title__icon} />
+                                    Conversion Funnel
+                                </h3>
+                                <div className={styles.funnel}>
+                                    {funnel.map(stage => (
+                                        <div
+                                            key={stage.stage}
+                                            className={styles.funnel_stage}
+                                            title="Counts are unique visitors (browser identities / tids), not accounts. One person logged in from two browsers or devices counts as two logged-in visitors but one account, so these stages nest under Visitors and never exceed it."
+                                        >
+                                            <span className={styles.funnel_stage__label}>{stage.stage}</span>
+                                            <div className={styles.funnel_stage__bar_wrapper}>
+                                                <div
+                                                    className={styles.funnel_stage__bar}
+                                                    style={{ width: `${stage.percentage}%` }}
+                                                />
+                                            </div>
+                                            <span className={styles.funnel_stage__stats}>
+                                                {stage.count.toLocaleString()} ({stage.percentage}%)
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </Card>
+                        )}
+
                         {/* Traffic Sources */}
                         <Card>
                             <h3
@@ -545,7 +545,10 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                                 )}
                             </div>
                         </Card>
+                    </div>
 
+                    {/* Top Landing Pages + Geographic Distribution side by side */}
+                    <div className={styles.split_grid}>
                         {/* Top Landing Pages */}
                         <Card>
                             <h3
@@ -574,7 +577,7 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                                             <tbody>
                                                 {landingPages.map(p => (
                                                     <tr key={p.path}>
-                                                        <td>{p.path}</td>
+                                                        <td className={styles.table__truncate} title={p.path}>{p.path}</td>
                                                         <td className={styles.table__number}>{p.visitors.toLocaleString()}</td>
                                                         <td className={styles.table__bar_cell}>
                                                             <div
@@ -590,10 +593,7 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                                 )}
                             </div>
                         </Card>
-                    </div>
 
-                    {/* Geography + Devices side by side */}
-                    <div className={styles.split_grid}>
                         {/* Geographic Distribution */}
                         <Card>
                             <h3 className={styles.section_title}>
@@ -634,37 +634,37 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
                                 )}
                             </div>
                         </Card>
-
-                        {/* Device Breakdown */}
-                        <Card>
-                            <h3 className={styles.section_title}>
-                                <Smartphone size={16} className={styles.section_title__icon} />
-                                Device Breakdown
-                            </h3>
-                            <div>
-                                {devices.length === 0 ? (
-                                    <div className={styles.empty_state}>No device data for this period</div>
-                                ) : (
-                                    <div className={styles.funnel}>
-                                        {devices.map(d => (
-                                            <div key={d.device} className={styles.funnel_stage}>
-                                                <span className={styles.funnel_stage__label}>{d.device}</span>
-                                                <div className={styles.funnel_stage__bar_wrapper}>
-                                                    <div
-                                                        className={styles.funnel_stage__bar}
-                                                        style={{ width: `${d.percentage}%` }}
-                                                    />
-                                                </div>
-                                                <span className={styles.funnel_stage__stats}>
-                                                    {d.count.toLocaleString()} ({d.percentage}%)
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </Card>
                     </div>
+
+                    {/* Device Breakdown */}
+                    <Card>
+                        <h3 className={styles.section_title}>
+                            <Smartphone size={16} className={styles.section_title__icon} />
+                            Device Breakdown
+                        </h3>
+                        <div>
+                            {devices.length === 0 ? (
+                                <div className={styles.empty_state}>No device data for this period</div>
+                            ) : (
+                                <div className={styles.funnel}>
+                                    {devices.map(d => (
+                                        <div key={d.device} className={styles.funnel_stage}>
+                                            <span className={styles.funnel_stage__label}>{d.device}</span>
+                                            <div className={styles.funnel_stage__bar_wrapper}>
+                                                <div
+                                                    className={styles.funnel_stage__bar}
+                                                    style={{ width: `${d.percentage}%` }}
+                                                />
+                                            </div>
+                                            <span className={styles.funnel_stage__stats}>
+                                                {d.count.toLocaleString()} ({d.percentage}%)
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </Card>
 
                     {/* Campaign Performance */}
                     {campaigns.length > 0 && (

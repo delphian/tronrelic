@@ -395,6 +395,14 @@ export interface IOverviewTrendPath {
     hits: number;
 }
 
+/** One country and its interactive hit count within a trend bucket. */
+export interface IOverviewTrendCountry {
+    /** ISO-3166 alpha-2 country of the `page` events. */
+    country: string;
+    /** Interactive `page` events from this country in the bucket. */
+    hits: number;
+}
+
 /** One time bucket of the overview trend series. */
 export interface IOverviewTrendPoint {
     /** Bucket start — ISO-8601 UTC for hour buckets, `YYYY-MM-DD` for days. */
@@ -410,6 +418,13 @@ export interface IOverviewTrendPoint {
      * visitors — a path is the URL a `page` beacon reported.
      */
     topPaths: IOverviewTrendPath[];
+    /**
+     * The bucket's most-active countries (top 3 by `page`-event count,
+     * descending), same page-view measure as {@link topPaths} so the whole
+     * tooltip stays in one commensurable unit. Distinct from the Geo panel's
+     * windowed distinct-visitor count by design. Empty for zero-traffic buckets.
+     */
+    topCountries: IOverviewTrendCountry[];
 }
 
 /**
@@ -1778,13 +1793,27 @@ export class TrafficService {
             ORDER BY bucket ASC, hits DESC, path ASC
             LIMIT 3 BY bucket
         `;
+        // Top 3 countries per bucket for the tooltip — same construction and
+        // measure as the paths query (page-event counts within just this
+        // bucket, `page` rows only so bot-only bootstrap countries never
+        // surface). NULL country is dropped so a hover lists only nameable
+        // origins. `LIMIT 3 BY bucket` bounds the payload to 3 × bucket count.
+        const countriesSql = `
+            SELECT ${bucketExpr} AS bucket, country, count() AS hits
+            FROM ${TABLE_NAME}
+            WHERE ${clause}${botFilter} AND event_type = 'page' AND country IS NOT NULL
+            GROUP BY bucket, country
+            ORDER BY bucket ASC, hits DESC, country ASC
+            LIMIT 3 BY bucket
+        `;
 
         try {
-            const [current, previous, seriesRows, pathRows] = await Promise.all([
+            const [current, previous, seriesRows, pathRows, countryRows] = await Promise.all([
                 fetchKpis(currentRange),
                 fetchKpis(previousRange),
                 this.clickhouse.query<{ bucket: string; visitors: string | number; pageviews: string | number }>(seriesSql, params),
-                this.clickhouse.query<{ bucket: string; path: string; hits: string | number }>(pathsSql, params)
+                this.clickhouse.query<{ bucket: string; path: string; hits: string | number }>(pathsSql, params),
+                this.clickhouse.query<{ bucket: string; country: string; hits: string | number }>(countriesSql, params)
             ]);
 
             // Zero-fill every bucket in the window, then overlay the rows.
@@ -1800,7 +1829,7 @@ export class TrafficService {
             const buckets = new Map<string, IOverviewTrendPoint>();
             for (let ms = floorUtc; ms <= until.getTime(); ms += stepMs) {
                 const key = keyFor(ms);
-                buckets.set(key, { bucket: key, visitors: 0, pageviews: 0, topPaths: [] });
+                buckets.set(key, { bucket: key, visitors: 0, pageviews: 0, topPaths: [], topCountries: [] });
             }
             for (const row of seriesRows) {
                 const key = granularity === 'hour'
@@ -1822,6 +1851,17 @@ export class TrafficService {
                 const point = buckets.get(key);
                 if (point) {
                     point.topPaths.push({ path: String(row.path), hits: Number(row.hits) });
+                }
+            }
+            // Overlay the per-bucket top countries — same ordering guarantee as
+            // paths (rows arrive hits-desc, appending preserves rank).
+            for (const row of countryRows) {
+                const key = granularity === 'hour'
+                    ? clickHouseDateToIso(String(row.bucket))
+                    : String(row.bucket);
+                const point = buckets.get(key);
+                if (point) {
+                    point.topCountries.push({ country: String(row.country), hits: Number(row.hits) });
                 }
             }
 
