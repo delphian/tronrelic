@@ -24,7 +24,7 @@
 
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
     Users, MousePointerClick,
     Globe, Smartphone, BarChart3, Target, ChevronDown, ChevronRight
@@ -120,6 +120,13 @@ interface IAnalyticsDashboardProps {
     customRange?: ICustomDateRange;
     /** Whether classified bot rows are included. */
     includeBots: boolean;
+    /**
+     * Page-level auto-refresh signal. Each increment triggers a background
+     * refetch that swaps data in place — no loading blank and no collapse of an
+     * open traffic-source drill-down, unlike a control-driven (foreground)
+     * reload. Omitted disables periodic refresh.
+     */
+    refreshSignal?: number;
 }
 
 /**
@@ -129,9 +136,10 @@ interface IAnalyticsDashboardProps {
  * headline, conversion funnel, traffic sources, landing pages, geography,
  * devices, campaigns, and retention data for the globally selected window.
  *
- * @param props - Global period, custom range, and bot-filter selection.
+ * @param props - Global period, custom range, and bot-filter selection, plus
+ *   the shared auto-refresh signal that drives periodic in-place reloads.
  */
-export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyticsDashboardProps) {
+export function AnalyticsDashboard({ period, customRange, includeBots, refreshSignal }: IAnalyticsDashboardProps) {
     const [loading, setLoading] = useState(true);
 
     // Data state
@@ -181,13 +189,20 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
     }, [expandedSource, sourceDetails, period, customRange, excludeBots]);
 
     /**
-     * Fetch all analytics data for the selected period.
-     * Runs all requests in parallel for performance.
+     * Fetch all analytics data for the selected period. Runs all requests in
+     * parallel for performance.
+     *
+     * @param background - When true this is an auto-refresh tick, not a
+     *   control-driven load: keep the current data on screen (no loading blank)
+     *   and preserve any open traffic-source drill-down instead of resetting it,
+     *   so a periodic refresh never disrupts what the operator is reading.
      */
-    const fetchAll = useCallback(async () => {
-        setLoading(true);
-        setExpandedSource(null);
-        setSourceDetails({});
+    const fetchAll = useCallback(async (background = false) => {
+        if (!background) {
+            setLoading(true);
+            setExpandedSource(null);
+            setSourceDetails({});
+        }
         try {
             const [
                 funnelRes,
@@ -221,13 +236,34 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
         } catch (error) {
             console.error('Failed to fetch analytics:', error);
         } finally {
-            setLoading(false);
+            if (!background) {
+                setLoading(false);
+            }
         }
     }, [period, customRange, excludeBots]);
 
+    // Foreground load: runs on mount and whenever a control (period, range, bot
+    // filter) changes, showing the loading state.
     useEffect(() => {
         fetchAll();
     }, [fetchAll]);
+
+    // Background auto-refresh: re-pull in place on each page-level refresh tick.
+    // The latest fetchAll is read through a ref so this effect depends only on
+    // refreshSignal — depending on fetchAll directly would both double-fetch on
+    // every control change and, worse, let a tick fire a stale-closure fetch for
+    // the previously-selected window. A mount guard skips the initial signal so
+    // the foreground effect owns the first load.
+    const fetchAllRef = useRef(fetchAll);
+    fetchAllRef.current = fetchAll;
+    const didMountRef = useRef(false);
+    useEffect(() => {
+        if (!didMountRef.current) {
+            didMountRef.current = true;
+            return;
+        }
+        fetchAllRef.current(true);
+    }, [refreshSignal]);
 
     /** Build chart series for the retention line chart. */
     const retentionSeries: ChartSeries[] = [
@@ -263,7 +299,7 @@ export function AnalyticsDashboard({ period, customRange, includeBots }: IAnalyt
     return (
         <div className={styles.dashboard}>
             {/* Overview headline — KPI strip + unified trend (owns its fetch) */}
-            <OverviewTrend period={period} customRange={customRange} includeBots={includeBots} />
+            <OverviewTrend period={period} customRange={customRange} includeBots={includeBots} refreshSignal={refreshSignal} />
 
             {loading ? (
                 <div className={styles.loading}>Loading analytics data...</div>

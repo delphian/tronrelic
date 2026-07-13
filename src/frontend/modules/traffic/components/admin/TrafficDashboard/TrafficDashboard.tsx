@@ -28,7 +28,7 @@
  * failing query for one dimension does not block the rest of the dashboard.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Globe, MapPin, RefreshCw } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
@@ -81,7 +81,24 @@ function useNumberFormatter(): (n: number) => string {
     }, []);
 }
 
-export function TrafficDashboard() {
+interface ITrafficDashboardProps {
+    /**
+     * Page-level auto-refresh signal. Each increment refreshes all four panels
+     * in place — no loading blank, and a transient failure keeps the prior data
+     * rather than flashing an error. Distinct from the manual Refresh button,
+     * which deliberately shows the loading state. Omitted disables it.
+     */
+    refreshSignal?: number;
+}
+
+/**
+ * ClickHouse traffic_events dashboard — bot-class breakdown, classifier-gap
+ * samples, and top landing paths / countries over a selectable window.
+ *
+ * @param props - The shared auto-refresh signal driving periodic in-place
+ *   reloads of every panel.
+ */
+export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
     const [sinceHours, setSinceHours] = useState<number>(24);
     // Bumped by the Refresh button to re-trigger the fetch effect under
     // the same cleanup-flag guard used for window changes. Avoids a
@@ -114,76 +131,95 @@ export function TrafficDashboard() {
         []
     );
 
-    useEffect(() => {
-        // Cleanup-flag guard against stale fetch results: clicking the
-        // window picker rapidly (e.g. 24h -> 7d -> 1h) starts overlapping
-        // requests, and a slower earlier response can land after a
-        // faster later one. Without this guard, the dashboard would
-        // briefly display data for a window the user has already left.
-        // The flag also covers the Refresh-while-fetching case via
-        // refreshNonce because the effect re-runs through the same
-        // cleanup path.
-        let active = true;
+    // Fetch all four panels. A request-id ref supersedes stale in-flight
+    // responses so a slower earlier request (e.g. clicking 24h -> 7d -> 1h)
+    // cannot overwrite a faster later one — the ordering guard the previous
+    // cleanup flag provided, but reusable outside a single effect.
+    //
+    // `background` distinguishes an auto-refresh tick from a control-driven or
+    // manual reload: a background refresh swaps data in place (no loading blank)
+    // and, on a transient failure, keeps the prior panel rather than flashing an
+    // error over good data. Foreground reloads keep the original blank-then-load
+    // behaviour so the manual Refresh button still reads as an action.
+    const reqIdRef = useRef(0);
+    const fetchAll = useCallback(async (background = false): Promise<void> => {
+        const reqId = ++reqIdRef.current;
         const params = `?sinceHours=${sinceHours}`;
+        const isCurrent = (): boolean => reqId === reqIdRef.current;
 
-        // Reset loading and error state up-front so a previously-failed
-        // panel renders the loading state during refresh rather than
-        // continuing to display the stale error (PanelBody renders error
-        // before loading).
-        setSummaryLoading(true);
-        setBotOtherLoading(true);
-        setTopPathsLoading(true);
-        setTopCountriesLoading(true);
-        setSummaryError(null);
-        setBotOtherError(null);
-        setTopPathsError(null);
-        setTopCountriesError(null);
+        if (!background) {
+            // Reset loading and error state up-front so a previously-failed panel
+            // renders the loading state during refresh rather than continuing to
+            // display the stale error (PanelBody renders error before loading).
+            setSummaryLoading(true);
+            setBotOtherLoading(true);
+            setTopPathsLoading(true);
+            setTopCountriesLoading(true);
+            setSummaryError(null);
+            setBotOtherError(null);
+            setTopPathsError(null);
+            setTopCountriesError(null);
+        }
 
-        // Fire all four reads in parallel — they're independent endpoints
-        // and the loading-per-panel UX hides any tail latency.
+        // Fire all four reads in parallel — they're independent endpoints and
+        // the loading-per-panel UX hides any tail latency.
         const summaryPromise = fetch(`${baseUrl}/summary${params}`)
             .then(async r => {
                 if (!r.ok) throw new Error(`Failed to load summary (${r.status})`);
                 return r.json() as Promise<SummaryResponse>;
             })
-            .then(data => { if (active) { setSummary(data); setSummaryError(null); } })
-            .catch(err => { if (active) setSummaryError(err instanceof Error ? err.message : 'Failed to load'); })
-            .finally(() => { if (active) setSummaryLoading(false); });
+            .then(data => { if (isCurrent()) { setSummary(data); setSummaryError(null); } })
+            .catch(err => { if (isCurrent() && !background) setSummaryError(err instanceof Error ? err.message : 'Failed to load'); })
+            .finally(() => { if (isCurrent() && !background) setSummaryLoading(false); });
 
         const botOtherPromise = fetch(`${baseUrl}/bot-other-samples${params}&limit=15`)
             .then(async r => {
                 if (!r.ok) throw new Error(`Failed to load bot_other (${r.status})`);
                 return r.json() as Promise<AggregateResponse>;
             })
-            .then(data => { if (active) { setBotOther(data); setBotOtherError(null); } })
-            .catch(err => { if (active) setBotOtherError(err instanceof Error ? err.message : 'Failed to load'); })
-            .finally(() => { if (active) setBotOtherLoading(false); });
+            .then(data => { if (isCurrent()) { setBotOther(data); setBotOtherError(null); } })
+            .catch(err => { if (isCurrent() && !background) setBotOtherError(err instanceof Error ? err.message : 'Failed to load'); })
+            .finally(() => { if (isCurrent() && !background) setBotOtherLoading(false); });
 
         const topPathsPromise = fetch(`${baseUrl}/top-paths${params}&limit=15`)
             .then(async r => {
                 if (!r.ok) throw new Error(`Failed to load paths (${r.status})`);
                 return r.json() as Promise<AggregateResponse>;
             })
-            .then(data => { if (active) { setTopPaths(data); setTopPathsError(null); } })
-            .catch(err => { if (active) setTopPathsError(err instanceof Error ? err.message : 'Failed to load'); })
-            .finally(() => { if (active) setTopPathsLoading(false); });
+            .then(data => { if (isCurrent()) { setTopPaths(data); setTopPathsError(null); } })
+            .catch(err => { if (isCurrent() && !background) setTopPathsError(err instanceof Error ? err.message : 'Failed to load'); })
+            .finally(() => { if (isCurrent() && !background) setTopPathsLoading(false); });
 
         const topCountriesPromise = fetch(`${baseUrl}/top-countries${params}&limit=15`)
             .then(async r => {
                 if (!r.ok) throw new Error(`Failed to load countries (${r.status})`);
                 return r.json() as Promise<AggregateResponse>;
             })
-            .then(data => { if (active) { setTopCountries(data); setTopCountriesError(null); } })
-            .catch(err => { if (active) setTopCountriesError(err instanceof Error ? err.message : 'Failed to load'); })
-            .finally(() => { if (active) setTopCountriesLoading(false); });
+            .then(data => { if (isCurrent()) { setTopCountries(data); setTopCountriesError(null); } })
+            .catch(err => { if (isCurrent() && !background) setTopCountriesError(err instanceof Error ? err.message : 'Failed to load'); })
+            .finally(() => { if (isCurrent() && !background) setTopCountriesLoading(false); });
 
-        // The await-all isn't required for cleanup correctness — each
-        // chain self-guards via `active`. It's kept off the effect
-        // signature deliberately: useEffect can't return a Promise.
-        void Promise.all([summaryPromise, botOtherPromise, topPathsPromise, topCountriesPromise]);
+        await Promise.all([summaryPromise, botOtherPromise, topPathsPromise, topCountriesPromise]);
+    }, [baseUrl, sinceHours]);
 
-        return () => { active = false; };
-    }, [baseUrl, sinceHours, refreshNonce]);
+    // Foreground load: mount, window changes, and the manual Refresh button
+    // (via refreshNonce). Shows the loading state.
+    useEffect(() => { fetchAll(); }, [fetchAll, refreshNonce]);
+
+    // Background auto-refresh: re-pull all panels in place on each page-level
+    // tick. Latest fetchAll read via a ref so this depends only on refreshSignal
+    // (avoids double-fetch on control changes and stale-window ticks); the mount
+    // guard leaves the first load to the foreground effect.
+    const fetchAllRef = useRef(fetchAll);
+    fetchAllRef.current = fetchAll;
+    const didMountRef = useRef(false);
+    useEffect(() => {
+        if (!didMountRef.current) {
+            didMountRef.current = true;
+            return;
+        }
+        fetchAllRef.current(true);
+    }, [refreshSignal]);
 
     const clickhouseDisabledNotice = summary && !summary.clickhouseEnabled;
 

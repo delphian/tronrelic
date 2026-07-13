@@ -14,6 +14,7 @@
  * ├── index.ts          # Barrel exports (this file)
  * ├── api/              # Admin analytics + GSC client
  * ├── components/       # admin/* dashboard panels
+ * ├── hooks/            # Shared dashboard hooks (auto-refresh clock)
  * └── lib/              # Device icon helper
  * ```
  */
@@ -34,6 +35,12 @@ export { TrafficDashboard } from './components';
 export { CrawlerDashboard } from './components';
 export { OverviewTrend } from './components';
 export { PeriodPicker, toDateInputValue } from './components';
+
+// =============================================================================
+// Hooks — shared dashboard behavior
+// =============================================================================
+
+export { useAutoRefresh } from './hooks/useAutoRefresh';
 
 // =============================================================================
 // API client

@@ -118,15 +118,22 @@ interface IOverviewTrendProps {
     customRange?: ICustomDateRange;
     /** Whether classified bot rows are included. */
     includeBots: boolean;
+    /**
+     * Page-level auto-refresh signal. Each increment re-pulls the trend in
+     * place; the prior data stays visible (dimmed via `isFetching`) so the
+     * periodic refresh never flashes a loading state. Omitted disables it.
+     */
+    refreshSignal?: number;
 }
 
 /**
  * KPI strip + unified trend chart for the Analytics tab.
  *
- * @param props - Global period/bot-filter selection from the page controls.
+ * @param props - Global period/bot-filter selection from the page controls,
+ *   plus the shared auto-refresh signal that drives periodic in-place reloads.
  * @returns The rendered overview headline.
  */
-export function OverviewTrend({ period, customRange, includeBots }: IOverviewTrendProps) {
+export function OverviewTrend({ period, customRange, includeBots, refreshSignal }: IOverviewTrendProps) {
     const [trend, setTrend] = useState<IOverviewTrend | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [metric, setMetric] = useState<TrendMetric>('visitors');
@@ -142,7 +149,7 @@ export function OverviewTrend({ period, customRange, includeBots }: IOverviewTre
             .catch(err => { if (active) setError(err instanceof Error ? err.message : 'Failed to load'); })
             .finally(() => { if (active) setIsFetching(false); });
         return () => { active = false; };
-    }, [period, customRange, includeBots]);
+    }, [period, customRange, includeBots, refreshSignal]);
 
     const series: BarChartSeries[] = useMemo(() => {
         if (!trend || trend.series.length === 0) return [];
