@@ -230,20 +230,11 @@
     color: color-mix(in srgb, var(--color-primary) 50%, var(--color-success));
 }
 
-/* Two-column grid for side-by-side sections */
-.split_grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--grid-gap-md);
-    container-type: inline-size;
-    container-name: split-grid;
-}
-
-@container split-grid (min-width: #{$breakpoint-mobile-lg}) {
-    .split_grid {
-        grid-template-columns: 1fr 1fr;
-    }
-}
+/* Side-by-side sections use the shared <Grid columns="responsive"> layout
+   primitive (components/layout/Grid). The former local `.split_grid` set
+   container-type on the same element its @container rule targeted — a query
+   container is only matched by its descendants, never itself — so the 2-column
+   rule never applied and the sections never floated. */
 
 .empty_state {
     text-align: center;
