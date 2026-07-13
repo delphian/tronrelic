@@ -384,7 +384,17 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
                         ...(draft.typeIdFilter.trim() ? { typeIdFilter: draft.typeIdFilter.trim() } : {})
                     }
             ));
-            onSaved(await saveSavedPrompt({ id: prompt.id, triggers }));
+            const saved = await saveSavedPrompt({ id: prompt.id, triggers });
+            // Re-seed drafts from the server's normalized triggers so newly added
+            // rows adopt their minted ids. Without this, a second in-modal save
+            // resends `id: undefined` for those rows and the server treats them as
+            // brand new — re-anchoring the cron and wiping run bookkeeping instead
+            // of preserving the element.
+            const refreshed = saved.find(p => p.id === prompt.id);
+            if (refreshed) {
+                setTriggerDrafts(toTriggerDrafts(refreshed.triggers));
+            }
+            onSaved(saved);
         } catch (err) {
             onError(err instanceof Error ? err.message : 'Failed to update triggers');
         } finally {
@@ -593,6 +603,9 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
                                         aria-label="Hook to bind"
                                     >
                                         {!draft.hookId && <option value="">Select a hook…</option>}
+                                        {draft.hookId && !bindableHooks.some(hook => hook.id === draft.hookId) && (
+                                            <option value={draft.hookId}>{draft.hookId}</option>
+                                        )}
                                         {bindableHooks.map(hook => (
                                             <option key={hook.id} value={hook.id}>{hook.id}</option>
                                         ))}
