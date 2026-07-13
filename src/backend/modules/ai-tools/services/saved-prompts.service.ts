@@ -717,12 +717,10 @@ export class SavedPromptsService {
 // ── Helpers ─────────────────────────────────────────────────────────
 
 /**
- * Shape a raw Mongo document into the published `ISavedPrompt`: strip the
- * driver-assigned `_id`, then derive the deprecated flat schedule projection
- * (`cron` / `scheduleEnabled` / `lastRunAt` / `lastRunError`) from the first
- * cron trigger. The projection is read-time only — never stored — and exists
- * so the pre-`triggers[]` editor UI keeps working until the chunk-3b editor
- * lands; it is removed with that editor.
+ * Shape a raw Mongo document into the published `ISavedPrompt` by stripping
+ * the driver-assigned `_id`. Triggers pass through verbatim — the deprecated
+ * flat schedule projection the pre-`triggers[]` editor needed was removed
+ * along with that editor.
  *
  * @param doc - The raw Mongo document.
  * @returns The API-shaped prompt.
@@ -730,21 +728,7 @@ export class SavedPromptsService {
 function stripMongoId<T extends Record<string, unknown>>(doc: T): ISavedPrompt {
     const cleaned = { ...doc } as Record<string, unknown>;
     delete cleaned._id;
-    const prompt = cleaned as unknown as ISavedPrompt;
-    const firstCron = prompt.triggers?.find(
-        (t): t is ISavedPromptCronTrigger => t.kind === 'cron'
-    );
-    if (firstCron) {
-        prompt.cron = firstCron.cron;
-        prompt.scheduleEnabled = firstCron.enabled !== false;
-        if (firstCron.lastRunAt !== undefined) {
-            prompt.lastRunAt = firstCron.lastRunAt;
-        }
-        if (firstCron.lastRunError !== undefined) {
-            prompt.lastRunError = firstCron.lastRunError;
-        }
-    }
-    return prompt;
+    return cleaned as unknown as ISavedPrompt;
 }
 
 /**

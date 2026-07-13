@@ -174,26 +174,4 @@ export interface ISavedPrompt {
      * element here).
      */
     triggers?: ISavedPromptTrigger[];
-    /**
-     * @deprecated Transitional read-only projection of the first cron trigger's
-     * expression, derived by the backend at read time (never stored). Exists so
-     * the pre-`triggers[]` editor UI keeps compiling and working until the
-     * chunk-3b editor lands; write via `triggers`, not this field.
-     */
-    cron?: string | null;
-    /**
-     * @deprecated Transitional projection of the first cron trigger's `enabled`
-     * flag. See {@link ISavedPrompt.cron}.
-     */
-    scheduleEnabled?: boolean;
-    /**
-     * @deprecated Transitional projection of the first cron trigger's
-     * `lastRunAt`. See {@link ISavedPrompt.cron}.
-     */
-    lastRunAt?: string;
-    /**
-     * @deprecated Transitional projection of the first cron trigger's
-     * `lastRunError`. See {@link ISavedPrompt.cron}.
-     */
-    lastRunError?: string | null;
 }

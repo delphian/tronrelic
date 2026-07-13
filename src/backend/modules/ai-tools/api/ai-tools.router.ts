@@ -53,6 +53,7 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
     router.get('/query/providers', controller.listQueryProviders);
     router.get('/query/conversations/:conversationId', controller.getConversationHistory);
 
+    router.get('/query/prompts/hooks', controller.listPromptHooks);
     router.get('/query/prompts', controller.listPrompts);
     router.post('/query/prompts', controller.savePrompt);
     router.delete('/query/prompts/:id', controller.deletePrompt);

@@ -118,32 +118,6 @@ function validateToolAllowlist(value: unknown): string | null {
 }
 
 /**
- * Translate the legacy flat `cron`/`scheduleEnabled` save-prompt body fields
- * into the unified `triggers` input, for editor clients that predate the
- * `triggers[]` schema (removed once the chunk-3b editor lands). Semantics
- * mirror the old flat contract: both fields absent preserves the existing
- * triggers (`undefined`); a `null`/empty cron clears them (`null`); a cron
- * string becomes one cron trigger element honouring `scheduleEnabled`.
- *
- * @param cron - The raw legacy cron body value.
- * @param scheduleEnabled - The raw legacy enable flag.
- * @returns A `triggers` input equivalent to the legacy request.
- */
-function legacyCronToTriggers(cron: unknown, scheduleEnabled: unknown): ISavedPromptTriggerInput[] | null | undefined {
-    if (cron === undefined) {
-        return undefined;
-    }
-    if (cron === null || (typeof cron === 'string' && !cron.trim())) {
-        return null;
-    }
-    return [{
-        kind: 'cron',
-        cron: typeof cron === 'string' ? cron : String(cron),
-        enabled: scheduleEnabled !== false
-    }];
-}
-
-/**
  * Read the Better Auth admin id `requireAdmin` set on the request, for audit
  * attribution. Undefined when the call authenticated via the service token.
  *
@@ -171,6 +145,8 @@ export class AiToolsController {
      * @param promptVariables - Prompt variable registry (Registry tab Variables section + trifecta secret-leg feed).
      * @param systemPrompts - Core system-prompts service (Registry tab System Prompts section + per-query injection composition).
      * @param resolveEndUser - Maps a Better Auth user id to the live end-user principal the governor scopes user-owned-object tools to (interactive query attribution + prompt-owner labelling).
+     * @param screenConfig - Untrusted-content output-screen policy store (Registry tab screen section).
+     * @param bindableHooks - Declared hook seams a saved prompt's hook trigger may bind to, with their registry descriptions — served to the editor's hook picker so the UI offers exactly what save-time validation accepts.
      */
     constructor(
         private readonly registry: AiToolRegistry,
@@ -184,7 +160,8 @@ export class AiToolsController {
         private readonly promptVariables: PromptVariableRegistry,
         private readonly systemPrompts: SystemPromptsService,
         private readonly resolveEndUser: EndUserResolver,
-        private readonly screenConfig: ScreenConfigService
+        private readonly screenConfig: ScreenConfigService,
+        private readonly bindableHooks: ReadonlyArray<{ id: string; description: string }> = []
     ) {}
 
     /** GET /tools — registry with capability, provider, and enabled state. */
@@ -793,6 +770,15 @@ export class AiToolsController {
         res.json({ providers });
     };
 
+    /**
+     * GET /query/prompts/hooks — the declared hook seams a saved prompt's hook
+     * trigger may bind to. Backs the editor's hook picker so it offers exactly
+     * the ids `savePrompt` will accept.
+     */
+    listPromptHooks = (_req: Request, res: Response): void => {
+        res.json({ hooks: this.bindableHooks });
+    };
+
     /** GET /query/prompts — saved prompt templates, newest-updated first. */
     listPrompts = async (_req: Request, res: Response): Promise<void> => {
         try {
@@ -810,26 +796,21 @@ export class AiToolsController {
      * client's shared state stays current without a second round-trip.
      */
     savePrompt = async (req: Request, res: Response): Promise<void> => {
-        const { id, name, prompt, triggers, cron, scheduleEnabled, providerId, model, toolAllowlist } = (req.body ?? {}) as {
+        const { id, name, prompt, triggers, providerId, model, toolAllowlist } = (req.body ?? {}) as {
             id?: unknown;
             name?: unknown;
             prompt?: unknown;
             triggers?: unknown;
-            cron?: unknown;
-            scheduleEnabled?: unknown;
             providerId?: unknown;
             model?: unknown;
             toolAllowlist?: unknown;
         };
         try {
-            // The editor sends the unified `triggers` array. Until the editor UI
-            // migrates (chunk 3b), the legacy flat `cron`/`scheduleEnabled` body
-            // fields are still accepted and translated into a single cron
-            // trigger element so the pre-triggers UI keeps working; `triggers`
-            // wins when both are present.
-            const effectiveTriggers = triggers !== undefined
-                ? (triggers as ISavedPromptTriggerInput[] | null)
-                : legacyCronToTriggers(cron, scheduleEnabled);
+            // The editor sends the unified `triggers` array (tri-state: absent
+            // preserves, null/[] clears, an array replaces). The legacy flat
+            // `cron`/`scheduleEnabled` body fields were retired with the
+            // pre-`triggers[]` editor.
+            const effectiveTriggers = triggers as ISavedPromptTriggerInput[] | null | undefined;
             const hasId = typeof id === 'string' && id.trim().length > 0;
             if (hasId) {
                 await this.savedPrompts.update(id as string, {
