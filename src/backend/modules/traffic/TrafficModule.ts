@@ -120,7 +120,7 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         IgnoredUsersService.setDependencies(dependencies.database, this.logger);
         this.ignoredUsersService = IgnoredUsersService.getInstance();
         await this.ignoredUsersService.createIndexes();
-        this.trafficService.setIgnoredUserIds(await this.ignoredUsersService.getIds());
+        await this.trafficService.setIgnoredUserIds(await this.ignoredUsersService.getIds());
 
         // Admin dashboard reads against traffic_events aggregates, plus the
         // analytics + GSC surface. Resolves account/wallet services from the

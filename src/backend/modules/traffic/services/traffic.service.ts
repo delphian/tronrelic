@@ -628,13 +628,18 @@ export class TrafficService {
     private static instance: TrafficService | null = null;
 
     /**
-     * Cached Better Auth ids of registered accounts to exclude from every read
-     * (the operator ignore list). Held as a plain array so the hot query path
-     * ({@link rangeParams}) stays synchronous — the authoritative list lives in
-     * `IgnoredUsersService` (Mongo) and is pushed here at bootstrap and after
-     * each mutation via {@link setIgnoredUserIds}. Empty means "exclude nobody".
+     * The operator ignore list, in two cached forms. `ignoredUserIds` is the raw
+     * Better Auth account list from Mongo; `ignoredCandidateUids` is the resolved
+     * "whole person" tid set — every `candidate_uid` that has ever logged in as
+     * one of those accounts. The exclusion injects the *resolved tid set* as a
+     * literal, never a subquery: `candidate_uid` is the second column of the
+     * table's `ORDER BY (timestamp, candidate_uid)` sort key (migration 010), so
+     * a literal `candidate_uid NOT IN (…)` is index-friendly, whereas the old
+     * `WHERE user_id IN (…)` subquery scanned unindexed `user_id` on *every* read.
+     * Both empty means "exclude nobody".
      */
     private ignoredUserIds: string[] = [];
+    private ignoredCandidateUids: string[] = [];
 
     private constructor(
         private readonly clickhouse: IClickHouseService | undefined,
@@ -642,37 +647,59 @@ export class TrafficService {
     ) {}
 
     /**
-     * Replace the cached ignore-list ids. Called by the traffic module at
-     * bootstrap and by the admin controller after an add/remove, so the
-     * always-on exclusion reflects the persisted list without a per-query Mongo
-     * read. Idempotent and cheap; the ids feed {@link ignoredUsersExclusion}.
+     * Replace the ignore list and resolve its whole-person tid set once. Called
+     * by the traffic module at bootstrap and by the admin controller after an
+     * add/remove — the *only* moments the list changes — so the expensive
+     * `user_id`-keyed scan runs here (once per mutation) instead of inside every
+     * dashboard read. Reads then filter against the cached literal tid set,
+     * which prunes on the sort key. The tradeoff is bounded staleness: a login as
+     * an ignored account between refreshes is not excluded until the next refresh
+     * (a re-save of the list, or the next boot) rather than instantly — an
+     * accepted cost for collapsing ~18 subquery scans per dashboard load plus the
+     * 30s live-counter poll into one scan per list change. On a resolution error
+     * the previous tid set is kept (best-effort), matching the "re-syncs on next
+     * boot" contract of the controller cache refresh.
      *
      * @param ids - The full set of Better Auth account ids to exclude.
      */
-    public setIgnoredUserIds(ids: string[]): void {
+    public async setIgnoredUserIds(ids: string[]): Promise<void> {
         this.ignoredUserIds = ids;
+        if (!this.clickhouse || ids.length === 0) {
+            this.ignoredCandidateUids = [];
+            return;
+        }
+        // Unwindowed by design — a tid that logged in as an ignored account at
+        // ANY point must be excluded, so this resolution cannot be time-bounded.
+        // It runs once per list change, not once per read, which is what makes
+        // the unindexed user_id scan affordable.
+        const sql = `SELECT DISTINCT candidate_uid FROM ${TABLE_NAME} WHERE user_id IN ({ignoredUserIds:Array(String)})`;
+        try {
+            const rows = await this.clickhouse.query<{ candidate_uid: string }>(sql, { ignoredUserIds: ids });
+            this.ignoredCandidateUids = rows.map(r => r.candidate_uid);
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to resolve ignored candidate_uids; keeping previous exclusion set');
+        }
     }
 
     /**
-     * The always-on "whole person" exclusion for the ignore list. Excludes every
-     * row whose tid ever logged in as an ignored account — including that tid's
-     * anonymous, pre-login rows — so an ignored operator disappears from visitor
-     * counts entirely, not just from their logged-in rows. The subquery is
-     * deliberately unwindowed: a tid that logged in as an ignored account at any
-     * point is excluded across the whole read, regardless of when that login
-     * fell. Returns an empty fragment when nobody is ignored (an `IN ()` would be
-     * invalid SQL), so the common path adds no cost.
+     * The always-on "whole person" exclusion for the ignore list. Filters out
+     * every row of any resolved ignored tid — including that tid's anonymous,
+     * pre-login rows — via a literal `candidate_uid NOT IN (…)` against the
+     * cached set (see {@link setIgnoredUserIds} for how it is resolved and why a
+     * literal beats the previous per-read subquery). Returns an empty fragment
+     * when nobody is ignored (an `IN ()` would be invalid SQL), so the common
+     * path adds no cost.
      *
      * @returns The ` AND candidate_uid NOT IN (…)` fragment and its bound param,
      *   ready to append to any `traffic_events` WHERE clause.
      */
     private ignoredUsersExclusion(): { fragment: string; params: Record<string, unknown> } {
-        if (this.ignoredUserIds.length === 0) {
+        if (this.ignoredCandidateUids.length === 0) {
             return { fragment: '', params: {} };
         }
         return {
-            fragment: ` AND candidate_uid NOT IN (SELECT candidate_uid FROM ${TABLE_NAME} WHERE user_id IN ({ignoredUserIds:Array(String)}))`,
-            params: { ignoredUserIds: this.ignoredUserIds }
+            fragment: ' AND candidate_uid NOT IN ({ignoredCandidateUids:Array(String)})',
+            params: { ignoredCandidateUids: this.ignoredCandidateUids }
         };
     }
 
@@ -1118,9 +1145,16 @@ export class TrafficService {
         if (range.until) {
             where += ' AND timestamp <= parseDateTimeBestEffort({until:String})';
         }
+        // Derived sessions build a fresh window instead of reusing rangeParams'
+        // clause, so the ignore-list exclusion must be re-applied here — without
+        // it session KPIs (count, duration, bounce) keep counting ignored
+        // operators even though visitor/pageview counts drop them. The param is
+        // already bound in `params` (rangeParams set it); only the fragment needs
+        // appending, so no per-read subquery returns.
+        const excluded = this.ignoredUsersExclusion();
         // session_start <= until holds automatically — the scan admits no row
         // past the upper bound — so only the lower bound needs the HAVING.
-        return { where: `${where}${botFilter}`, having: 'session_start >= parseDateTimeBestEffort({since:String})', params };
+        return { where: `${where}${botFilter}${excluded.fragment}`, having: 'session_start >= parseDateTimeBestEffort({since:String})', params };
     }
 
     /**

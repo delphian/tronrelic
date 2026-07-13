@@ -96,7 +96,7 @@ export class TrafficController {
      */
     private async refreshIgnoredUsersCache(): Promise<void> {
         try {
-            this.trafficService.setIgnoredUserIds(await this.ignoredUsersService.getIds());
+            await this.trafficService.setIgnoredUserIds(await this.ignoredUsersService.getIds());
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to refresh ignored-users cache');
         }

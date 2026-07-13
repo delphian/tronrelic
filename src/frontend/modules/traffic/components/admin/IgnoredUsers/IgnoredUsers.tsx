@@ -17,7 +17,7 @@
  * auth, so the initial load state here is the permitted admin case.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { isAxiosError } from 'axios';
 import { Search, UserX, X } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
@@ -69,10 +69,6 @@ export function IgnoredUsers() {
     const [results, setResults] = useState<IAccountMatch[]>([]);
     const [searching, setSearching] = useState(false);
     const [adding, setAdding] = useState(false);
-    // Guards the debounced search against a stale response overwriting a newer
-    // one — only the latest issued search may set results.
-    const searchSeq = useRef(0);
-
     useEffect(() => {
         let active = true;
         adminGetIgnoredUsers()
@@ -92,18 +88,22 @@ export function IgnoredUsers() {
             return;
         }
         setSearching(true);
-        const seq = ++searchSeq.current;
+        // Per-run guard cleared by the cleanup on every query change (including
+        // to a blank/short term) and on unmount, so a search still in flight
+        // cannot repopulate the dropdown after the field is cleared or the
+        // component unmounts. This also keeps only the latest search's result.
+        let active = true;
         const timer = setTimeout(async () => {
             try {
                 const matches = await adminSearchAccounts(term);
-                if (seq === searchSeq.current) setResults(matches);
+                if (active) setResults(matches);
             } catch {
-                if (seq === searchSeq.current) setResults([]);
+                if (active) setResults([]);
             } finally {
-                if (seq === searchSeq.current) setSearching(false);
+                if (active) setSearching(false);
             }
         }, SEARCH_DEBOUNCE_MS);
-        return () => clearTimeout(timer);
+        return () => { active = false; clearTimeout(timer); };
     }, [query]);
 
     /**
