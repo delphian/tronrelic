@@ -470,6 +470,28 @@ describe('SavedPromptsService', () => {
             expect(trigger.enabled).toBe(true);
         });
 
+        it('resets a hook trigger\'s failure state when its binding changes, preserving it on a no-op re-save', async () => {
+            const created = await service.create({ name: 'Rebind', prompt: 'p', triggers: [{ kind: 'hook', hookId: 'content.published' }] });
+            const triggerId = created.triggers![0].id;
+            await service.recordRunFailure(created.id, triggerId, new Date().toISOString(), 'boom');
+
+            // No-op re-save (same hookId, still filterless) keeps the streak.
+            const resaved = await service.update(created.id, { triggers: [{ id: triggerId, kind: 'hook', hookId: 'content.published' }] });
+            expect((resaved.triggers![0] as any).failureCount).toBe(1);
+
+            // A binding change (typeIdFilter added) wipes the stale streak so
+            // the rebound trigger cannot immediately auto-pause.
+            const rebound = await service.update(created.id, { triggers: [{ id: triggerId, kind: 'hook', hookId: 'content.published', typeIdFilter: 'blog:post' }] });
+            const trigger = rebound.triggers![0] as any;
+            expect(trigger.failureCount).toBe(0);
+            expect(trigger.lastRunError).toBeNull();
+        });
+
+        it('rejects a defined non-string typeIdFilter instead of silently widening the binding', async () => {
+            await expect(service.create({ name: 'BadFilter', prompt: 'p', triggers: [{ kind: 'hook', hookId: 'content.published', typeIdFilter: 5 as any }] }))
+                .rejects.toBeInstanceOf(SavedPromptValidationError);
+        });
+
         it('rejects duplicate trigger ids within one save', async () => {
             const created = await service.create({ name: 'DupIds', prompt: 'p' });
             await expect(service.update(created.id, {

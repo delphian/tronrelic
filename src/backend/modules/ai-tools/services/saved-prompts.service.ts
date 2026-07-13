@@ -675,14 +675,34 @@ export class SavedPromptsService {
                 if (this.options.knownHookIds && !this.options.knownHookIds.has(hookId)) {
                     throw new SavedPromptValidationError(`triggers[${index}].hookId "${hookId}" is not a declared hook`);
                 }
+                // Fail closed on a malformed filter: silently coercing a
+                // defined non-string to '' would broaden a scoped hook prompt
+                // into one firing on every event, mirroring the toolAllowlist
+                // never-silently-widen rule.
+                if (raw.typeIdFilter !== undefined && typeof raw.typeIdFilter !== 'string') {
+                    throw new SavedPromptValidationError(`triggers[${index}].typeIdFilter must be a string`);
+                }
                 const typeIdFilter = typeof raw.typeIdFilter === 'string' ? raw.typeIdFilter.trim() : '';
+                // Reset the failure streak and error banner when the binding
+                // actually changes (hookId or typeIdFilter added/rewritten),
+                // mirroring the cron re-anchor reset — the old streak accrued
+                // under a different binding and must not immediately re-pause
+                // the newly configured trigger. Coerce prior's filter to ''
+                // (absent and empty both mean "no filter") so a no-op re-save
+                // of a filterless trigger never counts as a change.
+                const priorHook = prior && prior.kind === 'hook' ? prior : null;
+                const priorTypeIdFilter = priorHook?.typeIdFilter ?? '';
+                const hookChanged = !priorHook
+                    || priorHook.hookId !== hookId
+                    || priorTypeIdFilter !== typeIdFilter;
                 const hookTrigger: ISavedPromptTrigger = {
                     id,
                     kind: 'hook',
                     enabled,
                     hookId,
                     ...(typeIdFilter ? { typeIdFilter } : {}),
-                    ...bookkeeping
+                    ...bookkeeping,
+                    ...(hookChanged ? { lastRunError: null, failureCount: 0 } : {})
                 };
                 return pruneUndefined(hookTrigger);
             }
