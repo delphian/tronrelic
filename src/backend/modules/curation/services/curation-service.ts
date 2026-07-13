@@ -765,13 +765,16 @@ export class CurationService implements ICurationService {
                     // told the provider-side effect did not complete.
                     await this.commit(entry.type, resolved);
 
-                    // Canonical content is now live — the approved-status applyEdit
-                    // committed above. A rejected decision, or a commit that threw,
-                    // never reaches here, so the seam signals only a genuine publish.
-                    // Fire the content.published observer so downstream reactors act
-                    // on the live record; observer semantics isolate any reactor's
-                    // failure from the decision.
-                    if (status === 'approved' && this.hookRegistry) {
+                    // Fire content.published only when the approval actually made
+                    // canonical content live — i.e. the type declares an approved
+                    // status word, so commit() above ran its applyEdit. A type that
+                    // omits decisionStatus.approved publishes asynchronously through a
+                    // routed sink instead, so its "went live" moment is the sink
+                    // delivery (observable via scheduler.legDelivered), not this
+                    // synchronous seam; firing here would signal a not-yet-live record.
+                    // A rejected decision, or a commit that threw, never reaches here.
+                    // Observer semantics isolate any reactor's failure from the decision.
+                    if (status === 'approved' && entry.type.decisionStatus.approved && this.hookRegistry) {
                         await this.hookRegistry.invoke(HOOKS.content.published, {
                             typeId: existing.typeId,
                             ref: existing.ref,

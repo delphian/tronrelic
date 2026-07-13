@@ -223,6 +223,20 @@ describe('CurationService', () => {
         expect(hookRegistry.invoke).not.toHaveBeenCalled();
     });
 
+    it('does not fire content.published when the type declares no approved status word', async () => {
+        // A sink-carried type omits decisionStatus.approved: approval commits no
+        // canonical content synchronously (commit() is a no-op), so the hook must
+        // stay silent — the "went live" moment is the async sink delivery instead.
+        const hookRegistry = createMockHookRegistry();
+        const service = makeService(hookRegistry);
+        service.registerType(spyCurationType({ decisionStatus: { rejected: 'rejected' } }), 'x-poster');
+        const held = await service.hold({ typeId: 'x-poster:tweet', ref: { postId: 'p1' } });
+
+        await service.approve(held.id, 'admin-1');
+
+        expect(hookRegistry.invoke).not.toHaveBeenCalled();
+    });
+
     it('omits the approve transition when the type declares no approved status word', async () => {
         const service = makeService();
         // A type that declares only a rejection word: with no `approved` word,
