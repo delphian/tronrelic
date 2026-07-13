@@ -166,6 +166,14 @@ const BINDABLE_HOOKS = [
 export const BINDABLE_HOOK_IDS: ReadonlySet<string> = new Set(BINDABLE_HOOKS.map(h => h.descriptor.id));
 
 /**
+ * Bindable-hook metadata served to the saved-prompt editor's hook picker
+ * (`GET /query/prompts/hooks`), so the UI offers exactly the seams a save will
+ * accept instead of hardcoding a copy of this allowlist.
+ */
+export const BINDABLE_HOOK_INFOS: ReadonlyArray<{ id: string; description: string }> =
+    BINDABLE_HOOKS.map(h => ({ id: h.descriptor.id, description: h.descriptor.description }));
+
+/**
  * One enqueued hook-trigger run: the prompt and trigger to fire plus the
  * flattened `{%hook.*%}` variables from the firing's payload. Durable job data
  * — everything the worker needs, since the hook context itself cannot outlive
@@ -433,7 +441,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             () => this.serviceRegistry.get<IAccountDirectoryService>('accounts')
         );
 
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig);
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig, BINDABLE_HOOK_INFOS);
 
         this.logger.info('ai-tools module initialized');
     }

@@ -4,23 +4,35 @@
  * @file PromptEditModal.tsx
  *
  * Focused saved-prompt editor rendered inside the shared modal from the Query
- * tab's SavedPromptsPanel. Two independent save paths — name+body, and the cron
- * schedule — so a schedule save never clears an in-progress body edit and vice
- * versa (each request omits the other's fields and the server upsert preserves
- * them). Owns its draft state and a 30s tick that drives the live "next run"
- * countdown. Pure client surface (only mounts on a user click), so loading
- * states and Date-based countdowns are appropriate here.
+ * tab's SavedPromptsPanel. Independent save paths — name+body, tools, and the
+ * triggers set — so a trigger save never clears an in-progress body edit and
+ * vice versa (each request omits the other's fields and the server upsert
+ * preserves them). The Triggers section edits the unified `triggers[]` array:
+ * any number of cron schedules and declared-hook bindings, each with its own
+ * enabled flag and run bookkeeping. Owns its draft state and a 30s tick that
+ * drives the live "next run" countdown. Pure client surface (only mounts on a
+ * user click), so loading states and Date-based countdowns are appropriate.
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Save, Clock, AlertCircle, CheckCircle } from 'lucide-react';
-import type { ISavedPrompt, IAiToolInfo, ITrifectaStatus } from '@/types';
+import { Save, Clock, AlertCircle, CheckCircle, Plus, CalendarClock, Webhook, Trash2 } from 'lucide-react';
+import type { ISavedPrompt, ISavedPromptTrigger, IAiToolInfo, ITrifectaStatus } from '@/types';
 import { Button } from '../../../../../components/ui/Button';
 import { Input } from '../../../../../components/ui/Input';
 import { Textarea } from '../../../../../components/ui/Textarea';
 import { Select } from '../../../../../components/ui/Select';
 import { Switch } from '../../../../../components/ui/Switch';
-import { saveSavedPrompt, getQueryProviders, listTools, getTrifectaPreview, type IAiProviderModels } from '../../../../../modules/ai-tools';
+import { IconButton } from '../../../../../components/ui/IconButton';
+import {
+    saveSavedPrompt,
+    getQueryProviders,
+    listTools,
+    getTrifectaPreview,
+    listPromptTriggerHooks,
+    type IAiProviderModels,
+    type IBindableHookInfo,
+    type ISavedPromptTriggerRequest
+} from '../../../../../modules/ai-tools';
 import { ToolAllowlistPicker } from '../components/ToolAllowlistPicker';
 import { RunTrifectaBadge } from '../components/RunTrifectaBadge';
 import {
@@ -34,6 +46,48 @@ import {
 } from './savedPromptCron';
 import styles from './SavedPromptsPanel.module.scss';
 
+/**
+ * Editable draft of one trigger element. Flattens both discriminants into one
+ * shape so a row's inputs bind without narrowing; `key` is a stable local list
+ * key (the server id for existing elements, a local counter for new ones) so
+ * removing a row never re-keys its siblings and loses their input state.
+ */
+interface ITriggerDraft {
+    /** Stable React list key — never sent to the server. */
+    key: string;
+    /** Server-assigned trigger id, preserved so run bookkeeping survives edits. */
+    id?: string;
+    /** Discriminator: cron schedule or declared-hook binding. */
+    kind: 'cron' | 'hook';
+    /** Whether this trigger fires. */
+    enabled: boolean;
+    /** Cron expression draft (cron kind only). */
+    cron: string;
+    /** Declared hook id draft (hook kind only). */
+    hookId: string;
+    /** Optional content-type filter draft (hook kind only). */
+    typeIdFilter: string;
+}
+
+/**
+ * Map a prompt's stored triggers into editable drafts, flattening the
+ * discriminated union so every row binds the same input set.
+ *
+ * @param triggers - The prompt's stored trigger set (absent = manual-only).
+ * @returns One draft per stored trigger, keyed by the server id.
+ */
+function toTriggerDrafts(triggers: ISavedPromptTrigger[] | undefined): ITriggerDraft[] {
+    return (triggers ?? []).map(trigger => ({
+        key: trigger.id,
+        id: trigger.id,
+        kind: trigger.kind,
+        enabled: trigger.enabled,
+        cron: trigger.kind === 'cron' ? trigger.cron : '',
+        hookId: trigger.kind === 'hook' ? trigger.hookId : '',
+        typeIdFilter: trigger.kind === 'hook' ? (trigger.typeIdFilter ?? '') : ''
+    }));
+}
+
 interface PromptEditModalProps {
     /** The prompt being edited. Seeds the draft state. */
     prompt: ISavedPrompt;
@@ -44,8 +98,8 @@ interface PromptEditModalProps {
 }
 
 /**
- * Saved-prompt editor with separate Save buttons for name+body and for the cron
- * schedule.
+ * Saved-prompt editor with separate Save buttons for name+body, the tool
+ * allowlist, and the trigger set.
  *
  * @param props.prompt - The prompt to edit.
  * @param props.onSaved - Receives the updated list after a save.
@@ -63,12 +117,12 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
         prompt.providerId && prompt.model ? `${prompt.providerId}|${prompt.model}` : ''
     );
     const [providers, setProviders] = useState<IAiProviderModels[]>([]);
-    const [scheduleDraft, setScheduleDraft] = useState<{ cron: string; enabled: boolean }>({
-        cron: prompt.cron ?? '',
-        enabled: prompt.scheduleEnabled !== false
-    });
+    const [triggerDrafts, setTriggerDrafts] = useState<ITriggerDraft[]>(() => toTriggerDrafts(prompt.triggers));
+    const [bindableHooks, setBindableHooks] = useState<IBindableHookInfo[]>([]);
     const [bodySaving, setBodySaving] = useState(false);
-    const [scheduleSaving, setScheduleSaving] = useState(false);
+    const [triggersSaving, setTriggersSaving] = useState(false);
+    /** Monotonic counter minting stable local keys for newly added trigger rows. */
+    const newTriggerKeyRef = useRef(0);
 
     // Tool allowlist section. `toolsLoaded` gates the trifecta preview so it
     // never fires against the transient pre-seed selection. A prompt that already
@@ -152,6 +206,24 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
         return () => { cancelled = true; clearTimeout(timer); };
     }, [toolAllowlistDraft, toolsLoaded]);
 
+    // Load the bindable-hook catalog for the hook picker. Secondary data on a
+    // click-mounted surface: a quiet failure leaves the picker empty and the
+    // "Add hook trigger" button disabled, never a broken save.
+    useEffect(() => {
+        let cancelled = false;
+        void (async () => {
+            try {
+                const hooks = await listPromptTriggerHooks();
+                if (!cancelled) {
+                    setBindableHooks(hooks);
+                }
+            } catch {
+                /* picker stays empty; hook triggers cannot be added */
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
     // Load the model catalog across every registered provider for the picker.
     // Secondary data on a click-mounted surface, so a loading gap and a quiet
     // failure (picker shows only "Default") are both acceptable.
@@ -179,20 +251,30 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
         return () => clearInterval(intervalId);
     }, []);
 
-    const draftDescription = useMemo(() => describeCron(scheduleDraft.cron), [scheduleDraft.cron]);
-    const draftCronInvalid = scheduleDraft.cron.trim().length > 0 && draftDescription === null;
-    const draftMsUntilNext = useMemo(
-        () => (draftCronInvalid ? null : getMsUntilNextCron(scheduleDraft.cron, nowTick)),
-        [scheduleDraft.cron, draftCronInvalid, nowTick]
-    );
-    const draftNextDate = useMemo(
-        () => (draftCronInvalid ? null : getNextCronDate(scheduleDraft.cron, nowTick)),
-        [scheduleDraft.cron, draftCronInvalid, nowTick]
+    /**
+     * Per-element run bookkeeping keyed by trigger id, from the prompt's stored
+     * triggers — read-only display data (last run, last error) the drafts never
+     * carry or mutate.
+     */
+    const triggerBookkeeping = useMemo(
+        () => new Map<string, ISavedPromptTrigger>((prompt.triggers ?? []).map(trigger => [trigger.id, trigger])),
+        [prompt.triggers]
     );
 
     /**
-     * Persist name + body edits. Schedule fields are omitted so the server
-     * upsert preserves whatever cron is currently set.
+     * Whether any draft is unsaveable: a cron element with an empty or
+     * unparseable expression, or a hook element with no hook selected. Gates
+     * the Save button so the backend's 400 is never the first feedback.
+     */
+    const hasInvalidTrigger = triggerDrafts.some(draft => (
+        draft.kind === 'cron'
+            ? describeCron(draft.cron) === null
+            : !draft.hookId.trim()
+    ));
+
+    /**
+     * Persist name + body edits. Trigger fields are omitted so the server
+     * upsert preserves whatever triggers are currently set.
      */
     const handleSaveBody = useCallback(async () => {
         const trimmedName = nameDraft.trim();
@@ -253,23 +335,62 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
     }, [prompt.id, prompt.toolAllowlist, toolsTouched, toolAllowlistDraft, onSaved, onError]);
 
     /**
-     * Persist schedule edits. Name/body fields are omitted so a schedule save
-     * never clears an open body edit on the same prompt.
+     * Apply a partial edit to one trigger draft, addressed by its stable local
+     * key so sibling rows keep their input state untouched.
+     *
+     * @param key - The draft's local list key.
+     * @param patch - The fields to change on that draft.
      */
-    const handleSaveSchedule = useCallback(async () => {
-        setScheduleSaving(true);
+    const updateTriggerDraft = useCallback((key: string, patch: Partial<ITriggerDraft>) => {
+        setTriggerDrafts(prev => prev.map(draft => (draft.key === key ? { ...draft, ...patch } : draft)));
+    }, []);
+
+    /**
+     * Append a new enabled trigger draft of the given kind. A hook draft
+     * pre-selects the first bindable hook so the row is saveable immediately.
+     *
+     * @param kind - Which trigger kind to add.
+     */
+    const addTriggerDraft = useCallback((kind: 'cron' | 'hook') => {
+        newTriggerKeyRef.current += 1;
+        setTriggerDrafts(prev => [...prev, {
+            key: `new-${newTriggerKeyRef.current}`,
+            kind,
+            enabled: true,
+            cron: '',
+            hookId: kind === 'hook' ? (bindableHooks[0]?.id ?? '') : '',
+            typeIdFilter: ''
+        }]);
+    }, [bindableHooks]);
+
+    /**
+     * Persist the complete trigger set. The server replaces the stored array
+     * wholesale, merging run bookkeeping back onto elements whose `id` matches
+     * an existing trigger; an empty set clears every trigger (manual-only
+     * prompt). Name/body/tools fields are omitted so a trigger save never
+     * clears an open edit in the other sections.
+     */
+    const handleSaveTriggers = useCallback(async () => {
+        setTriggersSaving(true);
         try {
-            onSaved(await saveSavedPrompt({
-                id: prompt.id,
-                cron: scheduleDraft.cron.trim(),
-                scheduleEnabled: scheduleDraft.enabled
-            }));
+            const triggers: ISavedPromptTriggerRequest[] = triggerDrafts.map(draft => (
+                draft.kind === 'cron'
+                    ? { id: draft.id, kind: 'cron', enabled: draft.enabled, cron: draft.cron.trim() }
+                    : {
+                        id: draft.id,
+                        kind: 'hook',
+                        enabled: draft.enabled,
+                        hookId: draft.hookId,
+                        ...(draft.typeIdFilter.trim() ? { typeIdFilter: draft.typeIdFilter.trim() } : {})
+                    }
+            ));
+            onSaved(await saveSavedPrompt({ id: prompt.id, triggers }));
         } catch (err) {
-            onError(err instanceof Error ? err.message : 'Failed to update schedule');
+            onError(err instanceof Error ? err.message : 'Failed to update triggers');
         } finally {
-            setScheduleSaving(false);
+            setTriggersSaving(false);
         }
-    }, [prompt.id, scheduleDraft, onSaved, onError]);
+    }, [prompt.id, triggerDrafts, onSaved, onError]);
 
     return (
         <div className={styles.edit}>
@@ -354,95 +475,194 @@ export function PromptEditModal({ prompt, onSaved, onError }: PromptEditModalPro
                 </div>
             </div>
 
-            {/* Schedule */}
+            {/* Triggers */}
             <div className={styles.edit_section}>
-                <p className={styles.section_label}>Schedule</p>
-                <label className={styles.field_label} htmlFor={`schedule-cron-${prompt.id}`}>
-                    Cron expression (UTC)
-                </label>
-                <Input
-                    id={`schedule-cron-${prompt.id}`}
-                    type="text"
-                    value={scheduleDraft.cron}
-                    onChange={(e) => setScheduleDraft(prev => ({ ...prev, cron: e.target.value }))}
-                    placeholder="0 * * * *  — leave blank to clear"
-                    className={styles.cron_input}
-                    aria-label="Cron expression (UTC)"
-                    aria-invalid={draftCronInvalid}
-                />
+                <p className={styles.section_label}>Triggers</p>
+                <p className={styles.field_hint}>
+                    Autonomous firing rules — cron schedules and hook bindings. Each trigger pauses and
+                    fails independently; a prompt with no triggers only runs when loaded into the composer.
+                </p>
 
-                <div className={styles.schedule_description}>
-                    {scheduleDraft.cron.trim().length === 0 ? (
-                        <span className={styles.schedule_description_muted}>
-                            No schedule — saving clears any existing cron.
-                        </span>
-                    ) : draftCronInvalid ? (
-                        <span className={styles.schedule_description_error}>
-                            <AlertCircle size={12} /> Invalid cron expression
-                        </span>
-                    ) : (
-                        <span className={styles.schedule_description_ok}>
-                            <CheckCircle size={12} /> {draftDescription}
-                        </span>
-                    )}
-                </div>
+                {triggerDrafts.map(draft => {
+                    const bookkeeping = draft.id ? triggerBookkeeping.get(draft.id) : undefined;
+                    const cronDescription = draft.kind === 'cron' ? describeCron(draft.cron) : null;
+                    const cronInvalid = draft.kind === 'cron' && cronDescription === null;
+                    const msUntilNext = draft.kind === 'cron' && !cronInvalid
+                        ? getMsUntilNextCron(draft.cron, nowTick)
+                        : null;
+                    const nextDate = draft.kind === 'cron' && !cronInvalid
+                        ? getNextCronDate(draft.cron, nowTick)
+                        : null;
+                    const hookInfo = draft.kind === 'hook'
+                        ? bindableHooks.find(hook => hook.id === draft.hookId)
+                        : undefined;
+                    return (
+                        <div key={draft.key} className={styles.trigger_row}>
+                            <div className={styles.trigger_header}>
+                                <span className={styles.trigger_kind}>
+                                    {draft.kind === 'cron'
+                                        ? <><CalendarClock size={14} /> Cron schedule</>
+                                        : <><Webhook size={14} /> Hook binding</>}
+                                </span>
+                                <div className={styles.trigger_header_actions}>
+                                    <Switch
+                                        on={draft.enabled}
+                                        onChange={(next) => updateTriggerDraft(draft.key, { enabled: next })}
+                                        size="sm"
+                                        aria-label={draft.enabled ? 'Disable trigger' : 'Enable trigger'}
+                                    />
+                                    <span className={styles.trigger_enabled_label}>
+                                        {draft.enabled ? 'Enabled' : 'Paused'}
+                                    </span>
+                                    <IconButton
+                                        variant="danger"
+                                        size="sm"
+                                        onClick={() => setTriggerDrafts(prev => prev.filter(d => d.key !== draft.key))}
+                                        aria-label="Remove trigger"
+                                        title="Remove this trigger (takes effect on save)"
+                                    >
+                                        <Trash2 size={12} />
+                                    </IconButton>
+                                </div>
+                            </div>
 
-                {draftMsUntilNext !== null && (
-                    <div className={styles.next_run}>
-                        <Clock size={12} />
-                        <span>
-                            Next run {formatTimeUntil(draftMsUntilNext)}
-                            {draftNextDate && ` (${formatLocalWallClock(draftNextDate)})`}
-                            {!scheduleDraft.enabled && (
-                                <span className={styles.next_run_paused}> (paused)</span>
+                            {draft.kind === 'cron' ? (
+                                <>
+                                    <label className={styles.field_label} htmlFor={`trigger-cron-${prompt.id}-${draft.key}`}>
+                                        Cron expression (UTC)
+                                    </label>
+                                    <Input
+                                        id={`trigger-cron-${prompt.id}-${draft.key}`}
+                                        type="text"
+                                        value={draft.cron}
+                                        onChange={(e) => updateTriggerDraft(draft.key, { cron: e.target.value })}
+                                        placeholder="0 * * * *"
+                                        className={styles.cron_input}
+                                        aria-label="Cron expression (UTC)"
+                                        aria-invalid={cronInvalid}
+                                    />
+                                    <div className={styles.schedule_description}>
+                                        {cronInvalid ? (
+                                            <span className={styles.schedule_description_error}>
+                                                <AlertCircle size={12} /> {draft.cron.trim() ? 'Invalid cron expression' : 'A cron expression is required'}
+                                            </span>
+                                        ) : (
+                                            <span className={styles.schedule_description_ok}>
+                                                <CheckCircle size={12} /> {cronDescription}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {msUntilNext !== null && (
+                                        <div className={styles.next_run}>
+                                            <Clock size={12} />
+                                            <span>
+                                                Next run {formatTimeUntil(msUntilNext)}
+                                                {nextDate && ` (${formatLocalWallClock(nextDate)})`}
+                                                {!draft.enabled && (
+                                                    <span className={styles.next_run_paused}> (paused)</span>
+                                                )}
+                                            </span>
+                                        </div>
+                                    )}
+                                    <div className={styles.presets}>
+                                        {CRON_PRESETS.map(preset => (
+                                            <Button
+                                                key={preset.cron}
+                                                variant="ghost"
+                                                size="xs"
+                                                onClick={() => updateTriggerDraft(draft.key, { cron: preset.cron })}
+                                            >
+                                                {preset.label}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                    <p className={styles.field_hint}>
+                                        Evaluated on the master tick (every 2 minutes).
+                                    </p>
+                                </>
+                            ) : (
+                                <>
+                                    <label className={styles.field_label} htmlFor={`trigger-hook-${prompt.id}-${draft.key}`}>
+                                        Hook
+                                    </label>
+                                    <Select
+                                        id={`trigger-hook-${prompt.id}-${draft.key}`}
+                                        className={styles.model_select}
+                                        value={draft.hookId}
+                                        onChange={(e) => updateTriggerDraft(draft.key, { hookId: e.target.value })}
+                                        aria-label="Hook to bind"
+                                    >
+                                        {!draft.hookId && <option value="">Select a hook…</option>}
+                                        {bindableHooks.map(hook => (
+                                            <option key={hook.id} value={hook.id}>{hook.id}</option>
+                                        ))}
+                                    </Select>
+                                    {hookInfo && (
+                                        <p className={styles.field_hint}>{hookInfo.description}</p>
+                                    )}
+                                    <label className={styles.field_label} htmlFor={`trigger-filter-${prompt.id}-${draft.key}`}>
+                                        Content-type filter (optional)
+                                    </label>
+                                    <Input
+                                        id={`trigger-filter-${prompt.id}-${draft.key}`}
+                                        type="text"
+                                        value={draft.typeIdFilter}
+                                        onChange={(e) => updateTriggerDraft(draft.key, { typeIdFilter: e.target.value })}
+                                        placeholder="blog:post — blank fires on every event"
+                                        aria-label="Content-type filter"
+                                    />
+                                    <p className={styles.field_hint}>
+                                        Fires only when the event&apos;s content type matches; the hook payload reaches the
+                                        prompt as {'{%hook.*%}'} variables. Runs are queued, never inline.
+                                    </p>
+                                </>
                             )}
-                        </span>
-                    </div>
+
+                            {bookkeeping?.lastRunAt && (
+                                <div className={styles.last_run}>
+                                    Last run {formatRelativeTime(bookkeeping.lastRunAt)}
+                                    {bookkeeping.lastRunError && (
+                                        <span className={styles.last_run_error}>
+                                            {' · '}<AlertCircle size={11} /> {bookkeeping.lastRunError}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+
+                {triggerDrafts.length === 0 && (
+                    <p className={styles.field_hint}>No triggers — this prompt runs manually only.</p>
                 )}
 
-                <div className={styles.presets}>
-                    {CRON_PRESETS.map(preset => (
-                        <Button
-                            key={preset.cron}
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => setScheduleDraft(prev => ({ ...prev, cron: preset.cron }))}
-                        >
-                            {preset.label}
-                        </Button>
-                    ))}
+                <div className={styles.edit_actions}>
+                    <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => addTriggerDraft('cron')}
+                    >
+                        <Plus size={12} /> Add cron trigger
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => addTriggerDraft('hook')}
+                        disabled={bindableHooks.length === 0}
+                        title={bindableHooks.length === 0 ? 'No bindable hooks available' : undefined}
+                    >
+                        <Plus size={12} /> Add hook trigger
+                    </Button>
                 </div>
-
-                <div className={styles.enabled_row}>
-                    <Switch
-                        on={scheduleDraft.enabled}
-                        onChange={(next) => setScheduleDraft(prev => ({ ...prev, enabled: next }))}
-                        size="sm"
-                        aria-label={scheduleDraft.enabled ? 'Disable schedule' : 'Enable schedule'}
-                    />
-                    <span>{scheduleDraft.enabled ? 'Enabled' : 'Disabled'}</span>
-                    <span className={styles.enabled_hint}>— evaluated on the master tick (every 2 minutes)</span>
-                </div>
-
-                {prompt.lastRunAt && (
-                    <div className={styles.last_run}>
-                        Last run {formatRelativeTime(prompt.lastRunAt)}
-                        {prompt.lastRunError && (
-                            <span className={styles.last_run_error}>
-                                {' · '}<AlertCircle size={11} /> {prompt.lastRunError}
-                            </span>
-                        )}
-                    </div>
-                )}
 
                 <div className={styles.edit_actions}>
                     <Button
                         variant="primary"
                         size="sm"
-                        onClick={() => { void handleSaveSchedule(); }}
-                        disabled={draftCronInvalid || scheduleSaving}
+                        onClick={() => { void handleSaveTriggers(); }}
+                        disabled={hasInvalidTrigger || triggersSaving}
                     >
-                        <Save size={14} /> {scheduleSaving ? 'Saving…' : 'Save schedule'}
+                        <Save size={14} /> {triggersSaving ? 'Saving…' : 'Save triggers'}
                     </Button>
                 </div>
             </div>

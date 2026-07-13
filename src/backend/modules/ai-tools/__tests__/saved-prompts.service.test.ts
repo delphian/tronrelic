@@ -294,11 +294,11 @@ describe('SavedPromptsService', () => {
             expect((trigger as any).cron).toBe('0 0 * * *');
         });
 
-        it('projects the first cron trigger onto the deprecated flat fields', async () => {
+        it('does not project the retired flat schedule fields onto reads', async () => {
             const created = await service.create({ name: 'Projected', prompt: 'run', triggers: [{ kind: 'cron', cron: '0 0 * * *' }] });
-            // Transitional read-time projection for the pre-triggers editor UI.
-            expect(created.cron).toBe('0 0 * * *');
-            expect(created.scheduleEnabled).toBe(true);
+            // The pre-`triggers[]` projection was removed with the legacy editor.
+            expect((created as unknown as Record<string, unknown>).cron).toBeUndefined();
+            expect((created as unknown as Record<string, unknown>).scheduleEnabled).toBeUndefined();
         });
 
         it('leaves triggers absent when the array is empty or omitted', async () => {
@@ -393,7 +393,6 @@ describe('SavedPromptsService', () => {
             const created = await service.create({ name: 'WithCron', prompt: 'p', triggers: [{ kind: 'cron', cron: '* * * * *' }] });
             const cleared = await service.update(created.id, { triggers: null });
             expect(cleared.triggers).toBeUndefined();
-            expect(cleared.cron).toBeUndefined();
 
             const again = await service.create({ name: 'WithCron2', prompt: 'p', triggers: [{ kind: 'cron', cron: '* * * * *' }] });
             const emptied = await service.update(again.id, { triggers: [] });

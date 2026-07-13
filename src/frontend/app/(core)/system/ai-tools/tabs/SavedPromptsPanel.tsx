@@ -6,8 +6,8 @@
  * Collapsible saved-prompts panel for the Query tab. Lists saved prompt
  * templates with per-row load (click the name to drop it into the composer),
  * duplicate, edit, and delete, plus an inline save row that captures the
- * composer's current text. Each row shows a schedule chip linking to the cron
- * editor (rendered in a modal). The parent owns the shared `prompts` list so the
+ * composer's current text. Each row shows a triggers chip linking to the
+ * trigger editor (rendered in a modal). The parent owns the shared `prompts` list so the
  * composer can also see it; this panel owns its open/closed state, the first-open
  * fetch, and the action handlers.
  *
@@ -28,7 +28,7 @@ import {
     CalendarClock,
     AlertTriangle
 } from 'lucide-react';
-import type { ISavedPrompt } from '@/types';
+import type { ISavedPrompt, ISavedPromptTrigger } from '@/types';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
 import { Input } from '../../../../../components/ui/Input';
@@ -57,6 +57,66 @@ const TICK_MS = 1000;
  * all-manual prompt list never polls.
  */
 const RUN_REFRESH_MS = 30_000;
+
+/**
+ * Summarize a prompt's trigger set for the row chip: the cron description for
+ * a single cron, the hook id for a single hook, or a count for a mixed set —
+ * enough to scan the list without opening the editor.
+ *
+ * @param triggers - The prompt's stored triggers.
+ * @returns A short chip label, or null when the prompt has no triggers.
+ */
+function describeTriggers(triggers: ISavedPromptTrigger[]): string | null {
+    if (triggers.length === 0) {
+        return null;
+    }
+    if (triggers.length === 1) {
+        const trigger = triggers[0];
+        return trigger.kind === 'cron'
+            ? (describeCron(trigger.cron) ?? 'invalid cron')
+            : trigger.hookId + (trigger.typeIdFilter ? ` (${trigger.typeIdFilter})` : '');
+    }
+    return `${triggers.length} triggers`;
+}
+
+/**
+ * The most recent run timestamp across a prompt's triggers, so the row's
+ * "last run" label covers cron and hook firings alike.
+ *
+ * @param triggers - The prompt's stored triggers.
+ * @returns The latest `lastRunAt` ISO timestamp, or null when never run.
+ */
+function latestRunAt(triggers: ISavedPromptTrigger[]): string | null {
+    let latest: string | null = null;
+    for (const trigger of triggers) {
+        if (trigger.lastRunAt && (!latest || trigger.lastRunAt > latest)) {
+            latest = trigger.lastRunAt;
+        }
+    }
+    return latest;
+}
+
+/**
+ * The soonest upcoming cron firing across a prompt's enabled cron triggers —
+ * hook triggers have no predictable next run, so they never contribute.
+ *
+ * @param triggers - The prompt's stored triggers.
+ * @param now - Current epoch ms.
+ * @returns Milliseconds until the next firing, or null when none is scheduled.
+ */
+function msUntilNextRun(triggers: ISavedPromptTrigger[], now: number): number | null {
+    let soonest: number | null = null;
+    for (const trigger of triggers) {
+        if (trigger.kind !== 'cron' || !trigger.enabled) {
+            continue;
+        }
+        const ms = getMsUntilNextCron(trigger.cron, now);
+        if (ms !== null && (soonest === null || ms < soonest)) {
+            soonest = ms;
+        }
+    }
+    return soonest;
+}
 
 interface SavedPromptsPanelProps {
     /** Shared saved-prompts list, owned by the parent Query tab. */
@@ -118,11 +178,12 @@ export function SavedPromptsPanel({
     }, [open, loadPrompts]);
 
     /**
-     * Whether any prompt carries a live (non-paused, valid-looking) cron. Drives
-     * the run-refresh poll gate so an all-manual list never polls the backend.
+     * Whether any prompt carries an enabled trigger (cron or hook — hook runs
+     * also write `lastRunAt`). Drives the run-refresh poll gate so an
+     * all-manual list never polls the backend.
      */
     const hasActiveSchedule = prompts.some(
-        sp => !!sp.cron && sp.cron.trim().length > 0 && sp.scheduleEnabled !== false
+        sp => (sp.triggers ?? []).some(trigger => trigger.enabled)
     );
 
     // Advance `now` once a second while the panel is open so the next-run
@@ -201,7 +262,7 @@ export function SavedPromptsPanel({
         }
     }, [prompts, onPromptsChange, onError]);
 
-    /** Open the focused editor (name / body / schedule) for a prompt. */
+    /** Open the focused editor (name / body / tools / triggers) for a prompt. */
     const openEdit = useCallback((sp: ISavedPrompt) => {
         modal.open({
             title: 'Edit prompt',
@@ -217,10 +278,11 @@ export function SavedPromptsPanel({
         });
     }, [modal, onPromptsChange, onError]);
 
-    /** Confirm before deleting, warning when an active or paused schedule is attached. */
+    /** Confirm before deleting, warning when active or paused triggers are attached. */
     const confirmDelete = useCallback((sp: ISavedPrompt) => {
-        const hasSchedule = !!sp.cron && sp.cron.trim().length > 0;
-        const scheduleIsActive = hasSchedule && sp.scheduleEnabled !== false;
+        const triggers = sp.triggers ?? [];
+        const hasSchedule = triggers.length > 0;
+        const scheduleIsActive = triggers.some(trigger => trigger.enabled);
         const modalId = modal.open({
             title: 'Delete saved prompt?',
             size: 'sm',
@@ -232,12 +294,12 @@ export function SavedPromptsPanel({
                     </p>
                     {scheduleIsActive && (
                         <p className={styles.confirm_warning}>
-                            <AlertTriangle size={14} /> An active schedule will stop firing.
+                            <AlertTriangle size={14} /> Active triggers will stop firing.
                         </p>
                     )}
                     {hasSchedule && !scheduleIsActive && (
                         <p className={styles.confirm_warning}>
-                            <AlertTriangle size={14} /> A paused schedule will be removed with the prompt.
+                            <AlertTriangle size={14} /> Paused triggers will be removed with the prompt.
                         </p>
                     )}
                     <div className={styles.confirm_actions}>
@@ -258,23 +320,23 @@ export function SavedPromptsPanel({
     }, [modal, handleDelete]);
 
     /**
-     * Schedule chip for a row — always clickable so a row with no cron still
-     * jumps into the editor to add one.
+     * Triggers chip for a row — always clickable so a row with no triggers
+     * still jumps into the editor to add one.
      *
-     * @param sp - The prompt whose schedule to render.
+     * @param sp - The prompt whose triggers to render.
      * @returns The chip element.
      */
-    function renderScheduleChip(sp: ISavedPrompt) {
-        const hasCron = !!sp.cron && sp.cron.trim().length > 0;
-        const scheduleEnabled = sp.scheduleEnabled !== false;
-        const cronDescription = hasCron ? describeCron(sp.cron as string) : null;
-        const titleText = hasCron
-            ? `${cronDescription ?? sp.cron ?? ''}${scheduleEnabled ? '' : ' (paused)'}`
-            : 'No schedule — click to add';
+    function renderTriggersChip(sp: ISavedPrompt) {
+        const triggers = sp.triggers ?? [];
+        const anyEnabled = triggers.some(trigger => trigger.enabled);
+        const summary = describeTriggers(triggers);
+        const titleText = summary
+            ? `${summary}${anyEnabled ? '' : ' (paused)'}`
+            : 'No triggers — click to add';
         const chipClass = [
             styles.schedule_chip,
-            hasCron && scheduleEnabled ? styles.schedule_chip_active : '',
-            hasCron && !scheduleEnabled ? styles.schedule_chip_paused : ''
+            triggers.length > 0 && anyEnabled ? styles.schedule_chip_active : '',
+            triggers.length > 0 && !anyEnabled ? styles.schedule_chip_paused : ''
         ].filter(Boolean).join(' ');
 
         return (
@@ -283,13 +345,13 @@ export function SavedPromptsPanel({
                 className={chipClass}
                 onClick={() => openEdit(sp)}
                 title={titleText}
-                aria-label={`Edit schedule for ${sp.name}`}
+                aria-label={`Edit triggers for ${sp.name}`}
             >
                 <CalendarClock size={12} />
-                {hasCron && (
+                {summary && (
                     <span className={styles.schedule_chip_text}>
-                        {cronDescription ?? 'invalid cron'}
-                        {!scheduleEnabled && ' (paused)'}
+                        {summary}
+                        {!anyEnabled && ' (paused)'}
                     </span>
                 )}
             </button>
@@ -315,16 +377,17 @@ export function SavedPromptsPanel({
         return (
             <ul className={styles.list}>
                 {prompts.map(sp => {
-                    // Next-run only applies to an active (non-paused) schedule with a
-                    // valid cron — a paused or cron-less prompt never fires, so promising
-                    // a "next run" there would mislead. getMsUntilNextCron returns null on
-                    // an unparseable expression, which also suppresses the line.
-                    const scheduleActive = !!sp.cron && sp.cron.trim().length > 0 && sp.scheduleEnabled !== false;
+                    // Next-run only applies to enabled cron triggers — a paused
+                    // trigger never fires and a hook trigger has no predictable
+                    // firing time, so promising a "next run" there would mislead.
                     // `now` is ticked each second while open, so this re-derives
                     // and the countdown advances on its own.
-                    const msUntilNextRun = scheduleActive ? getMsUntilNextCron(sp.cron as string, now) : null;
+                    const triggers = sp.triggers ?? [];
+                    const nextRunMs = msUntilNextRun(triggers, now);
+                    const lastRun = latestRunAt(triggers);
+                    const hasRunError = triggers.some(trigger => !!trigger.lastRunError);
                     return (
-                    <li key={sp.id} className={`${styles.row} ${sp.lastRunError ? styles.row_error : ''}`}>
+                    <li key={sp.id} className={`${styles.row} ${hasRunError ? styles.row_error : ''}`}>
                         <div className={styles.row_main}>
                             <button
                                 type="button"
@@ -337,24 +400,24 @@ export function SavedPromptsPanel({
                             </button>
                             <div className={styles.row_meta}>
                                 {/* Last run always shows — including for a prompt with no
-                                    active schedule — so an operator can see when a prompt
-                                    last fired regardless of whether it is currently cron-
+                                    active trigger — so an operator can see when a prompt
+                                    last fired regardless of whether anything is currently
                                     enabled; "Never run yet" covers the not-yet-fired case.
-                                    Next run shows only for a live schedule. */}
-                                {sp.lastRunAt
-                                    ? <span>Last run {formatRelativeTime(sp.lastRunAt)}</span>
+                                    Next run shows only for a live cron trigger. */}
+                                {lastRun
+                                    ? <span>Last run {formatRelativeTime(lastRun)}</span>
                                     : <span>Never run yet</span>}
-                                {msUntilNextRun !== null && <span>Next run {formatTimeUntil(msUntilNextRun)}</span>}
+                                {nextRunMs !== null && <span>Next run {formatTimeUntil(nextRunMs)}</span>}
                             </div>
                         </div>
                         <div className={styles.row_actions}>
-                            {renderScheduleChip(sp)}
+                            {renderTriggersChip(sp)}
                             <IconButton
                                 variant="primary"
                                 size="sm"
                                 onClick={() => openEdit(sp)}
                                 aria-label={`Edit ${sp.name}`}
-                                title="Edit name, body, and schedule"
+                                title="Edit name, body, tools, and triggers"
                             >
                                 <Pencil size={12} />
                             </IconButton>

@@ -500,14 +500,51 @@ export async function getQueryProviders(): Promise<IAiProviderModels[]> {
     return data.providers;
 }
 
+/**
+ * One trigger element in a {@link saveSavedPrompt} body — the editor's input
+ * shape for a saved prompt's autonomous firing rules. Mirrors the backend
+ * `ISavedPromptTriggerInput`: the server assigns ids to new elements and
+ * preserves run bookkeeping for elements whose `id` matches an existing
+ * trigger, so the editor always sends the complete replacement set.
+ */
+export interface ISavedPromptTriggerRequest {
+    /** Existing trigger id to preserve bookkeeping; omit for a new element. */
+    id?: string;
+    /** Discriminator: a cron schedule or a declared-hook binding. */
+    kind: 'cron' | 'hook';
+    /** Whether the trigger fires; defaults to true when omitted. */
+    enabled?: boolean;
+    /** Cron expression (UTC) — required when `kind` is `'cron'`. */
+    cron?: string;
+    /** Declared hook descriptor id — required when `kind` is `'hook'`. */
+    hookId?: string;
+    /** Optional content-type filter for hook triggers (fires only on a match). */
+    typeIdFilter?: string;
+}
+
+/**
+ * One declared hook seam a saved prompt's hook trigger may bind to, as
+ * returned by `GET /query/prompts/hooks`. The picker's option list — the
+ * backend rejects any `hookId` outside this set at save time.
+ */
+export interface IBindableHookInfo {
+    /** The declared hook descriptor id (e.g. `content.published`). */
+    id: string;
+    /** The hook registry's description of when the seam fires. */
+    description: string;
+}
+
 /** Body for {@link saveSavedPrompt}. Omit `id` to create; supply it to update. */
 export interface ISavePromptRequest {
     id?: string;
     name?: string;
     prompt?: string;
-    /** Cron expression; `''`/`null` clears the schedule. Omit to leave unchanged. */
-    cron?: string | null;
-    scheduleEnabled?: boolean;
+    /**
+     * The prompt's complete trigger set. Tri-state: omit to leave unchanged;
+     * `null` or `[]` clears every trigger; an array replaces the whole set
+     * (elements carrying an existing `id` keep their run bookkeeping).
+     */
+    triggers?: ISavedPromptTriggerRequest[] | null;
     /** Provider plugin id the prompt targets; `''`/`null` clears the pin. Omit to leave unchanged. */
     providerId?: string | null;
     /** Model id the prompt runs on; `''`/`null` clears the pin. Omit to leave unchanged. */
@@ -518,6 +555,21 @@ export interface ISavePromptRequest {
      * to all enabled tools. The editor sends the explicit selection.
      */
     toolAllowlist?: string[] | null;
+}
+
+/**
+ * List the declared hook seams a saved prompt's hook trigger may bind to, for
+ * the trigger editor's hook picker. Serves exactly the ids the backend accepts
+ * at save time, so the picker can never offer an unbindable seam.
+ *
+ * @returns The bindable hooks with their registry descriptions.
+ */
+export async function listPromptTriggerHooks(): Promise<IBindableHookInfo[]> {
+    const data = await parse<{ hooks: IBindableHookInfo[] }>(
+        await fetch(`${BASE}/query/prompts/hooks`),
+        'load bindable hooks'
+    );
+    return data.hooks;
 }
 
 /**
