@@ -794,26 +794,46 @@ describe('TrafficService', () => {
 
     describe('ignore list exclusion', () => {
         const IGNORED = ['665f00000000000000000001', '665f00000000000000000002'];
+        const RESOLVED_TIDS = [{ candidate_uid: 'tid-a' }, { candidate_uid: 'tid-b' }];
 
-        it('excludes the whole person for ignored accounts on a rangeParams read', async () => {
+        /**
+         * Build a mock whose `query` resolves the ignored candidate_uid set for
+         * the DISTINCT-resolution query (issued by setIgnoredUserIds) and captures
+         * the last non-resolution read for assertions.
+         *
+         * @param captured - Sink for the last read's sql/params.
+         * @param readRow - Row shape a read query should return.
+         * @returns The configured mock ClickHouse double.
+         */
+        function mockWithResolver(
+            captured: { sql?: string; params?: Record<string, unknown> },
+            readRow: Record<string, unknown> = {}
+        ): ReturnType<typeof createMockClickHouse> {
             const ch = createMockClickHouse();
-            const captured: { sql?: string; params?: Record<string, unknown> } = {};
             ch.query = async <T>(sql: string, params?: unknown): Promise<T[]> => {
+                if (sql.includes('SELECT DISTINCT candidate_uid')) {
+                    return RESOLVED_TIDS as T[];
+                }
                 captured.sql = sql;
                 captured.params = params as Record<string, unknown>;
-                return [] as T[];
+                return [readRow] as T[];
             };
-            TrafficService.setDependencies(ch, createMockLogger());
+            return ch;
+        }
+
+        it('resolves the whole-person tid set once and injects it as a literal on reads', async () => {
+            const captured: { sql?: string; params?: Record<string, unknown> } = {};
+            TrafficService.setDependencies(mockWithResolver(captured), createMockLogger());
             const svc = TrafficService.getInstance();
-            svc.setIgnoredUserIds(IGNORED);
+            await svc.setIgnoredUserIds(IGNORED);
 
             await svc.getGeoDistribution({ since: new Date('2026-06-01T00:00:00.000Z') });
 
-            // Whole-person: exclude every tid that ever logged in as an ignored
-            // account, via the unwindowed candidate_uid subquery.
-            expect(captured.sql).toContain('candidate_uid NOT IN (SELECT candidate_uid FROM');
-            expect(captured.sql).toContain('user_id IN ({ignoredUserIds:Array(String)})');
-            expect(captured.params?.ignoredUserIds).toEqual(IGNORED);
+            // Read filters against the resolved literal tid set — no per-read
+            // subquery on the unindexed user_id column.
+            expect(captured.sql).toContain('candidate_uid NOT IN ({ignoredCandidateUids:Array(String)})');
+            expect(captured.sql).not.toContain('SELECT candidate_uid FROM');
+            expect(captured.params?.ignoredCandidateUids).toEqual(['tid-a', 'tid-b']);
         });
 
         it('adds no exclusion when the ignore list is empty', async () => {
@@ -828,27 +848,21 @@ describe('TrafficService', () => {
 
             await TrafficService.getInstance().getGeoDistribution({ since: new Date('2026-06-01T00:00:00.000Z') });
 
-            expect(captured.sql).not.toContain('ignoredUserIds');
-            expect(captured.params?.ignoredUserIds).toBeUndefined();
+            expect(captured.sql).not.toContain('ignoredCandidateUids');
+            expect(captured.params?.ignoredCandidateUids).toBeUndefined();
         });
 
         it('excludes ignored accounts from the live visitor count (own WHERE path)', async () => {
-            const ch = createMockClickHouse();
             const captured: { sql?: string; params?: Record<string, unknown> } = {};
-            ch.query = async <T>(sql: string, params?: unknown): Promise<T[]> => {
-                captured.sql = sql;
-                captured.params = params as Record<string, unknown>;
-                return [{ visitors: '3' }] as T[];
-            };
-            TrafficService.setDependencies(ch, createMockLogger());
+            TrafficService.setDependencies(mockWithResolver(captured, { visitors: '3' }), createMockLogger());
             const svc = TrafficService.getInstance();
-            svc.setIgnoredUserIds(IGNORED);
+            await svc.setIgnoredUserIds(IGNORED);
 
             await svc.getLiveVisitorCount();
 
             expect(captured.sql).toContain('INTERVAL 5 MINUTE');
-            expect(captured.sql).toContain('candidate_uid NOT IN (SELECT candidate_uid FROM');
-            expect(captured.params?.ignoredUserIds).toEqual(IGNORED);
+            expect(captured.sql).toContain('candidate_uid NOT IN ({ignoredCandidateUids:Array(String)})');
+            expect(captured.params?.ignoredCandidateUids).toEqual(['tid-a', 'tid-b']);
         });
     });
 });
