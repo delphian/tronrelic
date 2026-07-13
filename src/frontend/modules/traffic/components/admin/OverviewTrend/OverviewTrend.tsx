@@ -168,7 +168,12 @@ export function OverviewTrend({ period, customRange, includeBots, refreshSignal 
         }];
     }, [trend, metric]);
 
-    if (error) {
+    // Only blank to the error card when there is no data to show. A failed
+    // background auto-refresh (a refreshSignal tick) leaves the prior `trend`
+    // in state, so keep the loaded panel visible rather than replacing good
+    // data with an error over a transient failure (stale-while-revalidate,
+    // matching the sibling dashboards' background-refresh contract).
+    if (error && !trend) {
         return <Card padding="md"><p className={styles.error}>{error}</p></Card>;
     }
     if (!trend) {

@@ -37,16 +37,22 @@ import { useEffect, useState } from 'react';
  * @param intervalMs - Milliseconds between ticks while the tab is visible. The
  *   caller owns the cadence so different surfaces (e.g. a fast live counter vs.
  *   slower dashboards) can pick their own rate; changing it restarts the clock.
+ * @param enabled - Whether the clock runs. Defaults to true so existing callers
+ *   are unaffected. Pass false to pause ticking entirely (e.g. while the host
+ *   page shows a tab whose child does not consume the signal), sparing the page
+ *   needless re-renders; the returned signal holds its last value until
+ *   re-enabled.
  * @returns A counter that increments on every tick — feed it to fetch-effect
  *   dependency arrays to drive a periodic, in-place refresh.
  */
-export function useAutoRefresh(intervalMs: number): number {
+export function useAutoRefresh(intervalMs: number, enabled = true): number {
     const [signal, setSignal] = useState(0);
 
     useEffect(() => {
         // SSR guard: the hosting page is a client component, but keep the hook
         // safe to call in any render environment by no-oping without a document.
-        if (typeof document === 'undefined') {
+        // Also no-op when disabled so a paused clock issues no ticks or fetches.
+        if (typeof document === 'undefined' || !enabled) {
             return;
         }
 
@@ -95,7 +101,7 @@ export function useAutoRefresh(intervalMs: number): number {
             stop();
             document.removeEventListener('visibilitychange', handleVisibility);
         };
-    }, [intervalMs]);
+    }, [intervalMs, enabled]);
 
     return signal;
 }

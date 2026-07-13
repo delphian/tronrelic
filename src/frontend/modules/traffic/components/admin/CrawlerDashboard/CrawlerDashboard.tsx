@@ -130,7 +130,7 @@ export function CrawlerDashboard({ refreshSignal }: ICrawlerDashboardProps) {
                 setTrendError(err instanceof Error ? err.message : 'Failed to load');
             }
         } finally {
-            if (reqId === trendReqId.current && !background) {
+            if (reqId === trendReqId.current) {
                 setTrendLoading(false);
             }
         }
@@ -158,7 +158,7 @@ export function CrawlerDashboard({ refreshSignal }: ICrawlerDashboardProps) {
                 setPathsError(err instanceof Error ? err.message : 'Failed to load');
             }
         } finally {
-            if (reqId === pathsReqId.current && !background) {
+            if (reqId === pathsReqId.current) {
                 setPathsLoading(false);
             }
         }
