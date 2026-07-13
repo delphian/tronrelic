@@ -1825,29 +1825,38 @@ export class TrafficService {
         `;
         // Top 3 sources per bucket, attributed as page VIEWS by origin. Source
         // lives only on the first-touch `bootstrap` row (a `page` row's referrer
-        // is the site's own domain), so each bucket page view is joined to its
-        // visitor's earliest bootstrap source — `argMin(domain, timestamp)`,
+        // is the site's own domain), so each bucket page view is LEFT-joined to
+        // its visitor's earliest bootstrap source — `argMin(domain, timestamp)`,
         // matching getTrafficSources' `domain(referer)`/`direct` derivation. The
-        // bootstrap side is bounded to visitors who viewed a page in the window,
-        // and page-view counts keep this commensurable with the paths/countries
-        // blocks. `LIMIT 3 BY bucket` bounds the payload.
+        // join is LEFT (not INNER) so a page view whose tid has no retained
+        // bootstrap row still counts: the middleware bootstrap is best-effort and
+        // swallows failures, so outages/deploys and pre-feature tids leave
+        // page-only tids permanently. Those unmatched views bucket to
+        // '(unattributed)' — a distinct sentinel, never folded into 'direct'
+        // (which means "no referrer", not "no record") — so topSources stays the
+        // SAME page-view population as topPaths/topCountries and the bar. Under
+        // this codebase's join_use_nulls=0 an unmatched source fills as '' (not
+        // NULL); if that ever flips, the guard must also test IS NULL.
+        // `LIMIT 3 BY bucket` bounds the payload.
         const sourcesSql = `
             SELECT bucket, source, count() AS hits
             FROM (
-                SELECT ${bucketExpr} AS bucket, candidate_uid
-                FROM ${TABLE_NAME}
-                WHERE ${clause}${botFilter} AND event_type = 'page'
-            ) AS pv
-            INNER JOIN (
-                SELECT candidate_uid,
-                    argMin(multiIf(referer IS NULL OR referer = '', 'direct', domain(referer)), timestamp) AS source
-                FROM ${TABLE_NAME}
-                WHERE event_type = 'bootstrap' AND candidate_uid IN (
-                    SELECT candidate_uid FROM ${TABLE_NAME}
+                SELECT
+                    pv.bucket AS bucket,
+                    if(src.source = '', '(unattributed)', src.source) AS source
+                FROM (
+                    SELECT ${bucketExpr} AS bucket, candidate_uid
+                    FROM ${TABLE_NAME}
                     WHERE ${clause}${botFilter} AND event_type = 'page'
-                )
-                GROUP BY candidate_uid
-            ) AS src USING (candidate_uid)
+                ) AS pv
+                LEFT JOIN (
+                    SELECT candidate_uid,
+                        argMin(multiIf(referer IS NULL OR referer = '', 'direct', domain(referer)), timestamp) AS source
+                    FROM ${TABLE_NAME}
+                    WHERE event_type = 'bootstrap' AND ${this.pageVisitorMembership(clause, botFilter)}
+                    GROUP BY candidate_uid
+                ) AS src USING (candidate_uid)
+            )
             GROUP BY bucket, source
             ORDER BY bucket ASC, hits DESC, source ASC
             LIMIT 3 BY bucket
