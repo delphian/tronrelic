@@ -192,12 +192,23 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
      * Fetch all analytics data for the selected period. Runs all requests in
      * parallel for performance.
      *
+     * A monotonic request-id ref guards against stale in-flight responses:
+     * rapidly changing the period, range, or bot filter — or a slow background
+     * tick resolving after a newer foreground load — leaves an older request to
+     * finish last, and without the guard its `Promise.all` would overwrite every
+     * panel with data for the wrong window. Each call captures an incremented id
+     * and only writes state while that id is still current, mirroring the
+     * Crawler/Traffic dashboards. The current request also owns the page-level
+     * loading flag so a superseding background tick can't strand it on.
+     *
      * @param background - When true this is an auto-refresh tick, not a
      *   control-driven load: keep the current data on screen (no loading blank)
      *   and preserve any open traffic-source drill-down instead of resetting it,
      *   so a periodic refresh never disrupts what the operator is reading.
      */
+    const reqIdRef = useRef(0);
     const fetchAll = useCallback(async (background = false) => {
+        const reqId = ++reqIdRef.current;
         if (!background) {
             setLoading(true);
             setExpandedSource(null);
@@ -224,6 +235,10 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                 adminGetAnalyticsOverview(),
             ]);
 
+            // Drop this response if a newer fetch has superseded it, so a slower
+            // earlier request can never overwrite fresher data.
+            if (reqId !== reqIdRef.current) return;
+
             setFunnel(funnelRes.stages);
             setTrafficSources(sourcesRes.sources);
             setTrafficTotal(sourcesRes.total);
@@ -236,7 +251,10 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
         } catch (error) {
             console.error('Failed to fetch analytics:', error);
         } finally {
-            if (!background) {
+            // Only the latest request clears loading — guarding by id (not by the
+            // background flag) lets a superseding background tick clear a blank a
+            // superseded foreground load left set, avoiding a stranded spinner.
+            if (reqId === reqIdRef.current) {
                 setLoading(false);
             }
         }

@@ -101,7 +101,10 @@ export default function SystemTrafficPage() {
     // the page level) and threading the signal down as a prop keeps a single
     // timer driving every aggregate surface instead of each panel owning its
     // own; it pauses while the tab is hidden.
-    const dashboardRefresh = useAutoRefresh(DASHBOARD_REFRESH_MS);
+    const dashboardRefresh = useAutoRefresh(
+        DASHBOARD_REFRESH_MS,
+        activeTab === 'analytics' || activeTab === 'crawlers'
+    );
 
     /**
      * Memoized custom date range built from the date input values.

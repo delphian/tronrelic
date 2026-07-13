@@ -170,7 +170,7 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
             })
             .then(data => { if (isCurrent()) { setSummary(data); setSummaryError(null); } })
             .catch(err => { if (isCurrent() && !background) setSummaryError(err instanceof Error ? err.message : 'Failed to load'); })
-            .finally(() => { if (isCurrent() && !background) setSummaryLoading(false); });
+            .finally(() => { if (isCurrent()) setSummaryLoading(false); });
 
         const botOtherPromise = fetch(`${baseUrl}/bot-other-samples${params}&limit=15`)
             .then(async r => {
@@ -179,7 +179,7 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
             })
             .then(data => { if (isCurrent()) { setBotOther(data); setBotOtherError(null); } })
             .catch(err => { if (isCurrent() && !background) setBotOtherError(err instanceof Error ? err.message : 'Failed to load'); })
-            .finally(() => { if (isCurrent() && !background) setBotOtherLoading(false); });
+            .finally(() => { if (isCurrent()) setBotOtherLoading(false); });
 
         const topPathsPromise = fetch(`${baseUrl}/top-paths${params}&limit=15`)
             .then(async r => {
@@ -188,7 +188,7 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
             })
             .then(data => { if (isCurrent()) { setTopPaths(data); setTopPathsError(null); } })
             .catch(err => { if (isCurrent() && !background) setTopPathsError(err instanceof Error ? err.message : 'Failed to load'); })
-            .finally(() => { if (isCurrent() && !background) setTopPathsLoading(false); });
+            .finally(() => { if (isCurrent()) setTopPathsLoading(false); });
 
         const topCountriesPromise = fetch(`${baseUrl}/top-countries${params}&limit=15`)
             .then(async r => {
@@ -197,7 +197,7 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
             })
             .then(data => { if (isCurrent()) { setTopCountries(data); setTopCountriesError(null); } })
             .catch(err => { if (isCurrent() && !background) setTopCountriesError(err instanceof Error ? err.message : 'Failed to load'); })
-            .finally(() => { if (isCurrent() && !background) setTopCountriesLoading(false); });
+            .finally(() => { if (isCurrent()) setTopCountriesLoading(false); });
 
         await Promise.all([summaryPromise, botOtherPromise, topPathsPromise, topCountriesPromise]);
     }, [baseUrl, sinceHours]);
