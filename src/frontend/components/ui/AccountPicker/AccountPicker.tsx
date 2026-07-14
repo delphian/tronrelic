@@ -16,7 +16,7 @@
  * permitted loading case (not primary page content), per the SSR rules.
  */
 
-import { useState, useEffect, useCallback, useId } from 'react';
+import { useState, useEffect, useCallback, useId, useRef } from 'react';
 import { Search, X } from 'lucide-react';
 import type { IAccountMatch } from '@/types';
 import { Input } from '../Input';
@@ -72,7 +72,22 @@ export function AccountPicker({ value, onChange, disabled, placeholder }: Accoun
     const [results, setResults] = useState<IAccountMatch[]>([]);
     const [searching, setSearching] = useState(false);
     const [selected, setSelected] = useState<IAccountMatch | null>(null);
+    const [isOpen, setIsOpen] = useState(false);
     const listId = useId();
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    // Dismiss the floating results dropdown when the admin clicks outside the
+    // picker, so a stale absolutely-positioned overlay can't linger over — and
+    // swallow clicks meant for — the form controls beneath it.
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent): void => {
+            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     // Resolve a label for an externally-supplied value (e.g. a settings page
     // re-opened on a stored id). The exact-id search path returns the one
@@ -187,14 +202,18 @@ export function AccountPicker({ value, onChange, disabled, placeholder }: Accoun
 
     // Search state: debounced typeahead with a results dropdown.
     return (
-        <div className={styles.search}>
+        <div className={styles.search} ref={containerRef}>
             <div className={styles.search_input}>
                 <Search size={16} aria-hidden="true" className={styles.search_icon} />
                 <Input
                     type="text"
                     className={styles.search_field}
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => {
+                        setQuery(e.target.value);
+                        setIsOpen(true);
+                    }}
+                    onFocus={() => setIsOpen(true)}
                     placeholder={placeholder ?? 'Search accounts by email, name, or paste a user id'}
                     aria-label="Search accounts"
                     aria-controls={listId}
@@ -202,7 +221,7 @@ export function AccountPicker({ value, onChange, disabled, placeholder }: Accoun
                 />
             </div>
 
-            {(results.length > 0 || searching) && (
+            {isOpen && (results.length > 0 || searching) && (
                 <ul className={styles.results} id={listId} role="listbox" aria-label="Account search results">
                     {searching && <li className={styles.results_note}>Searching…</li>}
                     {!searching &&
