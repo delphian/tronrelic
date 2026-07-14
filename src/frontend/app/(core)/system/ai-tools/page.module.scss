@@ -1,7 +1,7 @@
 /**
- * Styles for the /system/ai-tools admin dashboard. Tab row, trifecta banner,
- * and the small layout helpers the tabs share. Visual surfaces come from the
- * Card / Badge / Table / Button primitives; this module only adds structure.
+ * Styles for the /system/ai-tools admin dashboard. Tab row and the small layout
+ * helpers the tabs share. Visual surfaces come from the Card / Badge / Table /
+ * Button primitives; this module only adds structure.
  */
 
 @use '../../../breakpoints' as *;
@@ -124,62 +124,6 @@
     text-align: center;
     color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);
-}
-
-/* Trifecta banner disclosure toggle: the icon + headline row doubles as the
-   expand/collapse control, so it resets the button chrome and lets the trailing
-   chevron drift to the right edge to signal the row is interactive. */
-.trifecta_toggle {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-sm);
-    width: 100%;
-    padding: 0;
-    background: none;
-    border: none;
-    cursor: pointer;
-    text-align: left;
-    color: var(--color-text);
-}
-
-.trifecta_toggle_chevron {
-    margin-left: auto;
-    color: var(--color-text-muted);
-}
-
-/* Trifecta banner contributing-tool lists. */
-.trifecta_legs {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--gap-sm);
-    margin-top: var(--gap-sm);
-}
-
-/* One leg: the category label stacked above its contributing-tool chips, with a
-   small vertical gap separating the label from the listing beneath it. */
-.trifecta_leg {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-}
-
-.trifecta_leg_label {
-    font-size: var(--font-size-caption);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
-    color: var(--color-text-subtle);
-}
-
-/* Contributing-tool chips under a leg. The badge font already sits at the
-   smallest label token, so the listing reads as secondary detail by shrinking
-   the bubble — tighter padding, gap, and radius than a default Badge. */
-.trifecta_leg_badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--gap-2xs);
-    --badge-padding: var(--padding-2xs) var(--padding-xs);
-    --badge-gap: var(--gap-2xs);
-    --badge-border-radius: var(--radius-sm);
 }
 
 /* Provider panel rows. */
@@ -384,12 +328,6 @@
     font-size: var(--font-size-body-sm);
     color: var(--color-text);
     cursor: pointer;
-}
-
-@container (min-width: #{$breakpoint-mobile-lg}) {
-    .trifecta_legs {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
 }
 
 /* ============================================================================
@@ -691,16 +629,6 @@
     align-items: center;
     gap: var(--gap-sm);
     flex-wrap: wrap;
-}
-
-/* Degraded trifecta banner shown when the status could not be evaluated — an
- * absent banner must never read as "safe". */
-.trifecta_degraded {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-sm);
-    font-size: var(--font-size-body-sm);
-    color: var(--color-warning-text);
 }
 
 /* Pagination row under a feed table. */

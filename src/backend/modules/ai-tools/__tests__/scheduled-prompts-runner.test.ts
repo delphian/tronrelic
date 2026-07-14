@@ -167,8 +167,11 @@ describe('runScheduledPrompts', () => {
 
         expect(provider.query).toHaveBeenCalledTimes(1);
         // Autonomous → programmatic mode, so the governor's external-tool
-        // default-deny applies (triggerPath !== 'interactive').
-        expect(provider.query).toHaveBeenCalledWith({ prompt: 'run me', mode: 'programmatic' });
+        // default-deny applies (triggerPath !== 'interactive'). The run's
+        // conversationId rides the query so the governor stamps every tool
+        // audit record with the same id the history record carries — without it
+        // the Query tab's per-conversation tool lookup finds nothing.
+        expect(provider.query).toHaveBeenCalledWith({ prompt: 'run me', mode: 'programmatic', conversationId: expect.any(String) });
         expect(savedPrompts.recordRunResult).toHaveBeenCalledTimes(1);
         const [id, triggerId, , err] = savedPrompts.recordRunResult.mock.calls[0];
         expect(id).toBe('due');
@@ -410,7 +413,7 @@ describe('runScheduledPrompts', () => {
         );
 
         expect(active.query).not.toHaveBeenCalled();
-        expect(pinned.query).toHaveBeenCalledWith({ prompt: 'run me', model: 'some-model', mode: 'programmatic' });
+        expect(pinned.query).toHaveBeenCalledWith({ prompt: 'run me', model: 'some-model', mode: 'programmatic', conversationId: expect.any(String) });
     });
 
     it('records a failed run when a pinned provider is not installed', async () => {
@@ -444,7 +447,7 @@ describe('runScheduledPrompts', () => {
         await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
 
         expect(provider.query).toHaveBeenCalledTimes(1);
-        expect(provider.query).toHaveBeenCalledWith({ prompt: 'run', mode: 'programmatic' });
+        expect(provider.query).toHaveBeenCalledWith({ prompt: 'run', mode: 'programmatic', conversationId: expect.any(String) });
         // Only the fired trigger writes back — skipped/invalid ones don't churn the DB.
         expect(savedPrompts.recordRunResult).toHaveBeenCalledTimes(1);
         expect(savedPrompts.recordRunResult.mock.calls[0][0]).toBe('due');
@@ -464,7 +467,8 @@ describe('runScheduledPrompts', () => {
         expect(provider.query).toHaveBeenCalledWith({
             prompt: 'run',
             mode: 'programmatic',
-            endUser: { userId: 'u1', groups: ['admin'], email: 'a@b.co' }
+            endUser: { userId: 'u1', groups: ['admin'], email: 'a@b.co' },
+            conversationId: expect.any(String)
         });
         expect(savedPrompts.recordRunFailure).not.toHaveBeenCalled();
     });
@@ -501,7 +505,7 @@ describe('runScheduledPrompts', () => {
         expect(savedPrompts.recordRunFailure.mock.calls[0][0]).toBe('thrower');
         // The exception did not abort the tick: the next due prompt still ran.
         expect(provider.query).toHaveBeenCalledTimes(1);
-        expect(provider.query).toHaveBeenCalledWith({ prompt: 'run', mode: 'programmatic' });
+        expect(provider.query).toHaveBeenCalledWith({ prompt: 'run', mode: 'programmatic', conversationId: expect.any(String) });
     });
 
     it('fails closed for an owned prompt when no resolver is supplied', async () => {
@@ -525,7 +529,7 @@ describe('runScheduledPrompts', () => {
 
         expect(resolveEndUser).not.toHaveBeenCalled();
         // No ownerUserId → endUser stays undefined (omitted by the matcher).
-        expect(provider.query).toHaveBeenCalledWith({ prompt: 'run', mode: 'programmatic' });
+        expect(provider.query).toHaveBeenCalledWith({ prompt: 'run', mode: 'programmatic', conversationId: expect.any(String) });
     });
 
     it('records a successful run in the query history tagged scheduled and visible (carries a conversationId)', async () => {

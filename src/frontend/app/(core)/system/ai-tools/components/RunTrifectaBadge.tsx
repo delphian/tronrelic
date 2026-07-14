@@ -3,8 +3,7 @@
 /**
  * @file RunTrifectaBadge.tsx
  *
- * Compact per-run lethal-trifecta indicator for the saved-prompt editor. Where
- * TrifectaPanel is the page-level banner over the whole enabled set, this badge
+ * Compact per-run lethal-trifecta indicator for the saved-prompt editor. It
  * reflects the trifecta scoped to one prompt's selected tool allowlist, so the
  * operator sees in real time whether narrowing the selection breaks the chain.
  *
