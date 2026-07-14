@@ -28,7 +28,7 @@ It still publishes its produce-and-fire service on the **service registry** (`IS
 |---------|-------|-----------|---------|
 | Category | Source (plugin/module) | No (code) | A named notification type: id, label, audience, per-channel defaults |
 | Channel | Channel provider | No (code) | A delivery transport that declares the content features it `accepts`: `toast` now; `email`, `push` later |
-| Audience | Category / call site | Snapshot in audit | Who to reach: groups, user ids, wallets |
+| Audience | Category / call site | Snapshot in audit | Who to reach: groups, user ids |
 | Preference | User | Yes | Per-user opt-out of a (category, channel) pair, plus a global mute |
 | Policy | Admin | Yes | Global enable/disable of a channel or a category |
 | Audit record | Platform | Yes | One row per blast: what fired, to whom, delivered vs suppressed |
@@ -40,11 +40,14 @@ One service goes on the registry as `'notifications'`. Its public verbs are smal
 ```typescript
 interface INotificationService {
     // Source declares a category it owns. Disposer unregisters on plugin disable.
-    registerCategory(category: INotificationCategory): Disposer;
+    registerCategory(category: INotificationCategory): NotificationDisposer;
     // Channel provider declares a transport. Toast is registered by this module; plugins add more.
-    registerChannel(channel: INotificationChannel): Disposer;
+    registerChannel(channel: INotificationChannel): NotificationDisposer;
     // Fire a notification. Returns a receipt carrying the audit id and delivered/suppressed counts.
     notify(request: INotificationRequest): Promise<INotificationReceipt>;
+    // Back the preference and admin UIs with the live registry state.
+    listCategories(): INotificationCategory[];
+    listChannels(): INotificationChannelInfo[];
 }
 ```
 
@@ -52,7 +55,7 @@ Everything else is internal to the module and reached only through its own admin
 
 ### The resolution pipeline
 
-`DispatchService.notify()` is the heart. For a request it resolves the audience to user ids and resolves the content type into a descriptor (`describe(ref)`), then computes the features the descriptor carries. The **candidate channels** are the registered channels whose `accepts` covers every one of those features — a channel that cannot render the content is not a candidate at all (and not a suppression). For each (recipient, candidate channel) it applies an ordered gate — the first failing gate suppresses that channel for that recipient, and the reason is counted in the audit:
+`DispatchService.notify()` is the heart. For a request it resolves the audience to user ids and resolves the content type into a descriptor (`describe(ref)`), then computes the features the descriptor carries. Each channel also registers a sink on the shared [content router](./system-content-types.md) with a low `accepts` floor — the **candidate channels** are those whose floor is a subset of the descriptor's present features (`accepts ⊆ present`), so nearly every channel is structurally a candidate. Fidelity is enforced later, at delivery: a candidate that cannot render the content faithfully (a toast with neither title nor body) **refuses**, and the refusal is an audited outcome, not a silent non-candidacy. For each (recipient, candidate channel) dispatch then applies an ordered gate — the first failing gate suppresses that channel for that recipient, and the reason is counted in the audit:
 
 1. Category is registered **and** admin policy has not disabled it.
 2. Channel's admin policy has not disabled it globally.
@@ -69,7 +72,7 @@ A channel is a transport behind one interface, so adding email or push later is 
 interface INotificationChannel {
     id: string;          // 'toast', later 'email', 'push'
     label: string;
-    accepts: NotificationContentFeature[];   // 'title' | 'body' | 'media' | 'fields' it can render
+    accepts: NotificationContentFeature[];   // 'title' | 'body' | 'media' | 'details' it can render
     deliver(recipients: INotificationRecipient[], message: IRenderedNotification): Promise<IChannelDeliveryResult>;
 }
 ```

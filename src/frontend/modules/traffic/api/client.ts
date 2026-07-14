@@ -679,20 +679,20 @@ export interface IOverviewTrendPath {
     hits: number;
 }
 
-/** One country and its interactive hit count within a trend bucket. */
+/** One country and its distinct-visitor count within a trend bucket. */
 export interface IOverviewTrendCountry {
-    /** ISO-3166 alpha-2 country of the `page` events. */
+    /** ISO-3166 alpha-2 country of the `page`-viewing visitors. */
     country: string;
-    /** Interactive `page` events from this country in the bucket. */
-    hits: number;
+    /** Distinct visitors (tids) located in this country in the bucket. */
+    visitors: number;
 }
 
-/** One acquisition source and its attributed page-view count within a trend bucket. */
+/** One acquisition source and its distinct-visitor count within a trend bucket. */
 export interface IOverviewTrendSource {
-    /** First-touch referrer domain (or `direct`) the bucket's views are attributed to. */
+    /** First-touch referrer domain (or `direct`) the bucket's visitors are attributed to. */
     source: string;
-    /** Bucket `page` events whose visitor first-touched from this source. */
-    hits: number;
+    /** Distinct visitors (tids) whose first touch came from this source. */
+    visitors: number;
 }
 
 /** One time bucket of the overview trend series. */
@@ -701,11 +701,11 @@ export interface IOverviewTrendPoint {
     bucket: string;
     visitors: number;
     pageviews: number;
-    /** Top 3 most-hit paths in the bucket (hits desc); [] when zero-traffic. */
+    /** Top 3 most-hit paths in the bucket (page views desc); [] when zero-traffic. */
     topPaths: IOverviewTrendPath[];
-    /** Top 3 most-active countries in the bucket (hits desc); [] when zero-traffic. */
+    /** Top 3 countries by distinct visitors in the bucket (desc); [] when zero-traffic. */
     topCountries: IOverviewTrendCountry[];
-    /** Top 3 acquisition sources by attributed page views (hits desc); [] when zero-traffic. */
+    /** Top 3 acquisition sources by distinct visitors in the bucket (desc); [] when zero-traffic. */
     topSources: IOverviewTrendSource[];
 }
 

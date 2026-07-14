@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { cn } from '../../../../lib/cn';
 import styles from './BarChart.module.css';
 
@@ -100,6 +100,15 @@ interface BarChartProps {
     yAxisMin?: number;
     /** Fixed maximum value for Y-axis (overrides auto-calculated maximum) */
     yAxisMax?: number;
+    /**
+     * Render the Y-axis on a whole-number scale: bounds snap to integer step
+     * multiples and each tick is a distinct integer. Set this for count data
+     * (visitors, pageviews) instead of rounding fractional ticks in the caller's
+     * `yAxisFormatter` — that rounding is what collapses a small domain's ticks
+     * into duplicate labels (0, 0.67, 1.33, 2 → "0, 1, 1, 2"). Off by default so
+     * continuous-value charts keep their evenly-spaced fractional ticks.
+     */
+    integerTicks?: boolean;
     /**
      * Render the legend. Defaults to the mode's behavior (`normal` shows it,
      * `widget` hides it); set explicitly to override — e.g. `true` to surface a
@@ -274,6 +283,62 @@ function resolveColor(color: string | undefined, index: number) {
 }
 
 /**
+ * Picks a "nice" whole-number step for an integer axis so gridlines land on
+ * round values a reader expects (…1, 2, 5, 10, 20, 50…) rather than arbitrary
+ * fractions. This is the piece that prevents duplicate axis labels: the default
+ * four-tick split of a small domain produces fractional values (0, 0.67, 1.33,
+ * 2) that an integer formatter collapses to repeats ("0, 1, 1, 2"). Snapping to
+ * a whole-number step guarantees every tick is a distinct integer.
+ *
+ * @param span - Height of the value domain (maxY − minY); assumed ≥ 1 so a
+ *   flat/degenerate domain still yields a usable step.
+ * @param targetTicks - Rough number of intervals wanted, tuning step coarseness.
+ * @returns A step that is a whole number ≥ 1 (1/2/5 × a power of ten).
+ */
+function niceIntegerStep(span: number, targetTicks = 3) {
+    const rough = span / targetTicks;
+    if (rough <= 1) {
+        return 1;
+    }
+    const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
+    const normalized = rough / magnitude;
+    const niceNormalized = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+    return niceNormalized * magnitude;
+}
+
+/**
+ * Snaps an auto-computed domain to whole-number bounds and emits one tick per
+ * step, so a count-based chart renders an integer axis with distinct labels.
+ * Auto bounds expand outward to the nearest step multiple (giving headroom and a
+ * top gridline that lines up with the data); a caller-pinned bound is respected
+ * as-is so an explicit `yAxisMin`/`yAxisMax` still wins. Because every tick is a
+ * multiple of an integer step, a zero baseline is always included when the domain
+ * straddles it — no separate zero-tick insertion is needed.
+ *
+ * @param minY - Lower domain bound after baseline/pinning resolution.
+ * @param maxY - Upper domain bound after baseline/pinning resolution.
+ * @param fixedMin - The caller's `yAxisMin`, if pinned — left untouched when set.
+ * @param fixedMax - The caller's `yAxisMax`, if pinned — left untouched when set.
+ * @returns The (possibly widened) integer domain plus ascending tick values.
+ */
+function niceIntegerAxis(minY: number, maxY: number, fixedMin?: number, fixedMax?: number) {
+    const step = niceIntegerStep(Math.max(maxY - minY, 1));
+    const axisMin = fixedMin !== undefined ? minY : Math.floor(minY / step) * step;
+    let axisMax = fixedMax !== undefined ? maxY : Math.ceil(maxY / step) * step;
+    if (axisMin >= axisMax) {
+        axisMax = axisMin + step;
+    }
+    const ticks: number[] = [];
+    // Guard the loop bound with a half-step epsilon so float drift cannot drop
+    // the final tick, and cap the iteration count so a pathological pinned domain
+    // (huge span, tiny step) can never spin unbounded.
+    for (let value = axisMin; value <= axisMax + step / 2 && ticks.length < 1000; value += step) {
+        ticks.push(value);
+    }
+    return { min: axisMin, max: axisMax, ticks };
+}
+
+/**
  * BarChart - Responsive SVG grouped column chart with normal and widget modes.
  *
  * Renders one column per series for each shared category (typically a time
@@ -309,6 +374,7 @@ export function BarChart({
     emptyLabel = 'Not enough data to render a chart.',
     yAxisMin: fixedYMin,
     yAxisMax: fixedYMax,
+    integerTicks = false,
     showLegend,
     layout = 'grouped'
 }: BarChartProps) {
@@ -325,6 +391,14 @@ export function BarChart({
     const [tooltipNode, setTooltipNode] = useState<HTMLDivElement | null>(null);
     const [tooltipWidth, setTooltipWidth] = useState(0);
     const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+    const [pinned, setPinned] = useState(false);
+    // Synchronous mirror of `pinned` for the pointer-move/leave guards. A touch
+    // tap dispatches pointerdown → pointerup → pointerleave within one gesture,
+    // before React re-renders with the new `pinned` value, so a handler reading
+    // the captured `pinned` state would see it stale and clear the just-pinned
+    // tooltip. The ref updates in the same tick as the pin, so the guards see the
+    // truth immediately; `pinned` state still exists to drive the dismissal effect.
+    const pinnedRef = useRef(false);
 
     /**
      * Measures the rendered tooltip's width so its center can be clamped to keep
@@ -360,6 +434,43 @@ export function BarChart({
         observer.observe(container);
         return () => observer.disconnect();
     }, [container, chrome.minWidth]);
+
+    /**
+     * While a tooltip is pinned, dismiss it on any pointer-down outside the chart
+     * figure or on Escape — the "click anywhere else" half of the pin contract.
+     * The containment check spares interactions inside the figure: the pinning
+     * tap itself, a click on a different bar (which re-pins), the tooltip, and the
+     * legend. Only a genuine outside interaction clears the pin. The listener is
+     * bound to `document` solely while pinned, so there is no idle global handler,
+     * and it lives in an effect (client-only) so SSR is untouched.
+     */
+    useEffect(() => {
+        if (!pinned) {
+            return;
+        }
+        const dismiss = (event: PointerEvent) => {
+            const target = event.target;
+            if (container && target instanceof Node && container.contains(target)) {
+                return;
+            }
+            pinnedRef.current = false;
+            setPinned(false);
+            setTooltip(null);
+        };
+        const handleKey = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                pinnedRef.current = false;
+                setPinned(false);
+                setTooltip(null);
+            }
+        };
+        document.addEventListener('pointerdown', dismiss);
+        document.addEventListener('keydown', handleKey);
+        return () => {
+            document.removeEventListener('pointerdown', dismiss);
+            document.removeEventListener('keydown', handleKey);
+        };
+    }, [pinned, container]);
 
     /**
      * Toggles visibility of a series by ID (normal-mode legend interaction).
@@ -472,6 +583,19 @@ export function BarChart({
             } else {
                 maxY = minY + 1;
             }
+        }
+
+        // Integer-axis callers (count data) snap the domain to whole-number
+        // bounds here so both the scale and the ticks are integer-valued. Done
+        // before rangeY/scaleY so bar heights map against the snapped domain, and
+        // the resulting tick values are reused verbatim below instead of the
+        // fractional four-tick split.
+        let integerTickValues: number[] | null = null;
+        if (integerTicks) {
+            const axis = niceIntegerAxis(minY, maxY, fixedYMin, fixedYMax);
+            minY = axis.min;
+            maxY = axis.max;
+            integerTickValues = axis.ticks;
         }
 
         const rangeY = maxY - minY || 1;
@@ -602,13 +726,17 @@ export function BarChart({
             });
         });
 
-        // Y-axis ticks (normal mode): four evenly spaced, plus an explicit zero
-        // tick when the data crosses the baseline.
-        const yTicks = Array.from({ length: 4 }).map((_, index) => {
-            const value = minY + (rangeY / 3) * index;
-            return { value, y: scaleY(value) };
-        });
-        if (zeroInRange && minY < 0 && maxY > 0) {
+        // Y-axis ticks (normal mode). Integer mode uses the whole-number tick
+        // values computed above (already distinct and zero-inclusive); otherwise
+        // fall back to four evenly spaced ticks, plus an explicit zero tick when
+        // the data crosses the baseline.
+        const yTicks = integerTickValues
+            ? integerTickValues.map(value => ({ value, y: scaleY(value) }))
+            : Array.from({ length: 4 }).map((_, index) => {
+                const value = minY + (rangeY / 3) * index;
+                return { value, y: scaleY(value) };
+            });
+        if (!integerTickValues && zeroInRange && minY < 0 && maxY > 0) {
             const hasZeroTick = yTicks.some(tick => Math.abs(tick.value) < 0.0001);
             if (!hasZeroTick) {
                 yTicks.push({ value: 0, y: scaleY(0) });
@@ -632,7 +760,7 @@ export function BarChart({
             zeroInRange,
             seriesLookup
         };
-    }, [series, hiddenSeries, containerWidth, height, chrome, fixedYMin, fixedYMax, seriesColors, layout]);
+    }, [series, hiddenSeries, containerWidth, height, chrome, fixedYMin, fixedYMax, integerTicks, seriesColors, layout]);
 
     // Optional header row shared by the empty and populated renders: the
     // operator-set title on the left, caller-supplied controls (e.g. a widget's
@@ -668,14 +796,18 @@ export function BarChart({
     const { width, height: chartHeight, bars, categories, yTicks, xTicks, baselineY, seriesLookup } = chartData;
 
     /**
-     * Resolves the hovered category from the pointer X position and builds the
-     * tooltip rows for every visible series at that category. Normal mode only.
+     * Resolves the category nearest the pointer X and builds the tooltip rows for
+     * every visible series there. Shared by hover (`handlePointerMove`) and
+     * click/tap-to-pin (`handlePointerDown`) so both select a bucket identically.
+     * Normal mode only; returns null when the chart is non-interactive, has no
+     * categories, or the nearest bucket carries no visible series point.
      *
      * @param event - React pointer event from the SVG element (mouse, touch, or pen)
+     * @returns The tooltip state to display, or null to show nothing
      */
-    const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
+    const resolveTooltipAt = (event: React.PointerEvent<SVGSVGElement>): TooltipState | null => {
         if (!chrome.interactive || !categories.length) {
-            return;
+            return null;
         }
 
         const bounds = event.currentTarget.getBoundingClientRect();
@@ -712,18 +844,51 @@ export function BarChart({
             .filter((item): item is TooltipDatum => Boolean(item));
 
         if (!items.length) {
-            setTooltip(null);
-            return;
+            return null;
         }
 
-        setTooltip({ x: nearest.centerX, y: chrome.margin.top, date: nearest.date, items, chartWidthPx: bounds.width });
+        return { x: nearest.centerX, y: chrome.margin.top, date: nearest.date, items, chartWidthPx: bounds.width };
     };
 
     /**
-     * Clears the tooltip when the pointer leaves the chart.
+     * Updates the hovered tooltip as the pointer moves. No-ops while a tooltip is
+     * pinned (read from `pinnedRef` synchronously so a touch tap's trailing
+     * pointermove cannot fight the pin), so a pinned bucket stays put.
+     *
+     * @param event - React pointer event from the SVG element
+     */
+    const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
+        if (pinnedRef.current) {
+            return;
+        }
+        setTooltip(resolveTooltipAt(event));
+    };
+
+    /**
+     * Clears the tooltip when the pointer leaves the chart — unless it is pinned,
+     * in which case the pin owns the tooltip until an outside click or Escape.
      */
     const handlePointerLeave = () => {
+        if (pinnedRef.current) {
+            return;
+        }
         setTooltip(null);
+    };
+
+    /**
+     * Pins the tooltip to the clicked/tapped bucket so it survives pointer-out —
+     * the primary way to read a bar on touch, where hover is unreliable. Updates
+     * `pinnedRef` synchronously (guarding the same gesture's trailing move/leave)
+     * and `pinned` state to arm the outside-click/Escape dismissal effect. A tap
+     * on a bucket with no data unpins, matching a click on empty chart area.
+     *
+     * @param event - React pointer event from the SVG element (mouse or touch)
+     */
+    const handlePointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+        const next = resolveTooltipAt(event);
+        pinnedRef.current = Boolean(next);
+        setPinned(Boolean(next));
+        setTooltip(next);
     };
 
     const ariaLabel = `Bar chart: ${series.map(item => item.label).join(', ')}`;
@@ -780,6 +945,7 @@ export function BarChart({
                 preserveAspectRatio="xMinYMid meet"
                 role="img"
                 aria-label={ariaLabel}
+                onPointerDown={chrome.interactive ? handlePointerDown : undefined}
                 onPointerMove={chrome.interactive ? handlePointerMove : undefined}
                 onPointerLeave={chrome.interactive ? handlePointerLeave : undefined}
             >

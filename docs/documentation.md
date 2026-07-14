@@ -103,7 +103,7 @@ Each detailed document addresses a single concern: discovery and implementation 
 
 ### Cross-Referencing Patterns
 
-Link liberally but provide context describing what the reader will find. Use relative paths—never hardcode repository URLs. Good links describe the destination: "For API discovery techniques, see [market-fetcher-discovery.md](./market-fetcher-discovery.md)." Bad links leave readers guessing: "See market-fetcher-discovery.md for more information."
+Link liberally but provide context describing what the reader will find. Use relative paths—never hardcode repository URLs. Good links describe the destination: "For hydration error prevention and the `<ClientTime>` API, see [ui-ssr-hydration.md](./frontend/ui/ui-ssr-hydration.md)." Bad links leave readers guessing: "See ui-ssr-hydration.md for more information."
 
 ### Migrating to Directories
 
