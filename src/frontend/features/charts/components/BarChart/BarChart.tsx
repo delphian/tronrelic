@@ -329,10 +329,11 @@ function niceIntegerAxis(minY: number, maxY: number, fixedMin?: number, fixedMax
         axisMax = axisMin + step;
     }
     const ticks: number[] = [];
-    // Guard the loop bound with a half-step epsilon so float drift cannot drop
-    // the final tick, and cap the iteration count so a pathological pinned domain
-    // (huge span, tiny step) can never spin unbounded.
-    for (let value = axisMin; value <= axisMax + step / 2 && ticks.length < 1000; value += step) {
+    // Guard the loop bound with a tiny epsilon so float drift cannot drop the
+    // final tick, while a full half-step would admit a tick beyond a pinned
+    // fixedMax that is not a step multiple; and cap the iteration count so a
+    // pathological pinned domain (huge span, tiny step) can never spin unbounded.
+    for (let value = axisMin; value <= axisMax + step * 1e-6 && ticks.length < 1000; value += step) {
         ticks.push(value);
     }
     return { min: axisMin, max: axisMax, ticks };
