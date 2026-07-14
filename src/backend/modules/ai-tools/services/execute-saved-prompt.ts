@@ -272,7 +272,15 @@ export async function executeSavedPrompt(
         // → all enabled tools, `[]` → none, a name list → that subset); a
         // listed name that resolves to no registered tool fails the run,
         // which the catch below records and counts toward the auto-pause.
-        const result = (await provider.query({ prompt: promptText, model: p.model, mode: 'programmatic', endUser, injectedSystemPrompt, toolAllowlist: p.toolAllowlist })) as IAiQueryResult;
+        // Thread this run's conversationId into the query so the governor stamps
+        // every tool audit record with the same id the history record carries.
+        // Without it the audit rows are untagged and the Query tab's
+        // per-conversation tool lookup (listActivity({ conversationId })) finds
+        // nothing, surfacing a false "No tool calls in this conversation" on an
+        // autonomous run that did use tools. Mode stays 'programmatic' — the id is
+        // for audit correlation only and never relaxes the governor's autonomous
+        // default-deny.
+        const result = (await provider.query({ prompt: promptText, model: p.model, mode: 'programmatic', endUser, injectedSystemPrompt, toolAllowlist: p.toolAllowlist, conversationId: historyConversationId })) as IAiQueryResult;
         // Record the run in the core query history so it surfaces in the
         // Query tab beside interactive queries. Tagged `scheduled` to mark
         // it autonomous; the provider transport above stays `programmatic`,

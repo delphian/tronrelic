@@ -4,12 +4,10 @@
  * @fileoverview /system/ai-tools — the AI tool governance dashboard.
  *
  * Four tabs (Query — the default — then Registry, Activity, Approvals) plus a
- * lethal-trifecta banner and a live pending-approval count on the Approvals tab.
- * When holds are already waiting on first load the shell opens on Approvals
- * instead of Query, so the operator lands on the decision that needs them. The
- * trifecta banner renders a degraded state on load failure rather than vanishing
- * — an absent security signal must never read as "safe". Curation moved to its
- * own surface at /system/curation. Per-tool policy editing is not its own tab —
+ * live pending-approval count on the Approvals tab. When holds are already
+ * waiting on first load the shell opens on Approvals instead of Query, so the
+ * operator lands on the decision that needs them. Curation moved to its own
+ * surface at /system/curation. Per-tool policy editing is not its own tab —
  * the Registry slide-over carries it — so this shell has no Policy tab.
  * Admin-gated by the /system layout; like the other system pages it is a client
  * component that fetches over the cookie-authenticated admin API. Governed events
@@ -18,13 +16,10 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { AlertTriangle } from 'lucide-react';
-import type { ITrifectaStatus } from '@/types';
-import { Page, PageHeader } from '../../../../components/layout';
+import { Page } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { getSocket } from '../../../../lib/socketClient';
-import { getTrifecta, getApprovalsCount } from '../../../../modules/ai-tools';
-import { TrifectaPanel } from './components/TrifectaPanel';
+import { getApprovalsCount } from '../../../../modules/ai-tools';
 import { RegistryTab } from './tabs/RegistryTab';
 import { ActivityTab } from './tabs/ActivityTab';
 import { ApprovalsTab } from './tabs/ApprovalsTab';
@@ -42,30 +37,25 @@ const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
 ];
 
 /**
+ * Stable no-op for RegistryTab's required `onChanged`. The callback used to
+ * re-check the trifecta banner after a registry change; with that banner
+ * removed there is nothing left for the page to do, and a module-level constant
+ * keeps RegistryTab's memoized callbacks from re-creating each render.
+ */
+const noop = (): void => {};
+
+/**
  * AI tool governance dashboard page.
  *
  * @returns The page.
  */
 export default function AiToolsAdminPage() {
     const [activeTab, setActiveTab] = useState<TabId>('query');
-    const [trifecta, setTrifecta] = useState<ITrifectaStatus | null>(null);
-    const [trifectaError, setTrifectaError] = useState(false);
     const [pending, setPending] = useState(0);
     /** True once the initial pending fetch has auto-routed, so it fires at most once. */
     const autoRoutedRef = useRef(false);
     /** True once the operator picks a tab, so auto-routing never yanks them away. */
     const userPickedRef = useRef(false);
-
-    const refreshTrifecta = useCallback(async () => {
-        try {
-            setTrifecta(await getTrifecta());
-            setTrifectaError(false);
-        } catch {
-            // Surface an explicit degraded banner — a missing trifecta signal
-            // must not be mistaken for a clean one.
-            setTrifectaError(true);
-        }
-    }, []);
 
     const refreshPending = useCallback(async (): Promise<number | null> => {
         try {
@@ -77,11 +67,9 @@ export default function AiToolsAdminPage() {
         }
     }, []);
 
-    // On first load, evaluate the trifecta and, if holds are already waiting,
-    // open on Approvals rather than the default Query — unless the operator has
-    // already chosen a tab.
+    // On first load, if holds are already waiting, open on Approvals rather than
+    // the default Query — unless the operator has already chosen a tab.
     useEffect(() => {
-        void refreshTrifecta();
         void (async () => {
             const count = await refreshPending();
             if (count && count > 0 && !autoRoutedRef.current && !userPickedRef.current) {
@@ -89,7 +77,7 @@ export default function AiToolsAdminPage() {
                 setActiveTab('approvals');
             }
         })();
-    }, [refreshTrifecta, refreshPending]);
+    }, [refreshPending]);
 
     // Keep the pending-approvals badge live regardless of which tab is open.
     useEffect(() => {
@@ -114,17 +102,7 @@ export default function AiToolsAdminPage() {
 
     return (
         <Page>
-            <PageHeader title="AI Tools" subtitle="Govern every tool an AI agent can invoke — registry, activity, approvals, and per-tool policy." />
             <div className={styles.container}>
-                {trifecta
-                    ? <TrifectaPanel status={trifecta} />
-                    : trifectaError && (
-                        <div className={styles.trifecta_degraded} role="status">
-                            <AlertTriangle size={16} aria-hidden="true" />
-                            Trifecta status unavailable — the enabled tool set could not be evaluated. Retry from any tab action.
-                        </div>
-                    )}
-
                 <div className={styles.tabs} role="tablist" aria-label="AI tool governance sections">
                     {TABS.map(tab => (
                         <button
@@ -143,7 +121,7 @@ export default function AiToolsAdminPage() {
                 </div>
 
                 <div className={styles.content}>
-                    {activeTab === 'registry' && <RegistryTab onChanged={refreshTrifecta} />}
+                    {activeTab === 'registry' && <RegistryTab onChanged={noop} />}
                     {activeTab === 'query' && <QueryTab />}
                     {activeTab === 'activity' && <ActivityTab />}
                     {activeTab === 'approvals' && <ApprovalsTab onChanged={refreshPending} />}
