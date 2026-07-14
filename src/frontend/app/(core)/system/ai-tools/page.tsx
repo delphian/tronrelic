@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Page } from '../../../../components/layout';
+import { Page, PageHeader } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { getSocket } from '../../../../lib/socketClient';
 import { getApprovalsCount } from '../../../../modules/ai-tools';
@@ -102,6 +102,7 @@ export default function AiToolsAdminPage() {
 
     return (
         <Page>
+            <PageHeader title="AI Tools" subtitle="Govern every tool an AI agent can invoke — registry, activity, approvals, and per-tool policy." />
             <div className={styles.container}>
                 <div className={styles.tabs} role="tablist" aria-label="AI tool governance sections">
                     {TABS.map(tab => (
