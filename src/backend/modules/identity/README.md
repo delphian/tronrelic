@@ -10,7 +10,7 @@ Owns Better Auth and everything keyed by the Better Auth user id: the auth insta
 | Module class | `src/backend/modules/identity/IdentityModule.ts` |
 | Admin page | `/system/users` (menu item `Users`, order 25, registered in `run()`) |
 | Service registry names | `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'` |
-| Mounted routes | `/api/auth/*`, `/api/user/wallets/*`, `/api/user/settings`, `/api/admin/users/groups/*`, `/api/admin/users` (accounts) |
+| Mounted routes | `/api/auth/*`, `/api/user/wallets/*`, `/api/user/settings`, `/api/admin/users/groups/*`, `/api/admin/users` (accounts), `/api/admin/accounts/search` |
 | Types package | `@delphian/tronrelic-types` → `IWalletService`, `IAccountDirectoryService`, `IUserGroupService`, `IUserSettingsService` |
 | Auth collections | `module_user_auth_users` / `_sessions` / `_accounts` / `_verifications` / `_passkeys` |
 | Owned collections | `module_user_wallets`, `module_user_groups`, `module_user_settings` |
@@ -107,12 +107,13 @@ First consumer: the notifications module persists per-user opt-outs here under t
 | GET | `/api/admin/users` | `requireAdmin` | Paginated / searched account summaries (`IAccountSummary[]` + total) |
 | GET | `/api/admin/users/:id` | `requireAdmin` | One account summary, or 404 |
 | PUT | `/api/admin/users/:id/groups` | `requireAdmin` | Set an account's group membership |
+| GET | `/api/admin/accounts/search?q=` | `requireAdmin` | Typeahead account search → `{ accounts: IAccountMatch[] }`; backs `context.ui.AccountPicker` |
 
 `/api/admin/users` is a `/:id` catch-all, so it mounts **last**. The literal-segment routers must mount ahead of it: the groups router here, and the traffic module's `/api/admin/users/{traffic,analytics}` routers (TrafficModule runs before this module). Without that order the catch-all would shadow `traffic`, `analytics`, and `groups`.
 
 ## Lifecycle
 
-**`init()`** constructs (in order) `GroupService`, `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, and the Better Auth instance, then wires the auth facade and builds the wallet + group + user-settings controllers. **`run()`** registers the `Users` menu item under the System container, mounts `/api/auth/*`, the wallet router, the user-settings router, the admin group router, and the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`.
+**`init()`** constructs (in order) `GroupService`, `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, and the Better Auth instance, then wires the auth facade and builds the wallet + group + user-settings controllers. **`run()`** registers the `Users` menu item under the System container, mounts `/api/auth/*`, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`.
 
 ## Related
 

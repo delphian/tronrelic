@@ -42,6 +42,26 @@ export interface IAccountSummary {
 }
 
 /**
+ * Minimal account projection for pickers and search results.
+ *
+ * The narrow shape a UI needs to identify and choose an account — id plus the
+ * two human-readable labels. Deliberately smaller than {@link IAccountSummary}
+ * (no groups, wallet, verification, or timestamps): search endpoints and the
+ * shared `AccountPicker` traffic in this shape so neither leaks auth-internal
+ * fields to admin surfaces that only need to name a person.
+ */
+export interface IAccountMatch {
+    /** Better Auth user id — the opaque value a caller stores/selects. */
+    id: string;
+
+    /** Account email, the primary label. */
+    email: string;
+
+    /** Display name, or null when unset. */
+    name: string | null;
+}
+
+/**
  * Options for paginated/filtered account listing.
  */
 export interface IListAccountsOptions {

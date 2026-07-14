@@ -37,7 +37,7 @@ import { AccountsController } from './api/accounts.controller.js';
 import { UserSettingsController } from './api/user-settings.controller.js';
 import { createWalletRouter } from './api/wallet.routes.js';
 import { createAdminUserGroupRouter } from './api/user-group.routes.js';
-import { createAdminAccountsRouter } from './api/accounts.routes.js';
+import { createAdminAccountsRouter, createAdminAccountSearchRouter } from './api/accounts.routes.js';
 import { createUserSettingsRouter } from './api/user-settings.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 
@@ -289,6 +289,14 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         const adminAccountsRouter: Router = createAdminAccountsRouter(this.accountsController, this.groupController);
         this.app.use('/api/admin/users', requireAdmin, adminAccountsRouter);
         this.logger.info('Admin accounts router mounted at /api/admin/users');
+
+        // Admin account-search router at the dedicated literal `/api/admin/accounts`
+        // prefix — kept off the `/api/admin/users` `/:id` catch-all above so its
+        // `/search` route is not captured as an id. Backs the shared
+        // `context.ui.AccountPicker` typeahead used by admin surfaces.
+        const adminAccountSearchRouter: Router = createAdminAccountSearchRouter(this.accountsController);
+        this.app.use('/api/admin/accounts', requireAdmin, adminAccountSearchRouter);
+        this.logger.info('Admin account-search router mounted at /api/admin/accounts');
 
         // Publish the BA-keyed services for late-binding discovery. Published in
         // identity's run() — which precedes notifications' run() and any runtime

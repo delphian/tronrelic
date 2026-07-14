@@ -45,3 +45,24 @@ export function createAdminAccountsRouter(
 
     return router;
 }
+
+/**
+ * Create the admin account-search router.
+ *
+ * Mounted at the dedicated literal prefix `/api/admin/accounts` (with
+ * `requireAdmin` at the parent), deliberately separate from the
+ * `/api/admin/users` accounts router: that one is a `/:id` catch-all, so a
+ * `/search` route added there would be captured as an id. A distinct prefix
+ * also gives account pickers a stable, module-neutral URL. Backs the shared
+ * `context.ui.AccountPicker` typeahead.
+ *
+ * @param controller - Account-directory read controller.
+ * @returns Configured admin account-search router.
+ */
+export function createAdminAccountSearchRouter(controller: AccountsController): Router {
+    const router = Router();
+
+    router.get('/search', controller.searchAccounts.bind(controller));
+
+    return router;
+}
