@@ -198,12 +198,13 @@ export function OverviewTrend({ period, customRange, includeBots, refreshSignal 
      * top acquisition sources inside the chart tooltip. Surfaces "what did they
      * view, from where, and how did they arrive?" in place so an operator
      * reading the trend need not cross-reference the landing-pages, geo, or
-     * traffic-sources panels — while each heading names the metric (views) and
-     * its bucket scope so no count is misread as a window total, a first-touch
-     * landing count, or a panel's distinct-visitor figure. All three blocks
-     * share the bucket's page-view measure (sources attribute each view to the
-     * viewer's first-touch origin), so they stay commensurable with the bar and
-     * with each other.
+     * traffic-sources panels. Two units coexist by design and each heading scopes
+     * its count to the bucket: "Most viewed" counts page views (a person viewing
+     * a path twice is two views), while "Top countries" and "Top sources" count
+     * DISTINCT VISITORS — a country/origin is a property of the visitor, so one
+     * person cannot inflate them. The visitor blocks therefore track the
+     * Unique-Visitors bar, and intentionally do not sum to a window total or fold
+     * into the page-view figures.
      *
      * @param metadata - The hovered bar's point metadata; `topPaths`,
      *   `topCountries`, and `topSources` are the server-ranked lists the series
@@ -234,7 +235,7 @@ export function OverviewTrend({ period, customRange, includeBots, refreshSignal 
                         {countries.map(c => (
                             <div key={c.country} className={styles.tooltip_paths__row}>
                                 <span className={styles.tooltip_paths__path}>{c.country}</span>
-                                <span className={styles.tooltip_paths__hits}>{numberFormatter.format(c.hits)}</span>
+                                <span className={styles.tooltip_paths__hits}>{numberFormatter.format(c.visitors)}</span>
                             </div>
                         ))}
                     </div>
@@ -245,7 +246,7 @@ export function OverviewTrend({ period, customRange, includeBots, refreshSignal 
                         {sources.map(s => (
                             <div key={s.source} className={styles.tooltip_paths__row}>
                                 <span className={styles.tooltip_paths__path}>{s.source}</span>
-                                <span className={styles.tooltip_paths__hits}>{numberFormatter.format(s.hits)}</span>
+                                <span className={styles.tooltip_paths__hits}>{numberFormatter.format(s.visitors)}</span>
                             </div>
                         ))}
                     </div>
@@ -329,7 +330,8 @@ export function OverviewTrend({ period, customRange, includeBots, refreshSignal 
                 series={series}
                 height={280}
                 yAxisMin={0}
-                yAxisFormatter={(v) => numberFormatter.format(Math.round(v))}
+                integerTicks
+                yAxisFormatter={(v) => numberFormatter.format(v)}
                 tooltipMetadataFormatter={renderTooltipMetadata}
                 emptyLabel="No traffic recorded in this period."
             />

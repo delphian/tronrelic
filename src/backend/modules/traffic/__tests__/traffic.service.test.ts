@@ -710,10 +710,10 @@ describe('TrafficService', () => {
                     return [{ bucket: '2026-06-01 05:00:00', path: '/markets', hits: '4' }] as T[];
                 }
                 if (sql.includes('GROUP BY bucket, country')) {
-                    return [{ bucket: '2026-06-01 05:00:00', country: 'US', hits: '5' }] as T[];
+                    return [{ bucket: '2026-06-01 05:00:00', country: 'US', visitors: '5' }] as T[];
                 }
                 if (sql.includes('GROUP BY bucket, source')) {
-                    return [{ bucket: '2026-06-01 05:00:00', source: 'google.com', hits: '6' }] as T[];
+                    return [{ bucket: '2026-06-01 05:00:00', source: 'google.com', visitors: '6' }] as T[];
                 }
                 if (sql.includes('GROUP BY bucket')) {
                     return [{ bucket: '2026-06-01 05:00:00', visitors: '3', pageviews: '7' }] as T[];
@@ -741,7 +741,7 @@ describe('TrafficService', () => {
             expect(out.series).toHaveLength(25);
             // The populated bucket carries its ranked paths, countries, and sources as metadata.
             expect(out.series.find(p => p.bucket === '2026-06-01T05:00:00.000Z'))
-                .toEqual({ bucket: '2026-06-01T05:00:00.000Z', visitors: 3, pageviews: 7, topPaths: [{ path: '/markets', hits: 4 }], topCountries: [{ country: 'US', hits: 5 }], topSources: [{ source: 'google.com', hits: 6 }] });
+                .toEqual({ bucket: '2026-06-01T05:00:00.000Z', visitors: 3, pageviews: 7, topPaths: [{ path: '/markets', hits: 4 }], topCountries: [{ country: 'US', visitors: 5 }], topSources: [{ source: 'google.com', visitors: 6 }] });
             // Zero-traffic buckets carry empty breakdown lists, never undefined.
             expect(out.series.find(p => p.bucket === '2026-06-01T02:00:00.000Z')?.topPaths).toEqual([]);
             expect(out.series.find(p => p.bucket === '2026-06-01T02:00:00.000Z')?.topCountries).toEqual([]);

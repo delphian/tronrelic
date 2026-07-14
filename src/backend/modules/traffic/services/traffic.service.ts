@@ -395,20 +395,20 @@ export interface IOverviewTrendPath {
     hits: number;
 }
 
-/** One country and its interactive hit count within a trend bucket. */
+/** One country and its distinct-visitor count within a trend bucket. */
 export interface IOverviewTrendCountry {
-    /** ISO-3166 alpha-2 country of the `page` events. */
+    /** ISO-3166 alpha-2 country of the `page`-viewing visitors. */
     country: string;
-    /** Interactive `page` events from this country in the bucket. */
-    hits: number;
+    /** Distinct visitors (tids) located in this country in the bucket. */
+    visitors: number;
 }
 
-/** One acquisition source and its attributed page-view count within a trend bucket. */
+/** One acquisition source and its distinct-visitor count within a trend bucket. */
 export interface IOverviewTrendSource {
-    /** First-touch referrer domain (or `direct`) the bucket's views are attributed to. */
+    /** First-touch referrer domain (or `direct`) the bucket's visitors are attributed to. */
     source: string;
-    /** Bucket `page` events whose visitor first-touched from this source. */
-    hits: number;
+    /** Distinct visitors (tids) whose first touch came from this source. */
+    visitors: number;
 }
 
 /** One time bucket of the overview trend series. */
@@ -427,19 +427,22 @@ export interface IOverviewTrendPoint {
      */
     topPaths: IOverviewTrendPath[];
     /**
-     * The bucket's most-active countries (top 3 by `page`-event count,
-     * descending), same page-view measure as {@link topPaths} so the whole
-     * tooltip stays in one commensurable unit. Distinct from the Geo panel's
-     * windowed distinct-visitor count by design. Empty for zero-traffic buckets.
+     * The bucket's most-active countries (top 3 by distinct visitors,
+     * descending). Measured in DISTINCT VISITORS, not page views — a country is
+     * a property of the visitor, so a single person refreshing must not inflate
+     * it. Shares the visitor unit with the Unique-Visitors bar and the Geo panel;
+     * intentionally does not sum to the bucket's total visitors (a bucket can
+     * span several countries). Empty for zero-traffic buckets.
      */
     topCountries: IOverviewTrendCountry[];
     /**
-     * The bucket's top acquisition sources (top 3, descending), measured as
-     * `page` views attributed to each viewer's first-touch source — the same
-     * page-view unit as {@link topPaths}/{@link topCountries}, so all three
-     * blocks stay commensurable. Source can only come from the first-touch
-     * `bootstrap` row (a `page` row's referrer is the site's own domain), so
-     * this is a join, not a plain group-by. Empty for zero-traffic buckets.
+     * The bucket's top acquisition sources (top 3 by distinct visitors,
+     * descending). Measured in DISTINCT VISITORS by each visitor's first-touch
+     * origin — "where did this bucket's visitors come from?", matching
+     * {@link topCountries} and the visitor bar rather than {@link topPaths}'
+     * page-view unit. Source can only come from the first-touch `bootstrap` row
+     * (a `page` row's referrer is the site's own domain), so this is a join, not
+     * a plain group-by. Empty for zero-traffic buckets.
      */
     topSources: IOverviewTrendSource[];
 }
@@ -1810,39 +1813,50 @@ export class TrafficService {
             ORDER BY bucket ASC, hits DESC, path ASC
             LIMIT 3 BY bucket
         `;
-        // Top 3 countries per bucket for the tooltip — same construction and
-        // measure as the paths query (page-event counts within just this
-        // bucket, `page` rows only so bot-only bootstrap countries never
-        // surface). NULL country is dropped so a hover lists only nameable
-        // origins. `LIMIT 3 BY bucket` bounds the payload to 3 × bucket count.
+        // Top 3 countries per bucket for the tooltip, measured as DISTINCT
+        // VISITORS (`uniqExact(candidate_uid)`) — a country is an attribute of the
+        // visitor, so a single person refreshing a page must not inflate their
+        // country's count. This matches the module's primary-measure convention
+        // (visitors, not raw hits) used by the Geo panel and every other
+        // dashboard read; only "Most viewed" (topPaths) stays a page-view count,
+        // because a view is the thing being counted there. Scoped to `page` rows
+        // so bot-only bootstrap countries never surface; NULL country is dropped
+        // so a hover lists only nameable origins. `LIMIT 3 BY bucket` bounds the
+        // payload to 3 × bucket count.
         const countriesSql = `
-            SELECT ${bucketExpr} AS bucket, country, count() AS hits
+            SELECT ${bucketExpr} AS bucket, country, uniqExact(candidate_uid) AS visitors
             FROM ${TABLE_NAME}
             WHERE ${clause}${botFilter} AND event_type = 'page' AND country IS NOT NULL
             GROUP BY bucket, country
-            ORDER BY bucket ASC, hits DESC, country ASC
+            ORDER BY bucket ASC, visitors DESC, country ASC
             LIMIT 3 BY bucket
         `;
-        // Top 3 sources per bucket, attributed as page VIEWS by origin. Source
-        // lives only on the first-touch `bootstrap` row (a `page` row's referrer
-        // is the site's own domain), so each bucket page view is LEFT-joined to
-        // its visitor's earliest bootstrap source — `argMin(domain, timestamp)`,
-        // matching getTrafficSources' `domain(referer)`/`direct` derivation. The
-        // join is LEFT (not INNER) so a page view whose tid has no retained
-        // bootstrap row still counts: the middleware bootstrap is best-effort and
-        // swallows failures, so outages/deploys and pre-feature tids leave
-        // page-only tids permanently. Those unmatched views bucket to
-        // '(unattributed)' — a distinct sentinel, never folded into 'direct'
-        // (which means "no referrer", not "no record") — so topSources stays the
-        // SAME page-view population as topPaths/topCountries and the bar. Under
-        // this codebase's join_use_nulls=0 an unmatched source fills as '' (not
-        // NULL); if that ever flips, the guard must also test IS NULL.
-        // `LIMIT 3 BY bucket` bounds the payload.
+        // Top 3 sources per bucket, measured as DISTINCT VISITORS by first-touch
+        // origin — "where did this bucket's visitors come from?", not "how many
+        // page views arrived from each origin". A source is a property of the
+        // visitor (their first touch), so one person browsing several pages counts
+        // once for their origin, matching topCountries and the module's
+        // visitor-primary convention. Source lives only on the first-touch
+        // `bootstrap` row (a `page` row's referrer is the site's own domain), so
+        // each bucket's page-viewing visitor is LEFT-joined to their earliest
+        // bootstrap source — `argMin(domain, timestamp)`, matching
+        // getTrafficSources' `domain(referer)`/`direct` derivation. The join is
+        // LEFT (not INNER) so a visitor whose tid has no retained bootstrap row
+        // still counts: the middleware bootstrap is best-effort and swallows
+        // failures, so outages/deploys and pre-feature tids leave page-only tids
+        // permanently. Those unmatched visitors bucket to '(unattributed)' — a
+        // distinct sentinel, never folded into 'direct' (which means "no
+        // referrer", not "no record"). `candidate_uid` is carried out of the page
+        // subquery so the outer `uniqExact` can dedupe a visitor's many page rows
+        // to one per source. Under this codebase's join_use_nulls=0 an unmatched
+        // source fills as '' (not NULL); if that ever flips, the guard must also
+        // test IS NULL. `LIMIT 3 BY bucket` bounds the payload.
         const sourcesSql = `
-            SELECT bucket, source, count() AS hits
+            SELECT bucket, source, uniqExact(candidate_uid) AS visitors
             FROM (
                 SELECT
                     pv.bucket AS bucket,
+                    pv.candidate_uid AS candidate_uid,
                     if(src.source = '', '(unattributed)', src.source) AS source
                 FROM (
                     SELECT ${bucketExpr} AS bucket, candidate_uid
@@ -1858,7 +1872,7 @@ export class TrafficService {
                 ) AS src USING (candidate_uid)
             )
             GROUP BY bucket, source
-            ORDER BY bucket ASC, hits DESC, source ASC
+            ORDER BY bucket ASC, visitors DESC, source ASC
             LIMIT 3 BY bucket
         `;
 
@@ -1868,8 +1882,8 @@ export class TrafficService {
                 fetchKpis(previousRange),
                 this.clickhouse.query<{ bucket: string; visitors: string | number; pageviews: string | number }>(seriesSql, params),
                 this.clickhouse.query<{ bucket: string; path: string; hits: string | number }>(pathsSql, params),
-                this.clickhouse.query<{ bucket: string; country: string; hits: string | number }>(countriesSql, params),
-                this.clickhouse.query<{ bucket: string; source: string; hits: string | number }>(sourcesSql, params)
+                this.clickhouse.query<{ bucket: string; country: string; visitors: string | number }>(countriesSql, params),
+                this.clickhouse.query<{ bucket: string; source: string; visitors: string | number }>(sourcesSql, params)
             ]);
 
             // Zero-fill every bucket in the window, then overlay the rows.
@@ -1910,14 +1924,14 @@ export class TrafficService {
                 }
             }
             // Overlay the per-bucket top countries — same ordering guarantee as
-            // paths (rows arrive hits-desc, appending preserves rank).
+            // paths (rows arrive visitors-desc, appending preserves rank).
             for (const row of countryRows) {
                 const key = granularity === 'hour'
                     ? clickHouseDateToIso(String(row.bucket))
                     : String(row.bucket);
                 const point = buckets.get(key);
                 if (point) {
-                    point.topCountries.push({ country: String(row.country), hits: Number(row.hits) });
+                    point.topCountries.push({ country: String(row.country), visitors: Number(row.visitors) });
                 }
             }
             // Overlay the per-bucket top sources — same ordering guarantee.
@@ -1927,7 +1941,7 @@ export class TrafficService {
                     : String(row.bucket);
                 const point = buckets.get(key);
                 if (point) {
-                    point.topSources.push({ source: String(row.source), hits: Number(row.hits) });
+                    point.topSources.push({ source: String(row.source), visitors: Number(row.visitors) });
                 }
             }
 

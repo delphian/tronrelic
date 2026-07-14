@@ -120,6 +120,12 @@ The policy and audit indexes are created in `init()`. Categories and channels ar
 | PATCH | `/api/admin/system/notifications/channels/:id` | `requireAdmin` | Enable/disable a channel |
 | GET | `/api/admin/system/notifications/history` | `requireAdmin` | Audit feed (filter: `categoryId`, `source`; paginated) |
 
+## Admin and User Surfaces
+
+`/system/notifications` has three admin tabs: **Categories** (enable/disable each, see its source and per-channel defaults), **Channels** (globally enable/disable a transport), and **History** (the audit feed, filterable by category, source, time). A fourth tab, **My Preferences**, and the `/profile` preferences panel are the same `PreferencesPanel` component — every user-configurable category with a per-channel toggle plus a global mute, writing identity's `module_user_settings` store; the pipeline reads it at dispatch.
+
+`severity` (`info` | `success` | `warning` | `danger`) drives the toast's visual tone client-side (`NotificationHandler.tsx`) — it carries no other behavior in the pipeline.
+
 ## First Consumer
 
 The `ai-tools` module registers the `ai-tools.scheduled-prompt-run` category (audience: admin group, `channelDefaults: { toast: true }`, user-silenceable) plus an `ai-tools:scheduled-prompt-run` content type, and fires `notify({ category, typeId, ref })` after every cron-scheduled prompt run — so admins see a toast when a scheduled AI prompt runs, any admin can opt out at `/profile` or the My Preferences tab, and an admin can disable the whole category for everyone.

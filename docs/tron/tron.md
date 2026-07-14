@@ -174,6 +174,6 @@ Before implementing any TRON-related feature, verify:
 
 **Related topics:**
 - [system-blockchain-sync-architecture.md](../system/system-blockchain-sync-architecture.md) - How TronRelic fetches and processes TRON blocks
-- [market-system-architecture.md](../markets/market-system-architecture.md) - How energy market pricing uses TRON parameters
+- [trp-resource-markets README](../../src/plugins/trp-resource-markets/README.md) - How energy market pricing uses TRON parameters
 - [plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) - How observers receive enriched TRON transactions
 - [environment.md](../environment.md) - TronGrid API key configuration and rate limiting
