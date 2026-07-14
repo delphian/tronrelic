@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { IAccountMatch } from '@/types';
 import { getServerSideApiUrl } from './api-url';
 
 export const apiClient = axios.create({
@@ -8,6 +9,21 @@ export const apiClient = axios.create({
   baseURL: typeof window === 'undefined' ? `${getServerSideApiUrl()}/api` : '/api',
   timeout: 5000
 });
+
+/**
+ * Typeahead search over Better Auth accounts for admin pickers (the shared
+ * `AccountPicker`). Hits the admin-gated identity endpoint; in the browser the
+ * relative `/api` base sends the same-origin session cookie, so an admin caller
+ * is authorized without extra wiring. Passing an exact 24-hex user id resolves
+ * that one account, which is how a picker re-labels a stored selection.
+ *
+ * @param q - Search term: an email/name substring, or an exact account id.
+ * @returns Matching accounts (id/email/name); empty on no match or a blank term.
+ */
+export async function adminSearchAccounts(q: string): Promise<IAccountMatch[]> {
+  const response = await apiClient.get('/admin/accounts/search', { params: { q } });
+  return (response.data as { accounts?: IAccountMatch[] }).accounts ?? [];
+}
 
 export async function getLatestTransactions(limit = 50) {
   const response = await apiClient.get('/blockchain/transactions/latest', {

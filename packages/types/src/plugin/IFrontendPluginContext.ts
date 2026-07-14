@@ -223,6 +223,22 @@ export interface IUIComponents {
     }>;
 
     /**
+     * Admin account picker — a searchable control for selecting a Better Auth
+     * account by name/email. Self-contained: it queries the admin
+     * account-search endpoint itself, so a consumer only binds value/onChange.
+     * `value` is the selected account id (or null); `onChange` receives the new
+     * id, or null when cleared. Admin-gated by that endpoint — use only on admin
+     * surfaces. Lets a plugin choose an account (e.g. a bot author) without
+     * reimplementing account search.
+     */
+    AccountPicker: ComponentType<{
+        value: string | null;
+        onChange: (accountId: string | null) => void;
+        disabled?: boolean;
+        placeholder?: string;
+    }>;
+
+    /**
      * Table wrapper matching the core `/system/*` admin tables.
      *
      * Compose with `Thead`, `Tbody`, `Tr`, `Th`, `Td` to get the same

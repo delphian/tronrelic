@@ -19,6 +19,7 @@ export type {
 export type {
     IAccountDirectoryService,
     IAccountSummary,
+    IAccountMatch,
     IListAccountsOptions,
     IListAccountsResult
 } from './IAccountDirectoryService.js';

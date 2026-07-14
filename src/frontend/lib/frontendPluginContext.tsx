@@ -22,6 +22,7 @@ import { Select } from '../components/ui/Select';
 import { ClientTime } from '../components/ui/ClientTime';
 import { Tooltip } from '../components/ui/Tooltip';
 import { LazyIconPickerModal as IconPickerModal } from '../components/ui/IconPickerModal';
+import { AccountPicker } from '../components/ui/AccountPicker';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
 import { useModal as useModalHook } from '../components/ui/ModalProvider';
 import { useToast as useToastHook } from '../components/ui/ToastProvider';
@@ -343,6 +344,7 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             ClientTime,
             Tooltip,
             IconPickerModal,
+            AccountPicker,
             Table,
             Thead,
             Tbody,
@@ -445,6 +447,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         ClientTime,
         Tooltip,
         IconPickerModal,
+        AccountPicker,
         Table,
         Thead,
         Tbody,

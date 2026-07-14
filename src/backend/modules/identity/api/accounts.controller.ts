@@ -13,7 +13,7 @@
  */
 
 import type { Request, Response } from 'express';
-import type { ISystemLogService } from '@/types';
+import type { ISystemLogService, IAccountMatch, IAccountSummary } from '@/types';
 import type { AccountDirectoryService } from '../services/account-directory.service.js';
 import { parsePositiveInt, parseNonNegativeInt } from '../../../api/query-params.js';
 
@@ -22,6 +22,28 @@ const DEFAULT_LIMIT = 50;
 
 /** Hard ceiling on page size — mirrors the service ceiling. */
 const MAX_LIMIT = 200;
+
+/** Page size for the typeahead account search — small, it feeds a dropdown. */
+const ACCOUNT_SEARCH_LIMIT = 10;
+
+/**
+ * A Better Auth user id is a 24-char hex ObjectId string. When the query is
+ * exactly that, resolve it directly instead of substring-scanning email/name —
+ * so a picker re-opened on a stored id resolves its label in one exact read.
+ */
+const BA_USER_ID_PATTERN = /^[0-9a-f]{24}$/i;
+
+/**
+ * Narrow an {@link IAccountSummary} to the {@link IAccountMatch} projection the
+ * picker/search surface exposes — dropping auth-internal fields (groups,
+ * wallet, verification, timestamps) an account chooser never needs.
+ *
+ * @param account - The full directory summary.
+ * @returns The minimal id/email/name match.
+ */
+function toAccountMatch(account: IAccountSummary): IAccountMatch {
+    return { id: account.id, email: account.email, name: account.name };
+}
 
 /**
  * Controller for admin account-directory endpoints.
@@ -64,6 +86,44 @@ export class AccountsController {
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to list accounts');
             res.status(500).json({ error: 'InternalError', message: 'Failed to list accounts' });
+        }
+
+        return;
+    }
+
+    /**
+     * GET /api/admin/accounts/search?q=
+     *
+     * Typeahead account search backing admin account pickers (e.g. the shared
+     * `context.ui.AccountPicker`). Returns the minimal {@link IAccountMatch}
+     * projection — never the full summary — so admin choosers only see
+     * id/email/name. An exact 24-hex query resolves the one account by id (the
+     * re-open-on-stored-id case); anything else is a capped substring search.
+     * An empty query returns no matches rather than the whole directory.
+     *
+     * @param req - Express request; reads the `q` query param.
+     * @param res - Express response.
+     * @returns Resolves once the response has been written.
+     */
+    async searchAccounts(req: Request, res: Response): Promise<void> {
+        const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+        if (!q) {
+            res.json({ accounts: [] });
+            return;
+        }
+
+        try {
+            if (BA_USER_ID_PATTERN.test(q)) {
+                const account = await this.accountDirectory.getAccount(q);
+                res.json({ accounts: account ? [toAccountMatch(account)] : [] });
+                return;
+            }
+
+            const { accounts } = await this.accountDirectory.listAccounts({ search: q, limit: ACCOUNT_SEARCH_LIMIT });
+            res.json({ accounts: accounts.map(toAccountMatch) });
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to search accounts');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to search accounts' });
         }
 
         return;
