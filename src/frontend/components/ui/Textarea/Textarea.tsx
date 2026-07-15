@@ -3,7 +3,19 @@
 import { forwardRef } from 'react';
 import type { TextareaHTMLAttributes } from 'react';
 import { cn } from '../../../lib/cn';
+import type { InputSize } from '../Input';
 import styles from './Textarea.module.css';
+
+/**
+ * Maps size prop values to their corresponding CSS Module class names.
+ * Controls the padding density of the multiline field.
+ */
+const sizeClass: Record<InputSize, string> = {
+    xs: styles['textarea--xs'],
+    sm: styles['textarea--sm'],
+    md: styles['textarea--md'],
+    lg: styles['textarea--lg']
+};
 
 /**
  * TextareaProps defines the properties available for the Textarea component.
@@ -18,6 +30,12 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
      * @default 'default'
      */
     variant?: 'default' | 'ghost';
+    /**
+     * Density of the field's padding, sharing the Input ladder so a multiline
+     * field sits at the same visual weight as the single-line one beside it.
+     * @default 'md'
+     */
+    size?: InputSize;
 }
 
 /**
@@ -50,16 +68,16 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
  * />
  * ```
  *
- * @param props - Textarea properties including variant and standard textarea attributes.
+ * @param props - Textarea properties including variant, size, and standard textarea attributes.
  * @param ref - Forwarded ref to the underlying `<textarea>` for imperative focus/measure.
  * @returns A styled textarea element with consistent focus behavior.
  */
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-    function Textarea({ className, variant = 'default', ...props }, ref) {
+    function Textarea({ className, variant = 'default', size = 'md', ...props }, ref) {
         return (
             <textarea
                 ref={ref}
-                className={cn(styles.textarea, variant === 'ghost' && styles['textarea--ghost'], className)}
+                className={cn(styles.textarea, sizeClass[size], variant === 'ghost' && styles['textarea--ghost'], className)}
                 {...props}
             />
         );

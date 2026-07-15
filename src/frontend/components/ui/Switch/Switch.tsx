@@ -5,7 +5,7 @@ import { ToggleLeft, ToggleRight } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import styles from './Switch.module.css';
 
-type SwitchSize = 'sm' | 'md' | 'lg';
+type SwitchSize = 'xs' | 'sm' | 'md' | 'lg';
 
 /**
  * Icon-rendered on/off toggle. Flips `on` state on click; the icon and color
@@ -30,6 +30,7 @@ export interface SwitchProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
 }
 
 const sizeClass: Record<SwitchSize, string> = {
+    xs: styles['switch--xs'],
     sm: styles['switch--sm'],
     md: styles['switch--md'],
     lg: styles['switch--lg']
@@ -42,9 +43,10 @@ const sizeClass: Record<SwitchSize, string> = {
  * control rather than a faint glyph. The previous 18/20/24 ladder was too small
  * to communicate state at a glance in a dense table row. Hardcoded here because
  * CSS custom properties can't be read synchronously by the lucide-react `size`
- * prop.
+ * prop. `xs` continues the ladder one rung down at `--icon-size-sm`.
  */
 const iconSize: Record<SwitchSize, number> = {
+    xs: 18,
     sm: 20,
     md: 24,
     lg: 32

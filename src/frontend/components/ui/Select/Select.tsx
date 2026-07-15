@@ -3,21 +3,44 @@
 import type { SelectHTMLAttributes } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '../../../lib/cn';
+import type { InputSize } from '../Input';
 import styles from './Select.module.css';
 
 /**
  * SelectProps defines the properties available for the Select component.
  *
- * Extends standard select attributes with a visual variant, mirroring the
- * Input primitive so dropdowns and text inputs stay visually consistent.
+ * Extends standard select attributes with a visual variant and density,
+ * mirroring the Input primitive so dropdowns and text inputs stay visually
+ * consistent.
+ *
+ * The native `size` attribute (which turns the dropdown into a scrolling list
+ * box) is omitted so the name can carry the design-system density, matching
+ * Input and every other sized component.
  */
-export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
+export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
     /**
      * Visual style variant.
      * @default 'default'
      */
     variant?: 'default' | 'ghost';
+    /**
+     * Density of the control's padding, sharing the Input ladder so a dropdown
+     * sits at the same visual weight as the field beside it.
+     * @default 'md'
+     */
+    size?: InputSize;
 }
+
+/**
+ * Maps size prop values to their corresponding CSS Module class names.
+ * Controls the padding density of the dropdown.
+ */
+const sizeClass: Record<InputSize, string> = {
+    xs: styles['select--xs'],
+    sm: styles['select--sm'],
+    md: styles['select--md'],
+    lg: styles['select--lg']
+};
 
 /**
  * Select Component
@@ -43,14 +66,14 @@ export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
  * </Select>
  * ```
  *
- * @param props - Select properties including variant and standard select attributes.
+ * @param props - Select properties including variant, size, and standard select attributes.
  * @returns A styled select element wrapped with a chevron affordance.
  */
-export function Select({ className, variant = 'default', children, ...props }: SelectProps) {
+export function Select({ className, variant = 'default', size = 'md', children, ...props }: SelectProps) {
     return (
         <span className={cn(styles.wrapper, className)}>
             <select
-                className={cn(styles.select, variant === 'ghost' && styles['select--ghost'])}
+                className={cn(styles.select, sizeClass[size], variant === 'ghost' && styles['select--ghost'])}
                 {...props}
             >
                 {children}

@@ -96,46 +96,46 @@ Declare the intent in a comment so the next audit reads it as deliberate, not as
 
 ## Size-Variant Convention
 
-Component-scoped semantic tokens that vary by density use the `xs | sm | md | lg` suffix uniformly. Buttons expose `--button-padding-xs/sm/md/lg`, `--button-font-size-xs/sm/md/lg`, `--button-height-xs/sm/md/lg`. Cards expose `--card-padding-xs/sm/md/lg`. Inputs expose `--input-padding` and `--input-padding-sm` (dense inline variant). When adding a new component-scoped density, extend the same four-step ladder rather than inventing a parallel scale — callers then pick the step that matches the visual weight they need, and responsive rules swap tokens instead of redefining them.
+Component-scoped semantic tokens that vary by density use the `xs | sm | md | lg` suffix uniformly. Buttons expose `--button-padding-xs/sm/md/lg`, `--button-font-size-xs/sm/md/lg`, `--button-height-xs/sm/md/lg`. Cards expose `--card-padding-xs/sm/md/lg`. Inputs expose `--input-padding-xs/sm/md/lg`, shared by `<Input>`, `<Textarea>`, and `<Select>` (`--input-padding` survives as a deprecated alias for `-md`; prefer the `size` prop). When adding a new component-scoped density, extend the same four-step ladder rather than inventing a parallel scale — callers then pick the step that matches the visual weight they need, and responsive rules swap tokens instead of redefining them.
+
+`xs` derives from `sm` at half scale, expressed as `calc(… * 0.5)` off the same primitive so the relationship survives a change to the scale underneath. Halving stops where a value has a functional floor rather than an aesthetic one: `--button-height-xs` holds at 24px because half of `sm` is a 17px target, under the WCAG 2.2 SC 2.5.8 minimum, and `--button-font-size-xs` holds at 0.72rem because half of `sm` is unreadable. A ladder step is a design decision, not arithmetic.
 
 ## Token Immutability — Components Select, Tokens Don't Redefine
 
-A token's value never changes based on breakpoint or context. Components switch *which token they reference* at each breakpoint instead of redefining what tokens mean.
+A token's value never changes based on breakpoint or context. Rules switch *which token they reference* instead of redefining what tokens mean.
 
 ```scss
-/* CORRECT — component selects the appropriate token at each breakpoint */
-.card--padding-md {
-    padding: var(--card-padding-md);  /* 1.5rem */
+/* CORRECT — the rule selects a different token at the narrow breakpoint */
+.table th,
+.table td {
+    padding: var(--table-cell-padding);
 }
 
-@media (max-width: $breakpoint-mobile-lg) {
-    .card--padding-md {
-        padding: var(--card-padding-sm);  /* 1rem */
-    }
-}
-
-@media (max-width: $breakpoint-mobile-sm) {
-    .card--padding-md {
-        padding: var(--card-padding-xs);  /* 0.5rem */
+@media (max-width: $breakpoint-mobile) {
+    .table th,
+    .table td {
+        padding: var(--table-cell-padding-compact);
     }
 }
 ```
 
 ```scss
-/* WRONG — redefines what "md" means across breakpoints */
+/* WRONG — redefines what the token means */
 :root {
-    --card-padding-md: 1.5rem;
+    --table-cell-padding: 0.85rem 1.1rem;
 }
-@media (max-width: $breakpoint-mobile-lg) {
+@media (max-width: $breakpoint-mobile) {
     :root {
-        --card-padding-md: 0.75rem;  /* "Medium" now means 12px? */
+        --table-cell-padding: 0.4rem 0.5rem;  /* the name now describes nothing */
     }
 }
 ```
 
-Why this matters: when `--card-padding-md` always means the same value, the name stays honest and developers can trust it. The moment tokens redefine across breakpoints, "medium" describes nothing and debugging requires checking definitions at every viewport.
+Why this matters: when `--table-cell-padding` always means the same value, the name stays honest and developers can trust it. The moment tokens redefine across breakpoints, the name describes nothing and debugging requires checking definitions at every viewport.
 
-**Reference implementation:** `src/frontend/components/ui/Card/Card.module.scss` (lines 43–79) cascades `--card-padding-lg → -md → -sm → -xs` across three breakpoints. Tokens themselves never change.
+**Reference implementation:** `src/frontend/app/globals.scss` — the mobile block selects `--table-cell-padding-compact` rather than redefining `--table-cell-padding`.
+
+Immutability governs how a rule *picks* a token; it does not oblige a component to pick by breakpoint at all. Where density is a `size` or `padding` prop, the caller owns the choice and the component holds it at every width — `<Card>` works this way deliberately, so a surface that wants a tighter card asks for `padding="xs"` instead of inheriting a step-down it cannot see. Reach for a responsive rule when the *component* must adapt to its own space, and prefer `@container` over `@media` when you do (see [ui-responsive-design.md](./ui-responsive-design.md)).
 
 ## Breakpoints
 

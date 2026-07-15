@@ -29,6 +29,10 @@
 }
 
 /* Size Variants (padding scales with size; icon sizing is handled by the component's `size` prop) */
+.switch--xs {
+    padding: var(--switch-padding-xs);
+}
+
 .switch--sm {
     padding: var(--switch-padding-sm);
 }

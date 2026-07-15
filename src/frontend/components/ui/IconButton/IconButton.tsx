@@ -5,7 +5,7 @@ import { cn } from '../../../lib/cn';
 import styles from './IconButton.module.css';
 
 type IconButtonVariant = 'ghost' | 'primary' | 'danger' | 'success';
-type IconButtonSize = 'sm' | 'md' | 'lg';
+type IconButtonSize = 'xs' | 'sm' | 'md' | 'lg';
 
 /**
  * Icon-only button primitive for inline row actions (edit, delete, copy) where
@@ -40,6 +40,7 @@ const variantClass: Record<IconButtonVariant, string> = {
 };
 
 const sizeClass: Record<IconButtonSize, string> = {
+    xs: styles['icon-btn--xs'],
     sm: styles['icon-btn--sm'],
     md: styles['icon-btn--md'],
     lg: styles['icon-btn--lg']
