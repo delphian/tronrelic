@@ -404,10 +404,10 @@
     --page-header-bg-position: bottom right;
 
     /* Main Content Area Padding (top / sides / bottom) */
-    --main-padding-lg: var(--spacing-14) var(--spacing-15) var(--spacing-16);   /* desktop */
-    --main-padding-md: var(--spacing-12) var(--spacing-10) var(--spacing-15);   /* tablet */
-    --main-padding-sm: var(--spacing-10) var(--spacing-9) var(--spacing-14);    /* mobile */
-    --main-padding-xs: var(--spacing-4) var(--spacing-4) var(--spacing-7);      /* mobile-sm */
+    --main-padding-lg: var(--spacing-9) var(--spacing-15) var(--spacing-11);    /* desktop:   20px / 48px / 28px */
+    --main-padding-md: var(--spacing-7) var(--spacing-10) var(--spacing-10);    /* tablet:    16px / 24px / 24px */
+    --main-padding-sm: var(--spacing-5) var(--spacing-9) var(--spacing-9);      /* mobile:    12px / 20px / 20px */
+    --main-padding-xs: var(--spacing-1) var(--spacing-4) var(--spacing-4);      /* mobile-sm:  4px /  8px /  8px */
 
     /* Site-wide Body Background Image */
     --body-bg-image: none;
