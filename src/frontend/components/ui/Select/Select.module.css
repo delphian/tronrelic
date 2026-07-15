@@ -25,13 +25,35 @@
     background: var(--input-background);
     border: var(--input-border);
     color: var(--color-text);
-    /* Comfortable padding matching Input; extra right room clears the chevron. */
-    padding: var(--input-padding);
+    /*
+     * Padding matches the Input ladder; the size classes below set
+     * --select-padding rather than the padding shorthand, so the chevron's
+     * right-hand clearance survives every density step. The chevron sits at a
+     * fixed offset, so that clearance stays constant across sizes.
+     */
+    padding: var(--select-padding, var(--input-padding-md));
     padding-right: var(--padding-xl);
     font-size: var(--input-font-size);
     line-height: var(--line-height-normal);
     transition: var(--input-transition);
     cursor: pointer;
+}
+
+/* Size Variants (padding only; font-size holds so xs stays legible) */
+.select--xs {
+    --select-padding: var(--input-padding-xs);
+}
+
+.select--sm {
+    --select-padding: var(--input-padding-sm);
+}
+
+.select--md {
+    --select-padding: var(--input-padding-md);
+}
+
+.select--lg {
+    --select-padding: var(--input-padding-lg);
 }
 
 /* Keyboard-only focus ring (mouse clicks should not leave a lingering ring). */

@@ -75,9 +75,12 @@
                          border-color var(--transition-base);
 
     /* Button - Size Variants */
-    --button-height-xs: 26px;
-    --button-padding-xs: var(--spacing-1) var(--spacing-3);  /* 0.25rem 0.4rem */
-    --button-font-size-xs: var(--font-size-xs);              /* 0.72rem */
+    /* xs derives from sm at half scale. Height and font-size stop at a floor
+       instead: half of sm would be a 17px target (under the WCAG 2.5.8 minimum
+       of 24px) carrying 6.8px text. */
+    --button-height-xs: 24px;                                /* WCAG 2.5.8 minimum target */
+    --button-padding-xs: calc(var(--spacing-3) * 0.5) calc(var(--spacing-6) * 0.5); /* half of sm */
+    --button-font-size-xs: var(--font-size-xs);              /* 0.72rem - legibility floor */
 
     --button-height-sm: 34px;
     --button-padding-sm: var(--spacing-3) var(--spacing-6);  /* 0.4rem 0.85rem */
@@ -155,6 +158,7 @@
      * would visually dominate. Color of the icon flips on hover based on the
      * semantic tone of the action (primary / danger / success / text).
      */
+    --icon-button-bare-padding-xs: calc(var(--spacing-1) * 0.25); /* half of sm */
     --icon-button-bare-padding-sm: calc(var(--spacing-1) * 0.5);
     --icon-button-bare-padding-md: var(--spacing-1);
     --icon-button-bare-padding-lg: var(--spacing-2);
@@ -172,6 +176,7 @@
      * deliberately has no hover-color change because the click flips state.
      * ======================================================================== */
 
+    --switch-padding-xs: calc(var(--spacing-1) * 0.25); /* half of sm */
     --switch-padding-sm: calc(var(--spacing-1) * 0.5);
     --switch-padding-md: var(--spacing-1);
     --switch-padding-lg: var(--spacing-2);
@@ -259,8 +264,13 @@
     --input-background: rgba(3, 6, 15, 0.9);
     --input-border: var(--border-width-thin) solid var(--color-primary-alpha-18);
     --input-border-radius: var(--radius-sm);
-    --input-padding: var(--spacing-5) var(--spacing-7); /* 0.75rem 1rem */
+    --input-padding-xs: calc(var(--spacing-1) * 0.5) calc(var(--spacing-2) * 0.5); /* 0.125rem 0.175rem — half of sm */
     --input-padding-sm: var(--spacing-1) var(--spacing-2); /* 0.25rem 0.35rem — dense filter/search/inline inputs */
+    --input-padding-md: var(--spacing-5) var(--spacing-7); /* 0.75rem 1rem — default */
+    --input-padding-lg: var(--spacing-7) var(--spacing-9); /* 1rem 1.25rem */
+    /* Deprecated alias for --input-padding-md. Retained because ~20 call sites
+       still hardcode it; prefer the Input/Textarea/Select `size` prop. */
+    --input-padding: var(--input-padding-md);
     --input-font-size: 0.98rem;
     --input-transition: border-color var(--transition-base),
                         box-shadow var(--transition-base);

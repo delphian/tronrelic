@@ -72,7 +72,7 @@ export interface IUIComponents {
     Card: ComponentType<{
         children?: React.ReactNode;
         tone?: 'default' | 'muted' | 'accent';
-        padding?: 'sm' | 'md' | 'lg';
+        padding?: 'xs' | 'sm' | 'md' | 'lg';
         elevated?: boolean;
         className?: string;
         style?: React.CSSProperties;
@@ -128,7 +128,7 @@ export interface IUIComponents {
         onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
         disabled?: boolean;
         variant?: 'ghost' | 'primary' | 'danger' | 'success';
-        size?: 'sm' | 'md' | 'lg';
+        size?: 'xs' | 'sm' | 'md' | 'lg';
         className?: string;
         title?: string;
         type?: 'button' | 'submit' | 'reset';
@@ -153,7 +153,7 @@ export interface IUIComponents {
          */
         onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
         disabled?: boolean;
-        size?: 'sm' | 'md' | 'lg';
+        size?: 'xs' | 'sm' | 'md' | 'lg';
         className?: string;
         title?: string;
         type?: 'button' | 'submit' | 'reset';
@@ -169,6 +169,8 @@ export interface IUIComponents {
         disabled?: boolean;
         required?: boolean;
         variant?: 'default' | 'ghost';
+        /** Padding density; `xs` for dense inline filters, `md` for standard forms. */
+        size?: 'xs' | 'sm' | 'md' | 'lg';
         type?: string;
         className?: string;
         id?: string;
@@ -193,6 +195,8 @@ export interface IUIComponents {
         onChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void;
         children?: React.ReactNode;
         variant?: 'default' | 'ghost';
+        /** Padding density; shares the Input ladder so adjacent controls match. */
+        size?: 'xs' | 'sm' | 'md' | 'lg';
         disabled?: boolean;
         required?: boolean;
         className?: string;

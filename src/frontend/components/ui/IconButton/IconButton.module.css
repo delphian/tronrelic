@@ -31,6 +31,10 @@
 }
 
 /* Size Variants (padding only; caller controls icon size) */
+.icon-btn--xs {
+    padding: var(--icon-button-bare-padding-xs);
+}
+
 .icon-btn--sm {
     padding: var(--icon-button-bare-padding-sm);
 }

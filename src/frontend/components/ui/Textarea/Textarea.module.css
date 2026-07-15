@@ -12,12 +12,28 @@
     background: var(--input-background);
     border: var(--input-border);
     color: inherit;
-    padding: var(--input-padding);
     font-family: inherit;
     font-size: var(--input-font-size);
     line-height: var(--line-height-normal);
     transition: var(--input-transition);
     resize: vertical;
+}
+
+/* Size Variants (padding only; font-size holds so xs stays legible) */
+.textarea--xs {
+    padding: var(--input-padding-xs);
+}
+
+.textarea--sm {
+    padding: var(--input-padding-sm);
+}
+
+.textarea--md {
+    padding: var(--input-padding-md);
+}
+
+.textarea--lg {
+    padding: var(--input-padding-lg);
 }
 
 .textarea::placeholder {
