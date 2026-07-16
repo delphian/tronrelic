@@ -8,7 +8,6 @@
  * Returns:
  * - Published CMS page slugs with updatedAt timestamps
  * - Active plugin page paths
- * - Verified wallet addresses for user profile pages
  *
  * Cached for 10 minutes to avoid repeated database queries from
  * sitemap.xml requests.
@@ -26,7 +25,6 @@ interface SitemapCache {
 interface SitemapData {
     pages: Array<{ slug: string; updatedAt: string }>;
     pluginPages: string[];
-    profiles: string[];
 }
 
 /** Cache TTL in milliseconds (10 minutes). */
@@ -60,14 +58,13 @@ export function sitemapRouter(database: IDatabaseService): Router {
                 return;
             }
 
-            // Fetch all three data sources in parallel
-            const [pages, pluginPages, profiles] = await Promise.all([
+            // Fetch both data sources in parallel
+            const [pages, pluginPages] = await Promise.all([
                 fetchPublishedPages(database),
-                fetchPluginPages(database),
-                fetchVerifiedProfiles(database)
+                fetchPluginPages(database)
             ]);
 
-            const data: SitemapData = { pages, pluginPages, profiles };
+            const data: SitemapData = { pages, pluginPages };
 
             // Cache the result
             cache = { data, expiresAt: Date.now() + CACHE_TTL_MS };
@@ -134,45 +131,6 @@ async function fetchPluginPages(
         return plugins
             .map(p => `/${p.id as string}`)
             .filter(path => path.length > 1);
-    } catch (error) {
-        console.error('Failed to fetch sitemap data:', error);
-        return [];
-    }
-}
-
-/** Maximum total profile addresses to include in sitemap. */
-const MAX_PROFILE_ADDRESSES = 1000;
-
-/**
- * Fetch verified wallet addresses for user profile pages.
- *
- * Only includes users with at least one cryptographically verified wallet.
- * Capped at 1000 total addresses (not users) to prevent sitemap bloat,
- * since users can have multiple verified wallets.
- *
- * @param database - Database service
- * @returns Array of wallet address strings (max 1000)
- */
-async function fetchVerifiedProfiles(
-    database: IDatabaseService
-): Promise<string[]> {
-    try {
-        const collection = database.getCollection('users');
-        const users = await collection
-            .find(
-                { wallets: { $elemMatch: { verified: true } } },
-                { projection: { wallets: 1 } }
-            )
-            .limit(MAX_PROFILE_ADDRESSES)
-            .toArray();
-
-        const addresses = users.flatMap(user =>
-            ((user.wallets ?? []) as Array<{ address: string; verified: boolean }>)
-                .filter(w => w.verified)
-                .map(w => w.address)
-        );
-
-        return addresses.slice(0, MAX_PROFILE_ADDRESSES);
     } catch (error) {
         console.error('Failed to fetch sitemap data:', error);
         return [];
