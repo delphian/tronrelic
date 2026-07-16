@@ -60,23 +60,23 @@ describe('routeMatches', () => {
         expect(routeMatches(['/', '/markets'], '/')).toBe(true);
         expect(routeMatches(['/', '/markets'], '/markets')).toBe(true);
         expect(routeMatches(['/'], '/markets')).toBe(false);
-        expect(routeMatches(['/'], '/u/TXyz')).toBe(false);
+        expect(routeMatches(['/'], '/tools/energy-estimator')).toBe(false);
     });
 
     it('handles single-segment globs', () => {
-        expect(routeMatches(['/u/*'], '/u/TXyz')).toBe(true);
-        expect(routeMatches(['/u/*'], '/u/')).toBe(false);
-        expect(routeMatches(['/u/*'], '/u')).toBe(false);
-        expect(routeMatches(['/u/*'], '/u/TXyz/holdings')).toBe(false);
-        expect(routeMatches(['/u/*'], '/users/TXyz')).toBe(false);
+        expect(routeMatches(['/tools/*'], '/tools/energy-estimator')).toBe(true);
+        expect(routeMatches(['/tools/*'], '/tools/')).toBe(false);
+        expect(routeMatches(['/tools/*'], '/tools')).toBe(false);
+        expect(routeMatches(['/tools/*'], '/tools/energy-estimator/faq')).toBe(false);
+        expect(routeMatches(['/tools/*'], '/toolset/energy-estimator')).toBe(false);
     });
 
     it('handles deep globs', () => {
-        expect(routeMatches(['/u/**'], '/u/TXyz')).toBe(true);
-        expect(routeMatches(['/u/**'], '/u/TXyz/holdings')).toBe(true);
-        expect(routeMatches(['/u/**'], '/u/TXyz/holdings/2024')).toBe(true);
-        expect(routeMatches(['/u/**'], '/u')).toBe(false);
-        expect(routeMatches(['/u/**'], '/users/TXyz')).toBe(false);
+        expect(routeMatches(['/system/**'], '/system/logs')).toBe(true);
+        expect(routeMatches(['/system/**'], '/system/logs/archive')).toBe(true);
+        expect(routeMatches(['/system/**'], '/system/logs/archive/2024')).toBe(true);
+        expect(routeMatches(['/system/**'], '/system')).toBe(false);
+        expect(routeMatches(['/system/**'], '/systemx/logs')).toBe(false);
     });
 
     it('a deep glob at the root matches any path', () => {
@@ -86,11 +86,11 @@ describe('routeMatches', () => {
     });
 
     it('mixes patterns in a single filter', () => {
-        const filter = ['/', '/markets', '/u/*'];
+        const filter = ['/', '/markets', '/tools/*'];
         expect(routeMatches(filter, '/')).toBe(true);
         expect(routeMatches(filter, '/markets')).toBe(true);
-        expect(routeMatches(filter, '/u/TXyz')).toBe(true);
-        expect(routeMatches(filter, '/u/TXyz/h')).toBe(false);
+        expect(routeMatches(filter, '/tools/energy-estimator')).toBe(true);
+        expect(routeMatches(filter, '/tools/energy-estimator/faq')).toBe(false);
         expect(routeMatches(filter, '/admin')).toBe(false);
     });
 });
@@ -102,8 +102,8 @@ describe('normaliseRoutePattern', () => {
     });
 
     it('accepts trailing single and deep globs', () => {
-        expect(normaliseRoutePattern('/u/*')).toBe('/u/*');
-        expect(normaliseRoutePattern('/u/**')).toBe('/u/**');
+        expect(normaliseRoutePattern('/tools/*')).toBe('/tools/*');
+        expect(normaliseRoutePattern('/system/**')).toBe('/system/**');
     });
 
     it('trims whitespace surrounding a pattern', () => {
@@ -117,7 +117,7 @@ describe('normaliseRoutePattern', () => {
 
     it('rejects patterns without a leading slash', () => {
         expect(normaliseRoutePattern('markets')).toBeNull();
-        expect(normaliseRoutePattern('u/*')).toBeNull();
+        expect(normaliseRoutePattern('tools/*')).toBeNull();
     });
 
     it('rejects internal whitespace', () => {
@@ -126,8 +126,8 @@ describe('normaliseRoutePattern', () => {
 
     it('rejects glob markers anywhere except the trailing segment', () => {
         expect(normaliseRoutePattern('/*/markets')).toBeNull();
-        expect(normaliseRoutePattern('/u/*/extra')).toBeNull();
-        expect(normaliseRoutePattern('/u*')).toBeNull();
+        expect(normaliseRoutePattern('/tools/*/extra')).toBeNull();
+        expect(normaliseRoutePattern('/tools*')).toBeNull();
     });
 });
 
@@ -136,11 +136,11 @@ describe('partitionRoutePatterns', () => {
         const { exact, patterns } = partitionRoutePatterns([
             '/',
             '/markets',
-            '/u/*',
-            '/admin/**'
+            '/tools/*',
+            '/system/**'
         ]);
         expect(exact).toEqual(['/', '/markets']);
-        expect(patterns).toEqual(['/u/*', '/admin/**']);
+        expect(patterns).toEqual(['/tools/*', '/system/**']);
     });
 
     it('returns empty buckets for an empty input', () => {
@@ -371,8 +371,8 @@ describe('PlacementService CRUD', () => {
         });
         expect(placement.titleUrl).toBe('/markets');
 
-        const updated = await service.update(placement.id, { titleUrl: '/u/TXyz' });
-        expect(updated?.titleUrl).toBe('/u/TXyz');
+        const updated = await service.update(placement.id, { titleUrl: '/profile' });
+        expect(updated?.titleUrl).toBe('/profile');
 
         const cleared = await service.update(placement.id, { titleUrl: null });
         expect(cleared?.titleUrl).toBeUndefined();
@@ -716,12 +716,12 @@ describe('PlacementService.findByRoute (globs)', () => {
     });
 
     it('returns placements with single-glob patterns when the route matches one segment', async () => {
-        await service.create({ typeId: 'profile:summary', zoneId: 'main-after', routes: ['/u/*'] });
+        await service.create({ typeId: 'tools:summary', zoneId: 'main-after', routes: ['/tools/*'] });
         await service.create({ typeId: 'home:hero', zoneId: 'main-after', routes: ['/'] });
 
-        const results = await service.findByRoute('/u/TXyz');
+        const results = await service.findByRoute('/tools/energy-estimator');
         const ids = results.map(p => p.typeId).sort();
-        expect(ids).toEqual(['profile:summary']);
+        expect(ids).toEqual(['tools:summary']);
     });
 
     it('returns placements with deep-glob patterns at any depth', async () => {
@@ -734,9 +734,9 @@ describe('PlacementService.findByRoute (globs)', () => {
     });
 
     it('excludes single-glob rows when the route has extra depth', async () => {
-        await service.create({ typeId: 'profile:summary', zoneId: 'main-after', routes: ['/u/*'] });
+        await service.create({ typeId: 'tools:summary', zoneId: 'main-after', routes: ['/tools/*'] });
 
-        const results = await service.findByRoute('/u/TXyz/holdings');
+        const results = await service.findByRoute('/tools/energy-estimator/faq');
         expect(results).toEqual([]);
     });
 });

@@ -13,17 +13,16 @@ import { WidgetZone, fetchWidgetsForRoute } from '../../components/widgets';
  * - main-before: Above page content
  * - main-after: Below page content
  *
- * The pathname is extracted from request headers set by middleware.
- * Route params are empty for core pages (dynamic routes like /u/[address]
- * have their own layouts that provide context-specific params).
+ * The pathname is extracted from request headers set by middleware, which
+ * carries no matched-route params — so widgets resolved here always receive
+ * an empty param map. A page whose widgets need route params must fetch its
+ * own bundle and render its own zones.
  */
 export default async function CoreLayout({ children }: { children: ReactNode }) {
     // Extract pathname from middleware-set header for per-route widgets
     const headersList = await headers();
     const pathname = headersList.get('x-pathname') || '/';
 
-    // Core pages use empty params - dynamic routes (e.g., /u/[address])
-    // have their own layouts that provide context-specific params
     const params: Record<string, string> = {};
 
     const { widgets, zones } = await fetchWidgetsForRoute(pathname, params);

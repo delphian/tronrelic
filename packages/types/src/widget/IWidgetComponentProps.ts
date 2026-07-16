@@ -58,15 +58,15 @@ export interface IWidgetComponentProps {
      * Current URL path where the widget is rendering.
      *
      * Enables widgets to adjust rendering based on the current page.
-     * For example, '/u/TXyz123...' on a profile page.
+     * For example, '/tools/energy-estimator' on a tools page.
      */
     route: string;
 
     /**
      * Route parameters extracted from the URL path.
      *
-     * For dynamic routes like `/u/[address]`, this would contain
-     * `{ address: 'TXyz123...' }`. Empty object for static routes.
+     * For dynamic routes like `/[...slug]`, this would contain
+     * `{ slug: 'about-us' }`. Empty object for static routes.
      */
     params: Record<string, string>;
 

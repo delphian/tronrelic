@@ -96,8 +96,8 @@ Treat the values in `IRegisterWidgetInput` as *defaults*, not invariants. Anythi
 | Form | Matches | Example |
 |---|---|---|
 | Exact | The literal path, nothing else | `/markets` |
-| Single-segment glob | One trailing segment, no deeper | `/u/*` matches `/u/TXyz`, not `/u/TXyz/holdings` |
-| Deep glob | Any depth below the prefix | `/admin/**` matches `/admin/users/edit` |
+| Single-segment glob | One trailing segment, no deeper | `/tools/*` matches `/tools/energy-estimator`, not `/tools/energy-estimator/faq` |
+| Deep glob | Any depth below the prefix | `/system/**` matches `/system/plugins/trp-forum` |
 
 Patterns must start with `/`, contain no whitespace, and place glob markers only at the trailing position (`/*/markets` is rejected). The matcher is `routeMatches` in `src/backend/modules/widgets/placements/route-matcher.ts`; the admin API validates inputs through `normaliseRoutePattern` before reaching the placement service.
 
@@ -128,7 +128,7 @@ When two plugins target the same zone, set explicit `defaultOrder` to win determ
 
 ## Data Fetchers
 
-`defaultDataFetcher(route, params, placement?)` receives the resolved route, any params the host extracted (e.g. `{ address }` on `/u/[address]`), and a per-placement `IWidgetPlacementContext` — `{ id, instanceConfig }` — that lets one widget type produce per-placement variation without shipping a type per permutation. The third argument is optional, so existing fetchers that ignore placement-scoped config remain valid. The resolver substitutes an empty object for `instanceConfig` when a placement carries no overrides, so fetchers can read keys unconditionally.
+`defaultDataFetcher(route, params, placement?)` receives the resolved route, any params the host extracted (e.g. `{ slug }` on `/[...slug]`), and a per-placement `IWidgetPlacementContext` — `{ id, instanceConfig }` — that lets one widget type produce per-placement variation without shipping a type per permutation. The third argument is optional, so existing fetchers that ignore placement-scoped config remain valid. The resolver substitutes an empty object for `instanceConfig` when a placement carries no overrides, so fetchers can read keys unconditionally.
 
 Fetchers must return JSON-serialisable data quickly — heavy work belongs in a scheduled job that writes to a plugin-owned MongoDB collection that the fetcher then reads. A 5-second per-fetcher timeout is enforced by the SSR resolver via `Promise.race`. Failures should resolve to empty data, never throw — a throw is converted to an empty payload but logged as a fetcher error.
 

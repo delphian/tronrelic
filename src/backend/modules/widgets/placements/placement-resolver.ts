@@ -66,7 +66,7 @@ export class PlacementResolver {
      *
      * @param route - Request path resolved by the host.
      * @param params - Route params extracted by the host (e.g.
-     *   `{ address }` on `/u/[address]`). Forwarded to each widget
+     *   `{ slug }` on `/[...slug]`). Forwarded to each widget
      *   type's data fetcher.
      * @returns Top-level widget data ready for the frontend, in render
      *   order, with container children nested.

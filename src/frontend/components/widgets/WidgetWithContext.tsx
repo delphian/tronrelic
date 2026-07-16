@@ -62,8 +62,8 @@ interface WidgetWithContextProps {
  * and real-time updates without importing directly from the frontend app.
  *
  * Also passes route and params to enable context-aware rendering. For example,
- * a widget on `/u/[address]` can access `params.address` to display profile-
- * specific content.
+ * a widget on `/[...slug]` can access `params.slug` to display page-specific
+ * content.
  *
  * This wrapper is a client component to ensure the context is created
  * in the browser where WebSocket connections are available.

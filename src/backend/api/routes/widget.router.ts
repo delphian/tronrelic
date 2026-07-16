@@ -23,8 +23,8 @@ export function widgetRouter(): Router {
      * Fetch widgets for a specific route with pre-fetched data.
      *
      * Query params:
-     * - route: URL path to match against placement routes (e.g., '/', '/u/TXyz...')
-     * - params: Optional JSON-encoded route parameters (e.g., '{"address":"TXyz..."}')
+     * - route: URL path to match against placement routes (e.g., '/', '/tools/energy-estimator')
+     * - params: Optional JSON-encoded route parameters (e.g., '{"slug":"about-us"}')
      *
      * Returns:
      * {

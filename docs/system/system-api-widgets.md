@@ -10,7 +10,7 @@ The type/placement split landed in PR 2 of the widget rewrite gave operators a d
 
 All three routers chain `createAdminRateLimiter` before `requireAdmin` at mount time, so every endpoint is bounded per-IP and gated to the cookie or service-token auth path. Mutations on `/placements` broadcast `widgets:placements-update` over WebSocket to every connected socket; admin UIs refetch, public pages refetch widget data.
 
-The placements controller validates inputs against the live `IZoneRegistry` and `IWidgetTypeRegistry`. A request naming an unknown zone or type fails 400 before the placement service is touched. Route patterns flow through `normaliseRoutePattern` so the matcher's grammar (exact, `/u/*`, `/u/**`) is the single source of truth — see [Route Pattern Grammar](#route-pattern-grammar) below.
+The placements controller validates inputs against the live `IZoneRegistry` and `IWidgetTypeRegistry`. A request naming an unknown zone or type fails 400 before the placement service is touched. Route patterns flow through `normaliseRoutePattern` so the matcher's grammar (exact, `/tools/*`, `/system/**`) is the single source of truth — see [Route Pattern Grammar](#route-pattern-grammar) below.
 
 ## Endpoints
 
@@ -72,8 +72,8 @@ Placement `routes` arrays accept three forms:
 | Form | Matches | Example |
 |---|---|---|
 | Exact | The literal path, nothing else | `/markets` |
-| Single-segment glob | One trailing segment, no deeper | `/u/*` matches `/u/TXyz`, not `/u/TXyz/holdings` |
-| Deep glob | Any depth below the prefix | `/admin/**` matches `/admin/users/edit` |
+| Single-segment glob | One trailing segment, no deeper | `/tools/*` matches `/tools/energy-estimator`, not `/tools/energy-estimator/faq` |
+| Deep glob | Any depth below the prefix | `/system/**` matches `/system/plugins/trp-forum` |
 
 Empty `routes: []` matches every route. The matcher is `routeMatches` in `src/backend/modules/widgets/placements/route-matcher.ts`.
 

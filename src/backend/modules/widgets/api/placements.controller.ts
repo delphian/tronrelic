@@ -84,7 +84,7 @@ const MAX_TITLE_URL_LENGTH = 512;
 /**
  * Format gate for a placement `titleUrl`. The heading link is
  * internal-only: the value must be a single-leading-slash root-relative
- * path (e.g. `/markets`, `/u/TXyz?tab=holdings#summary`). The negative
+ * path (e.g. `/markets`, `/profile?tab=wallets#summary`). The negative
  * lookahead rejects protocol-relative (`//host`) and the backslash
  * trick (`/\host`) that browsers normalise to off-site navigation;
  * forbidding whitespace and backslash anywhere blocks header/newline
