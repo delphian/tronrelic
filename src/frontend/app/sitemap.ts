@@ -7,7 +7,6 @@ import { absoluteUrl } from '../lib/seo';
 interface SitemapData {
   pages: Array<{ slug: string; updatedAt: string }>;
   pluginPages: string[];
-  profiles: string[];
 }
 
 /** Static routes that always appear in the sitemap. */
@@ -29,8 +28,8 @@ const staticPathSet = new Set(staticRoutes.map(r => r.path));
 /**
  * Fetch dynamic sitemap data from the backend.
  *
- * Calls the public /api/sitemap-data endpoint which returns published CMS pages,
- * active plugin pages, and verified user profiles in a single request.
+ * Calls the public /api/sitemap-data endpoint which returns published CMS pages
+ * and active plugin pages in a single request.
  * Fails gracefully — returns empty data if the backend is unavailable.
  *
  * @returns Dynamic sitemap entries or empty defaults
@@ -45,13 +44,13 @@ async function fetchDynamicData(): Promise<SitemapData> {
 
     if (!response.ok) {
       console.warn(`Sitemap data fetch failed: ${response.status}`);
-      return { pages: [], pluginPages: [], profiles: [] };
+      return { pages: [], pluginPages: [] };
     }
 
     return await response.json() as SitemapData;
   } catch (error) {
     console.warn('Failed to fetch sitemap data:', error);
-    return { pages: [], pluginPages: [], profiles: [] };
+    return { pages: [], pluginPages: [] };
   }
 }
 
@@ -110,20 +109,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         priority: 0.7
       });
       seenPaths.add(path);
-    }
-  }
-
-  // User profile pages (verified wallet addresses)
-  for (const address of dynamicData.profiles) {
-    const profilePath = `/u/${address}`;
-    if (!seenPaths.has(profilePath)) {
-      entries.push({
-        url: absoluteUrl(siteUrl, profilePath),
-        lastModified: now,
-        changeFrequency: 'weekly',
-        priority: 0.4
-      });
-      seenPaths.add(profilePath);
     }
   }
 
