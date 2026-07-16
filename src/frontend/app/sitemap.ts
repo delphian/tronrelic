@@ -60,7 +60,6 @@ async function fetchDynamicData(): Promise<SitemapData> {
  * Combines hardcoded core routes with dynamically discovered content:
  * - Published CMS pages (articles, documentation, announcements)
  * - Active plugin pages (resource-markets, whale tracking, etc.)
- * - Verified user profile pages (/u/{address})
  *
  * Dynamic entries are fetched from the backend's /api/sitemap-data endpoint
  * which caches results for 10 minutes. Static entries that overlap with
