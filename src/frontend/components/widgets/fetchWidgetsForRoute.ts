@@ -45,9 +45,11 @@ export interface IWidgetBundle {
  *
  * // For dynamic routes with params
  * export default async function PageLayout({ params }) {
- *     const { slug } = params;
- *     const route = `/${slug}`;
- *     const routeParams = { slug };
+ *     // A [...slug] catch-all resolves slug to string[]; params is a Promise in Next.js 15
+ *     const { slug } = await params;
+ *     const path = slug.join('/');
+ *     const route = `/${path}`;
+ *     const routeParams = { slug: path };
  *     const widgets = await fetchWidgetsForRoute(route, routeParams);
  *
  *     return (
