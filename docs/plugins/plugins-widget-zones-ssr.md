@@ -32,7 +32,7 @@ If no component is registered for a widget ID, dev mode falls back to a JSON dum
 interface IWidgetComponentProps {
     data: unknown;                   // SSR-fetched payload from the widget type's defaultDataFetcher
     context: IFrontendPluginContext; // UI primitives, API client, WebSocket
-    route: string;                   // Current URL, e.g. '/u/TXyz...'
+    route: string;                   // Current URL, e.g. '/tools/energy-estimator'
     params: Record<string, string>;  // Extracted route params
 }
 ```

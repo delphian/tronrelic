@@ -24,8 +24,8 @@ export interface IWidgetBundle {
  * Uses internal Docker URL (SITE_BACKEND) for container-to-container communication
  * during SSR. The external apiUrl doesn't resolve from inside containers.
  *
- * @param route - URL path to fetch widgets for (e.g., '/', '/u/TXyz...')
- * @param params - Optional route parameters (e.g., { address: 'TXyz...' })
+ * @param route - URL path to fetch widgets for (e.g., '/', '/tools/energy-estimator')
+ * @param params - Optional route parameters (e.g., { slug: 'about-us' })
  * @returns The widget bundle: pre-fetched widgets plus each zone's layout
  *
  * @example
@@ -44,10 +44,10 @@ export interface IWidgetBundle {
  * }
  *
  * // For dynamic routes with params
- * export default async function ProfileLayout({ params }) {
- *     const { address } = params;
- *     const route = `/u/${address}`;
- *     const routeParams = { address };
+ * export default async function PageLayout({ params }) {
+ *     const { slug } = params;
+ *     const route = `/${slug}`;
+ *     const routeParams = { slug };
  *     const widgets = await fetchWidgetsForRoute(route, routeParams);
  *
  *     return (

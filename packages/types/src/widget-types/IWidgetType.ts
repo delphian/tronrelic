@@ -47,7 +47,7 @@ export interface IWidgetPlacementContext {
 /**
  * SSR data fetcher signature shared between widget types and the
  * legacy widget service. Receives the resolved route, any params
- * extracted by the host (e.g. `{ address }` on `/u/[address]`), and
+ * extracted by the host (e.g. `{ slug }` on `/[...slug]`), and
  * the per-placement context (placement id and instanceConfig).
  *
  * The third arg is optional so existing fetchers that ignore

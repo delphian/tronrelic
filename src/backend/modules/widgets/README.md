@@ -94,8 +94,8 @@ The pre-split admin read endpoints (`/api/widgets/all`, `/api/widgets/zones/:zon
 | Form | Matches | Example |
 |---|---|---|
 | Exact | The literal path, nothing else | `/`, `/markets` |
-| Single-segment glob | One trailing segment, no deeper | `/u/*` matches `/u/TXyz`, not `/u/TXyz/holdings` |
-| Deep glob | Any depth below the prefix | `/admin/**` matches `/admin/users/edit` |
+| Single-segment glob | One trailing segment, no deeper | `/tools/*` matches `/tools/energy-estimator`, not `/tools/energy-estimator/faq` |
+| Deep glob | Any depth below the prefix | `/system/**` matches `/system/plugins/trp-forum` |
 
 Empty `routes: []` matches every route. Glob markers are only valid at the trailing position — `/*/markets` is rejected at write time.
 

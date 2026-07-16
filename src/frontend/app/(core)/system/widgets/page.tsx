@@ -9,7 +9,7 @@
  * and an enabled switch, plus inline edit / delete / restore-defaults
  * actions. Create-placement opens a modal with a type picker, a zone
  * picker, and a route chip input that accepts exact paths or globs
- * (`/u/*`, `/admin/**`).
+ * (`/tools/*`, `/system/**`).
  *
  * Lives behind the System container, which is admin-gated. Like
  * `/system/menu` and `/system/hooks` this is a client component
@@ -228,7 +228,7 @@ function lookupZone(snapshot: IZoneSnapshot | null, zoneId: string): { label: st
  * can filter placements to a chosen URL exactly the way SSR resolution
  * does. Kept in lockstep with the server: empty `routes` matches every
  * path; otherwise an entry matches as an exact path, a single-segment
- * glob (`/u/*`), or a deep glob (`/u/**`).
+ * glob (`/tools/*`), or a deep glob (`/system/**`).
  *
  * @param routes - Placement's route filter.
  * @param route - Selected URL path to test against.
@@ -3140,7 +3140,7 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, placements,
                         value={routeDraft}
                         onChange={(e) => { setRouteDraft(e.target.value); setRouteError(null); }}
                         onKeyDown={handleRouteKey}
-                        placeholder="/u/* or /markets or /admin/**"
+                        placeholder="/about or /tools/* or /system/**"
                         disabled={saving}
                     />
                     <Button
@@ -3155,8 +3155,8 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, placements,
                 </div>
                 {routeError && <span className={styles.field_error}>{routeError}</span>}
                 <span className={styles.field_hint}>
-                    Press Enter or comma to add. Use <code>/u/*</code> for a single segment,
-                    {' '}<code>/u/**</code> for any depth.
+                    Press Enter or comma to add. Use <code>/tools/*</code> for a single segment,
+                    {' '}<code>/system/**</code> for any depth.
                 </span>
             </div>
 

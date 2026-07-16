@@ -6,11 +6,11 @@
  *
  * - **Exact** — `'/markets'` matches the path `/markets` and nothing
  *   else.
- * - **Prefix** — `'/u/*'` matches anything under `/u/` with one
- *   additional segment (`/u/TXyz` matches, `/u/TXyz/holdings` does
- *   not).
- * - **Deep prefix** — `'/u/**'` matches anything under `/u/` at any
- *   depth, including `/u/TXyz/holdings/2024`.
+ * - **Prefix** — `'/tools/*'` matches anything under `/tools/` with one
+ *   additional segment (`/tools/energy-estimator` matches,
+ *   `/tools/energy-estimator/faq` does not).
+ * - **Deep prefix** — `'/system/**'` matches anything under `/system/`
+ *   at any depth, including `/system/plugins/trp-forum`.
  *
  * Empty `routes` array still matches every path, preserving the
  * original "no filter" semantic.
@@ -73,7 +73,7 @@ function patternMatches(pattern: string, route: string): boolean {
 /**
  * Test whether a placement's route filter matches the given request
  * path. Empty `routes` matches every path. Otherwise, any matching
- * entry — exact, single-glob (`/u/*`), or deep-glob (`/u/**`) —
+ * entry — exact, single-glob (`/tools/*`), or deep-glob (`/system/**`) —
  * accepts the path.
  *
  * @param routes - Placement's route filter.
