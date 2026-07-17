@@ -776,6 +776,11 @@ export function QueryTab() {
             if (!(ack as IStreamAck).success) {
                 throw new Error('Server did not start a streaming query.');
             }
+            // Per-run grant consumed: clear the allowlist once the governor has
+            // accepted this run so a later ordinary message cannot silently
+            // reuse a previously granted side-effecting tool. Honors the
+            // "grant only what this run needs" contract this picker advertises.
+            setToolSelection([]);
         } catch (err) {
             streamingTurnIdRef.current = null;
             activeQueryIdRef.current = null;
@@ -1187,8 +1192,10 @@ export function QueryTab() {
                             </summary>
                             <div className={styles.composer_tools_body}>
                                 <p className={styles.composer_tools_hint}>
-                                    Tools this query may call. Defaults to none — grant only what this run
-                                    needs. Naming a tool that is disabled or removed fails the run.
+                                    Registry tools this query may call. Defaults to none — grant only what
+                                    this run needs. Provider-hosted tools (web search / fetch), when enabled
+                                    for the model, still run regardless of this selection. Naming a tool
+                                    that is disabled or removed fails the run.
                                 </p>
                                 <ToolAllowlistPicker
                                     tools={tools}

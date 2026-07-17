@@ -321,7 +321,13 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
                                 alt: seo.title ?? 'TronRelic'
                             }]
                         }
-                        : {})
+                        : {}),
+                    // Mirror buildMetadata: emit article timestamps whenever
+                    // present. Next renders article:published_time/modified_time
+                    // only under type:'article', so the ungated spread is
+                    // harmless and keeps both metadata paths consistent.
+                    ...(seo.publishedTime ? { publishedTime: seo.publishedTime } : {}),
+                    ...(seo.modifiedTime ? { modifiedTime: seo.modifiedTime } : {})
                 };
             }
         }
