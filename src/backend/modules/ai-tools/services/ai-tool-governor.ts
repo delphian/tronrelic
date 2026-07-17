@@ -398,12 +398,41 @@ export class AiToolGovernor implements IAiToolGovernor {
             // its object access to it. The policy precondition has already
             // guaranteed a present, non-empty principal for such a tool, so the
             // handler can rely on it; other tools receive `undefined` and ignore it.
-            const result = await runWithCurationAutoApprove(autoApprove, () => this.runWithTimeout(tool, input, ctx.endUser));
+            const rawResult = await runWithCurationAutoApprove(autoApprove, () => this.runWithTimeout(tool, input, ctx.endUser));
             status = 'ok';
-            // The digest records the raw value regardless of what the model sees,
-            // so the audit trail is complete even when the screen withholds.
-            resultDigest = digestResult(result);
-            if (cap.surfacesUntrustedContent === true) {
+            // The digest records the raw handler value regardless of what the
+            // model ultimately sees, so the audit trail is complete even when a
+            // hook or the screen withholds or alters the forwarded content.
+            resultDigest = digestResult(rawResult);
+
+            // ai.toolResult (waterfall): let core/plugins ALTER the result, or
+            // throw HookAbortError to WITHHOLD it from the model. Runs before the
+            // provenance wrap and screen so an altered result is still labeled and
+            // screened. Only a HookAbortError (or an internal registry fault)
+            // escapes invoke() for a waterfall — a handler's non-abort throw is
+            // isolated inside the invoker and leaves the value unchanged.
+            let result: unknown = rawResult;
+            let withheldByHook: string | undefined;
+            try {
+                result = await this.hookRegistry.invoke(
+                    HOOKS.ai.toolResult,
+                    { toolName: tool.name, providerId, capability: cap, input, context: ctx },
+                    rawResult
+                );
+            } catch (hookError: unknown) {
+                if (!isHookAbortError(hookError)) {
+                    throw hookError;
+                }
+                withheldByHook = hookError.message || 'Tool result withheld by a policy hook.';
+                this.logger.warn({ tool: tool.name, reason: withheldByHook }, 'ai.toolResult hook withheld a tool result');
+            }
+
+            if (withheldByHook !== undefined) {
+                // A post-result hook vetoed the payload: the model must never see
+                // it. Mirror the screen's withhold shape; the raw value is already
+                // digested into the record, so the audit still reflects what ran.
+                content = { contentWithheld: true, reason: withheldByHook };
+            } else if (cap.surfacesUntrustedContent === true) {
                 // Active output screen: classify attacker-influenceable text with
                 // the provider's cheap model before the main model can act on it.
                 // A no-op when the screen is disabled, unconfigured, or posture-

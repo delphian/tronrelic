@@ -101,6 +101,30 @@ export const HOOKS = {
                 'to the model as a denial.'
         }),
         /**
+         * Waterfall seam fired after a governed AI tool's handler returns and
+         * before the governor wraps or screens the result — handlers receive the
+         * invocation metadata plus the raw result threaded as the value, and
+         * return the next value. A handler may ALTER the result (redact, reshape,
+         * summarize) or throw `HookAbortError` to WITHHOLD it entirely, in which
+         * case the governor replaces the body with a withheld marker the model
+         * cannot read. Placed before the provenance wrap and untrusted-content
+         * screen (order between `ai.toolInvoke` and `ai.toolInvoked`) so an altered
+         * result is still labeled and screened; the raw result is already digested
+         * into the audit record, so the trail reflects ground truth regardless.
+         * A non-abort throw is isolated and leaves the value unchanged.
+         */
+        toolResult: defineHook<IAiToolInvokeContext, unknown, 'waterfall'>({
+            id: 'ai.toolResult',
+            kind: 'waterfall',
+            phase: 'ai.tool',
+            order: 150,
+            description:
+                'Alter or withhold a governed AI tool result after execution and before it is wrapped, ' +
+                'screened, and returned to the model. Handlers thread the raw result value and return the ' +
+                'next; throw HookAbortError to withhold the result from the model. For redaction, reshaping, ' +
+                'or policy withholding — the raw result is still digested into the audit record.'
+        }),
+        /**
          * Observer seam fired after a governed AI tool call completes, with
          * the full invocation record. For audit fan-out, alerting, and
          * lethal-trifecta watch — handlers run in parallel and cannot change

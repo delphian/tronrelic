@@ -62,6 +62,7 @@ import { AiToolsController } from './api/ai-tools.controller.js';
 import { createAiToolsAdminRouter } from './api/ai-tools.router.js';
 import { SocialPostStore } from './services/social-post-store.js';
 import { createSocialPostCurationType, createSocialPostTool } from './social-post.js';
+import { createWebFetchTool } from './web-fetch.js';
 
 /** Service-registry name for the provider-neutral tool registry. */
 export const AI_TOOLS_SERVICE = 'ai-tools';
@@ -543,6 +544,16 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             logger: this.logger
         });
         this.registry.registerTool(socialPostTool, 'core');
+
+        // The provider-neutral generic web-fetch tool. Fetches one public https
+        // URL and returns its text under a full SSRF/redirect/size guard.
+        // Classified external / reversible / public / surfaces-untrusted, so the
+        // registry ships it disabled (opt-in), the governor bars it from
+        // autonomous paths and wraps every result in the untrusted-content
+        // envelope. It is domain-neutral infrastructure, hence a core built-in
+        // here rather than a feature module. See web-fetch.ts for the guard
+        // rationale and the lethal-trifecta implications of enabling it.
+        this.registry.registerTool(createWebFetchTool(), 'core');
     }
 
     /**
