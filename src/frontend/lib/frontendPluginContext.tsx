@@ -38,6 +38,7 @@ import { SubMenu } from '../components/layout/MenuNav/SubMenu';
 import { useAuthSession } from '../modules/user/components/SessionProvider';
 import { getSocket } from './socketClient';
 import { getRuntimeConfig } from './runtimeConfig';
+import { useFilePicker } from './filePickerRegistry';
 
 /**
  * API client implementation for frontend plugins.
@@ -385,7 +386,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             websocket,
             useModal: useModalHook,
             useUser: usePluginUser,
-            useToast: useToastHook
+            useToast: useToastHook,
+            useFilePicker
         };
     }, []);
 
@@ -487,6 +489,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         websocket,
         useModal: useModalHook,
         useUser: usePluginUser,
-        useToast: useToastHook
+        useToast: useToastHook,
+        useFilePicker
     };
 }

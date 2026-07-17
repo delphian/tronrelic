@@ -25,6 +25,10 @@ export type {
     ISystemComponents,
     IApiClient,
     IWebSocketClient,
-    IPluginUserState
+    IPluginUserState,
+    IFilePickerClient,
+    IFilePickerProvider,
+    IFileSelection,
+    IFilePickOptions
 } from './IFrontendPluginContext.js';
 export { definePlugin } from './definePlugin.js';
