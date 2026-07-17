@@ -70,6 +70,7 @@ export function createAdminAnalyticsRouter(controller: TrafficController): Route
     router.delete('/gsc/credentials', controller.removeGscCredentials.bind(controller));
     router.post('/gsc/refresh', controller.refreshGscData.bind(controller));
     router.get('/gsc/keywords', controller.getGscKeywords.bind(controller));
+    router.get('/gsc/pages', controller.getGscPages.bind(controller));
     router.get('/gsc/keywords-by-day', controller.getGscKeywordsByDay.bind(controller));
 
     return router;

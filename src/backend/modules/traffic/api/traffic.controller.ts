@@ -765,6 +765,27 @@ export class TrafficController {
     }
 
     /**
+     * GET /api/admin/users/analytics/gsc/pages?periodHours=168&limit=25
+     * Aggregated GSC landing pages (clicks/impressions/CTR/position) for the
+     * window. Backed by the [page, date] totals collection, which is immune to
+     * query anonymization — so this surfaces where clicks actually landed even
+     * when no keyword can be attributed to them. Returns an empty array until
+     * the `gsc:fetch` job has stored page totals; carries `windowStart`/
+     * `windowEnd` for a truthful period label.
+     */
+    async getGscPages(req: Request, res: Response): Promise<void> {
+        const periodHours = parsePositiveInt(req.query.periodHours, 168, MAX_SINCE_HOURS);
+        const limit = parsePositiveInt(req.query.limit, 25, MAX_LIMIT);
+        try {
+            const result = await this.gscService.getPagesForPeriod(periodHours, limit);
+            res.json({ periodHours, limit, ...result });
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to fetch GSC pages');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch GSC pages' });
+        }
+    }
+
+    /**
      * GET /api/admin/users/analytics/gsc/keywords-by-day?days=14&topN=15
      * Daily GSC keyword buckets (clicks/impressions trend with per-day top
      * keywords). Already offset by the GSC ingestion delay in the service.
