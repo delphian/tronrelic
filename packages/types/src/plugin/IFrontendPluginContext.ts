@@ -878,6 +878,94 @@ export interface IWebSocketClient {
  * }
  * ```
  */
+/**
+ * Options a consumer passes when opening the file picker. All advisory to the
+ * active provider — a provider may ignore hints it cannot honor.
+ */
+export interface IFilePickOptions {
+    /**
+     * MIME-type hints the picker should prefer/allow (e.g. `['image/*']`).
+     * Advisory: the provider uses these to filter its browse view and constrain
+     * the upload control, but consumers must still validate the returned file.
+     */
+    accept?: string[];
+
+    /** Title shown on the picker modal. */
+    title?: string;
+
+    /** Whether the picker offers an upload control (default true) or is browse-only. */
+    allowUpload?: boolean;
+}
+
+/**
+ * A file the user chose through the picker — either newly uploaded or selected
+ * from existing storage. `fileId` and `url` are both returned so a consumer can
+ * store whichever it needs; both are opaque and must not be parsed or rebuilt.
+ */
+export interface IFileSelection {
+    /** Provider inventory id (opaque). */
+    fileId: string;
+
+    /** Browser-safe URL to the file (opaque; may be relative or absolute). */
+    url: string;
+
+    /** MIME type the provider reported. */
+    mimeType: string;
+
+    /** Original filename, for display. */
+    name: string;
+}
+
+/**
+ * The concrete picker a files-provider plugin delivers at runtime. Core never
+ * implements this — the enabled files provider registers one via
+ * {@link IFilePickerClient.registerProvider}. `open` resolves with the user's
+ * selection, or `null` when they cancel/dismiss.
+ */
+export interface IFilePickerProvider {
+    /** Id of the delivering provider plugin, for diagnostics/telemetry. */
+    providerId: string;
+
+    /** Open the picker UI; resolve the selection, or `null` on cancel. */
+    open: (options?: IFilePickOptions) => Promise<IFileSelection | null>;
+}
+
+/**
+ * Core-owned files client — the standardized "pick a local file to upload OR
+ * pick from already-uploaded files" interface. The picker UI itself is
+ * provider-delivered: whichever files-provider plugin is enabled registers its
+ * own picker (last registration wins), so an operator can disable the default
+ * provider and enable an alternative without any consumer change. Consumers
+ * depend only on this interface and never reference a provider plugin.
+ *
+ * When no provider is registered (e.g. the files plugin is disabled),
+ * `isAvailable` is `false` and `pick` resolves to `null` — treat files as a
+ * capability that can be absent and degrade gracefully.
+ *
+ * NOTE: this is the frontend picker interface only. A core backend
+ * files-module facade (a stable, always-present server-side handle over the
+ * `'files'` service registry) is intentionally deferred — backend consumers
+ * still reach `IFileService` via `context.services.watch('files')` directly.
+ */
+export interface IFilePickerClient {
+    /**
+     * Open the active provider's picker and await the user's choice. Resolves
+     * `null` on cancel/dismiss OR when no provider is currently available.
+     */
+    pick: (options?: IFilePickOptions) => Promise<IFileSelection | null>;
+
+    /** Reactive flag: whether a files provider is currently registered. */
+    isAvailable: boolean;
+
+    /**
+     * Provider-only: register this frontend as the active picker provider.
+     * A provider plugin calls this from its side-effect component on mount and
+     * invokes the returned disposer on unmount, so disabling the plugin
+     * withdraws the capability automatically. Last registration wins.
+     */
+    registerProvider: (provider: IFilePickerProvider) => () => void;
+}
+
 export interface IFrontendPluginContext {
     /** Plugin identifier used for namespacing events and API routes */
     pluginId: string;
@@ -979,4 +1067,24 @@ export interface IFrontendPluginContext {
         }) => string;
         dismiss: (id: string) => void;
     };
+
+    /**
+     * File picker hook — the standardized way to let a user pick a local file to
+     * upload OR choose from already-uploaded files. The picker UI is delivered by
+     * the enabled files-provider plugin (see {@link IFilePickerClient}); consumers
+     * call `pick()` and store the returned selection, never touching a provider's
+     * endpoints. `isAvailable` is reactive, so a consumer can hide its "choose
+     * file" control when no provider is enabled and fall back (e.g. a URL field).
+     * Must be called within a component context (React hooks pattern).
+     *
+     * @example
+     * ```typescript
+     * const { pick, isAvailable } = context.useFilePicker();
+     * const onChoose = async () => {
+     *     const file = await pick({ accept: ['image/*'], title: 'Choose image' });
+     *     if (file) setImageUrl(file.url);
+     * };
+     * ```
+     */
+    useFilePicker: () => IFilePickerClient;
 }

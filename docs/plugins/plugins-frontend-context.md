@@ -1,6 +1,6 @@
 # Plugin Frontend Context
 
-Plugins receive `IFrontendPluginContext` as a prop on every page and component. It provides UI primitives, layout components, an HTTP client, the shared Socket.IO connection, charts, modal/toast hooks, and a reactive user-identity hook — without crossing the `src/plugins/` ↔ `src/frontend/` workspace boundary.
+Plugins receive `IFrontendPluginContext` as a prop on every page and component. It provides UI primitives, layout components, an HTTP client, the shared Socket.IO connection, charts, modal/toast hooks, a reactive user-identity hook, and the file picker — without crossing the `src/plugins/` ↔ `src/frontend/` workspace boundary.
 
 ## Why Dependency Injection
 
@@ -20,6 +20,7 @@ interface IFrontendPluginContext {
     useUser: () => IPluginUserState;
     useModal: () => { open, close, closeAll };
     useToast: () => { push, dismiss };
+    useFilePicker: () => IFilePickerClient;   // pick/upload files; provider-delivered
 }
 ```
 
@@ -35,6 +36,27 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 ```
 
 The `definePlugin({ pages: [{ path, component }] })` registration wires `context` automatically — direct exports won't receive it.
+
+## File Picker (`context.useFilePicker`)
+
+`useFilePicker()` is the standardized way to let a user **pick a local file to upload or choose from already-uploaded files**. It returns `{ pick, isAvailable, registerProvider }`. Consumers call `pick(options)` and store the returned selection's `url`/`fileId` — both opaque, never parsed or rebuilt into an endpoint.
+
+```typescript
+const { pick, isAvailable } = context.useFilePicker();
+
+const onChoose = async () => {
+    const file = await pick({ accept: ['image/*'], title: 'Choose image' });
+    if (file) setImageUrl(file.url);   // IFileSelection: { fileId, url, mimeType, name }
+};
+```
+
+The picker is **core interface, provider-delivered**: core owns `useFilePicker`, but the concrete picker UI is supplied at runtime by whichever files-provider plugin is enabled (`trp-files` by default). That plugin registers its picker via `registerProvider` from its side-effect component, so **last registration wins** — an operator can disable the default provider and enable an alternative, and every consumer picks up the new UI with no code change. `registerProvider` is for provider plugins only; ordinary consumers use `pick`.
+
+Treat files as a **capability that can be absent**: when no provider is enabled, `isAvailable` is `false` and `pick()` resolves to `null`. Hide the "choose file" control when unavailable and offer a fallback (e.g. a URL text field). `isAvailable` is reactive, so the control appears/disappears as the provider plugin is toggled.
+
+> **Deferred: backend files-module facade.** This picker is the *frontend* half only. A core *backend* files-module facade — a stable, always-present server-side handle over the `'files'` service registry — is intentionally **not** built yet. Backend consumers still reach `IFileService` directly via `context.services.watch('files')` (already provider-agnostic). This does not limit the picker: it works and is fully provider-swappable today, because each provider ships both its picker UI and its own endpoints.
+>
+> **Agents/maintainers: periodically ask the project owner whether it's time to build the backend facade.** What it would add — a single core chokepoint for policy/quota/audit across all backend file writes, and a non-null handle so backend code stops hand-handling "provider not registered." What deferring costs — nothing for the picker; backend consumers keep using `watch('files')`. Surface this every so often (e.g. when adding a new backend file consumer) rather than letting the deferral quietly become permanent.
 
 ## Detail Documents
 
