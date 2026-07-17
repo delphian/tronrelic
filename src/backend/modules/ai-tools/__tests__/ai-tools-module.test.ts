@@ -46,7 +46,10 @@ function createMockHookRegistry(): IHookRegistry {
         register: vi.fn(() => () => undefined),
         disposeForPlugin: vi.fn(() => 0),
         snapshot: vi.fn(() => ({ tracks: [] })),
-        invoke: vi.fn(async () => undefined)
+        // Faithful no-handler behaviour: return the threaded seed (3rd arg) so a
+        // waterfall invoke (e.g. `ai.toolResult`) passes its value through
+        // unchanged, while a series/observer invoke (no seed) resolves undefined.
+        invoke: vi.fn(async (_descriptor: unknown, _input: unknown, seed?: unknown) => seed)
     } as unknown as IHookRegistry;
 }
 
@@ -358,6 +361,46 @@ describe('AiToolsModule', () => {
 
             expect(result.status).toBe('ok');
             expect(result.content).toEqual({ ok: true });
+        });
+
+        it('forwards an ai.toolResult hook-altered result to the model', async () => {
+            // A waterfall handler on ai.toolResult reshapes the tool output before
+            // it reaches the model; the pre-execution ai.toolInvoke series call
+            // (no seed) must still pass through, so discriminate by descriptor id.
+            (mockHooks as { invoke: unknown }).invoke = vi.fn(
+                async (descriptor: { id?: string }, _input: unknown, seed?: unknown) =>
+                    descriptor?.id === 'ai.toolResult' ? { redacted: true } : seed
+            );
+            // The raw handler output is irrelevant — the ai.toolResult hook
+            // replaces it — so keep the helper's default shape.
+            module.getRegistry().registerTool(readTool(vi.fn(async () => ({ ok: true }))), 'test');
+
+            const result = await module.getGovernor().invoke('test-read', {}, interactiveCtx);
+
+            expect(result.status).toBe('ok');
+            expect(result.content).toEqual({ redacted: true });
+        });
+
+        it('withholds the result when an ai.toolResult hook aborts', async () => {
+            (mockHooks as { invoke: unknown }).invoke = vi.fn(
+                async (descriptor: { id?: string }, _input: unknown, seed?: unknown) => {
+                    if (descriptor?.id === 'ai.toolResult') {
+                        throw new HookAbortError('blocked by policy');
+                    }
+                    return seed;
+                }
+            );
+            const handler = vi.fn(async () => ({ ok: true }));
+            module.getRegistry().registerTool(readTool(handler), 'test');
+
+            const result = await module.getGovernor().invoke('test-read', {}, interactiveCtx);
+
+            // The tool still ran (status ok, handler called), but the model sees a
+            // withheld marker instead of the payload — a post-execution abort is a
+            // withhold, not a veto.
+            expect(handler).toHaveBeenCalledOnce();
+            expect(result.status).toBe('ok');
+            expect(result.content).toEqual({ contentWithheld: true, reason: 'blocked by policy' });
         });
 
         it('denies a disabled tool', async () => {
