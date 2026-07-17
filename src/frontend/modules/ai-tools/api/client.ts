@@ -376,6 +376,12 @@ export async function clearPolicy(name: string): Promise<void> {
  * backend scopes `ai-tools:query-stream` chunks to that single socket instead of
  * broadcasting globally, so other admin sessions never receive this query's
  * deltas. Required for a streaming request.
+ *
+ * `toolAllowlist` narrows which tools this one run may call, enforced at the
+ * governor. Unlike a saved prompt (which persists a three-state field), an
+ * ad-hoc query has nothing to persist, so the composer always sends the explicit
+ * array: `[]` grants no tools (the safe default), a name list grants that subset.
+ * Omit entirely to leave the run at the contract default (all enabled tools).
  */
 export interface IQueryRequest {
     prompt: string;
@@ -385,6 +391,7 @@ export interface IQueryRequest {
     stream?: boolean;
     messages?: IAiConversationMessage[];
     conversationId?: string;
+    toolAllowlist?: string[];
 }
 
 /**

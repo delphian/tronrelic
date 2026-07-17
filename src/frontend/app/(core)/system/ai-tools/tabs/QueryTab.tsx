@@ -11,6 +11,13 @@
  * reopened into the transcript. Like the sibling tabs this is an interactive
  * admin client surface, not an SSR-first public component — loading states are
  * appropriate for its secondary data and user-triggered sends.
+ *
+ * A per-run tool allowlist (a collapsed disclosure in the composer) narrows which
+ * tools the next send may call. It defaults to no tools — least privilege — so a
+ * manual query is inert until the operator deliberately grants a tool for that
+ * run. Being one-shot, it has no three-state contract to preserve: the explicit
+ * selection is sent verbatim on every send (`[]` = no tools; a name list = that
+ * subset), and a scoped lethal-trifecta preview updates while the disclosure is open.
  */
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
@@ -21,7 +28,7 @@ import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
-import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IAiTranscriptSegment, IModelInfo, ISavedPrompt, IToolInvocationRecord } from '@/types';
+import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IAiToolInfo, IAiTranscriptSegment, IModelInfo, ISavedPrompt, IToolInvocationRecord, ITrifectaStatus } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
@@ -39,11 +46,15 @@ import {
     getConversation,
     getQueryModels,
     listActivity,
+    listTools,
+    getTrifectaPreview,
     type IStreamAck
 } from '../../../../../modules/ai-tools';
 import { SavedPromptsPanel } from './SavedPromptsPanel';
 import { InvocationDetailPanel } from '../components/InvocationDetailPanel';
 import { InvocationTable } from '../components/InvocationTable';
+import { ToolAllowlistPicker } from '../components/ToolAllowlistPicker';
+import { RunTrifectaBadge } from '../components/RunTrifectaBadge';
 import pageStyles from '../page.module.scss';
 import styles from './QueryTab.module.scss';
 
@@ -374,6 +385,21 @@ export function QueryTab() {
     const [error, setError] = useState<string | null>(null);
     const [models, setModels] = useState<IModelInfo[]>([]);
     const [modelOverride, setModelOverride] = useState<string>('');
+    /** The full tool registry (enabled + disabled), backing the per-run allowlist picker. */
+    const [tools, setTools] = useState<IAiToolInfo[]>([]);
+    /**
+     * Tool names the next send is allowed to call. Defaults to none — a manual
+     * query does nothing dangerous unless the operator grants a tool for that
+     * run. Sent verbatim to the governor on every send: `[]` = no tools, a list =
+     * that subset (no three-state contract, since a one-shot run persists nothing).
+     */
+    const [toolSelection, setToolSelection] = useState<string[]>([]);
+    /** Whether the composer's Tools disclosure is open; gates the trifecta preview so it runs only when visible. */
+    const [toolsOpen, setToolsOpen] = useState(false);
+    /** Scoped lethal-trifecta verdict for the current selection, or null before the first preview resolves. */
+    const [trifecta, setTrifecta] = useState<ITrifectaStatus | null>(null);
+    /** Whether a trifecta preview request is in flight (drives the badge's pending state). */
+    const [trifectaLoading, setTrifectaLoading] = useState(false);
     const [copiedTurnId, setCopiedTurnId] = useState<string | null>(null);
     const [view, setView] = useState<'chat' | 'history'>('chat');
     const [conversations, setConversations] = useState<ConversationGroup[]>([]);
@@ -461,6 +487,57 @@ export function QueryTab() {
         })();
         return () => { cancelled = true; };
     }, []);
+
+    // Load the tool registry once for the per-run allowlist picker. Secondary
+    // data on an interactive surface — a quiet failure leaves the picker empty,
+    // which only means the run gets no tools (the default), never a broken chat.
+    useEffect(() => {
+        let cancelled = false;
+        void (async () => {
+            try {
+                const list = await listTools();
+                if (!cancelled) {
+                    setTools(list);
+                }
+            } catch {
+                /* picker shows no options; the run simply gets no tools */
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    // Preview the lethal-trifecta posture of the current selection, but only
+    // while the Tools disclosure is open — a closed disclosure needs no preview,
+    // so an operator who never opens it pays for no requests. Debounced so rapid
+    // toggling issues one request. The verdict is server-computed (it folds in
+    // provider server-tools and secret variables an allowlist cannot gate), so
+    // this only renders what the preview endpoint returns.
+    useEffect(() => {
+        if (!toolsOpen) {
+            return;
+        }
+        let cancelled = false;
+        setTrifectaLoading(true);
+        const timer = setTimeout(() => {
+            void (async () => {
+                try {
+                    const status = await getTrifectaPreview(toolSelection);
+                    if (!cancelled) {
+                        setTrifecta(status);
+                    }
+                } catch {
+                    if (!cancelled) {
+                        setTrifecta(null);
+                    }
+                } finally {
+                    if (!cancelled) {
+                        setTrifectaLoading(false);
+                    }
+                }
+            })();
+        }, 350);
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [toolSelection, toolsOpen]);
 
     /**
      * Mutate a single turn in place by id. Used by the stream handler to append
@@ -688,7 +765,10 @@ export function QueryTab() {
                 model: modelOverride || undefined,
                 messages: priorMessages,
                 conversationId,
-                stream: true
+                stream: true,
+                // Sent verbatim: `[]` grants no tools (the default), a name list
+                // grants that subset. The governor enforces it for this run.
+                toolAllowlist: toolSelection
             });
             // The streaming path acks immediately; the answer arrives over the
             // socket. A non-ack shape would mean the server didn't stream —
@@ -708,7 +788,7 @@ export function QueryTab() {
                 error: err instanceof Error ? err.message : 'Failed to submit query'
             });
         }
-    }, [input, streaming, messages, modelOverride, updateTurn]);
+    }, [input, streaming, messages, modelOverride, toolSelection, updateTurn]);
 
     /**
      * Abort the in-flight streaming query via the backend cancel route. The
@@ -1095,6 +1175,30 @@ export function QueryTab() {
                             aria-label="Message input"
                             disabled={streaming}
                         />
+                        <details
+                            className={styles.composer_tools}
+                            onToggle={(e) => setToolsOpen(e.currentTarget.open)}
+                        >
+                            <summary className={styles.composer_tools_summary}>
+                                <Wrench size={16} />
+                                Tools — {toolSelection.length === 0
+                                    ? 'none (default)'
+                                    : `${toolSelection.length} selected`}
+                            </summary>
+                            <div className={styles.composer_tools_body}>
+                                <p className={styles.composer_tools_hint}>
+                                    Tools this query may call. Defaults to none — grant only what this run
+                                    needs. Naming a tool that is disabled or removed fails the run.
+                                </p>
+                                <ToolAllowlistPicker
+                                    tools={tools}
+                                    selected={toolSelection}
+                                    onChange={setToolSelection}
+                                    disabled={streaming}
+                                />
+                                <RunTrifectaBadge status={trifecta} loading={trifectaLoading} />
+                            </div>
+                        </details>
                         <div className={styles.composer_toolbar}>
                             {models.length > 0 && (
                                 <Select
