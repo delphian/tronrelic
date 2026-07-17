@@ -430,6 +430,39 @@
     gap: var(--gap-sm);
 }
 
+/* Per-run tool allowlist, tucked into a disclosure between the textarea and the
+   toolbar so it never crowds the composer. Collapsed by default (the run gets no
+   tools); opening it reveals the picker and the scoped trifecta badge. */
+.composer_tools {
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    padding: var(--padding-sm);
+}
+
+.composer_tools_summary {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    cursor: pointer;
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.composer_tools_body {
+    margin-top: var(--gap-sm);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.composer_tools_hint {
+    margin: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
 .composer_send {
     margin-left: auto;
 }

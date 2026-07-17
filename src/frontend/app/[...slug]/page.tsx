@@ -260,6 +260,8 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
             ogImage: dynamic.ogImage ?? pluginPage.ogImage,
             ogType: dynamic.ogType ?? pluginPage.ogType,
             canonical: dynamic.canonical ?? pluginPage.canonical,
+            publishedTime: dynamic.publishedTime ?? pluginPage.publishedTime,
+            modifiedTime: dynamic.modifiedTime ?? pluginPage.modifiedTime,
             noindex: dynamic.noindex ?? pluginPage.noindex
         };
 
@@ -277,6 +279,8 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
                 path: slug,
                 image: seo.ogImage,
                 type: seo.ogType,
+                publishedTime: seo.publishedTime,
+                modifiedTime: seo.modifiedTime,
                 keywords: seo.keywords,
                 canonical: seo.canonical
             });

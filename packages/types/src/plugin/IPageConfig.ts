@@ -59,6 +59,20 @@ export interface IPluginPageMetadata {
     /** Open Graph type; use 'article' for time-stamped content. */
     ogType?: 'website' | 'article';
 
+    /**
+     * ISO 8601 first-publication timestamp for `article:published_time`.
+     * Only meaningful with `ogType: 'article'`; the catch-all route threads it
+     * into the Open Graph article tags so time-stamped content exposes its
+     * publish date to crawlers and social scrapers, not only inside JSON-LD.
+     */
+    publishedTime?: string;
+
+    /**
+     * ISO 8601 last-modification timestamp for `article:modified_time`.
+     * Pairs with {@link publishedTime}; same article-only semantics.
+     */
+    modifiedTime?: string;
+
     /** Canonical URL override for search-engine signal consolidation. */
     canonical?: string;
 
@@ -206,6 +220,20 @@ export interface IPageConfig {
      * Use 'article' for time-stamped content like blog posts or news.
      */
     ogType?: 'website' | 'article';
+
+    /**
+     * ISO 8601 first-publication timestamp for time-stamped pages, emitted as
+     * `article:published_time` when `ogType` is `'article'`. Wildcard pages
+     * typically supply this per-request via `serverMetadataFetcher` instead of
+     * declaring it statically here.
+     */
+    publishedTime?: string;
+
+    /**
+     * ISO 8601 last-modification timestamp, emitted as `article:modified_time`.
+     * Pairs with {@link publishedTime}.
+     */
+    modifiedTime?: string;
 
     /**
      * Optional canonical URL override.
