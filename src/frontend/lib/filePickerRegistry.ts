@@ -16,7 +16,7 @@
  * provider owns its own endpoints, so this module needs no runtime config.
  */
 
-import { useSyncExternalStore } from 'react';
+import { useSyncExternalStore, useMemo } from 'react';
 import type {
     IFilePickerClient,
     IFilePickerProvider,
@@ -120,9 +120,9 @@ function getServerIsAvailable(): boolean {
  */
 export function useFilePicker(): IFilePickerClient {
     const isAvailable = useSyncExternalStore(subscribe, getIsAvailable, getServerIsAvailable);
-    return {
+    return useMemo(() => ({
         pick: openFilePicker,
         isAvailable,
         registerProvider: registerFilePickerProvider
-    };
+    }), [isAvailable]);
 }
