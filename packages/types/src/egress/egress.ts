@@ -75,8 +75,13 @@ function ipv4FromMappedIpv6(addr: string): string | null {
  * other non-public range — the set an SSRF guard must reject.
  *
  * Covers IPv4 (0/8, 10/8, 100.64/10 CGNAT, 127/8, 169.254/16 link-local,
- * 172.16/12, 192.168/16) and IPv6 (`::` unspecified, ::1 loopback, fc00::/7
- * unique-local, fe80::/10 link-local). IPv4-mapped IPv6 literals
+ * 172.16/12, 192.168/16) plus the IANA special-purpose blocks that are not
+ * publicly routable and so must not be a fetch target (192.0.0.0/24 protocol
+ * assignments, 192.0.2.0/24 / 198.51.100.0/24 / 203.0.113.0/24 RFC5737
+ * documentation, 198.18.0.0/15 benchmarking, 224.0.0.0/4 multicast, and
+ * 240.0.0.0/4 reserved / limited broadcast) and IPv6 (`::` unspecified, ::1
+ * loopback, fc00::/7 unique-local, fe80::/10 link-local, 2001:db8::/32
+ * documentation). IPv4-mapped IPv6 literals
  * (`::ffff:a.b.c.d` and the hex form `URL` normalizes them to) are decoded to
  * their embedded IPv4 and tested against the IPv4 ranges, closing the
  * mapped-address SSRF bypass. A string that is not a recognizable IP literal
@@ -95,6 +100,7 @@ export function isPrivateIp(ip: string): boolean {
         addr === '::' || addr === '0:0:0:0:0:0:0:0'
         || addr === '::1' || addr === '0:0:0:0:0:0:0:1'
         || addr.startsWith('fc') || addr.startsWith('fd') || /^fe[89ab]/.test(addr)
+        || addr.startsWith('2001:db8:') || addr.startsWith('2001:0db8:')
     ) {
         result = true;
     } else {
@@ -102,12 +108,22 @@ export function isPrivateIp(ip: string): boolean {
         if (parts.length === 4 && parts.every(part => /^\d{1,3}$/.test(part))) {
             const a = Number(parts[0]);
             const b = Number(parts[1]);
+            const c = Number(parts[2]);
             result =
                 a === 0 || a === 10 || a === 127
                 || (a === 100 && b >= 64 && b <= 127)
                 || (a === 169 && b === 254)
                 || (a === 172 && b >= 16 && b <= 31)
-                || (a === 192 && b === 168);
+                || (a === 192 && b === 168)
+                // IETF protocol assignments (192.0.0.0/24) + RFC5737 TEST-NET-1 (192.0.2.0/24).
+                || (a === 192 && b === 0 && (c === 0 || c === 2))
+                // Benchmarking (198.18.0.0/15) + RFC5737 TEST-NET-2 (198.51.100.0/24).
+                || (a === 198 && (b === 18 || b === 19))
+                || (a === 198 && b === 51 && c === 100)
+                // RFC5737 TEST-NET-3 (203.0.113.0/24).
+                || (a === 203 && b === 0 && c === 113)
+                // Multicast (224.0.0.0/4) + reserved / limited broadcast (240.0.0.0/4–255.255.255.255).
+                || a >= 224;
         }
     }
     return result;

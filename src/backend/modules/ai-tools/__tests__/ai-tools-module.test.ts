@@ -74,7 +74,7 @@ function builtinVariableDeps(): Pick<
 }
 
 /** A strictly read-only tool with a spy handler. */
-function readTool(handler = vi.fn(async () => ({ ok: true }))): IAiTool {
+function readTool(handler: IAiTool['handler'] = vi.fn(async () => ({ ok: true }))): IAiTool {
     return {
         name: 'test-read',
         description: 'A read-only test tool.',
@@ -401,6 +401,31 @@ describe('AiToolsModule', () => {
             expect(handler).toHaveBeenCalledOnce();
             expect(result.status).toBe('ok');
             expect(result.content).toEqual({ contentWithheld: true, reason: 'blocked by policy' });
+        });
+
+        it('preserves a valid undefined tool result instead of erroring on the waterfall seed', async () => {
+            // A handler may resolve to `undefined` under the Promise<unknown> tool
+            // contract. The real HookRegistry rejects an `undefined` waterfall seed,
+            // so the governor must skip the ai.toolResult seam rather than pass one —
+            // otherwise an already-executed tool is misreported as an error and a
+            // retry could duplicate an effectful call. This mock replicates the real
+            // registry's undefined-seed guard so the test fails without that skip.
+            (mockHooks as { invoke: unknown }).invoke = vi.fn(
+                async (descriptor: { id?: string; kind?: string }, _input: unknown, seed?: unknown) => {
+                    if (descriptor?.id === 'ai.toolResult' && seed === undefined) {
+                        throw new Error("Hook 'ai.toolResult' is a waterfall and requires a seed value.");
+                    }
+                    return seed;
+                }
+            );
+            const handler = vi.fn(async () => undefined);
+            module.getRegistry().registerTool(readTool(handler), 'test');
+
+            const result = await module.getGovernor().invoke('test-read', {}, interactiveCtx);
+
+            expect(handler).toHaveBeenCalledOnce();
+            expect(result.status).toBe('ok');
+            expect(result.content).toBeUndefined();
         });
 
         it('denies a disabled tool', async () => {

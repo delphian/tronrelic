@@ -18,8 +18,22 @@ describe('isPrivateIp', () => {
         }
     });
 
-    it('flags IPv6 unspecified, loopback, unique-local, and the full fe80::/10 link-local range', () => {
-        for (const ip of ['::', '::1', 'fc00::1', 'fd12:3456::1', 'fe80::1', 'fe90::1', 'fea0::1', 'febf::1']) {
+    it('flags IANA special-purpose IPv4 blocks that are not publicly routable', () => {
+        for (const ip of [
+            '192.0.0.1', '192.0.0.171',      // 192.0.0.0/24 protocol assignments
+            '192.0.2.5',                      // 192.0.2.0/24 RFC5737 TEST-NET-1
+            '198.51.100.5',                   // 198.51.100.0/24 RFC5737 TEST-NET-2
+            '203.0.113.5',                    // 203.0.113.0/24 RFC5737 TEST-NET-3
+            '198.18.0.1', '198.19.255.255',   // 198.18.0.0/15 benchmarking
+            '224.0.0.1', '239.255.255.255',   // 224.0.0.0/4 multicast
+            '240.0.0.1', '255.255.255.255'    // 240.0.0.0/4 reserved + limited broadcast
+        ]) {
+            expect(isPrivateIp(ip), ip).toBe(true);
+        }
+    });
+
+    it('flags IPv6 unspecified, loopback, unique-local, the full fe80::/10 link-local range, and 2001:db8::/32 documentation', () => {
+        for (const ip of ['::', '::1', 'fc00::1', 'fd12:3456::1', 'fe80::1', 'fe90::1', 'fea0::1', 'febf::1', '2001:db8::1']) {
             expect(isPrivateIp(ip), ip).toBe(true);
         }
     });
