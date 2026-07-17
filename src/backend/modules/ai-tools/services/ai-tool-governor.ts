@@ -413,18 +413,27 @@ export class AiToolGovernor implements IAiToolGovernor {
             // isolated inside the invoker and leaves the value unchanged.
             let result: unknown = rawResult;
             let withheldByHook: string | undefined;
-            try {
-                result = await this.hookRegistry.invoke(
-                    HOOKS.ai.toolResult,
-                    { toolName: tool.name, providerId, capability: cap, input, context: ctx },
-                    rawResult
-                );
-            } catch (hookError: unknown) {
-                if (!isHookAbortError(hookError)) {
-                    throw hookError;
+            // A handler resolving to `undefined` is a valid, content-free success
+            // under the `Promise<unknown>` tool contract, but a waterfall cannot
+            // carry it: HookRegistry.invoke rejects an `undefined` seed (its guard
+            // against an untyped caller omitting the seed entirely). There is no
+            // payload to alter or withhold, so skip the seam rather than let that
+            // guard throw and misreport an already-executed tool as an error — a
+            // model retry could then re-run an effectful tool, duplicating its effect.
+            if (rawResult !== undefined) {
+                try {
+                    result = await this.hookRegistry.invoke(
+                        HOOKS.ai.toolResult,
+                        { toolName: tool.name, providerId, capability: cap, input, context: ctx },
+                        rawResult
+                    );
+                } catch (hookError: unknown) {
+                    if (!isHookAbortError(hookError)) {
+                        throw hookError;
+                    }
+                    withheldByHook = hookError.message || 'Tool result withheld by a policy hook.';
+                    this.logger.warn({ tool: tool.name, reason: withheldByHook }, 'ai.toolResult hook withheld a tool result');
                 }
-                withheldByHook = hookError.message || 'Tool result withheld by a policy hook.';
-                this.logger.warn({ tool: tool.name, reason: withheldByHook }, 'ai.toolResult hook withheld a tool result');
             }
 
             if (withheldByHook !== undefined) {

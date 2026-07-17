@@ -95,10 +95,15 @@ type IRawResponse =
  * @returns The pinned public target, or a refusal with a correctable reason.
  */
 function resolvePinnedTarget(hostname: string): Promise<IPinnedTarget | IPinRefusal> {
+    // WHATWG `URL.hostname` keeps the brackets on an IPv6 literal (`[2606:...]`);
+    // `dns.lookup` treats them as part of the name and fails ENOTFOUND, so strip
+    // them for resolution. Callers keep the bracketed form for the Host header,
+    // where an IPv6 literal must stay bracketed.
+    const lookupHost = hostname.replace(/^\[|\]$/g, '');
     return new Promise((resolve) => {
-        dnsLookup(hostname, { all: true }, (err, addresses) => {
+        dnsLookup(lookupHost, { all: true }, (err, addresses) => {
             let outcome: IPinnedTarget | IPinRefusal;
-            if (err || addresses.length === 0) {
+            if (err || !addresses || addresses.length === 0) {
                 outcome = { ok: false, error: `refused: cannot resolve host ${hostname}` };
             } else {
                 const blocked = addresses.find(entry => isPrivateIp(entry.address));
@@ -128,7 +133,9 @@ function resolvePinnedTarget(hostname: string): Promise<IPinnedTarget | IPinRefu
  */
 function requestOnce(url: URL, pinnedIp: string, signal: AbortSignal): Promise<IRawResponse> {
     return new Promise((resolve, reject) => {
-        const hostIsLiteral = isIP(url.hostname) !== 0;
+        // `url.hostname` keeps the brackets on an IPv6 literal, which makes
+        // `isIP` return 0; strip them so a literal is detected and SNI is omitted.
+        const hostIsLiteral = isIP(url.hostname.replace(/^\[|\]$/g, '')) !== 0;
         const req = httpsRequest(
             {
                 host: pinnedIp,
@@ -199,8 +206,8 @@ function extractReadable(contentType: string, body: string): string {
     let result = body;
     if (contentType.includes('html')) {
         result = body
-            .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
-            .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+            .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
+            .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, ' ')
             .replace(/<\/(?:p|div|section|article|li|tr|h[1-6]|br)>/gi, '\n')
             .replace(/<[^>]+>/g, ' ')
             .replace(/[ \t]+/g, ' ')
