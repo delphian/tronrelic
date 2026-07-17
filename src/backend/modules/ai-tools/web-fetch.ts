@@ -206,8 +206,8 @@ function extractReadable(contentType: string, body: string): string {
     let result = body;
     if (contentType.includes('html')) {
         result = body
-            .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
-            .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, ' ')
+            .replace(/<script\b[^>]*>[\s\S]*?<\/script(?:\s[^>]*)?>/gi, ' ')
+            .replace(/<style\b[^>]*>[\s\S]*?<\/style(?:\s[^>]*)?>/gi, ' ')
             .replace(/<\/(?:p|div|section|article|li|tr|h[1-6]|br)>/gi, '\n')
             .replace(/<[^>]+>/g, ' ')
             .replace(/[ \t]+/g, ' ')
