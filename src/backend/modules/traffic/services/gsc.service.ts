@@ -117,6 +117,63 @@ export interface IGscKeywordsPeriodResult {
     keywords: IGscKeyword[];
 }
 
+/**
+ * True per-day per-page site totals fetched with the [page, date] dimensions.
+ *
+ * Like the date-only daily totals, a request that omits the `query` dimension
+ * is not subject to GSC's query anonymization — so these rows capture the
+ * clicks and impressions each landing page earned across *all* queries,
+ * including the anonymized low-volume ones that never appear in a keyword row.
+ * This is what lets the "top pages" panel show where clicks actually landed
+ * even when no keyword can be attributed to them.
+ */
+export interface IGscPageTotalDocument {
+    /** Landing page URL. */
+    page: string;
+    /** Calendar day this row represents. */
+    date: Date;
+    /** Clicks the page earned this day across all queries (anonymized included). */
+    clicks: number;
+    /** Impressions the page earned this day across all queries. */
+    impressions: number;
+    /** Click-through rate for the day (0-1). */
+    ctr: number;
+    /** Average position of the page in search results this day. */
+    position: number;
+    /** When this row was fetched from GSC (drives the TTL index). */
+    fetchedAt: Date;
+}
+
+/**
+ * One aggregated landing page from the page-totals collection: how much search
+ * traffic the page drew over the window, immune to query anonymization.
+ */
+export interface IGscPage {
+    /** Landing page URL. */
+    page: string;
+    /** Total clicks for this page (all queries, anonymized included). */
+    clicks: number;
+    /** Total impressions for this page. */
+    impressions: number;
+    /** Average CTR across rows (0-1). */
+    ctr: number;
+    /** Impression-weighted average position across rows. */
+    position: number;
+}
+
+/**
+ * Aggregated pages for a period plus the delay-shifted window covered — the
+ * page-dimension counterpart to {@link IGscKeywordsPeriodResult}.
+ */
+export interface IGscPagesPeriodResult {
+    /** Inclusive window start (ISO-8601 UTC). */
+    windowStart: string;
+    /** Inclusive window end (ISO-8601 UTC) — always ~3 days behind now. */
+    windowEnd: string;
+    /** Aggregated pages sorted by clicks descending. */
+    pages: IGscPage[];
+}
+
 /** Key-value store keys for GSC configuration. */
 const KV_CREDENTIALS = 'gsc:credentials';
 const KV_SITE_URL = 'gsc:siteUrl';
@@ -130,6 +187,14 @@ const COLLECTION_NAME = 'module_user_gsc_queries';
  * the `module_user_` prefix for consistency with the keyword collection.
  */
 const TOTALS_COLLECTION_NAME = 'module_user_gsc_daily_totals';
+
+/**
+ * Per-day per-page totals from the [page, date] GSC request. Physical name
+ * keeps the `module_user_` prefix for consistency with the sibling GSC
+ * collections. Immune to query anonymization (no `query` dimension), so it
+ * captures clicks that no keyword row can account for.
+ */
+const PAGE_TOTALS_COLLECTION_NAME = 'module_user_gsc_page_totals';
 
 /** Maximum rows per GSC API request. */
 const GSC_ROW_LIMIT = 5000;
@@ -155,6 +220,7 @@ export class GscService {
     private static instance: GscService;
     private readonly collection: Collection<IGscQueryDocument>;
     private readonly totalsCollection: Collection<IGscDailyTotalDocument>;
+    private readonly pageTotalsCollection: Collection<IGscPageTotalDocument>;
 
     /**
      * Private constructor enforces singleton pattern. Use setDependencies()
@@ -171,6 +237,7 @@ export class GscService {
     ) {
         this.collection = database.getCollection<IGscQueryDocument>(COLLECTION_NAME);
         this.totalsCollection = database.getCollection<IGscDailyTotalDocument>(TOTALS_COLLECTION_NAME);
+        this.pageTotalsCollection = database.getCollection<IGscPageTotalDocument>(PAGE_TOTALS_COLLECTION_NAME);
     }
 
     /**
@@ -239,6 +306,14 @@ export class GscService {
         await this.totalsCollection.createIndex(
             { fetchedAt: 1 },
             { expireAfterSeconds: 120 * 24 * 60 * 60, name: 'gsc_totals_ttl' }
+        );
+        await this.pageTotalsCollection.createIndex(
+            { date: 1, page: 1 },
+            { unique: true, name: 'gsc_page_totals_dedup' }
+        );
+        await this.pageTotalsCollection.createIndex(
+            { fetchedAt: 1 },
+            { expireAfterSeconds: 120 * 24 * 60 * 60, name: 'gsc_page_totals_ttl' }
         );
         this.logger.info('GSC query indexes created');
     }
@@ -449,6 +524,7 @@ export class GscService {
         }
 
         await this.fetchAndStoreDailyTotals(searchConsole, siteUrl, start, end, now);
+        await this.fetchAndStorePageTotals(searchConsole, siteUrl, start, end, now);
 
         await this.database.set(KV_LAST_FETCH, now.toISOString());
         this.logger.info({ rowsFetched: totalRows, siteUrl }, 'GSC data fetch complete');
@@ -514,6 +590,98 @@ export class GscService {
             await this.totalsCollection.bulkWrite(bulkOps);
         }
         this.logger.info({ days: bulkOps.length, siteUrl }, 'GSC daily totals stored');
+    }
+
+    /**
+     * Fetch true per-day per-page totals with a [page, date] request and upsert
+     * them into the page-totals collection.
+     *
+     * This is the source of truth behind the "top pages" panel. Because the
+     * request omits the `query` dimension it escapes GSC's query anonymization,
+     * so each page's clicks and impressions reflect *all* the queries that
+     * surfaced it — including the anonymized low-volume ones that never produce
+     * a keyword row. Summing keyword rows per page would undercount exactly the
+     * clicks the operator is trying to find.
+     *
+     * Unlike the date-only daily totals (one row per day, never paginated), a
+     * page-dimensioned response can exceed the row limit on a site with many
+     * indexed pages, so this paginates like the keyword fetch.
+     *
+     * @param searchConsole - Authenticated Search Console client.
+     * @param siteUrl - GSC property URL.
+     * @param start - ISO date string (YYYY-MM-DD), inclusive.
+     * @param end - ISO date string (YYYY-MM-DD), inclusive.
+     * @param fetchedAt - Timestamp stamped onto each upserted row (drives TTL).
+     */
+    private async fetchAndStorePageTotals(
+        searchConsole: ReturnType<typeof google.searchconsole>,
+        siteUrl: string,
+        start: string,
+        end: string,
+        fetchedAt: Date
+    ): Promise<void> {
+        let totalRows = 0;
+        let startRow = 0;
+        let hasMore = true;
+        let pageCount = 0;
+
+        while (hasMore) {
+            if (pageCount >= GSC_MAX_PAGES) {
+                this.logger.warn({ totalRows, maxPages: GSC_MAX_PAGES }, 'GSC page-totals fetch hit pagination safety limit');
+                break;
+            }
+            pageCount++;
+            const response = await searchConsole.searchanalytics.query({
+                siteUrl,
+                requestBody: {
+                    startDate: start,
+                    endDate: end,
+                    dimensions: ['page', 'date'],
+                    rowLimit: GSC_ROW_LIMIT,
+                    startRow
+                }
+            });
+
+            const rows = response.data.rows ?? [];
+            if (rows.length === 0) {
+                hasMore = false;
+                break;
+            }
+
+            const bulkOps = rows.reduce<Array<{ updateOne: { filter: Record<string, unknown>; update: { $set: IGscPageTotalDocument }; upsert: true } }>>((ops, row) => {
+                const [page, dateStr] = row.keys ?? [];
+                if (!page || !dateStr) {
+                    return ops;
+                }
+                const date = new Date(dateStr);
+                if (isNaN(date.getTime())) {
+                    return ops;
+                }
+                const doc: IGscPageTotalDocument = {
+                    page,
+                    date,
+                    clicks: row.clicks ?? 0,
+                    impressions: row.impressions ?? 0,
+                    ctr: row.ctr ?? 0,
+                    position: row.position ?? 0,
+                    fetchedAt
+                };
+                ops.push({ updateOne: { filter: { date: doc.date, page: doc.page }, update: { $set: doc }, upsert: true } });
+                return ops;
+            }, []);
+
+            if (bulkOps.length > 0) {
+                await this.pageTotalsCollection.bulkWrite(bulkOps);
+            }
+            totalRows += rows.length;
+            startRow += rows.length;
+
+            if (rows.length < GSC_ROW_LIMIT) {
+                hasMore = false;
+            }
+        }
+
+        this.logger.info({ rowsFetched: totalRows, siteUrl }, 'GSC page totals stored');
     }
 
     /**
@@ -687,6 +855,67 @@ export class GscService {
             windowStart: since.toISOString(),
             windowEnd: end.toISOString(),
             keywords
+        };
+    }
+
+    /**
+     * Get aggregated landing pages for a given time period.
+     *
+     * The page-dimension counterpart to {@link getKeywordsForPeriod}: aggregates
+     * the anonymization-immune page-totals rows by page, summing clicks and
+     * impressions and impression-weighting position, sorted by clicks
+     * descending. Because impressions are included, pages Google surfaced but
+     * that drew no click still appear (with zero clicks) — the page-level view
+     * of "surfaced in search, clicked or not".
+     *
+     * The window is shifted back by the GSC ingestion delay identically to the
+     * keyword read, and `windowStart`/`windowEnd` carry the true dates so the
+     * UI can label coverage honestly.
+     *
+     * @param periodHours - Lookback period in hours.
+     * @param limit - Maximum pages to return (default: 10).
+     * @returns The delay-shifted window and its aggregated pages.
+     */
+    async getPagesForPeriod(periodHours: number, limit: number = 10): Promise<IGscPagesPeriodResult> {
+        const delayMs = GSC_DATA_DELAY_DAYS * 24 * 60 * 60 * 1000;
+        const end = new Date(Date.now() - delayMs);
+        const since = new Date(end.getTime() - (periodHours * 60 * 60 * 1000));
+
+        const results = await this.pageTotalsCollection.aggregate<{
+            _id: string;
+            totalClicks: number;
+            totalImpressions: number;
+            weightedPosition: number;
+        }>([
+            { $match: { date: { $gte: since, $lte: end } } },
+            {
+                $group: {
+                    _id: '$page',
+                    totalClicks: { $sum: '$clicks' },
+                    totalImpressions: { $sum: '$impressions' },
+                    weightedPosition: { $sum: { $multiply: ['$position', '$impressions'] } }
+                }
+            },
+            { $sort: { totalClicks: -1, totalImpressions: -1 } },
+            { $limit: limit }
+        ]).toArray();
+
+        const pages = results.map(r => ({
+            page: r._id,
+            clicks: r.totalClicks,
+            impressions: r.totalImpressions,
+            ctr: r.totalImpressions > 0
+                ? Math.round((r.totalClicks / r.totalImpressions) * 10000) / 10000
+                : 0,
+            position: r.totalImpressions > 0
+                ? Math.round((r.weightedPosition / r.totalImpressions) * 10) / 10
+                : 0
+        }));
+
+        return {
+            windowStart: since.toISOString(),
+            windowEnd: end.toISOString(),
+            pages
         };
     }
 }

@@ -12,6 +12,11 @@
  *   magnitude and would flatten a shared axis).
  * - **Top keywords table** — clicks, impressions, CTR, and average position
  *   per query over a selectable window.
+ * - **Top pages table** — the landing pages search surfaced over the same
+ *   window, backed by the [page, date] totals. Because that request omits the
+ *   `query` dimension it escapes GSC's query anonymization, so it accounts for
+ *   clicks that no keyword row can (the anonymized low-volume queries), and
+ *   including impressions surfaces pages Google showed even with zero clicks.
  *
  * Chart totals come from the backend's date-only GSC totals (immune to
  * query anonymization); the keyword table is limited to non-anonymized
@@ -25,13 +30,13 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Search, TrendingUp } from 'lucide-react';
+import { AlertTriangle, FileText, Search, TrendingUp } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
 import { Card } from '../../../../../components/ui/Card';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { adminGetGscKeywords, adminGetGscKeywordsByDay, adminGetGscStatus } from '../../../api';
-import type { IGscKeyword, IGscDailyKeywords, IGscStatus } from '../../../api';
+import { adminGetGscKeywords, adminGetGscPages, adminGetGscKeywordsByDay, adminGetGscStatus } from '../../../api';
+import type { IGscKeyword, IGscPage, IGscDailyKeywords, IGscStatus } from '../../../api';
 import styles from './GscKeywords.module.scss';
 
 /** Keyword-table lookback windows. 30d is the backend's hard ceiling. */
@@ -69,6 +74,10 @@ export function GscKeywords() {
     const [keywordsError, setKeywordsError] = useState<string | null>(null);
     const [keywordsLoading, setKeywordsLoading] = useState(true);
 
+    const [pages, setPages] = useState<IGscPage[] | null>(null);
+    const [pagesError, setPagesError] = useState<string | null>(null);
+    const [pagesLoading, setPagesLoading] = useState(true);
+
     const [daily, setDaily] = useState<IGscDailyKeywords[] | null>(null);
     const [dailyError, setDailyError] = useState<string | null>(null);
     const [dailyLoading, setDailyLoading] = useState(true);
@@ -92,6 +101,22 @@ export function GscKeywords() {
             })
             .catch(err => { if (active) setKeywordsError(err instanceof Error ? err.message : 'Failed to load'); })
             .finally(() => { if (active) setKeywordsLoading(false); });
+
+        return () => { active = false; };
+    }, [periodHours]);
+
+    // Top-pages fetch — re-runs when the window changes, keyed to the same
+    // picker as the keyword table. Backed by the anonymization-immune page
+    // totals, so it accounts for clicks the keyword table cannot.
+    useEffect(() => {
+        let active = true;
+        setPagesLoading(true);
+        setPagesError(null);
+
+        adminGetGscPages({ periodHours, limit: 25 })
+            .then(data => { if (active) setPages(data.pages); })
+            .catch(err => { if (active) setPagesError(err instanceof Error ? err.message : 'Failed to load'); })
+            .finally(() => { if (active) setPagesLoading(false); });
 
         return () => { active = false; };
     }, [periodHours]);
@@ -279,6 +304,48 @@ export function GscKeywords() {
                                     <td className={styles.numeric}>{numberFormatter.format(kw.impressions)}</td>
                                     <td className={styles.numeric}>{(kw.ctr * 100).toFixed(1)}%</td>
                                     <td className={styles.numeric}>{kw.position.toFixed(1)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </Card>
+
+            <Card padding="md" className={styles.panel}>
+                <div className={styles.panel_header}>
+                    <FileText size={18} aria-hidden="true" />
+                    <h3 className={styles.panel_title}>Top pages</h3>
+                </div>
+                {pagesError ? (
+                    <p className={styles.panel_error}>{pagesError}</p>
+                ) : pagesLoading ? (
+                    <p className={styles.panel_loading}>Loading…</p>
+                ) : !pages || pages.length === 0 ? (
+                    <p className={styles.panel_empty}>
+                        No page data in this window yet. Page totals populate on
+                        the next <code>gsc:fetch</code> run after this feature
+                        ships — trigger a refresh in the Settings tab to backfill
+                        the current window immediately.
+                    </p>
+                ) : (
+                    <table className={styles.table}>
+                        <thead>
+                            <tr>
+                                <th scope="col">page</th>
+                                <th scope="col" className={styles.numeric_col}>clicks</th>
+                                <th scope="col" className={styles.numeric_col}>impressions</th>
+                                <th scope="col" className={styles.numeric_col}>CTR</th>
+                                <th scope="col" className={styles.numeric_col}>position</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {pages.map(pg => (
+                                <tr key={pg.page}>
+                                    <td className={styles.keyword_cell}>{pg.page}</td>
+                                    <td className={styles.numeric}>{numberFormatter.format(pg.clicks)}</td>
+                                    <td className={styles.numeric}>{numberFormatter.format(pg.impressions)}</td>
+                                    <td className={styles.numeric}>{(pg.ctr * 100).toFixed(1)}%</td>
+                                    <td className={styles.numeric}>{pg.position.toFixed(1)}</td>
                                 </tr>
                             ))}
                         </tbody>

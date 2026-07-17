@@ -84,19 +84,22 @@ function createFakeDatabase(): {
     database: IDatabaseService;
     queries: IFakeCollection;
     totals: IFakeCollection;
+    pageTotals: IFakeCollection;
 } {
     const queries = createFakeCollection();
     const totals = createFakeCollection();
+    const pageTotals = createFakeCollection();
     const collections: Record<string, IFakeCollection> = {
         module_user_gsc_queries: queries,
-        module_user_gsc_daily_totals: totals
+        module_user_gsc_daily_totals: totals,
+        module_user_gsc_page_totals: pageTotals
     };
     const database = {
         getCollection: vi.fn((name: string) => collections[name]),
         get: vi.fn(async () => null),
         set: vi.fn(async () => undefined)
     } as unknown as IDatabaseService;
-    return { database, queries, totals };
+    return { database, queries, totals, pageTotals };
 }
 
 /**
@@ -126,10 +129,10 @@ describe('GscService', () => {
      *
      * @returns The service instance and its staged collections.
      */
-    function setup(): { service: GscService; queries: IFakeCollection; totals: IFakeCollection } {
-        const { database, queries, totals } = createFakeDatabase();
+    function setup(): { service: GscService; queries: IFakeCollection; totals: IFakeCollection; pageTotals: IFakeCollection } {
+        const { database, queries, totals, pageTotals } = createFakeDatabase();
         GscService.setDependencies(database, {} as ICacheService, createMockLogger());
-        return { service: GscService.getInstance(), queries, totals };
+        return { service: GscService.getInstance(), queries, totals, pageTotals };
     }
 
     describe('createIndexes()', () => {
@@ -145,6 +148,21 @@ describe('GscService', () => {
             expect(totals.createIndex).toHaveBeenCalledWith(
                 { fetchedAt: 1 },
                 expect.objectContaining({ name: 'gsc_totals_ttl' })
+            );
+        });
+
+        it('creates the page-totals dedup and TTL indexes', async () => {
+            const { service, pageTotals } = setup();
+
+            await service.createIndexes();
+
+            expect(pageTotals.createIndex).toHaveBeenCalledWith(
+                { date: 1, page: 1 },
+                expect.objectContaining({ unique: true, name: 'gsc_page_totals_dedup' })
+            );
+            expect(pageTotals.createIndex).toHaveBeenCalledWith(
+                { fetchedAt: 1 },
+                expect.objectContaining({ name: 'gsc_page_totals_ttl' })
             );
         });
     });
@@ -166,6 +184,40 @@ describe('GscService', () => {
             expect(end).toBeLessThanOrEqual(after - DELAY_DAYS * DAY_MS);
             expect(end - start).toBe(periodHours * 60 * 60 * 1000);
             expect(result.keywords).toEqual([]);
+        });
+    });
+
+    describe('getPagesForPeriod()', () => {
+        it('returns the delay-shifted window bounds alongside the pages', async () => {
+            // Mirrors the keyword window so the page table can share the picker.
+            const { service } = setup();
+            const periodHours = 168;
+
+            const before = Date.now();
+            const result = await service.getPagesForPeriod(periodHours, 10);
+            const after = Date.now();
+
+            const end = new Date(result.windowEnd).getTime();
+            const start = new Date(result.windowStart).getTime();
+            expect(end).toBeGreaterThanOrEqual(before - DELAY_DAYS * DAY_MS);
+            expect(end).toBeLessThanOrEqual(after - DELAY_DAYS * DAY_MS);
+            expect(end - start).toBe(periodHours * 60 * 60 * 1000);
+            expect(result.pages).toEqual([]);
+        });
+
+        it('impression-weights position and derives CTR from aggregated rows', async () => {
+            // Position must weight by impressions, not average naively, and a
+            // surfaced-but-unclicked page (zero clicks) must still appear.
+            const { service, pageTotals } = setup();
+            pageTotals.aggregateRows = [
+                { _id: '/energy', totalClicks: 5, totalImpressions: 100, weightedPosition: 250 },
+                { _id: '/quiet', totalClicks: 0, totalImpressions: 40, weightedPosition: 320 }
+            ];
+
+            const result = await service.getPagesForPeriod(168, 10);
+
+            expect(result.pages[0]).toEqual({ page: '/energy', clicks: 5, impressions: 100, ctr: 0.05, position: 2.5 });
+            expect(result.pages[1]).toEqual({ page: '/quiet', clicks: 0, impressions: 40, ctr: 0, position: 8 });
         });
     });
 

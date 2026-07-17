@@ -943,6 +943,54 @@ export async function adminGetGscKeywords(options?: { periodHours?: number; limi
     };
 }
 
+/** One aggregated GSC landing page — search traffic the page drew over the window. */
+export interface IGscPage {
+    /** Landing page URL. */
+    page: string;
+    /** Total clicks (all queries, anonymized included). */
+    clicks: number;
+    /** Total impressions. */
+    impressions: number;
+    /** Average click-through rate (0-1). */
+    ctr: number;
+    /** Impression-weighted average position in search results. */
+    position: number;
+}
+
+/**
+ * Aggregated GSC pages plus the delay-shifted window actually covered — the
+ * page-dimension counterpart to {@link IGscKeywordsResult}.
+ */
+export interface IGscPagesResult {
+    /** Inclusive window start (ISO-8601 UTC). */
+    windowStart: string;
+    /** Inclusive window end (ISO-8601 UTC). */
+    windowEnd: string;
+    /** Pages sorted by clicks descending. */
+    pages: IGscPage[];
+}
+
+/**
+ * Get aggregated GSC landing pages for a lookback window (admin endpoint).
+ *
+ * Backed by the page-dimension totals, which escape GSC's query anonymization,
+ * so this reveals where clicks landed even when no keyword is attributable.
+ * @param options - Window in hours (default 168 = 7d) and row limit
+ * @returns Pages sorted by clicks descending plus the covered window
+ */
+export async function adminGetGscPages(options?: { periodHours?: number; limit?: number }
+): Promise<IGscPagesResult> {
+    const response = await apiClient.get('/admin/users/analytics/gsc/pages', {
+        params: options
+    });
+    const data = response.data as Partial<IGscPagesResult>;
+    return {
+        windowStart: data.windowStart ?? '',
+        windowEnd: data.windowEnd ?? '',
+        pages: data.pages ?? []
+    };
+}
+
 /**
  * Get daily GSC keyword buckets for trend charting (admin endpoint).
  * @param days - Number of daily buckets (default 14)

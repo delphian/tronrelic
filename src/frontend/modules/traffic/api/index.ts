@@ -37,6 +37,7 @@ export {
     adminRemoveGscCredentials,
     adminRefreshGscData,
     adminGetGscKeywords,
+    adminGetGscPages,
     adminGetGscKeywordsByDay,
     // Crawler analytics functions
     adminGetBotTrend,
@@ -77,6 +78,8 @@ export type {
     IGscStatus,
     IGscKeyword,
     IGscKeywordsResult,
+    IGscPage,
+    IGscPagesResult,
     IGscDailyKeywords,
     ITrafficBucket,
     IBotClassDailyPoint
