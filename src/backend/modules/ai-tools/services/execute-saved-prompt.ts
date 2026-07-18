@@ -163,16 +163,38 @@ export async function executeSavedPrompt(
     const { triggerId, claimedAt } = opts;
 
     /**
-     * Record a pre-query failure (provider missing, owner unresolvable) against
-     * the firing trigger and surface the auto-pause in the log — shared by the
-     * two fail-closed branches below so their bookkeeping cannot drift.
+     * Record a pre-query failure (provider missing, owner unresolvable) so it is
+     * never silent. First append a failed query-history row (best-effort) so the
+     * skipped run surfaces in the Query tab beside real queries; then, only when a
+     * trigger fired the run, stamp the failure against that trigger and surface any
+     * auto-pause in the log. Shared by the two fail-closed branches below so their
+     * bookkeeping cannot drift. The history row matters most for a manual "run
+     * now": it has no trigger banner, so without it the operator's 202 "started"
+     * toast is the only trace and the skipped run vanishes.
      *
-     * @param reason - The caller-facing failure reason for the error banner.
+     * @param reason - The caller-facing failure reason, used for both the error
+     *        banner and the recorded history row's error message.
      */
     const failClosed = async (reason: string): Promise<void> => {
         logger.warn({ promptId: p.id, name: p.name, triggerId }, `Saved prompt run skipped: ${reason}`);
-        // A manual run has no trigger to stamp or auto-pause — the caller surfaced
-        // the pre-run failure to the operator directly, so there is nothing to record.
+        // Surface the skipped run in the Query tab so a pre-run failure is not
+        // invisible there — critical for a manual run, which has no trigger banner
+        // to fall back on. Best-effort, mirroring the post-query branches. The ids
+        // and timestamp are built locally because the run-wide ones are declared
+        // later in this function (referencing them here would hit the TDZ); the raw
+        // prompt is recorded since a pre-run failure never reached per-run variable
+        // substitution.
+        if (recordQuery) {
+            try {
+                await recordQuery(
+                    buildAiQueryRecord('scheduled', p.prompt, randomUUID(), new Date().toISOString(), randomUUID(), null, reason, p.model)
+                );
+            } catch (historyErr) {
+                logger.warn({ err: historyErr, promptId: p.id, name: p.name }, 'Failed to record skipped saved-prompt query history');
+            }
+        }
+        // A manual run has no trigger to stamp or auto-pause — the history row
+        // above is its only record.
         if (!triggerId || !claimedAt) {
             return;
         }
