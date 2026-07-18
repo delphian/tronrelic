@@ -22,6 +22,7 @@ import {
     ChevronDown,
     ChevronRight,
     RefreshCw,
+    Play,
     Pencil,
     CopyPlus,
     Trash2,
@@ -127,6 +128,8 @@ interface SavedPromptsPanelProps {
     currentPromptText: string;
     /** Load a saved prompt's body back into the composer. */
     onLoadPromptText: (text: string) => void;
+    /** Execute a saved prompt immediately as a self-contained autonomous run. */
+    onRun: (sp: ISavedPrompt) => void;
     /** Surface save/duplicate/delete errors to the parent. */
     onError: (message: string) => void;
 }
@@ -143,6 +146,7 @@ export function SavedPromptsPanel({
     onPromptsChange,
     currentPromptText,
     onLoadPromptText,
+    onRun,
     onError
 }: SavedPromptsPanelProps) {
     const modal = useModal();
@@ -412,6 +416,15 @@ export function SavedPromptsPanel({
                         </div>
                         <div className={styles.row_actions}>
                             {renderTriggersChip(sp)}
+                            <IconButton
+                                variant="primary"
+                                size="sm"
+                                onClick={() => onRun(sp)}
+                                aria-label={`Run ${sp.name} now`}
+                                title="Run this prompt now (autonomous — result appears in History)"
+                            >
+                                <Play size={12} />
+                            </IconButton>
                             <IconButton
                                 variant="primary"
                                 size="sm"

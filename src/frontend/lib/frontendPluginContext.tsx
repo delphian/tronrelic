@@ -39,6 +39,7 @@ import { useAuthSession } from '../modules/user/components/SessionProvider';
 import { getSocket } from './socketClient';
 import { getRuntimeConfig } from './runtimeConfig';
 import { useFilePicker } from './filePickerRegistry';
+import { useImageGen } from './imageGenRegistry';
 
 /**
  * API client implementation for frontend plugins.
@@ -387,7 +388,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             useModal: useModalHook,
             useUser: usePluginUser,
             useToast: useToastHook,
-            useFilePicker
+            useFilePicker,
+            useImageGen
         };
     }, []);
 
@@ -490,6 +492,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         useModal: useModalHook,
         useUser: usePluginUser,
         useToast: useToastHook,
-        useFilePicker
+        useFilePicker,
+        useImageGen
     };
 }

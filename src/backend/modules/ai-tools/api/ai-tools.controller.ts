@@ -161,6 +161,7 @@ export class AiToolsController {
         private readonly systemPrompts: SystemPromptsService,
         private readonly resolveEndUser: EndUserResolver,
         private readonly screenConfig: ScreenConfigService,
+        private readonly runSavedPromptNow: (promptId: string) => Promise<void>,
         private readonly bindableHooks: ReadonlyArray<{ id: string; description: string }> = []
     ) {}
 
@@ -875,6 +876,45 @@ export class AiToolsController {
         } catch {
             res.status(500).json({ error: 'Failed to delete prompt.' });
         }
+    };
+
+    /**
+     * POST /query/prompts/:id/run — execute a saved prompt immediately, exactly
+     * as its schedule would fire it (autonomous programmatic run through the
+     * shared executor, recorded to history badged `scheduled`). Validates upfront
+     * — the prompt exists and a provider can run it — so the operator gets an
+     * immediate error, then fires the run WITHOUT awaiting it: the autonomous
+     * query can take minutes and its result lands in the Query-tab history like
+     * any scheduled firing, so blocking the request would only risk a gateway
+     * timeout while adding nothing. Returns 202 Accepted once the run has started.
+     */
+    runPrompt = async (req: Request, res: Response): Promise<void> => {
+        const id = String(req.params.id ?? '');
+        const prompt = await this.savedPrompts.get(id);
+        if (!prompt) {
+            res.status(404).json({ success: false, error: 'Saved prompt not found' });
+            return;
+        }
+        // Resolve the provider the run would use — the pinned one, or the active
+        // provider when unpinned — mirroring executeSavedPrompt's own resolution,
+        // so a missing provider fails here with a clear message instead of
+        // silently recording a failed run the operator would have to hunt for.
+        const provider = prompt.providerId
+            ? this.providers.getProvider(prompt.providerId)
+            : this.providers.getActive();
+        if (!provider) {
+            res.status(400).json({
+                success: false,
+                error: prompt.providerId
+                    ? `AI provider "${prompt.providerId}" is not installed or enabled`
+                    : 'No active AI provider is installed'
+            });
+            return;
+        }
+        // Fire-and-forget: the shared executor records its own history and never
+        // throws, so nothing here needs to await or catch it.
+        void this.runSavedPromptNow(id);
+        res.status(202).json({ success: true, started: true });
     };
 
     /** GET /activity — paged invocation audit feed with filters. */

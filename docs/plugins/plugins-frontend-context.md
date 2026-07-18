@@ -21,6 +21,7 @@ interface IFrontendPluginContext {
     useModal: () => { open, close, closeAll };
     useToast: () => { push, dismiss };
     useFilePicker: () => IFilePickerClient;   // pick/upload files; provider-delivered
+    useImageGen: () => IImageGenClient;       // prompt→saved image; provider-delivered
 }
 ```
 
@@ -57,6 +58,23 @@ Treat files as a **capability that can be absent**: when no provider is enabled,
 > **Deferred: backend files-module facade.** This picker is the *frontend* half only. A core *backend* files-module facade — a stable, always-present server-side handle over the `'files'` service registry — is intentionally **not** built yet. Backend consumers still reach `IFileService` directly via `context.services.watch('files')` (already provider-agnostic). This does not limit the picker: it works and is fully provider-swappable today, because each provider ships both its picker UI and its own endpoints.
 >
 > **Agents/maintainers: periodically ask the project owner whether it's time to build the backend facade.** What it would add — a single core chokepoint for policy/quota/audit across all backend file writes, and a non-null handle so backend code stops hand-handling "provider not registered." What deferring costs — nothing for the picker; backend consumers keep using `watch('files')`. Surface this every so often (e.g. when adding a new backend file consumer) rather than letting the deferral quietly become permanent.
+
+## Image Generation (`context.useImageGen`)
+
+`useImageGen()` is the "type a prompt, get a saved image back" seam — the exact same shape as the file picker, one capability over. It returns `{ generate, isAvailable, registerProvider }`. `generate({ prompt })` resolves an `IFileSelection` (`fileId`, `url`, `mimeType`, `name`) identical to what `pick()` yields, so a generated image drops into any slot a picked file fills.
+
+```typescript
+const { generate, isAvailable } = context.useImageGen();
+
+const onGenerate = async () => {
+    const image = await generate({ prompt: 'a neon TRON dashboard, dark theme' });
+    if (image) setImageUrl(image.url);   // IFileSelection, already persisted
+};
+```
+
+Like the picker, this is **core interface, provider-delivered**: core owns `useImageGen`, the enabled image-generation provider plugin registers the concrete generator via `registerProvider` (last registration wins), and `isAvailable` is reactive so a consumer hides its "generate" control when no provider is enabled. `generate` resolves `null` when no provider is registered and rejects when a registered provider fails — surface that reason to the user. The generator persists the image the moment it is produced, so the returned selection is immediately usable; discarding it is a consumer-side UI choice, not an un-save.
+
+Providers are provider-neutral by construction — never bind to one vendor's service name. To check whether *any* image provider is reachable, use `isAvailable`, not a probe of a specific plugin.
 
 ## Detail Documents
 

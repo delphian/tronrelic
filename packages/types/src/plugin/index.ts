@@ -29,6 +29,9 @@ export type {
     IFilePickerClient,
     IFilePickerProvider,
     IFileSelection,
-    IFilePickOptions
+    IFilePickOptions,
+    IImageGenClient,
+    IImageGenProvider,
+    IImageGenOptions
 } from './IFrontendPluginContext.js';
 export { definePlugin } from './definePlugin.js';

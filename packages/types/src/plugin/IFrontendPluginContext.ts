@@ -966,6 +966,74 @@ export interface IFilePickerClient {
     registerProvider: (provider: IFilePickerProvider) => () => void;
 }
 
+/**
+ * Options a consumer passes when asking the active image-gen provider to make an
+ * image. The prompt is the only required field; everything else is advisory and
+ * a provider drops knobs it cannot honor.
+ */
+export interface IImageGenOptions {
+    /** Natural-language description of the image to generate. */
+    prompt: string;
+
+    /**
+     * Provider-specific knobs (aspect ratio, style, seed, negative prompt).
+     * Advisory: the active provider validates these and drops keys it does not
+     * recognize, so a consumer can pass a superset without breaking on a swap.
+     */
+    providerOptions?: Record<string, unknown>;
+}
+
+/**
+ * The concrete image generator an image-gen provider plugin delivers at runtime.
+ * Core never implements this — the enabled provider registers one via
+ * {@link IImageGenClient.registerProvider}. `generate` persists the produced
+ * image through the platform file inventory and resolves the SAME
+ * {@link IFileSelection} the file picker yields, so a generated image is
+ * interchangeable with a picked one. It rejects (never returns null) when
+ * generation fails — a safety-filter refusal, rate limit, or provider error —
+ * so the consumer can surface the reason.
+ */
+export interface IImageGenProvider {
+    /** Id of the delivering provider plugin, for diagnostics/telemetry. */
+    providerId: string;
+
+    /** Generate an image, persist it, and resolve the saved file selection. */
+    generate: (options: IImageGenOptions) => Promise<IFileSelection>;
+}
+
+/**
+ * Core-owned image-generation client — the standardized "type a prompt, get a
+ * saved image back as a file selection" seam, modeled exactly on
+ * {@link IFilePickerClient}. Core owns this interface; the enabled image-gen
+ * provider plugin delivers the concrete generator (last registration wins), so
+ * an operator can swap providers without any consumer change. Because
+ * `generate` yields an {@link IFileSelection}, a consumer can feed the result
+ * straight into the same slot a picked file fills.
+ *
+ * When no provider is registered, `isAvailable` is `false` and `generate`
+ * resolves to `null` — treat image generation as a capability that can be
+ * absent and hide the control (falling back to picking/uploading a file).
+ */
+export interface IImageGenClient {
+    /**
+     * Generate an image from the prompt and resolve the persisted selection.
+     * Resolves `null` when no provider is currently available; rejects when a
+     * registered provider fails to generate (the consumer surfaces the reason).
+     */
+    generate: (options: IImageGenOptions) => Promise<IFileSelection | null>;
+
+    /** Reactive flag: whether an image-gen provider is currently registered. */
+    isAvailable: boolean;
+
+    /**
+     * Provider-only: register this frontend as the active image-gen provider.
+     * A provider plugin calls this from its side-effect component on mount and
+     * invokes the returned disposer on unmount, so disabling the plugin
+     * withdraws the capability automatically. Last registration wins.
+     */
+    registerProvider: (provider: IImageGenProvider) => () => void;
+}
+
 export interface IFrontendPluginContext {
     /** Plugin identifier used for namespacing events and API routes */
     pluginId: string;
@@ -1087,4 +1155,25 @@ export interface IFrontendPluginContext {
      * ```
      */
     useFilePicker: () => IFilePickerClient;
+
+    /**
+     * Image-generation hook — the standardized "type a prompt, get a saved image
+     * back" seam. The concrete generator is delivered by the enabled image-gen
+     * provider plugin (see {@link IImageGenClient}); consumers call `generate()`
+     * and receive an {@link IFileSelection} identical in shape to a picked file,
+     * so the result drops into the same slot. `isAvailable` is reactive, so a
+     * consumer hides its "generate" control when no provider is enabled and falls
+     * back to picking/uploading. Must be called within a component context
+     * (React hooks pattern).
+     *
+     * @example
+     * ```typescript
+     * const { generate, isAvailable } = context.useImageGen();
+     * const onGenerate = async () => {
+     *     const image = await generate({ prompt: 'a neon TRON dashboard' });
+     *     if (image) setImageUrl(image.url);
+     * };
+     * ```
+     */
+    useImageGen: () => IImageGenClient;
 }

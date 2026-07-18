@@ -21,7 +21,7 @@
  */
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { Send, Bot, User, AlertCircle, X, Copy, CheckCircle, Plus, History, MessageSquare, RefreshCw, ChevronDown, ChevronRight, Brain, Wrench, CornerDownRight, Info } from 'lucide-react';
+import { Send, Bot, User, AlertCircle, X, Copy, CheckCircle, Plus, History, MessageSquare, RefreshCw, ChevronDown, ChevronRight, Brain, Wrench, CornerDownRight, Info, Play } from 'lucide-react';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
@@ -48,8 +48,10 @@ import {
     listActivity,
     listTools,
     getTrifectaPreview,
+    runSavedPromptNow,
     type IStreamAck
 } from '../../../../../modules/ai-tools';
+import { useToast } from '../../../../../components/ui/ToastProvider';
 import { SavedPromptsPanel } from './SavedPromptsPanel';
 import { InvocationDetailPanel } from '../components/InvocationDetailPanel';
 import { InvocationTable } from '../components/InvocationTable';
@@ -379,6 +381,7 @@ function formatUsd(amount: number | null | undefined): string {
  * @returns The tab.
  */
 export function QueryTab() {
+    const { push } = useToast();
     const [messages, setMessages] = useState<ChatTurn[]>([]);
     const [input, setInput] = useState('');
     const [streaming, setStreaming] = useState(false);
@@ -794,6 +797,34 @@ export function QueryTab() {
             });
         }
     }, [input, streaming, messages, modelOverride, toolSelection, updateTurn]);
+
+    /**
+     * Execute a saved prompt immediately from the saved-prompts panel — a
+     * self-contained autonomous run, exactly as its schedule would fire it. It
+     * runs server-side (programmatic mode, the prompt's own tools, its owner
+     * principal) rather than in this interactive conversation, so the result
+     * lands in the Query-tab History badged Scheduled, not the live transcript.
+     * The POST returns as soon as the run is accepted; a toast confirms it
+     * started or surfaces an upfront rejection (missing prompt or no provider).
+     *
+     * @param sp - The saved prompt to run now.
+     */
+    const handleRunSavedPrompt = useCallback(async (sp: ISavedPrompt) => {
+        try {
+            await runSavedPromptNow(sp.id);
+            push({
+                tone: 'success',
+                title: 'Prompt run started',
+                description: `"${sp.name}" is running autonomously — its result appears in History.`
+            });
+        } catch (err) {
+            push({
+                tone: 'danger',
+                title: 'Could not run prompt',
+                description: err instanceof Error ? err.message : 'Failed to start the run.'
+            });
+        }
+    }, [push]);
 
     /**
      * Abort the in-flight streaming query via the backend cancel route. The
@@ -1261,6 +1292,7 @@ export function QueryTab() {
                     onPromptsChange={setSavedPrompts}
                     currentPromptText={input}
                     onLoadPromptText={(text) => { setInput(text); textareaRef.current?.focus(); }}
+                    onRun={(sp) => { void handleRunSavedPrompt(sp); }}
                     onError={setError}
                 />
                 </>
