@@ -982,12 +982,16 @@ export interface IImageGenOptions {
      * from-nothing generation. Pass the SAME {@link IFileSelection} the file
      * picker or a prior generation yields — the provider reads its opaque
      * `fileId`, so the reference must already live in the platform file
-     * inventory (no external URL is ever fetched). Omit it for ordinary
-     * prompt-only generation. A provider whose active generator cannot edit
-     * rejects the call, so a consumer that offers a reference control must be
-     * prepared to surface that rejection.
+     * inventory (no external URL is ever fetched). Omit it — or pass `null` —
+     * for ordinary prompt-only generation; `null` is accepted so a consumer
+     * holding the selection in `useState<IFileSelection | null>(null)` can pass
+     * it straight through without coercing to `undefined`, matching the
+     * `IFileSelection | null` that {@link IFilePickerClient.pick} and
+     * {@link IImageGenClient.generate} return. A provider whose active generator
+     * cannot edit rejects the call, so a consumer that offers a reference
+     * control must be prepared to surface that rejection.
      */
-    referenceImage?: IFileSelection;
+    referenceImage?: IFileSelection | null;
 
     /**
      * Provider-specific knobs (aspect ratio, style, seed, negative prompt).
