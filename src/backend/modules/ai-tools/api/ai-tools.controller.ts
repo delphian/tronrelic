@@ -889,32 +889,40 @@ export class AiToolsController {
      * timeout while adding nothing. Returns 202 Accepted once the run has started.
      */
     runPrompt = async (req: Request, res: Response): Promise<void> => {
-        const id = String(req.params.id ?? '');
-        const prompt = await this.savedPrompts.get(id);
-        if (!prompt) {
-            res.status(404).json({ success: false, error: 'Saved prompt not found' });
-            return;
+        try {
+            const id = String(req.params.id ?? '');
+            const prompt = await this.savedPrompts.get(id);
+            if (!prompt) {
+                res.status(404).json({ success: false, error: 'Saved prompt not found' });
+                return;
+            }
+            // Resolve the provider the run would use — the pinned one, or the active
+            // provider when unpinned — mirroring executeSavedPrompt's own resolution,
+            // so a missing provider fails here with a clear message instead of
+            // silently recording a failed run the operator would have to hunt for.
+            const provider = prompt.providerId
+                ? this.providers.getProvider(prompt.providerId)
+                : this.providers.getActive();
+            if (!provider) {
+                res.status(400).json({
+                    success: false,
+                    error: prompt.providerId
+                        ? `AI provider "${prompt.providerId}" is not installed or enabled`
+                        : 'No active AI provider is installed'
+                });
+                return;
+            }
+            // Fire-and-forget: the shared executor records its own history and never
+            // throws, so nothing here needs to await or catch it.
+            void this.runSavedPromptNow(id);
+            res.status(202).json({ success: true, started: true });
+        } catch {
+            // The prompt lookup hits Mongo, which can reject on a DB fault; without
+            // this guard the async handler's rejection would go unhandled (Express 4
+            // does not catch it), hanging the request. Mirror the sibling CRUD
+            // handlers' 500-on-failure shape.
+            res.status(500).json({ success: false, error: 'Failed to initiate prompt run' });
         }
-        // Resolve the provider the run would use — the pinned one, or the active
-        // provider when unpinned — mirroring executeSavedPrompt's own resolution,
-        // so a missing provider fails here with a clear message instead of
-        // silently recording a failed run the operator would have to hunt for.
-        const provider = prompt.providerId
-            ? this.providers.getProvider(prompt.providerId)
-            : this.providers.getActive();
-        if (!provider) {
-            res.status(400).json({
-                success: false,
-                error: prompt.providerId
-                    ? `AI provider "${prompt.providerId}" is not installed or enabled`
-                    : 'No active AI provider is installed'
-            });
-            return;
-        }
-        // Fire-and-forget: the shared executor records its own history and never
-        // throws, so nothing here needs to await or catch it.
-        void this.runSavedPromptNow(id);
-        res.status(202).json({ success: true, started: true });
     };
 
     /** GET /activity — paged invocation audit feed with filters. */

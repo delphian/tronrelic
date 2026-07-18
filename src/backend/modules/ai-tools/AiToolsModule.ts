@@ -598,12 +598,21 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
      * @returns Resolves once the run and its history recording settle.
      */
     async runSavedPromptNow(promptId: string): Promise<void> {
-        const prompt = await this.savedPrompts.get(promptId);
-        if (!prompt) {
-            this.logger.warn({ promptId }, 'runSavedPromptNow: prompt not found');
-            return;
+        // Fired fire-and-forget from the controller (`void this.runSavedPromptNow(id)`),
+        // so a rejection here has no awaiter and would surface as an unhandled promise
+        // rejection. executeSavedPrompt never throws, but the savedPrompts lookup can
+        // (transient DB error/failover); guard the whole body so this method honours
+        // its documented "never throws" contract.
+        try {
+            const prompt = await this.savedPrompts.get(promptId);
+            if (!prompt) {
+                this.logger.warn({ promptId }, 'runSavedPromptNow: prompt not found');
+                return;
+            }
+            await executeSavedPrompt(prompt, this.buildSavedPromptExecutionDeps(), {});
+        } catch (err) {
+            this.logger.error({ err, promptId }, 'runSavedPromptNow: failed to load or execute saved prompt');
         }
-        await executeSavedPrompt(prompt, this.buildSavedPromptExecutionDeps(), {});
     }
 
     /**
