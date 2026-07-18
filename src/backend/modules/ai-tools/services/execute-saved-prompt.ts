@@ -117,15 +117,19 @@ export interface ISavedPromptExecutionDeps {
 export interface ISavedPromptExecutionOptions {
     /**
      * The trigger element that fired — the address every bookkeeping write
-     * (failure streak, auto-pause, error banner) is scoped to.
+     * (failure streak, auto-pause, error banner) is scoped to. Omitted for a
+     * manual "run now" that no trigger initiated: with no trigger to stamp,
+     * that run skips all failure-streak bookkeeping and only records history,
+     * so a hand-fired run can never auto-pause a schedule.
      */
-    triggerId: string;
+    triggerId?: string;
     /**
      * ISO timestamp the run was claimed at, written by the caller before
      * invoking the executor and reused for the failure stamps so the banner
-     * matches the claimed `lastRunAt`.
+     * matches the claimed `lastRunAt`. Absent on a manual run (no claim, no
+     * trigger stamp).
      */
-    claimedAt: string;
+    claimedAt?: string;
     /**
      * Optional per-run variable values (name → expanded text), e.g. the hook
      * payload a hook trigger carries (`hook.type-id`, `hook.ref`,
@@ -167,6 +171,11 @@ export async function executeSavedPrompt(
      */
     const failClosed = async (reason: string): Promise<void> => {
         logger.warn({ promptId: p.id, name: p.name, triggerId }, `Saved prompt run skipped: ${reason}`);
+        // A manual run has no trigger to stamp or auto-pause — the caller surfaced
+        // the pre-run failure to the operator directly, so there is nothing to record.
+        if (!triggerId || !claimedAt) {
+            return;
+        }
         try {
             const { disabled } = await savedPrompts.recordRunFailure(p.id, triggerId, claimedAt, reason);
             if (disabled) {
@@ -299,14 +308,17 @@ export async function executeSavedPrompt(
             }
         }
         // Success ends the trigger's failure streak so intermittent errors
-        // never accumulate toward the auto-pause threshold. Best-effort.
-        try {
-            await savedPrompts.resetRunFailures(p.id, triggerId);
-        } catch (writeErr) {
-            logger.warn(
-                { err: writeErr, promptId: p.id, name: p.name },
-                'Failed to reset saved-prompt failure streak'
-            );
+        // never accumulate toward the auto-pause threshold. Best-effort. A
+        // manual run has no trigger streak, so there is nothing to reset.
+        if (triggerId) {
+            try {
+                await savedPrompts.resetRunFailures(p.id, triggerId);
+            } catch (writeErr) {
+                logger.warn(
+                    { err: writeErr, promptId: p.id, name: p.name },
+                    'Failed to reset saved-prompt failure streak'
+                );
+            }
         }
         // Tell admins the run finished. Wrapped so a notifier fault cannot
         // disturb the caller or mask the successful query.
@@ -324,22 +336,25 @@ export async function executeSavedPrompt(
         // Best-effort failure stamp; the run is already claimed, so a failure
         // here only loses the error banner, never duplicates. Consecutive
         // failures accumulate and eventually auto-pause the trigger so a
-        // broken prompt stops refailing on every firing.
+        // broken prompt stops refailing on every firing. A manual run has no
+        // trigger to stamp, so it only records the failed run in history below.
         let autoDisabled = false;
-        try {
-            const { disabled } = await savedPrompts.recordRunFailure(p.id, triggerId, claimedAt, lastRunError);
-            autoDisabled = disabled;
-            if (disabled) {
-                logger.error(
-                    { promptId: p.id, name: p.name, triggerId },
-                    'Saved-prompt trigger auto-paused after consecutive failures'
+        if (triggerId && claimedAt) {
+            try {
+                const { disabled } = await savedPrompts.recordRunFailure(p.id, triggerId, claimedAt, lastRunError);
+                autoDisabled = disabled;
+                if (disabled) {
+                    logger.error(
+                        { promptId: p.id, name: p.name, triggerId },
+                        'Saved-prompt trigger auto-paused after consecutive failures'
+                    );
+                }
+            } catch (writeErr) {
+                logger.warn(
+                    { err: writeErr, promptId: p.id, name: p.name },
+                    'Failed to persist saved-prompt run error'
                 );
             }
-        } catch (writeErr) {
-            logger.warn(
-                { err: writeErr, promptId: p.id, name: p.name },
-                'Failed to persist saved-prompt run error'
-            );
         }
         try {
             notify?.({ promptId: p.id, name: p.name, status: 'error', error: lastRunError, disabled: autoDisabled });

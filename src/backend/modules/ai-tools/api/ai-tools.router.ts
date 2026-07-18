@@ -56,6 +56,7 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
     router.get('/query/prompts/hooks', controller.listPromptHooks);
     router.get('/query/prompts', controller.listPrompts);
     router.post('/query/prompts', controller.savePrompt);
+    router.post('/query/prompts/:id/run', controller.runPrompt);
     router.delete('/query/prompts/:id', controller.deletePrompt);
 
     router.get('/activity', controller.listActivity);

@@ -56,7 +56,7 @@ import { PromptVariableRegistry } from './services/prompt-variable-registry.js';
 import { SystemPromptsService } from './services/system-prompts.service.js';
 import { registerBuiltinVariables } from './variables/index.js';
 import { runScheduledPrompts, type ScheduledPromptNotifier } from './services/scheduled-prompts-runner.js';
-import { executeSavedPrompt } from './services/execute-saved-prompt.js';
+import { executeSavedPrompt, type ISavedPromptExecutionDeps } from './services/execute-saved-prompt.js';
 import { createAccountEndUserResolver, type EndUserResolver } from './services/end-user-resolver.js';
 import { AiToolsController } from './api/ai-tools.controller.js';
 import { createAiToolsAdminRouter } from './api/ai-tools.router.js';
@@ -442,7 +442,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             () => this.serviceRegistry.get<IAccountDirectoryService>('accounts')
         );
 
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig, BINDABLE_HOOK_INFOS);
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig, (id: string) => this.runSavedPromptNow(id), BINDABLE_HOOK_INFOS);
 
         this.logger.info('ai-tools module initialized');
     }
@@ -554,6 +554,56 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         // here rather than a feature module. See web-fetch.ts for the guard
         // rationale and the lethal-trifecta implications of enabling it.
         this.registry.registerTool(createWebFetchTool(), 'core');
+    }
+
+    /**
+     * Assemble the collaborator bundle every autonomous saved-prompt run shares,
+     * so the firing paths — the hook-queue worker and the manual "run now"
+     * endpoint — build identical dependencies from one place and can never drift.
+     * `notify` is passed in because the admin run-notification callback is a
+     * closure local to {@link run}; a manual run passes none.
+     *
+     * @param notify - Optional admin run-notification callback.
+     * @returns The execution deps for {@link executeSavedPrompt}.
+     */
+    private buildSavedPromptExecutionDeps(notify?: ScheduledPromptNotifier): ISavedPromptExecutionDeps {
+        return {
+            savedPrompts: this.savedPrompts,
+            logger: this.logger,
+            resolveProvider: (providerId?: string) => providerId
+                ? this.providerRegistry.getProvider(providerId)
+                : this.providerRegistry.getActive(),
+            resolveEndUser: this.resolveEndUser,
+            composeSystemPrompt: (principal?: Parameters<SystemPromptsService['compose']>[0]) =>
+                this.systemPrompts.compose(principal),
+            notify,
+            recordQuery: (record: Parameters<AiQueryHistoryService['append']>[0]) =>
+                this.queryHistory.append(record)
+        };
+    }
+
+    /**
+     * Execute a saved prompt immediately on demand, exactly as an autonomous
+     * firing would but initiated by an operator rather than a trigger. Runs
+     * through the one shared {@link executeSavedPrompt} path — programmatic mode,
+     * the prompt's re-resolved owner principal, its injected system prompt and
+     * three-state tool allowlist, recorded to history — but with no trigger, so
+     * it keeps no failure streak and can never auto-pause a schedule. Never
+     * throws (the executor records every failure to history); callers fire it
+     * and return without awaiting the possibly-minutes-long query. A manual run
+     * does not fire the admin run-notification: the operator already has direct
+     * feedback and the run was not scheduled.
+     *
+     * @param promptId - The saved prompt to run now.
+     * @returns Resolves once the run and its history recording settle.
+     */
+    async runSavedPromptNow(promptId: string): Promise<void> {
+        const prompt = await this.savedPrompts.get(promptId);
+        if (!prompt) {
+            this.logger.warn({ promptId }, 'runSavedPromptNow: prompt not found');
+            return;
+        }
+        await executeSavedPrompt(prompt, this.buildSavedPromptExecutionDeps(), {});
     }
 
     /**
@@ -716,19 +766,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         // worker re-reads the prompt fresh, re-checks the binding, claims the
         // run, and executes through the same shared path as the cron runner.
         if (this.hookQueueFactory) {
-            const execDeps = {
-                savedPrompts: this.savedPrompts,
-                logger: this.logger,
-                resolveProvider: (providerId?: string) => providerId
-                    ? this.providerRegistry.getProvider(providerId)
-                    : this.providerRegistry.getActive(),
-                resolveEndUser: this.resolveEndUser,
-                composeSystemPrompt: (principal?: Parameters<SystemPromptsService['compose']>[0]) =>
-                    this.systemPrompts.compose(principal),
-                notify: notifyScheduledRun,
-                recordQuery: (record: Parameters<AiQueryHistoryService['append']>[0]) =>
-                    this.queryHistory.append(record)
-            };
+            const execDeps = this.buildSavedPromptExecutionDeps(notifyScheduledRun);
 
             this.hookPromptQueue = this.hookQueueFactory(async (job) => {
                 const { promptId, triggerId, hookId, variables } = job.data;

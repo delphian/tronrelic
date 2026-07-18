@@ -70,7 +70,8 @@ function makeController(overrides: Record<string, any> = {}) {
         promptVariables as any,
         systemPrompts as any,
         resolveEndUser as any,
-        {} as any // screenConfig
+        {} as any, // screenConfig
+        (async () => undefined) as any // runSavedPromptNow
     );
 
     return { controller, savedPrompts, providers, history, systemPrompts, resolveEndUser, registry, policy, promptVariables };

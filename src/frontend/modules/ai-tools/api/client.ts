@@ -616,6 +616,20 @@ export async function deleteSavedPrompt(id: string): Promise<void> {
 }
 
 /**
+ * Execute a saved prompt immediately as a self-contained autonomous run — the
+ * same path its schedule fires. The server validates upfront (the prompt exists
+ * and a provider can run it) and returns as soon as the run is accepted; the
+ * result lands in the Query-tab history, not inline. Rejects with the server's
+ * message on an upfront rejection (404 missing prompt, 400 no provider).
+ *
+ * @param id - The saved prompt id to run now.
+ * @returns Resolves once the run has been accepted.
+ */
+export async function runSavedPromptNow(id: string): Promise<void> {
+    await parse(await fetch(`${BASE}/query/prompts/${encodeURIComponent(id)}/run`, { method: 'POST' }), 'run saved prompt');
+}
+
+/**
  * One core-managed additional (audience-scoped) system prompt, as returned by
  * `GET /system-prompts`. Mirrors the backend `ISystemPromptDoc` using
  * platform-owned primitives so the frontend stays decoupled from core internals.
