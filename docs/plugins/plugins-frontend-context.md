@@ -74,6 +74,12 @@ const onGenerate = async () => {
 
 Like the picker, this is **core interface, provider-delivered**: core owns `useImageGen`, the enabled image-generation provider plugin registers the concrete generator via `registerProvider` (last registration wins), and `isAvailable` is reactive so a consumer hides its "generate" control when no provider is enabled. `generate` resolves `null` when no provider is registered and rejects when a registered provider fails — surface that reason to the user. The generator persists the image the moment it is produced, so the returned selection is immediately usable; discarding it is a consumer-side UI choice, not an un-save.
 
+**Reference image (image-to-image edit).** Pass an optional `referenceImage` — the same `IFileSelection` the picker or a prior generation yields — to edit or vary an existing image instead of generating from scratch. The prompt then describes the *change*, and the provider runs its edit path. The provider reads only the selection's opaque `fileId`, so the reference must already live in the platform inventory (the picker's upload and browse both satisfy this); no external URL is fetched. A provider whose active generator cannot edit **rejects** the call, so treat the reference control as optional and be ready to surface that rejection — never gate the plain prompt-only path on it.
+
+```typescript
+const image = await generate({ prompt: 'make the background deep blue', referenceImage });
+```
+
 Providers are provider-neutral by construction — never bind to one vendor's service name. To check whether *any* image provider is reachable, use `isAvailable`, not a probe of a specific plugin.
 
 ## Detail Documents

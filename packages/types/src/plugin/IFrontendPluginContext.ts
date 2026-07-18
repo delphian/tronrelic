@@ -976,6 +976,20 @@ export interface IImageGenOptions {
     prompt: string;
 
     /**
+     * Optional reference image to edit or vary instead of generating from
+     * scratch. When supplied, the prompt describes the *change* to make to this
+     * image and the provider runs its image-to-image (edit) path rather than a
+     * from-nothing generation. Pass the SAME {@link IFileSelection} the file
+     * picker or a prior generation yields — the provider reads its opaque
+     * `fileId`, so the reference must already live in the platform file
+     * inventory (no external URL is ever fetched). Omit it for ordinary
+     * prompt-only generation. A provider whose active generator cannot edit
+     * rejects the call, so a consumer that offers a reference control must be
+     * prepared to surface that rejection.
+     */
+    referenceImage?: IFileSelection;
+
+    /**
      * Provider-specific knobs (aspect ratio, style, seed, negative prompt).
      * Advisory: the active provider validates these and drops keys it does not
      * recognize, so a consumer can pass a superset without breaking on a swap.
@@ -997,7 +1011,12 @@ export interface IImageGenProvider {
     /** Id of the delivering provider plugin, for diagnostics/telemetry. */
     providerId: string;
 
-    /** Generate an image, persist it, and resolve the saved file selection. */
+    /**
+     * Generate an image, persist it, and resolve the saved file selection. When
+     * `options.referenceImage` is set the provider runs its edit path against
+     * that image instead of generating from scratch; it rejects if its active
+     * generator cannot edit.
+     */
     generate: (options: IImageGenOptions) => Promise<IFileSelection>;
 }
 
