@@ -148,6 +148,19 @@
     color: var(--icon-button-bare-color-danger-hover);
 }
 
+/* While a row is being edited or its save is in flight the inactive row actions
+   are disabled; dim them and suppress the hover treatment so the lock reads
+   clearly instead of relying on the browser's default disabled dimming. */
+.icon_btn:disabled {
+    opacity: var(--opacity-55);
+    cursor: not-allowed;
+}
+
+.icon_btn:disabled:hover {
+    color: var(--icon-button-bare-color);
+    background: transparent;
+}
+
 @container redirects-manager (max-width: #{$breakpoint-mobile-md}) {
     .form_row {
         grid-template-columns: 1fr;
