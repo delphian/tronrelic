@@ -204,7 +204,10 @@ export type {
     ICoreContentHooks,
     IWalletLinkedContext,
     ISyndicationDeliveredContext,
-    IContentPublishedContext
+    IContentPublishedContext,
+    ISitemapEntry,
+    ISitemapHookContext,
+    SitemapChangeFrequency
 } from './hooks/index.js';
 export { HookAbortError, isHookAbortError } from './hooks/index.js';
 export type { IHeadFragment, HeadFragmentTag, ISsrHeadContext } from './ssr/index.js';

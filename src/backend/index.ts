@@ -309,17 +309,19 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // later in init() and resolved lazily per request.
     const serviceRegistry = new ServiceRegistry(logger);
 
-    // Mount API routes now that coreDatabase exists. Routers receive the shared
-    // database instance via dependency injection.
-    app.use('/api', createApiRouter(coreDatabase));
-
-    await initializeCoreServices(coreDatabase);
-
     // Hook registry is the inverse of the service registry: plugins register
     // handlers against core-declared seams, where the service registry lets
-    // plugins publish capabilities for consumers. Instantiate alongside so
-    // both are available to the plugin loader.
+    // plugins publish capabilities for consumers. Constructed before the API
+    // router so request-time consumers hold the reference (the sitemap router
+    // invokes `http.sitemapEntries`); plugin handlers register later in init()
+    // on this same instance and are resolved when the seam fires per request.
     const hookRegistry = new HookRegistry(logger);
+
+    // Mount API routes now that coreDatabase and the hook registry exist.
+    // Routers receive the shared instances via dependency injection.
+    app.use('/api', createApiRouter(coreDatabase, hookRegistry));
+
+    await initializeCoreServices(coreDatabase);
 
     // Register shared infrastructure on the service registry so modules and
     // plugins can discover them via late-binding DI instead of importing

@@ -36,6 +36,7 @@ import type { IToolInvocationRecord } from '../ai-tools/IToolInvocationRecord.js
 import type { IWalletLinkedContext } from './IWalletLinkedContext.js';
 import type { ISyndicationDeliveredContext } from './ISyndicationDeliveredContext.js';
 import type { IContentPublishedContext } from './IContentPublishedContext.js';
+import type { ISitemapEntry, ISitemapHookContext } from './ISitemapEntry.js';
 
 /**
  * SSR-phase declared seams. Mirrors the `HOOKS.ssr` object in core's
@@ -103,6 +104,16 @@ export interface ICoreHttpHooks {
      * link outcome; a failing handler never breaks the link.
      */
     readonly walletLinked: HookDescriptor<IWalletLinkedContext, void, 'observer'>;
+
+    /**
+     * Waterfall seam fired while `GET /api/sitemap-data` assembles the sitemap.
+     * Handlers receive the generation context plus the entries accumulated so
+     * far and return the next list (conventionally by concatenating their own
+     * entries onto the input). Lets a plugin that owns many crawlable resources
+     * — a blog's posts, a forum's threads — contribute per-resource URLs core
+     * cannot enumerate without reaching into the plugin's private storage.
+     */
+    readonly sitemapEntries: HookDescriptor<ISitemapHookContext, ReadonlyArray<ISitemapEntry>, 'waterfall'>;
 }
 
 /**
