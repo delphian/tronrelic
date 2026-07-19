@@ -340,6 +340,7 @@ export function RedirectsManager() {
                                                                     onChange={e => setDraft(d => (d ? { ...d, pattern: e.target.value } : d))}
                                                                     placeholder="/tron-forum"
                                                                     aria-label="Source path"
+                                                                    disabled={savingEdit}
                                                                 />
                                                                 <Input
                                                                     type="text"
@@ -348,6 +349,7 @@ export function RedirectsManager() {
                                                                     onChange={e => setDraft(d => (d ? { ...d, notes: e.target.value } : d))}
                                                                     placeholder="Note (optional)"
                                                                     aria-label="Note"
+                                                                    disabled={savingEdit}
                                                                 />
                                                             </div>
                                                         </td>
@@ -359,6 +361,7 @@ export function RedirectsManager() {
                                                                 onChange={e => setDraft(d => (d ? { ...d, destination: e.target.value } : d))}
                                                                 placeholder="/forum"
                                                                 aria-label="Destination path"
+                                                                disabled={savingEdit}
                                                             />
                                                         </td>
                                                         <td>
@@ -367,6 +370,7 @@ export function RedirectsManager() {
                                                                     type="checkbox"
                                                                     checked={rowDraft.isPrefix ?? true}
                                                                     onChange={e => setDraft(d => (d ? { ...d, isPrefix: e.target.checked } : d))}
+                                                                    disabled={savingEdit}
                                                                 />
                                                                 prefix
                                                             </label>
@@ -377,6 +381,7 @@ export function RedirectsManager() {
                                                                     type="checkbox"
                                                                     checked={rowDraft.permanent ?? true}
                                                                     onChange={e => setDraft(d => (d ? { ...d, permanent: e.target.checked } : d))}
+                                                                    disabled={savingEdit}
                                                                 />
                                                                 301
                                                             </label>
@@ -448,6 +453,7 @@ export function RedirectsManager() {
                                                                     type="button"
                                                                     className={styles.icon_btn}
                                                                     onClick={() => handleStartEdit(rule)}
+                                                                    disabled={editingId !== null}
                                                                     aria-label="Edit redirect"
                                                                     title="Edit"
                                                                 >
@@ -457,6 +463,7 @@ export function RedirectsManager() {
                                                                     type="button"
                                                                     className={styles.icon_btn}
                                                                     onClick={() => handleToggle(rule)}
+                                                                    disabled={editingId !== null}
                                                                     aria-label={rule.enabled ? 'Disable redirect' : 'Enable redirect'}
                                                                     title={rule.enabled ? 'Disable' : 'Enable'}
                                                                 >
@@ -466,6 +473,7 @@ export function RedirectsManager() {
                                                                     type="button"
                                                                     className={`${styles.icon_btn} ${styles.icon_btn__danger}`}
                                                                     onClick={() => handleDelete(rule)}
+                                                                    disabled={editingId !== null}
                                                                     aria-label="Delete redirect"
                                                                     title="Delete"
                                                                 >
