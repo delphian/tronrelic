@@ -14,7 +14,9 @@
  */
 
 import { Router } from 'express';
-import type { IDatabaseService } from '@/types';
+import type { IDatabaseService, IHookRegistry, ISitemapEntry } from '@/types';
+import { HOOKS } from '../../hooks/registry.js';
+
 /** Cached sitemap data with expiry timestamp. */
 interface SitemapCache {
     data: SitemapData;
@@ -25,6 +27,12 @@ interface SitemapCache {
 interface SitemapData {
     pages: Array<{ slug: string; updatedAt: string }>;
     pluginPages: string[];
+    /**
+     * Per-resource URLs contributed by plugins through the
+     * `http.sitemapEntries` hook (e.g. every published blog post). Distinct
+     * from `pluginPages`, which carries only the one landing path per plugin.
+     */
+    pluginEntries: ISitemapEntry[];
 }
 
 /** Cache TTL in milliseconds (10 minutes). */
@@ -37,9 +45,11 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
  * generation. Response is cached in memory for 10 minutes.
  *
  * @param database - Database service for MongoDB access
+ * @param hookRegistry - Hook registry used to invoke `http.sitemapEntries` so
+ *   plugins can contribute their own per-resource URLs (blog posts, etc.).
  * @returns Express router with sitemap data endpoint
  */
-export function sitemapRouter(database: IDatabaseService): Router {
+export function sitemapRouter(database: IDatabaseService, hookRegistry: IHookRegistry): Router {
     const router = Router();
     let cache: SitemapCache | null = null;
 
@@ -58,13 +68,23 @@ export function sitemapRouter(database: IDatabaseService): Router {
                 return;
             }
 
-            // Fetch both data sources in parallel
+            // Fetch both core data sources in parallel, then let plugins
+            // contribute their own per-resource URLs via the hook. The hook
+            // seed is an empty array; each handler concatenates its entries,
+            // and a throwing handler is isolated by the waterfall invoker so a
+            // single misbehaving plugin never blanks the whole sitemap.
             const [pages, pluginPages] = await Promise.all([
                 fetchPublishedPages(database),
                 fetchPluginPages(database)
             ]);
 
-            const data: SitemapData = { pages, pluginPages };
+            const pluginEntries = await hookRegistry.invoke(
+                HOOKS.http.sitemapEntries,
+                { generatedAt: new Date().toISOString() },
+                [] as ReadonlyArray<ISitemapEntry>
+            );
+
+            const data: SitemapData = { pages, pluginPages, pluginEntries: [...pluginEntries] };
 
             // Cache the result
             cache = { data, expiresAt: Date.now() + CACHE_TTL_MS };

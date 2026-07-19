@@ -42,3 +42,5 @@ export type { IWalletLinkedContext } from './IWalletLinkedContext.js';
 export type { ISyndicationDeliveredContext } from './ISyndicationDeliveredContext.js';
 
 export type { IContentPublishedContext } from './IContentPublishedContext.js';
+
+export type { ISitemapEntry, ISitemapHookContext, SitemapChangeFrequency } from './ISitemapEntry.js';

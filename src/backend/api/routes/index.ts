@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { IDatabaseService } from '@/types';
+import type { IDatabaseService, IHookRegistry } from '@/types';
 import { blockchainRouter } from './blockchain.router.js';
 import { transactionsRouter } from './transactions.router.js';
 import { transactionRouter } from './transaction.router.js';
@@ -25,9 +25,11 @@ import { PluginApiService } from '../../services/plugin-api.service.js';
  * instance with a unified model registry.
  *
  * @param database - Shared database service instance from bootstrap
+ * @param hookRegistry - Shared hook registry, forwarded to routers that invoke
+ *   core seams (the sitemap router fires `http.sitemapEntries`).
  * @returns Express router with all API routes mounted
  */
-export function createApiRouter(database: IDatabaseService) {
+export function createApiRouter(database: IDatabaseService, hookRegistry: IHookRegistry) {
   const router = Router();
 
   // Routers without database dependency
@@ -48,7 +50,7 @@ export function createApiRouter(database: IDatabaseService) {
   router.use('/tokens', tokensRouter(database));
   router.use('/admin/system', systemRouter(database));
   router.use('/dashboard', dashboardRouter(database));
-  router.use('/sitemap-data', sitemapRouter(database));
+  router.use('/sitemap-data', sitemapRouter(database, hookRegistry));
 
   // Note: Menu, Pages, and Database (migrations) routers are mounted directly
   // by their respective modules in bootstrap (apps/backend/src/index.ts) to follow

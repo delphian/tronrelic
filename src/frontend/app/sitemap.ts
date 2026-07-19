@@ -3,10 +3,19 @@ import { getServerConfig } from '../lib/serverConfig';
 import { getServerSideApiUrlWithPath } from '../lib/api-url';
 import { absoluteUrl } from '../lib/seo';
 
+/** One plugin-contributed sitemap URL (from the http.sitemapEntries hook). */
+interface SitemapPluginEntry {
+  path: string;
+  lastModified?: string;
+  changeFrequency?: MetadataRoute.Sitemap[number]['changeFrequency'];
+  priority?: number;
+}
+
 /** Response shape from GET /api/sitemap-data. */
 interface SitemapData {
   pages: Array<{ slug: string; updatedAt: string }>;
   pluginPages: string[];
+  pluginEntries?: SitemapPluginEntry[];
 }
 
 /** Static routes that always appear in the sitemap. */
@@ -44,13 +53,13 @@ async function fetchDynamicData(): Promise<SitemapData> {
 
     if (!response.ok) {
       console.warn(`Sitemap data fetch failed: ${response.status}`);
-      return { pages: [], pluginPages: [] };
+      return { pages: [], pluginPages: [], pluginEntries: [] };
     }
 
     return await response.json() as SitemapData;
   } catch (error) {
     console.warn('Failed to fetch sitemap data:', error);
-    return { pages: [], pluginPages: [] };
+    return { pages: [], pluginPages: [], pluginEntries: [] };
   }
 }
 
@@ -109,6 +118,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       });
       seenPaths.add(path);
     }
+  }
+
+  // Plugin-contributed per-resource URLs (e.g. every published blog post),
+  // gathered by core via the http.sitemapEntries hook. Each carries its own
+  // lastModified/changeFrequency/priority; core absolutizes the root-relative
+  // path here, the same way it does for CMS and plugin-landing paths above.
+  for (const entry of dynamicData.pluginEntries ?? []) {
+    if (!entry.path || seenPaths.has(entry.path)) {
+      continue;
+    }
+    entries.push({
+      url: absoluteUrl(siteUrl, entry.path),
+      lastModified: entry.lastModified ?? now,
+      changeFrequency: entry.changeFrequency ?? 'weekly',
+      priority: entry.priority ?? 0.7
+    });
+    seenPaths.add(entry.path);
   }
 
   return entries;

@@ -21,7 +21,7 @@
  * @module backend/hooks/registry
  */
 
-import type { IHeadFragment, ISsrHeadContext, IAiToolInvokeContext, IToolInvocationRecord, IWalletLinkedContext, ISyndicationDeliveredContext, IContentPublishedContext } from '@/types';
+import type { IHeadFragment, ISsrHeadContext, IAiToolInvokeContext, IToolInvocationRecord, IWalletLinkedContext, ISyndicationDeliveredContext, IContentPublishedContext, ISitemapEntry, ISitemapHookContext } from '@/types';
 import { defineHook } from './define-hook.js';
 
 /**
@@ -161,6 +161,30 @@ export const HOOKS = {
                 'Carries the owner user id and the address. For feature modules that react to new verified ' +
                 'ownership (e.g. account-history enrolling the address into its backfill) — handlers cannot ' +
                 'change the link outcome.'
+        }),
+        /**
+         * Waterfall that aggregates plugin-contributed sitemap URLs while the
+         * `GET /api/sitemap-data` endpoint assembles the sitemap. Handlers
+         * receive the generation context plus the entries accumulated so far
+         * and return the next list — conventionally by concatenating their own
+         * entries onto the input. Seeded with an empty array by the endpoint.
+         *
+         * The seam exists so a plugin owning many crawlable resources (a blog's
+         * posts, a forum's threads) can surface per-resource URLs core cannot
+         * enumerate without reaching into the plugin's private storage — which
+         * the plugin-coupling rule forbids. Grouped under the `http.api` track
+         * because it fires inside the sitemap-data request.
+         */
+        sitemapEntries: defineHook<ISitemapHookContext, ReadonlyArray<ISitemapEntry>, 'waterfall'>({
+            id: 'http.sitemapEntries',
+            kind: 'waterfall',
+            phase: 'http.api',
+            order: 200,
+            description:
+                'Contribute sitemap URLs while GET /api/sitemap-data assembles the sitemap. Handlers thread ' +
+                'an array of { path, lastModified?, changeFrequency?, priority? } entries; core absolutizes ' +
+                'each root-relative path against the runtime site origin. For plugins that own many crawlable ' +
+                'resources (blog posts, forum threads) core cannot enumerate on its own.'
         })
     },
     websocket: {} as Record<string, never>,
