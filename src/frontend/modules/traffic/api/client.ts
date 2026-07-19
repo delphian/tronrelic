@@ -1057,3 +1057,95 @@ export async function adminGetBotPaths(botClass: string,
     });
     return response.data as { buckets: ITrafficBucket[]; clickhouseEnabled: boolean };
 }
+
+// ============================================================================
+// Redirect Management API Functions
+// ============================================================================
+
+/**
+ * An admin-managed URL redirect rule. Mirrors the backend `IRedirectRuleAdmin`
+ * shape returned by the redirect management endpoints (the four match/issue
+ * fields plus id, enabled flag, notes, and ISO timestamps for the table).
+ */
+export interface IRedirectRuleAdmin {
+    /** Rule id (hex string); the handle edits/deletes address. */
+    id: string;
+    /** Source path to match, root-relative. */
+    pattern: string;
+    /** True matches `pattern` and any sub-path; false is exact. */
+    isPrefix: boolean;
+    /** Destination path, root-relative. */
+    destination: string;
+    /** True issues a 301 (permanent); false a 302 (temporary). */
+    permanent: boolean;
+    /** Whether the rule is currently served to the edge middleware. */
+    enabled: boolean;
+    /** Optional operator annotation recording why the redirect exists. */
+    notes?: string;
+    /** ISO-8601 creation timestamp. */
+    createdAt: string;
+    /** ISO-8601 last-update timestamp. */
+    updatedAt: string;
+}
+
+/**
+ * Editable fields when creating or patching a redirect rule. Booleans are
+ * optional so the backend can default a simple legacy→new mapping to
+ * prefix/permanent/enabled.
+ */
+export interface IRedirectRuleInput {
+    /** Source path to match. */
+    pattern: string;
+    /** Destination path. */
+    destination: string;
+    /** Prefix vs exact match; backend defaults to true. */
+    isPrefix?: boolean;
+    /** 301 vs 302; backend defaults to true. */
+    permanent?: boolean;
+    /** Active flag; backend defaults to true. */
+    enabled?: boolean;
+    /** Optional operator annotation. */
+    notes?: string;
+}
+
+/**
+ * List every redirect rule (enabled and disabled) for the management table.
+ *
+ * @returns All rules, newest first.
+ */
+export async function adminListRedirects(): Promise<IRedirectRuleAdmin[]> {
+    const response = await apiClient.get('/admin/redirects');
+    return (response.data as { rules: IRedirectRuleAdmin[] }).rules ?? [];
+}
+
+/**
+ * Create a redirect rule.
+ *
+ * @param input - The rule fields; omitted booleans default server-side.
+ * @returns The created rule.
+ */
+export async function adminCreateRedirect(input: IRedirectRuleInput): Promise<IRedirectRuleAdmin> {
+    const response = await apiClient.post('/admin/redirects', input);
+    return response.data as IRedirectRuleAdmin;
+}
+
+/**
+ * Patch a redirect rule (e.g. toggle `enabled`, retarget `destination`).
+ *
+ * @param id - The rule id.
+ * @param patch - Fields to change.
+ * @returns The updated rule.
+ */
+export async function adminUpdateRedirect(id: string, patch: Partial<IRedirectRuleInput>): Promise<IRedirectRuleAdmin> {
+    const response = await apiClient.patch(`/admin/redirects/${id}`, patch);
+    return response.data as IRedirectRuleAdmin;
+}
+
+/**
+ * Delete a redirect rule.
+ *
+ * @param id - The rule id.
+ */
+export async function adminDeleteRedirect(id: string): Promise<void> {
+    await apiClient.delete(`/admin/redirects/${id}`);
+}

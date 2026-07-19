@@ -31,6 +31,7 @@ export { AnalyticsDashboard } from './components';
 export { GscSettings } from './components';
 export { IgnoredUsers } from './components';
 export { GscKeywords } from './components';
+export { RedirectsManager } from './components';
 export { TrafficDashboard } from './components';
 export { CrawlerDashboard } from './components';
 export { OverviewTrend } from './components';

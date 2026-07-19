@@ -1,0 +1,147 @@
+@use '../../../../../app/breakpoints' as *;
+
+.container {
+    container-type: inline-size;
+    container-name: redirects-manager;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+
+    svg {
+        color: var(--color-primary);
+    }
+}
+
+/* Add-rule form: two-up source/destination row, then note, then options. */
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    padding: var(--card-padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+}
+
+.form_row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--gap-md);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.label {
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+}
+
+.options {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-md);
+    flex-wrap: wrap;
+}
+
+.checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    cursor: pointer;
+}
+
+.error {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-danger-text);
+    background: var(--color-danger-alpha-18);
+    border: var(--border-width-thin) solid var(--color-danger-alpha-50);
+    border-radius: var(--radius-sm);
+    padding: var(--padding-sm) var(--padding-md);
+}
+
+/* Source/destination paths render monospace so trailing slashes and casing
+   read unambiguously. */
+.path {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    word-break: break-all;
+}
+
+.note {
+    display: block;
+    margin-top: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+.dest {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+
+    svg {
+        color: var(--color-text-subtle);
+        flex-shrink: 0;
+    }
+}
+
+.row_disabled {
+    opacity: var(--opacity-55);
+}
+
+.actions_col {
+    text-align: right;
+}
+
+.actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+}
+
+/* Borderless inline row actions; icon tone flips to the semantic action color
+   on hover, per the bare icon-button pattern. */
+.icon_btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--icon-button-bare-padding-md);
+    border: none;
+    border-radius: var(--icon-button-bare-border-radius);
+    background: transparent;
+    color: var(--icon-button-bare-color);
+    cursor: pointer;
+    transition: color var(--transition-base), background var(--transition-base);
+}
+
+.icon_btn:hover {
+    color: var(--icon-button-bare-color-primary-hover);
+    background: var(--color-surface-elevated);
+}
+
+.icon_btn__danger:hover {
+    color: var(--icon-button-bare-color-danger-hover);
+}
+
+@container redirects-manager (max-width: #{$breakpoint-mobile-md}) {
+    .form_row {
+        grid-template-columns: 1fr;
+    }
+}

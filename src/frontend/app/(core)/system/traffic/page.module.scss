@@ -14,39 +14,21 @@
     container-name: traffic-admin;
 }
 
-.tabs {
+/* Tab row: the Submenu-Pattern menu (MenuNavClient) on the left, with the live
+   counter pushed to the right edge. Replaces the former hand-rolled button row
+   so the tabs inherit per-user gating, ordering, and live menu:update refresh. */
+.tab_row {
     display: flex;
-    gap: var(--gap-sm);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
+    align-items: center;
+    gap: var(--gap-md);
     flex-wrap: wrap;
+    border-bottom: var(--border-width-thin) solid var(--color-border);
 }
 
-.tab,
-.tab__active {
-    padding: var(--gap-sm) var(--gap-md);
-    background: none;
-    border: none;
-    border-bottom: var(--border-width-medium) solid transparent;
-    cursor: pointer;
-    font-size: var(--font-size-body-lg);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text-muted);
-    transition: color var(--transition-base), border-color var(--transition-base);
-}
-
-.tab:hover {
-    color: var(--color-text);
-}
-
-.tab:focus-visible,
-.tab__active:focus-visible {
-    outline: var(--focus-outline-width) solid var(--color-focus);
-    outline-offset: var(--focus-outline-offset);
-}
-
-.tab__active {
-    color: var(--color-primary);
-    border-bottom-color: var(--color-primary);
+/* Wrapper around MenuNavClient; lets it take its natural width so the live
+   counter's margin-left:auto can claim the remaining row width. */
+.submenu {
+    min-width: 0;
 }
 
 /* Live "online now" counter, pushed to the right edge of the tab row. */

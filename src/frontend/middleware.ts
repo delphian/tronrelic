@@ -250,32 +250,87 @@ interface RedirectRule {
 }
 
 /**
- * Legacy redirect rules migrated from next.config.mjs.
+ * How long (ms) a fetched redirect map is served before a background refresh.
+ * Matches the backend feed's Cache-Control, so an admin-added rule goes live in
+ * at most this long.
  */
-const REDIRECT_RULES: RedirectRule[] = [
-    // Resource markets legacy paths
-    { pattern: '/rent-tron-energy', isPrefix: true, destination: '/resource-markets', permanent: true },
-    { pattern: '/lp/rm', isPrefix: true, destination: '/resource-markets', permanent: true },
+const REDIRECT_CACHE_TTL_MS = 60_000;
 
-    // Legacy tool paths
-    { pattern: '/tron-trx-energy-fee-calculator', isPrefix: true, destination: '/tools', permanent: true },
-    { pattern: '/tools/staking-calculator', isPrefix: true, destination: '/tools', permanent: true },
-    { pattern: '/tools/tronmoji', isPrefix: true, destination: '/tools', permanent: true },
-    { pattern: '/tools/tron-custom-address-generator', isPrefix: true, destination: '/tools', permanent: true },
-    { pattern: '/tools/signature-verification', isPrefix: true, destination: '/tools', permanent: true },
-    { pattern: '/tools/hex-to-base58check', isPrefix: true, destination: '/tools', permanent: true },
-    { pattern: '/tools/base58check-to-hex', isPrefix: true, destination: '/tools', permanent: true },
+/**
+ * Timeout (ms) for the server-to-server redirect-map fetch. The map load sits on
+ * the request critical path, so a slow backend must not stall navigation — on
+ * timeout the last-known (or empty) map is used and the request proceeds.
+ */
+const REDIRECT_FETCH_TIMEOUT_MS = 3000;
 
-    // Legacy article slugs
-    { pattern: '/tron-dex', isPrefix: true, destination: '/articles', permanent: true },
-    { pattern: '/tron-latest-trc10-tokens', isPrefix: true, destination: '/articles', permanent: true },
-    { pattern: '/tron-latest-trc10-exchanges', isPrefix: true, destination: '/articles', permanent: true },
-    { pattern: '/tron-node-setup-guide', isPrefix: true, destination: '/articles', permanent: true },
-    { pattern: '/tron-bandwidth-vs-energy', isPrefix: true, destination: '/articles', permanent: true },
-    { pattern: '/tron-delegated-proof-of-stake', isPrefix: true, destination: '/articles', permanent: true },
-    { pattern: '/tron-trc10-token', isPrefix: true, destination: '/articles', permanent: true },
-    { pattern: '/tron-super-representatives', isPrefix: true, destination: '/articles', permanent: true },
-];
+/**
+ * Module-scope cache of the admin-managed redirect map. Redirect rules are no
+ * longer hardcoded here — they live in Mongo (`module_traffic_redirects`) and
+ * are edited from `/system/traffic`. This middleware runs on the Edge runtime
+ * and cannot reach Mongo directly, so it pulls the map from the backend's public
+ * `/api/redirects` feed and caches it in module scope. In the standalone Node
+ * server this cache persists across requests in one instance, so the steady
+ * state is ~one backend call per TTL window, not per request.
+ */
+let cachedRedirectRules: RedirectRule[] = [];
+
+/** Epoch ms after which the cached map is stale; 0 means never fetched (cold). */
+let redirectCacheExpiry = 0;
+
+/** Dedupes concurrent background refreshes so only one fetch runs at a time. */
+let redirectRefreshInFlight: Promise<void> | null = null;
+
+/**
+ * Fetch the active redirect map from the backend and replace the cache. A
+ * non-OK response leaves the last-known map in place rather than clearing it, so
+ * a transient backend hiccup never drops live redirects.
+ */
+async function refreshRedirectRules(): Promise<void> {
+    const response = await fetch(`${getServerSideApiUrl()}/api/redirects`, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(REDIRECT_FETCH_TIMEOUT_MS)
+    });
+    if (!response.ok) {
+        return;
+    }
+    const data = await response.json() as { rules?: RedirectRule[] };
+    cachedRedirectRules = Array.isArray(data.rules) ? data.rules : [];
+    redirectCacheExpiry = Date.now() + REDIRECT_CACHE_TTL_MS;
+}
+
+/**
+ * Return the current redirect map, refreshing as needed. On a cold cache it
+ * blocks on the first fetch so a redirect fires on the very first request; once
+ * warm it serves the cached map immediately and refreshes stale data in the
+ * background (deduped), so no request pays fetch latency after warmup. Every
+ * failure path degrades to the last-known (or empty) map and lets the request
+ * fall through — a redirect lookup must never 500 or stall navigation.
+ *
+ * @returns The active redirect rules.
+ */
+async function getRedirectRules(): Promise<RedirectRule[]> {
+    const now = Date.now();
+    if (redirectCacheExpiry === 0) {
+        // Cold: block once so the very first request can still redirect. Arm the
+        // expiry either way so subsequent requests take the non-blocking warm
+        // path instead of blocking on every hit while a backend is unreachable.
+        try {
+            await refreshRedirectRules();
+        } catch {
+            /* leave the map empty; the background path will retry after the TTL */
+        }
+        if (redirectCacheExpiry === 0) {
+            redirectCacheExpiry = now + REDIRECT_CACHE_TTL_MS;
+        }
+        return cachedRedirectRules;
+    }
+    if (now >= redirectCacheExpiry && !redirectRefreshInFlight) {
+        redirectRefreshInFlight = refreshRedirectRules()
+            .catch(() => { /* keep last-known map on failure */ })
+            .finally(() => { redirectRefreshInFlight = null; });
+    }
+    return cachedRedirectRules;
+}
 
 /**
  * Check if a referrer URL is from an external domain.
@@ -293,9 +348,14 @@ function isExternalReferrer(referer: string, requestHost: string): boolean {
 
 /**
  * Find a matching redirect rule for the given path.
+ *
+ * @param pathname - The request path to match.
+ * @param rules - The active redirect map (served most-specific-first by the
+ *   backend, so the first match under this simple loop is the best one).
+ * @returns The matching rule, or undefined when none applies.
  */
-function findRedirectRule(pathname: string): RedirectRule | undefined {
-    for (const rule of REDIRECT_RULES) {
+function findRedirectRule(pathname: string, rules: RedirectRule[]): RedirectRule | undefined {
+    for (const rule of rules) {
         if (rule.isPrefix) {
             if (pathname === rule.pattern || pathname.startsWith(rule.pattern + '/')) {
                 return rule;
@@ -315,8 +375,10 @@ function findRedirectRule(pathname: string): RedirectRule | undefined {
 export async function middleware(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
 
-    // Check for matching redirect rule
-    const rule = findRedirectRule(pathname);
+    // Check for a matching admin-managed redirect rule. The map is fetched from
+    // the backend and cached in module scope (see getRedirectRules) — no rules
+    // are hardcoded in this bundle.
+    const rule = findRedirectRule(pathname, await getRedirectRules());
 
     if (rule) {
         const referer = request.headers.get('referer');
