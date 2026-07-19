@@ -12,6 +12,7 @@ export {
     GscSettings,
     IgnoredUsers,
     GscKeywords,
+    RedirectsManager,
     TrafficDashboard,
     CrawlerDashboard,
     OverviewTrend,

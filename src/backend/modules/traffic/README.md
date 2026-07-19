@@ -8,12 +8,12 @@ Owns cookieless behavioral analytics: the ClickHouse `traffic_events` pipeline, 
 |---------|-------|
 | Module id | `traffic` |
 | Module class | `src/backend/modules/traffic/TrafficModule.ts` |
-| Admin page | `/system/traffic` (menu item `Traffic`, order 26, registered in `run()`) |
-| Mounted routes | `/api/admin/users/traffic/*`, `/api/admin/users/analytics/*`, `/api/user/bootstrap`, `/api/user/track` |
+| Admin page | `/system/traffic` (menu item `Traffic`, order 26; tab row is the Submenu Pattern under menu namespace `traffic`, both registered in `run()`) |
+| Mounted routes | `/api/admin/users/traffic/*`, `/api/admin/users/analytics/*`, `/api/user/bootstrap`, `/api/user/track`, `/api/redirects` (public), `/api/admin/redirects/*` |
 | Scheduled job | `gsc:fetch` (daily, `0 3 * * *`) |
 | ClickHouse table | `traffic_events` (migrations 010, 012, 013, 014, 015) |
 | Event types | `bootstrap` (cookieless first touch, incl. bots) · `page` (interactive navigation) |
-| Mongo collections | `module_user_gsc_queries` (GSC keyword cache — physical name preserved) · `module_user_gsc_daily_totals` (date-only GSC daily totals) · `module_user_gsc_page_totals` ([page, date] GSC totals, anonymization-immune) · `module_traffic_ignored_users` (operator ignore list) |
+| Mongo collections | `module_user_gsc_queries` (GSC keyword cache — physical name preserved) · `module_user_gsc_daily_totals` (date-only GSC daily totals) · `module_user_gsc_page_totals` ([page, date] GSC totals, anonymization-immune) · `module_traffic_ignored_users` (operator ignore list) · `module_traffic_redirects` (admin-managed URL redirect rules) |
 | Analytics key | cookieless `tronrelic_tid` (`candidate_uid`), independent of identity |
 | Bootstrap order | Inits/runs **before** `IdentityModule` so its `/api/admin/users/{traffic,analytics}` routers mount ahead of the accounts `/api/admin/users` catch-all |
 
@@ -31,6 +31,8 @@ Physical storage names are unchanged from when this code lived under the user mo
 | `services/traffic.service.ts` | ClickHouse `traffic_events` writes + admin aggregate reads; `buildTrafficEvent`, `ITrafficEvent`. Also owns the always-on ignore-list exclusion: `setIgnoredUserIds` resolves the whole-person tid set once per list change (one unwindowed `user_id` scan) and caches it; `rangeParams` (plus `getLiveVisitorCount`) then appends a literal, index-friendly `candidate_uid NOT IN (<cached tids>)` |
 | `services/ignored-users.service.ts` | `IgnoredUsersService` — Mongo-backed operator ignore list (`module_traffic_ignored_users`); persists id + denormalized email/name, exposes `list`/`getIds`/`add`/`remove`. Persistence only; the query-time filtering is TrafficService's |
 | `services/gsc.service.ts` | Google Search Console keyword fetch/store (`module_user_gsc_queries`) plus date-only daily totals (`module_user_gsc_daily_totals`) and [page, date] page totals (`module_user_gsc_page_totals`) — GSC drops anonymized queries from keyword rows, so chart totals and the top-pages panel come from query-less fetches that escape anonymization |
+| `services/redirect.service.ts` | Admin-managed legacy-URL redirect rules (`module_traffic_redirects`, one doc per rule, unique index on `pattern`). Validates same-site paths, refuses reserved prefixes (`/api`, `/_next`), rejects self- and prefix-loop redirects. `getActiveRules()` serves enabled rules most-specific-first to the edge middleware; migration 017 seeds the initial legacy set, thereafter admin-managed from the UI |
+| `api/redirects.{controller,routes}.ts` | Public `GET /api/redirects` (unauthenticated cached feed the Next.js edge middleware polls) and admin CRUD under `/api/admin/redirects` (`requireAdmin`). The middleware issues the actual 301/302; no rules are hardcoded in the frontend bundle |
 | `services/bot-classifier.ts` | Request → `BotClass` (powers `traffic_events.bot_class`). `classifyTrafficRequest` runs scanner heuristics first — probe paths (`/.env`, encoded traversal) and spoofed search-engine `Referer` with no `Sec-Fetch-Site` — then falls through to the UA-only `classifyUserAgent`; scanners fake browser UAs, so UA-only classification cannot catch them |
 | `services/geo.service.ts` | IP → country, referrer parsing, device derivation, `getClientIP`; defines `DeviceCategory` / `ScreenSizeCategory` |
 | `api/traffic.{controller,routes}.ts` | `/api/admin/users/traffic/*` raw-traffic reads **and** `/api/admin/users/analytics/*` dashboard aggregates (ClickHouse-backed), including the per-tid / per-user page-activity reads |
@@ -43,6 +45,7 @@ Physical storage names are unchanged from when this code lived under the user mo
 | `services/channel-classifier.ts` | `classifyChannel` — the single canonical acquisition-channel definition (direct/organic/paid/social/email/ai/referral), GA4-aligned: paid mediums + ad click-IDs first (gclid et al., names forwarded by the middleware, values never stored), then email/social mediums, then referrer-domain lists. Stored at write time on `traffic_events.channel`, bootstrap rows only |
 | `migrations/015_traffic_events_source_hash_columns.ts` | Adds `ip_hash` (per-client) + `subnet_hash` (/24 v4, /48 v6) so analytics can answer "same source?" without PII; run before deploying code that writes them |
 | `migrations/016_traffic_events_channel_column.ts` | Adds the `channel` column; run before deploying code that writes it. Pre-migration rows read as NULL and fall back to domain-only classification |
+| `migrations/017_seed_redirect_rules.ts` | MongoDB seed: back-fills `module_traffic_redirects` with the 17 legacy middleware redirects + 3 audit 404-fixes (prefix, 301). Idempotent (`$setOnInsert` by `pattern`), so re-runs are no-ops and operator edits are never clobbered |
 
 ## Metrics Contract
 
@@ -82,6 +85,8 @@ The `/api/admin/users/analytics/*` router (also `requireAdmin`) serves the `/sys
 Per-page clickstream reads live on the same router: `tid-activity` and `user-activity` summarize `page` events by anonymous tid (`user_id IS NULL`) and registered account (`user_id IS NOT NULL`) respectively, and `page-hits?subject=tid|user&id=` returns one subject's ordered page hits — "every page they hit".
 
 The ignore list is managed on the same router: `GET/POST /ignored-users` and `DELETE /ignored-users/:userId` read and edit `module_traffic_ignored_users` (each mutation refreshes `TrafficService`'s cached id set so the always-on exclusion takes effect at once), and `account-search?q=` resolves accounts to add — an exact Better Auth id via the `'accounts'` service's `getAccount`, otherwise an email/name substring via `listAccounts`. See the "Ignored account" row in the Metrics Contract for the exclusion semantics.
+
+URL redirects are managed on their own admin router (`requireAdmin`): `GET /api/admin/redirects` lists every rule, `POST` creates one, `PATCH /:id` patches (e.g. toggle `enabled`, retarget), `DELETE /:id` removes. The public `GET /api/redirects` (no auth) returns only enabled rules in the minimal `{ pattern, isPrefix, destination, permanent }` shape, most-specific-first, with a 60s `Cache-Control` — it is the feed the Next.js edge middleware polls and caches to issue the actual 301/302. Redirect rules are DATA, never deployed code: an operator adds a rule from `/system/traffic` → Redirects and the middleware serves it within a minute, no rebuild.
 
 Two public ingestion endpoints (no auth) write rows; both resolve the tid from the unsigned `tronrelic_tid` cookie and attribute to the Better Auth account when one is present:
 

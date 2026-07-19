@@ -30,6 +30,14 @@ export { GscService } from './services/gsc.service.js';
 export type { IGscStatus, IGscKeyword, IGscQueryDocument } from './services/gsc.service.js';
 export { IgnoredUsersService } from './services/ignored-users.service.js';
 export type { IIgnoredUserDocument } from './services/ignored-users.service.js';
+export { RedirectService, RedirectValidationError, RedirectNotFoundError } from './services/redirect.service.js';
+export type {
+    IRedirectRule,
+    IRedirectRuleAdmin,
+    IRedirectRuleDocument,
+    IRedirectRuleInput,
+    IRedirectRulePatch
+} from './services/redirect.service.js';
 export { classifyUserAgent } from './services/bot-classifier.js';
 export type { BotClass } from './services/bot-classifier.js';
 export {
@@ -44,5 +52,7 @@ export {
 
 export { TrafficController } from './api/traffic.controller.js';
 export { createAdminTrafficRouter, createAdminAnalyticsRouter } from './api/traffic.routes.js';
+export { RedirectsController } from './api/redirects.controller.js';
+export { createPublicRedirectsRouter, createAdminRedirectsRouter } from './api/redirects.routes.js';
 export { resolveAnalyticsRange } from './services/traffic.service.js';
 export type { IAnalyticsRangeQuery } from './services/traffic.service.js';

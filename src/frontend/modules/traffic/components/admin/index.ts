@@ -14,6 +14,7 @@ export { AnalyticsDashboard } from './AnalyticsDashboard';
 export { GscSettings } from './GscSettings';
 export { IgnoredUsers } from './IgnoredUsers';
 export { GscKeywords } from './GscKeywords';
+export { RedirectsManager } from './RedirectsManager';
 export { TrafficDashboard } from './TrafficDashboard';
 export { CrawlerDashboard } from './CrawlerDashboard';
 export { OverviewTrend } from './OverviewTrend';

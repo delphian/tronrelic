@@ -24,11 +24,14 @@ import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { GscService } from './services/gsc.service.js';
 import { TrafficService } from './services/traffic.service.js';
 import { IgnoredUsersService } from './services/ignored-users.service.js';
+import { RedirectService } from './services/redirect.service.js';
 import { initGeoIP } from './services/geo.service.js';
 import { TrafficController } from './api/traffic.controller.js';
 import { BootstrapController } from './api/bootstrap.controller.js';
+import { RedirectsController } from './api/redirects.controller.js';
 import { createAdminTrafficRouter, createAdminAnalyticsRouter } from './api/traffic.routes.js';
 import { createBootstrapRouter, createPageEventRouter } from './api/bootstrap.routes.js';
+import { createPublicRedirectsRouter, createAdminRedirectsRouter } from './api/redirects.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 
 /**
@@ -65,6 +68,27 @@ export interface ITrafficModuleDependencies {
 }
 
 /**
+ * Namespace for the `/system/traffic` in-page tab row. Rendered as a menu via
+ * the Submenu Pattern (`MenuNavClient`) rather than a hand-rolled button row, so
+ * the tabs inherit per-user gating, ordering, and live `menu:update` refresh and
+ * a plugin could contribute a tab.
+ */
+const TRAFFIC_SUBMENU_NAMESPACE = 'traffic';
+
+/**
+ * The `/system/traffic` tab row. `order` is left-to-right position; `tab` is the
+ * `?tab=` query key the page switches panels on. Icons are lucide names.
+ */
+const TRAFFIC_SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
+    { label: 'Analytics', tab: 'analytics', icon: 'BarChart3', order: 0 },
+    { label: 'Visitors', tab: 'visitors', icon: 'Users', order: 1 },
+    { label: 'Crawlers', tab: 'crawlers', icon: 'Bot', order: 2 },
+    { label: 'SEO', tab: 'seo', icon: 'Search', order: 3 },
+    { label: 'Redirects', tab: 'redirects', icon: 'CornerUpRight', order: 4 },
+    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 5 }
+];
+
+/**
  * Cookieless traffic analytics module.
  */
 export class TrafficModule implements IModule<ITrafficModuleDependencies> {
@@ -83,8 +107,10 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
     private gscService!: GscService;
     private trafficService!: TrafficService;
     private ignoredUsersService!: IgnoredUsersService;
+    private redirectService!: RedirectService;
     private trafficController!: TrafficController;
     private bootstrapController!: BootstrapController;
+    private redirectsController!: RedirectsController;
 
     private readonly logger = logger.child({ module: 'traffic' });
 
@@ -122,6 +148,14 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         await this.ignoredUsersService.createIndexes();
         await this.trafficService.setIgnoredUserIds(await this.ignoredUsersService.getIds());
 
+        // RedirectService — admin-managed legacy-URL 301/302 map. Rules live in
+        // Mongo and are served to the edge middleware, so operators add
+        // redirects without a deploy. Migration 017 seeds the initial legacy
+        // set; operators add/edit the rest from the /system/traffic Redirects tab.
+        RedirectService.setDependencies(dependencies.database, this.logger);
+        this.redirectService = RedirectService.getInstance();
+        await this.redirectService.createIndexes();
+
         // Admin dashboard reads against traffic_events aggregates, plus the
         // analytics + GSC surface. Resolves account/wallet services from the
         // registry at request time.
@@ -135,6 +169,9 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
 
         // Slim first-touch analytics bootstrap (no identity, no Mongo).
         this.bootstrapController = new BootstrapController(this.trafficService, this.logger);
+
+        // Admin redirect management + the public feed the edge middleware polls.
+        this.redirectsController = new RedirectsController(this.redirectService, this.logger);
 
         this.logger.info('Traffic module initialized');
     }
@@ -163,6 +200,25 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
             });
 
             this.logger.info('Traffic menu item registered under the System container');
+
+            // In-page tab row as a namespaced menu (Submenu Pattern). Nodes are
+            // memory-only and live outside the System container, so the
+            // container's non-bypassable requiresAdmin force does not reach them
+            // — each node sets requiresAdmin itself. The page renders this
+            // namespace with MenuNavClient instead of hand-rolling the tabs.
+            for (const tab of TRAFFIC_SUBMENU_TABS) {
+                await this.menuService.create({
+                    namespace: TRAFFIC_SUBMENU_NAMESPACE,
+                    label: tab.label,
+                    url: `/system/traffic?tab=${tab.tab}`,
+                    icon: tab.icon,
+                    order: tab.order,
+                    parent: null,
+                    enabled: true,
+                    requiresAdmin: true
+                });
+            }
+            this.logger.info('Traffic submenu tab nodes registered');
         } catch (error) {
             this.logger.error({ error }, 'Failed to register traffic menu item');
             throw new Error(`Failed to register traffic menu item: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -192,6 +248,19 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         const pageEventRouter: Router = createPageEventRouter(this.bootstrapController);
         this.app.use('/api/user/track', pageEventRouter);
         this.logger.info('Page-event router mounted at /api/user/track');
+
+        // Public redirect feed — no auth. The Next.js edge middleware polls this
+        // server-to-server (before any auth context exists) to learn the active
+        // legacy-URL redirect map, just like the public bootstrap ingestion.
+        const publicRedirectsRouter: Router = createPublicRedirectsRouter(this.redirectsController);
+        this.app.use('/api/redirects', publicRedirectsRouter);
+        this.logger.info('Public redirect feed mounted at /api/redirects');
+
+        // Admin redirect management. Distinct prefix from the identity module's
+        // /api/admin/users catch-all, so ordering is not load-bearing here.
+        const adminRedirectsRouter: Router = createAdminRedirectsRouter(this.redirectsController);
+        this.app.use('/api/admin/redirects', requireAdmin, adminRedirectsRouter);
+        this.logger.info('Admin redirects router mounted at /api/admin/redirects');
 
         // Daily GSC fetch (3 AM). SchedulerService supports late registration.
         if (this.scheduler) {

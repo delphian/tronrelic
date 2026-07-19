@@ -31,6 +31,11 @@ export {
     adminAddIgnoredUser,
     adminRemoveIgnoredUser,
     adminSearchAccounts,
+    // Redirect management functions
+    adminListRedirects,
+    adminCreateRedirect,
+    adminUpdateRedirect,
+    adminDeleteRedirect,
     // Google Search Console functions
     adminGetGscStatus,
     adminSaveGscCredentials,
@@ -82,5 +87,7 @@ export type {
     IGscPagesResult,
     IGscDailyKeywords,
     ITrafficBucket,
-    IBotClassDailyPoint
+    IBotClassDailyPoint,
+    IRedirectRuleAdmin,
+    IRedirectRuleInput
 } from './client';
