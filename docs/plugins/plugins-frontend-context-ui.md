@@ -14,7 +14,7 @@ Layout components carry typed props — `<layout.Stack gap="md">` fails compilat
 interface IFrontendPluginContext {
     pluginId: string;              // Used internally for namespacing events and API routes
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
-    ui: IUIComponents;             // Card, Badge, Button, IconButton, Switch, Input, Skeleton, ClientTime, Tooltip, IconPickerModal, Table family
+    ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Skeleton, ClientTime, Tooltip, IconPickerModal, Table family
     charts: IChartComponents;      // LineChart, BarChart
     system: ISystemComponents;     // SchedulerMonitor (admin)
     api: IApiClient;               // get/post/put/patch/delete
@@ -78,12 +78,15 @@ const [tab, setTab] = useState('query');
 | `Badge` | `tone?: 'neutral'\|'info'\|'success'\|'warning'\|'danger'`, `title?`, `className?`, `children?` |
 | `Skeleton` | `width?`, `height?`, `className?`, `style?` |
 | `Button` | `variant?: 'primary'\|'secondary'\|'ghost'\|'danger'\|'warning'`, `size?: 'xs'\|'sm'\|'md'\|'lg'`, `loading?`, `icon?: ReactNode`, `disabled?`, `onClick?`, `type?`, `aria-label?`, `className?`, `children?` |
+| `CopyButton` | `value: string` (required), `label?`, `copiedLabel?`, `resetMs?`, `variant?`, `size?`, `disabled?`, `type?`, `aria-label?`, `className?` |
 | `IconButton` | `variant?: 'ghost'\|'primary'\|'danger'\|'success'`, `size?: 'sm'\|'md'\|'lg'`, `onClick?: (event) => void`, `disabled?`, `title?`, `type?`, **`aria-label` (required)**, `className?`, `children?` |
 | `Switch` | `on: boolean`, `onChange: (next) => void`, `onClick?: (event) => void`, `size?: 'sm'\|'md'\|'lg'`, `disabled?`, `title?`, `type?`, **`aria-label` (required)**, `className?` |
 | `Input` | `value?`, `onChange?`, `onKeyDown?`, `placeholder?`, `disabled?`, `required?`, `variant?: 'default'\|'ghost'`, `type?`, `min?`, `max?`, `step?`, `id?`, `name?`, `aria-label?`, `className?` |
 | `ClientTime` | `date: Date \| string \| null \| undefined`, `format?: 'time'\|'datetime'\|'date'`, `fallback?` |
 | `Tooltip` | `content: string`, `children: ReactNode`, `placement?: 'top'\|'bottom'` |
 | `IconPickerModal` | `selectedIcon?`, `onSelect: (iconName) => void`, `onClose: () => void` |
+
+`CopyButton` wraps `Button` to copy `value` to the clipboard on click, briefly swapping to a confirmation state (`copiedLabel`) for `resetMs`. Use it instead of hand-rolling `navigator.clipboard` — it owns the async-clipboard call, the non-secure-context fallback, the confirmation timing, and `event.stopPropagation()` so it is safe inside a clickable row. Provide `label` for a text+icon button; omit it for icon-only and set `aria-label` so the action is still announced. Set `type="button"` when placing it inside a `<form>` to avoid submitting the form.
 
 `IconButton` is for inline row actions where a bordered `Button` would dominate. `aria-label` is required because there's no visible text. The click handler receives the full event so plugin code can call `event.stopPropagation()` to avoid firing an enclosing row's click handler.
 

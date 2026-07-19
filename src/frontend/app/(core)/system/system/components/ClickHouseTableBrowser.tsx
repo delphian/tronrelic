@@ -242,7 +242,7 @@ export function ClickHouseTableBrowser() {
                                                                             <div onClick={(e) => e.stopPropagation()}>
                                                                                 <CopyButton
                                                                                     value={rowJson}
-                                                                                    ariaLabel="Copy row JSON"
+                                                                                    aria-label="Copy row JSON"
                                                                                 />
                                                                             </div>
                                                                         </Td>

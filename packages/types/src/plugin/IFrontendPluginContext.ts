@@ -119,7 +119,7 @@ export interface IUIComponents {
      * async-clipboard call, the non-secure-context fallback, the confirmation
      * timing, and `event.stopPropagation()` so it is safe inside a clickable
      * row. Provide `label` for a text+icon button; omit it for icon-only and
-     * set `ariaLabel` so the action is still announced.
+     * set `aria-label` so the action is still announced.
      */
     CopyButton: ComponentType<{
         /** String written to the clipboard on click. */
@@ -131,10 +131,12 @@ export interface IUIComponents {
         /** How long the confirmation state persists, in milliseconds. */
         resetMs?: number;
         /** Accessible label used when no visible `label` is shown. */
-        ariaLabel?: string;
+        'aria-label'?: string;
         variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'warning';
         size?: 'xs' | 'sm' | 'md' | 'lg';
         disabled?: boolean;
+        /** Button `type`; set to `'button'` to avoid submitting an enclosing form. */
+        type?: 'button' | 'submit' | 'reset';
         className?: string;
     }>;
 

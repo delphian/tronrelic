@@ -27,7 +27,7 @@ interface CopyButtonProps extends Omit<ButtonProps, 'icon' | 'onClick' | 'childr
      * Accessible label when no visible text is shown.
      * @default 'Copy to clipboard'
      */
-    ariaLabel?: string;
+    'aria-label'?: string;
 }
 
 /**
@@ -41,7 +41,7 @@ export function CopyButton({
     label,
     copiedLabel = 'Copied',
     resetMs = 1500,
-    ariaLabel = 'Copy to clipboard',
+    'aria-label': ariaLabel = 'Copy to clipboard',
     variant = 'ghost',
     size = 'sm',
     ...rest
