@@ -6,9 +6,15 @@
  * Surfaces the SEO/AI-standing signals already captured by the bot
  * classifier at `traffic_events` write time:
  *
- * - **Crawler trend** — daily event counts per `bot_class` rendered as a
- *   multi-series line chart. Answers "is AI-crawler traffic growing, and
- *   how does it compare to search-engine crawling and human traffic?"
+ * Human traffic is deliberately absent from every panel here — this is a
+ * bot-visibility surface, and human numbers belong to the Analytics and
+ * Visitors tabs. The backend reads enforce it (the trend query excludes
+ * `bot_class = 'human'`, and the per-path allow-list omits it), so the
+ * exclusion does not depend on the series lists below staying correct.
+ *
+ * - **Crawler trend** — daily event counts per non-human `bot_class` rendered
+ *   as a multi-series line chart. Answers "is AI-crawler traffic growing, and
+ *   how does it compare to search-engine crawling and other bot classes?"
  * - **Per-bot-class paths** — which paths a selected bot class actually
  *   fetches. Defaults to `ai_crawler` because "are AI crawlers reaching
  *   our content pages or bouncing off the homepage" is the core
@@ -42,9 +48,10 @@ const SINCE_OPTIONS: Array<{ label: string; hours: number }> = [
  * Colors come from the data-visualization palette (`--chart-color-*`) —
  * series identity is data semantics, not brand theming, so literal
  * fallbacks are the documented exception.
+ *
+ * No `human` entry: the trend endpoint does not serve human counts.
  */
 const BOT_CLASS_SERIES: Array<{ key: string; label: string; cssVar: string; fallback: string }> = [
-    { key: 'human', label: 'Human', cssVar: '--chart-color-1', fallback: '#3b82f6' },
     { key: 'search_engine', label: 'Search engine', cssVar: '--chart-color-2', fallback: '#22c55e' },
     { key: 'ai_crawler', label: 'AI crawler', cssVar: '--chart-color-5', fallback: '#8b5cf6' },
     { key: 'social_unfurler', label: 'Social unfurler', cssVar: '--chart-color-3', fallback: '#f59e0b' },
@@ -54,15 +61,18 @@ const BOT_CLASS_SERIES: Array<{ key: string; label: string; cssVar: string; fall
     { key: 'unclassified', label: 'Unclassified', cssVar: '--chart-color-9', fallback: '#14b8a6' }
 ];
 
-/** Bot classes selectable in the per-path panel (excludes the NULL fold). */
+/**
+ * Bot classes selectable in the per-path panel. Excludes the NULL fold
+ * (`unclassified` is a coverage signal, not a drillable class) and `human`
+ * (the backend allow-list rejects it — this tab serves no human traffic).
+ */
 const PATH_BOT_CLASSES: Array<{ key: string; label: string }> = [
     { key: 'ai_crawler', label: 'AI crawler' },
     { key: 'search_engine', label: 'Search engine' },
     { key: 'social_unfurler', label: 'Social unfurler' },
     { key: 'uptime_probe', label: 'Uptime probe' },
     { key: 'scanner', label: 'Scanner' },
-    { key: 'bot_other', label: 'Other bots' },
-    { key: 'human', label: 'Human' }
+    { key: 'bot_other', label: 'Other bots' }
 ];
 
 /**

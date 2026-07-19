@@ -170,8 +170,10 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         // Slim first-touch analytics bootstrap (no identity, no Mongo).
         this.bootstrapController = new BootstrapController(this.trafficService, this.logger);
 
-        // Admin redirect management + the public feed the edge middleware polls.
-        this.redirectsController = new RedirectsController(this.redirectService, this.logger);
+        // Admin redirect management + the public feed the edge middleware polls,
+        // plus redirect-hit ingestion and windowed analytics (redirect_events via
+        // TrafficService).
+        this.redirectsController = new RedirectsController(this.redirectService, this.trafficService, this.logger);
 
         this.logger.info('Traffic module initialized');
     }

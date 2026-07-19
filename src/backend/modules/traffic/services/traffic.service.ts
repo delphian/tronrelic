@@ -463,6 +463,69 @@ export interface IOverviewTrend {
 }
 
 /**
+ * Resolved inputs for one served-redirect row, built by the redirects
+ * controller from the edge-middleware beacon and handed to
+ * {@link TrafficService.recordRedirectHit}. Kept as pre-resolved data (not the
+ * Express request) so the service stays a thin ClickHouse writer — the
+ * controller owns request parsing, bot classification, and header extraction.
+ */
+export interface IRedirectHitInput {
+    /** The matched rule's source pattern — the analytics grouping key. */
+    pattern: string;
+    /** The actual requested path (reveals which sub-paths hit a prefix rule). */
+    path: string;
+    /** The rule's destination at hit time. */
+    destination: string;
+    /** True for a 301 (permanent), false for a 302 (temporary). */
+    permanent: boolean;
+    /** Classification of the requesting client, powering the humans-only filter. */
+    botClass: BotClass;
+    /** Cloudflare edge country (ISO-3166 alpha-2), or null when unknown. */
+    country: string | null;
+}
+
+/** One time bucket of the redirect-hit trend series. */
+export interface IRedirectTrendPoint {
+    /** Bucket start — ISO-8601 UTC for hour buckets, `YYYY-MM-DD` for days. */
+    bucket: string;
+    /** Redirects served in the bucket (honors the humans-only filter). */
+    hits: number;
+}
+
+/** One redirect rule's hit total within the window, for the per-pattern table. */
+export interface IRedirectPatternStat {
+    /** The rule's source pattern. */
+    pattern: string;
+    /** The rule's most-recent destination in the window (rules can be retargeted). */
+    destination: string;
+    /** Whether the most-recent hit was a 301 (permanent) rather than a 302. */
+    permanent: boolean;
+    /** Redirects served for this pattern in the window (honors the humans-only filter). */
+    hits: number;
+}
+
+/**
+ * Windowed redirect analytics for the `/system/traffic` Redirects tab: a
+ * headline total with a human/bot split, a zero-filled hits-over-time series
+ * (hourly for windows ≤ 48h, daily otherwise), and a per-pattern breakdown so
+ * operators see which legacy URLs still earn their redirect.
+ */
+export interface IRedirectAnalytics {
+    /** Bucket size — hourly for windows ≤ 48h, daily otherwise. */
+    granularity: 'hour' | 'day';
+    /** Redirects served in the window (humans-only when `excludeBots`). */
+    total: number;
+    /** Human-classified redirects in the window (always unfiltered, for the split badge). */
+    humanTotal: number;
+    /** Bot-classified redirects in the window (always unfiltered, for the split badge). */
+    botTotal: number;
+    /** Zero-filled per-bucket hit counts, oldest first. */
+    series: IRedirectTrendPoint[];
+    /** Per-pattern hit totals, most-hit first. */
+    byPattern: IRedirectPatternStat[];
+}
+
+/**
  * One row of the analytics new-arrivals table: a tid whose global first-seen
  * (across the full table) falls inside the window, with its first-touch
  * attribution, lifetime page-view count (`page` events only — bootstrap
@@ -603,6 +666,17 @@ export interface IPageHit {
  */
 export const TRAFFIC_EVENTS_TABLE_NAME = 'traffic_events';
 const TABLE_NAME = TRAFFIC_EVENTS_TABLE_NAME;
+
+/**
+ * ClickHouse table capturing one row per served admin-managed URL redirect
+ * (migration 018). Deliberately separate from `traffic_events` so redirect hits
+ * stay outside the visitor/pageview Metrics Contract.
+ */
+export const REDIRECT_EVENTS_TABLE_NAME = 'redirect_events';
+
+/** Max rows returned by the per-pattern redirect breakdown. */
+const REDIRECT_PATTERN_LIMIT = 100;
+
 const DEFAULT_AGGREGATE_HOURS = 24;
 const DEFAULT_AGGREGATE_LIMIT = 20;
 
@@ -802,6 +876,34 @@ export class TrafficService {
     }
 
     /**
+     * Record one served-redirect hit. Fire-and-forget, mirroring
+     * {@link recordEvent}: returns synchronously once the insert is dispatched,
+     * never blocks the caller, and no-ops when ClickHouse is unavailable. The
+     * row lands in `redirect_events`, isolated from `traffic_events` so redirect
+     * traffic never touches the visitor/pageview Metrics Contract.
+     *
+     * @param input - Pre-resolved hit fields from the redirects controller.
+     */
+    recordRedirectHit(input: IRedirectHitInput): void {
+        if (!this.clickhouse) {
+            return;
+        }
+
+        const row = {
+            timestamp: formatClickHouseDateTime64Utc(new Date()),
+            pattern: input.pattern,
+            path: input.path,
+            destination: input.destination,
+            permanent: input.permanent ? 1 : 0,
+            bot_class: input.botClass,
+            country: input.country ?? ''
+        };
+        this.clickhouse.insert(REDIRECT_EVENTS_TABLE_NAME, [row]).catch((error) => {
+            this.logger.warn({ error, pattern: input.pattern }, 'Failed to record redirect hit');
+        });
+    }
+
+    /**
      * Return the earliest events recorded for a candidate UUID, oldest
      * first. Used by Phase 3's first-touch backfill on `startSession`:
      * pull the cookieless rows that landed before the user's JS started
@@ -953,10 +1055,18 @@ export class TrafficService {
     }
 
     /**
-     * Daily row counts per `bot_class` over the lookback window. Powers the
-     * crawler-trend chart: one point per day, each carrying a per-class count
-     * map. NULL classes are folded into `'unclassified'` (matching the
-     * breakdown panel's NULL bucket) so classifier coverage gaps stay visible.
+     * Daily row counts per non-human `bot_class` over the lookback window.
+     * Powers the crawler-trend chart: one point per day, each carrying a
+     * per-class count map.
+     *
+     * Rows classified `'human'` are excluded at the query. The Crawlers tab is
+     * a bot-visibility surface, not a comparison surface — human traffic has
+     * its own dashboards, and mixing it in here both misstates the tab's
+     * purpose and lets the (much larger) human series flatten every crawler
+     * series against the axis. NULL classes are *kept*, folded into
+     * `'unclassified'`: unlike the analytics reads' `HUMAN_ROWS_FILTER`, which
+     * treats NULL as human, this surface treats it as unknown so classifier
+     * coverage gaps stay visible.
      *
      * The pivot from `(day, klass, count)` rows into per-day maps happens in
      * JS — keeping the SQL a plain two-dimension GROUP BY mirrors the other
@@ -981,6 +1091,7 @@ export class TrafficService {
                 count() AS count
             FROM ${TABLE_NAME}
             WHERE timestamp > now() - INTERVAL {sinceHours:UInt32} HOUR
+              AND coalesce(bot_class, 'unclassified') != 'human'
             GROUP BY day, klass
             ORDER BY day ASC
         `;
@@ -1949,6 +2060,133 @@ export class TrafficService {
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read overview trend');
             return { granularity, current: emptyKpis(), previous: emptyKpis(), series: [] };
+        }
+    }
+
+    /**
+     * Windowed redirect-hit analytics for the Redirects tab: a headline total
+     * with a human/bot split, a zero-filled hits-over-time series, and a
+     * per-pattern breakdown.
+     *
+     * Reads `redirect_events`, which is NOT tid-keyed, so this deliberately does
+     * NOT go through {@link rangeParams} — that helper injects the
+     * `candidate_uid NOT IN (…)` ignore-list filter, which has no meaning here.
+     * The window clause is built standalone. Bucketing matches
+     * {@link getOverviewTrend}: hourly for windows ≤ 48h (a day-bucketed "24h"
+     * view is one bar), daily otherwise, with every empty bucket emitted as an
+     * explicit zero so gaps read as "no redirects", not missing chart segments.
+     *
+     * @param range - Inclusive date window.
+     * @param excludeBots - Restrict the series and per-pattern counts to
+     *   human-classified hits. The human/bot split totals are always unfiltered.
+     * @returns Granularity, totals, the bucket series, and the per-pattern table.
+     */
+    async getRedirectAnalytics(range: IAnalyticsDateRange, excludeBots = false): Promise<IRedirectAnalytics> {
+        const HOUR_MS = 60 * 60 * 1000;
+        const DAY_MS = 24 * HOUR_MS;
+        const until = range.until ?? new Date();
+        // Guard against degenerate/inverted ranges so the zero-fill loop stays finite.
+        const windowMs = Math.max(until.getTime() - range.since.getTime(), HOUR_MS);
+        const granularity: 'hour' | 'day' = windowMs <= 48 * HOUR_MS ? 'hour' : 'day';
+
+        if (!this.clickhouse) {
+            return { granularity, total: 0, humanTotal: 0, botTotal: 0, series: [], byPattern: [] };
+        }
+
+        // Standalone window clause — deliberately NOT rangeParams: redirect_events
+        // has no candidate_uid, so the ignore-list filter must not be applied.
+        const params: Record<string, unknown> = { since: formatClickHouseDateTime64Utc(range.since) };
+        let clause = 'timestamp >= parseDateTimeBestEffort({since:String})';
+        if (range.until) {
+            params.until = formatClickHouseDateTime64Utc(range.until);
+            clause += ' AND timestamp <= parseDateTimeBestEffort({until:String})';
+        }
+        // redirect_events.bot_class is always populated (no legacy NULL rows), so
+        // humans-only is a plain equality, unlike traffic_events' NULL-tolerant filter.
+        const botFilter = excludeBots ? " AND bot_class = 'human'" : '';
+
+        const bucketExpr = granularity === 'hour' ? 'toStartOfHour(timestamp)' : 'toDate(timestamp)';
+        // Totals are always unfiltered so the UI can show the human/bot split
+        // regardless of the active filter; `total` is derived in JS below.
+        const totalsSql = `
+            SELECT count() AS allTotal, countIf(bot_class = 'human') AS humanTotal
+            FROM ${REDIRECT_EVENTS_TABLE_NAME}
+            WHERE ${clause}
+        `;
+        const seriesSql = `
+            SELECT ${bucketExpr} AS bucket, count() AS hits
+            FROM ${REDIRECT_EVENTS_TABLE_NAME}
+            WHERE ${clause}${botFilter}
+            GROUP BY bucket
+            ORDER BY bucket ASC
+        `;
+        // Latest destination/permanent per pattern via argMax(timestamp) so a
+        // retargeted rule reports its current target, not a stale one.
+        const byPatternSql = `
+            SELECT
+                pattern,
+                argMax(destination, timestamp) AS destination,
+                argMax(permanent, timestamp) AS permanent,
+                count() AS hits
+            FROM ${REDIRECT_EVENTS_TABLE_NAME}
+            WHERE ${clause}${botFilter}
+            GROUP BY pattern
+            ORDER BY hits DESC, pattern ASC
+            LIMIT {limit:UInt32}
+        `;
+
+        try {
+            const [totalsRows, seriesRows, patternRows] = await Promise.all([
+                this.clickhouse.query<{ allTotal: string | number; humanTotal: string | number }>(totalsSql, params),
+                this.clickhouse.query<{ bucket: string; hits: string | number }>(seriesSql, params),
+                this.clickhouse.query<{ pattern: string; destination: string; permanent: string | number; hits: string | number }>(
+                    byPatternSql,
+                    { ...params, limit: REDIRECT_PATTERN_LIMIT }
+                )
+            ]);
+
+            const allTotal = Number(totalsRows[0]?.allTotal ?? 0);
+            const humanTotal = Number(totalsRows[0]?.humanTotal ?? 0);
+            const botTotal = allTotal - humanTotal;
+            const total = excludeBots ? humanTotal : allTotal;
+
+            // Zero-fill every bucket in the window, then overlay the rows so a
+            // gap renders as an explicit zero rather than a missing segment.
+            const stepMs = granularity === 'hour' ? HOUR_MS : DAY_MS;
+            const since = range.since;
+            const floorUtc = granularity === 'hour'
+                ? Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate(), since.getUTCHours())
+                : Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate());
+            const keyFor = (ms: number): string => granularity === 'hour'
+                ? new Date(ms).toISOString()
+                : new Date(ms).toISOString().split('T')[0];
+
+            const buckets = new Map<string, IRedirectTrendPoint>();
+            for (let ms = floorUtc; ms <= until.getTime(); ms += stepMs) {
+                const key = keyFor(ms);
+                buckets.set(key, { bucket: key, hits: 0 });
+            }
+            for (const row of seriesRows) {
+                const key = granularity === 'hour'
+                    ? clickHouseDateToIso(String(row.bucket))
+                    : String(row.bucket);
+                const point = buckets.get(key);
+                if (point) {
+                    point.hits = Number(row.hits);
+                }
+            }
+
+            const byPattern: IRedirectPatternStat[] = patternRows.map(r => ({
+                pattern: String(r.pattern),
+                destination: String(r.destination),
+                permanent: Number(r.permanent) === 1,
+                hits: Number(r.hits)
+            }));
+
+            return { granularity, total, humanTotal, botTotal, series: Array.from(buckets.values()), byPattern };
+        } catch (error) {
+            this.logger.warn({ error }, 'Failed to read redirect analytics');
+            return { granularity, total: 0, humanTotal: 0, botTotal: 0, series: [], byPattern: [] };
         }
     }
 

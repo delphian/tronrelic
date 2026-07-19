@@ -143,6 +143,13 @@
     gap: var(--gap-lg);
 }
 
+/* Redirects tab stacks the hit analytics above the rule-management table. */
+.redirect_stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+}
+
 /* Settings tab stacks the ignore-list panel above the GSC settings. */
 .settings_stack {
     display: flex;

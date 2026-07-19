@@ -13,6 +13,7 @@ export {
     IgnoredUsers,
     GscKeywords,
     RedirectsManager,
+    RedirectAnalytics,
     TrafficDashboard,
     CrawlerDashboard,
     OverviewTrend,

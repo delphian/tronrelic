@@ -9,17 +9,31 @@
 
 import { Router } from 'express';
 import type { RedirectsController } from './redirects.controller.js';
+import { createRateLimiter } from '../../../api/middleware/rate-limit.js';
 
 /**
- * Build the public redirect-feed router (the edge middleware's data source).
+ * Build the public redirect router: the enabled-rules feed the edge middleware
+ * polls, plus the hit-ingestion beacon it fires when it serves a redirect.
  *
- * @param controller - Redirects controller whose read handler is bound.
- * @returns Router exposing `GET /` (mounted at `/api/redirects`).
+ * The hit endpoint is rate-limited because each call writes a `redirect_events`
+ * row — the same defense the public bootstrap/track ingestion carries. The
+ * ceiling is generous: a busy crawler can legitimately trip several legacy URLs
+ * a second, and the middleware fires one beacon per served redirect.
+ *
+ * @param controller - Redirects controller whose read + hit handlers are bound.
+ * @returns Router exposing `GET /` and `POST /hit` (mounted at `/api/redirects`).
  */
 export function createPublicRedirectsRouter(controller: RedirectsController): Router {
     const router = Router();
 
     router.get('/', controller.getPublicRedirects.bind(controller));
+
+    const hitRateLimiter = createRateLimiter({
+        windowSeconds: 60,
+        maxRequests: 60,
+        keyPrefix: 'traffic:redirect-hit'
+    });
+    router.post('/hit', hitRateLimiter, controller.recordHit.bind(controller));
 
     return router;
 }
@@ -36,6 +50,7 @@ export function createAdminRedirectsRouter(controller: RedirectsController): Rou
     const router = Router();
 
     router.get('/', controller.listRedirects.bind(controller));
+    router.get('/analytics', controller.getRedirectAnalytics.bind(controller));
     router.post('/', controller.createRedirect.bind(controller));
     router.patch('/:id', controller.updateRedirect.bind(controller));
     router.delete('/:id', controller.deleteRedirect.bind(controller));

@@ -35,6 +35,7 @@ import {
     GscSettings,
     IgnoredUsers,
     RedirectsManager,
+    RedirectAnalytics,
     PeriodPicker,
     toDateInputValue,
     useAutoRefresh
@@ -306,7 +307,12 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
                     </div>
                 )}
                 {activeTab === 'seo' && <GscKeywords />}
-                {activeTab === 'redirects' && <RedirectsManager />}
+                {activeTab === 'redirects' && (
+                    <div className={styles.redirect_stack}>
+                        <RedirectAnalytics />
+                        <RedirectsManager />
+                    </div>
+                )}
                 {activeTab === 'settings' && (
                     <div className={styles.settings_stack}>
                         <IgnoredUsers />
