@@ -24,8 +24,12 @@
  * - **Unique index on `pattern`** — a source path resolves to one rule.
  * - **Same-site only** — `pattern` and `destination` are both root-relative
  *   paths; off-site redirects are out of scope and rejected by validation.
- * - **Loop-guarded** — a rule whose destination re-matches its own pattern is
- *   rejected at write time so the middleware can never bounce a request.
+ * - **Single-rule loop-guarded** — a rule whose destination re-matches its own
+ *   pattern is rejected at write time. This guards only *self*-loops; a cycle
+ *   spanning multiple rules (`/a → /b` plus `/b → /a`) is not detected here.
+ *   The blast radius is bounded: writes are admin-only and the middleware
+ *   issues at most one redirect per request, so a cross-rule cycle surfaces as
+ *   a browser-capped `ERR_TOO_MANY_REDIRECTS`, never a server-side loop.
  * - **Most-specific-first ordering** — active rules are served longest-pattern
  *   first so `/tools/x` wins over `/tools` under the middleware's first-match.
  */
@@ -417,6 +421,15 @@ export class RedirectService {
         }
         if (!destination.startsWith('/') || destination.length < 1) {
             throw new RedirectValidationError('destination must be a root-relative path (e.g. /new-page)');
+        }
+        // A destination whose second character is `/` or `\` is scheme-relative:
+        // the edge middleware resolves it with `new URL(destination, request.url)`,
+        // which keeps the request scheme but takes the authority from the
+        // destination, so `//evil.example` (and the `/\` backslash variant) become
+        // `https://evil.example/` — an off-site open redirect that breaks the
+        // documented same-site-only contract. Reject both leading forms.
+        if (destination.length > 1 && (destination[1] === '/' || destination[1] === '\\')) {
+            throw new RedirectValidationError('destination must not begin with // or /\\ (resolves to an external origin)');
         }
         if (/\s/.test(pattern) || /\s/.test(destination)) {
             throw new RedirectValidationError('pattern and destination must not contain whitespace');

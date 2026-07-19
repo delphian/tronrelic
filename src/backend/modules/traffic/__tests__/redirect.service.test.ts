@@ -181,6 +181,14 @@ describe('RedirectService', () => {
                 .rejects.toBeInstanceOf(RedirectValidationError);
         });
 
+        it('rejects a protocol-relative destination that would resolve off-site', async () => {
+            const { service } = setup();
+            await expect(service.createRule({ pattern: '/old', destination: '//evil.example' }))
+                .rejects.toBeInstanceOf(RedirectValidationError);
+            await expect(service.createRule({ pattern: '/old2', destination: '/\\evil.example' }))
+                .rejects.toBeInstanceOf(RedirectValidationError);
+        });
+
         it('rejects a self-redirect', async () => {
             const { service } = setup();
             await expect(service.createRule({ pattern: '/same', destination: '/same' }))

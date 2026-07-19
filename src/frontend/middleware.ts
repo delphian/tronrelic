@@ -257,6 +257,16 @@ interface RedirectRule {
 const REDIRECT_CACHE_TTL_MS = 60_000;
 
 /**
+ * Backoff (ms) applied after a failed warm refresh (non-OK response or a thrown
+ * fetch). Shorter than the healthy TTL so recovery is detected quickly, yet far
+ * longer than a single request — it caps the frontend to one feed retry per
+ * window during a backend incident instead of one fetch per page view. Without
+ * it the warm path leaves the already-expired cache in place and re-fetches on
+ * every request, amplifying load against an already-unhealthy backend.
+ */
+const REDIRECT_RETRY_BACKOFF_MS = 10_000;
+
+/**
  * Timeout (ms) for the server-to-server redirect-map fetch. The map load sits on
  * the request critical path, so a slow backend must not stall navigation — on
  * timeout the last-known (or empty) map is used and the request proceeds.
@@ -325,9 +335,23 @@ async function getRedirectRules(): Promise<RedirectRule[]> {
         return cachedRedirectRules;
     }
     if (now >= redirectCacheExpiry && !redirectRefreshInFlight) {
+        // Snapshot the stale (already-expired) deadline so the settlement
+        // handler can distinguish a successful refresh — which pushes the
+        // expiry a full TTL into the future — from a failed one. Both failure
+        // modes (a non-OK response, which returns without advancing the
+        // expiry, and a thrown fetch caught below) leave the expiry equal to
+        // this snapshot. On failure, arm a short backoff so an unhealthy feed
+        // is retried once per backoff window instead of re-fetched on every
+        // request during a backend incident; the last-known map is retained.
+        const staleExpiry = redirectCacheExpiry;
         redirectRefreshInFlight = refreshRedirectRules()
             .catch(() => { /* keep last-known map on failure */ })
-            .finally(() => { redirectRefreshInFlight = null; });
+            .finally(() => {
+                if (redirectCacheExpiry === staleExpiry) {
+                    redirectCacheExpiry = Date.now() + REDIRECT_RETRY_BACKOFF_MS;
+                }
+                redirectRefreshInFlight = null;
+            });
     }
     return cachedRedirectRules;
 }
