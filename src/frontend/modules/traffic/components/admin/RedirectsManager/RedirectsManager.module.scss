@@ -105,6 +105,14 @@
     opacity: var(--opacity-55);
 }
 
+/* Inline row edit stacks the source path over its optional note, mirroring how
+   the two read as one cell in view mode. */
+.edit_stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
 .actions_col {
     text-align: right;
 }
