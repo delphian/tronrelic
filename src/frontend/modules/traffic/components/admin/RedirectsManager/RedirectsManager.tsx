@@ -16,7 +16,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { isAxiosError } from 'axios';
-import { CornerUpRight, ArrowRight, Trash2, Power, PowerOff, Plus } from 'lucide-react';
+import { CornerUpRight, ArrowRight, Trash2, Power, PowerOff, Plus, Pencil, Check, X } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
 import { Input } from '../../../../../components/ui/Input';
 import { Card } from '../../../../../components/ui/Card';
@@ -29,7 +29,7 @@ import {
     adminUpdateRedirect,
     adminDeleteRedirect
 } from '../../../api/client';
-import type { IRedirectRuleAdmin } from '../../../api/client';
+import type { IRedirectRuleAdmin, IRedirectRuleInput } from '../../../api/client';
 import styles from './RedirectsManager.module.scss';
 
 /**
@@ -70,6 +70,10 @@ export function RedirectsManager() {
     const [creating, setCreating] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
+
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [draft, setDraft] = useState<IRedirectRuleInput | null>(null);
+    const [savingEdit, setSavingEdit] = useState(false);
 
     /**
      * Load all rules from the admin endpoint. Failure leaves the table empty
@@ -157,6 +161,76 @@ export function RedirectsManager() {
             setActionError(extractError(err, 'Failed to delete redirect'));
         }
     }, []);
+
+    /**
+     * Enter inline-edit mode for a row, seeding the draft from the rule's
+     * current values so the operator edits a copy rather than mutating the
+     * live table until Save succeeds.
+     *
+     * @param rule - The rule whose row becomes editable.
+     */
+    const handleStartEdit = useCallback((rule: IRedirectRuleAdmin) => {
+        setActionError(null);
+        setEditingId(rule.id);
+        setDraft({
+            pattern: rule.pattern,
+            destination: rule.destination,
+            isPrefix: rule.isPrefix,
+            permanent: rule.permanent,
+            notes: rule.notes ?? ''
+        });
+    }, []);
+
+    /**
+     * Abandon an in-progress edit, discarding the draft so the row reverts to
+     * its persisted values with no request sent.
+     */
+    const handleCancelEdit = useCallback(() => {
+        setEditingId(null);
+        setDraft(null);
+    }, []);
+
+    /**
+     * Persist the draft as a patch of only the fields the operator changed —
+     * the backend re-validates same-site/reserved-prefix/loop invariants and a
+     * no-op edit closes the row without a needless request. On success the row
+     * is replaced with the server's canonical copy (fresh `updatedAt`).
+     *
+     * @param rule - The original rule the draft is edited from.
+     */
+    const handleSaveEdit = useCallback(async (rule: IRedirectRuleAdmin) => {
+        if (!draft) {
+            return;
+        }
+        const trimmedPattern = draft.pattern.trim();
+        const trimmedDestination = draft.destination.trim();
+        if (!trimmedPattern || !trimmedDestination) {
+            setActionError('Source and destination are required');
+            return;
+        }
+        const trimmedNotes = (draft.notes ?? '').trim();
+        const patch: Partial<IRedirectRuleInput> = {};
+        if (trimmedPattern !== rule.pattern) patch.pattern = trimmedPattern;
+        if (trimmedDestination !== rule.destination) patch.destination = trimmedDestination;
+        if (draft.isPrefix !== rule.isPrefix) patch.isPrefix = draft.isPrefix;
+        if (draft.permanent !== rule.permanent) patch.permanent = draft.permanent;
+        if (trimmedNotes !== (rule.notes ?? '')) patch.notes = trimmedNotes;
+        if (Object.keys(patch).length === 0) {
+            handleCancelEdit();
+            return;
+        }
+        setActionError(null);
+        setSavingEdit(true);
+        try {
+            const updated = await adminUpdateRedirect(rule.id, patch);
+            setRules(prev => (prev ?? []).map(r => (r.id === updated.id ? updated : r)));
+            handleCancelEdit();
+        } catch (err) {
+            setActionError(extractError(err, 'Failed to update redirect'));
+        } finally {
+            setSavingEdit(false);
+        }
+    }, [draft, handleCancelEdit]);
 
     if (loading) {
         return (
@@ -251,58 +325,159 @@ export function RedirectsManager() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {rules.map(rule => (
-                                        <tr key={rule.id} className={rule.enabled ? undefined : styles.row_disabled}>
-                                            <td>
-                                                <code className={styles.path}>{rule.pattern}</code>
-                                                {rule.notes && <span className={styles.note}>{rule.notes}</span>}
-                                            </td>
-                                            <td>
-                                                <span className={styles.dest}>
-                                                    <ArrowRight size={14} aria-hidden="true" />
-                                                    <code className={styles.path}>{rule.destination}</code>
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <Badge tone="neutral">{rule.isPrefix ? 'prefix' : 'exact'}</Badge>
-                                            </td>
-                                            <td>
-                                                <Badge tone={rule.permanent ? 'info' : 'neutral'}>
-                                                    {rule.permanent ? '301' : '302'}
-                                                </Badge>
-                                            </td>
-                                            <td>
-                                                <Badge tone={rule.enabled ? 'success' : 'neutral'}>
-                                                    {rule.enabled ? 'active' : 'disabled'}
-                                                </Badge>
-                                            </td>
-                                            <td>
-                                                <ClientTime date={rule.updatedAt} format="date" />
-                                            </td>
-                                            <td>
-                                                <div className={styles.actions}>
-                                                    <button
-                                                        type="button"
-                                                        className={styles.icon_btn}
-                                                        onClick={() => handleToggle(rule)}
-                                                        aria-label={rule.enabled ? 'Disable redirect' : 'Enable redirect'}
-                                                        title={rule.enabled ? 'Disable' : 'Enable'}
-                                                    >
-                                                        {rule.enabled ? <Power size={16} /> : <PowerOff size={16} />}
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        className={`${styles.icon_btn} ${styles.icon_btn__danger}`}
-                                                        onClick={() => handleDelete(rule)}
-                                                        aria-label="Delete redirect"
-                                                        title="Delete"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    {rules.map(rule => {
+                                        const rowDraft = editingId === rule.id ? draft : null;
+                                        return (
+                                            <tr key={rule.id} className={rule.enabled ? undefined : styles.row_disabled}>
+                                                {rowDraft ? (
+                                                    <>
+                                                        <td>
+                                                            <div className={styles.edit_stack}>
+                                                                <Input
+                                                                    type="text"
+                                                                    size="sm"
+                                                                    value={rowDraft.pattern}
+                                                                    onChange={e => setDraft(d => (d ? { ...d, pattern: e.target.value } : d))}
+                                                                    placeholder="/tron-forum"
+                                                                    aria-label="Source path"
+                                                                />
+                                                                <Input
+                                                                    type="text"
+                                                                    size="sm"
+                                                                    value={rowDraft.notes ?? ''}
+                                                                    onChange={e => setDraft(d => (d ? { ...d, notes: e.target.value } : d))}
+                                                                    placeholder="Note (optional)"
+                                                                    aria-label="Note"
+                                                                />
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            <Input
+                                                                type="text"
+                                                                size="sm"
+                                                                value={rowDraft.destination}
+                                                                onChange={e => setDraft(d => (d ? { ...d, destination: e.target.value } : d))}
+                                                                placeholder="/forum"
+                                                                aria-label="Destination path"
+                                                            />
+                                                        </td>
+                                                        <td>
+                                                            <label className={styles.checkbox}>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={rowDraft.isPrefix ?? true}
+                                                                    onChange={e => setDraft(d => (d ? { ...d, isPrefix: e.target.checked } : d))}
+                                                                />
+                                                                prefix
+                                                            </label>
+                                                        </td>
+                                                        <td>
+                                                            <label className={styles.checkbox}>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={rowDraft.permanent ?? true}
+                                                                    onChange={e => setDraft(d => (d ? { ...d, permanent: e.target.checked } : d))}
+                                                                />
+                                                                301
+                                                            </label>
+                                                        </td>
+                                                        <td>
+                                                            <Badge tone={rule.enabled ? 'success' : 'neutral'}>
+                                                                {rule.enabled ? 'active' : 'disabled'}
+                                                            </Badge>
+                                                        </td>
+                                                        <td>
+                                                            <ClientTime date={rule.updatedAt} format="date" />
+                                                        </td>
+                                                        <td>
+                                                            <div className={styles.actions}>
+                                                                <button
+                                                                    type="button"
+                                                                    className={styles.icon_btn}
+                                                                    onClick={() => void handleSaveEdit(rule)}
+                                                                    disabled={savingEdit}
+                                                                    aria-label="Save changes"
+                                                                    title="Save"
+                                                                >
+                                                                    <Check size={16} />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className={styles.icon_btn}
+                                                                    onClick={handleCancelEdit}
+                                                                    disabled={savingEdit}
+                                                                    aria-label="Cancel edit"
+                                                                    title="Cancel"
+                                                                >
+                                                                    <X size={16} />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <td>
+                                                            <code className={styles.path}>{rule.pattern}</code>
+                                                            {rule.notes && <span className={styles.note}>{rule.notes}</span>}
+                                                        </td>
+                                                        <td>
+                                                            <span className={styles.dest}>
+                                                                <ArrowRight size={14} aria-hidden="true" />
+                                                                <code className={styles.path}>{rule.destination}</code>
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            <Badge tone="neutral">{rule.isPrefix ? 'prefix' : 'exact'}</Badge>
+                                                        </td>
+                                                        <td>
+                                                            <Badge tone={rule.permanent ? 'info' : 'neutral'}>
+                                                                {rule.permanent ? '301' : '302'}
+                                                            </Badge>
+                                                        </td>
+                                                        <td>
+                                                            <Badge tone={rule.enabled ? 'success' : 'neutral'}>
+                                                                {rule.enabled ? 'active' : 'disabled'}
+                                                            </Badge>
+                                                        </td>
+                                                        <td>
+                                                            <ClientTime date={rule.updatedAt} format="date" />
+                                                        </td>
+                                                        <td>
+                                                            <div className={styles.actions}>
+                                                                <button
+                                                                    type="button"
+                                                                    className={styles.icon_btn}
+                                                                    onClick={() => handleStartEdit(rule)}
+                                                                    aria-label="Edit redirect"
+                                                                    title="Edit"
+                                                                >
+                                                                    <Pencil size={16} />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className={styles.icon_btn}
+                                                                    onClick={() => handleToggle(rule)}
+                                                                    aria-label={rule.enabled ? 'Disable redirect' : 'Enable redirect'}
+                                                                    title={rule.enabled ? 'Disable' : 'Enable'}
+                                                                >
+                                                                    {rule.enabled ? <Power size={16} /> : <PowerOff size={16} />}
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className={`${styles.icon_btn} ${styles.icon_btn__danger}`}
+                                                                    onClick={() => handleDelete(rule)}
+                                                                    aria-label="Delete redirect"
+                                                                    title="Delete"
+                                                                >
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </>
+                                                )}
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
