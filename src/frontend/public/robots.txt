@@ -5,6 +5,10 @@
 # answers about TRON energy markets should cite this site. Robots groups do
 # not inherit the `*` group's rules, so each named bot carries its own
 # admin/api disallows.
+#
+# The blog RSS feed lives under /api/, so every group carves it out with an
+# Allow — the longest-match rule (RFC 9309) lets crawlers and answer engines
+# fetch the advertised feed while the rest of /api/ stays blocked.
 
 User-agent: *
 Allow: /
@@ -12,6 +16,7 @@ Allow: /
 # Block admin and system areas
 Disallow: /system
 Disallow: /system/
+Allow: /api/plugins/blog/rss
 Disallow: /api/
 Disallow: /_next/
 
@@ -21,6 +26,7 @@ User-agent: GPTBot
 Allow: /
 Disallow: /system
 Disallow: /system/
+Allow: /api/plugins/blog/rss
 Disallow: /api/
 Disallow: /_next/
 
@@ -28,6 +34,7 @@ User-agent: OAI-SearchBot
 Allow: /
 Disallow: /system
 Disallow: /system/
+Allow: /api/plugins/blog/rss
 Disallow: /api/
 Disallow: /_next/
 
@@ -35,6 +42,7 @@ User-agent: ClaudeBot
 Allow: /
 Disallow: /system
 Disallow: /system/
+Allow: /api/plugins/blog/rss
 Disallow: /api/
 Disallow: /_next/
 
@@ -42,6 +50,7 @@ User-agent: PerplexityBot
 Allow: /
 Disallow: /system
 Disallow: /system/
+Allow: /api/plugins/blog/rss
 Disallow: /api/
 Disallow: /_next/
 
@@ -49,6 +58,7 @@ User-agent: Google-Extended
 Allow: /
 Disallow: /system
 Disallow: /system/
+Allow: /api/plugins/blog/rss
 Disallow: /api/
 Disallow: /_next/
 
@@ -56,6 +66,7 @@ User-agent: CCBot
 Allow: /
 Disallow: /system
 Disallow: /system/
+Allow: /api/plugins/blog/rss
 Disallow: /api/
 Disallow: /_next/
 
