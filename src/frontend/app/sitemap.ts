@@ -1,21 +1,17 @@
 import type { MetadataRoute } from 'next';
+import type { ISitemapEntry } from '@/types';
 import { getServerConfig } from '../lib/serverConfig';
 import { getServerSideApiUrlWithPath } from '../lib/api-url';
 import { absoluteUrl } from '../lib/seo';
-
-/** One plugin-contributed sitemap URL (from the http.sitemapEntries hook). */
-interface SitemapPluginEntry {
-  path: string;
-  lastModified?: string;
-  changeFrequency?: MetadataRoute.Sitemap[number]['changeFrequency'];
-  priority?: number;
-}
 
 /** Response shape from GET /api/sitemap-data. */
 interface SitemapData {
   pages: Array<{ slug: string; updatedAt: string }>;
   pluginPages: string[];
-  pluginEntries?: SitemapPluginEntry[];
+  // Reuse the shared core contract the backend producer serializes into this
+  // field (sitemap.router.ts types it `ISitemapEntry[]` from `@/types`), so the
+  // response model cannot silently drift from the hook contract.
+  pluginEntries?: ISitemapEntry[];
 }
 
 /** Static routes that always appear in the sitemap. */
@@ -124,15 +120,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // gathered by core via the http.sitemapEntries hook. Each carries its own
   // lastModified/changeFrequency/priority; core absolutizes the root-relative
   // path here, the same way it does for CMS and plugin-landing paths above.
+  // Entries cross an HTTP trust boundary from arbitrary plugin code with no
+  // runtime validation, so harden here: skip a null/undefined array element
+  // (its `entry.path` access would throw inside this un-try/caught loop and
+  // blank the whole sitemap), and clamp `priority` to [0.0, 1.0] since Next.js
+  // renders an out-of-range value verbatim into invalid sitemap XML.
   for (const entry of dynamicData.pluginEntries ?? []) {
-    if (!entry.path || seenPaths.has(entry.path)) {
+    if (!entry || !entry.path || seenPaths.has(entry.path)) {
       continue;
     }
     entries.push({
       url: absoluteUrl(siteUrl, entry.path),
       lastModified: entry.lastModified ?? now,
       changeFrequency: entry.changeFrequency ?? 'weekly',
-      priority: entry.priority ?? 0.7
+      priority: entry.priority !== undefined ? Math.max(0, Math.min(1, entry.priority)) : 0.7
     });
     seenPaths.add(entry.path);
   }

@@ -84,7 +84,16 @@ export function sitemapRouter(database: IDatabaseService, hookRegistry: IHookReg
                 [] as ReadonlyArray<ISitemapEntry>
             );
 
-            const data: SitemapData = { pages, pluginPages, pluginEntries: [...pluginEntries] };
+            // Guard the spread: the waterfall invoker threads a handler's raw
+            // return value unchecked (only throws are isolated), so an untyped
+            // plugin returning null/undefined/non-array would make `[...]` throw
+            // and blank the whole sitemap — the exact failure the isolation above
+            // exists to prevent. Coalesce a bad return to an empty list.
+            const data: SitemapData = {
+                pages,
+                pluginPages,
+                pluginEntries: Array.isArray(pluginEntries) ? [...pluginEntries] : []
+            };
 
             // Cache the result
             cache = { data, expiresAt: Date.now() + CACHE_TTL_MS };
