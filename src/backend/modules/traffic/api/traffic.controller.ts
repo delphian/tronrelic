@@ -45,12 +45,14 @@ const ACCOUNT_LOOKUP_BATCH_SIZE = 25;
 /**
  * Allow-list for the `botClass` query param on per-bot-class reads. Mirrors
  * the `BotClass` union in `services/bot-classifier.ts` plus the synthetic
- * `'unclassified'` bucket the time-series read folds NULL rows into. The
- * service binds the value as a query parameter, but rejecting unknown values
- * here keeps the API surface self-documenting and 400s typos early.
+ * `'unclassified'` bucket the time-series read folds NULL rows into, minus
+ * `'human'` — these reads back the Crawlers tab, which is a bot-visibility
+ * surface and deliberately serves no human traffic (the trend query excludes
+ * it too). The service binds the value as a query parameter, but rejecting
+ * unknown values here keeps the API surface self-documenting and 400s typos
+ * early.
  */
 const KNOWN_BOT_CLASSES = new Set([
-    'human',
     'search_engine',
     'ai_crawler',
     'social_unfurler',

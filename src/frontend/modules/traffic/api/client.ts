@@ -1149,3 +1149,62 @@ export async function adminUpdateRedirect(id: string, patch: Partial<IRedirectRu
 export async function adminDeleteRedirect(id: string): Promise<void> {
     await apiClient.delete(`/admin/redirects/${id}`);
 }
+
+/** One time bucket of the redirect-hit trend series. Mirrors the backend shape. */
+export interface IRedirectTrendPoint {
+    /** Bucket start — ISO-8601 UTC for hour buckets, `YYYY-MM-DD` for days. */
+    bucket: string;
+    /** Redirects served in the bucket (honors the humans-only filter). */
+    hits: number;
+}
+
+/** One redirect rule's hit total within the window, for the per-pattern table. */
+export interface IRedirectPatternStat {
+    /** The rule's source pattern. */
+    pattern: string;
+    /** The rule's most-recent destination in the window. */
+    destination: string;
+    /** True when the most-recent hit was a 301 (permanent) rather than a 302. */
+    permanent: boolean;
+    /** Redirects served for this pattern in the window (honors the humans-only filter). */
+    hits: number;
+}
+
+/**
+ * Windowed redirect analytics for the Redirects tab. Mirrors the backend
+ * `IRedirectAnalytics`: a headline total with a human/bot split, a zero-filled
+ * hits-over-time series, and a per-pattern breakdown.
+ */
+export interface IRedirectAnalytics {
+    /** Bucket size — hourly for windows ≤ 48h, daily otherwise. */
+    granularity: 'hour' | 'day';
+    /** Redirects served in the window (humans-only when the bot filter is on). */
+    total: number;
+    /** Human-classified redirects in the window (always unfiltered). */
+    humanTotal: number;
+    /** Bot-classified redirects in the window (always unfiltered). */
+    botTotal: number;
+    /** Zero-filled per-bucket hit counts, oldest first. */
+    series: IRedirectTrendPoint[];
+    /** Per-pattern hit totals, most-hit first. */
+    byPattern: IRedirectPatternStat[];
+}
+
+/**
+ * Get windowed redirect-hit analytics for the Redirects tab. Accepts the same
+ * period/custom-range/bot-filter vocabulary as the other aggregate reads.
+ *
+ * @param period - Preset window; ignored when `customRange` is supplied.
+ * @param customRange - Explicit ISO date range overriding `period`.
+ * @param excludeBots - Restrict the series and per-pattern counts to humans.
+ * @returns The redirect analytics payload.
+ */
+export async function adminGetRedirectAnalytics(
+    period: AnalyticsPeriod = '7d',
+    customRange?: ICustomDateRange,
+    excludeBots?: boolean
+): Promise<IRedirectAnalytics> {
+    const params = { ...(customRange ? customRange : { period }), ...(excludeBots ? { bots: 'exclude' } : {}) };
+    const response = await apiClient.get('/admin/redirects/analytics', { params });
+    return response.data as IRedirectAnalytics;
+}

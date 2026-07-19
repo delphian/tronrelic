@@ -11,7 +11,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import type { NextRequest, NextFetchEvent } from 'next/server';
 import { getServerSideApiUrl } from './lib/api-url';
 
 /** Cookie name for preserved external referrer */
@@ -394,9 +394,45 @@ function findRedirectRule(pathname: string, rules: RedirectRule[]): RedirectRule
 }
 
 /**
+ * Beacon a served redirect to the backend so it lands in `redirect_events` for
+ * the Redirects-tab analytics.
+ *
+ * Best-effort and fire-and-forget: the caller fires it on the edge `waitUntil`
+ * queue so it never delays the 301/302. It forwards the client headers the
+ * backend classifies on (UA, referer, sec-fetch-site, cf-ipcountry) plus the
+ * real client IP via `buildForwardedHeaders`, and swallows every failure —
+ * analytics must never break a redirect. The target sits under `/api`, excluded
+ * by the matcher below, so this never re-enters the middleware.
+ *
+ * @param request - The inbound request that matched a redirect rule.
+ * @param rule - The matched rule; pattern/destination/permanent are recorded as-is.
+ */
+async function emitRedirectHit(request: NextRequest, rule: RedirectRule): Promise<void> {
+    // Resolved outside the try: a missing SITE_BACKEND is a deployment error
+    // that must surface, while the fetch below stays best-effort.
+    const backendUrl = getServerSideApiUrl();
+    try {
+        await fetch(`${backendUrl}/api/redirects/hit`, {
+            method: 'POST',
+            headers: buildForwardedHeaders(request),
+            body: JSON.stringify({
+                pattern: rule.pattern,
+                destination: rule.destination,
+                permanent: rule.permanent,
+                path: request.nextUrl.pathname
+            }),
+            cache: 'no-store',
+            signal: AbortSignal.timeout(3000)
+        });
+    } catch {
+        // Ignore — redirect analytics is best-effort, never load-bearing.
+    }
+}
+
+/**
  * Middleware that handles redirects and sets request context headers.
  */
-export async function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest, event: NextFetchEvent) {
     const pathname = request.nextUrl.pathname;
 
     // Check for a matching admin-managed redirect rule. The map is fetched from
@@ -422,6 +458,11 @@ export async function middleware(request: NextRequest) {
                 path: '/',
             });
         }
+
+        // Record the served redirect for analytics (redirect_events). Queued on
+        // waitUntil so the 301/302 returns immediately without waiting on the
+        // best-effort beacon.
+        event.waitUntil(emitRedirectHit(request, rule));
 
         return response;
     }

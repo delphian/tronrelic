@@ -36,6 +36,7 @@ export {
     adminCreateRedirect,
     adminUpdateRedirect,
     adminDeleteRedirect,
+    adminGetRedirectAnalytics,
     // Google Search Console functions
     adminGetGscStatus,
     adminSaveGscCredentials,
@@ -89,5 +90,8 @@ export type {
     ITrafficBucket,
     IBotClassDailyPoint,
     IRedirectRuleAdmin,
-    IRedirectRuleInput
+    IRedirectRuleInput,
+    IRedirectAnalytics,
+    IRedirectTrendPoint,
+    IRedirectPatternStat
 } from './client';

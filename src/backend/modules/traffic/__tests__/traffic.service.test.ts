@@ -305,9 +305,9 @@ describe('TrafficService', () => {
             // under JSONEachRow; the per-day pivot is the method's whole job.
             const ch = createMockClickHouse();
             ch.queue.push(
-                { day: '2026-06-01', klass: 'human', count: '120' },
+                { day: '2026-06-01', klass: 'search_engine', count: '120' },
                 { day: '2026-06-01', klass: 'ai_crawler', count: 8 },
-                { day: '2026-06-02', klass: 'human', count: '95' },
+                { day: '2026-06-02', klass: 'scanner', count: '95' },
                 { day: '2026-06-02', klass: 'unclassified', count: '3' }
             );
             TrafficService.setDependencies(ch, createMockLogger());
@@ -315,8 +315,8 @@ describe('TrafficService', () => {
             const out = await TrafficService.getInstance().getBotClassTimeSeries({ sinceHours: 168 });
 
             expect(out).toEqual([
-                { day: '2026-06-01', counts: { human: 120, ai_crawler: 8 } },
-                { day: '2026-06-02', counts: { human: 95, unclassified: 3 } }
+                { day: '2026-06-01', counts: { search_engine: 120, ai_crawler: 8 } },
+                { day: '2026-06-02', counts: { scanner: 95, unclassified: 3 } }
             ]);
         });
 
@@ -334,6 +334,25 @@ describe('TrafficService', () => {
 
             expect(captured.sql).toContain("coalesce(bot_class, 'unclassified')");
             expect(captured.params).toEqual({ sinceHours: 48 });
+        });
+
+        it('excludes human rows but keeps the NULL fold', async () => {
+            // The Crawlers tab serves no human traffic. Filtering on the
+            // coalesced expression (not bare `bot_class != 'human'`) is
+            // load-bearing: a bare inequality evaluates NULL for unclassified
+            // rows, which ClickHouse drops — silently deleting the coverage
+            // signal this surface exists to show.
+            const ch = createMockClickHouse();
+            const captured: { sql?: string } = {};
+            ch.query = async <T>(sql: string): Promise<T[]> => {
+                captured.sql = sql;
+                return [] as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            await TrafficService.getInstance().getBotClassTimeSeries({ sinceHours: 48 });
+
+            expect(captured.sql).toContain("coalesce(bot_class, 'unclassified') != 'human'");
         });
 
         it('returns [] and logs on query failure', async () => {
