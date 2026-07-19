@@ -15,6 +15,7 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Skeleton } from '../components/ui/Skeleton';
 import { Button } from '../components/ui/Button';
+import { CopyButton } from '../components/ui/CopyButton';
 import { IconButton } from '../components/ui/IconButton';
 import { Switch } from '../components/ui/Switch';
 import { Input } from '../components/ui/Input';
@@ -333,6 +334,7 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             Badge,
             Skeleton,
             Button,
+            CopyButton,
             IconButton,
             Switch,
             // forwardRef gives Input a ForwardRefExoticComponent type whose static
@@ -441,6 +443,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         Badge,
         Skeleton,
         Button,
+        CopyButton,
         IconButton,
         Switch,
         // See FrontendPluginContextProvider above: forwardRef's static propTypes

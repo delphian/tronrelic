@@ -109,6 +109,36 @@ export interface IUIComponents {
     }>;
 
     /**
+     * CopyButton — one-click "copy to clipboard" affordance.
+     *
+     * Writes `value` to the system clipboard on click and briefly swaps to a
+     * confirmation state (`copiedLabel`) for `resetMs`. Wraps `Button`, so it
+     * takes the same `variant`/`size` and defaults to a quiet `ghost`/`sm`
+     * treatment. Use instead of hand-rolling `navigator.clipboard` in a plugin
+     * (copy a post's text, an address, a code block) — the primitive owns the
+     * async-clipboard call, the non-secure-context fallback, the confirmation
+     * timing, and `event.stopPropagation()` so it is safe inside a clickable
+     * row. Provide `label` for a text+icon button; omit it for icon-only and
+     * set `ariaLabel` so the action is still announced.
+     */
+    CopyButton: ComponentType<{
+        /** String written to the clipboard on click. */
+        value: string;
+        /** Visible label beside the icon; icon-only when omitted. */
+        label?: string;
+        /** Label shown during the post-copy confirmation window. */
+        copiedLabel?: string;
+        /** How long the confirmation state persists, in milliseconds. */
+        resetMs?: number;
+        /** Accessible label used when no visible `label` is shown. */
+        ariaLabel?: string;
+        variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'warning';
+        size?: 'xs' | 'sm' | 'md' | 'lg';
+        disabled?: boolean;
+        className?: string;
+    }>;
+
+    /**
      * IconButton — borderless icon-only button for inline row actions.
      *
      * Use when a bordered `<Button>` with an icon would visually dominate
@@ -1061,7 +1091,7 @@ export interface IFrontendPluginContext {
     /** Plugin identifier used for namespacing events and API routes */
     pluginId: string;
 
-    /** UI component library (Card, Badge, Button, IconButton, Switch, Input, Select, Skeleton, ClientTime, Tooltip, IconPickerModal, Table family) */
+    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Skeleton, ClientTime, Tooltip, IconPickerModal, Table family) */
     ui: IUIComponents;
 
     /** Layout component library (Page, PageHeader, Stack, Grid, Section, SubMenu) */
