@@ -116,7 +116,7 @@ export function WalletManageList({
                                                     <CopyButton
                                                         value={wallet.address}
                                                         size="xs"
-                                                        ariaLabel="Copy wallet address"
+                                                        aria-label="Copy wallet address"
                                                     />
                                                 </span>
                                                 <span className={styles.meta}>

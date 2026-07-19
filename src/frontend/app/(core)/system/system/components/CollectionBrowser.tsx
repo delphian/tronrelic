@@ -319,7 +319,7 @@ export function CollectionBrowser() {
                                                                             <div className={styles.row_actions} onClick={(e) => e.stopPropagation()}>
                                                                                 <CopyButton
                                                                                     value={JSON.stringify(doc, null, 2)}
-                                                                                    ariaLabel="Copy document JSON"
+                                                                                    aria-label="Copy document JSON"
                                                                                 />
                                                                                 <Button
                                                                                     variant="ghost"
