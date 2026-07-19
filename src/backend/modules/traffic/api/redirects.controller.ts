@@ -99,20 +99,26 @@ function sanitizeHitPath(raw: unknown): string | null {
 }
 
 /**
- * Normalize the Cloudflare edge country header (`CF-IPCountry`) into a short
- * code or null. Values are ISO-3166 alpha-2 plus a few Cloudflare sentinels
- * (`XX`, `T1`); a length cap guards against a forged oversized header on the
- * unauthenticated endpoint.
+ * Normalize the Cloudflare edge country header (`CF-IPCountry`) into a storable
+ * ISO-3166 alpha-2 code or null. This endpoint is unauthenticated, so a
+ * hand-rolled caller can forge arbitrary `CF-IPCountry` values; accepting them
+ * unvalidated would let unbounded distinct strings land in the
+ * `LowCardinality(String)` `country` column and bloat its dictionary. Accept
+ * only a 2-letter uppercase code and drop Cloudflare's non-country sentinels
+ * (`XX` unknown, `T1` Tor), matching `normalizeCfCountry` in `traffic.service.ts`.
  *
  * @param raw - The forwarded `cf-ipcountry` header value.
- * @returns The trimmed country code, or null when absent/blank.
+ * @returns The uppercase alpha-2 code, or null for sentinels/malformed input.
  */
 function clampCountry(raw: string | undefined): string | null {
     if (typeof raw !== 'string') {
         return null;
     }
-    const code = raw.trim().slice(0, 8);
-    return code.length > 0 ? code : null;
+    const code = raw.trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(code) && code !== 'XX' && code !== 'T1') {
+        return code;
+    }
+    return null;
 }
 
 /**
@@ -134,25 +140,43 @@ export class RedirectsController {
     /**
      * Public ingestion the edge middleware beacons when it serves a redirect.
      * Unauthenticated (the middleware fires it server-to-server before any auth
-     * context), so body fields are clamped and the request is classified for
-     * bots exactly like the bootstrap ingestion. Fire-and-forget: the write
-     * never blocks or throws into the response.
+     * context), so provenance is proven by matching, not a shared secret: the
+     * beaconed `pattern` must name a currently-enabled redirect rule, and the
+     * middleware only fires after serving one. Unmatched (forged) patterns are
+     * dropped, and `destination`/`permanent` are sourced from the matched rule
+     * rather than the caller — so all three `LowCardinality` columns
+     * (`pattern`/`destination`/`country`) carry only trusted values, closing
+     * both the fabricated-breakdown-row and the dictionary-bloat vectors an
+     * arbitrary caller would otherwise open. Fire-and-forget: the write never
+     * blocks or throws into the response.
      *
-     * @param req - Express request; body carries `{ pattern, destination, permanent, path }`
-     *   and forwarded client headers (UA, referer, sec-fetch-site, cf-ipcountry).
-     * @param res - Express response carrying `{ success: true }`.
+     * @param req - Express request; body carries `{ pattern, path }` (plus the
+     *   ignored `destination`/`permanent` the middleware forwards) and client
+     *   headers (UA, referer, sec-fetch-site, cf-ipcountry).
+     * @param res - Express response carrying `{ success: true }` — the beacon
+     *   always 200s (an unknown pattern records nothing but is not an error, so
+     *   the endpoint leaks nothing about which patterns are valid).
      */
     async recordHit(req: Request, res: Response): Promise<void> {
         try {
             const body = (req.body ?? {}) as Record<string, unknown>;
             const pattern = clampString(body.pattern, MAX_REDIRECT_FIELD_LENGTH);
-            const destination = clampString(body.destination, MAX_REDIRECT_FIELD_LENGTH);
-            if (!pattern || !destination) {
-                res.status(400).json({ error: 'ValidationError', message: 'pattern and destination are required strings' });
+            if (!pattern) {
+                res.status(400).json({ error: 'ValidationError', message: 'pattern is required' });
                 return;
             }
 
-            const path = sanitizeHitPath(body.path) ?? pattern;
+            // Provenance-by-matching: record only hits whose pattern is a live
+            // enabled rule (what the middleware actually serves). An unknown
+            // pattern is a forged/stale beacon — drop it silently (still 200,
+            // since the beacon is fire-and-forget).
+            const rule = (await this.redirectService.getActiveRules()).find(r => r.pattern === pattern);
+            if (!rule) {
+                res.json({ success: true });
+                return;
+            }
+
+            const path = sanitizeHitPath(body.path) ?? rule.pattern;
             const botClass = classifyTrafficRequest({
                 userAgent: headerValue(req.headers['user-agent']),
                 path,
@@ -161,13 +185,12 @@ export class RedirectsController {
             });
             const country = clampCountry(headerValue(req.headers['cf-ipcountry']));
 
-            // `permanent` defaults to true (301) unless the beacon explicitly
-            // sends false, matching how the rules themselves default.
+            // destination/permanent come from the matched rule, never the caller.
             const hit: IRedirectHitInput = {
-                pattern,
+                pattern: rule.pattern,
                 path,
-                destination,
-                permanent: body.permanent !== false,
+                destination: rule.destination,
+                permanent: rule.permanent,
                 botClass,
                 country
             };
