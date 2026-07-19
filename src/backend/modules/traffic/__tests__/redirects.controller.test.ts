@@ -43,20 +43,26 @@ function buildRes(): { res: Response; status: ReturnType<typeof vi.fn>; json: Re
 describe('RedirectsController redirect analytics', () => {
     let recordRedirectHit: ReturnType<typeof vi.fn>;
     let getRedirectAnalytics: ReturnType<typeof vi.fn>;
+    let getActiveRules: ReturnType<typeof vi.fn>;
     let controller: RedirectsController;
 
     beforeEach(() => {
         recordRedirectHit = vi.fn();
         getRedirectAnalytics = vi.fn();
-        const redirectService = {} as unknown as RedirectService;
+        // Default active-rule set the beacon's pattern is matched against.
+        getActiveRules = vi.fn().mockResolvedValue([
+            { pattern: '/tron-forum', isPrefix: true, destination: '/forum', permanent: true },
+            { pattern: '/a', isPrefix: true, destination: '/b', permanent: false }
+        ]);
+        const redirectService = { getActiveRules } as unknown as RedirectService;
         const trafficService = { recordRedirectHit, getRedirectAnalytics } as unknown as TrafficService;
         const logger = { error: vi.fn() } as unknown as ISystemLogService;
         controller = new RedirectsController(redirectService, trafficService, logger);
     });
 
     describe('recordHit()', () => {
-        it('400s and records nothing when pattern/destination are missing', async () => {
-            const req = buildReq({ body: { pattern: '/only-pattern' } });
+        it('400s and records nothing when pattern is missing', async () => {
+            const req = buildReq({ body: { destination: '/forum' } });
             const { res, status, json } = buildRes();
 
             await controller.recordHit(req, res);
@@ -66,9 +72,20 @@ describe('RedirectsController redirect analytics', () => {
             expect(json).toHaveBeenCalledWith(expect.objectContaining({ error: 'ValidationError' }));
         });
 
-        it('dispatches a hit and answers success for a valid beacon', async () => {
+        it('drops (records nothing, still 200) a beacon whose pattern is not an active rule', async () => {
+            const req = buildReq({ body: { pattern: '/forged', destination: '/evil' } });
+            const { res, json } = buildRes();
+
+            await controller.recordHit(req, res);
+
+            expect(recordRedirectHit).not.toHaveBeenCalled();
+            expect(json).toHaveBeenCalledWith({ success: true });
+        });
+
+        it('records a matched beacon, sourcing destination/permanent from the rule', async () => {
             const req = buildReq({
-                body: { pattern: '/tron-forum', destination: '/forum', permanent: true, path: '/tron-forum/thread/9?ref=x' },
+                // Body destination/permanent are deliberately wrong — they must be ignored.
+                body: { pattern: '/tron-forum', destination: '/attacker', permanent: false, path: '/tron-forum/thread/9?ref=x' },
                 headers: { 'user-agent': 'Mozilla/5.0', 'cf-ipcountry': 'US' }
             });
             const { res, json } = buildRes();
@@ -78,33 +95,38 @@ describe('RedirectsController redirect analytics', () => {
             expect(recordRedirectHit).toHaveBeenCalledTimes(1);
             const hit = recordRedirectHit.mock.calls[0][0];
             expect(hit.pattern).toBe('/tron-forum');
+            // Sourced from the matched rule, not the (forged) body.
             expect(hit.destination).toBe('/forum');
+            expect(hit.permanent).toBe(true);
             // Query string stripped from the stored path.
             expect(hit.path).toBe('/tron-forum/thread/9');
-            expect(hit.permanent).toBe(true);
             expect(hit.country).toBe('US');
             expect(typeof hit.botClass).toBe('string');
             expect(json).toHaveBeenCalledWith({ success: true });
         });
 
-        it('defaults permanent to true and path to the pattern when omitted/invalid', async () => {
-            const req = buildReq({ body: { pattern: '/a', destination: '/b', path: 'not-a-path' } });
+        it('defaults path to the pattern when the beacon path is invalid', async () => {
+            const req = buildReq({ body: { pattern: '/a', path: 'not-a-path' } });
             const { res } = buildRes();
 
             await controller.recordHit(req, res);
 
             const hit = recordRedirectHit.mock.calls[0][0];
-            expect(hit.permanent).toBe(true);
             expect(hit.path).toBe('/a');
+            // /a is a 302 rule — permanent comes from the rule, not the body.
+            expect(hit.permanent).toBe(false);
         });
 
-        it('honors an explicit permanent=false (302)', async () => {
-            const req = buildReq({ body: { pattern: '/a', destination: '/b', permanent: false } });
+        it('rejects a forged CF-IPCountry header (only ISO alpha-2 stored)', async () => {
+            const req = buildReq({
+                body: { pattern: '/tron-forum' },
+                headers: { 'cf-ipcountry': 'not-a-country' }
+            });
             const { res } = buildRes();
 
             await controller.recordHit(req, res);
 
-            expect(recordRedirectHit.mock.calls[0][0].permanent).toBe(false);
+            expect(recordRedirectHit.mock.calls[0][0].country).toBeNull();
         });
     });
 

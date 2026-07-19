@@ -30,7 +30,7 @@ export function createPublicRedirectsRouter(controller: RedirectsController): Ro
 
     const hitRateLimiter = createRateLimiter({
         windowSeconds: 60,
-        maxRequests: 60,
+        maxRequests: 300,
         keyPrefix: 'traffic:redirect-hit'
     });
     router.post('/hit', hitRateLimiter, controller.recordHit.bind(controller));
