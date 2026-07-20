@@ -39,7 +39,7 @@
  */
 
 import type { Request } from 'express';
-import type { IClickHouseService, ISystemLogService } from '@/types';
+import type { IAccountDirectoryService, IClickHouseService, ISystemLogService } from '@/types';
 import { getClientIP, getCountryFromIP, getDeviceCategory } from './geo.service.js';
 import { getIpHash, getSubnetHash } from './ip-hash.js';
 import { classifyTrafficRequest, type BotClass } from './bot-classifier.js';
@@ -327,6 +327,67 @@ export interface IConversionFunnelResponse extends IBinaryConversionFunnel {
      * tracking contributes no tids and is not counted.
      */
     newAccountVisitors: number;
+}
+
+/**
+ * Max concurrent directory reads when resolving the funnel's active accounts.
+ *
+ * The active set is uncapped (a custom analytics range is not window-bounded)
+ * and the directory exposes no bulk created-between query, so the per-id
+ * fan-out is chunked to keep concurrent Mongo reads bounded rather than
+ * starving the pool on a large window.
+ */
+export const ACCOUNT_LOOKUP_BATCH_SIZE = 25;
+
+/**
+ * Compose the full three-stage conversion funnel: the ClickHouse binary funnel
+ * plus the acquisition stage resolved against Better Auth account-creation
+ * dates.
+ *
+ * Extracted so the REST controller and the AI tool return the *same* funnel.
+ * The acquisition stage crosses two stores on purpose — ClickHouse knows which
+ * accounts appeared logged-in during the window, but only the identity module
+ * knows when an account was created, which is the ground truth a first-login
+ * proxy cannot match (re-logins after the traffic table's TTL expiry would
+ * otherwise re-mint long-standing accounts as "new").
+ *
+ * @param trafficService - Source of the binary funnel and the tid counts.
+ * @param accounts - Identity's account directory, or undefined when identity is
+ *                   unavailable; the stage then reads 0 rather than failing the
+ *                   whole funnel, since a missing acquisition number is better
+ *                   than no funnel at all.
+ * @param range - The analytics window, whose bounds also define "created during".
+ * @param excludeBots - Whether to restrict counts to human-classified rows.
+ * @returns The funnel with `newAccountVisitors` populated.
+ */
+export async function composeConversionFunnel(
+    trafficService: TrafficService,
+    accounts: IAccountDirectoryService | undefined,
+    range: IAnalyticsDateRange,
+    excludeBots: boolean
+): Promise<IConversionFunnelResponse> {
+    const funnel = await trafficService.getBinaryConversionFunnel(range, excludeBots);
+    const response: IConversionFunnelResponse = { ...funnel, newAccountVisitors: 0 };
+
+    if (accounts && funnel.converted > 0) {
+        const activeIds = await trafficService.getActiveAccountIds(range, excludeBots);
+        const until = range.until ?? new Date();
+
+        const summaries: Awaited<ReturnType<typeof accounts.getAccount>>[] = [];
+        for (let i = 0; i < activeIds.length; i += ACCOUNT_LOOKUP_BATCH_SIZE) {
+            const batch = activeIds.slice(i, i + ACCOUNT_LOOKUP_BATCH_SIZE);
+            summaries.push(...await Promise.all(batch.map(id => accounts.getAccount(id))));
+        }
+
+        const newAccountIds = summaries
+            .filter((account): account is NonNullable<typeof account> => account !== null)
+            .filter(account => account.createdAt >= range.since && account.createdAt <= until)
+            .map(account => account.id);
+
+        response.newAccountVisitors = await trafficService.countTidsForUsers(range, newAccountIds, excludeBots);
+    }
+
+    return response;
 }
 
 /** UTM-campaign aggregate joined to the binary conversion. */
