@@ -18,8 +18,8 @@
 
 import type { Request, Response } from 'express';
 import type { IAiToolRegistry, IServiceRegistry, IAccountDirectoryService, IWalletService, ISystemLogService } from '@/types';
-import type { TrafficService, IConversionFunnelResponse } from '../services/traffic.service.js';
-import { resolveAnalyticsRange } from '../services/traffic.service.js';
+import type { TrafficService } from '../services/traffic.service.js';
+import { composeConversionFunnel, resolveAnalyticsRange } from '../services/traffic.service.js';
 import type { GscService } from '../services/gsc.service.js';
 import type { IgnoredUsersService } from '../services/ignored-users.service.js';
 import { listOwnAiTools } from '../ai-tools.js';
@@ -36,12 +36,6 @@ const MAX_SINCE_HOURS = 720; // 30 days
 const MAX_LIMIT = 200;
 const MAX_HISTORY_LIMIT = 200;
 const MAX_GSC_DAYS = 90;
-// Max concurrent directory reads when resolving the funnel's active
-// accounts. The active set is uncapped (a custom analytics range is not
-// window-bounded), so the per-id findOne fan-out is chunked to keep
-// concurrent Mongo reads bounded and avoid starving the pool on a large
-// window rather than firing the whole set at once.
-const ACCOUNT_LOOKUP_BATCH_SIZE = 25;
 
 /**
  * Allow-list for the `botClass` query param on per-bot-class reads. Mirrors
@@ -491,30 +485,15 @@ export class TrafficController {
         const range = resolveAnalyticsRange(req.query);
         const excludeBots = parseExcludeBots(req.query.bots);
         try {
-            const funnel = await this.trafficService.getBinaryConversionFunnel(range, excludeBots);
-            const response: IConversionFunnelResponse = { ...funnel, newAccountVisitors: 0 };
-            const accounts = this.serviceRegistry.get<IAccountDirectoryService>('accounts');
-            if (accounts && funnel.converted > 0) {
-                const activeIds = await this.trafficService.getActiveAccountIds(range, excludeBots);
-                const until = range.until ?? new Date();
-                // Per-id directory reads, batched to bound concurrency. The
-                // active set is the window's logged-in accounts and is uncapped
-                // (a custom analytics range is not window-bounded), and the
-                // directory exposes no bulk created-between query. Rather than
-                // fire one findOne per account all at once — which starves the
-                // Mongo pool on a large window — the fan-out is chunked so at
-                // most ACCOUNT_LOOKUP_BATCH_SIZE reads are in flight at a time.
-                const summaries: Awaited<ReturnType<typeof accounts.getAccount>>[] = [];
-                for (let i = 0; i < activeIds.length; i += ACCOUNT_LOOKUP_BATCH_SIZE) {
-                    const batch = activeIds.slice(i, i + ACCOUNT_LOOKUP_BATCH_SIZE);
-                    summaries.push(...await Promise.all(batch.map(id => accounts.getAccount(id))));
-                }
-                const newAccountIds = summaries
-                    .filter((account): account is NonNullable<typeof account> => account !== null)
-                    .filter(account => account.createdAt >= range.since && account.createdAt <= until)
-                    .map(account => account.id);
-                response.newAccountVisitors = await this.trafficService.countTidsForUsers(range, newAccountIds, excludeBots);
-            }
+            // Composition lives in the service so this route and the
+            // tronrelic-get-audience-behavior AI tool cannot drift into
+            // reporting different funnels for the same window.
+            const response = await composeConversionFunnel(
+                this.trafficService,
+                this.serviceRegistry.get<IAccountDirectoryService>('accounts'),
+                range,
+                excludeBots
+            );
             res.json(response);
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch conversion funnel');

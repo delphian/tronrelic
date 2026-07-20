@@ -34,6 +34,7 @@
  */
 
 import type {
+    IAccountDirectoryService,
     IAiTool,
     IAiToolInfo,
     IAiToolRegistry,
@@ -43,6 +44,7 @@ import type {
 } from '@/types';
 import type { GscService } from './services/gsc.service.js';
 import type { INewVisitorOrigin, TrafficService } from './services/traffic.service.js';
+import { composeConversionFunnel } from './services/traffic.service.js';
 
 /** Provider id passed to `registerTool` so the admin UI groups tools under this module. */
 export const PROVIDER_ID = 'traffic';
@@ -187,11 +189,19 @@ function projectVisitorOrigin(origin: INewVisitorOrigin): Record<string, unknown
 /**
  * Build the seven read-only traffic tools bound to the given services.
  *
+ * @param serviceRegistry - Resolves identity's `'accounts'` service at call
+ *                          time for the funnel's acquisition stage; passed
+ *                          rather than the resolved service because identity
+ *                          registers after this module builds its tools.
  * @param trafficService - ClickHouse-backed `traffic_events` reads.
  * @param gscService - Mongo-backed Google Search Console caches.
  * @returns Array of tool definitions ready for `registerTool`.
  */
-function buildTools(trafficService: TrafficService, gscService: GscService): IAiTool[] {
+function buildTools(
+    serviceRegistry: IServiceRegistry,
+    trafficService: TrafficService,
+    gscService: GscService
+): IAiTool[] {
     /**
      * Shared `period` schema property, declared once so every tool offers the
      * model the same window vocabulary.
@@ -221,10 +231,15 @@ function buildTools(trafficService: TrafficService, gscService: GscService): IAi
             'a "pageview" is a client-side navigation; a "session" is a run of hits under a 30-minute gap. ' +
             'Does NOT include registered-account totals — those live in the identity module, not this tool. ' +
             'Returns clickhouseEnabled:false with empty figures when the analytics store is down. This tool is read-only.',
-        // Capability: read / internal — aggregate counts only, no per-visitor
-        // rows and no attacker-authored strings, so neither a secret nor an
-        // untrusted-content surface.
-        capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal' },
+        // Capability: read / internal / surfaces-untrusted — the KPIs and the
+        // visitor/pageview series are aggregate counts with no per-visitor rows,
+        // so this is not a secret surface. But every trend bucket also carries
+        // topPaths/topSources/topCountries, and `path` is accepted as an
+        // arbitrary string by the public unauthenticated page-event endpoint
+        // (leading-slash and length-capped only, never allow-listed) — the same
+        // reason breakdownTool declares these values untrusted. Declared here too
+        // so the governor screens and wraps the result.
+        capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true },
         inputSchema: {
             type: 'object',
             description: 'Window and bot-filter options for the overview',
@@ -274,10 +289,15 @@ function buildTools(trafficService: TrafficService, gscService: GscService): IAi
             'Sources, landing pages, and campaigns are FIRST-TOUCH attributed: they read only first-touch rows, so a ' +
             'visitor who arrived direct and returned via a campaign still credits "direct". ' +
             'Returns at most ' + MAX_BUCKETS + ' buckets. This tool is read-only.',
-        // Capability: read / internal — grouped counts. Referrer domains are
-        // client-supplied but land in bounded low-cardinality buckets rather
-        // than free text, so this is not an untrusted-content surface.
-        capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal' },
+        // Capability: read / internal / surfaces-untrusted — the referrer
+        // domains behind "sources" are bounded, but "campaigns" returns
+        // utm_campaign/source/medium and "landing-pages" returns path, and the
+        // `source` drill-down returns both. Those columns are accepted as
+        // arbitrary strings by the public unauthenticated ingestion endpoints
+        // (length-capped only, never allow-listed), which is exactly why
+        // newVisitorsTool declares the same values untrusted. Declared here too
+        // so the governor screens and wraps the result.
+        capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal', surfacesUntrustedContent: true },
         inputSchema: {
             type: 'object',
             description: 'Dimension, window, and bot-filter options for the breakdown',
@@ -361,7 +381,9 @@ function buildTools(trafficService: TrafficService, gscService: GscService): IAi
             'accounts), returning-visitor retention, and the daily distinct-visitor series. ' +
             'Use for "are visitors coming back", "how many convert", or "is the audience growing" questions. ' +
             '"Converted" counts visitors who were logged in at any point in the window, so it includes returning account ' +
-            'holders, not just signups; "new accounts" counts only accounts actually created during the window. ' +
+            'holders and is NOT a signup count — never present it as signups. The separate `newAccountVisitors` figure is ' +
+            'the acquisition stage: visitors attributed to accounts actually created during the window. It reads 0 when the ' +
+            'identity module is unavailable, which is indistinguishable from a genuine zero — say "0 or unavailable" if it is 0. ' +
             'Returns clickhouseEnabled:false with empty figures when the analytics store is down. This tool is read-only.',
         // Capability: read / internal — cohort counts, no per-visitor rows.
         capability: { sideEffect: 'read', reversible: true, sensitivity: 'internal' },
@@ -384,8 +406,14 @@ function buildTools(trafficService: TrafficService, gscService: GscService): IAi
             const excludeBots = resolveExcludeBots(input.excludeBots);
             const range = { since, until };
 
+            // Resolved at call time, not registration time: identity registers
+            // 'accounts' during its own run() and the tool must survive being
+            // built first. When it is absent the shared helper reports 0 new
+            // accounts rather than failing the whole funnel.
+            const accounts = serviceRegistry.get<IAccountDirectoryService>('accounts');
+
             const [funnel, retention, dailyVisitors] = await Promise.all([
-                trafficService.getBinaryConversionFunnel(range, excludeBots),
+                composeConversionFunnel(trafficService, accounts, range, excludeBots),
                 trafficService.getRetention(range, excludeBots),
                 trafficService.getDailyVisitors(range, excludeBots)
             ]);
@@ -569,7 +597,7 @@ function buildTools(trafficService: TrafficService, gscService: GscService): IAi
                     type: 'integer',
                     minimum: 1,
                     maximum: MAX_BUCKETS,
-                    description: `Max rows to return. Defaults to ${DEFAULT_BUCKETS}, capped at ${MAX_BUCKETS}. Ignored by view "status".`
+                    description: `Max rows to return. Defaults to ${DEFAULT_BUCKETS}, capped at ${MAX_BUCKETS}. Ignored by view "status". For view "keywords-by-day" this is the total keyword budget spread across the daily buckets (at least one keyword per day), not a per-day count.`
                 }
             },
             required: ['view'],
@@ -596,7 +624,14 @@ function buildTools(trafficService: TrafficService, gscService: GscService): IAi
             } else if (view === 'pages') {
                 data = await gscService.getPagesForPeriod(hours, limit);
             } else if (view === 'keywords-by-day') {
-                data = await gscService.getKeywordsByDay(Math.max(1, Math.ceil(hours / 24)), limit);
+                // `limit` is documented as a TOTAL row cap, but getKeywordsByDay
+                // applies its second argument per daily bucket — a 30d window at
+                // the default 20 would return 600 keyword rows and blow the
+                // context budget MAX_BUCKETS exists to protect. Spread the
+                // caller's row budget across the buckets, keeping at least the
+                // top keyword per day so the trend stays readable.
+                const days = Math.max(1, Math.ceil(hours / 24));
+                data = await gscService.getKeywordsByDay(days, Math.max(1, Math.floor(limit / days)));
             } else {
                 data = await gscService.getStatus();
             }
@@ -693,7 +728,7 @@ export function registerTrafficAiTools(
     gscService: GscService,
     logger: ISystemLogService
 ): ServiceWatchDisposer {
-    const tools = buildTools(trafficService, gscService);
+    const tools = buildTools(serviceRegistry, trafficService, gscService);
 
     return serviceRegistry.watch<IAiToolRegistry>('ai-tools', {
         onAvailable: (registry) => {

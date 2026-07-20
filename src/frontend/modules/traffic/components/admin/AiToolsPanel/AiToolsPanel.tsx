@@ -18,6 +18,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { ShieldAlert } from 'lucide-react';
 import { Card } from '../../../../../components/ui/Card';
 import { Badge } from '../../../../../components/ui/Badge';
@@ -128,7 +129,7 @@ export function AiToolsPanel() {
         <Stack gap="md">
             <p className="text-muted">
                 Tools the AI assistant may call against traffic analytics. The switch is the same enabled state the
-                central <a className="link" href="/system/ai-tools">AI tool registry</a> governs — disabling a tool here
+                central <Link className="link" href="/system/ai-tools">AI tool registry</Link> governs — disabling a tool here
                 removes it from every AI query. Per-visitor clickstreams are deliberately not exposed to any tool.
             </p>
 

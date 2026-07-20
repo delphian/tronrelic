@@ -33,7 +33,9 @@ function createTrafficServiceStub() {
         getGeoDistribution: vi.fn(async () => [{ country: 'US', visitors: 2, count: 2 }]),
         getDeviceBreakdown: vi.fn(async () => [{ device: 'desktop', visitors: 6, count: 8 }]),
         getCampaignPerformance: vi.fn(async () => [{ campaign: 'spring', visitors: 1, count: 1 }]),
-        getBinaryConversionFunnel: vi.fn(async () => ({ visitors: 10, converted: 2 })),
+        getBinaryConversionFunnel: vi.fn(async () => ({ distinctVisitors: 10, converted: 2, conversionRate: 0.2 })),
+        getActiveAccountIds: vi.fn(async () => ['account-1']),
+        countTidsForUsers: vi.fn(async () => 1),
         getRetention: vi.fn(async () => [{ day: 1, visitors: 3 }]),
         getDailyVisitors: vi.fn(async () => [{ day: '2026-07-01', visitors: 3 }]),
         getBotClassBreakdown: vi.fn(async () => [{ botClass: 'ai_crawler', count: 12 }]),
@@ -70,7 +72,9 @@ function createGscServiceStub() {
     return {
         getKeywordsForPeriod: vi.fn(async () => ({ keywords: [{ query: 'tron energy', clicks: 4 }] })),
         getPagesForPeriod: vi.fn(async () => ({ pages: [{ page: '/', clicks: 9 }] })),
-        getKeywordsByDay: vi.fn(async () => ({ days: [] })),
+        // Params declared so a test can assert on the day/topN split the
+        // handler derives.
+        getKeywordsByDay: vi.fn(async (_days: number, _topN: number) => ({ days: [] })),
         getStatus: vi.fn(async () => ({ configured: true }))
     };
 }
@@ -79,9 +83,13 @@ function createGscServiceStub() {
  * Capture the tools a `registerTrafficAiTools` call registers, by driving the
  * service-registry watch synchronously with a stub registry.
  *
+ * @param gscStub - Optional GscService double, so a caller can assert on the
+ *                  arguments the handlers pass it. Defaults to a fresh stub.
  * @returns The registered tools keyed by name, plus the stub registry.
  */
-function registerAndCapture(): { tools: Map<string, IAiTool>; registry: IAiToolRegistry } {
+function registerAndCapture(
+    gscStub: ReturnType<typeof createGscServiceStub> = createGscServiceStub()
+): { tools: Map<string, IAiTool>; registry: IAiToolRegistry } {
     const tools = new Map<string, IAiTool>();
     const registry = {
         registerTool: vi.fn((tool: IAiTool) => { tools.set(tool.name, tool); }),
@@ -106,7 +114,10 @@ function registerAndCapture(): { tools: Map<string, IAiTool>; registry: IAiToolR
         watch: vi.fn((_name: string, handlers: { onAvailable: (svc: IAiToolRegistry) => void }) => {
             handlers.onAvailable(registry);
             return () => undefined;
-        })
+        }),
+        // Identity absent — exercises the graceful path where the funnel's
+        // acquisition stage reads 0 instead of failing the whole read.
+        get: vi.fn(() => undefined)
     } as unknown as IServiceRegistry;
 
     const logger = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } as unknown as ISystemLogService;
@@ -114,7 +125,7 @@ function registerAndCapture(): { tools: Map<string, IAiTool>; registry: IAiToolR
     registerTrafficAiTools(
         serviceRegistry,
         createTrafficServiceStub() as unknown as TrafficService,
-        createGscServiceStub() as unknown as GscService,
+        gscStub as unknown as GscService,
         logger
     );
 
@@ -145,6 +156,14 @@ describe('traffic AI tools', () => {
             expect(tools.get(AI_TOOL_NAMES.crawlers)?.capability?.surfacesUntrustedContent).toBe(true);
             expect(tools.get(AI_TOOL_NAMES.seo)?.capability?.surfacesUntrustedContent).toBe(true);
             expect(tools.get(AI_TOOL_NAMES.newVisitors)?.capability?.surfacesUntrustedContent).toBe(true);
+            // The breakdown tool returns utm_* and path verbatim on its
+            // campaigns / landing-pages / source-drill-down branches, and both
+            // arrive as arbitrary strings on the public ingestion endpoints.
+            expect(tools.get(AI_TOOL_NAMES.breakdown)?.capability?.surfacesUntrustedContent).toBe(true);
+            // Every overview trend bucket carries topPaths/topSources/topCountries,
+            // so the headline tool is an untrusted surface too despite its KPIs
+            // being pure aggregates.
+            expect(tools.get(AI_TOOL_NAMES.overview)?.capability?.surfacesUntrustedContent).toBe(true);
         });
 
         it('exposes no tool backed by the per-subject clickstream reads', async () => {
@@ -241,6 +260,36 @@ describe('traffic AI tools', () => {
         it('defaults to excluding bots so counts match the dashboard', async () => {
             const result = await tools.get(AI_TOOL_NAMES.overview)!.handler({}) as { excludeBots: boolean };
             expect(result.excludeBots).toBe(true);
+        });
+
+        it('spreads the keyword-trend row budget across days instead of per-day', async () => {
+            // A 30d window at the default limit would return 30 buckets x 20
+            // keywords without the spread — 600 rows against a 50-row ceiling.
+            const gsc = createGscServiceStub();
+            const { tools: built } = registerAndCapture(gsc);
+            await built.get(AI_TOOL_NAMES.seo)!.handler({ view: 'keywords-by-day', period: '30d' });
+
+            const call = gsc.getKeywordsByDay.mock.calls[0];
+            expect(call).toBeDefined();
+            const [days, topN] = call;
+            expect(days).toBe(30);
+            expect(days * topN).toBeLessThanOrEqual(50);
+            expect(topN).toBeGreaterThanOrEqual(1);
+        });
+    });
+
+    describe('conversion funnel composition', () => {
+        it('returns the acquisition stage, not just the binary funnel', async () => {
+            const result = await tools.get(AI_TOOL_NAMES.audience)!.handler({}) as {
+                funnel: Record<string, unknown>;
+            };
+
+            // Identity is absent in this stub, so the stage is present-but-zero
+            // rather than missing — the model must never infer signups from
+            // `converted`, which counts returning account holders too.
+            expect(result.funnel).toHaveProperty('newAccountVisitors');
+            expect(result.funnel.newAccountVisitors).toBe(0);
+            expect(result.funnel.converted).toBe(2);
         });
     });
 });

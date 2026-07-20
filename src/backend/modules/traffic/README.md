@@ -110,19 +110,21 @@ Every tool conforms to the [Metrics Contract](#metrics-contract) above; the desc
 
 | Tool | Backing reads | Capability |
 |------|---------------|------------|
-| `tronrelic-get-traffic-overview` | `getOverviewTrend`, `getLiveVisitorCount`, `getEngagementMetrics` | read / internal |
-| `tronrelic-query-traffic-breakdown` | sources, landing pages, geo, devices, campaigns, source-details (one `dimension` enum) | read / internal |
-| `tronrelic-get-audience-behavior` | `getBinaryConversionFunnel`, `getRetention`, `getDailyVisitors` | read / internal |
+| `tronrelic-get-traffic-overview` | `getOverviewTrend`, `getLiveVisitorCount`, `getEngagementMetrics` | read / internal / untrusted |
+| `tronrelic-query-traffic-breakdown` | sources, landing pages, geo, devices, campaigns, source-details (one `dimension` enum) | read / internal / untrusted |
+| `tronrelic-get-audience-behavior` | `composeConversionFunnel`, `getRetention`, `getDailyVisitors` | read / internal |
 | `tronrelic-get-new-visitor-origins` | `getNewVisitors`, projected | read / internal / untrusted |
 | `tronrelic-get-crawler-activity` | bot-class breakdown, trend, paths, unclassified UAs | read / internal / untrusted |
 | `tronrelic-get-seo-performance` | `GscService` keywords, pages, keywords-by-day, status | read / internal / untrusted |
 | `tronrelic-get-redirect-analytics` | `getRedirectAnalytics` | read / internal |
 
-**Why three tools declare `surfacesUntrustedContent`.** Unclassified User-Agents, GSC search queries, and new-visitor `searchKeyword`/`utm` values are all authored by outsiders and can be crafted. The declaration makes the governor wrap the result as data rather than instructions. Adding these arms the untrusted-content leg of the lethal-trifecta detector — check the banner and screen posture at `/system/ai-tools` after enabling them alongside any egress tool.
+**Why five tools declare `surfacesUntrustedContent`.** Anything a visitor can put on the wire and later read back is an injection vector. Unclassified User-Agents, GSC search queries, and new-visitor `searchKeyword`/`utm` are the obvious cases, but two more are easy to miss: every `getOverviewTrend` bucket carries `topPaths`/`topSources`/`topCountries`, and the breakdown tool returns `utm_*` (campaigns) and `path` (landing pages, source drill-down) verbatim. Both arrive on the **public unauthenticated** ingestion endpoints, where `clampUtm` and `sanitizePath` apply length caps and a leading-slash rule but never an allow-list — so a crafted path or campaign is storable and surfaces once it ranks in a bucket. Only `tronrelic-get-audience-behavior` (pure cohort counts) and `tronrelic-get-redirect-analytics` (patterns validated against operator-authored rules at ingestion) are genuinely clean. The declaration is what makes the governor wrap and screen the result; omitting it means no wrap at all. Adding these arms the untrusted-content leg of the lethal-trifecta detector — check the banner and screen posture at `/system/ai-tools` after enabling them alongside any egress tool.
 
 **What is deliberately absent.** `getPageActivity` and `getPageHits` — one person's ordered browsing history, pseudonymous by tid but re-identifiable once a tid carries a `user_id` — are exposed to no tool, and `getHighVolumeSubnets` is excluded because a subnet hash is a source-correlation key. `getNewVisitors` ships only through `projectVisitorOrigin`, which strips `userId` and `subnetHash` so rows carry acquisition shape with no correlation key. Re-adding any of these is a privacy decision, not a convenience one.
 
 The **AI tab** on `/system/traffic` lists these tools with their capability badges, description prompt, and input examples, and toggles each one. It proxies the core registry through `GET /api/admin/users/analytics/ai-tools` and `PATCH /api/admin/users/analytics/ai-tools/:name` (both `requireAdmin`), filtered to this provider — a name owned by another provider 404s. Enabled state lives in core, so a toggle here is the same switch the `/system/ai-tools` Registry tab flips.
+
+**Funnel composition is shared, not duplicated.** `composeConversionFunnel` (exported from `services/traffic.service.ts`) joins the ClickHouse binary funnel to the acquisition stage resolved against Better Auth `createdAt`. Both `GET /analytics/conversion-funnel` and the audience tool call it, so the REST panel and the AI answer cannot drift into reporting different funnels for one window. When identity is unavailable the stage reads 0 rather than failing the funnel — indistinguishable from a genuine zero, which is why the tool description tells the model to say "0 or unavailable". Note the cost profile: `getActiveAccountIds` is uncapped and the helper fans out one directory read per active account, batched `ACCOUNT_LOOKUP_BATCH_SIZE` wide. A model calling this repeatedly at `30d` is a heavier load than the one operator-triggered dashboard panel it was written for.
 
 See [system-ai-tools.md](../../../../docs/system/system-ai-tools.md) for the tool contract, capability vocabulary, and the accountability every tool must meet.
 
