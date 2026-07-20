@@ -9,6 +9,7 @@ Owns cookieless behavioral analytics: the ClickHouse `traffic_events` pipeline, 
 | Module id | `traffic` |
 | Module class | `src/backend/modules/traffic/TrafficModule.ts` |
 | Admin page | `/system/traffic` (menu item `Traffic`, order 26; tab row is the Submenu Pattern under menu namespace `traffic`, both registered in `run()`) |
+| AI tools | 7 read-only tools on the core `'ai-tools'` registry, provider id `traffic` — see [AI Tools](#ai-tools) |
 | Mounted routes | `/api/admin/users/traffic/*`, `/api/admin/users/analytics/*`, `/api/user/bootstrap`, `/api/user/track`, `/api/redirects` + `/api/redirects/hit` (public), `/api/admin/redirects/*` (incl. `/analytics`) |
 | Scheduled job | `gsc:fetch` (daily, `0 3 * * *`) |
 | ClickHouse tables | `traffic_events` (migrations 010, 012, 013, 014, 015, 016) · `redirect_events` (migration 018) — served-redirect hits, isolated from the `traffic_events` Metrics Contract |
@@ -33,6 +34,7 @@ Physical storage names are unchanged from when this code lived under the user mo
 | `services/gsc.service.ts` | Google Search Console keyword fetch/store (`module_user_gsc_queries`) plus date-only daily totals (`module_user_gsc_daily_totals`) and [page, date] page totals (`module_user_gsc_page_totals`) — GSC drops anonymized queries from keyword rows, so chart totals and the top-pages panel come from query-less fetches that escape anonymization |
 | `services/redirect.service.ts` | Admin-managed legacy-URL redirect rules (`module_traffic_redirects`, one doc per rule, unique index on `pattern`). Validates same-site paths, refuses reserved prefixes (`/api`, `/_next`), rejects self- and prefix-loop redirects. `getActiveRules()` serves enabled rules most-specific-first to the edge middleware; migration 017 seeds the initial legacy set, thereafter admin-managed from the UI |
 | `api/redirects.{controller,routes}.ts` | Public `GET /api/redirects` (unauthenticated cached feed the Next.js edge middleware polls) and admin CRUD under `/api/admin/redirects` (`requireAdmin`). The middleware issues the actual 301/302; no rules are hardcoded in the frontend bundle. Also owns redirect-hit ingestion (`POST /api/redirects/hit`, public, rate-limited) and windowed analytics (`GET /api/admin/redirects/analytics`); both delegate ClickHouse work to `TrafficService` (`recordRedirectHit` / `getRedirectAnalytics` over `redirect_events`), injected alongside `RedirectService` |
+| `ai-tools.ts` | The 7 read-only `IAiTool` definitions, the `'ai-tools'` registry watch, and `listOwnAiTools` (the one definition of "ours" shared by the AI tab and its toggle route). Wraps `TrafficService`/`GscService`; exposes no per-subject clickstream — see [AI Tools](#ai-tools) |
 | `services/bot-classifier.ts` | Request → `BotClass` (powers `traffic_events.bot_class`). `classifyTrafficRequest` runs scanner heuristics first — probe paths (`/.env`, encoded traversal) and spoofed search-engine `Referer` with no `Sec-Fetch-Site` — then falls through to the UA-only `classifyUserAgent`; scanners fake browser UAs, so UA-only classification cannot catch them |
 | `services/geo.service.ts` | IP → country, referrer parsing, device derivation, `getClientIP`; defines `DeviceCategory` / `ScreenSizeCategory` |
 | `api/traffic.{controller,routes}.ts` | `/api/admin/users/traffic/*` raw-traffic reads **and** `/api/admin/users/analytics/*` dashboard aggregates (ClickHouse-backed), including the per-tid / per-user page-activity reads |
@@ -100,9 +102,33 @@ Two public ingestion endpoints (no auth) write rows; both resolve the tid from t
 
 When ClickHouse is unavailable every read returns empty with `clickhouseEnabled: false` rather than failing.
 
+## AI Tools
+
+Seven read-only tools let a model answer analytics questions without an operator opening the dashboard. They register on the core `'ai-tools'` registry under provider id `traffic` via the `watch()` pattern (the ai-tools module publishes its registry during `run()`, so a one-shot `get()` would race boot order). Registration failures are logged and swallowed — this module also owns the public ingestion endpoints every page view depends on, so optional AI capability must never take it down.
+
+Every tool conforms to the [Metrics Contract](#metrics-contract) above; the descriptions restate the Visitor / Pageview / Session definitions so the model does not invent its own. All accept a `period` of `1h`/`24h`/`7d`/`30d` and default `excludeBots` to true, matching the dashboard's humans-only default.
+
+| Tool | Backing reads | Capability |
+|------|---------------|------------|
+| `tronrelic-get-traffic-overview` | `getOverviewTrend`, `getLiveVisitorCount`, `getEngagementMetrics` | read / internal |
+| `tronrelic-query-traffic-breakdown` | sources, landing pages, geo, devices, campaigns, source-details (one `dimension` enum) | read / internal |
+| `tronrelic-get-audience-behavior` | `getBinaryConversionFunnel`, `getRetention`, `getDailyVisitors` | read / internal |
+| `tronrelic-get-new-visitor-origins` | `getNewVisitors`, projected | read / internal / untrusted |
+| `tronrelic-get-crawler-activity` | bot-class breakdown, trend, paths, unclassified UAs | read / internal / untrusted |
+| `tronrelic-get-seo-performance` | `GscService` keywords, pages, keywords-by-day, status | read / internal / untrusted |
+| `tronrelic-get-redirect-analytics` | `getRedirectAnalytics` | read / internal |
+
+**Why three tools declare `surfacesUntrustedContent`.** Unclassified User-Agents, GSC search queries, and new-visitor `searchKeyword`/`utm` values are all authored by outsiders and can be crafted. The declaration makes the governor wrap the result as data rather than instructions. Adding these arms the untrusted-content leg of the lethal-trifecta detector — check the banner and screen posture at `/system/ai-tools` after enabling them alongside any egress tool.
+
+**What is deliberately absent.** `getPageActivity` and `getPageHits` — one person's ordered browsing history, pseudonymous by tid but re-identifiable once a tid carries a `user_id` — are exposed to no tool, and `getHighVolumeSubnets` is excluded because a subnet hash is a source-correlation key. `getNewVisitors` ships only through `projectVisitorOrigin`, which strips `userId` and `subnetHash` so rows carry acquisition shape with no correlation key. Re-adding any of these is a privacy decision, not a convenience one.
+
+The **AI tab** on `/system/traffic` lists these tools with their capability badges, description prompt, and input examples, and toggles each one. It proxies the core registry through `GET /api/admin/users/analytics/ai-tools` and `PATCH /api/admin/users/analytics/ai-tools/:name` (both `requireAdmin`), filtered to this provider — a name owned by another provider 404s. Enabled state lives in core, so a toggle here is the same switch the `/system/ai-tools` Registry tab flips.
+
+See [system-ai-tools.md](../../../../docs/system/system-ai-tools.md) for the tool contract, capability vocabulary, and the accountability every tool must meet.
+
 ## Lifecycle
 
-**`init()`** runs `initGeoIP()`, then constructs `GscService` (creates indexes) and `TrafficService` (no-ops without ClickHouse), then `IgnoredUsersService` (creates indexes) and seeds `TrafficService`'s ignore cache from it so the exclusion is live from the first read, then builds the traffic + bootstrap controllers. **`run()`** registers the `Traffic` menu item under the System container, mounts the traffic, analytics, and bootstrap routers — the `/api/admin/users/*` routers ahead of the identity module's accounts `/api/admin/users` catch-all — and registers the daily `gsc:fetch` job.
+**`init()`** runs `initGeoIP()`, then constructs `GscService` (creates indexes) and `TrafficService` (no-ops without ClickHouse), then `IgnoredUsersService` (creates indexes) and seeds `TrafficService`'s ignore cache from it so the exclusion is live from the first read, then builds the traffic + bootstrap controllers. **`run()`** registers the `Traffic` menu item under the System container, mounts the traffic, analytics, and bootstrap routers — the `/api/admin/users/*` routers ahead of the identity module's accounts `/api/admin/users` catch-all — registers the daily `gsc:fetch` job, and starts the `'ai-tools'` registry watch that registers the read-only analytics tools.
 
 ## Related
 

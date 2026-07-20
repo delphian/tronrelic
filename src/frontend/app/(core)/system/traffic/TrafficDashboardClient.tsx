@@ -36,6 +36,7 @@ import {
     IgnoredUsers,
     RedirectsManager,
     RedirectAnalytics,
+    AiToolsPanel,
     PeriodPicker,
     toDateInputValue,
     useAutoRefresh
@@ -46,7 +47,7 @@ import type { AnalyticsPeriod, ICustomDateRange } from '../../../../modules/traf
 import styles from './page.module.scss';
 
 /** Tab identifiers for the traffic admin page. */
-type TrafficTab = 'analytics' | 'visitors' | 'crawlers' | 'seo' | 'redirects' | 'settings';
+type TrafficTab = 'analytics' | 'visitors' | 'crawlers' | 'seo' | 'redirects' | 'ai' | 'settings';
 
 /** The menu namespace TrafficModule registers the tab nodes under. */
 const SUBMENU_NAMESPACE = 'traffic';
@@ -84,7 +85,7 @@ const DASHBOARD_REFRESH_MS = 60_000;
  */
 function isTrafficTab(tab: string | undefined): tab is TrafficTab {
     return tab === 'analytics' || tab === 'visitors' || tab === 'crawlers'
-        || tab === 'seo' || tab === 'redirects' || tab === 'settings';
+        || tab === 'seo' || tab === 'redirects' || tab === 'ai' || tab === 'settings';
 }
 
 /**
@@ -313,6 +314,7 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
                         <RedirectsManager />
                     </div>
                 )}
+                {activeTab === 'ai' && <AiToolsPanel />}
                 {activeTab === 'settings' && (
                     <div className={styles.settings_stack}>
                         <IgnoredUsers />

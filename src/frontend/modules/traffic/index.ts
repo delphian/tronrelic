@@ -35,6 +35,7 @@ export { RedirectsManager } from './components';
 export { RedirectAnalytics } from './components';
 export { TrafficDashboard } from './components';
 export { CrawlerDashboard } from './components';
+export { AiToolsPanel } from './components';
 export { OverviewTrend } from './components';
 export { PeriodPicker, toDateInputValue } from './components';
 

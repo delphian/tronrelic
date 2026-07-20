@@ -16,6 +16,7 @@ export {
     RedirectAnalytics,
     TrafficDashboard,
     CrawlerDashboard,
+    AiToolsPanel,
     OverviewTrend,
     PeriodPicker,
     toDateInputValue

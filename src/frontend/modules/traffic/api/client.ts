@@ -1208,3 +1208,57 @@ export async function adminGetRedirectAnalytics(
     const response = await apiClient.get('/admin/redirects/analytics', { params });
     return response.data as IRedirectAnalytics;
 }
+
+// ============================================================================
+// AI Tools (registry proxy)
+// ============================================================================
+
+/**
+ * One traffic AI tool as reported by the core registry proxy.
+ *
+ * Mirrors the core `IAiToolInfo` shape. Redeclared here rather than imported
+ * from the types package because this client is frontend-only and the fields
+ * the AI tab renders are a stable subset — `capability` is optional because a
+ * legacy tool may predate the classification requirement.
+ */
+export interface IAiToolSummary {
+    name: string;
+    description: string;
+    enabled: boolean;
+    provider: string;
+    inputSchema?: unknown;
+    inputExamples?: Array<Record<string, unknown>>;
+    capability?: {
+        sideEffect?: string;
+        sensitivity?: string;
+        reversible?: boolean;
+        spendsMoney?: boolean;
+        surfacesUntrustedContent?: boolean;
+        forcesCuratorReview?: boolean;
+    };
+}
+
+/**
+ * List the traffic module's own AI tools with their live enabled state.
+ *
+ * @returns This module's registered tools, empty when none are registered.
+ */
+export async function adminGetTrafficAiTools(): Promise<IAiToolSummary[]> {
+    const response = await apiClient.get('/admin/users/analytics/ai-tools');
+    return (response.data as { tools?: IAiToolSummary[] }).tools ?? [];
+}
+
+/**
+ * Enable or disable one traffic AI tool.
+ *
+ * The enabled state lives in the core registry, so this is the same switch the
+ * `/system/ai-tools` Registry tab flips — not a traffic-local copy.
+ *
+ * @param name - Tool name to toggle.
+ * @param enabled - Target enabled state.
+ * @returns The updated tool as the registry now reports it.
+ */
+export async function adminSetTrafficAiToolEnabled(name: string, enabled: boolean): Promise<IAiToolSummary | undefined> {
+    const response = await apiClient.patch(`/admin/users/analytics/ai-tools/${encodeURIComponent(name)}`, { enabled });
+    return (response.data as { tool?: IAiToolSummary }).tool;
+}
