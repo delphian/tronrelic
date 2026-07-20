@@ -18,5 +18,6 @@ export { RedirectsManager } from './RedirectsManager';
 export { RedirectAnalytics } from './RedirectAnalytics';
 export { TrafficDashboard } from './TrafficDashboard';
 export { CrawlerDashboard } from './CrawlerDashboard';
+export { AiToolsPanel } from './AiToolsPanel';
 export { OverviewTrend } from './OverviewTrend';
 export { PeriodPicker, toDateInputValue } from './PeriodPicker';

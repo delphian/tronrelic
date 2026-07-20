@@ -17,11 +17,12 @@
  */
 
 import type { Request, Response } from 'express';
-import type { IServiceRegistry, IAccountDirectoryService, IWalletService, ISystemLogService } from '@/types';
+import type { IAiToolRegistry, IServiceRegistry, IAccountDirectoryService, IWalletService, ISystemLogService } from '@/types';
 import type { TrafficService, IConversionFunnelResponse } from '../services/traffic.service.js';
 import { resolveAnalyticsRange } from '../services/traffic.service.js';
 import type { GscService } from '../services/gsc.service.js';
 import type { IgnoredUsersService } from '../services/ignored-users.service.js';
+import { listOwnAiTools } from '../ai-tools.js';
 import { parsePositiveInt, parseNonNegativeInt } from '../../../api/query-params.js';
 
 /** Max account matches returned by the ignore-list account search. */
@@ -800,6 +801,74 @@ export class TrafficController {
         } catch (error) {
             this.logger.error({ err: error }, 'Failed to fetch GSC keywords by day');
             res.status(500).json({ error: 'InternalError', message: 'Failed to fetch GSC keywords by day' });
+        }
+    }
+
+    /**
+     * GET /api/admin/users/analytics/ai-tools
+     *
+     * List this module's AI tools with their capability classification and live
+     * enabled state, so the AI tab can show an operator exactly what a model may
+     * ask of the analytics surface. A proxy onto the core registry rather than a
+     * second source of truth — the enabled state it reports is the same one
+     * `/system/ai-tools` governs.
+     *
+     * 503s when the registry is absent (the ai-tools module unavailable), because
+     * an empty list would read as "traffic registers no AI tools" when in fact
+     * nothing could be asked.
+     */
+    async getAiTools(_req: Request, res: Response): Promise<void> {
+        try {
+            const registry = this.serviceRegistry.get<IAiToolRegistry>('ai-tools');
+            if (!registry) {
+                res.status(503).json({ error: 'ServiceUnavailable', message: 'AI tool registry unavailable' });
+                return;
+            }
+            res.json({ tools: listOwnAiTools(registry) });
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to list traffic AI tools');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to list traffic AI tools' });
+        }
+    }
+
+    /**
+     * PATCH /api/admin/users/analytics/ai-tools/:name  body: { enabled: boolean }
+     *
+     * Enable or disable one traffic AI tool. The ownership check is not
+     * cosmetic: without it this route would be a general-purpose switch for any
+     * provider's tools that happens to sit behind the traffic admin surface, so
+     * a name belonging to another provider 404s exactly like an unknown one.
+     */
+    async setAiToolEnabled(req: Request, res: Response): Promise<void> {
+        const name = String(req.params.name ?? '');
+        const enabled = (req.body as { enabled?: unknown } | undefined)?.enabled;
+
+        // Strict boolean only — a coerced truthy string could flip a tool the
+        // opposite of the operator's intent.
+        if (typeof enabled !== 'boolean') {
+            res.status(400).json({ error: 'BadRequest', message: 'enabled must be a boolean' });
+            return;
+        }
+
+        try {
+            const registry = this.serviceRegistry.get<IAiToolRegistry>('ai-tools');
+            if (!registry) {
+                res.status(503).json({ error: 'ServiceUnavailable', message: 'AI tool registry unavailable' });
+                return;
+            }
+
+            const owned = listOwnAiTools(registry).some(tool => tool.name === name);
+            if (!owned) {
+                res.status(404).json({ error: 'NotFound', message: 'Unknown traffic AI tool' });
+                return;
+            }
+
+            await registry.setEnabled(name, enabled);
+            const tool = listOwnAiTools(registry).find(entry => entry.name === name);
+            res.json({ tool });
+        } catch (error) {
+            this.logger.error({ err: error, name }, 'Failed to update traffic AI tool');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to update traffic AI tool' });
         }
     }
 }

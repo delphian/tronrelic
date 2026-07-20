@@ -18,7 +18,8 @@
  */
 
 import type { Express, Router } from 'express';
-import type { ICacheService, IClickHouseService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry } from '@/types';
+import type { ICacheService, IClickHouseService, IDatabaseService, IMenuService, IModule, IModuleMetadata, ISchedulerService, IServiceRegistry, ServiceWatchDisposer } from '@/types';
+import { registerTrafficAiTools } from './ai-tools.js';
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { GscService } from './services/gsc.service.js';
@@ -85,7 +86,8 @@ const TRAFFIC_SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: st
     { label: 'Crawlers', tab: 'crawlers', icon: 'Bot', order: 2 },
     { label: 'SEO', tab: 'seo', icon: 'Search', order: 3 },
     { label: 'Redirects', tab: 'redirects', icon: 'CornerUpRight', order: 4 },
-    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 5 }
+    { label: 'AI', tab: 'ai', icon: 'Sparkles', order: 5 },
+    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 6 }
 ];
 
 /**
@@ -103,6 +105,14 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
     private app!: Express;
     private menuService!: IMenuService;
     private scheduler!: ISchedulerService | null;
+    private serviceRegistry!: IServiceRegistry;
+
+    /**
+     * Disposer for the `'ai-tools'` registry watch. Held so the subscription can
+     * be torn down symmetrically; modules run for the process lifetime, so this
+     * is never called today.
+     */
+    private unwatchAiTools: ServiceWatchDisposer | null = null;
 
     private gscService!: GscService;
     private trafficService!: TrafficService;
@@ -126,6 +136,7 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         this.app = dependencies.app;
         this.menuService = dependencies.menuService;
         this.scheduler = dependencies.scheduler;
+        this.serviceRegistry = dependencies.serviceRegistry;
 
         // Initialize GeoIP lookup for country detection (non-blocking).
         await initGeoIP();
@@ -275,6 +286,16 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
         } else {
             this.logger.info('Scheduler disabled — GSC fetch job not registered');
         }
+
+        // Read-only AI tools over the analytics surface. Watched rather than
+        // resolved once: the ai-tools module publishes its registry during
+        // `run()`, and bootstrap order does not guarantee it has done so yet.
+        this.unwatchAiTools = registerTrafficAiTools(
+            this.serviceRegistry,
+            this.trafficService,
+            this.gscService,
+            this.logger
+        );
 
         this.logger.info('Traffic module running');
     }

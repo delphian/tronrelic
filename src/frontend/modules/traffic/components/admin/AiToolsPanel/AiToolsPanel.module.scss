@@ -1,0 +1,92 @@
+@use '../../../../../app/breakpoints' as *;
+
+.tool_header {
+    container-type: inline-size;
+    container-name: ai-tool-header;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--gap-md);
+}
+
+.tool_identity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+    min-width: 0;
+}
+
+.tool_name {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}
+
+.tool_badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-2xs);
+}
+
+.tool_section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.tool_section_label {
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+}
+
+.tool_description {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+    color: var(--color-text-muted);
+}
+
+.tool_examples {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
+}
+
+.tool_example {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    padding: var(--padding-sm);
+    overflow-x: auto;
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.error_row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-danger);
+}
+
+/* Narrow containers (slideout, mobile) stack the switch under the tool name
+   rather than letting the long tool id squeeze it off the row. */
+@container ai-tool-header (max-width: #{$breakpoint-mobile-md}) {
+    .tool_header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--gap-sm);
+    }
+}
