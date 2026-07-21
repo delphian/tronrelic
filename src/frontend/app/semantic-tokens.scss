@@ -383,11 +383,9 @@
     --page-header-bg-size: 140px;
     --page-header-bg-position: bottom right;
 
-    /* Main Content Area Padding (top / sides / bottom) */
-    --main-padding-lg: var(--spacing-9) var(--spacing-15) var(--spacing-11);    /* desktop:   20px / 48px / 28px */
-    --main-padding-md: var(--spacing-7) var(--spacing-10) var(--spacing-10);    /* tablet:    16px / 24px / 24px */
-    --main-padding-sm: var(--spacing-5) var(--spacing-9) var(--spacing-9);      /* mobile:    12px / 20px / 20px */
-    --main-padding-xs: var(--spacing-1) var(--spacing-4) var(--spacing-4);      /* mobile-sm:  4px /  8px /  8px */
+    /* Main Content Area Padding — declared in the density block below, since
+       the shell gutter scales with --density alongside the other layout
+       spacing. See --main-padding-lg/md/sm/xs there. */
 
     /* Site-wide Body Background Image */
     --body-bg-image: none;
@@ -595,8 +593,9 @@
  * DENSITY MULTIPLIER + DENSITY-SCALED TOKENS
  *
  * Scales layout spacing only — generic gaps and padding, card padding,
- * stack/grid gaps, and the page gap. Identity by default; the named steps
- * below set it, and `data-density` on <html> applies one site-wide.
+ * stack/grid gaps, the page gap, and the <main> shell padding. Identity by
+ * default; the named steps below set it, and `data-density` on <html> applies
+ * one site-wide.
  *
  * `[data-density]` is in this selector list on purpose. A custom property is
  * substituted where it is DECLARED, not where it is used, so a scaled token
@@ -667,6 +666,26 @@
     /* Page gaps */
     --page-gap: calc(var(--spacing-14) * var(--density));   /* base 3rem */
     --page-gap-sm: calc(var(--spacing-7) * var(--density)); /* base 1rem - mobile/constrained contexts */
+
+    /* Main Content Area Padding (top / sides / bottom)
+     *
+     * The <main> shell gutter, selected per breakpoint in globals.scss. Each
+     * side is multiplied individually because a three-value shorthand cannot
+     * be scaled as a unit. Base values at density 1 are, in order:
+     *   lg  desktop    24px / 48px / 24px
+     *   md  tablet     16px / 24px / 24px
+     *   sm  mobile     12px / 24px / 24px
+     *   xs  mobile-sm   4px /  8px /  8px
+     *
+     * Each declaration stays on ONE line on purpose: trp-themes builds its
+     * new-theme template by line-matching `--var: value;` out of this file's
+     * served copy, and a wrapped value would emit a valueless declaration.
+     * (That template is currently inert — no /semantic-tokens.css is served —
+     * but keep the constraint so restoring it doesn't silently break.) */
+    --main-padding-lg: calc(var(--spacing-9) * var(--density)) calc(var(--spacing-15) * var(--density)) calc(var(--spacing-11) * var(--density));
+    --main-padding-md: calc(var(--spacing-7) * var(--density)) calc(var(--spacing-10) * var(--density)) calc(var(--spacing-10) * var(--density));
+    --main-padding-sm: calc(var(--spacing-5) * var(--density)) calc(var(--spacing-9) * var(--density)) calc(var(--spacing-9) * var(--density));
+    --main-padding-xs: calc(var(--spacing-1) * var(--density)) calc(var(--spacing-4) * var(--density)) calc(var(--spacing-4) * var(--density));
 }
 
 /* ============================================================================
