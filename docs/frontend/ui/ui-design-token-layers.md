@@ -175,7 +175,7 @@ Drift accumulates quietly. A periodic grep catches most of it:
 
 ```bash
 # Component code reaching into Layer 1 — the boundary violation
-grep -rnE 'var\(--(spacing-[0-9]+|radius-[1-6]|font-size-(xxs|xs|sm|base|md|lg|xl|2xl|3xl))\)' \
+grep -rnE 'var\(\s*--(spacing-[0-9]+|radius-[1-6]|font-size-(xxs|xs|sm|base|md|lg|xl|2xl|3xl))\s*\)' \
     src/frontend src/plugins --include="*.scss" --include="*.css" \
     --exclude-dir=.next --exclude-dir=dist --exclude-dir=node_modules \
     | grep -v 'app/semantic-tokens.scss'
@@ -191,7 +191,7 @@ grep -nE 'rgba?\(([0-9]+,\s*){2}(2[0-9]{2}|1[5-9][0-9])' \
     src/frontend/app/semantic-tokens.scss
 ```
 
-The first grep currently reports a known backlog (~1,270 sites across 78 files, all `--spacing-*` and raw `--font-size-*`); radius is clean. Treat new hits as regressions, not as part of that backlog.
+The first grep currently reports a known backlog (~1,170 sites across 78 files, all `--spacing-*` and raw `--font-size-*`); radius is clean. Treat new hits as regressions, not as part of that backlog.
 
 Hits are either real violations (replace with semantic tokens, the alpha ladder, or `color-mix()`) or intentional literals from the exception carveout above. The latter should already carry an explaining comment; if they don't, add one and consider whether a plugin-local variable would be cleaner.
 
