@@ -261,6 +261,20 @@ async function fetchSSRSession(): Promise<ISSRSession | null> {
   }
 }
 
+/**
+ * Site-wide interface density, stamped onto <html> during SSR.
+ *
+ * Density scales layout spacing (gaps, generic and card padding, page gap)
+ * through the --density multiplier in semantic-tokens.scss. It is set here
+ * rather than in a client effect so the value is present in the server-rendered
+ * HTML — stamping it after hydration would repaint every gap on the page and
+ * produce a visible density snap on first load, the same reason data-theme is
+ * resolved during SSR.
+ *
+ * Valid steps: 'compact' (0.75), 'cozy' (0.875), 'default' (1), 'roomy' (1.125).
+ */
+const SITE_DENSITY = 'default';
+
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // Extract pathname from middleware-set header for ticker-after widget zone
   const headersList = await headers();
@@ -288,7 +302,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   ]);
 
   return (
-    <html {...htmlAttributes}>
+    /* data-density is spread first so an ssr.htmlAttributes hook contributor
+       can override the site default without this layout knowing about it. */
+    <html data-density={SITE_DENSITY} {...htmlAttributes}>
       <head>
         {/* Inject runtime configuration before any client scripts */}
         <script
