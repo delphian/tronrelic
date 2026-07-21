@@ -376,8 +376,8 @@
     --page-bg-size: 140px;
     --page-bg-position: bottom right;
 
-    /* PageHeader Layout */
-    --page-header-gap: var(--spacing-5);        /* 0.75rem */
+    /* PageHeader Layout — --page-header-gap is declared in the density block
+       below; it separates page-level content rather than sizing a control. */
     --page-header-bg-image: none;
     --page-header-bg-opacity: 0.08;
     --page-header-bg-size: 140px;
@@ -395,12 +395,9 @@
     --body-bg-repeat: no-repeat;
     --body-bg-attachment: fixed;
 
-    /* Input Group */
-    --input-group-gap: var(--spacing-5);        /* 0.75rem */
-
-    /* Form Footer — trailing action row (e.g. Cancel / Save) */
-    --form-footer-gap: var(--spacing-5);        /* 0.75rem - gap between footer actions */
-    --form-footer-margin-top: var(--spacing-10);/* 1.5rem - separation from form body */
+    /* Input Group and Form Footer spacing — declared in the density block
+       below. These space controls apart rather than sizing them, so they scale.
+       See --input-group-gap, --form-footer-gap, --form-footer-margin-top. */
 
     /* ========================================================================
      * NAVIGATION COMPONENT TOKENS
@@ -416,9 +413,9 @@
     --color-nav-tab-active-background: rgba(255, 255, 255, 0.1);
     --color-nav-tab-active-border: rgba(255, 255, 255, 0.2);
 
-    /* Navigation - Layout (responsive shell overrides in globals.scss) */
-    --nav-padding: var(--spacing-8) var(--spacing-10);  /* 1.1rem 1.5rem - condensed nav padding below desktop */
-    --nav-gap: var(--spacing-6);                        /* 0.85rem - stacked nav gap on mobile */
+    /* Navigation - Layout (responsive shell overrides in globals.scss)
+       --nav-padding and --nav-gap are declared in the density block below: the
+       nav shell is layout chrome, so its gutter tracks the <main> gutter. */
 
     /* ========================================================================
      * TABLE COMPONENT TOKENS
@@ -433,9 +430,9 @@
     --table-header-font-size: var(--font-size-xs);        /* 0.72rem */
     --table-header-letter-spacing: var(--letter-spacing-wide); /* 0.08em */
 
-    /* Table - Cells */
-    --table-cell-padding: var(--spacing-6) var(--spacing-8); /* 0.85rem 1.1rem */
-    --table-cell-padding-compact: var(--spacing-3) var(--spacing-4); /* 0.4rem 0.5rem - dense cells on narrow viewports */
+    /* Table - Cells (--table-cell-padding and --table-cell-padding-compact are
+       declared in the density block below: cell padding is the row rhythm of a
+       data table, which is exactly what a density setting should reach.) */
     --table-cell-border: var(--border-width-thin) solid rgba(255, 255, 255, 0.05);
 
     /* Table - Row Hover */
@@ -462,8 +459,8 @@
      * ALERT COMPONENT TOKENS
      * ======================================================================== */
 
-    /* Alert - Base */
-    --alert-padding: var(--spacing-8) 1.4rem;     /* 1.1rem 1.4rem */
+    /* Alert - Base (--alert-padding is declared in the density block below: an
+       alert is a content block, not a control with a fixed touch target.) */
     --alert-border-radius: var(--radius-md);
     --alert-border-width: var(--border-width-thin);
     --alert-font-size: var(--font-size-sm);       /* 0.85rem */
@@ -586,16 +583,19 @@
     --meter-height: 8px;
     --meter-background: var(--color-border-strong);
     --meter-value-background: var(--gradient-meter);
-    --meter-margin-top: var(--spacing-5);         /* 0.75rem */
+    /* --meter-margin-top is declared in the density block below: it separates
+       the meter from preceding content, so it scales like any other gap. The
+       bar's own --meter-height stays fixed for legibility. */
 }
 
 /* ============================================================================
  * DENSITY MULTIPLIER + DENSITY-SCALED TOKENS
  *
  * Scales layout spacing only — generic gaps and padding, card padding,
- * stack/grid gaps, the page gap, and the <main> shell padding. Identity by
- * default; the named steps below set it, and `data-density` on <html> applies
- * one site-wide.
+ * stack/grid gaps, the page gap, the <main> shell padding, and the remaining
+ * content-level spacing (page header, nav shell, input group, form footer,
+ * table cells, alert, meter offset). Identity by default; the named steps below
+ * set it, and `data-density` on <html> applies one site-wide.
  *
  * `[data-density]` is in this selector list on purpose. A custom property is
  * substituted where it is DECLARED, not where it is used, so a scaled token
@@ -614,10 +614,17 @@
  * `:root, [data-theme="default"]` must stay in this list: <html> may carry no
  * data-density attribute, and these tokens would otherwise be undefined.
  *
- * Control internals (button, input, badge, chip, table, modal, alert and toast
- * padding) deliberately do NOT scale: their heights, icon sizes and touch
- * targets are px and would distort against shrinking padding, and holding them
- * fixed keeps tap targets above the WCAG 2.5.8 minimum.
+ * Control internals (button, icon-button, switch, input, badge, chip and
+ * segmented-control padding) deliberately do NOT scale: their heights, icon
+ * sizes and touch targets are px and would distort against shrinking padding,
+ * and holding them fixed keeps tap targets above the WCAG 2.5.8 minimum.
+ * Overlay chrome (modal and toast padding, offsets) is likewise fixed — it is
+ * positioned against the viewport, not against page content.
+ *
+ * The dividing line is what the value spaces, not which component owns it: a
+ * token that separates content scales, a token that sizes a control does not.
+ * --meter-margin-top scales while --meter-height holds; --table-cell-padding
+ * scales because it is the row rhythm of a data table.
  *
  * These tokens are density-relative by design and compute to different values
  * under different density steps — a deliberate carve-out from the
@@ -686,6 +693,30 @@
     --main-padding-md: calc(var(--spacing-7) * var(--density)) calc(var(--spacing-10) * var(--density)) calc(var(--spacing-10) * var(--density));
     --main-padding-sm: calc(var(--spacing-5) * var(--density)) calc(var(--spacing-9) * var(--density)) calc(var(--spacing-9) * var(--density));
     --main-padding-xs: calc(var(--spacing-1) * var(--density)) calc(var(--spacing-4) * var(--density)) calc(var(--spacing-4) * var(--density));
+
+    /* PageHeader — gap between title and subtitle */
+    --page-header-gap: calc(var(--spacing-5) * var(--density));   /* base 0.75rem */
+
+    /* Navigation shell — condensed padding below desktop, stacked gap on mobile */
+    --nav-padding: calc(var(--spacing-8) * var(--density)) calc(var(--spacing-10) * var(--density)); /* base 1rem 1.5rem */
+    --nav-gap: calc(var(--spacing-6) * var(--density));           /* base 0.75rem */
+
+    /* Input group and form footer — spacing between controls, not within them */
+    --input-group-gap: calc(var(--spacing-5) * var(--density));        /* base 0.75rem */
+    --form-footer-gap: calc(var(--spacing-5) * var(--density));        /* base 0.75rem */
+    --form-footer-margin-top: calc(var(--spacing-10) * var(--density));/* base 1.5rem */
+
+    /* Table cell padding — the row rhythm of a data table.
+     * Both steps scale so the narrow-viewport rule in globals.scss still
+     * selects the compact token rather than redefining the default one. */
+    --table-cell-padding: calc(var(--spacing-6) * var(--density)) calc(var(--spacing-8) * var(--density));         /* base 0.75rem 1rem */
+    --table-cell-padding-compact: calc(var(--spacing-3) * var(--density)) calc(var(--spacing-4) * var(--density)); /* base 0.5rem 0.5rem */
+
+    /* Alert body padding — a content block, not a control */
+    --alert-padding: calc(var(--spacing-8) * var(--density)) calc(1.4rem * var(--density));  /* base 1rem 1.4rem */
+
+    /* Meter offset from preceding content (--meter-height stays fixed) */
+    --meter-margin-top: calc(var(--spacing-5) * var(--density));  /* base 0.75rem */
 }
 
 /* ============================================================================
