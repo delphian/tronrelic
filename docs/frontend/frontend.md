@@ -38,7 +38,7 @@ Component responsiveness uses `container-type: inline-size` and `@container` que
 
 ### Design Tokens and SCSS Modules — No Hardcoded Values
 
-Component-specific styles live in colocated `Component.module.scss` files with scoped class names (use underscores for multi-word identifiers so TypeScript dot notation works: `styles.market_card`). Reference design tokens (`var(--color-primary)`, `var(--gap-md)`, `var(--card-padding-md)`, `var(--radius-md)`) — never hardcoded colors, spacing, fonts, or sizes. The token system has three layers: foundation primitives in `primitives.scss` (forbidden in component code — including the `--radius-1`…`--radius-6` scale), use-case-named semantics and curated t-shirt-sized primitives in `semantic-tokens.scss` (preferred), and design-constant primitives like `--shadow-sm` and `--border-width-thin` (acceptable fallback). Full tier rules in [ui-design-token-layers.md](./ui/ui-design-token-layers.md); SCSS workflow in [ui-scss-modules.md](./ui/ui-scss-modules.md).
+Component-specific styles live in colocated `Component.module.scss` files with scoped class names (use underscores for multi-word identifiers so TypeScript dot notation works: `styles.market_card`). Reference design tokens (`var(--color-primary)`, `var(--gap-md)`, `var(--card-padding-md)`, `var(--radius-md)`) — never hardcoded colors, spacing, fonts, or sizes. The rule is one line: **component code references Layer 2 (`semantic-tokens.scss`); Layer 1 (`primitives.scss`) is composition input.** Layer 1 holds only `--spacing-N`, `--radius-N`, and the raw font-size scale. Full detail in [ui-design-token-layers.md](./ui/ui-design-token-layers.md); SCSS workflow in [ui-scss-modules.md](./ui/ui-scss-modules.md).
 
 ### Modules Export Through `index.ts`
 

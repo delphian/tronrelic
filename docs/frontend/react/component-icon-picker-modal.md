@@ -75,7 +75,7 @@ export function IconField() {
 
 CSS Modules (`IconPickerModal.module.css`) scoped to the component, container queries on `container-name: icon-picker` to adapt grid columns to modal width (not viewport).
 
-The component's existing SCSS predates the project's 4-tier token rule and references foundation primitives (`--spacing-N`, `--font-size-xs/sm/md`). When adding new component CSS in this codebase, prefer the use-case semantics and curated t-shirt primitives — see [ui-design-token-layers.md](../ui/ui-design-token-layers.md) for the tier rules and [ui-scss-modules.md](../ui/ui-scss-modules.md) for the component-styling workflow.
+The component's existing SCSS predates the Layer 1 / Layer 2 boundary and references foundation scales (`--spacing-N`, `--font-size-xs/sm/md`) directly. New component CSS must reference Layer 2 only — see [ui-design-token-layers.md](../ui/ui-design-token-layers.md) for the rule and [ui-scss-modules.md](../ui/ui-scss-modules.md) for the styling workflow.
 
 ## Pre-Use Checklist
 
@@ -89,6 +89,6 @@ The component's existing SCSS predates the project's 4-tier token rule and refer
 
 - [react.md](./react.md) — Provider composition, where `ModalProvider` lives
 - [ui-scss-modules.md](../ui/ui-scss-modules.md) — Component styling workflow
-- [ui-design-token-layers.md](../ui/ui-design-token-layers.md) — Token tier rules
+- [ui-design-token-layers.md](../ui/ui-design-token-layers.md) — Token layer boundary and consumption rule
 - [ui-accessibility.md](../ui/ui-accessibility.md) — ARIA, focus, keyboard navigation rules
 - [ui-theme.md](../ui/ui-theme.md) — Theme system using IconPickerModal in admin

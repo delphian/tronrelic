@@ -1,37 +1,36 @@
 # Design Tokens
 
-TronRelic's design tokens are CSS variables that name design decisions (colors, spacing, typography, radii, shadows). The system follows the three-layer pattern used by W3C-DTCG, Material Design, Adobe Spectrum, and Shopify Polaris — primitives at the bottom, semantic aliases in the middle, component code on top.
+TronRelic's design tokens are CSS variables that name design decisions (colors, spacing, typography, radii, shadows). The system follows the three-layer pattern used by W3C-DTCG, Material Design, Adobe Spectrum, and Shopify Polaris — foundation scales at the bottom, the consumable surface in the middle, component code on top.
 
 ## Why This Matters
 
-Hardcoded values fragment the UI and make theming impossible. Three layers give a single source of truth at each level: change one semantic token and every component that aliases it updates; theme switching is a remap, not a rewrite. The price of breaking the layering is exactly what it sounds like — token names that lie, themes that don't propagate, mobile breakpoints that redefine "medium" until the word means nothing.
+Hardcoded values fragment the UI and make theming impossible. Layering gives a single source of truth at each level: change one Layer 2 token and every component using it updates; theme switching is a remap, not a rewrite. The price of breaking the layering is exactly what it sounds like — token names that lie, themes that don't propagate, mobile breakpoints that redefine "medium" until the word means nothing.
+
+## The Rule
+
+**Component code references Layer 2. Layer 1 is composition input.**
+
+That is the whole consumption rule. There is no ranking to memorize and no second numbering scheme — if a token is declared in `semantic-tokens.scss`, component CSS may use it; if it is declared in `primitives.scss`, component CSS may not.
 
 ## The Three Layers
 
-### Layer 1 — Foundation Primitives (`primitives.scss`)
+### Layer 1 — Foundation Scales (`primitives.scss`)
 
-Raw values with no use-case meaning. Color palette (`--color-blue-500`), spacing scale (`--spacing-1` through `--spacing-20`), raw t-shirt font sizes (`--font-size-xs/sm/md/lg/xl/2xl/3xl`), font weights, line heights, radii, shadows.
+Three scales and nothing else: `--spacing-1…16`, `--radius-1…6`, `--font-size-xxs…3xl`. Each exists solely to be composed into a Layer 2 token. Component code never picks a rung off these ladders.
 
-### Layer 2 — Semantic Tokens (`semantic-tokens.scss`)
+### Layer 2 — Consumable Surface (`semantic-tokens.scss`)
 
-Use-case names that alias primitives: `--color-text`, `--color-danger`, `--card-padding-md`, `--button-padding-md`, `--button-border-radius`, `--card-shadow`, `--card-border-radius`, `--font-size-heading-md`, `--font-size-body`, `--max-width-prose`. These are the chokepoint themes remap to switch dark/light/brand variants.
+Everything component code may reference. Naming here is **deliberately mixed**: `--color-primary` and `--card-padding-md` describe use cases, `--gap-md` and `--shadow-sm` describe values, and all four belong because all four are endpoints.
 
-`semantic-tokens.scss` also hosts curated t-shirt-sized scales — `--gap-2xs/xs/sm/md/lg/xl`, `--padding-2xs/xs/sm/md/lg/xl`, `--avatar-size-sm/md/lg`. **By industry convention these are still primitives** (the names describe values, not use cases — Spectrum, Tailwind v4, Carbon, Atlassian classify their equivalents the same way). They live in this file because it is the curated chokepoint of *tokens component code may reference*, not a strict semantic-only collection.
+The boundary between Layer 1 and Layer 2 is **input versus endpoint**, not primitive-name versus semantic-name. `--shadow-sm` reads like a primitive but nothing composes from it, so it is Layer 2. `--spacing-7` is an input to `--gap-md`, so it is Layer 1. This is the same line Material draws between `md.ref.*` and `md.sys.*`, where the consumable layer likewise mixes `md.sys.color.primary` with `md.sys.shape.corner.large`.
+
+Prefer the use-case name when one fits — `--card-padding-md` inside a card rather than `--gap-md` — because it carries intent and gives a theme a narrower handle. **This is guidance, not a rule.** The value-named scales exist precisely for what use-case names do not cover, and reaching for one is not a violation.
 
 ### Layer 3 — Component Code (`.module.scss`, `globals.scss` utilities)
 
-Where tokens meet markup. Component CSS Modules consume tokens; `globals.scss` defines the small set of global utility classes (`.text-muted`, `.chip`, `.alert`, etc.).
+Where tokens meet markup. Component CSS Modules consume Layer 2; `globals.scss` defines the small set of global utility classes (`.text-muted`, `.chip`, `.alert`, etc.).
 
-## The Four-Tier Rule for Component Code
-
-Component CSS reaches for tokens in this order:
-
-1. **Use-case-named semantic tokens** when one exists — `--color-text`, `--color-danger`, `--card-padding-md`, `--button-gap`, `--stack-gap-md`, `--font-size-heading-md`, `--font-size-body`, `--max-width-prose`. **Always preferred.**
-2. **Curated t-shirt primitives in `semantic-tokens.scss`** — `--gap-*`, `--padding-*`, `--radius-xs/sm/md/lg/xl/full`, `--avatar-size-*`. Acceptable when no use-case-named semantic fits.
-3. **Design-constant primitives in `primitives.scss`** — `--border-width-thin/medium/thick`, `--shadow-sm/md/lg`, `--font-weight-*`, `--line-height-*`, `--letter-spacing-*`, `--max-width-*`. These don't shift between themes; aliasing them through Layer 2 adds ceremony without value, so reach for them directly. Radius is **not** in this tier: the t-shirt scale carries the `--density` factor, so consuming a foundation radius silently opts that corner out of density scaling.
-4. **Forbidden in component code** — the foundation scales: `--spacing-1`...`--spacing-20`, `--radius-1`...`--radius-6`, raw color palette (`--color-blue-500`), raw t-shirt font sizes (`--font-size-xs/sm/md/lg/xl/2xl/3xl`).
-
-If no token in tiers 1–3 fits, **flag the gap so a use-case-named semantic can be added**. Don't silently drop to a forbidden foundation primitive.
+If no Layer 2 token fits, **add one** — don't reach into Layer 1.
 
 ## Layer 2 Composition Rules
 
@@ -41,7 +40,7 @@ Layer 2 tokens must derive from theme-controlled tokens. Literal values short-ci
 
 **No half-derived tokens.** A token that mixes `var(--color-primary)` with a literal stop (e.g., `linear-gradient(135deg, var(--color-primary), #6da3ff)`) themes the derived half and freezes the literal half. The result is a visible color shear when the theme remaps primary. Derive every stop from theme-controlled values; use `color-mix(in srgb, var(--color-primary) 70%, white)` for a lighter variant.
 
-**No duplicate token names across layers.** Defining the same token in both `primitives.scss` and `semantic-tokens.scss` creates dead code — the later file wins the cascade silently. Semantic-named tokens belong in Layer 2; raw scales in Layer 1. A token name may appear only once in the source tree.
+**No duplicate token names across layers.** Defining the same token in both `primitives.scss` and `semantic-tokens.scss` creates dead code — the later file wins the cascade silently. Endpoints belong in Layer 2; composition inputs in Layer 1. A token name may appear only once in the source tree.
 
 ### Alpha Ladder
 
@@ -175,7 +174,13 @@ Themes override semantic tokens via custom CSS attached to a `[data-theme="UUID"
 Drift accumulates quietly. A periodic grep catches most of it:
 
 ```bash
-# Layer 3/4 — color literals in component and plugin code
+# Component code reaching into Layer 1 — the boundary violation
+grep -rnE 'var\(--(spacing-[0-9]+|radius-[1-6]|font-size-(xxs|xs|sm|base|md|lg|xl|2xl|3xl))\)' \
+    src/frontend src/plugins --include="*.scss" --include="*.css" \
+    --exclude-dir=.next --exclude-dir=dist --exclude-dir=node_modules \
+    | grep -v 'app/semantic-tokens.scss'
+
+# Color literals in component and plugin code
 grep -rnE 'rgba?\(|#[0-9a-fA-F]{6}' \
     src/frontend/components src/frontend/modules src/frontend/features src/plugins \
     --include="*.scss" 2>/dev/null \
@@ -185,6 +190,8 @@ grep -rnE 'rgba?\(|#[0-9a-fA-F]{6}' \
 grep -nE 'rgba?\(([0-9]+,\s*){2}(2[0-9]{2}|1[5-9][0-9])' \
     src/frontend/app/semantic-tokens.scss
 ```
+
+The first grep currently reports a known backlog (~1,270 sites across 78 files, all `--spacing-*` and raw `--font-size-*`); radius is clean. Treat new hits as regressions, not as part of that backlog.
 
 Hits are either real violations (replace with semantic tokens, the alpha ladder, or `color-mix()`) or intentional literals from the exception carveout above. The latter should already carry an explaining comment; if they don't, add one and consider whether a plugin-local variable would be cleaner.
 

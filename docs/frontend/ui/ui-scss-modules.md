@@ -120,7 +120,7 @@ Reach for tokens in `semantic-tokens.scss` first. Tokens are immutable — selec
 }
 ```
 
-**Token tiering** (full rules in [ui-design-token-layers.md](./ui-design-token-layers.md#the-four-tier-rule-for-component-code)): prefer use-case-named semantics (`--card-padding-md`, `--button-gap`); fall back to curated t-shirt primitives (`--gap-*`, `--padding-*`, `--radius-*`) and design constants (`--shadow-*`, `--font-weight-*`); never touch foundation scales (`--spacing-*`, `--radius-1`…`--radius-6`, raw color palette, raw `--font-size-xs/sm/md/lg/xl/2xl/3xl`). If nothing fits, add a new use-case-named semantic — don't drop to a forbidden scale. Never hardcode values, never redefine tokens across breakpoints.
+**Token layering** (full rules in [ui-design-token-layers.md](./ui-design-token-layers.md#the-rule)): component code references Layer 2 (`semantic-tokens.scss`) and never Layer 1 (`primitives.scss`, which holds only `--spacing-N`, `--radius-N`, and the raw font-size scale as composition inputs). Within Layer 2, prefer the use-case name when one fits (`--card-padding-md` over `--gap-md` inside a card) — guidance, not a rule. If nothing fits, add a Layer 2 token rather than reaching into Layer 1. Never hardcode values, never redefine tokens across breakpoints.
 
 ## Complete Example
 

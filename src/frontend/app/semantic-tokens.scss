@@ -1,14 +1,21 @@
 /**
- * TronRelic Semantic Tokens (Layer 2)
+ * TronRelic Consumable Tokens (Layer 2)
  *
- * Semantic tokens composed from primitives.scss foundation values.
- * These tokens add meaning to primitive values (e.g., --color-primary instead of --blue-600).
- * They provide consistent theming and can be changed globally to affect all components.
+ * The complete surface component code may reference. If a token is not declared
+ * here (or in the density block below), component code must not use it.
  *
- * Derived from analyzing actual usage patterns in Button.module.css, Card.module.css,
- * Badge.module.css, Input.module.css, and globals.scss utility classes.
+ * Naming is deliberately mixed. `--color-primary` describes a use case,
+ * `--gap-md` describes a value, and both belong here because both are endpoints
+ * for component code. The Layer 1 / Layer 2 boundary is input-vs-endpoint, not
+ * primitive-vs-semantic — the same boundary Material draws between md.ref.* and
+ * md.sys.*, where the consumable layer also mixes the two naming styles.
  *
- * See docs/frontend/ui/ui-design-token-layers.md for usage guidelines.
+ * Prefer the use-case name when one fits (`--card-padding-md` over `--gap-md`
+ * inside a card); it carries intent and gives themes a narrower handle. This is
+ * guidance, not a rule — the value-named scales exist precisely for everything
+ * a use-case name does not cover, and reaching for one is not a violation.
+ *
+ * See docs/frontend/ui/ui-design-token-layers.md for the consumption rule.
  */
 
 /* ============================================================================
@@ -16,6 +23,126 @@
  * ========================================================================== */
 :root,
 [data-theme="default"] {
+    /* ========================================================================
+     * DESIGN CONSTANTS
+     *
+     * Endpoints with no composition step — the token IS the value. They live
+     * here rather than in primitives.scss because component code consumes them
+     * directly; a name like --shadow-sm reading "primitive" is irrelevant to
+     * where it belongs.
+     * ======================================================================== */
+
+    /* Typography - Font Family (system fonts for zero-latency rendering) */
+    --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'Courier New', Courier, monospace;
+
+    /* Typography - Font Weights */
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    /* Typography - Line Heights */
+    --line-height-tight: 1.25;
+    --line-height-normal: 1.4;
+    --line-height-relaxed: 1.5;
+
+    /* Typography - Letter Spacing */
+    --letter-spacing-tight: -0.02em;
+    --letter-spacing-normal: 0.01em;
+    --letter-spacing-wide: 0.08em;
+
+    /* Brand & Status Colors — the source of truth a theme remaps */
+    --color-background: #03060f;
+    --color-primary: #4b8cff;
+    --color-primary-strong: #246bff;
+    --color-success: #57d48c;
+    --color-warning: #ffc857;
+    --color-danger: #ff6f7d;
+
+    /* Shadows */
+    --shadow-sm: 0 8px 18px rgba(7, 15, 30, 0.35);
+    --shadow-md: 0 18px 36px rgba(10, 20, 45, 0.42);
+    --shadow-lg: 0 28px 48px rgba(5, 12, 28, 0.55);
+    --shadow-xl: 0 40px 64px rgba(3, 8, 22, 0.65);
+
+    /* Border Widths */
+    --border-width-thin: 1px;
+    --border-width-medium: 2px;
+    --border-width-thick: 3px;
+
+    /* Opacity Scale */
+    --opacity-0: 0;
+    --opacity-35: 0.35;
+    --opacity-50: 0.5;
+    --opacity-55: 0.55;
+    --opacity-60: 0.6;
+    --opacity-70: 0.7;
+    --opacity-75: 0.75;
+    --opacity-80: 0.8;
+    --opacity-85: 0.85;
+    --opacity-90: 0.9;
+    --opacity-100: 1;
+
+    /* Z-Index Scale */
+    --z-index-base: 0;
+    --z-index-dropdown: 10;
+    --z-index-sticky: 100;
+    --z-index-fixed: 1000;
+    --z-index-modal-backdrop: 1100;
+    --z-index-modal: 1110;
+    --z-index-toast: 1200;
+
+    /* Transitions */
+    --transition-base: 160ms ease;
+    --transition-fast: 100ms ease;
+    --transition-slow: 250ms ease;
+
+    /* Animation Durations (from actual keyframes) */
+    --duration-flash: 2.4s;
+    --duration-pulse: 2s;
+    --duration-slide: 0.25s;
+
+    /* Icon Sizes
+     *
+     * --button-height-* deliberately does not sit alongside these: "button" is
+     * a component, so that ladder lives with the button tokens below. */
+    --icon-size-xs: 14px;
+    --icon-size-sm: 18px;
+    --icon-size-md: 20px;
+    --icon-size-lg: 24px;
+    --icon-size-xl: 32px;
+
+    /* Max Widths (layout containers) */
+    --max-width-prose: 64ch;     /* character-relative, not px */
+    --max-width-xs: 320px;
+    --max-width-sm: 420px;
+    --max-width-md: 640px;
+    --max-width-lg: 820px;
+    --max-width-xl: 1080px;
+
+    /* Container Padding (responsive) */
+    --container-padding-mobile: 1.25rem;   /* 20px */
+    --container-padding-tablet: 1.5rem;    /* 24px */
+    --container-padding-desktop: 3rem;     /* 48px */
+
+    /* Chart Color Palette (10 distinct, accessible colors for data series)
+     *
+     * A palette rather than a scale: chart components consume these directly
+     * because a series colour encodes data identity, not brand. Inventing ten
+     * use-case aliases would be ceremony without a caller. */
+    --chart-color-1: #3b82f6;    /* Blue */
+    --chart-color-2: #22c55e;    /* Green */
+    --chart-color-3: #f59e0b;    /* Amber */
+    --chart-color-4: #ef4444;    /* Red */
+    --chart-color-5: #8b5cf6;    /* Violet */
+    --chart-color-6: #06b6d4;    /* Cyan */
+    --chart-color-7: #ec4899;    /* Pink */
+    --chart-color-8: #f97316;    /* Orange */
+    --chart-color-9: #14b8a6;    /* Teal */
+    --chart-color-10: #6366f1;   /* Indigo */
+    --chart-color-total: #7C9BFF; /* Total/aggregate line */
+
     /* ========================================================================
      * GENERIC LAYOUT & TYPOGRAPHY TOKENS
      *
