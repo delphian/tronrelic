@@ -27,7 +27,7 @@
 .stat_card {
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     padding: var(--spacing-7);
     text-align: center;
 }
@@ -53,7 +53,7 @@
     padding: var(--spacing-7);
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
 }
 
 /* Apply equal spacing on wide containers when filters fit on one line */
@@ -138,7 +138,7 @@ fieldset.filter_group {
 .table_container {
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     overflow-x: auto;
     width: 100%;
 }
@@ -313,7 +313,7 @@ fieldset.filter_group {
 .context_json {
     background: var(--color-background);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     padding: var(--spacing-5);
     overflow-x: auto;
     font-family: var(--font-mono);
@@ -331,7 +331,7 @@ fieldset.filter_group {
     padding: var(--spacing-7);
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
 }
 
 .pagination_info {

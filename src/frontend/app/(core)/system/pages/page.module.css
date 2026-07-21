@@ -61,7 +61,7 @@
     padding: var(--spacing-12);
     background: var(--color-surface-muted);
     border: 1px dashed var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     color: var(--color-text-muted);
 }
 

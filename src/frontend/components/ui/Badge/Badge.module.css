@@ -20,27 +20,32 @@
 /* Live Indicator - Recording dot with pulse animation */
 .live_indicator {
     display: inline-block;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
+    width: var(--badge-live-indicator-size);
+    height: var(--badge-live-indicator-size);
+    border-radius: var(--radius-pill);
     background: var(--color-danger);
-    box-shadow: 0 0 4px rgba(255, 68, 68, 0.6);
+    box-shadow: 0 0 4px var(--color-danger-alpha-60);
     animation: live_pulse var(--duration-pulse) ease-in-out infinite;
 }
 
+/*
+ * The pulse animates intensity only — glow spread, opacity, scale, brightness.
+ * It deliberately does not reassign `background`, so the dot's hue stays
+ * var(--color-danger) across the whole cycle and a theme that remaps danger
+ * still owns the indicator. Earlier revisions flipped to literal reds mid-cycle,
+ * which made the dot ignore the theme for half of every pulse.
+ */
 @keyframes live_pulse {
     0%, 100% {
         opacity: 1;
         transform: scale(1);
-        background: #ff0000;
-        box-shadow: 0 0 8px rgba(255, 0, 0, 0.9), 0 0 12px rgba(255, 0, 0, 0.5);
+        box-shadow: 0 0 8px var(--color-danger-alpha-90), 0 0 12px var(--color-danger-alpha-50);
         filter: brightness(1.3);
     }
     50% {
         opacity: 0.6;
         transform: scale(0.9);
-        background: #ff4444;
-        box-shadow: 0 0 4px rgba(255, 68, 68, 0.6);
+        box-shadow: 0 0 4px var(--color-danger-alpha-60);
         filter: brightness(1);
     }
 }

@@ -26,7 +26,7 @@
 .status_dot {
     width: var(--gap-sm);
     height: var(--gap-sm);
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-pill);
     flex-shrink: 0;
 }
 
@@ -41,7 +41,7 @@
 .setup_guide {
     padding: var(--input-group-gap) var(--gap-md);
     background: color-mix(in srgb, var(--color-primary) 6%, transparent);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     border-left: var(--border-width-medium) solid var(--color-primary);
 }
 
@@ -75,7 +75,7 @@
     font-size: var(--font-size-caption);
     background: color-mix(in srgb, var(--color-text) 8%, transparent);
     padding: var(--gap-2xs) var(--gap-xs);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
 }
 
 .form {
@@ -128,7 +128,7 @@
     color: var(--color-danger);
     padding: var(--gap-sm) var(--input-group-gap);
     background: color-mix(in srgb, var(--color-danger) 10%, transparent);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
 }
 
 .success {
@@ -136,7 +136,7 @@
     color: var(--color-success);
     padding: var(--gap-sm) var(--input-group-gap);
     background: color-mix(in srgb, var(--color-success) 10%, transparent);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
 }
 
 .info_row {

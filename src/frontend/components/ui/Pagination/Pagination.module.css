@@ -10,7 +10,7 @@
     align-items: center;
     gap: var(--spacing-4);
     padding: var(--spacing-2) var(--spacing-5);
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-pill);
     background: var(--color-surface-muted);
     border: var(--border-width-thin) solid var(--color-border);
 }
@@ -19,7 +19,7 @@
 .page {
     min-width: var(--button-height-sm);
     height: var(--button-height-sm);
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-pill);
     border: none;
     background: transparent;
     color: var(--color-text-muted);

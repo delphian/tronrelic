@@ -64,7 +64,7 @@
 .window_picker {
     display: inline-flex;
     background: var(--color-surface-muted);
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-pill);
     padding: var(--padding-2xs);
     border: var(--border-width-thin) solid var(--color-border);
 }
@@ -77,7 +77,7 @@
     font-size: var(--font-size-body-sm);
     font-weight: var(--font-weight-semibold);
     padding: var(--padding-2xs) var(--padding-sm);
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-pill);
     cursor: pointer;
     transition: background-color var(--transition-base), color var(--transition-base);
 }

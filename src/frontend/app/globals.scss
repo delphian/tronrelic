@@ -359,7 +359,7 @@ button:focus-visible {
 }
 
 .pill {
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-pill);
   padding: var(--pill-padding);
   background: var(--color-surface-elevated);
 }
@@ -391,14 +391,14 @@ button:focus-visible {
 
 .table-scroll {
   overflow-x: auto;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
 }
 
 .meter {
   position: relative;
   width: 100%;
   height: var(--meter-height);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-pill);
   background: var(--meter-background);
   overflow: hidden;
   margin-top: var(--meter-margin-top);

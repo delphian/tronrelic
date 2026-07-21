@@ -13,9 +13,9 @@
 
 .error {
     color: var(--color-danger-text);
-    background: var(--color-danger-alpha-10);
+    background: var(--color-danger-alpha-18);
     padding: var(--padding-xs) var(--padding-sm);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     font-size: var(--font-size-body-sm);
 }
 
@@ -51,7 +51,7 @@
     list-style: none;
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     box-shadow: var(--shadow-md);
     overflow: hidden;
 }
@@ -121,7 +121,7 @@
     gap: var(--gap-sm);
     padding: var(--padding-xs) var(--padding-sm);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     background: var(--color-surface-muted);
 }
 

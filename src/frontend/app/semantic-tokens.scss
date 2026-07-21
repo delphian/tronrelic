@@ -49,7 +49,6 @@
 
     /* Button - Base Properties */
     --button-gap: var(--spacing-4);                    /* 0.5rem - icon spacing */
-    --button-border-radius: var(--radius-full);        /* 999px - pill shape */
     --button-border-width: var(--border-width-thin);   /* 1px */
     --button-font-weight: var(--font-weight-semibold); /* 600 */
     --button-letter-spacing: var(--letter-spacing-normal); /* 0.01em */
@@ -132,7 +131,6 @@
     --icon-button-background-hover: var(--color-surface-elevated);
     --icon-button-border: var(--border-width-thin) solid var(--color-border);
     --icon-button-border-hover: var(--border-width-thin) solid var(--color-border-strong);
-    --icon-button-border-radius: var(--radius-md);
     --icon-button-color: var(--color-text-muted);
     --icon-button-color-hover: var(--color-text);
 
@@ -146,7 +144,6 @@
     --icon-button-bare-padding-sm: calc(var(--spacing-1) * 0.5);
     --icon-button-bare-padding-md: var(--spacing-1);
     --icon-button-bare-padding-lg: var(--spacing-2);
-    --icon-button-bare-border-radius: var(--radius-sm);
     --icon-button-bare-color: var(--color-text-muted);
     --icon-button-bare-color-ghost-hover: var(--color-text);
     --icon-button-bare-color-primary-hover: var(--color-primary);
@@ -164,7 +161,6 @@
     --switch-padding-sm: calc(var(--spacing-1) * 0.5);
     --switch-padding-md: var(--spacing-1);
     --switch-padding-lg: var(--spacing-2);
-    --switch-border-radius: var(--radius-sm);
     --switch-on-color: var(--color-success);
     --switch-off-color: var(--color-text-muted);
 
@@ -175,7 +171,6 @@
     /* Card - Base Properties */
     --card-background: var(--color-surface);
     --card-border: var(--border-width-thin) solid var(--color-border);
-    --card-border-radius: var(--radius-lg);
     --card-shadow: var(--shadow-sm);
     --card-backdrop-filter: blur(18px);
     --card-transition: transform var(--transition-base),
@@ -201,9 +196,11 @@
      * BADGE COMPONENT TOKENS
      * ======================================================================== */
 
+    /* Badge - Live Indicator (pulsing "recording" dot preceding badge content) */
+    --badge-live-indicator-size: 6px;
+
     /* Badge - Base Properties */
     --badge-gap: var(--spacing-2);                     /* 0.35rem */
-    --badge-border-radius: var(--radius-full);         /* 999px */
     --badge-padding: var(--spacing-2) var(--spacing-5);/* 0.35rem 0.75rem */
     --badge-font-size: var(--font-size-xs);            /* 0.72rem */
     --badge-letter-spacing: var(--letter-spacing-wide);/* 0.08em */
@@ -241,7 +238,6 @@
     /* Input - Base Properties */
     --input-background: rgba(3, 6, 15, 0.9);
     --input-border: var(--border-width-thin) solid var(--color-primary-alpha-18);
-    --input-border-radius: var(--radius-sm);
     --input-padding-xs: calc(var(--spacing-1) * 0.5) calc(var(--spacing-2) * 0.5); /* 0.125rem 0.175rem — half of sm */
     --input-padding-sm: var(--spacing-1) var(--spacing-2); /* 0.25rem 0.35rem — dense filter/search/inline inputs */
     --input-padding-md: var(--spacing-5) var(--spacing-7); /* 0.75rem 1rem — default */
@@ -274,7 +270,6 @@
     /* Modal - Dialog */
     --modal-dialog-background: rgba(10, 15, 26, 0.96);
     --modal-dialog-border: var(--border-width-thin) solid var(--color-border-strong);
-    --modal-dialog-border-radius: var(--radius-lg);
     --modal-dialog-shadow: var(--shadow-lg);
     --modal-dialog-max-height: min(90vh, 720px);
 
@@ -313,7 +308,6 @@
     /* Toast - Item */
     --toast-item-gap: var(--spacing-7);                    /* 1rem */
     --toast-item-padding: var(--spacing-7) var(--spacing-8);/* 1rem 1.1rem */
-    --toast-item-border-radius: var(--radius-md);
     --toast-item-background: rgba(10, 15, 26, 0.96);
     --toast-item-border-width: var(--border-width-thin);
     --toast-item-shadow: var(--shadow-lg);
@@ -423,7 +417,6 @@
 
     /* Table - Base */
     --table-background: rgba(6, 11, 20, 0.55);
-    --table-border-radius: var(--radius-md);
 
     /* Table - Header */
     --table-header-background: rgba(255, 255, 255, 0.05);
@@ -461,7 +454,6 @@
 
     /* Alert - Base (--alert-padding is declared in the density block below: an
        alert is a content block, not a control with a fixed touch target.) */
-    --alert-border-radius: var(--radius-md);
     --alert-border-width: var(--border-width-thin);
     --alert-font-size: var(--font-size-sm);       /* 0.85rem */
     --alert-background: rgba(10, 15, 26, 0.88);
@@ -524,9 +516,15 @@
     --color-warning-alpha-40: rgba(255, 200, 87, 0.4);
     --color-warning-text: #ffe2a6;
 
-    /* Danger Color Alphas */
+    /* Danger Color Alphas
+     * The 18/50 steps predate the alpha-ladder convention and bake in the
+     * literal danger RGB, so a theme remapping --color-danger does not reach
+     * them. New steps derive via color-mix; collapse the older two onto the
+     * same form when their call sites are next touched. */
     --color-danger-alpha-18: rgba(255, 111, 125, 0.18);
     --color-danger-alpha-50: rgba(255, 111, 125, 0.5);
+    --color-danger-alpha-60: color-mix(in srgb, var(--color-danger) 60%, transparent);
+    --color-danger-alpha-90: color-mix(in srgb, var(--color-danger) 90%, transparent);
     --color-danger-text: #ffc1c8;
 
     /* Success Color Alphas */
@@ -553,7 +551,6 @@
 
     --chip-gap: var(--spacing-3);                 /* 0.4rem */
     --chip-padding: var(--spacing-2) var(--spacing-5); /* 0.35rem 0.7rem */
-    --chip-border-radius: var(--radius-full);
     --chip-font-size: 0.78rem;
     --chip-border: var(--border-width-thin) solid var(--color-border-strong);
     --chip-transition: background-color var(--transition-base),
@@ -568,7 +565,6 @@
 
     --segmented-control-background: var(--color-surface-elevated);
     --segmented-control-border: var(--border-width-thin) solid var(--color-border);
-    --segmented-control-border-radius: var(--radius-sm);
     --segmented-control-divider: var(--border-width-thin) solid var(--color-border);
     --segmented-control-padding: 0;
     --segmented-control-button-padding: var(--spacing-1) var(--spacing-3); /* 0.25rem 0.4rem */
@@ -717,6 +713,50 @@
 
     /* Meter offset from preceding content (--meter-height stays fixed) */
     --meter-margin-top: calc(var(--spacing-5) * var(--density));  /* base 0.75rem */
+
+    /* ------------------------------------------------------------------
+     * RADIUS — role semantics
+     *
+     * The only tokens component code may use for a corner; the --radius-*
+     * foundation in primitives.scss is off-limits, exactly as --spacing-N is
+     * off-limits behind --gap-*. Named by role rather than size because the
+     * foundation is not a ramp to interpolate — pick the role that matches the
+     * box you are rounding.
+     *
+     * --radius-pill is the one step that does not scale: 999px is a sentinel
+     * meaning "fully round", not a measurement, and multiplying it changes
+     * nothing while implying it might.
+     * ------------------------------------------------------------------ */
+    --radius-inline:   calc(var(--radius-1) * var(--density));   /* base 4px  */
+    --radius-control:  calc(var(--radius-2) * var(--density));   /* base 10px */
+    --radius-surface:  calc(var(--radius-3) * var(--density));   /* base 16px */
+    --radius-elevated: calc(var(--radius-4) * var(--density));   /* base 24px */
+    --radius-sheet:    calc(var(--radius-5) * var(--density));   /* base 32px */
+    --radius-pill:     var(--radius-full);                        /* 999px, unscaled sentinel */
+
+    /* Component radius handles.
+     *
+     * These live HERE, not in the main token block, and the reason is the
+     * substitution rule at the top of this block: a token is substituted where
+     * it is DECLARED. Declared on :root alone, each of these would resolve its
+     * role token against density 1 and inherit that frozen value into any
+     * data-density subtree — scaling correctly site-wide while silently
+     * ignoring a local override. They exist so a theme can round all cards
+     * without touching inputs; drop the handle and use the role token directly
+     * if that granularity is not needed. */
+    --button-border-radius: var(--radius-pill);
+    --badge-border-radius: var(--radius-pill);
+    --chip-border-radius: var(--radius-pill);
+    --input-border-radius: var(--radius-control);
+    --switch-border-radius: var(--radius-control);
+    --icon-button-bare-border-radius: var(--radius-control);
+    --segmented-control-border-radius: var(--radius-control);
+    --icon-button-border-radius: var(--radius-surface);
+    --toast-item-border-radius: var(--radius-surface);
+    --table-border-radius: var(--radius-surface);
+    --alert-border-radius: var(--radius-surface);
+    --card-border-radius: var(--radius-elevated);
+    --modal-dialog-border-radius: var(--radius-elevated);
 }
 
 /* ============================================================================

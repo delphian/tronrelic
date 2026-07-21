@@ -17,7 +17,7 @@
     align-items: center;
     gap: var(--spacing-4);
     padding: var(--spacing-5) var(--spacing-6);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     font-size: var(--font-size-sm);
 }
 
@@ -40,7 +40,7 @@
     gap: var(--spacing-6);
     padding: var(--spacing-5) var(--spacing-6);
     background: var(--card-background);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     border: var(--card-border);
 }
 
@@ -126,14 +126,14 @@
     height: var(--spacing-10);
     background: transparent;
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     color: var(--color-text-muted);
     cursor: pointer;
     transition: all var(--transition-fast);
 }
 
 .expand_btn:hover {
-    background: var(--color-surface-hover);
+    background: var(--color-surface-elevated);
     color: var(--color-text);
 }
 
@@ -168,7 +168,7 @@
 
 .schedule_input:hover:not(:disabled) {
     background: var(--color-surface-elevated);
-    border-color: var(--color-border-hover);
+    border-color: var(--color-border-strong);
 }
 
 /* Details Row */
@@ -207,7 +207,7 @@
     padding: var(--spacing-4);
     background: var(--alert-danger-background);
     border: var(--border-width-thin) solid var(--alert-danger-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
 }
 
 .error_header {
@@ -233,7 +233,7 @@
     text-align: center;
     color: var(--color-text-muted);
     border: var(--border-width-thin) dashed var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     background: var(--card-background);
 }
 

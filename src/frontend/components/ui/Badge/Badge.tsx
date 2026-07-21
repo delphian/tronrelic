@@ -3,6 +3,13 @@ import { cn } from '../../../lib/cn';
 import styles from './Badge.module.css';
 
 /**
+ * Visual tone variants a Badge can render. Exported so callers that map their
+ * own domain status onto a badge (platform health, job state) can type that
+ * mapping against the component instead of restating the union locally.
+ */
+export type BadgeTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
+
+/**
  * BadgeProps interface defines the properties available for the Badge component.
  *
  * Extends standard span attributes to support visual tone variants for displaying
@@ -13,7 +20,7 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
      * Visual tone variant for status indication
      * @default 'neutral'
      */
-    tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger';
+    tone?: BadgeTone;
 
     /**
      * Whether to display a pulsing red recording indicator dot before the badge content.

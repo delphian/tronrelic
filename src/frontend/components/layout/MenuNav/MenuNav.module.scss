@@ -68,7 +68,7 @@
     padding: var(--padding-sm) var(--padding-md);
     background: transparent;
     border: var(--border-width-thin) solid transparent;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     text-transform: capitalize;
     text-decoration: none;
     color: inherit;
@@ -167,7 +167,7 @@
     padding: var(--padding-sm) var(--padding-md);
     background: transparent;
     border: var(--border-width-thin) solid transparent;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     text-transform: capitalize;
     color: inherit;
     transition: all var(--transition-base);
@@ -231,7 +231,7 @@
     min-width: 200px;
     background: var(--modal-dialog-background);
     border: var(--modal-dialog-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     padding: var(--padding-xs);
     box-shadow: var(--shadow-xl);
     backdrop-filter: blur(18px);
@@ -263,7 +263,7 @@
  */
 @media (max-width: $breakpoint-mobile) {
     .categoryBackdrop {
-        background: var(--backdrop-color);
+        background: var(--modal-backdrop-background);
     }
 
     .categoryDropdown {
@@ -276,7 +276,7 @@
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
-        border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+        border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
         border-bottom: none;
         padding: var(--padding-md);
         animation: categoryDropdown_slideUp 0.25s ease-out;
@@ -315,7 +315,7 @@
     gap: var(--gap-sm);
     width: 100%;
     padding: var(--padding-sm) var(--padding-md);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);
     text-decoration: none;
@@ -347,7 +347,7 @@
     padding: var(--padding-xs) var(--padding-sm);
     background: transparent;
     border: var(--border-width-thin) solid transparent;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);
     font-family: inherit;
@@ -398,7 +398,7 @@
     min-width: 200px;
     background: var(--modal-dialog-background);
     border: var(--modal-dialog-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     padding: var(--padding-xs);
     box-shadow: var(--shadow-xl);
     backdrop-filter: blur(18px);

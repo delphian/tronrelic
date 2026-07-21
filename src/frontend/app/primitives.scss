@@ -96,11 +96,39 @@
     --shadow-lg: 0 28px 48px rgba(5, 12, 28, 0.55);
     --shadow-xl: 0 40px 64px rgba(3, 8, 22, 0.65);
 
-    /* Border Radius Tokens */
-    --radius-xs: 4px;
-    --radius-sm: 10px;
-    --radius-md: 16px;
-    --radius-lg: 24px;
+    /*
+     * Border Radius Tokens — FOUNDATION ONLY
+     *
+     * Do not reference these in component code. They are the unscaled base the
+     * role semantics in semantic-tokens.scss compose from:
+     *
+     *   --radius-1    -> --radius-inline    hairline text highlight
+     *   --radius-2    -> --radius-control   input, switch, segmented control
+     *   --radius-3    -> --radius-surface   table, alert, toast, panel
+     *   --radius-4    -> --radius-elevated  card, modal
+     *   --radius-5    -> --radius-sheet     sheet edge meeting the viewport
+     *   --radius-full -> --radius-pill      button, badge, chip, meter
+     *
+     * Ordinal names, mirroring --spacing-N: the number is a position on the
+     * scale, not a multiple of a base unit. Do not read --radius-2 as "2x
+     * something" — the values are 4/10/16/24/32 and 10 is not 2x4.
+     *
+     * The semantics carry the --density factor; consuming a foundation value
+     * directly silently opts that corner out of density scaling. This mirrors
+     * --spacing-N -> --gap-*, where the foundation scale is likewise off-limits.
+     *
+     * Values are px on purpose. Control geometry here (--button-height-*,
+     * --icon-size-*, --avatar-size-*) is px, so a rem radius would scale with
+     * root font size while the box it rounds did not, distorting the corner.
+     *
+     * The uneven numeric gaps carry no meaning — the scale is role-based, not a
+     * ramp to interpolate. Pick the semantic whose role matches.
+     */
+    --radius-1: 4px;
+    --radius-2: 10px;
+    --radius-3: 16px;
+    --radius-4: 24px;
+    --radius-5: 32px;
     --radius-full: 999px;
 
     /* Border Width Tokens */

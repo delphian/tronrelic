@@ -29,7 +29,7 @@
     margin-bottom: var(--spacing-7);
     background-color: var(--alert-danger-background);
     border: var(--border-width-thin) solid var(--alert-danger-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     color: var(--alert-danger-color);
     font-size: var(--font-size-sm);
 }
@@ -39,7 +39,7 @@
     margin-bottom: var(--spacing-7);
     background-color: var(--alert-success-background);
     border: var(--border-width-thin) solid var(--alert-success-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     color: var(--alert-success-color);
     font-size: var(--font-size-sm);
 }

@@ -33,7 +33,7 @@
     padding: var(--spacing-4) var(--spacing-7);
     background: transparent;
     border: var(--border-width-thin) solid transparent;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     text-transform: capitalize;
     text-decoration: none;
     color: inherit;

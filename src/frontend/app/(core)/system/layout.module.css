@@ -79,7 +79,7 @@
     padding: var(--spacing-5) 1rem;
     background: rgba(255, 111, 125, 0.1);
     border: var(--border-width-thin) solid rgba(255, 111, 125, 0.3);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     color: var(--color-danger);
     font-size: var(--font-size-base);
     margin-top: var(--spacing-4);

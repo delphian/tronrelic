@@ -25,7 +25,7 @@
     gap: var(--gap-md);
     padding: var(--card-padding-sm);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     background: var(--color-surface-muted);
 }
 
@@ -70,7 +70,7 @@
     color: var(--color-danger-text);
     background: var(--color-danger-alpha-18);
     border: var(--border-width-thin) solid var(--color-danger-alpha-50);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     padding: var(--padding-sm) var(--padding-md);
 }
 

@@ -21,7 +21,7 @@
         font-family: var(--font-mono);
         background: var(--color-surface-muted);
         padding: var(--padding-2xs) var(--padding-xs);
-        border-radius: var(--radius-sm);
+        border-radius: var(--radius-control);
     }
 }
 
@@ -50,7 +50,7 @@
 
 .group_item {
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     padding: var(--padding-xs) var(--padding-sm);
 
     &:hover {

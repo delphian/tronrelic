@@ -89,7 +89,7 @@
        nominal width the box shrinks so it can be clamped fully into view. */
     max-width: 100%;
     padding: 0.6rem 0.8rem;
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     background: rgba(7, 12, 24, 0.95);
     border: var(--border-width-thin) solid rgba(124, 155, 255, 0.32);
     box-shadow: 0 18px 38px rgba(5, 9, 18, 0.45);
@@ -142,7 +142,7 @@
     padding: var(--spacing-2) var(--spacing-4);
     background: transparent;
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     cursor: pointer;
     transition: background-color var(--transition-fast), opacity var(--transition-fast);
 }
@@ -163,7 +163,7 @@
     display: inline-flex;
     width: 12px;
     height: 12px;
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-pill);
     border: var(--border-width-medium) solid;
     flex-shrink: 0;
 }
