@@ -231,7 +231,7 @@
  * header is the toggle and whose body renders only while expanded. */
 .section {
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
     background: var(--color-surface);
     overflow: hidden;
 }
@@ -289,7 +289,7 @@
     align-items: center;
     gap: var(--gap-2xs);
     padding: var(--padding-2xs) var(--padding-xs);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     border: var(--chip-border);
     background: var(--color-surface-muted);
     font-size: var(--font-size-caption);
@@ -427,7 +427,7 @@
     display: inline-flex;
     align-items: center;
     padding: var(--padding-2xs) var(--padding-sm);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-full);
     border: var(--chip-border);
     background: transparent;
     color: var(--color-text-muted);
@@ -504,7 +504,7 @@
     gap: var(--gap-2xs);
     padding: var(--padding-sm);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     background: var(--color-surface-muted);
 }
 
@@ -578,7 +578,7 @@
     padding: var(--padding-sm);
     background: var(--color-surface-muted);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     font-family: var(--font-mono, monospace);
     font-size: var(--font-size-caption);
     color: var(--color-text-muted);
@@ -594,7 +594,7 @@
     flex-direction: column;
     gap: var(--gap-2xs);
     padding: var(--padding-sm);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     background: var(--color-danger-alpha-18);
     border: var(--border-width-thin) solid var(--color-danger-alpha-50);
     color: var(--color-danger-text);
@@ -609,7 +609,7 @@
     align-items: flex-start;
     gap: var(--gap-sm);
     padding: var(--alert-padding);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
     background: var(--color-warning-alpha-15);
     border: var(--border-width-thin) solid var(--color-warning-alpha-40);
     color: var(--color-warning-text);

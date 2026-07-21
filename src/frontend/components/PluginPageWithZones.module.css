@@ -71,7 +71,7 @@
 .faq_summary:focus-visible {
     outline: 2px solid var(--color-focus);
     outline-offset: 2px;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
 }
 
 .faq_summary::-webkit-details-marker {

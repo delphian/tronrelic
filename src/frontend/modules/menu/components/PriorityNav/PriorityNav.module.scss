@@ -83,7 +83,7 @@
     background: transparent;
     color: var(--color-text-muted);
     cursor: pointer;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     font-size: var(--font-size-body-sm);
     transition: background-color var(--transition-base), color var(--transition-base);
 }
@@ -116,7 +116,7 @@
     padding: 0 var(--padding-2xs);
     background: var(--color-primary);
     color: var(--color-on-primary);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-full);
     font-size: var(--font-size-caption);
     font-weight: var(--font-weight-medium);
 }
@@ -167,7 +167,7 @@
     overscroll-behavior: contain;
     background: var(--modal-dialog-background);
     border: var(--modal-dialog-border);
-    border-radius: var(--radius-elevated);
+    border-radius: var(--radius-lg);
     box-shadow: var(--shadow-xl);
     backdrop-filter: blur(18px);
     z-index: var(--z-index-modal);
@@ -208,7 +208,7 @@
         max-height: 70vh;
 
         /* Bottom sheet styling */
-        border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+        border-radius: var(--radius-xl) var(--radius-xl) 0 0;
         border-bottom: none;
         padding: var(--padding-md);
 
@@ -248,7 +248,7 @@
         width: 36px;
         height: 4px;
         background: var(--color-border-strong);
-        border-radius: var(--radius-pill);
+        border-radius: var(--radius-full);
     }
 }
 
@@ -269,7 +269,7 @@
     background: transparent;
     color: var(--color-text-muted);
     cursor: pointer;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     transition: background-color var(--transition-base), color var(--transition-base);
 }
 
@@ -307,7 +307,7 @@
     display: block;
     width: 100%;
     padding: var(--padding-xs) var(--padding-sm);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     color: var(--color-text-muted);
     font-size: var(--font-size-body);
     text-decoration: none;

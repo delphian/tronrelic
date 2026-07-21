@@ -17,7 +17,7 @@
     align-items: center;
     gap: var(--spacing-4);
     padding: var(--spacing-5) var(--spacing-6);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
 }
 
@@ -40,7 +40,7 @@
     gap: var(--spacing-6);
     padding: var(--spacing-5) var(--spacing-6);
     background: var(--card-background);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
     border: var(--card-border);
 }
 
@@ -126,7 +126,7 @@
     height: var(--spacing-10);
     background: transparent;
     border: none;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     color: var(--color-text-muted);
     cursor: pointer;
     transition: all var(--transition-fast);
@@ -207,7 +207,7 @@
     padding: var(--spacing-4);
     background: var(--alert-danger-background);
     border: var(--border-width-thin) solid var(--alert-danger-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
 }
 
 .error_header {
@@ -233,7 +233,7 @@
     text-align: center;
     color: var(--color-text-muted);
     border: var(--border-width-thin) dashed var(--color-border);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
     background: var(--card-background);
 }
 

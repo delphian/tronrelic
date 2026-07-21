@@ -64,7 +64,7 @@
     max-height: var(--avatar-size-lg);
     width: auto;
     height: auto;
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     border: var(--border-width-thin) solid var(--color-border);
     object-fit: cover;
 }
@@ -201,7 +201,7 @@
     gap: var(--gap-2xs);
     padding: var(--padding-sm);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
     background: var(--color-surface-muted);
 }
 

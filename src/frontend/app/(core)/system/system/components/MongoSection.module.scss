@@ -83,7 +83,7 @@
 
 .group {
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     background: var(--color-surface-muted);
     overflow: hidden;
 }
@@ -199,7 +199,7 @@
 .error_details {
     padding: var(--padding-sm);
     background: var(--color-surface-muted);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     border-left: var(--border-width-medium) solid var(--color-danger);
 }
 
@@ -214,7 +214,7 @@
     margin: 0;
     padding: var(--padding-xs);
     background: var(--color-background);
-    border-radius: var(--radius-inline);
+    border-radius: var(--radius-xs);
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);
     color: var(--color-text-muted);

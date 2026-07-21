@@ -147,7 +147,7 @@
 .item__dismiss {
     border: none;
     background: var(--toast-action-background);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     color: inherit;
     padding: var(--toast-action-padding);
     font-size: var(--toast-action-font-size);

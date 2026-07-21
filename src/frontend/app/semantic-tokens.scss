@@ -715,48 +715,52 @@
     --meter-margin-top: calc(var(--spacing-5) * var(--density));  /* base 0.75rem */
 
     /* ------------------------------------------------------------------
-     * RADIUS — role semantics
+     * RADIUS — curated t-shirt scale
      *
-     * The only tokens component code may use for a corner; the --radius-*
+     * The only tokens component code may use for a corner; the --radius-N
      * foundation in primitives.scss is off-limits, exactly as --spacing-N is
-     * off-limits behind --gap-*. Named by role rather than size because the
-     * foundation is not a ramp to interpolate — pick the role that matches the
-     * box you are rounding.
+     * off-limits behind --gap-*. T-shirt-named to match every other consumable
+     * tier (--gap-*, --padding-*, --avatar-size-*) so authors size a corner the
+     * same way they size a gap.
      *
-     * --radius-pill is the one step that does not scale: 999px is a sentinel
+     * The steps are still chosen per role — xs highlights text, sm is control
+     * chrome, md is a contained surface, lg is a card or modal, xl is a sheet
+     * edge — so pick by what you are rounding, not by interpolating the numbers.
+     *
+     * --radius-full is the one step that does not scale: 999px is a sentinel
      * meaning "fully round", not a measurement, and multiplying it changes
      * nothing while implying it might.
      * ------------------------------------------------------------------ */
-    --radius-inline:   calc(var(--radius-1) * var(--density));   /* base 4px  */
-    --radius-control:  calc(var(--radius-2) * var(--density));   /* base 10px */
-    --radius-surface:  calc(var(--radius-3) * var(--density));   /* base 16px */
-    --radius-elevated: calc(var(--radius-4) * var(--density));   /* base 24px */
-    --radius-sheet:    calc(var(--radius-5) * var(--density));   /* base 32px */
-    --radius-pill:     var(--radius-full);                        /* 999px, unscaled sentinel */
+    --radius-xs:   calc(var(--radius-1) * var(--density));   /* base 4px  */
+    --radius-sm:   calc(var(--radius-2) * var(--density));   /* base 10px */
+    --radius-md:   calc(var(--radius-3) * var(--density));   /* base 16px */
+    --radius-lg:   calc(var(--radius-4) * var(--density));   /* base 24px */
+    --radius-xl:   calc(var(--radius-5) * var(--density));   /* base 32px */
+    --radius-full: var(--radius-6);                          /* 999px, unscaled sentinel */
 
     /* Component radius handles.
      *
      * These live HERE, not in the main token block, and the reason is the
      * substitution rule at the top of this block: a token is substituted where
      * it is DECLARED. Declared on :root alone, each of these would resolve its
-     * role token against density 1 and inherit that frozen value into any
+     * radius token against density 1 and inherit that frozen value into any
      * data-density subtree — scaling correctly site-wide while silently
      * ignoring a local override. They exist so a theme can round all cards
-     * without touching inputs; drop the handle and use the role token directly
-     * if that granularity is not needed. */
-    --button-border-radius: var(--radius-pill);
-    --badge-border-radius: var(--radius-pill);
-    --chip-border-radius: var(--radius-pill);
-    --input-border-radius: var(--radius-control);
-    --switch-border-radius: var(--radius-control);
-    --icon-button-bare-border-radius: var(--radius-control);
-    --segmented-control-border-radius: var(--radius-control);
-    --icon-button-border-radius: var(--radius-surface);
-    --toast-item-border-radius: var(--radius-surface);
-    --table-border-radius: var(--radius-surface);
-    --alert-border-radius: var(--radius-surface);
-    --card-border-radius: var(--radius-elevated);
-    --modal-dialog-border-radius: var(--radius-elevated);
+     * without touching inputs; drop the handle and use the t-shirt token
+     * directly if that granularity is not needed. */
+    --button-border-radius: var(--radius-full);
+    --badge-border-radius: var(--radius-full);
+    --chip-border-radius: var(--radius-full);
+    --input-border-radius: var(--radius-sm);
+    --switch-border-radius: var(--radius-sm);
+    --icon-button-bare-border-radius: var(--radius-sm);
+    --segmented-control-border-radius: var(--radius-sm);
+    --icon-button-border-radius: var(--radius-md);
+    --toast-item-border-radius: var(--radius-md);
+    --table-border-radius: var(--radius-md);
+    --alert-border-radius: var(--radius-md);
+    --card-border-radius: var(--radius-lg);
+    --modal-dialog-border-radius: var(--radius-lg);
 }
 
 /* ============================================================================

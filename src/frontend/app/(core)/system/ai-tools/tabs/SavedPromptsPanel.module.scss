@@ -52,7 +52,7 @@
     justify-content: center;
     min-width: var(--icon-size-md);
     padding: 0 var(--padding-2xs);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-full);
     background: var(--color-primary-alpha-15);
     color: var(--color-primary);
     font-size: var(--font-size-caption);
@@ -126,7 +126,7 @@
     gap: var(--gap-sm);
     padding: var(--padding-xs) var(--padding-sm);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     background: var(--color-surface-muted);
     flex-wrap: wrap;
 }
@@ -167,7 +167,7 @@
     &:focus-visible {
         outline: var(--focus-outline-width) solid var(--focus-outline-color);
         outline-offset: var(--focus-outline-offset);
-        border-radius: var(--radius-inline);
+        border-radius: var(--radius-xs);
     }
 }
 
@@ -196,7 +196,7 @@
     align-items: center;
     gap: var(--gap-2xs);
     padding: var(--padding-2xs) var(--padding-xs);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-full);
     border: var(--border-width-thin) solid var(--color-border);
     background: var(--color-surface);
     color: var(--color-text-muted);
@@ -371,7 +371,7 @@
     gap: var(--gap-xs);
     padding: var(--padding-sm);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     background: var(--color-surface-muted);
 }
 
