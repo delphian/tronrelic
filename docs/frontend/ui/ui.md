@@ -32,7 +32,7 @@ Hardcoded values prevent theming. Global classes collide. Viewport media queries
 
 ### Common Design Tokens
 
-Component code (`.module.scss`) reaches for use-case-named semantics first (`--card-padding-md`, `--button-gap`), falls back to curated t-shirt primitives (`--gap-md`, `--padding-md`, `--radius-md`) and design-constant primitives (`--shadow-sm`, `--border-width-thin`), and never touches foundation scales (`--spacing-7`, `--radius-3`, `--color-blue-500`, raw `--font-size-xs/sm/md/lg/xl/2xl/3xl`). Tier definitions and full token reference live in [ui-design-token-layers.md](./ui-design-token-layers.md).
+Component code (`.module.scss`) references Layer 2 (`semantic-tokens.scss`) and never Layer 1 (`primitives.scss`). Layer 1 holds only composition inputs — `--spacing-N`, `--radius-N`, and the raw font-size scale. Within Layer 2, prefer the use-case name when one fits (`--card-padding-md`, `--button-gap`) over the value-named scales (`--gap-md`, `--radius-md`); that is guidance, not a rule. Full detail in [ui-design-token-layers.md](./ui-design-token-layers.md).
 
 | Category | Tokens component code may reference |
 |----------|--------------------------------------|

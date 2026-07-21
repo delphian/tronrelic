@@ -65,9 +65,9 @@ Override only what you need — defaults apply for everything else.
 
 ### What Tokens Can a Theme Override?
 
-Any CSS custom property in the design system. The complete catalog is the source — browse [primitives.scss](../../../src/frontend/app/primitives.scss) (foundation values) and [semantic-tokens.scss](../../../src/frontend/app/semantic-tokens.scss) (use-case-named aliases). The admin's auto-generated template contains them all. For the conceptual hierarchy, see [ui-design-token-layers.md](./ui-design-token-layers.md).
+Any CSS custom property in the design system. The complete catalog is the source — browse [primitives.scss](../../../src/frontend/app/primitives.scss) (the three foundation scales) and [semantic-tokens.scss](../../../src/frontend/app/semantic-tokens.scss) (everything else). The admin's auto-generated template contains them all. For the conceptual hierarchy, see [ui-design-token-layers.md](./ui-design-token-layers.md).
 
-**Note on tier rules:** Component CSS forbids reaching into foundation primitives like `--spacing-*` or raw `--font-size-xs/sm/md/lg/xl/2xl/3xl`. Themes are different — they *are* the remap layer, so overriding primitives is legitimate when a theme needs to shift the foundation scale. The component-code restriction does not apply inside `[data-theme="..."]` blocks.
+**Note on the layer rule:** Component CSS may reference Layer 2 only, never the Layer 1 foundation scales (`--spacing-N`, `--radius-N`, raw `--font-size-*`). Themes are different — they *are* the remap layer, so overriding a foundation scale is legitimate when a theme needs to shift it wholesale. The component-code restriction does not apply inside `[data-theme="..."]` blocks.
 
 ## Background Image System
 
@@ -129,13 +129,13 @@ Before creating a theme, gather:
 ## Further Reading
 
 **Detail docs:**
-- [ui-design-token-layers.md](./ui-design-token-layers.md) — Token hierarchy, the 4-tier rule, breakpoints
+- [ui-design-token-layers.md](./ui-design-token-layers.md) — Layer boundary, the consumption rule, breakpoints
 - [ui-components.md](./ui-components.md) — Components that consume design tokens
 - [ui-scss-modules.md](./ui-scss-modules.md) — How component CSS Modules reference tokens
 
 **Source files:**
-- [primitives.scss](../../../src/frontend/app/primitives.scss) — Foundation primitives
-- [semantic-tokens.scss](../../../src/frontend/app/semantic-tokens.scss) — Semantic + curated tokens
+- [primitives.scss](../../../src/frontend/app/primitives.scss) — Layer 1: spacing, radius, font-size scales
+- [semantic-tokens.scss](../../../src/frontend/app/semantic-tokens.scss) — Layer 2: the consumable surface
 - [components/ui/](../../../src/frontend/components/ui/) — UI primitives
 - [components/layout/](../../../src/frontend/components/layout/) — Layout primitives
 

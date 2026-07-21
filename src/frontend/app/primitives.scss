@@ -1,25 +1,30 @@
 /**
- * TronRelic Foundation Tokens (Layer 1 - Primitives)
+ * TronRelic Foundation Scales (Layer 1)
  *
- * Context-free, reusable primitive values implemented as CSS custom properties.
- * These are raw values with no semantic meaning (e.g., --spacing-4, --blue-600).
- * Never reference these directly in components - use semantic tokens instead.
+ * Composition inputs. Every token here exists to be composed into a Layer 2
+ * token — never to be referenced by component code.
  *
- * Values derived from analyzing existing patterns across globals.scss and
- * component CSS modules to ensure consistency with the current design.
+ * The test for belonging here is not whether a name describes a value: it is
+ * whether the token is an INPUT to another token or an ENDPOINT for component
+ * code. `--shadow-sm` reads like a primitive but is an endpoint, so it lives in
+ * semantic-tokens.scss. `--spacing-7` is an input to `--gap-md`, so it lives
+ * here. This mirrors Material's md.ref.* -> md.sys.* boundary, where the
+ * consumable layer deliberately mixes semantic and t-shirt naming.
  *
- * See docs/frontend/ui/ui-design-token-layers.md for usage guidelines.
+ * Three scales. Nothing else belongs in this file.
+ *
+ * See docs/frontend/ui/ui-design-token-layers.md for the consumption rule.
  */
 
 :root {
     /* Color Scheme */
     color-scheme: dark;
 
-    /* Typography - Font Family (system fonts for zero-latency rendering) */
-    --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-    --font-mono: 'Courier New', Courier, monospace;
-
-    /* Typography - Font Sizes */
+    /*
+     * Typography Scale — raw sizes composed into --font-size-body-* and
+     * --font-size-heading-* in semantic-tokens.scss. Component code picks a
+     * purpose (body / caption / heading), never a rung off this ladder.
+     */
     --font-size-xxs: 0.5rem;     /* 8px */
     --font-size-xs: 0.72rem;     /* 11.52px */
     --font-size-sm: 0.85rem;     /* 13.6px */
@@ -30,24 +35,9 @@
     --font-size-2xl: 1.8rem;     /* 28.8px */
     --font-size-3xl: 2.6rem;     /* 41.6px */
 
-    /* Typography - Font Weights */
-    --font-weight-normal: 400;
-    --font-weight-medium: 500;
-    --font-weight-semibold: 600;
-    --font-weight-bold: 700;
-
-    /* Typography - Line Heights */
-    --line-height-tight: 1.25;
-    --line-height-normal: 1.4;
-    --line-height-relaxed: 1.5;
-
-    /* Typography - Letter Spacing */
-    --letter-spacing-tight: -0.02em;
-    --letter-spacing-normal: 0.01em;
-    --letter-spacing-wide: 0.08em;
-
     /*
-     * Spacing Scale — 4px grid, hybrid progression.
+     * Spacing Scale — 4px grid, hybrid progression. Composed into --gap-*,
+     * --padding-*, --card-padding-* and the rest of the density-scaled block.
      *
      * Linear 4px steps through the dense range (4–16px), where interface
      * density needs fine control, then a x1.5 ratio above it. A constant-ratio
@@ -75,56 +65,19 @@
     --spacing-15: 3rem;     /* 48px */
     --spacing-16: 4rem;     /* 64px */
 
-    /* Container Padding (responsive) */
-    --container-padding-mobile: 1.25rem;   /* 20px */
-    --container-padding-tablet: 1.5rem;    /* 24px */
-    --container-padding-desktop: 3rem;     /* 48px */
-
-    /* Color Tokens - Background */
-    --color-background: #03060f;
-
-    /* Color Tokens - Brand & Semantic */
-    --color-primary: #4b8cff;
-    --color-primary-strong: #246bff;
-    --color-success: #57d48c;
-    --color-warning: #ffc857;
-    --color-danger: #ff6f7d;
-
-    /* Shadow Tokens */
-    --shadow-sm: 0 8px 18px rgba(7, 15, 30, 0.35);
-    --shadow-md: 0 18px 36px rgba(10, 20, 45, 0.42);
-    --shadow-lg: 0 28px 48px rgba(5, 12, 28, 0.55);
-    --shadow-xl: 0 40px 64px rgba(3, 8, 22, 0.65);
-
     /*
-     * Border Radius Tokens — FOUNDATION ONLY
+     * Radius Scale — composed into --radius-xs/sm/md/lg/xl/full, which carry
+     * the --density factor. Ordinal names mirror --spacing-N: the number is a
+     * position, not a multiple. Do not read --radius-2 as "2x something" — the
+     * values are 4/10/16/24/32 and 10 is not 2x4.
      *
-     * Do not reference these in component code. They are the unscaled base the
-     * role semantics in semantic-tokens.scss compose from:
-     *
-     *   --radius-1 -> --radius-xs     hairline text highlight
-     *   --radius-2 -> --radius-sm     input, switch, segmented control
-     *   --radius-3 -> --radius-md     table, alert, toast, panel
-     *   --radius-4 -> --radius-lg     card, modal
-     *   --radius-5 -> --radius-xl     sheet edge meeting the viewport
-     *   --radius-6 -> --radius-full   button, badge, chip, meter
-     *
-     * Ordinal names, mirroring --spacing-N: the number is a position on the
-     * scale, not a multiple of a base unit. Do not read --radius-2 as "2x
-     * something" — the values are 4/10/16/24/32 and 10 is not 2x4.
-     *
-     * The t-shirt tier carries the --density factor; consuming a foundation
-     * value directly silently opts that corner out of density scaling. This
-     * mirrors --spacing-N -> --gap-*, where the foundation scale is likewise
-     * off-limits and the consumable tier is t-shirt-named.
-     *
-     * Values are px on purpose. Control geometry here (--button-height-*,
+     * Values are px on purpose. Control geometry (--button-height-*,
      * --icon-size-*, --avatar-size-*) is px, so a rem radius would scale with
      * root font size while the box it rounds did not, distorting the corner.
      *
-     * The uneven numeric gaps carry no meaning — the steps are chosen per role
+     * The uneven gaps carry no meaning — the steps are chosen per role
      * (highlight / control / surface / card / sheet / pill), not sampled off a
-     * ramp. Pick the step whose role matches rather than interpolating.
+     * ramp.
      */
     --radius-1: 4px;
     --radius-2: 10px;
@@ -133,78 +86,7 @@
     --radius-5: 32px;
     --radius-6: 999px;
 
-    /* Border Width Tokens */
-    --border-width-thin: 1px;
-    --border-width-medium: 2px;
-    --border-width-thick: 3px;
-
-    /* Opacity Scale */
-    --opacity-0: 0;
-    --opacity-35: 0.35;
-    --opacity-50: 0.5;
-    --opacity-55: 0.55;
-    --opacity-60: 0.6;
-    --opacity-70: 0.7;
-    --opacity-75: 0.75;
-    --opacity-80: 0.8;
-    --opacity-85: 0.85;
-    --opacity-90: 0.9;
-    --opacity-100: 1;
-
-    /* Z-Index Scale (from actual usage) */
-    --z-index-base: 0;
-    --z-index-dropdown: 10;
-    --z-index-sticky: 100;
-    --z-index-fixed: 1000;
-    --z-index-modal-backdrop: 1100;
-    --z-index-modal: 1110;
-    --z-index-toast: 1200;
-
-    /* Transition Tokens */
-    --transition-base: 160ms ease;
-    --transition-fast: 100ms ease;
-    --transition-slow: 250ms ease;
-
-    /* Animation Durations (from actual keyframes) */
-    --duration-flash: 2.4s;
-    --duration-pulse: 2s;
-    --duration-slide: 0.25s;
-
     /* Breakpoint Tokens
        REMOVED: Breakpoints are now defined in _breakpoints.scss (single source of truth).
        Import @use './breakpoints' as *; in SCSS files to use $breakpoint-* variables. */
-
-    /* Icon Size Tokens
-     *
-     * --button-height-* deliberately does not live here. "Button" is a use
-     * case, so the ladder belongs in semantic-tokens.scss, which is also where
-     * the xs step is defined. Duplicating the names across both layers made
-     * this file's copies dead code — semantic-tokens.scss loads second and
-     * silently won the cascade. */
-    --icon-size-xs: 14px;
-    --icon-size-sm: 18px;
-    --icon-size-md: 20px;
-    --icon-size-lg: 24px;
-    --icon-size-xl: 32px;
-
-    /* Max Width Tokens (for layout containers) */
-    --max-width-prose: 64ch;     /* character-relative, not px */
-    --max-width-xs: 320px;
-    --max-width-sm: 420px;
-    --max-width-md: 640px;
-    --max-width-lg: 820px;
-    --max-width-xl: 1080px;
-
-    /* Chart Color Palette (10 distinct, accessible colors for data series) */
-    --chart-color-1: #3b82f6;    /* Blue */
-    --chart-color-2: #22c55e;    /* Green */
-    --chart-color-3: #f59e0b;    /* Amber */
-    --chart-color-4: #ef4444;    /* Red */
-    --chart-color-5: #8b5cf6;    /* Violet */
-    --chart-color-6: #06b6d4;    /* Cyan */
-    --chart-color-7: #ec4899;    /* Pink */
-    --chart-color-8: #f97316;    /* Orange */
-    --chart-color-9: #14b8a6;    /* Teal */
-    --chart-color-10: #6366f1;   /* Indigo */
-    --chart-color-total: #7C9BFF; /* Total/aggregate line */
 }

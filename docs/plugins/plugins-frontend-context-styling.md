@@ -45,7 +45,7 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 }
 ```
 
-Multi-word identifiers use underscores (`styles.market_card`) so dot-notation works. See [ui-scss-modules.md](../frontend/ui/ui-scss-modules.md) for token tiers and naming.
+Multi-word identifiers use underscores (`styles.market_card`) so dot-notation works. See [ui-scss-modules.md](../frontend/ui/ui-scss-modules.md) for the token layer rule and naming.
 
 ## Status Colors and Brand-Tinted Overlays
 
@@ -158,5 +158,5 @@ If a legacy plugin imports from `apps/frontend` or `src/frontend/`:
 
 - [plugins-frontend-context.md](./plugins-frontend-context.md) — index
 - [plugins-seo-and-ssr.md](./plugins-seo-and-ssr.md) — `serverDataFetcher` contract and SEO fields
-- [ui-scss-modules.md](../frontend/ui/ui-scss-modules.md) — token tiers, naming, container queries
+- [ui-scss-modules.md](../frontend/ui/ui-scss-modules.md) — token layer rule, naming, container queries
 - [react.md](../frontend/react/react.md) — SSR + Live Updates pattern in depth
