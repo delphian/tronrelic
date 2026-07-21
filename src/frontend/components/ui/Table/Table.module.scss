@@ -11,7 +11,7 @@
 /* Table Wrapper - enables horizontal scroll and container queries */
 .table_wrapper {
     background: var(--card-background);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     border: var(--card-border);
     overflow: hidden;
     container-type: inline-size;

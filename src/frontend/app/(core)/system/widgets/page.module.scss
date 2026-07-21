@@ -92,7 +92,7 @@
     padding: var(--card-padding-sm);
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     transition: border-color var(--transition-base), background-color var(--transition-base);
 }
 
@@ -127,7 +127,7 @@
     padding: var(--padding-2xs) var(--padding-xs);
     background: var(--color-surface-muted);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     color: var(--color-text-muted);
     font-size: var(--font-size-caption);
     cursor: pointer;
@@ -175,7 +175,7 @@
     padding: var(--card-padding-sm);
     background: var(--color-surface-muted);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
 }
 
 .zone_layout_group {
@@ -252,7 +252,7 @@
     display: inline-block;
     padding: var(--padding-2xs) var(--padding-xs);
     background: var(--color-surface-muted);
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-inline);
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);
     color: var(--color-text);
@@ -276,7 +276,7 @@
 // distinct from nesting into a layout group.
 .gap_rail {
     height: var(--gap-sm);
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-pill);
     transition: height var(--transition-base), background-color var(--transition-base);
 }
 
@@ -294,7 +294,7 @@
     padding: var(--card-padding-sm);
     background: var(--color-surface-muted);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     transition: border-color var(--transition-base), box-shadow var(--transition-base);
 }
 
@@ -318,7 +318,7 @@
     border: none;
     background: transparent;
     color: var(--color-text-muted);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     cursor: grab;
     transition: color var(--transition-base), background-color var(--transition-base);
     touch-action: none;
@@ -389,7 +389,7 @@
     margin: var(--gap-2xs) 0 var(--gap-xs) var(--gap-lg);
     padding: var(--gap-2xs) 0 var(--gap-2xs) var(--gap-md);
     border-left: var(--border-width-medium) solid var(--color-border-strong);
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-inline);
     transition: background-color var(--transition-base), border-color var(--transition-base);
 }
 
@@ -468,7 +468,7 @@
     padding: var(--padding-2xs) var(--padding-xs);
     background: var(--color-primary-alpha-15);
     border: var(--border-width-thin) solid var(--color-primary-alpha-38);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);
     color: var(--color-text);
@@ -483,7 +483,7 @@
     border: none;
     background: transparent;
     color: var(--color-text-muted);
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-pill);
     cursor: pointer;
     transition: background-color var(--transition-base), color var(--transition-base);
 }
@@ -531,7 +531,7 @@
     padding: var(--card-padding-sm);
     background: var(--color-surface-muted);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
 }
 
 .config_required {
@@ -555,7 +555,7 @@
     padding: var(--padding-sm);
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
 }
 
 /* The editable fields within a row — for object items this stacks the

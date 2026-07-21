@@ -50,7 +50,7 @@
     padding: var(--padding-2xs);
     background: transparent;
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     color: var(--color-text-muted);
     cursor: pointer;
 }
@@ -63,7 +63,7 @@
     padding: var(--input-padding-sm);
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     color: var(--color-text);
     font-size: var(--font-size-body-sm);
 }

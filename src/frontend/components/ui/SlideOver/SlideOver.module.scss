@@ -72,7 +72,7 @@
     height: var(--modal-close-size);
     background: var(--modal-close-background);
     border: none;
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-pill);
     color: var(--color-text-muted);
     cursor: pointer;
     transition: background-color var(--transition-base), color var(--transition-base);

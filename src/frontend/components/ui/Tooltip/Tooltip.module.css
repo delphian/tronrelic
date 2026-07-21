@@ -27,7 +27,7 @@
     background-color: rgba(0, 0, 0, 0.95);
     color: var(--color-text);
     padding: var(--spacing-4) var(--spacing-5);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     font-size: var(--font-size-sm);
     line-height: var(--line-height-tight);
     max-width: 280px;

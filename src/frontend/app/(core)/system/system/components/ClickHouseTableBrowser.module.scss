@@ -45,7 +45,7 @@
 
 .table_item {
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     background: var(--color-surface-muted);
     overflow: hidden;
 }
@@ -149,7 +149,7 @@
     font-size: var(--font-size-caption);
     color: var(--color-text);
     background: var(--color-background);
-    border-radius: var(--radius-xs);
+    border-radius: var(--radius-inline);
     white-space: pre-wrap;
     word-break: break-word;
     max-height: 320px;

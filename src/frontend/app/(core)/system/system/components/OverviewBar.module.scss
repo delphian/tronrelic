@@ -19,7 +19,7 @@
     padding: var(--padding-sm);
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     backdrop-filter: blur(18px);
 }
 
@@ -39,7 +39,7 @@
     padding: var(--padding-sm);
     background: var(--color-surface-muted);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     text-decoration: none;
     color: var(--color-text);
     transition: border-color var(--transition-base), background-color var(--transition-base);
@@ -55,7 +55,7 @@
 .dot {
     width: 8px;
     height: 8px;
-    border-radius: var(--radius-full);
+    border-radius: var(--radius-pill);
     grid-row: 1 / span 2;
     flex-shrink: 0;
     background: var(--color-text-subtle);

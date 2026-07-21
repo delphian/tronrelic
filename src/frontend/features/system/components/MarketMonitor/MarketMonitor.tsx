@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Badge, type BadgeTone } from '../../../../components/ui/Badge';
+import { Button } from '../../../../components/ui/Button';
 import styles from './MarketMonitor.module.css';
 
 interface MarketPlatform {
@@ -136,21 +138,22 @@ export function MarketMonitor() {
     };
 
     /**
-     * Returns the appropriate CSS class variant for status badges.
+     * Maps a platform status onto a Badge tone so the status pill inherits the
+     * design system's themable tone colors instead of local literals.
      *
      * @param {string} status - Platform status
-     * @returns {string} CSS Module class name for badge variant
+     * @returns {BadgeTone} Tone the Badge component should render
      */
-    const getStatusBadgeClass = (status: string): string => {
+    const getStatusBadgeTone = (status: string): BadgeTone => {
         switch (status) {
             case 'online':
-                return styles['badge--online'];
+                return 'success';
             case 'stale':
-                return styles['badge--stale'];
+                return 'warning';
             case 'failed':
-                return styles['badge--failed'];
+                return 'danger';
             default:
-                return styles['badge--disabled'];
+                return 'neutral';
         }
     };
 
@@ -165,20 +168,22 @@ export function MarketMonitor() {
                 <header className={styles.section__header}>
                     <h2 className={styles.section__title}>Market Data Freshness</h2>
                     <div className={styles.actions}>
-                        <button
+                        <Button
+                            variant="secondary"
+                            size="sm"
                             onClick={() => triggerRefresh(false)}
-                            disabled={refreshing}
-                            className={styles.button}
+                            loading={refreshing}
                         >
-                            {refreshing ? 'Refreshing...' : 'Refresh All Markets'}
-                        </button>
-                        <button
+                            Refresh All Markets
+                        </Button>
+                        <Button
+                            variant="secondary"
+                            size="sm"
                             onClick={() => triggerRefresh(true)}
                             disabled={refreshing}
-                            className={styles.button}
                         >
                             Force Refresh
-                        </button>
+                        </Button>
                     </div>
                 </header>
 
@@ -225,7 +230,7 @@ export function MarketMonitor() {
                             className={`${styles.platform_card} ${getPlatformCardClass(platform.status)}`}
                         >
                             <div className={styles.platform_header}>
-                                <div className={styles.platform_header__info}>
+                                <div>
                                     <h3 className={styles.platform_header__title}>{platform.name}</h3>
                                     {platform.lastFetchedAt && (
                                         <p className={styles.platform_header__timestamp}>
@@ -234,14 +239,10 @@ export function MarketMonitor() {
                                     )}
                                 </div>
                                 <div className={styles.badges}>
-                                    {!platform.isActive && (
-                                        <span className={`${styles.badge} ${styles['badge--disabled']}`}>
-                                            Disabled
-                                        </span>
-                                    )}
-                                    <span className={`${styles.badge} ${getStatusBadgeClass(platform.status)}`}>
+                                    {!platform.isActive && <Badge tone="neutral">Disabled</Badge>}
+                                    <Badge tone={getStatusBadgeTone(platform.status)}>
                                         {platform.status}
-                                    </span>
+                                    </Badge>
                                 </div>
                             </div>
 

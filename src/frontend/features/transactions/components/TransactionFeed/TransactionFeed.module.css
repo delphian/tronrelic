@@ -39,7 +39,7 @@
 .transaction {
     background: rgba(11, 16, 28, 0.6);
     padding: var(--spacing-3);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
 }
 
 .transaction__header {

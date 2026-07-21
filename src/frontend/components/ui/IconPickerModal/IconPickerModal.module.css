@@ -52,7 +52,7 @@
     overflow-y: auto;
     padding: var(--spacing-4);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     background: var(--color-background);
     max-height: 50vh;
 }
@@ -78,7 +78,7 @@
     gap: var(--spacing-4);
     padding: var(--spacing-5);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     background: var(--color-surface);
     color: var(--color-text);
     cursor: pointer;

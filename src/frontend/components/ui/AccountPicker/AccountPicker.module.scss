@@ -38,7 +38,7 @@
     list-style: none;
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     box-shadow: var(--shadow-md);
     overflow: hidden;
 }
@@ -89,7 +89,7 @@
     gap: var(--gap-sm);
     padding: var(--padding-xs) var(--padding-sm);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     background: var(--color-surface-muted);
 }
 
@@ -123,7 +123,7 @@
     color: var(--color-text-muted);
     background: none;
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-control);
     cursor: pointer;
     transition: background var(--transition-fast), color var(--transition-fast);
 }
