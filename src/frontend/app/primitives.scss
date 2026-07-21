@@ -8,7 +8,7 @@
  * Values derived from analyzing existing patterns across globals.scss and
  * component CSS modules to ensure consistency with the current design.
  *
- * See docs/frontend/design-token-layers.md for usage guidelines.
+ * See docs/frontend/ui/ui-design-token-layers.md for usage guidelines.
  */
 
 :root {
@@ -19,49 +19,61 @@
     --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     --font-mono: 'Courier New', Courier, monospace;
 
-    /* Typography - Font Sizes (based on actual usage) */
-    --font-size-xxs: 0.5rem;     /* 8px - footnote-tier metadata (use sparingly) */
-    --font-size-xs: 0.72rem;     /* 11.52px - table headers, tiny labels */
-    --font-size-sm: 0.85rem;     /* 13.6px - most common small text */
-    --font-size-base: 0.9375rem; /* 15px - default body, buttons */
-    --font-size-md: 1rem;        /* 16px - standard paragraphs */
-    --font-size-lg: 1.05rem;     /* 16.8px - large buttons */
-    --font-size-xl: 1.6rem;      /* 25.6px - stat values */
-    --font-size-2xl: 1.8rem;     /* 28.8px - page titles (min) */
-    --font-size-3xl: 2.6rem;     /* 41.6px - page titles (max) */
+    /* Typography - Font Sizes */
+    --font-size-xxs: 0.5rem;     /* 8px */
+    --font-size-xs: 0.72rem;     /* 11.52px */
+    --font-size-sm: 0.85rem;     /* 13.6px */
+    --font-size-base: 0.9375rem; /* 15px */
+    --font-size-md: 1rem;        /* 16px */
+    --font-size-lg: 1.05rem;     /* 16.8px */
+    --font-size-xl: 1.6rem;      /* 25.6px */
+    --font-size-2xl: 1.8rem;     /* 28.8px */
+    --font-size-3xl: 2.6rem;     /* 41.6px */
 
-    /* Typography - Font Weights (from actual usage) */
+    /* Typography - Font Weights */
     --font-weight-normal: 400;
     --font-weight-medium: 500;
     --font-weight-semibold: 600;
     --font-weight-bold: 700;
 
-    /* Typography - Line Heights (from actual usage) */
+    /* Typography - Line Heights */
     --line-height-tight: 1.25;
     --line-height-normal: 1.4;
     --line-height-relaxed: 1.5;
 
-    /* Typography - Letter Spacing (from actual usage) */
-    --letter-spacing-tight: -0.02em;  /* Headings */
-    --letter-spacing-normal: 0.01em;  /* Body text */
-    --letter-spacing-wide: 0.08em;    /* Uppercase labels */
+    /* Typography - Letter Spacing */
+    --letter-spacing-tight: -0.02em;
+    --letter-spacing-normal: 0.01em;
+    --letter-spacing-wide: 0.08em;
 
-    /* Spacing Scale (derived from gap/padding/margin patterns) */
+    /*
+     * Spacing Scale — 4px grid, hybrid progression.
+     *
+     * Linear 4px steps through the dense range (4–16px), where interface
+     * density needs fine control, then a x1.5 ratio above it. A constant-ratio
+     * scale from a 4px base produces fractional values that fall off the grid
+     * (4, 6, 9, 13.5, 20.25), so the ascent is deliberately hybrid rather than
+     * strictly geometric.
+     *
+     * Eight distinct rungs: 4, 8, 12, 16, 24, 32, 48, 64. Seven names are
+     * aliases of an adjacent rung, retained so existing references keep
+     * resolving; collapse call sites onto the canonical rung before removing.
+     */
     --spacing-1: 0.25rem;   /* 4px */
-    --spacing-2: 0.35rem;   /* 5.6px - chips, badges */
-    --spacing-3: 0.4rem;    /* 6.4px - pills */
-    --spacing-4: 0.5rem;    /* 8px - stack-sm, common gaps */
-    --spacing-5: 0.75rem;   /* 12px - very common gap, input groups */
-    --spacing-6: 0.85rem;   /* 13.6px - table cells, alerts */
-    --spacing-7: 1rem;      /* 16px - default stack, card padding */
-    --spacing-8: 1.1rem;    /* 17.6px - table cells, alerts */
-    --spacing-9: 1.25rem;   /* 20px - card padding sm, stat grids */
-    --spacing-10: 1.5rem;   /* 24px - stack-lg, common grid gaps */
-    --spacing-11: 1.75rem;  /* 28px - main padding bottom */
-    --spacing-12: 2rem;     /* 32px - large card padding */
-    --spacing-14: 2.5rem;   /* 40px - page gaps */
-    --spacing-15: 3rem;     /* 48px - main padding horizontal */
-    --spacing-16: 3.5rem;   /* 56px */
+    --spacing-2: 0.25rem;   /* 4px */
+    --spacing-3: 0.5rem;    /* 8px */
+    --spacing-4: 0.5rem;    /* 8px */
+    --spacing-5: 0.75rem;   /* 12px */
+    --spacing-6: 0.75rem;   /* 12px */
+    --spacing-7: 1rem;      /* 16px */
+    --spacing-8: 1rem;      /* 16px */
+    --spacing-9: 1.5rem;    /* 24px */
+    --spacing-10: 1.5rem;   /* 24px */
+    --spacing-11: 1.5rem;   /* 24px */
+    --spacing-12: 2rem;     /* 32px */
+    --spacing-14: 3rem;     /* 48px */
+    --spacing-15: 3rem;     /* 48px */
+    --spacing-16: 4rem;     /* 64px */
 
     /* Container Padding (responsive) */
     --container-padding-mobile: 1.25rem;   /* 20px */
@@ -82,28 +94,28 @@
     --shadow-sm: 0 8px 18px rgba(7, 15, 30, 0.35);
     --shadow-md: 0 18px 36px rgba(10, 20, 45, 0.42);
     --shadow-lg: 0 28px 48px rgba(5, 12, 28, 0.55);
-    --shadow-xl: 0 40px 64px rgba(3, 8, 22, 0.65);   /* Floating overlays (menus, dropdowns) */
+    --shadow-xl: 0 40px 64px rgba(3, 8, 22, 0.65);
 
     /* Border Radius Tokens */
-    --radius-xs: 4px;       /* Minimal rounding for small elements */
+    --radius-xs: 4px;
     --radius-sm: 10px;
     --radius-md: 16px;
     --radius-lg: 24px;
-    --radius-full: 999px;   /* Pills, badges, circular buttons */
+    --radius-full: 999px;
 
     /* Border Width Tokens */
     --border-width-thin: 1px;
     --border-width-medium: 2px;
     --border-width-thick: 3px;
 
-    /* Opacity Scale (from actual usage patterns) */
+    /* Opacity Scale */
     --opacity-0: 0;
     --opacity-35: 0.35;
     --opacity-50: 0.5;
-    --opacity-55: 0.55;   /* Disabled state */
+    --opacity-55: 0.55;
     --opacity-60: 0.6;
     --opacity-70: 0.7;
-    --opacity-75: 0.75;   /* Loading state */
+    --opacity-75: 0.75;
     --opacity-80: 0.8;
     --opacity-85: 0.85;
     --opacity-90: 0.9;
@@ -124,18 +136,21 @@
     --transition-slow: 250ms ease;
 
     /* Animation Durations (from actual keyframes) */
-    --duration-flash: 2.4s;      /* Row flash animation */
-    --duration-pulse: 2s;        /* Live indicator pulse */
-    --duration-slide: 0.25s;     /* Toast slide-in */
+    --duration-flash: 2.4s;
+    --duration-pulse: 2s;
+    --duration-slide: 0.25s;
 
     /* Breakpoint Tokens
        REMOVED: Breakpoints are now defined in _breakpoints.scss (single source of truth).
        Import @use './breakpoints' as *; in SCSS files to use $breakpoint-* variables. */
 
-    /* Component Size Tokens */
-    --button-height-sm: 34px;
-    --button-height-md: 42px;
-    --button-height-lg: 50px;
+    /* Icon Size Tokens
+     *
+     * --button-height-* deliberately does not live here. "Button" is a use
+     * case, so the ladder belongs in semantic-tokens.scss, which is also where
+     * the xs step is defined. Duplicating the names across both layers made
+     * this file's copies dead code — semantic-tokens.scss loads second and
+     * silently won the cascade. */
     --icon-size-xs: 14px;
     --icon-size-sm: 18px;
     --icon-size-md: 20px;
@@ -143,12 +158,12 @@
     --icon-size-xl: 32px;
 
     /* Max Width Tokens (for layout containers) */
-    --max-width-prose: 64ch;     /* Readable text width */
-    --max-width-xs: 320px;       /* Narrow hint copy, empty-state labels */
-    --max-width-sm: 420px;       /* Small modal */
-    --max-width-md: 640px;       /* Medium modal */
-    --max-width-lg: 820px;       /* Large modal */
-    --max-width-xl: 1080px;      /* Extra large modal */
+    --max-width-prose: 64ch;     /* character-relative, not px */
+    --max-width-xs: 320px;
+    --max-width-sm: 420px;
+    --max-width-md: 640px;
+    --max-width-lg: 820px;
+    --max-width-xl: 1080px;
 
     /* Chart Color Palette (10 distinct, accessible colors for data series) */
     --chart-color-1: #3b82f6;    /* Blue */
