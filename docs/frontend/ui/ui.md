@@ -32,7 +32,7 @@ Hardcoded values prevent theming. Global classes collide. Viewport media queries
 
 ### Common Design Tokens
 
-Component code (`.module.scss`) reaches for use-case-named semantics first (`--card-padding-md`, `--button-gap`), falls back to curated t-shirt primitives (`--gap-md`, `--padding-md`) and design-constant primitives (`--radius-md`, `--shadow-sm`), and never touches foundation scales (`--spacing-7`, `--color-blue-500`, raw `--font-size-xs/sm/md/lg/xl/2xl/3xl`). Tier definitions and full token reference live in [ui-design-token-layers.md](./ui-design-token-layers.md).
+Component code (`.module.scss`) reaches for use-case-named semantics first (`--card-padding-md`, `--button-gap`, `--radius-surface`), falls back to curated t-shirt primitives (`--gap-md`, `--padding-md`) and design-constant primitives (`--shadow-sm`, `--border-width-thin`), and never touches foundation scales (`--spacing-7`, `--radius-3`, `--color-blue-500`, raw `--font-size-xs/sm/md/lg/xl/2xl/3xl`). Tier definitions and full token reference live in [ui-design-token-layers.md](./ui-design-token-layers.md).
 
 | Category | Tokens component code may reference |
 |----------|--------------------------------------|
@@ -40,7 +40,7 @@ Component code (`.module.scss`) reaches for use-case-named semantics first (`--c
 | Gaps | `--gap-2xs/xs/sm/md/lg/xl` (generic), plus component-scoped `--stack-gap-sm/md/lg`, `--grid-gap-sm/md/lg`, `--button-gap`, `--badge-gap`, `--chip-gap` |
 | Padding | `--padding-2xs/xs/sm/md/lg/xl` (generic), plus component-scoped `--card-padding-xs/sm/md/lg`, `--button-padding-xs/sm/md/lg`, `--input-padding-xs/sm/md/lg`, `--alert-padding` |
 | Typography | `--font-size-caption`, `--font-size-body-sm/body/body-lg`, `--font-size-heading-sm/md/lg/xl`; `--font-weight-normal/medium/semibold/bold`; `--line-height-tight/normal/relaxed` |
-| Borders | `--border-width-thin/medium/thick`, `--radius-xs/sm/md/lg/full` |
+| Borders | `--border-width-thin/medium/thick`; radius roles `--radius-inline` (4px), `--radius-control` (10px), `--radius-surface` (16px), `--radius-elevated` (24px), `--radius-sheet` (32px), `--radius-pill` (999px, unscaled) |
 | Shadows | `--shadow-sm/md/lg` |
 | Avatars | `--avatar-size-sm/md/lg` |
 | Max Widths | `--max-width-prose` (64ch), `--max-width-xs/sm/md/lg/xl` (320–1080px) |
