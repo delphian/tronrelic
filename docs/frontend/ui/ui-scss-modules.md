@@ -120,7 +120,7 @@ Reach for tokens in `semantic-tokens.scss` first. Tokens are immutable — selec
 }
 ```
 
-**Token tiering** (full rules in [ui-design-token-layers.md](./ui-design-token-layers.md#the-four-tier-rule-for-component-code)): prefer use-case-named semantics (`--card-padding-md`, `--button-gap`); fall back to curated t-shirt primitives (`--gap-*`, `--padding-*`) and design constants (`--radius-*`, `--shadow-*`, `--font-weight-*`); never touch foundation scales (`--spacing-*`, raw color palette, raw `--font-size-xs/sm/md/lg/xl/2xl/3xl`). If nothing fits, add a new use-case-named semantic — don't drop to a forbidden scale. Never hardcode values, never redefine tokens across breakpoints.
+**Token tiering** (full rules in [ui-design-token-layers.md](./ui-design-token-layers.md#the-four-tier-rule-for-component-code)): prefer use-case-named semantics (`--card-padding-md`, `--button-gap`, `--radius-surface`); fall back to curated t-shirt primitives (`--gap-*`, `--padding-*`) and design constants (`--shadow-*`, `--font-weight-*`); never touch foundation scales (`--spacing-*`, `--radius-1`…`--radius-5`, raw color palette, raw `--font-size-xs/sm/md/lg/xl/2xl/3xl`). If nothing fits, add a new use-case-named semantic — don't drop to a forbidden scale. Never hardcode values, never redefine tokens across breakpoints.
 
 ## Complete Example
 

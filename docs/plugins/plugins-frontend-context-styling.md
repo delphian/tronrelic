@@ -22,7 +22,7 @@ Create `Component.module.css` (or `.scss`) next to the component:
 
 .card {
     padding: var(--card-padding-sm);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-surface);
     background: var(--color-surface-muted);
 }
 
