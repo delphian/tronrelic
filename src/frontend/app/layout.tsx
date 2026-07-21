@@ -262,6 +262,18 @@ async function fetchSSRSession(): Promise<ISSRSession | null> {
 }
 
 /**
+ * Valid interface density steps, mirroring the `[data-density="…"]` rules
+ * in semantic-tokens.scss.
+ *
+ * TypeScript cannot read the stylesheet and JSX does not type-check
+ * hyphenated attributes, so without this union a typo'd step would still
+ * match the bare `[data-density]` selector, silently render at density 1,
+ * and report nothing. Keep in lockstep with the DENSITY STEPS block in
+ * semantic-tokens.scss.
+ */
+type DensityStep = 'compact' | 'cozy' | 'default' | 'roomy';
+
+/**
  * Site-wide interface density, stamped onto <html> during SSR.
  *
  * Density scales layout spacing (gaps, generic and card padding, page gap)
@@ -273,7 +285,7 @@ async function fetchSSRSession(): Promise<ISSRSession | null> {
  *
  * Valid steps: 'compact' (0.75), 'cozy' (0.875), 'default' (1), 'roomy' (1.125).
  */
-const SITE_DENSITY = 'default';
+const SITE_DENSITY: DensityStep = 'default';
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // Extract pathname from middleware-set header for ticker-after widget zone

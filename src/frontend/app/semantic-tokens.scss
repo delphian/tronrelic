@@ -15,33 +15,7 @@
  * DEFAULT THEME
  * ========================================================================== */
 :root,
-[data-theme="default"],
-[data-density] {
-    /* ========================================================================
-     * DENSITY MULTIPLIER
-     *
-     * Scales layout spacing only — generic gaps and padding, card padding,
-     * stack/grid gaps, and the page gap. Identity by default; the named steps
-     * at the bottom of this file set it, and `data-density` on <html> applies
-     * one site-wide.
-     *
-     * `[data-density]` is part of this selector list on purpose. A custom
-     * property is substituted where it is DECLARED, not where it is used, so a
-     * scaled token declared only on :root bakes in density 1 and silently
-     * ignores any override set further down the tree. Any element that sets
-     * --density must also match a selector that declares the scaled tokens.
-     *
-     * Control internals (button, input, badge, chip, table, modal, alert and
-     * toast padding) deliberately do NOT scale: their heights, icon sizes and
-     * touch targets are px and would distort against shrinking padding, and
-     * holding them fixed keeps tap targets above the WCAG 2.5.8 minimum.
-     *
-     * These tokens are therefore density-relative by design and compute to
-     * different values under different density steps — a deliberate carve-out
-     * from the token-immutability rule in ui-design-token-layers.md.
-     * ======================================================================== */
-    --density: 1;
-
+[data-theme="default"] {
     /* ========================================================================
      * GENERIC LAYOUT & TYPOGRAPHY TOKENS
      *
@@ -51,22 +25,6 @@
      * preferred where the component fits — these generic tiers cover the
      * non-component cases (one-off blocks, plugin pages, ad-hoc layouts).
      * ======================================================================== */
-
-    /* Generic Gaps — for flex/grid contexts that aren't a Stack, Grid, or Card */
-    --gap-2xs: calc(var(--spacing-1)  * var(--density));   /* base 0.25rem */
-    --gap-xs:  calc(var(--spacing-2)  * var(--density));   /* base 0.25rem */
-    --gap-sm:  calc(var(--spacing-4)  * var(--density));   /* base 0.5rem  */
-    --gap-md:  calc(var(--spacing-7)  * var(--density));   /* base 1rem    */
-    --gap-lg:  calc(var(--spacing-10) * var(--density));   /* base 1.5rem  */
-    --gap-xl:  calc(var(--spacing-14) * var(--density));   /* base 3rem    */
-
-    /* Generic Padding — for any block that isn't a Card, Button, Alert, etc. */
-    --padding-2xs: calc(var(--spacing-1)  * var(--density));   /* base 0.25rem */
-    --padding-xs:  calc(var(--spacing-2)  * var(--density));   /* base 0.25rem */
-    --padding-sm:  calc(var(--spacing-4)  * var(--density));   /* base 0.5rem  */
-    --padding-md:  calc(var(--spacing-7)  * var(--density));   /* base 1rem    */
-    --padding-lg:  calc(var(--spacing-10) * var(--density));   /* base 1.5rem  */
-    --padding-xl:  calc(var(--spacing-14) * var(--density));   /* base 3rem    */
 
     /* Typography — purpose-named font sizes */
     --font-size-caption:    var(--font-size-xs);    /* 0.72rem - labels, table headers, footnotes */
@@ -233,12 +191,6 @@
     --card-background-accent: var(--color-surface-accent);
     --card-shadow-elevated: var(--shadow-lg);
 
-    /* Card - Padding Variants (density-scaled) */
-    --card-padding-xs: calc(var(--spacing-4)  * var(--density));   /* base 0.5rem */
-    --card-padding-sm: calc(var(--spacing-7)  * var(--density));   /* base 1rem   */
-    --card-padding-md: calc(var(--spacing-10) * var(--density));   /* base 1.5rem */
-    --card-padding-lg: calc(var(--spacing-12) * var(--density));   /* base 2rem   */
-
     /* Card - Background Image Customization */
     --card-bg-image: none;                      /* Default: no background image */
     --card-bg-opacity: 0.08;                    /* Subtle watermark opacity */
@@ -398,19 +350,13 @@
      * LAYOUT UTILITY TOKENS
      * ======================================================================== */
 
-    /* Stack Layout (gaps density-scaled) */
-    --stack-gap-md: calc(var(--spacing-7)  * var(--density));   /* base 1rem   */
-    --stack-gap-sm: calc(var(--spacing-4)  * var(--density));   /* base 0.5rem */
-    --stack-gap-lg: calc(var(--spacing-10) * var(--density));   /* base 1.5rem */
+    /* Stack Layout */
     --stack-bg-image: none;
     --stack-bg-opacity: 0.08;
     --stack-bg-size: 140px;
     --stack-bg-position: bottom right;
 
-    /* Grid Layout (gaps density-scaled) */
-    --grid-gap-sm: calc(var(--spacing-5)  * var(--density));   /* base 0.75rem */
-    --grid-gap-md: calc(var(--spacing-10) * var(--density));   /* base 1.5rem  */
-    --grid-gap-lg: calc(var(--spacing-12) * var(--density));   /* base 2rem    */
+    /* Grid Layout */
     --grid-responsive-min: 280px;               /* auto-fit minmax floor for <Grid columns="responsive">; consumers override at their scope */
     --stat-grid-min: 220px;                     /* auto-fit minmax floor for the .stat-grid utility */
     --grid-bg-image: none;
@@ -424,9 +370,7 @@
     --section-bg-size: 140px;
     --section-bg-position: bottom right;
 
-    /* Page Layout (gaps density-scaled) */
-    --page-gap: calc(var(--spacing-14) * var(--density));   /* base 3rem */
-    --page-gap-sm: calc(var(--spacing-7) * var(--density)); /* base 1rem - mobile/constrained contexts */
+    /* Page Layout */
     --page-bg-image: none;
     --page-bg-opacity: 0.08;
     --page-bg-size: 140px;
@@ -645,6 +589,84 @@
     --meter-background: var(--color-border-strong);
     --meter-value-background: var(--gradient-meter);
     --meter-margin-top: var(--spacing-5);         /* 0.75rem */
+}
+
+/* ============================================================================
+ * DENSITY MULTIPLIER + DENSITY-SCALED TOKENS
+ *
+ * Scales layout spacing only — generic gaps and padding, card padding,
+ * stack/grid gaps, and the page gap. Identity by default; the named steps
+ * below set it, and `data-density` on <html> applies one site-wide.
+ *
+ * `[data-density]` is in this selector list on purpose. A custom property is
+ * substituted where it is DECLARED, not where it is used, so a scaled token
+ * declared only on :root bakes in density 1 and silently ignores any override
+ * set further down the tree. Any element that sets --density must also match a
+ * selector that declares these tokens.
+ *
+ * Only these tokens live here, equally on purpose. Adding `[data-density]` to
+ * the main block's selector list instead would redeclare all ~300 other tokens
+ * on every density-scoped element, resetting an active theme's overrides
+ * (trp-themes writes [data-theme="active"]) to default-theme values inside
+ * that subtree. The corollary is a footgun in the other direction: a new
+ * density-scaled token added to the main block would silently lose subtree
+ * overrides. New `calc(… * var(--density))` tokens belong in THIS block.
+ *
+ * `:root, [data-theme="default"]` must stay in this list: <html> may carry no
+ * data-density attribute, and these tokens would otherwise be undefined.
+ *
+ * Control internals (button, input, badge, chip, table, modal, alert and toast
+ * padding) deliberately do NOT scale: their heights, icon sizes and touch
+ * targets are px and would distort against shrinking padding, and holding them
+ * fixed keeps tap targets above the WCAG 2.5.8 minimum.
+ *
+ * These tokens are density-relative by design and compute to different values
+ * under different density steps — a deliberate carve-out from the
+ * token-immutability rule in ui-design-token-layers.md.
+ *
+ * This block MUST sit after the main token block and before the density steps
+ * below: all these selectors are (0,1,0), so source order breaks the tie.
+ * ========================================================================== */
+:root,
+[data-theme="default"],
+[data-density] {
+    --density: 1;
+
+    /* Generic Gaps — for flex/grid contexts that aren't a Stack, Grid, or Card */
+    --gap-2xs: calc(var(--spacing-1)  * var(--density));   /* base 0.25rem */
+    --gap-xs:  calc(var(--spacing-2)  * var(--density));   /* base 0.25rem */
+    --gap-sm:  calc(var(--spacing-4)  * var(--density));   /* base 0.5rem  */
+    --gap-md:  calc(var(--spacing-7)  * var(--density));   /* base 1rem    */
+    --gap-lg:  calc(var(--spacing-10) * var(--density));   /* base 1.5rem  */
+    --gap-xl:  calc(var(--spacing-14) * var(--density));   /* base 3rem    */
+
+    /* Generic Padding — for any block that isn't a Card, Button, Alert, etc. */
+    --padding-2xs: calc(var(--spacing-1)  * var(--density));   /* base 0.25rem */
+    --padding-xs:  calc(var(--spacing-2)  * var(--density));   /* base 0.25rem */
+    --padding-sm:  calc(var(--spacing-4)  * var(--density));   /* base 0.5rem  */
+    --padding-md:  calc(var(--spacing-7)  * var(--density));   /* base 1rem    */
+    --padding-lg:  calc(var(--spacing-10) * var(--density));   /* base 1.5rem  */
+    --padding-xl:  calc(var(--spacing-14) * var(--density));   /* base 3rem    */
+
+    /* Card padding */
+    --card-padding-xs: calc(var(--spacing-4)  * var(--density));   /* base 0.5rem */
+    --card-padding-sm: calc(var(--spacing-7)  * var(--density));   /* base 1rem   */
+    --card-padding-md: calc(var(--spacing-10) * var(--density));   /* base 1.5rem */
+    --card-padding-lg: calc(var(--spacing-12) * var(--density));   /* base 2rem   */
+
+    /* Stack gaps */
+    --stack-gap-md: calc(var(--spacing-7)  * var(--density));   /* base 1rem   */
+    --stack-gap-sm: calc(var(--spacing-4)  * var(--density));   /* base 0.5rem */
+    --stack-gap-lg: calc(var(--spacing-10) * var(--density));   /* base 1.5rem */
+
+    /* Grid gaps */
+    --grid-gap-sm: calc(var(--spacing-5)  * var(--density));   /* base 0.75rem */
+    --grid-gap-md: calc(var(--spacing-10) * var(--density));   /* base 1.5rem  */
+    --grid-gap-lg: calc(var(--spacing-12) * var(--density));   /* base 2rem    */
+
+    /* Page gaps */
+    --page-gap: calc(var(--spacing-14) * var(--density));   /* base 3rem */
+    --page-gap-sm: calc(var(--spacing-7) * var(--density)); /* base 1rem - mobile/constrained contexts */
 }
 
 /* ============================================================================
