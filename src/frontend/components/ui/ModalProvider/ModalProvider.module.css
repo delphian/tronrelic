@@ -100,7 +100,7 @@
     color: inherit;
     width: var(--modal-close-size);
     height: var(--modal-close-size);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-full);
     font-size: var(--modal-close-font-size);
     cursor: pointer;
     transition: background-color var(--transition-base);

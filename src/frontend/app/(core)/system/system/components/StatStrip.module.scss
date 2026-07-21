@@ -13,7 +13,7 @@
     gap: var(--gap-2xs);
     background: var(--color-surface-base);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     padding: var(--gap-2xs);
 }
 
@@ -22,7 +22,7 @@
     flex-direction: column;
     gap: var(--gap-2xs);
     padding: var(--padding-xs) var(--padding-sm);
-    border-radius: var(--radius-inline);
+    border-radius: var(--radius-xs);
     border-left: var(--border-width-medium) solid transparent;
     background: var(--color-surface-muted);
     min-width: 0;

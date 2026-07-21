@@ -18,7 +18,7 @@
     gap: var(--gap-sm);
     padding: var(--padding-md);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
     background: var(--color-surface);
     cursor: pointer;
 }
@@ -40,7 +40,7 @@
     gap: var(--gap-sm);
     padding: var(--padding-md);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
     background: var(--color-surface);
     margin: 0;
 }

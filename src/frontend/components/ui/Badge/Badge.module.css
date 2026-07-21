@@ -22,7 +22,7 @@
     display: inline-block;
     width: var(--badge-live-indicator-size);
     height: var(--badge-live-indicator-size);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-full);
     background: var(--color-danger);
     box-shadow: 0 0 4px var(--color-danger-alpha-60);
     animation: live_pulse var(--duration-pulse) ease-in-out infinite;

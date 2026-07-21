@@ -26,10 +26,10 @@ Where tokens meet markup. Component CSS Modules consume tokens; `globals.scss` d
 
 Component CSS reaches for tokens in this order:
 
-1. **Use-case-named semantic tokens** when one exists — `--color-text`, `--color-danger`, `--card-padding-md`, `--button-gap`, `--stack-gap-md`, `--font-size-heading-md`, `--font-size-body`, `--max-width-prose`, and the radius roles `--radius-inline/control/surface/elevated/sheet/pill`. **Always preferred.**
-2. **Curated t-shirt primitives in `semantic-tokens.scss`** — `--gap-*`, `--padding-*`, `--avatar-size-*`. Acceptable when no use-case-named semantic fits.
-3. **Design-constant primitives in `primitives.scss`** — `--border-width-thin/medium/thick`, `--shadow-sm/md/lg`, `--font-weight-*`, `--line-height-*`, `--letter-spacing-*`, `--max-width-*`. These don't shift between themes; aliasing them through Layer 2 adds ceremony without value, so reach for them directly. Radius is **not** in this tier: the role semantics carry the `--density` factor, so consuming a foundation radius silently opts that corner out of density scaling.
-4. **Forbidden in component code** — the foundation scales: `--spacing-1`...`--spacing-20`, `--radius-1`...`--radius-5` (and `--radius-full`), raw color palette (`--color-blue-500`), raw t-shirt font sizes (`--font-size-xs/sm/md/lg/xl/2xl/3xl`).
+1. **Use-case-named semantic tokens** when one exists — `--color-text`, `--color-danger`, `--card-padding-md`, `--button-gap`, `--stack-gap-md`, `--font-size-heading-md`, `--font-size-body`, `--max-width-prose`. **Always preferred.**
+2. **Curated t-shirt primitives in `semantic-tokens.scss`** — `--gap-*`, `--padding-*`, `--radius-xs/sm/md/lg/xl/full`, `--avatar-size-*`. Acceptable when no use-case-named semantic fits.
+3. **Design-constant primitives in `primitives.scss`** — `--border-width-thin/medium/thick`, `--shadow-sm/md/lg`, `--font-weight-*`, `--line-height-*`, `--letter-spacing-*`, `--max-width-*`. These don't shift between themes; aliasing them through Layer 2 adds ceremony without value, so reach for them directly. Radius is **not** in this tier: the t-shirt scale carries the `--density` factor, so consuming a foundation radius silently opts that corner out of density scaling.
+4. **Forbidden in component code** — the foundation scales: `--spacing-1`...`--spacing-20`, `--radius-1`...`--radius-6`, raw color palette (`--color-blue-500`), raw t-shirt font sizes (`--font-size-xs/sm/md/lg/xl/2xl/3xl`).
 
 If no token in tiers 1–3 fits, **flag the gap so a use-case-named semantic can be added**. Don't silently drop to a forbidden foundation primitive.
 

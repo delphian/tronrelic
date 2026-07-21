@@ -50,7 +50,7 @@
     &:focus-visible {
         outline: var(--focus-outline-width) solid var(--focus-outline-color);
         outline-offset: var(--focus-outline-offset);
-        border-radius: var(--radius-inline);
+        border-radius: var(--radius-xs);
     }
 }
 
@@ -66,7 +66,7 @@
     max-height: 14rem;
     overflow-y: auto;
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     background: var(--color-surface-muted);
 }
 

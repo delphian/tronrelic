@@ -55,7 +55,7 @@
     padding: var(--padding-sm);
     background: var(--color-surface-muted);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     container-type: inline-size;
     container-name: plugin-stats;
 }
@@ -129,7 +129,7 @@
     padding: var(--padding-xs) var(--padding-sm);
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-inline);
+    border-radius: var(--radius-xs);
 }
 
 .room_names {

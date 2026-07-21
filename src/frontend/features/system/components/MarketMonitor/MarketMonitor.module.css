@@ -60,7 +60,7 @@
     padding: var(--card-padding-sm);
     background: var(--color-surface-elevated);
     border: var(--border-width-thin) solid var(--color-border-strong);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
 }
 
 .metric_card__label {
@@ -114,7 +114,7 @@
 
 .platform_card {
     padding: var(--card-padding-sm);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
 }
 
 .platform_card--online {

@@ -52,7 +52,7 @@
     text-align: center;
     padding: var(--card-padding-sm);
     background: color-mix(in srgb, var(--color-surface-elevated) 50%, transparent);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
 }
 
 .metric_card__value {
@@ -89,7 +89,7 @@
 .funnel_stage__bar {
     height: var(--gap-md);
     background: var(--color-primary);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     transition: width 0.6s ease;
     min-width: var(--gap-2xs);
     opacity: 0.85;
@@ -180,7 +180,7 @@
 .table__bar {
     height: var(--padding-xs);
     background: var(--color-primary);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-full);
     opacity: 0.7;
 }
 
@@ -189,7 +189,7 @@
     display: inline-block;
     font-size: var(--font-size-caption);
     padding: var(--gap-2xs) var(--padding-sm);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-full);
     font-weight: var(--font-weight-medium);
 }
 
@@ -319,7 +319,7 @@
     min-width: 4.5rem;
     padding: var(--gap-sm) var(--padding-sm);
     background: color-mix(in srgb, var(--color-surface-elevated) 80%, transparent);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
 }
 
 .detail_card__value {
@@ -397,7 +397,7 @@
     color: var(--color-primary);
     background: color-mix(in srgb, var(--color-primary) 12%, transparent);
     padding: var(--gap-2xs) var(--padding-xs);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     margin-left: var(--padding-xs);
     vertical-align: middle;
     text-transform: uppercase;

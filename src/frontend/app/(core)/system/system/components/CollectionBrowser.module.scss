@@ -53,7 +53,7 @@
 
 .collection_item {
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
     overflow: hidden;
     background: var(--color-surface-muted);
     transition: border-color var(--transition-fast);
@@ -168,7 +168,7 @@
     padding: var(--spacing-5) var(--spacing-6);
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     color: var(--color-text);

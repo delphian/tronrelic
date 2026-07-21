@@ -124,7 +124,7 @@
 .streaming_dot {
     width: var(--gap-xs);
     height: var(--gap-xs);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-full);
     background: var(--color-primary);
     animation: pulse 1.5s ease-in-out infinite;
 }
@@ -159,7 +159,7 @@
     padding: var(--padding-xs) var(--padding-sm);
     border: var(--border-width-thin) solid var(--alert-danger-border);
     background: var(--alert-danger-background);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     color: var(--alert-danger-color);
     font-size: var(--font-size-caption);
 }
@@ -187,7 +187,7 @@
     justify-content: center;
     width: var(--avatar-size-sm);
     height: var(--avatar-size-sm);
-    border-radius: var(--radius-pill);
+    border-radius: var(--radius-full);
     color: var(--color-text-muted);
     background: var(--color-surface-muted);
     border: var(--border-width-thin) solid var(--color-border);
@@ -231,7 +231,7 @@
     padding: var(--padding-sm);
     background: var(--color-surface-muted);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     font-size: var(--font-size-body-sm);
     color: var(--color-text);
     line-height: var(--line-height-relaxed);
@@ -304,7 +304,7 @@
         font-size: var(--font-size-caption);
         background: var(--color-surface-muted);
         padding: var(--padding-2xs) var(--padding-xs);
-        border-radius: var(--radius-control);
+        border-radius: var(--radius-sm);
     }
 
     pre {
@@ -312,7 +312,7 @@
         padding: var(--padding-xs);
         background: var(--color-surface);
         border: var(--border-width-thin) solid var(--color-border);
-        border-radius: var(--radius-control);
+        border-radius: var(--radius-sm);
         overflow-x: auto;
 
         code {
@@ -435,7 +435,7 @@
    tools); opening it reveals the picker and the scoped trifecta badge. */
 .composer_tools {
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
     background: var(--color-surface);
     padding: var(--padding-sm);
 }
@@ -530,7 +530,7 @@
     gap: var(--gap-sm);
     padding: var(--padding-sm);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     background: var(--color-surface-muted);
 }
 
@@ -634,7 +634,7 @@
    answer; the muted body reads as secondary, set off by a left accent rule. */
 .thinking {
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     background: var(--color-surface-muted);
     padding: var(--padding-xs) var(--padding-sm);
 }
@@ -665,7 +665,7 @@
 .tool_call,
 .tool_result {
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     background: var(--color-surface-muted);
     padding: var(--padding-xs) var(--padding-sm);
 }
@@ -703,7 +703,7 @@
    transcript until an operator opens it. */
 .tools_used {
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-surface);
+    border-radius: var(--radius-md);
     background: var(--color-surface);
     padding: var(--padding-sm);
 }
@@ -729,7 +729,7 @@
     overflow: auto;
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-control);
+    border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);
     color: var(--color-text);
