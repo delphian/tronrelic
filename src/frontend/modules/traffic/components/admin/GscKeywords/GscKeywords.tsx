@@ -10,23 +10,21 @@
  * - **Clicks / impressions trend** — two stacked line charts from the daily
  *   buckets (separate charts because impressions dwarf clicks by orders of
  *   magnitude and would flatten a shared axis).
- * - **Top keywords table** — clicks, impressions, CTR, and average position
- *   per query over a selectable window.
- * - **Top pages table** — the landing pages search surfaced over the same
+ * - **Top pages table** — the landing pages search surfaced over a selectable
  *   window, backed by the [page, date] totals. Because that request omits the
  *   `query` dimension it escapes GSC's query anonymization, so it accounts for
  *   clicks that no keyword row can (the anonymized low-volume queries), and
  *   including impressions surfaces pages Google showed even with zero clicks.
- * - **Keyword → page pairs table** — the join the two tables above cannot
- *   express: which page each keyword surfaced. Aggregates the raw query cache
- *   by the `{query, page}` couple, so it inherits the same query anonymization
- *   as the keyword table and will not fully reconcile with the top-pages totals.
+ * - **Keyword → page pairs table** — which page each keyword surfaced, uncapped
+ *   so it accounts for every keyword→page combination in the window. Aggregates
+ *   the raw query cache by the `{query, page}` couple, so it inherits GSC's
+ *   query anonymization and will not fully reconcile with the top-pages totals.
  *
  * Chart totals come from the backend's date-only GSC totals (immune to
- * query anonymization); the keyword table is limited to non-anonymized
- * queries by the GSC API itself. The header surfaces the fetch status
- * (configured / last fetch) so a stalled `gsc:fetch` job is visible, and
- * the window picker shows the actual delay-shifted dates covered.
+ * query anonymization); the pairs table is limited to non-anonymized queries
+ * by the GSC API itself. The header surfaces the fetch status (configured /
+ * last fetch) so a stalled `gsc:fetch` job is visible, and the window picker
+ * shows the actual delay-shifted dates covered.
  *
  * Data is delayed ~3 days by GSC's ingestion lag (handled server-side).
  * Mirrors the TrafficDashboard pattern: client-only, session-cookie auth,
@@ -34,15 +32,15 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, FileText, Link2, Search, TrendingUp } from 'lucide-react';
+import { AlertTriangle, FileText, Link2, TrendingUp } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
 import { Stack, Grid } from '../../../../../components/layout';
 import { Card } from '../../../../../components/ui/Card';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { adminGetGscKeywords, adminGetGscPages, adminGetGscKeywordPages, adminGetGscKeywordsByDay, adminGetGscStatus } from '../../../api';
-import type { IGscKeyword, IGscPage, IGscKeywordPage, IGscDailyKeywords, IGscStatus } from '../../../api';
+import { adminGetGscPages, adminGetGscKeywordPages, adminGetGscKeywordsByDay, adminGetGscStatus } from '../../../api';
+import type { IGscPage, IGscKeywordPage, IGscDailyKeywords, IGscStatus } from '../../../api';
 import styles from './GscKeywords.module.scss';
 
 /** Keyword-table lookback windows. 30d is the backend's hard ceiling. */
@@ -69,22 +67,18 @@ function resolveCSSColor(varName: string, fallback: string): string {
 }
 
 /**
- * Google Search Console keyword dashboard — clicks/impressions trend plus
- * the top-keywords table.
+ * Google Search Console keyword dashboard — clicks/impressions trend plus the
+ * top-pages and (uncapped) keyword→page pairs tables.
  */
 export function GscKeywords() {
-    const [periodHours, setPeriodHours] = useState<number>(168);
-
-    const [keywords, setKeywords] = useState<IGscKeyword[] | null>(null);
-    const [keywordsWindow, setKeywordsWindow] = useState<{ start: string; end: string } | null>(null);
-    const [keywordsError, setKeywordsError] = useState<string | null>(null);
-    const [keywordsLoading, setKeywordsLoading] = useState(true);
+    const [periodHours, setPeriodHours] = useState<number>(24);
 
     const [pages, setPages] = useState<IGscPage[] | null>(null);
     const [pagesError, setPagesError] = useState<string | null>(null);
     const [pagesLoading, setPagesLoading] = useState(true);
 
     const [pairs, setPairs] = useState<IGscKeywordPage[] | null>(null);
+    const [pairsWindow, setPairsWindow] = useState<{ start: string; end: string } | null>(null);
     const [pairsError, setPairsError] = useState<string | null>(null);
     const [pairsLoading, setPairsLoading] = useState(true);
 
@@ -93,27 +87,6 @@ export function GscKeywords() {
     const [dailyLoading, setDailyLoading] = useState(true);
 
     const [status, setStatus] = useState<IGscStatus | null>(null);
-
-    // Keyword table fetch — re-runs when the window changes.
-    useEffect(() => {
-        let active = true;
-        setKeywordsLoading(true);
-        setKeywordsError(null);
-
-        adminGetGscKeywords({ periodHours, limit: 25 })
-            .then(data => {
-                if (active) {
-                    setKeywords(data.keywords);
-                    setKeywordsWindow(data.windowStart && data.windowEnd
-                        ? { start: data.windowStart, end: data.windowEnd }
-                        : null);
-                }
-            })
-            .catch(err => { if (active) setKeywordsError(err instanceof Error ? err.message : 'Failed to load'); })
-            .finally(() => { if (active) setKeywordsLoading(false); });
-
-        return () => { active = false; };
-    }, [periodHours]);
 
     // Top-pages fetch — re-runs when the window changes, keyed to the same
     // picker as the keyword table. Backed by the anonymization-immune page
@@ -132,15 +105,24 @@ export function GscKeywords() {
     }, [periodHours]);
 
     // Keyword→page pairs fetch — re-runs when the window changes, keyed to the
-    // same picker as the tables above. Reads the raw query cache, so it carries
-    // GSC's query anonymization exactly as the keyword table does.
+    // same picker as the pages table. Reads the raw query cache, so it carries
+    // GSC's query anonymization. Uncapped: returns every pair, so it fully
+    // accounts for which page each keyword surfaced. Also carries the covered
+    // window that drives the header's coverage label.
     useEffect(() => {
         let active = true;
         setPairsLoading(true);
         setPairsError(null);
 
-        adminGetGscKeywordPages({ periodHours, limit: 50 })
-            .then(data => { if (active) setPairs(data.pairs); })
+        adminGetGscKeywordPages({ periodHours })
+            .then(data => {
+                if (active) {
+                    setPairs(data.pairs);
+                    setPairsWindow(data.windowStart && data.windowEnd
+                        ? { start: data.windowStart, end: data.windowEnd }
+                        : null);
+                }
+            })
             .catch(err => { if (active) setPairsError(err instanceof Error ? err.message : 'Failed to load'); })
             .finally(() => { if (active) setPairsLoading(false); });
 
@@ -245,11 +227,11 @@ export function GscKeywords() {
                             </button>
                         ))}
                     </div>
-                    {keywordsWindow && (
+                    {pairsWindow && (
                         <p className={styles.meta}>
-                            Covers <ClientTime date={keywordsWindow.start} format="date" />
+                            Covers <ClientTime date={pairsWindow.start} format="date" />
                             {' – '}
-                            <ClientTime date={keywordsWindow.end} format="date" />
+                            <ClientTime date={pairsWindow.end} format="date" />
                         </p>
                     )}
                 </div>
@@ -294,48 +276,6 @@ export function GscKeywords() {
                     )}
                 </Card>
             </Grid>
-
-            <Card padding="md" className={styles.panel}>
-                <div className={styles.panel_header}>
-                    <Search size={18} aria-hidden="true" />
-                    <h3 className={styles.panel_title}>Top keywords</h3>
-                </div>
-                {keywordsError ? (
-                    <p className={styles.panel_error}>{keywordsError}</p>
-                ) : keywordsLoading ? (
-                    <p className={styles.panel_loading}>Loading…</p>
-                ) : !keywords || keywords.length === 0 ? (
-                    <p className={styles.panel_empty}>
-                        No keyword data in this window — note GSC windows end
-                        ~3 days ago, and Google omits anonymized low-volume
-                        queries from keyword rows entirely. Check the fetch
-                        status above and the Settings tab.
-                    </p>
-                ) : (
-                    <Table>
-                        <Thead>
-                            <Tr>
-                                <Th scope="col">keyword</Th>
-                                <Th scope="col" className={styles.numeric_col}>clicks</Th>
-                                <Th scope="col" className={styles.numeric_col}>impressions</Th>
-                                <Th scope="col" className={styles.numeric_col}>CTR</Th>
-                                <Th scope="col" className={styles.numeric_col}>position</Th>
-                            </Tr>
-                        </Thead>
-                        <Tbody>
-                            {keywords.map(kw => (
-                                <Tr key={kw.keyword}>
-                                    <Td className={styles.keyword_cell}>{kw.keyword}</Td>
-                                    <Td className={styles.numeric}>{numberFormatter.format(kw.clicks)}</Td>
-                                    <Td className={styles.numeric}>{numberFormatter.format(kw.impressions)}</Td>
-                                    <Td className={styles.numeric}>{(kw.ctr * 100).toFixed(1)}%</Td>
-                                    <Td className={styles.numeric}>{kw.position.toFixed(1)}</Td>
-                                </Tr>
-                            ))}
-                        </Tbody>
-                    </Table>
-                )}
-            </Card>
 
             <Card padding="md" className={styles.panel}>
                 <div className={styles.panel_header}>
@@ -385,10 +325,10 @@ export function GscKeywords() {
                     <h3 className={styles.panel_title}>Keyword → page pairs</h3>
                 </div>
                 <p className={styles.panel_note}>
-                    Which page each keyword surfaced — the join the two tables
-                    above can&apos;t show. Drawn from the raw query cache, so it
-                    carries the same low-volume-query anonymization as the top
-                    keywords table; clicks here won&apos;t fully reconcile with
+                    Which page each keyword surfaced — every keyword→page
+                    combination in the window, uncapped. Drawn from the raw
+                    query cache, so it carries GSC's low-volume-query
+                    anonymization; clicks here won&apos;t fully reconcile with
                     the anonymization-immune top pages totals.
                 </p>
                 {pairsError ? (

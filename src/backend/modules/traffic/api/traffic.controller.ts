@@ -768,9 +768,10 @@ export class TrafficController {
     }
 
     /**
-     * GET /api/admin/users/analytics/gsc/keyword-pages?periodHours=168&limit=25
+     * GET /api/admin/users/analytics/gsc/keyword-pages?periodHours=168
      * Aggregated GSC keyword→page pairs for the window — which pages each
-     * keyword surfaced. Backed by the raw query cache (the only rows carrying
+     * keyword surfaced. Uncapped by default (returns every pair); an optional
+     * `limit` requests fewer. Backed by the raw query cache (the only rows carrying
      * query and page together), so it inherits GSC's low-volume-query
      * anonymization exactly as the keyword panel does; its clicks will not
      * fully reconcile with the anonymization-immune page totals. Returns an
@@ -779,7 +780,12 @@ export class TrafficController {
      */
     async getGscKeywordPages(req: Request, res: Response): Promise<void> {
         const periodHours = parsePositiveInt(req.query.periodHours, 168, MAX_SINCE_HOURS);
-        const limit = parsePositiveInt(req.query.limit, 25, MAX_LIMIT);
+        // Uncapped by design — the pairs view must be exhaustive to fully
+        // account for every keyword→page combination. An explicit ?limit=
+        // still lets a caller request fewer, but there is no default ceiling.
+        const limit = req.query.limit === undefined
+            ? undefined
+            : parsePositiveInt(req.query.limit, 1, Number.MAX_SAFE_INTEGER);
         try {
             const result = await this.gscService.getKeywordPagePairsForPeriod(periodHours, limit);
             res.json({ periodHours, limit, ...result });
