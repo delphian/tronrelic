@@ -265,6 +265,18 @@ describe('classifyTrafficRequest', () => {
                 secFetchSite: 'none'
             })).toBe('human');
         });
+
+        // Matching is on the referrer hostname, not the raw URL: an internal
+        // same-origin page beacon whose path/query merely contains a search
+        // token must not be mislabeled a scanner.
+        it('does not flag an internal same-origin referrer whose path/query contains a search token', () => {
+            expect(classifyTrafficRequest({
+                userAgent: CHROME_UA,
+                path: '/tools/address',
+                referer: 'https://tronrelic.com/search?q=google.com',
+                secFetchSite: 'same-origin'
+            })).toBe('human');
+        });
     });
 
     describe('fallthrough to UA classification', () => {

@@ -64,6 +64,7 @@
  */
 
 import { isbot } from 'isbot';
+import { refererDomainFromUrl } from './channel-classifier.js';
 
 /**
  * Closed enum written to `traffic_events.bot_class`.
@@ -306,17 +307,16 @@ const TRAVERSAL_FRAGMENTS: readonly string[] = [
 ];
 
 /**
- * Referrer domains scanners routinely spoof to masquerade as organic
- * search traffic. Matched against the lowercased `Referer` value.
+ * Search-engine referrer hosts scanners spoof to masquerade as organic
+ * traffic. Matched against the parsed referrer *hostname* (not the raw URL)
+ * with an end-anchored domain regex mirroring `channel-classifier.ts`'s
+ * `SEARCH_DOMAINS`, so a search token that merely appears in an internal URL's
+ * path or query — e.g. a same-origin `page` beacon whose Referer is
+ * `/search?q=google.com` — is not mistaken for a search-engine origin.
+ * `google`/`yahoo`/`yandex` accept country TLDs (`google.de`, `google.co.uk`);
+ * the `(^|\.)` prefix admits subdomains (`www.google.com`).
  */
-const SPOOF_TARGET_REFERRERS: readonly string[] = [
-    'google.',
-    'bing.com',
-    'duckduckgo.com',
-    'yahoo.',
-    'baidu.com',
-    'yandex.'
-];
+const SPOOF_TARGET_HOST_REGEX = /(^|\.)((google|yahoo|yandex)\.[a-z]{2,3}(\.[a-z]{2})?|bing\.com|duckduckgo\.com|baidu\.com)$/;
 
 /**
  * True when the requested path pattern-matches a vulnerability probe.
@@ -372,8 +372,8 @@ function isSpoofedSearchReferrer(
     if (referer) {
         const site = secFetchSite ? secFetchSite.trim().toLowerCase() : '';
         if (site !== 'cross-site') {
-            const ref = referer.slice(0, MAX_SIGNAL_LENGTH).toLowerCase();
-            spoofed = SPOOF_TARGET_REFERRERS.some(domain => ref.includes(domain));
+            const host = refererDomainFromUrl(referer);
+            spoofed = host !== null && SPOOF_TARGET_HOST_REGEX.test(host);
         }
     }
     return spoofed;
