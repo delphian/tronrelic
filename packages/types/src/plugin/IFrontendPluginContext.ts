@@ -237,6 +237,29 @@ export interface IUIComponents {
         'aria-label'?: string;
     }>;
 
+    /**
+     * Textarea — themed multiline field matching the Input/Select treatment
+     * (shared input tokens plus focus ring), wrapping a native `<textarea>`.
+     * Supports standard textarea attributes (`rows`, `placeholder`,
+     * `disabled`). Use instead of a bare `<textarea>` so plugin multiline
+     * fields match core admin surfaces.
+     */
+    Textarea: ComponentType<{
+        value?: string;
+        onChange?: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+        placeholder?: string;
+        disabled?: boolean;
+        required?: boolean;
+        variant?: 'default' | 'ghost';
+        /** Padding density; shares the Input ladder so adjacent controls match. */
+        size?: 'xs' | 'sm' | 'md' | 'lg';
+        rows?: number;
+        className?: string;
+        id?: string;
+        name?: string;
+        'aria-label'?: string;
+    }>;
+
     /** Client-side time rendering component (prevents SSR hydration mismatches) */
     ClientTime: ComponentType<{
         date: Date | string | null | undefined;
@@ -256,6 +279,23 @@ export interface IUIComponents {
         selectedIcon?: string;
         onSelect: (iconName: string) => void;
         onClose: () => void;
+    }>;
+
+    /**
+     * ConfirmDialog — destructive-action confirmation body mounted inside a
+     * `useModal()` modal. Pairs an alert icon with the message and a
+     * danger/ghost button pair, tracking its own async spinner across
+     * `onConfirm`. The dialog never closes itself — wire `onConfirm` /
+     * `onCancel` to `close(modalId)`. Use instead of hand-rolling a confirm
+     * modal body so plugin confirmations match core.
+     */
+    ConfirmDialog: ComponentType<{
+        label: string;
+        message?: React.ReactNode;
+        confirmLabel?: string;
+        cancelLabel?: string;
+        onConfirm: () => Promise<void> | void;
+        onCancel: () => void;
     }>;
 
     /**
@@ -1093,7 +1133,7 @@ export interface IFrontendPluginContext {
     /** Plugin identifier used for namespacing events and API routes */
     pluginId: string;
 
-    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Skeleton, ClientTime, Tooltip, IconPickerModal, Table family) */
+    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, ClientTime, Tooltip, IconPickerModal, ConfirmDialog, Table family) */
     ui: IUIComponents;
 
     /** Layout component library (Page, PageHeader, Stack, Grid, Section, SubMenu) */

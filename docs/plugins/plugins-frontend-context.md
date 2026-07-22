@@ -12,7 +12,7 @@ Direct imports from `src/frontend/` break Next.js module resolution and couple p
 interface IFrontendPluginContext {
     pluginId: string;              // namespacing for events and API routes
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
-    ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Skeleton, ClientTime, Tooltip, IconPickerModal, Table family
+    ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, ClientTime, Tooltip, IconPickerModal, ConfirmDialog, AccountPicker, Table family
     charts: IChartComponents;      // LineChart, BarChart
     system: ISystemComponents;     // SchedulerMonitor (admin)
     api: IApiClient;               // get/post/put/patch/delete with runtime base URL

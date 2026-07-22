@@ -20,6 +20,8 @@ import { IconButton } from '../components/ui/IconButton';
 import { Switch } from '../components/ui/Switch';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
+import { Textarea } from '../components/ui/Textarea';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { ClientTime } from '../components/ui/ClientTime';
 import { Tooltip } from '../components/ui/Tooltip';
 import { LazyIconPickerModal as IconPickerModal } from '../components/ui/IconPickerModal';
@@ -345,9 +347,15 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             // metadata quirk without widening the published plugin contract.
             Input: Input as IUIComponents['Input'],
             Select,
+            // forwardRef (like Input) gives Textarea a static `propTypes` field
+            // that trips the invariant check against the narrowed contract; the
+            // runtime component accepts every prop the contract advertises, so
+            // the cast is sound.
+            Textarea: Textarea as IUIComponents['Textarea'],
             ClientTime,
             Tooltip,
             IconPickerModal,
+            ConfirmDialog,
             AccountPicker,
             Table,
             Thead,
@@ -451,9 +459,13 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         // component is fully compatible, so the cast is sound.
         Input: Input as IUIComponents['Input'],
         Select,
+        // forwardRef (like Input) trips the invariant check against the narrowed
+        // contract; the runtime component is fully compatible, so the cast is sound.
+        Textarea: Textarea as IUIComponents['Textarea'],
         ClientTime,
         Tooltip,
         IconPickerModal,
+        ConfirmDialog,
         AccountPicker,
         Table,
         Thead,
