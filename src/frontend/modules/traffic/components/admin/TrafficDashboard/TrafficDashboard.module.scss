@@ -12,10 +12,6 @@
 .container {
     container-type: inline-size;
     container-name: traffic-dashboard;
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-lg);
-    padding: var(--card-padding-md);
 }
 
 .header {
@@ -49,24 +45,26 @@
 }
 
 .window_picker {
-    display: inline-flex;
-    background: var(--color-surface-muted);
-    border-radius: var(--radius-full);
-    padding: var(--padding-2xs);
+    display: flex;
+    gap: 0;
     border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
 }
 
 .window_button,
 .window_active {
+    padding: var(--padding-xs) var(--gap-md);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-medium);
     border: none;
-    background: transparent;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-semibold);
-    padding: var(--padding-2xs) var(--padding-sm);
-    border-radius: var(--radius-full);
     cursor: pointer;
-    transition: background-color var(--transition-base), color var(--transition-base);
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.window_button {
+    color: var(--color-text-muted);
+    background: var(--color-surface);
 }
 
 .window_button:hover {
@@ -74,8 +72,8 @@
 }
 
 .window_active {
-    background: var(--gradient-primary);
     color: var(--color-text);
+    background: var(--gradient-primary);
 }
 
 .notice_card {
@@ -129,30 +127,6 @@
     margin: 0;
 }
 
-.table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--font-size-body-sm);
-
-    th,
-    td {
-        text-align: left;
-        padding: var(--padding-sm) var(--padding-md);
-        border-bottom: var(--border-width-thin) solid var(--color-border);
-        vertical-align: middle;
-    }
-
-    th {
-        font-weight: var(--font-weight-semibold);
-        color: var(--color-text-muted);
-        background: var(--color-surface-muted);
-    }
-
-    tbody tr:last-child td {
-        border-bottom: none;
-    }
-}
-
 .numeric_col {
     width: 1%;
     white-space: nowrap;
@@ -177,25 +151,10 @@
     max-width: 32rem;
 }
 
-.grid_two {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--grid-gap-md);
-}
-
 @container traffic-dashboard (max-width: #{$breakpoint-mobile-lg}) {
     .header {
         flex-direction: column;
         align-items: stretch;
-    }
-
-    .grid_two {
-        grid-template-columns: 1fr;
-    }
-
-    .table th,
-    .table td {
-        padding: var(--padding-xs) var(--padding-sm);
     }
 
     .ua_cell {

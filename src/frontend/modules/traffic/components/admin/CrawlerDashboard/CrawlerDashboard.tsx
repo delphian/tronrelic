@@ -32,6 +32,8 @@ import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
 import { Card } from '../../../../../components/ui/Card';
 import { Select } from '../../../../../components/ui/Select';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
+import { Stack } from '../../../../../components/layout';
 import { adminGetBotTrend, adminGetBotPaths } from '../../../api';
 import type { IBotClassDailyPoint, ITrafficBucket } from '../../../api';
 import styles from './CrawlerDashboard.module.scss';
@@ -221,7 +223,7 @@ export function CrawlerDashboard({ refreshSignal }: ICrawlerDashboardProps) {
     const numberFormatter = useMemo(() => new Intl.NumberFormat(), []);
 
     return (
-        <div className={styles.container}>
+        <Stack gap="lg" className={styles.container}>
             <header className={styles.header}>
                 <div>
                     <h2 className={styles.title}>Crawlers</h2>
@@ -300,24 +302,24 @@ export function CrawlerDashboard({ refreshSignal }: ICrawlerDashboardProps) {
                 ) : !paths || paths.length === 0 ? (
                     <p className={styles.panel_empty}>No events for this class in this window.</p>
                 ) : (
-                    <table className={styles.table}>
-                        <thead>
-                            <tr>
-                                <th scope="col">path</th>
-                                <th scope="col" className={styles.numeric_col}>events</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                    <Table>
+                        <Thead>
+                            <Tr>
+                                <Th scope="col">path</Th>
+                                <Th scope="col" className={styles.numeric_col}>events</Th>
+                            </Tr>
+                        </Thead>
+                        <Tbody>
                             {paths.map((b, i) => (
-                                <tr key={`${b.key ?? 'null'}_${i}`}>
-                                    <td><code className={styles.code}>{b.key ?? '(null)'}</code></td>
-                                    <td className={styles.numeric}>{numberFormatter.format(b.count)}</td>
-                                </tr>
+                                <Tr key={`${b.key ?? 'null'}_${i}`}>
+                                    <Td><code className={styles.code}>{b.key ?? '(null)'}</code></Td>
+                                    <Td className={styles.numeric}>{numberFormatter.format(b.count)}</Td>
+                                </Tr>
                             ))}
-                        </tbody>
-                    </table>
+                        </Tbody>
+                    </Table>
                 )}
             </Card>
-        </div>
+        </Stack>
     );
 }

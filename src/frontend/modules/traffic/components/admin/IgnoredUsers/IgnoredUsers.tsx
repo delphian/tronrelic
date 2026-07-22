@@ -17,7 +17,7 @@
  * auth, so the initial load state here is the permitted admin case.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useId } from 'react';
 import { isAxiosError } from 'axios';
 import { Search, UserX, X } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
@@ -69,6 +69,9 @@ export function IgnoredUsers() {
     const [results, setResults] = useState<IAccountMatch[]>([]);
     const [searching, setSearching] = useState(false);
     const [adding, setAdding] = useState(false);
+    // Stable id tying the search input to its results listbox for the ARIA
+    // combobox contract (aria-controls ↔ the <ul id>). Matches AccountPicker.
+    const listId = useId();
     useEffect(() => {
         let active = true;
         adminGetIgnoredUsers()
@@ -171,19 +174,23 @@ export function IgnoredUsers() {
                             <Search size={16} aria-hidden="true" className={styles.search_icon} />
                             <Input
                                 type="text"
+                                role="combobox"
                                 className={styles.search_field}
                                 value={query}
                                 onChange={e => setQuery(e.target.value)}
                                 placeholder="Search accounts by email, name, or paste a user id"
                                 aria-label="Search accounts to ignore"
+                                aria-controls={listId}
+                                aria-expanded={results.length > 0 || searching || !!rawIdOffer}
+                                aria-autocomplete="list"
                             />
                         </div>
 
                         {(results.length > 0 || searching || rawIdOffer) && (
-                            <ul className={styles.results} role="listbox" aria-label="Account search results">
+                            <ul className={styles.results} id={listId} role="listbox" aria-label="Account search results">
                                 {searching && <li className={styles.results_note}>Searching…</li>}
                                 {!searching && results.map(a => (
-                                    <li key={a.id}>
+                                    <li key={a.id} role="option" aria-selected={false}>
                                         <button
                                             type="button"
                                             className={styles.result}
@@ -199,7 +206,7 @@ export function IgnoredUsers() {
                                     </li>
                                 ))}
                                 {!searching && rawIdOffer && (
-                                    <li>
+                                    <li role="option" aria-selected={false}>
                                         <button
                                             type="button"
                                             className={styles.result}

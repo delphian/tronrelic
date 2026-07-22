@@ -71,6 +71,7 @@ export function createAdminAnalyticsRouter(controller: TrafficController): Route
     router.post('/gsc/refresh', controller.refreshGscData.bind(controller));
     router.get('/gsc/keywords', controller.getGscKeywords.bind(controller));
     router.get('/gsc/pages', controller.getGscPages.bind(controller));
+    router.get('/gsc/keyword-pages', controller.getGscKeywordPages.bind(controller));
     router.get('/gsc/keywords-by-day', controller.getGscKeywordsByDay.bind(controller));
 
     // AI tab — a filtered proxy onto the core 'ai-tools' registry, showing and

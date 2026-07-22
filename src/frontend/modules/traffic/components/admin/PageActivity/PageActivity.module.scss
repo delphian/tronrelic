@@ -11,19 +11,12 @@
 .container {
     container-type: inline-size;
     container-name: page-activity;
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-lg);
 }
 
 .section {
     display: flex;
     flex-direction: column;
     gap: var(--gap-md);
-    background: var(--color-surface-muted);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: var(--card-padding-sm);
 }
 
 .section_header {
@@ -43,35 +36,6 @@
 
 .table_wrapper {
     overflow-x: auto;
-}
-
-.table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--font-size-body-sm);
-}
-
-.table th {
-    text-align: left;
-    padding: var(--padding-xs) var(--input-group-gap);
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-    white-space: nowrap;
-}
-
-.table td {
-    padding: var(--padding-xs) var(--input-group-gap);
-    color: var(--color-text);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-    vertical-align: middle;
-}
-
-.table tr:hover td {
-    background: var(--color-surface-elevated);
 }
 
 .id_cell {

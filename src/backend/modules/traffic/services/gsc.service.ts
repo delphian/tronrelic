@@ -174,6 +174,48 @@ export interface IGscPagesPeriodResult {
     pages: IGscPage[];
 }
 
+/**
+ * One aggregated keyword→page pair: how much a single query drove a single
+ * landing page over the window.
+ *
+ * The "Top keywords" and "Top pages" panels each collapse one of the two
+ * dimensions away, so neither can answer "which page did this keyword
+ * surface?". This pairing keeps both dimensions, aggregating the raw
+ * `module_user_gsc_queries` rows (which carry `query` and `page` together)
+ * by the `{query, page}` couple. Because it reads the query-dimensioned
+ * collection it inherits GSC's low-volume-query anonymization — the same
+ * coverage gap the keyword panel already has — so its clicks will not fully
+ * reconcile with the anonymization-immune page totals.
+ */
+export interface IGscKeywordPage {
+    /** Search query. */
+    keyword: string;
+    /** Landing page URL the query surfaced. */
+    page: string;
+    /** Total clicks for this keyword→page pair. */
+    clicks: number;
+    /** Total impressions for this keyword→page pair. */
+    impressions: number;
+    /** Average CTR across rows (0-1). */
+    ctr: number;
+    /** Impression-weighted average position across rows. */
+    position: number;
+}
+
+/**
+ * Aggregated keyword→page pairs for a period plus the delay-shifted window
+ * covered — the two-dimensional counterpart to {@link IGscKeywordsPeriodResult}
+ * and {@link IGscPagesPeriodResult}.
+ */
+export interface IGscKeywordPagesPeriodResult {
+    /** Inclusive window start (ISO-8601 UTC). */
+    windowStart: string;
+    /** Inclusive window end (ISO-8601 UTC) — always ~3 days behind now. */
+    windowEnd: string;
+    /** Aggregated pairs sorted by clicks descending. */
+    pairs: IGscKeywordPage[];
+}
+
 /** Key-value store keys for GSC configuration. */
 const KV_CREDENTIALS = 'gsc:credentials';
 const KV_SITE_URL = 'gsc:siteUrl';
@@ -916,6 +958,72 @@ export class GscService {
             windowStart: since.toISOString(),
             windowEnd: end.toISOString(),
             pages
+        };
+    }
+
+    /**
+     * Get aggregated keyword→page pairs for a given time period.
+     *
+     * Answers "which pages did each keyword surface?" — the join the separate
+     * keyword and page panels cannot express because each drops one dimension.
+     * Aggregates the raw `module_user_gsc_queries` rows (the only collection
+     * carrying `query` and `page` on the same document) by the `{query, page}`
+     * couple, summing clicks and impressions and impression-weighting position,
+     * sorted by clicks then impressions descending so impression-only pairs
+     * still surface.
+     *
+     * Reads the query-dimensioned collection, so it inherits GSC's low-volume
+     * query anonymization exactly as the keyword panel does: anonymized queries
+     * never produced a row here, so their clicks are absent and will not
+     * reconcile with the anonymization-immune page totals. The window is
+     * delay-shifted identically to the sibling reads and the true dates are
+     * returned for honest labelling.
+     *
+     * @param periodHours - Lookback period in hours.
+     * @param limit - Maximum pairs to return (default: 10).
+     * @returns The delay-shifted window and its aggregated keyword→page pairs.
+     */
+    async getKeywordPagePairsForPeriod(periodHours: number, limit: number = 10): Promise<IGscKeywordPagesPeriodResult> {
+        const delayMs = GSC_DATA_DELAY_DAYS * 24 * 60 * 60 * 1000;
+        const end = new Date(Date.now() - delayMs);
+        const since = new Date(end.getTime() - (periodHours * 60 * 60 * 1000));
+
+        const results = await this.collection.aggregate<{
+            _id: { query: string; page: string };
+            totalClicks: number;
+            totalImpressions: number;
+            weightedPosition: number;
+        }>([
+            { $match: { date: { $gte: since, $lte: end } } },
+            {
+                $group: {
+                    _id: { query: '$query', page: '$page' },
+                    totalClicks: { $sum: '$clicks' },
+                    totalImpressions: { $sum: '$impressions' },
+                    weightedPosition: { $sum: { $multiply: ['$position', '$impressions'] } }
+                }
+            },
+            { $sort: { totalClicks: -1, totalImpressions: -1 } },
+            { $limit: limit }
+        ]).toArray();
+
+        const pairs = results.map(r => ({
+            keyword: r._id.query,
+            page: r._id.page,
+            clicks: r.totalClicks,
+            impressions: r.totalImpressions,
+            ctr: r.totalImpressions > 0
+                ? Math.round((r.totalClicks / r.totalImpressions) * 10000) / 10000
+                : 0,
+            position: r.totalImpressions > 0
+                ? Math.round((r.weightedPosition / r.totalImpressions) * 10) / 10
+                : 0
+        }));
+
+        return {
+            windowStart: since.toISOString(),
+            windowEnd: end.toISOString(),
+            pairs
         };
     }
 }

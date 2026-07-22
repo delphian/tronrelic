@@ -32,6 +32,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Globe, MapPin, RefreshCw } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
+import { Stack, Grid } from '../../../../../components/layout';
 import styles from './TrafficDashboard.module.scss';
 
 interface AggregateBucket {
@@ -224,7 +226,7 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
     const clickhouseDisabledNotice = summary && !summary.clickhouseEnabled;
 
     return (
-        <div className={styles.container}>
+        <Stack gap="lg" className={styles.container}>
             <header className={styles.header}>
                 <div>
                     <h1 className={styles.title}>Traffic</h1>
@@ -282,29 +284,29 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
                 </div>
                 <PanelBody loading={summaryLoading} error={summaryError} empty={summary?.buckets.length === 0}>
                     {summary && (
-                        <table className={styles.table}>
-                            <thead>
-                                <tr>
-                                    <th scope="col">bot_class</th>
-                                    <th scope="col" className={styles.numeric_col}>events</th>
-                                    <th scope="col" className={styles.numeric_col}>share</th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                        <Table>
+                            <Thead>
+                                <Tr>
+                                    <Th scope="col">bot_class</Th>
+                                    <Th scope="col" className={styles.numeric_col}>events</Th>
+                                    <Th scope="col" className={styles.numeric_col}>share</Th>
+                                </Tr>
+                            </Thead>
+                            <Tbody>
                                 {summary.buckets.map(b => {
                                     const share = summary.total > 0
                                         ? ((b.count / summary.total) * 100).toFixed(1)
                                         : '0.0';
                                     return (
-                                        <tr key={b.key ?? '__null__'}>
-                                            <td><code className={styles.code}>{renderKey(b.key)}</code></td>
-                                            <td className={styles.numeric}>{formatNumber(b.count)}</td>
-                                            <td className={styles.numeric}>{share}%</td>
-                                        </tr>
+                                        <Tr key={b.key ?? '__null__'}>
+                                            <Td><code className={styles.code}>{renderKey(b.key)}</code></Td>
+                                            <Td className={styles.numeric}>{formatNumber(b.count)}</Td>
+                                            <Td className={styles.numeric}>{share}%</Td>
+                                        </Tr>
                                     );
                                 })}
-                            </tbody>
-                        </table>
+                            </Tbody>
+                        </Table>
                     )}
                 </PanelBody>
             </Card>
@@ -321,29 +323,29 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
                 </p>
                 <PanelBody loading={botOtherLoading} error={botOtherError} empty={botOther?.buckets.length === 0}>
                     {botOther && (
-                        <table className={styles.table}>
-                            <thead>
-                                <tr>
-                                    <th scope="col">user_agent</th>
-                                    <th scope="col" className={styles.numeric_col}>events</th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                        <Table>
+                            <Thead>
+                                <Tr>
+                                    <Th scope="col">user_agent</Th>
+                                    <Th scope="col" className={styles.numeric_col}>events</Th>
+                                </Tr>
+                            </Thead>
+                            <Tbody>
                                 {botOther.buckets.map((b, i) => (
-                                    <tr key={`${b.key ?? 'null'}_${i}`}>
-                                        <td className={styles.ua_cell}>
+                                    <Tr key={`${b.key ?? 'null'}_${i}`}>
+                                        <Td className={styles.ua_cell}>
                                             <code className={styles.code}>{renderKey(b.key)}</code>
-                                        </td>
-                                        <td className={styles.numeric}>{formatNumber(b.count)}</td>
-                                    </tr>
+                                        </Td>
+                                        <Td className={styles.numeric}>{formatNumber(b.count)}</Td>
+                                    </Tr>
                                 ))}
-                            </tbody>
-                        </table>
+                            </Tbody>
+                        </Table>
                     )}
                 </PanelBody>
             </Card>
 
-            <div className={styles.grid_two}>
+            <Grid columns={2} gap="md">
                 <Card padding="md" className={styles.panel}>
                     <div className={styles.panel_header}>
                         <MapPin size={18} aria-hidden="true" />
@@ -351,22 +353,22 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
                     </div>
                     <PanelBody loading={topPathsLoading} error={topPathsError} empty={topPaths?.buckets.length === 0}>
                         {topPaths && (
-                            <table className={styles.table}>
-                                <thead>
-                                    <tr>
-                                        <th scope="col">path</th>
-                                        <th scope="col" className={styles.numeric_col}>events</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
+                            <Table>
+                                <Thead>
+                                    <Tr>
+                                        <Th scope="col">path</Th>
+                                        <Th scope="col" className={styles.numeric_col}>events</Th>
+                                    </Tr>
+                                </Thead>
+                                <Tbody>
                                     {topPaths.buckets.map((b, i) => (
-                                        <tr key={`${b.key ?? 'null'}_${i}`}>
-                                            <td><code className={styles.code}>{renderKey(b.key)}</code></td>
-                                            <td className={styles.numeric}>{formatNumber(b.count)}</td>
-                                        </tr>
+                                        <Tr key={`${b.key ?? 'null'}_${i}`}>
+                                            <Td><code className={styles.code}>{renderKey(b.key)}</code></Td>
+                                            <Td className={styles.numeric}>{formatNumber(b.count)}</Td>
+                                        </Tr>
                                     ))}
-                                </tbody>
-                            </table>
+                                </Tbody>
+                            </Table>
                         )}
                     </PanelBody>
                 </Card>
@@ -378,27 +380,27 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
                     </div>
                     <PanelBody loading={topCountriesLoading} error={topCountriesError} empty={topCountries?.buckets.length === 0}>
                         {topCountries && (
-                            <table className={styles.table}>
-                                <thead>
-                                    <tr>
-                                        <th scope="col">country</th>
-                                        <th scope="col" className={styles.numeric_col}>events</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
+                            <Table>
+                                <Thead>
+                                    <Tr>
+                                        <Th scope="col">country</Th>
+                                        <Th scope="col" className={styles.numeric_col}>events</Th>
+                                    </Tr>
+                                </Thead>
+                                <Tbody>
                                     {topCountries.buckets.map((b, i) => (
-                                        <tr key={`${b.key ?? 'null'}_${i}`}>
-                                            <td><code className={styles.code}>{renderKey(b.key)}</code></td>
-                                            <td className={styles.numeric}>{formatNumber(b.count)}</td>
-                                        </tr>
+                                        <Tr key={`${b.key ?? 'null'}_${i}`}>
+                                            <Td><code className={styles.code}>{renderKey(b.key)}</code></Td>
+                                            <Td className={styles.numeric}>{formatNumber(b.count)}</Td>
+                                        </Tr>
                                     ))}
-                                </tbody>
-                            </table>
+                                </Tbody>
+                            </Table>
                         )}
                     </PanelBody>
                 </Card>
-            </div>
-        </div>
+            </Grid>
+        </Stack>
     );
 }
 

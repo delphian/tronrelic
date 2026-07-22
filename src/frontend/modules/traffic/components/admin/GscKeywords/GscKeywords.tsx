@@ -17,6 +17,10 @@
  *   `query` dimension it escapes GSC's query anonymization, so it accounts for
  *   clicks that no keyword row can (the anonymized low-volume queries), and
  *   including impressions surfaces pages Google showed even with zero clicks.
+ * - **Keyword → page pairs table** — the join the two tables above cannot
+ *   express: which page each keyword surfaced. Aggregates the raw query cache
+ *   by the `{query, page}` couple, so it inherits the same query anonymization
+ *   as the keyword table and will not fully reconcile with the top-pages totals.
  *
  * Chart totals come from the backend's date-only GSC totals (immune to
  * query anonymization); the keyword table is limited to non-anonymized
@@ -30,13 +34,15 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, FileText, Search, TrendingUp } from 'lucide-react';
+import { AlertTriangle, FileText, Link2, Search, TrendingUp } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
+import { Stack, Grid } from '../../../../../components/layout';
 import { Card } from '../../../../../components/ui/Card';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
-import { adminGetGscKeywords, adminGetGscPages, adminGetGscKeywordsByDay, adminGetGscStatus } from '../../../api';
-import type { IGscKeyword, IGscPage, IGscDailyKeywords, IGscStatus } from '../../../api';
+import { adminGetGscKeywords, adminGetGscPages, adminGetGscKeywordPages, adminGetGscKeywordsByDay, adminGetGscStatus } from '../../../api';
+import type { IGscKeyword, IGscPage, IGscKeywordPage, IGscDailyKeywords, IGscStatus } from '../../../api';
 import styles from './GscKeywords.module.scss';
 
 /** Keyword-table lookback windows. 30d is the backend's hard ceiling. */
@@ -78,6 +84,10 @@ export function GscKeywords() {
     const [pagesError, setPagesError] = useState<string | null>(null);
     const [pagesLoading, setPagesLoading] = useState(true);
 
+    const [pairs, setPairs] = useState<IGscKeywordPage[] | null>(null);
+    const [pairsError, setPairsError] = useState<string | null>(null);
+    const [pairsLoading, setPairsLoading] = useState(true);
+
     const [daily, setDaily] = useState<IGscDailyKeywords[] | null>(null);
     const [dailyError, setDailyError] = useState<string | null>(null);
     const [dailyLoading, setDailyLoading] = useState(true);
@@ -117,6 +127,22 @@ export function GscKeywords() {
             .then(data => { if (active) setPages(data.pages); })
             .catch(err => { if (active) setPagesError(err instanceof Error ? err.message : 'Failed to load'); })
             .finally(() => { if (active) setPagesLoading(false); });
+
+        return () => { active = false; };
+    }, [periodHours]);
+
+    // Keyword→page pairs fetch — re-runs when the window changes, keyed to the
+    // same picker as the tables above. Reads the raw query cache, so it carries
+    // GSC's query anonymization exactly as the keyword table does.
+    useEffect(() => {
+        let active = true;
+        setPairsLoading(true);
+        setPairsError(null);
+
+        adminGetGscKeywordPages({ periodHours, limit: 50 })
+            .then(data => { if (active) setPairs(data.pairs); })
+            .catch(err => { if (active) setPairsError(err instanceof Error ? err.message : 'Failed to load'); })
+            .finally(() => { if (active) setPairsLoading(false); });
 
         return () => { active = false; };
     }, [periodHours]);
@@ -175,7 +201,7 @@ export function GscKeywords() {
     const numberFormatter = useMemo(() => new Intl.NumberFormat(), []);
 
     return (
-        <div className={styles.container}>
+        <Stack gap="lg" className={styles.container}>
             <header className={styles.header}>
                 <div>
                     <h2 className={styles.title}>Search keywords</h2>
@@ -229,7 +255,7 @@ export function GscKeywords() {
                 </div>
             </header>
 
-            <div className={styles.grid_two}>
+            <Grid columns={2} gap="md">
                 <Card padding="md" className={styles.panel}>
                     <div className={styles.panel_header}>
                         <TrendingUp size={18} aria-hidden="true" />
@@ -267,7 +293,7 @@ export function GscKeywords() {
                         />
                     )}
                 </Card>
-            </div>
+            </Grid>
 
             <Card padding="md" className={styles.panel}>
                 <div className={styles.panel_header}>
@@ -286,28 +312,28 @@ export function GscKeywords() {
                         status above and the Settings tab.
                     </p>
                 ) : (
-                    <table className={styles.table}>
-                        <thead>
-                            <tr>
-                                <th scope="col">keyword</th>
-                                <th scope="col" className={styles.numeric_col}>clicks</th>
-                                <th scope="col" className={styles.numeric_col}>impressions</th>
-                                <th scope="col" className={styles.numeric_col}>CTR</th>
-                                <th scope="col" className={styles.numeric_col}>position</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                    <Table>
+                        <Thead>
+                            <Tr>
+                                <Th scope="col">keyword</Th>
+                                <Th scope="col" className={styles.numeric_col}>clicks</Th>
+                                <Th scope="col" className={styles.numeric_col}>impressions</Th>
+                                <Th scope="col" className={styles.numeric_col}>CTR</Th>
+                                <Th scope="col" className={styles.numeric_col}>position</Th>
+                            </Tr>
+                        </Thead>
+                        <Tbody>
                             {keywords.map(kw => (
-                                <tr key={kw.keyword}>
-                                    <td className={styles.keyword_cell}>{kw.keyword}</td>
-                                    <td className={styles.numeric}>{numberFormatter.format(kw.clicks)}</td>
-                                    <td className={styles.numeric}>{numberFormatter.format(kw.impressions)}</td>
-                                    <td className={styles.numeric}>{(kw.ctr * 100).toFixed(1)}%</td>
-                                    <td className={styles.numeric}>{kw.position.toFixed(1)}</td>
-                                </tr>
+                                <Tr key={kw.keyword}>
+                                    <Td className={styles.keyword_cell}>{kw.keyword}</Td>
+                                    <Td className={styles.numeric}>{numberFormatter.format(kw.clicks)}</Td>
+                                    <Td className={styles.numeric}>{numberFormatter.format(kw.impressions)}</Td>
+                                    <Td className={styles.numeric}>{(kw.ctr * 100).toFixed(1)}%</Td>
+                                    <Td className={styles.numeric}>{kw.position.toFixed(1)}</Td>
+                                </Tr>
                             ))}
-                        </tbody>
-                    </table>
+                        </Tbody>
+                    </Table>
                 )}
             </Card>
 
@@ -328,30 +354,81 @@ export function GscKeywords() {
                         the current window immediately.
                     </p>
                 ) : (
-                    <table className={styles.table}>
-                        <thead>
-                            <tr>
-                                <th scope="col">page</th>
-                                <th scope="col" className={styles.numeric_col}>clicks</th>
-                                <th scope="col" className={styles.numeric_col}>impressions</th>
-                                <th scope="col" className={styles.numeric_col}>CTR</th>
-                                <th scope="col" className={styles.numeric_col}>position</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                    <Table>
+                        <Thead>
+                            <Tr>
+                                <Th scope="col">page</Th>
+                                <Th scope="col" className={styles.numeric_col}>clicks</Th>
+                                <Th scope="col" className={styles.numeric_col}>impressions</Th>
+                                <Th scope="col" className={styles.numeric_col}>CTR</Th>
+                                <Th scope="col" className={styles.numeric_col}>position</Th>
+                            </Tr>
+                        </Thead>
+                        <Tbody>
                             {pages.map(pg => (
-                                <tr key={pg.page}>
-                                    <td className={styles.keyword_cell}>{pg.page}</td>
-                                    <td className={styles.numeric}>{numberFormatter.format(pg.clicks)}</td>
-                                    <td className={styles.numeric}>{numberFormatter.format(pg.impressions)}</td>
-                                    <td className={styles.numeric}>{(pg.ctr * 100).toFixed(1)}%</td>
-                                    <td className={styles.numeric}>{pg.position.toFixed(1)}</td>
-                                </tr>
+                                <Tr key={pg.page}>
+                                    <Td className={styles.keyword_cell}>{pg.page}</Td>
+                                    <Td className={styles.numeric}>{numberFormatter.format(pg.clicks)}</Td>
+                                    <Td className={styles.numeric}>{numberFormatter.format(pg.impressions)}</Td>
+                                    <Td className={styles.numeric}>{(pg.ctr * 100).toFixed(1)}%</Td>
+                                    <Td className={styles.numeric}>{pg.position.toFixed(1)}</Td>
+                                </Tr>
                             ))}
-                        </tbody>
-                    </table>
+                        </Tbody>
+                    </Table>
                 )}
             </Card>
-        </div>
+
+            <Card padding="md" className={styles.panel}>
+                <div className={styles.panel_header}>
+                    <Link2 size={18} aria-hidden="true" />
+                    <h3 className={styles.panel_title}>Keyword → page pairs</h3>
+                </div>
+                <p className={styles.panel_note}>
+                    Which page each keyword surfaced — the join the two tables
+                    above can&apos;t show. Drawn from the raw query cache, so it
+                    carries the same low-volume-query anonymization as the top
+                    keywords table; clicks here won&apos;t fully reconcile with
+                    the anonymization-immune top pages totals.
+                </p>
+                {pairsError ? (
+                    <p className={styles.panel_error}>{pairsError}</p>
+                ) : pairsLoading ? (
+                    <p className={styles.panel_loading}>Loading…</p>
+                ) : !pairs || pairs.length === 0 ? (
+                    <p className={styles.panel_empty}>
+                        No keyword→page pairs in this window — Google omits
+                        anonymized low-volume queries from the underlying rows,
+                        so quiet windows can be empty even when the top pages
+                        table shows clicks. Check the fetch status above.
+                    </p>
+                ) : (
+                    <Table>
+                        <Thead>
+                            <Tr>
+                                <Th scope="col">keyword</Th>
+                                <Th scope="col">page</Th>
+                                <Th scope="col" className={styles.numeric_col}>clicks</Th>
+                                <Th scope="col" className={styles.numeric_col}>impressions</Th>
+                                <Th scope="col" className={styles.numeric_col}>CTR</Th>
+                                <Th scope="col" className={styles.numeric_col}>position</Th>
+                            </Tr>
+                        </Thead>
+                        <Tbody>
+                            {pairs.map(pair => (
+                                <Tr key={`${pair.keyword} ${pair.page}`}>
+                                    <Td className={styles.keyword_cell}>{pair.keyword}</Td>
+                                    <Td className={styles.keyword_cell}>{pair.page}</Td>
+                                    <Td className={styles.numeric}>{numberFormatter.format(pair.clicks)}</Td>
+                                    <Td className={styles.numeric}>{numberFormatter.format(pair.impressions)}</Td>
+                                    <Td className={styles.numeric}>{(pair.ctr * 100).toFixed(1)}%</Td>
+                                    <Td className={styles.numeric}>{pair.position.toFixed(1)}</Td>
+                                </Tr>
+                            ))}
+                        </Tbody>
+                    </Table>
+                )}
+            </Card>
+        </Stack>
     );
 }

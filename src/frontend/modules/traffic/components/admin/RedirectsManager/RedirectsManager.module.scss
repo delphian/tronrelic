@@ -3,9 +3,6 @@
 .container {
     container-type: inline-size;
     container-name: redirects-manager;
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-lg);
 }
 
 .header {

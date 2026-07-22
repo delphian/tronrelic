@@ -7,12 +7,6 @@
 
 @use '../../../../../app/breakpoints' as *;
 
-.dashboard {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-lg);
-}
-
 /* Period controls moved to the shared PeriodPicker component. */
 
 .section_title {
@@ -115,48 +109,19 @@
     overflow-x: auto;
 }
 
-.table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--font-size-body-sm);
-}
-
-.table th {
-    text-align: left;
-    padding: var(--gap-sm) var(--input-group-gap);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-muted);
-    font-size: var(--font-size-caption);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-}
-
-.table td {
-    padding: var(--gap-sm) var(--input-group-gap);
-    color: var(--color-text);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-    vertical-align: middle;
-}
-
-.table tr:last-child td {
-    border-bottom: none;
-}
-
 .table__number {
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
 
 /*
- * Numeric headers must right-align over their right-aligned cells. The base
- * `.table th { text-align: left }` rule outranks a bare `.table__number`
- * (both single-class, but `.table th` also matches the element, giving it the
- * higher specificity), so without this the header sat left while the numbers
- * sat right — header and content visibly out of column. Re-qualify with the
- * table ancestor to win the cascade.
+ * Numeric headers must right-align over their right-aligned cells. The shared
+ * <Table>/<Th> component's own `.th { text-align: left }` rule is a single
+ * class selector — equal specificity to a bare `.table__number`, so the
+ * winner would depend on unpredictable CSS Module bundling order. Re-qualify
+ * with the `th` element to reliably outrank it regardless of source order.
  */
-.table th.table__number {
+th.table__number {
     text-align: right;
 }
 
@@ -184,48 +149,18 @@
     opacity: 0.7;
 }
 
-/* Category badges — use semantic color tokens with opacity via color-mix */
-.category_badge {
-    display: inline-block;
-    font-size: var(--font-size-caption);
-    padding: var(--gap-2xs) var(--padding-sm);
-    border-radius: var(--radius-full);
-    font-weight: var(--font-weight-medium);
-}
-
-.category_badge--direct {
-    background: color-mix(in srgb, var(--color-text-muted) 20%, transparent);
-    color: var(--color-text-muted);
-}
-
-.category_badge--organic {
-    background: color-mix(in srgb, var(--color-success) 15%, transparent);
-    color: var(--color-success);
-}
-
-.category_badge--social {
-    background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-    color: var(--color-primary);
-}
-
-.category_badge--referral {
-    background: color-mix(in srgb, var(--color-warning) 15%, transparent);
-    color: var(--color-warning);
-}
-
-.category_badge--paid {
-    background: color-mix(in srgb, var(--color-danger) 15%, transparent);
-    color: var(--color-danger);
-}
-
-.category_badge--email {
+/* Category badges — the Badge component (tone prop) now supplies the
+   structural look (padding, radius, font-size, uppercase). Email and ai
+   have no matching Badge tone, so they render on the neutral tone with
+   just a color override layered on top via these classes. */
+.category_badge_email {
     background: color-mix(in srgb, var(--color-secondary) 15%, transparent);
     color: var(--color-secondary);
 }
 
 /* AI-assistant referrals — a blend of two theme tokens keeps the hue distinct
    from social (primary) and email (secondary) while remaining fully themable. */
-.category_badge--ai {
+.category_badge_ai {
     background: color-mix(in srgb, color-mix(in srgb, var(--color-primary) 50%, var(--color-success)) 18%, transparent);
     color: color-mix(in srgb, var(--color-primary) 50%, var(--color-success));
 }
@@ -389,19 +324,12 @@
     flex-shrink: 0;
 }
 
-/* Google Search Console keyword table */
+/* Google Search Console keyword table. The Badge component (tone="info")
+   now supplies the structural look; only positioning inside the heading
+   remains here. */
 .gsc_badge {
-    display: inline-block;
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-primary);
-    background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-    padding: var(--gap-2xs) var(--padding-xs);
-    border-radius: var(--radius-sm);
     margin-left: var(--padding-xs);
     vertical-align: middle;
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
 }
 
 .gsc_table {

@@ -29,18 +29,9 @@
     color: var(--color-text-muted);
 }
 
+/* Force the native date-picker's calendar UI (browser chrome, not stylable
+ * by tokens) to dark rendering — the only styling the shared <Input> does
+ * not provide, preserved when the raw input was replaced by <Input>. */
 .date_input {
-    font-size: var(--font-size-body-sm);
-    font-family: inherit;
-    padding: var(--padding-xs) var(--padding-sm);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    color: var(--color-text);
     color-scheme: dark;
-}
-
-.date_input:focus-visible {
-    outline: var(--border-width-medium) solid var(--color-primary);
-    outline-offset: calc(-1 * var(--border-width-medium));
 }

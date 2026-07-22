@@ -16,6 +16,7 @@
 import React from 'react';
 import { Calendar } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
+import { Input } from '../../../../../components/ui/Input';
 import type { AnalyticsPeriod } from '../../../api';
 import styles from './PeriodPicker.module.scss';
 
@@ -93,8 +94,9 @@ export function PeriodPicker({
             </Button>
             {period === 'custom' && (
                 <div className={styles.date_range}>
-                    <input
+                    <Input
                         type="date"
+                        size="sm"
                         className={styles.date_input}
                         value={customStart}
                         max={customEnd}
@@ -105,8 +107,9 @@ export function PeriodPicker({
                         aria-label="Start date"
                     />
                     <span className={styles.date_range__separator}>to</span>
-                    <input
+                    <Input
                         type="date"
+                        size="sm"
                         className={styles.date_input}
                         value={customEnd}
                         min={customStart}

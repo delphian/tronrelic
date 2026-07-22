@@ -768,6 +768,28 @@ export class TrafficController {
     }
 
     /**
+     * GET /api/admin/users/analytics/gsc/keyword-pages?periodHours=168&limit=25
+     * Aggregated GSC keyword→page pairs for the window — which pages each
+     * keyword surfaced. Backed by the raw query cache (the only rows carrying
+     * query and page together), so it inherits GSC's low-volume-query
+     * anonymization exactly as the keyword panel does; its clicks will not
+     * fully reconcile with the anonymization-immune page totals. Returns an
+     * empty array until the `gsc:fetch` job has stored data; carries
+     * `windowStart`/`windowEnd` for a truthful period label.
+     */
+    async getGscKeywordPages(req: Request, res: Response): Promise<void> {
+        const periodHours = parsePositiveInt(req.query.periodHours, 168, MAX_SINCE_HOURS);
+        const limit = parsePositiveInt(req.query.limit, 25, MAX_LIMIT);
+        try {
+            const result = await this.gscService.getKeywordPagePairsForPeriod(periodHours, limit);
+            res.json({ periodHours, limit, ...result });
+        } catch (error) {
+            this.logger.error({ err: error }, 'Failed to fetch GSC keyword-page pairs');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch GSC keyword-page pairs' });
+        }
+    }
+
+    /**
      * GET /api/admin/users/analytics/gsc/keywords-by-day?days=14&topN=15
      * Daily GSC keyword buckets (clicks/impressions trend with per-day top
      * keywords). Already offset by the GSC ingestion delay in the service.

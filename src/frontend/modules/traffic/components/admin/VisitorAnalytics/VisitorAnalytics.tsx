@@ -22,6 +22,9 @@ import React, { useEffect, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Button } from '../../../../../components/ui/Button';
+import { Card } from '../../../../../components/ui/Card';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
+import { Stack } from '../../../../../components/layout';
 import { adminGetAnonymousFirstTouches, adminGetFlaggedSubnets } from '../../../api';
 import type { AnalyticsPeriod, ICustomDateRange, IVisitorOrigin, VisitorPeriod } from '../../../api';
 import { getDeviceIcon } from '../../../lib/deviceIcon';
@@ -139,8 +142,8 @@ export function VisitorAnalytics({ period, customRange, includeBots }: IVisitorA
     const totalFirstTouchesPages = firstTouchesTotal > 0 ? Math.ceil(firstTouchesTotal / PAGE_LIMIT) : 1;
 
     return (
-        <div className={styles.container}>
-            <div className={styles.section}>
+        <Stack gap="lg" className={styles.container}>
+            <Card tone="muted" padding="sm" className={styles.section}>
                 <div className={styles.section_header}>
                     <h2 className={styles.section_title}>New Visitors</h2>
                 </div>
@@ -173,39 +176,39 @@ export function VisitorAnalytics({ period, customRange, includeBots }: IVisitorA
                 ) : (
                     <>
                         <div className={styles.table_wrapper}>
-                            <table className={styles.table}>
-                                <thead>
-                                    <tr>
-                                        <th>First Seen</th>
-                                        <th>Country</th>
-                                        <th>Original Referrer</th>
-                                        <th>Landing Page</th>
-                                        <th>Source</th>
-                                        <th>UTM</th>
-                                        <th>Device</th>
-                                        <th title="Client-side page views (page events only — server-recorded first touches are not views)">Total Views</th>
-                                        <th title="Derived sessions within the selected window (30-minute inactivity rule over page events)">Sessions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
+                            <Table>
+                                <Thead>
+                                    <Tr>
+                                        <Th scope="col">First Seen</Th>
+                                        <Th scope="col">Country</Th>
+                                        <Th scope="col">Original Referrer</Th>
+                                        <Th scope="col">Landing Page</Th>
+                                        <Th scope="col">Source</Th>
+                                        <Th scope="col">UTM</Th>
+                                        <Th scope="col">Device</Th>
+                                        <Th scope="col" title="Client-side page views (page events only — server-recorded first touches are not views)">Total Views</Th>
+                                        <Th scope="col" title="Derived sessions within the selected window (30-minute inactivity rule over page events)">Sessions</Th>
+                                    </Tr>
+                                </Thead>
+                                <Tbody>
                                     {firstTouches.map(touch => {
                                         const utmDisplay = formatUtm(touch.utm);
 
                                         return (
-                                            <tr key={touch.userId}>
-                                                <td>
+                                            <Tr key={touch.userId}>
+                                                <Td>
                                                     <ClientTime date={touch.firstSeen} format="relative" />
-                                                </td>
-                                                <td className={styles.country_cell}>
+                                                </Td>
+                                                <Td className={styles.country_cell}>
                                                     {touch.country || <span className={styles.muted}>—</span>}
-                                                </td>
-                                                <td className={styles.referrer_cell} title={touch.referrerDomain ?? undefined}>
+                                                </Td>
+                                                <Td className={styles.referrer_cell} title={touch.referrerDomain ?? undefined}>
                                                     {touch.referrerDomain || <span className={styles.muted}>direct</span>}
-                                                </td>
-                                                <td className={styles.landing_cell} title={touch.landingPage ?? undefined}>
+                                                </Td>
+                                                <Td className={styles.landing_cell} title={touch.landingPage ?? undefined}>
                                                     {touch.landingPage || <span className={styles.muted}>—</span>}
-                                                </td>
-                                                <td
+                                                </Td>
+                                                <Td
                                                     className={styles.source_cell}
                                                     title={touch.subnetHash
                                                         ? `${touch.subnetHash && flaggedSubnets.has(touch.subnetHash) ? 'High-volume network (possible automated traffic) — ' : ''}Salted subnet hash ${touch.subnetHash} — rows sharing this value came from the same /24 (IPv4) or /48 (IPv6) network`
@@ -225,20 +228,20 @@ export function VisitorAnalytics({ period, customRange, includeBots }: IVisitorA
                                                             </span>
                                                         )
                                                         : <span className={styles.muted}>—</span>}
-                                                </td>
-                                                <td className={styles.utm_cell} title={utmDisplay ?? undefined}>
+                                                </Td>
+                                                <Td className={styles.utm_cell} title={utmDisplay ?? undefined}>
                                                     {utmDisplay || <span className={styles.muted}>—</span>}
-                                                </td>
-                                                <td className={styles.device_cell}>
+                                                </Td>
+                                                <Td className={styles.device_cell}>
                                                     {getDeviceIcon(touch.device)}
-                                                </td>
-                                                <td>{touch.pageViews.toLocaleString()}</td>
-                                                <td>{touch.sessionsCount.toLocaleString()}</td>
-                                            </tr>
+                                                </Td>
+                                                <Td>{touch.pageViews.toLocaleString()}</Td>
+                                                <Td>{touch.sessionsCount.toLocaleString()}</Td>
+                                            </Tr>
                                         );
                                     })}
-                                </tbody>
-                            </table>
+                                </Tbody>
+                            </Table>
                         </div>
 
                         <div className={styles.pagination}>
@@ -264,7 +267,7 @@ export function VisitorAnalytics({ period, customRange, includeBots }: IVisitorA
                         </div>
                     </>
                 )}
-            </div>
-        </div>
+            </Card>
+        </Stack>
     );
 }

@@ -25,6 +25,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Button } from '../../../../../components/ui/Button';
+import { Card } from '../../../../../components/ui/Card';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
+import { Stack } from '../../../../../components/layout';
 import { adminGetPageActivity, adminGetPageHits } from '../../../api';
 import type { AnalyticsPeriod, ICustomDateRange, IPageActivityRow, IPageHit, PageActivitySubject, VisitorPeriod } from '../../../api';
 import { getDeviceIcon } from '../../../lib/deviceIcon';
@@ -93,8 +96,8 @@ function PageHitsRow({ subject, id, window }: IPageHitsRowProps) {
     }, [subject, id, window]);
 
     return (
-        <tr className={styles.detail_row}>
-            <td colSpan={8}>
+        <Tr className={styles.detail_row}>
+            <Td colSpan={8}>
                 {loading ? (
                     <div className={styles.loading}>Loading pages…</div>
                 ) : hits.length === 0 ? (
@@ -123,8 +126,8 @@ function PageHitsRow({ subject, id, window }: IPageHitsRowProps) {
                         )}
                     </>
                 )}
-            </td>
-        </tr>
+            </Td>
+        </Tr>
     );
 }
 
@@ -209,7 +212,7 @@ export function PageActivityTable({ subject, title, description, subjectHeading,
     }, []);
 
     return (
-        <div className={styles.section}>
+        <Card tone="muted" padding="sm" className={styles.section}>
             <div className={styles.section_header}>
                 <h2 className={styles.section_title}>{title}</h2>
             </div>
@@ -222,33 +225,33 @@ export function PageActivityTable({ subject, title, description, subjectHeading,
             ) : (
                 <>
                     <div className={styles.table_wrapper}>
-                        <table className={styles.table}>
-                            <thead>
-                                <tr>
-                                    <th>{subjectHeading}</th>
-                                    <th>First Seen</th>
-                                    <th>Last Seen</th>
-                                    <th>Page Views</th>
-                                    <th>Distinct Pages</th>
-                                    <th>Last Path</th>
-                                    <th>Device</th>
-                                    <th><span className="text-muted">Pages</span></th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                        <Table>
+                            <Thead>
+                                <Tr>
+                                    <Th scope="col">{subjectHeading}</Th>
+                                    <Th scope="col">First Seen</Th>
+                                    <Th scope="col">Last Seen</Th>
+                                    <Th scope="col">Page Views</Th>
+                                    <Th scope="col">Distinct Pages</Th>
+                                    <Th scope="col">Last Path</Th>
+                                    <Th scope="col">Device</Th>
+                                    <Th scope="col"><span className="text-muted">Pages</span></Th>
+                                </Tr>
+                            </Thead>
+                            <Tbody>
                                 {rows.map(row => (
                                     <React.Fragment key={row.id}>
-                                        <tr>
-                                            <td className={styles.id_cell} title={row.id}>{row.id}</td>
-                                            <td><ClientTime date={row.firstSeen} format="relative" /></td>
-                                            <td><ClientTime date={row.lastSeen} format="relative" /></td>
-                                            <td>{row.pageViews.toLocaleString()}</td>
-                                            <td>{row.distinctPaths.toLocaleString()}</td>
-                                            <td className={styles.path_cell} title={row.lastPath ?? undefined}>
+                                        <Tr>
+                                            <Td className={styles.id_cell} title={row.id}>{row.id}</Td>
+                                            <Td><ClientTime date={row.firstSeen} format="relative" /></Td>
+                                            <Td><ClientTime date={row.lastSeen} format="relative" /></Td>
+                                            <Td>{row.pageViews.toLocaleString()}</Td>
+                                            <Td>{row.distinctPaths.toLocaleString()}</Td>
+                                            <Td className={styles.path_cell} title={row.lastPath ?? undefined}>
                                                 {row.lastPath || <span className={styles.muted}>—</span>}
-                                            </td>
-                                            <td className={styles.device_cell}>{getDeviceIcon(row.device)}</td>
-                                            <td>
+                                            </Td>
+                                            <Td className={styles.device_cell}>{getDeviceIcon(row.device)}</Td>
+                                            <Td>
                                                 <Button
                                                     size="xs"
                                                     variant="ghost"
@@ -258,15 +261,15 @@ export function PageActivityTable({ subject, title, description, subjectHeading,
                                                 >
                                                     {expandedId === row.id ? 'Hide' : 'View'}
                                                 </Button>
-                                            </td>
-                                        </tr>
+                                            </Td>
+                                        </Tr>
                                         {expandedId === row.id && (
                                             <PageHitsRow subject={subject} id={row.id} window={window} />
                                         )}
                                     </React.Fragment>
                                 ))}
-                            </tbody>
-                        </table>
+                            </Tbody>
+                        </Table>
                     </div>
 
                     <div className={styles.pagination}>
@@ -292,7 +295,7 @@ export function PageActivityTable({ subject, title, description, subjectHeading,
                     </div>
                 </>
             )}
-        </div>
+        </Card>
     );
 }
 
@@ -322,7 +325,7 @@ export function PageActivity({ period, customRange }: IPageActivityProps) {
     ), [period, customRange]);
 
     return (
-        <div className={styles.container}>
+        <Stack gap="lg" className={styles.container}>
             <PageActivityTable
                 subject="tid"
                 title="Anonymous Visitor Activity"
@@ -337,6 +340,6 @@ export function PageActivity({ period, customRange }: IPageActivityProps) {
                 description="Per-page navigation for signed-in accounts, keyed on the Better Auth user id. Expand a row to see every page they hit."
                 window={window}
             />
-        </div>
+        </Stack>
     );
 }
