@@ -980,10 +980,13 @@ export class GscService {
      * returned for honest labelling.
      *
      * @param periodHours - Lookback period in hours.
-     * @param limit - Maximum pairs to return (default: 10).
+     * @param limit - Maximum pairs to return; omit (or pass 0) for all pairs.
+     *   This view is meant to be exhaustive — it accounts for every
+     *   keyword→page combination in the window — so callers default to
+     *   uncapped rather than a top-N slice.
      * @returns The delay-shifted window and its aggregated keyword→page pairs.
      */
-    async getKeywordPagePairsForPeriod(periodHours: number, limit: number = 10): Promise<IGscKeywordPagesPeriodResult> {
+    async getKeywordPagePairsForPeriod(periodHours: number, limit?: number): Promise<IGscKeywordPagesPeriodResult> {
         const delayMs = GSC_DATA_DELAY_DAYS * 24 * 60 * 60 * 1000;
         const end = new Date(Date.now() - delayMs);
         const since = new Date(end.getTime() - (periodHours * 60 * 60 * 1000));
@@ -1004,7 +1007,9 @@ export class GscService {
                 }
             },
             { $sort: { totalClicks: -1, totalImpressions: -1 } },
-            { $limit: limit }
+            // Uncapped by design: apply $limit only when a caller explicitly
+            // requests one, so the default view returns every pair.
+            ...(limit && limit > 0 ? [{ $limit: limit }] : [])
         ]).toArray();
 
         const pairs = results.map(r => ({
