@@ -13,7 +13,7 @@
     background: var(--card-background);
     border-radius: var(--radius-md);
     border: var(--card-border);
-    overflow: hidden;
+    overflow-x: auto;
     container-type: inline-size;
     container-name: table;
 }
@@ -30,9 +30,9 @@
 }
 
 /*
- * Sticky-header variant. The base wrapper uses `overflow: hidden`, which makes
- * it a scroll box that captures `position: sticky` and never scrolls — so a
- * sticky header cannot work against it. This modifier turns the wrapper into a
+ * Sticky-header variant. The base wrapper uses `overflow-x: auto` with no height
+ * bound, so it scrolls horizontally but never vertically — a `position: sticky`
+ * header has nothing to stick against. This modifier turns the wrapper into a
  * bounded vertical scroll container; the header then sticks to its top while the
  * body scrolls. Height is tunable via `--table-sticky-max-height`.
  */

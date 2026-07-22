@@ -2,8 +2,9 @@
  * GscKeywords styles.
  *
  * GSC keyword dashboard — clicks/impressions trend pair plus the
- * top-keywords table. Container query collapses the chart pair to a
- * single column at narrow widths.
+ * top-keywords table. The chart pair collapses to one column by its own
+ * width via the shared <Grid columns="responsive"> (auto-fit); the
+ * container context here backs the .header collapse.
  */
 
 @use '../../../../../app/breakpoints' as *;

@@ -255,7 +255,7 @@ export function GscKeywords() {
                 </div>
             </header>
 
-            <Grid columns={2} gap="md">
+            <Grid columns="responsive" gap="md">
                 <Card padding="md" className={styles.panel}>
                     <div className={styles.panel_header}>
                         <TrendingUp size={18} aria-hidden="true" />
