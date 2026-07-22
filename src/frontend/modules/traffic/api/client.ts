@@ -992,6 +992,62 @@ export async function adminGetGscPages(options?: { periodHours?: number; limit?:
 }
 
 /**
+ * One aggregated GSC keyword→page pair — which page a query surfaced and how
+ * much traffic that couple drew over the window.
+ */
+export interface IGscKeywordPage {
+    /** Search query. */
+    keyword: string;
+    /** Landing page URL the query surfaced. */
+    page: string;
+    /** Total clicks for this keyword→page pair. */
+    clicks: number;
+    /** Total impressions for this keyword→page pair. */
+    impressions: number;
+    /** Average click-through rate (0-1). */
+    ctr: number;
+    /** Impression-weighted average position in search results. */
+    position: number;
+}
+
+/**
+ * Aggregated GSC keyword→page pairs plus the delay-shifted window covered — the
+ * two-dimensional counterpart to {@link IGscKeywordsResult} and
+ * {@link IGscPagesResult}, keeping both the query and the page it surfaced.
+ */
+export interface IGscKeywordPagesResult {
+    /** Inclusive window start (ISO-8601 UTC). */
+    windowStart: string;
+    /** Inclusive window end (ISO-8601 UTC). */
+    windowEnd: string;
+    /** Pairs sorted by clicks descending. */
+    pairs: IGscKeywordPage[];
+}
+
+/**
+ * Get aggregated GSC keyword→page pairs for a lookback window (admin endpoint).
+ *
+ * Backed by the raw query cache, the only rows carrying query and page
+ * together, so it inherits GSC's low-volume-query anonymization the same way
+ * the keyword panel does — its clicks will not fully reconcile with the
+ * anonymization-immune page totals.
+ * @param options - Window in hours (default 168 = 7d) and row limit
+ * @returns Pairs sorted by clicks descending plus the covered window
+ */
+export async function adminGetGscKeywordPages(options?: { periodHours?: number; limit?: number }
+): Promise<IGscKeywordPagesResult> {
+    const response = await apiClient.get('/admin/users/analytics/gsc/keyword-pages', {
+        params: options
+    });
+    const data = response.data as Partial<IGscKeywordPagesResult>;
+    return {
+        windowStart: data.windowStart ?? '',
+        windowEnd: data.windowEnd ?? '',
+        pairs: data.pairs ?? []
+    };
+}
+
+/**
  * Get daily GSC keyword buckets for trend charting (admin endpoint).
  * @param days - Number of daily buckets (default 14)
  * @param topN - Max keywords per bucket (default 15)

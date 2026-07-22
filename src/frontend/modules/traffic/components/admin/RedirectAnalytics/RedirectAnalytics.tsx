@@ -23,6 +23,8 @@ import { CornerUpRight, ListOrdered } from 'lucide-react';
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
 import { Card } from '../../../../../components/ui/Card';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
+import { Stack } from '../../../../../components/layout';
 import { adminGetRedirectAnalytics } from '../../../api';
 import type { AnalyticsPeriod, IRedirectAnalytics } from '../../../api';
 import styles from './RedirectAnalytics.module.scss';
@@ -126,7 +128,7 @@ export function RedirectAnalytics() {
     const hasHits = data !== null && data.total > 0;
 
     return (
-        <div className={styles.container}>
+        <Stack gap="lg" className={styles.container}>
             <header className={styles.header}>
                 <div>
                     <h2 className={styles.title}>Redirect analytics</h2>
@@ -215,28 +217,28 @@ export function RedirectAnalytics() {
                 ) : !hasHits || !data || data.byPattern.length === 0 ? (
                     <p className={styles.panel_empty}>No redirects served in this window.</p>
                 ) : (
-                    <table className={styles.table}>
-                        <thead>
-                            <tr>
-                                <th scope="col">Source</th>
-                                <th scope="col">Destination</th>
-                                <th scope="col" className={styles.center_col}>Code</th>
-                                <th scope="col" className={styles.numeric_col}>Hits</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                    <Table>
+                        <Thead>
+                            <Tr>
+                                <Th scope="col">Source</Th>
+                                <Th scope="col">Destination</Th>
+                                <Th scope="col" className={styles.center_col}>Code</Th>
+                                <Th scope="col" className={styles.numeric_col}>Hits</Th>
+                            </Tr>
+                        </Thead>
+                        <Tbody>
                             {data.byPattern.map(row => (
-                                <tr key={row.pattern}>
-                                    <td><code className={styles.code}>{row.pattern}</code></td>
-                                    <td><code className={styles.code}>{row.destination}</code></td>
-                                    <td className={styles.center}>{row.permanent ? '301' : '302'}</td>
-                                    <td className={styles.numeric}>{numberFormatter.format(row.hits)}</td>
-                                </tr>
+                                <Tr key={row.pattern}>
+                                    <Td><code className={styles.code}>{row.pattern}</code></Td>
+                                    <Td><code className={styles.code}>{row.destination}</code></Td>
+                                    <Td className={styles.center}>{row.permanent ? '301' : '302'}</Td>
+                                    <Td className={styles.numeric}>{numberFormatter.format(row.hits)}</Td>
+                                </Tr>
                             ))}
-                        </tbody>
-                    </table>
+                        </Tbody>
+                    </Table>
                 )}
             </Card>
-        </div>
+        </Stack>
     );
 }

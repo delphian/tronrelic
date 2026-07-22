@@ -22,6 +22,7 @@ import { Input } from '../../../../../components/ui/Input';
 import { Card } from '../../../../../components/ui/Card';
 import { Badge } from '../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { Stack } from '../../../../../components/layout';
 import {
     adminListRedirects,
@@ -241,7 +242,7 @@ export function RedirectsManager() {
     }
 
     return (
-        <div className={styles.container}>
+        <Stack gap="lg" className={styles.container}>
             <Card padding="lg">
                 <Stack gap="md">
                     <div className={styles.header}>
@@ -312,26 +313,26 @@ export function RedirectsManager() {
 
                     {rules && rules.length > 0 ? (
                         <div className="table-scroll">
-                            <table className="table">
-                                <thead>
-                                    <tr>
-                                        <th scope="col">Source</th>
-                                        <th scope="col">Destination</th>
-                                        <th scope="col">Match</th>
-                                        <th scope="col">Code</th>
-                                        <th scope="col">Status</th>
-                                        <th scope="col">Updated</th>
-                                        <th scope="col" className={styles.actions_col}>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
+                            <Table>
+                                <Thead>
+                                    <Tr>
+                                        <Th scope="col">Source</Th>
+                                        <Th scope="col">Destination</Th>
+                                        <Th scope="col">Match</Th>
+                                        <Th scope="col">Code</Th>
+                                        <Th scope="col">Status</Th>
+                                        <Th scope="col">Updated</Th>
+                                        <Th scope="col" className={styles.actions_col}>Actions</Th>
+                                    </Tr>
+                                </Thead>
+                                <Tbody>
                                     {rules.map(rule => {
                                         const rowDraft = editingId === rule.id ? draft : null;
                                         return (
-                                            <tr key={rule.id} className={rule.enabled ? undefined : styles.row_disabled}>
+                                            <Tr key={rule.id} className={rule.enabled ? undefined : styles.row_disabled}>
                                                 {rowDraft ? (
                                                     <>
-                                                        <td>
+                                                        <Td>
                                                             <div className={styles.edit_stack}>
                                                                 <Input
                                                                     type="text"
@@ -352,8 +353,8 @@ export function RedirectsManager() {
                                                                     disabled={savingEdit}
                                                                 />
                                                             </div>
-                                                        </td>
-                                                        <td>
+                                                        </Td>
+                                                        <Td>
                                                             <Input
                                                                 type="text"
                                                                 size="sm"
@@ -363,8 +364,8 @@ export function RedirectsManager() {
                                                                 aria-label="Destination path"
                                                                 disabled={savingEdit}
                                                             />
-                                                        </td>
-                                                        <td>
+                                                        </Td>
+                                                        <Td>
                                                             <label className={styles.checkbox}>
                                                                 <input
                                                                     type="checkbox"
@@ -374,8 +375,8 @@ export function RedirectsManager() {
                                                                 />
                                                                 prefix
                                                             </label>
-                                                        </td>
-                                                        <td>
+                                                        </Td>
+                                                        <Td>
                                                             <label className={styles.checkbox}>
                                                                 <input
                                                                     type="checkbox"
@@ -385,16 +386,16 @@ export function RedirectsManager() {
                                                                 />
                                                                 301
                                                             </label>
-                                                        </td>
-                                                        <td>
+                                                        </Td>
+                                                        <Td>
                                                             <Badge tone={rule.enabled ? 'success' : 'neutral'}>
                                                                 {rule.enabled ? 'active' : 'disabled'}
                                                             </Badge>
-                                                        </td>
-                                                        <td>
+                                                        </Td>
+                                                        <Td>
                                                             <ClientTime date={rule.updatedAt} format="date" />
-                                                        </td>
-                                                        <td>
+                                                        </Td>
+                                                        <Td>
                                                             <div className={styles.actions}>
                                                                 <button
                                                                     type="button"
@@ -417,37 +418,37 @@ export function RedirectsManager() {
                                                                     <X size={16} />
                                                                 </button>
                                                             </div>
-                                                        </td>
+                                                        </Td>
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <td>
+                                                        <Td>
                                                             <code className={styles.path}>{rule.pattern}</code>
                                                             {rule.notes && <span className={styles.note}>{rule.notes}</span>}
-                                                        </td>
-                                                        <td>
+                                                        </Td>
+                                                        <Td>
                                                             <span className={styles.dest}>
                                                                 <ArrowRight size={14} aria-hidden="true" />
                                                                 <code className={styles.path}>{rule.destination}</code>
                                                             </span>
-                                                        </td>
-                                                        <td>
+                                                        </Td>
+                                                        <Td>
                                                             <Badge tone="neutral">{rule.isPrefix ? 'prefix' : 'exact'}</Badge>
-                                                        </td>
-                                                        <td>
+                                                        </Td>
+                                                        <Td>
                                                             <Badge tone={rule.permanent ? 'info' : 'neutral'}>
                                                                 {rule.permanent ? '301' : '302'}
                                                             </Badge>
-                                                        </td>
-                                                        <td>
+                                                        </Td>
+                                                        <Td>
                                                             <Badge tone={rule.enabled ? 'success' : 'neutral'}>
                                                                 {rule.enabled ? 'active' : 'disabled'}
                                                             </Badge>
-                                                        </td>
-                                                        <td>
+                                                        </Td>
+                                                        <Td>
                                                             <ClientTime date={rule.updatedAt} format="date" />
-                                                        </td>
-                                                        <td>
+                                                        </Td>
+                                                        <Td>
                                                             <div className={styles.actions}>
                                                                 <button
                                                                     type="button"
@@ -480,20 +481,20 @@ export function RedirectsManager() {
                                                                     <Trash2 size={16} />
                                                                 </button>
                                                             </div>
-                                                        </td>
+                                                        </Td>
                                                     </>
                                                 )}
-                                            </tr>
+                                            </Tr>
                                         );
                                     })}
-                                </tbody>
-                            </table>
+                                </Tbody>
+                            </Table>
                         </div>
                     ) : (
                         !loadError && <p className="text-muted">No redirects yet. Add one above.</p>
                     )}
                 </Stack>
             </Card>
-        </div>
+        </Stack>
     );
 }

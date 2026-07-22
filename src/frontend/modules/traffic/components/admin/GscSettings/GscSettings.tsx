@@ -148,7 +148,7 @@ export function GscSettings() {
     }
 
     return (
-        <div className={styles.container}>
+        <Stack gap="lg" className={styles.container}>
             <Card padding="lg">
                 <Stack gap="md">
                     <h3>Google Search Console</h3>
@@ -294,6 +294,6 @@ export function GscSettings() {
                     )}
                 </Stack>
             </Card>
-        </div>
+        </Stack>
     );
 }

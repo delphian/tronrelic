@@ -32,7 +32,9 @@ import {
 import { LineChart } from '../../../../../features/charts/components/LineChart';
 import type { ChartSeries } from '../../../../../features/charts/components/LineChart';
 import { Card } from '../../../../../components/ui/Card';
-import { Grid } from '../../../../../components/layout';
+import { Badge, type BadgeTone } from '../../../../../components/ui/Badge';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
+import { Grid, Stack } from '../../../../../components/layout';
 import { OverviewTrend } from '../OverviewTrend';
 import {
     adminGetTrafficSources,
@@ -92,24 +94,28 @@ function formatDuration(seconds: number): string {
 }
 
 /**
- * Get CSS class for a traffic source category badge.
+ * Resolve the Badge tone (and, for categories with no direct tone
+ * equivalent, a color-override class) for a traffic source category badge.
  *
  * Categories come from the backend's stored channel classification
  * (direct/organic/paid/social/email/ai/referral); unknown values fall
- * back to the referral style.
+ * back to the referral tone. Five categories map onto an existing Badge
+ * tone; email and ai have no matching tone, so they render on the neutral
+ * tone with a small color-override class layered on top.
  *
  * @param category - Acquisition channel string
- * @returns CSS module class name
+ * @returns Badge tone plus an optional className for categories without a
+ *   direct Badge tone equivalent
  */
-function getCategoryClass(category: string): string {
+function getCategoryBadgeProps(category: string): { tone: BadgeTone; className?: string } {
     switch (category) {
-        case 'direct': return styles['category_badge--direct'];
-        case 'organic': return styles['category_badge--organic'];
-        case 'social': return styles['category_badge--social'];
-        case 'paid': return styles['category_badge--paid'];
-        case 'email': return styles['category_badge--email'];
-        case 'ai': return styles['category_badge--ai'];
-        default: return styles['category_badge--referral'];
+        case 'direct': return { tone: 'neutral' };
+        case 'organic': return { tone: 'success' };
+        case 'social': return { tone: 'info' };
+        case 'paid': return { tone: 'danger' };
+        case 'email': return { tone: 'neutral', className: styles.category_badge_email };
+        case 'ai': return { tone: 'neutral', className: styles.category_badge_ai };
+        default: return { tone: 'warning' };
     }
 }
 
@@ -315,7 +321,7 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
         : 1;
 
     return (
-        <div className={styles.dashboard}>
+        <Stack gap="lg">
             {/* Overview headline — KPI strip + unified trend (owns its fetch) */}
             <OverviewTrend period={period} customRange={customRange} includeBots={includeBots} refreshSignal={refreshSignal} />
 
@@ -372,25 +378,25 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                                     <div className={styles.empty_state}>No traffic data for this period</div>
                                 ) : (
                                     <div className={styles.table_wrapper}>
-                                        <table className={styles.table}>
-                                            <thead>
-                                                <tr>
-                                                    <th className={styles.table__expand_cell}></th>
-                                                    <th>Source</th>
-                                                    <th>Category</th>
-                                                    <th className={styles.table__number}>Visitors</th>
-                                                    <th className={styles.table__bar_cell}></th>
-                                                    <th className={styles.table__number}>%</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
+                                        <Table>
+                                            <Thead>
+                                                <Tr>
+                                                    <Th scope="col" className={styles.table__expand_cell}></Th>
+                                                    <Th scope="col">Source</Th>
+                                                    <Th scope="col">Category</Th>
+                                                    <Th scope="col" className={styles.table__number}>Visitors</Th>
+                                                    <Th scope="col" className={styles.table__bar_cell}></Th>
+                                                    <Th scope="col" className={styles.table__number}>%</Th>
+                                                </Tr>
+                                            </Thead>
+                                            <Tbody>
                                                 {trafficSources.map(s => {
                                                     const isExpanded = expandedSource === s.source;
                                                     const details = sourceDetails[s.source];
                                                     const isLoading = sourceDetailsLoading === s.source;
                                                     return (
                                                         <React.Fragment key={s.source}>
-                                                            <tr
+                                                            <Tr
                                                                 className={`${styles.table__row_clickable} ${isExpanded ? styles.table__row_expanded : ''}`}
                                                                 onClick={() => toggleSourceDetails(s.source)}
                                                                 role="button"
@@ -403,30 +409,30 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                                                                 }}
                                                                 aria-expanded={isExpanded}
                                                             >
-                                                                <td className={styles.table__expand_cell}>
+                                                                <Td className={styles.table__expand_cell}>
                                                                     {isExpanded
                                                                         ? <ChevronDown size={14} />
                                                                         : <ChevronRight size={14} />
                                                                     }
-                                                                </td>
-                                                                <td>{s.source}</td>
-                                                                <td>
-                                                                    <span className={`${styles.category_badge} ${getCategoryClass(s.category)}`}>
+                                                                </Td>
+                                                                <Td>{s.source}</Td>
+                                                                <Td>
+                                                                    <Badge {...getCategoryBadgeProps(s.category)}>
                                                                         {s.category}
-                                                                    </span>
-                                                                </td>
-                                                                <td className={styles.table__number}>{s.visitors.toLocaleString()}</td>
-                                                                <td className={styles.table__bar_cell}>
+                                                                    </Badge>
+                                                                </Td>
+                                                                <Td className={styles.table__number}>{s.visitors.toLocaleString()}</Td>
+                                                                <Td className={styles.table__bar_cell}>
                                                                     <div
                                                                         className={styles.table__bar}
                                                                         style={{ width: `${(s.visitors / maxSourceCount) * 100}%` }}
                                                                     />
-                                                                </td>
-                                                                <td className={styles.table__number}>{s.percentage}%</td>
-                                                            </tr>
+                                                                </Td>
+                                                                <Td className={styles.table__number}>{s.percentage}%</Td>
+                                                            </Tr>
                                                             {isExpanded && (
-                                                                <tr className={styles.detail_row}>
-                                                                    <td colSpan={6} className={styles.detail_row__cell}>
+                                                                <Tr className={styles.detail_row}>
+                                                                    <Td colSpan={6} className={styles.detail_row__cell}>
                                                                         {isLoading ? (
                                                                             <div className={styles.detail_loading}>Loading details...</div>
                                                                         ) : details ? (
@@ -528,30 +534,30 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                                                                                     <div className={styles.detail_section}>
                                                                                         <h4 className={styles.detail_section__title}>
                                                                                             Search Keywords
-                                                                                            <span className={styles.gsc_badge}>Search Console</span>
+                                                                                            <Badge tone="info" className={styles.gsc_badge}>Search Console</Badge>
                                                                                         </h4>
-                                                                                        <table className={styles.gsc_table}>
-                                                                                            <thead>
-                                                                                                <tr>
-                                                                                                    <th className={styles.gsc_table__keyword}>Keyword</th>
-                                                                                                    <th className={styles.gsc_table__metric}>Clicks</th>
-                                                                                                    <th className={styles.gsc_table__metric}>Impr.</th>
-                                                                                                    <th className={styles.gsc_table__metric}>CTR</th>
-                                                                                                    <th className={styles.gsc_table__metric}>Pos.</th>
-                                                                                                </tr>
-                                                                                            </thead>
-                                                                                            <tbody>
+                                                                                        <Table className={styles.gsc_table}>
+                                                                                            <Thead>
+                                                                                                <Tr>
+                                                                                                    <Th scope="col" className={styles.gsc_table__keyword}>Keyword</Th>
+                                                                                                    <Th scope="col" className={styles.gsc_table__metric}>Clicks</Th>
+                                                                                                    <Th scope="col" className={styles.gsc_table__metric}>Impr.</Th>
+                                                                                                    <Th scope="col" className={styles.gsc_table__metric}>CTR</Th>
+                                                                                                    <Th scope="col" className={styles.gsc_table__metric}>Pos.</Th>
+                                                                                                </Tr>
+                                                                                            </Thead>
+                                                                                            <Tbody>
                                                                                                 {details.gscKeywords.map(kw => (
-                                                                                                    <tr key={kw.keyword}>
-                                                                                                        <td className={styles.gsc_table__keyword}>{kw.keyword}</td>
-                                                                                                        <td className={styles.gsc_table__metric}>{kw.clicks.toLocaleString()}</td>
-                                                                                                        <td className={styles.gsc_table__metric}>{kw.impressions.toLocaleString()}</td>
-                                                                                                        <td className={styles.gsc_table__metric}>{(kw.ctr * 100).toFixed(1)}%</td>
-                                                                                                        <td className={styles.gsc_table__metric}>{kw.position.toFixed(1)}</td>
-                                                                                                    </tr>
+                                                                                                    <Tr key={kw.keyword}>
+                                                                                                        <Td className={styles.gsc_table__keyword}>{kw.keyword}</Td>
+                                                                                                        <Td className={styles.gsc_table__metric}>{kw.clicks.toLocaleString()}</Td>
+                                                                                                        <Td className={styles.gsc_table__metric}>{kw.impressions.toLocaleString()}</Td>
+                                                                                                        <Td className={styles.gsc_table__metric}>{(kw.ctr * 100).toFixed(1)}%</Td>
+                                                                                                        <Td className={styles.gsc_table__metric}>{kw.position.toFixed(1)}</Td>
+                                                                                                    </Tr>
                                                                                                 ))}
-                                                                                            </tbody>
-                                                                                        </table>
+                                                                                            </Tbody>
+                                                                                        </Table>
                                                                                     </div>
                                                                                 ) : details.searchKeywords.length > 0 ? (
                                                                                     <div className={styles.detail_section}>
@@ -588,14 +594,14 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                                                                                 )}
                                                                             </div>
                                                                         ) : null}
-                                                                    </td>
-                                                                </tr>
+                                                                    </Td>
+                                                                </Tr>
                                                             )}
                                                         </React.Fragment>
                                                     );
                                                 })}
-                                            </tbody>
-                                        </table>
+                                            </Tbody>
+                                        </Table>
                                     </div>
                                 )}
                             </div>
@@ -621,29 +627,29 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                                     <div className={styles.empty_state}>No landing page data for this period</div>
                                 ) : (
                                     <div className={styles.table_wrapper}>
-                                        <table className={styles.table}>
-                                            <thead>
-                                                <tr>
-                                                    <th>Page</th>
-                                                    <th className={styles.table__number}>Visitors</th>
-                                                    <th className={styles.table__bar_cell}></th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
+                                        <Table>
+                                            <Thead>
+                                                <Tr>
+                                                    <Th scope="col">Page</Th>
+                                                    <Th scope="col" className={styles.table__number}>Visitors</Th>
+                                                    <Th scope="col" className={styles.table__bar_cell}></Th>
+                                                </Tr>
+                                            </Thead>
+                                            <Tbody>
                                                 {landingPages.map(p => (
-                                                    <tr key={p.path}>
-                                                        <td className={styles.table__truncate} title={p.path}>{p.path}</td>
-                                                        <td className={styles.table__number}>{p.visitors.toLocaleString()}</td>
-                                                        <td className={styles.table__bar_cell}>
+                                                    <Tr key={p.path}>
+                                                        <Td className={styles.table__truncate} title={p.path}>{p.path}</Td>
+                                                        <Td className={styles.table__number}>{p.visitors.toLocaleString()}</Td>
+                                                        <Td className={styles.table__bar_cell}>
                                                             <div
                                                                 className={styles.table__bar}
                                                                 style={{ width: `${(p.visitors / maxPageVisitors) * 100}%` }}
                                                             />
-                                                        </td>
-                                                    </tr>
+                                                        </Td>
+                                                    </Tr>
                                                 ))}
-                                            </tbody>
-                                        </table>
+                                            </Tbody>
+                                        </Table>
                                     </div>
                                 )}
                             </div>
@@ -660,31 +666,31 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                                     <div className={styles.empty_state}>No geographic data for this period</div>
                                 ) : (
                                     <div className={styles.table_wrapper}>
-                                        <table className={styles.table}>
-                                            <thead>
-                                                <tr>
-                                                    <th>Country</th>
-                                                    <th className={styles.table__number}>Visitors</th>
-                                                    <th className={styles.table__bar_cell}></th>
-                                                    <th className={styles.table__number}>%</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
+                                        <Table>
+                                            <Thead>
+                                                <Tr>
+                                                    <Th scope="col">Country</Th>
+                                                    <Th scope="col" className={styles.table__number}>Visitors</Th>
+                                                    <Th scope="col" className={styles.table__bar_cell}></Th>
+                                                    <Th scope="col" className={styles.table__number}>%</Th>
+                                                </Tr>
+                                            </Thead>
+                                            <Tbody>
                                                 {geoData.map(g => (
-                                                    <tr key={g.country}>
-                                                        <td>{g.country}</td>
-                                                        <td className={styles.table__number}>{g.count.toLocaleString()}</td>
-                                                        <td className={styles.table__bar_cell}>
+                                                    <Tr key={g.country}>
+                                                        <Td>{g.country}</Td>
+                                                        <Td className={styles.table__number}>{g.count.toLocaleString()}</Td>
+                                                        <Td className={styles.table__bar_cell}>
                                                             <div
                                                                 className={styles.table__bar}
                                                                 style={{ width: `${(g.count / maxGeoCount) * 100}%` }}
                                                             />
-                                                        </td>
-                                                        <td className={styles.table__number}>{g.percentage}%</td>
-                                                    </tr>
+                                                        </Td>
+                                                        <Td className={styles.table__number}>{g.percentage}%</Td>
+                                                    </Tr>
                                                 ))}
-                                            </tbody>
-                                        </table>
+                                            </Tbody>
+                                        </Table>
                                     </div>
                                 )}
                             </div>
@@ -730,40 +736,42 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                             </h3>
                             <div>
                                 <div className={styles.table_wrapper}>
-                                    <table className={styles.table}>
-                                        <thead>
-                                            <tr>
-                                                <th>Source</th>
-                                                <th>Medium</th>
-                                                <th>Campaign</th>
-                                                <th className={styles.table__number}>Visitors</th>
-                                                <th
+                                    <Table>
+                                        <Thead>
+                                            <Tr>
+                                                <Th scope="col">Source</Th>
+                                                <Th scope="col">Medium</Th>
+                                                <Th scope="col">Campaign</Th>
+                                                <Th scope="col" className={styles.table__number}>Visitors</Th>
+                                                <Th
+                                                    scope="col"
                                                     className={styles.table__number}
                                                     title="Visitors logged in at any point during the window — includes returning account holders, not only new signups"
                                                 >
                                                     Logged In
-                                                </th>
-                                                <th
+                                                </Th>
+                                                <Th
+                                                    scope="col"
                                                     className={styles.table__number}
                                                     title="Logged-in visitors / visitors"
                                                 >
                                                     Login %
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
+                                                </Th>
+                                            </Tr>
+                                        </Thead>
+                                        <Tbody>
                                             {campaigns.map(c => (
-                                                <tr key={`${c.source}|${c.medium}|${c.campaign}`}>
-                                                    <td>{c.source}</td>
-                                                    <td>{c.medium}</td>
-                                                    <td>{c.campaign}</td>
-                                                    <td className={styles.table__number}>{c.visitors.toLocaleString()}</td>
-                                                    <td className={styles.table__number}>{c.conversions}</td>
-                                                    <td className={styles.table__number}>{c.conversionRate}%</td>
-                                                </tr>
+                                                <Tr key={`${c.source}|${c.medium}|${c.campaign}`}>
+                                                    <Td>{c.source}</Td>
+                                                    <Td>{c.medium}</Td>
+                                                    <Td>{c.campaign}</Td>
+                                                    <Td className={styles.table__number}>{c.visitors.toLocaleString()}</Td>
+                                                    <Td className={styles.table__number}>{c.conversions}</Td>
+                                                    <Td className={styles.table__number}>{c.conversionRate}%</Td>
+                                                </Tr>
                                             ))}
-                                        </tbody>
-                                    </table>
+                                        </Tbody>
+                                    </Table>
                                 </div>
                             </div>
                         </Card>
@@ -822,6 +830,6 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                     )}
                 </>
             )}
-        </div>
+        </Stack>
     );
 }
