@@ -247,6 +247,8 @@ export interface IUIComponents {
     Textarea: ComponentType<{
         value?: string;
         onChange?: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+        /** Key handler so plugins can wire Ctrl/Cmd+Enter submit, matching Input. */
+        onKeyDown?: (e: React.KeyboardEvent) => void;
         placeholder?: string;
         disabled?: boolean;
         required?: boolean;
