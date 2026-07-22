@@ -338,30 +338,43 @@ function isScannerPath(path: string | null | undefined): boolean {
 }
 
 /**
- * True when the `Referer` claims a search-engine origin but the request
- * carries no `Sec-Fetch-Site` header. Chromium (including Android WebView
- * in-app browsers) has sent `Sec-Fetch-Site: cross-site` on genuine
- * click-throughs since 2019, and WebKit since iOS 16.4 (2023); curl-style
- * scanners spoofing the Referer send no Sec-Fetch headers at all. Gated on
- * search-engine referrers specifically (the domains scanners actually
- * spoof) so a legacy browser arriving from an arbitrary site is not
- * misclassified. Accepted residual: a pre-16.4 iOS browser arriving from
- * a real search click is mislabeled — the cost is one first-touch
- * analytics label, and its same-origin `page` events still classify
- * as human.
+ * True when the `Referer` claims a search-engine origin but the request's
+ * `Sec-Fetch-Site` is anything other than `cross-site`. A genuine search
+ * click-through is a cross-site navigation, and browsers set `Sec-Fetch-Site`
+ * themselves (it is a forbidden header — page scripts cannot forge it), so
+ * Chromium including Android WebView in-app browsers has sent `cross-site` on
+ * real click-throughs since 2019 and WebKit since iOS 16.4 (2023). Spoofing
+ * bots forge `Referer: https://www.google.com/` to masquerade as organic
+ * traffic — and because Chrome's default `strict-origin-when-cross-origin`
+ * policy makes even real clicks send a bare origin referer, the Referer alone
+ * cannot distinguish them. The fetch metadata gives them away: a scripted
+ * client sends no Sec-Fetch header at all (curl-style) or `Sec-Fetch-Site:
+ * none` — a user-initiated navigation with no originating document, which
+ * cannot coexist with a real cross-site referrer. We therefore treat a
+ * search-engine referer whose `Sec-Fetch-Site` is any non-`cross-site` value
+ * (absent, `none`, `same-origin`, `same-site`) as forged. Gated on
+ * search-engine referrers specifically (the domains scanners actually spoof)
+ * so a legacy browser arriving cross-site from an arbitrary site is untouched.
+ * Accepted residual: a pre-16.4 iOS browser arriving from a real search click
+ * (which sends no Sec-Fetch header) is mislabeled — the cost is one
+ * first-touch analytics label, and its same-origin `page` events still
+ * classify as human.
  *
  * @param referer - Raw `Referer` header value.
  * @param secFetchSite - Raw `Sec-Fetch-Site` header value.
- * @returns True when the referrer is a spoof-target domain and Sec-Fetch is absent.
+ * @returns True when the referrer is a spoof-target domain and Sec-Fetch-Site is not `cross-site`.
  */
 function isSpoofedSearchReferrer(
     referer: string | null | undefined,
     secFetchSite: string | null | undefined
 ): boolean {
     let spoofed = false;
-    if (referer && !secFetchSite) {
-        const ref = referer.slice(0, MAX_SIGNAL_LENGTH).toLowerCase();
-        spoofed = SPOOF_TARGET_REFERRERS.some(domain => ref.includes(domain));
+    if (referer) {
+        const site = secFetchSite ? secFetchSite.trim().toLowerCase() : '';
+        if (site !== 'cross-site') {
+            const ref = referer.slice(0, MAX_SIGNAL_LENGTH).toLowerCase();
+            spoofed = SPOOF_TARGET_REFERRERS.some(domain => ref.includes(domain));
+        }
     }
     return spoofed;
 }

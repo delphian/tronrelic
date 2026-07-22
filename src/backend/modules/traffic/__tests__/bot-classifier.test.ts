@@ -196,7 +196,7 @@ describe('classifyTrafficRequest', () => {
     });
 
     describe('scanner via spoofed search referrer', () => {
-        it('flags a google.com referrer with no Sec-Fetch-Site header', () => {
+        it('flags a google.com referrer with no Sec-Fetch-Site header (curl-style)', () => {
             expect(classifyTrafficRequest({
                 userAgent: CHROME_UA,
                 path: '/',
@@ -205,7 +205,41 @@ describe('classifyTrafficRequest', () => {
             })).toBe('scanner');
         });
 
-        it('accepts a google.com referrer with Sec-Fetch-Site present', () => {
+        // The real-world spoof: bots forge a google.com Referer but their
+        // navigation is not a cross-site click, so they send Sec-Fetch-Site:
+        // none (or same-origin/same-site). A genuine search click is always
+        // cross-site, so any non-cross-site value contradicts the referer.
+        it('flags a google.com referrer with Sec-Fetch-Site: none', () => {
+            expect(classifyTrafficRequest({
+                userAgent: CHROME_UA,
+                path: '/',
+                referer: 'https://www.google.com/',
+                secFetchSite: 'none'
+            })).toBe('scanner');
+        });
+
+        it.each(['same-origin', 'same-site'])(
+            'flags a google.com referrer with contradictory Sec-Fetch-Site: %s',
+            (site) => {
+                expect(classifyTrafficRequest({
+                    userAgent: CHROME_UA,
+                    path: '/',
+                    referer: 'https://www.google.com/',
+                    secFetchSite: site
+                })).toBe('scanner');
+            }
+        );
+
+        it('normalizes case and whitespace before the cross-site check', () => {
+            expect(classifyTrafficRequest({
+                userAgent: CHROME_UA,
+                path: '/',
+                referer: 'https://www.google.com/',
+                secFetchSite: '  NONE '
+            })).toBe('scanner');
+        });
+
+        it('accepts a genuine google.com click carrying Sec-Fetch-Site: cross-site', () => {
             expect(classifyTrafficRequest({
                 userAgent: CHROME_UA,
                 path: '/',
@@ -214,12 +248,21 @@ describe('classifyTrafficRequest', () => {
             })).toBe('human');
         });
 
-        it('does not flag non-search referrers lacking Sec-Fetch headers', () => {
+        it('accepts cross-site regardless of header casing', () => {
+            expect(classifyTrafficRequest({
+                userAgent: CHROME_UA,
+                path: '/',
+                referer: 'https://www.google.com/',
+                secFetchSite: 'Cross-Site'
+            })).toBe('human');
+        });
+
+        it('does not flag non-search referrers even with a non-cross-site Sec-Fetch-Site', () => {
             expect(classifyTrafficRequest({
                 userAgent: CHROME_UA,
                 path: '/',
                 referer: 'https://someblog.example.com/post',
-                secFetchSite: null
+                secFetchSite: 'none'
             })).toBe('human');
         });
     });
