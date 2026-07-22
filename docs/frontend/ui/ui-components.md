@@ -23,6 +23,7 @@ Source: [components/layout/](../../../src/frontend/components/layout/). Export b
 | `<Section>` | Content section with internal `gap` spacing | [Section](../../../src/frontend/components/layout/Section/) |
 | `<MainHeader>` | Site header: database-driven `MenuNav`, logo, wallet/theme controls (server component) | [MainHeader](../../../src/frontend/components/layout/MainHeader/) |
 | `MenuNavSSR` / `MenuNavClient` | SSR-first navigation fed by the backend Menu module; hydrates into a client menu with hamburger support. `MenuNavClient` (submenu mode) is also the **required** renderer for a core/module admin page's in-page tab row — see [Submenu Pattern](../../../src/backend/modules/menu/README.md#submenu-pattern-namespaced-tab-rows) | [MenuNav](../../../src/frontend/components/layout/MenuNav/) |
+| `<SubMenu>` | Plugin-facing wrapper over `MenuNavClient`: a menu-namespace-backed in-page tab strip. `onSelect` drives in-page tab state and suppresses navigation; omit it for ordinary nav links. Exposed to plugins as `context.layout.SubMenu` | [SubMenu](../../../src/frontend/components/layout/MenuNav/SubMenu.tsx) |
 | `<BlockTicker>` | Compact real-time block ticker; follows SSR + Live Updates with Redux hydration | [BlockTicker](../../../src/frontend/components/layout/BlockTicker/) |
 
 See [ui.md](./ui.md) and [frontend.md](../frontend.md#component-first-layout-architecture) for the decision hierarchy (layout components > utility classes > raw divs).
@@ -33,6 +34,7 @@ Source: [components/ui/](../../../src/frontend/components/ui/). Each folder expo
 
 | Component | Purpose | Key Props | Source |
 |-----------|---------|-----------|--------|
+| `<AccountPicker>` | Searchable Better Auth account selector (by name/email); self-contained — queries the admin account-search endpoint itself. Admin-gated, admin surfaces only | `value` (account id or null), `onChange`, `disabled`, `placeholder` | [AccountPicker](../../../src/frontend/components/ui/AccountPicker/) |
 | `<Badge>` | Inline status/label pill | `tone="neutral\|info\|success\|warning\|danger"`, `showLiveIndicator` | [Badge](../../../src/frontend/components/ui/Badge/) |
 | `<Button>` | Primary interactive button with text label | `variant="primary\|secondary\|ghost\|danger\|warning"`, `size="xs\|sm\|md\|lg"`, `icon`, `loading` | [Button](../../../src/frontend/components/ui/Button/) |
 | `<Card>` | Content surface with padding, elevation, and tone. Padding never shrinks by breakpoint — pick the step the surface needs | `padding="xs\|sm\|md\|lg"`, `elevated`, `tone`, `noBackgroundImage` | [Card](../../../src/frontend/components/ui/Card/) |
