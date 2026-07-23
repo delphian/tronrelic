@@ -23,7 +23,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page, PageHeader } from '../../../../components/layout';
+import { Page } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { MenuNavClient } from '../../../../components/layout/MenuNav/MenuNavClient';
 import { getSocket } from '../../../../lib/socketClient';
@@ -160,8 +160,6 @@ export function AiToolsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
 
     return (
         <Page>
-            <PageHeader title="AI Tools" subtitle="Govern every tool an AI agent can invoke — registry, activity, approvals, and per-tool policy." />
-
             {pending > 0 && (
                 <div className={styles.summary}>
                     <Badge tone="warning">{pending} pending approval{pending === 1 ? '' : 's'}</Badge>
