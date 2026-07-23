@@ -24,17 +24,22 @@ import styles from '../page.module.scss';
 /**
  * A single tool's registry row.
  *
- * @param props.tool - The tool to render (enabled, capability, name, description, provider).
+ * @param props.tool - The tool to render (enabled, capability, name, description).
  * @param props.hasOverride - Whether the tool carries a saved policy override; drives the "override" badge.
  * @param props.busy - Whether an enable toggle for this tool is in flight, disabling the switch.
+ * @param props.indented - Indents the row's leading cell so it nests visually under its
+ *                         provider-section header. The registry lists tools grouped by
+ *                         provider, so the provider is named once on the section header
+ *                         rather than repeated per row.
  * @param props.onToggle - Enable/disable handler the parent owns (reloads and re-checks the trifecta).
  * @param props.onSelect - Opens the detail slide-over for this tool.
  * @returns The table row.
  */
-export function RegistryToolRow({ tool, hasOverride, busy, onToggle, onSelect }: {
+export function RegistryToolRow({ tool, hasOverride, busy, indented = false, onToggle, onSelect }: {
     tool: IAiToolInfo;
     hasOverride: boolean;
     busy: boolean;
+    indented?: boolean;
     onToggle: (name: string, enabled: boolean) => void;
     onSelect: (tool: IAiToolInfo) => void;
 }) {
@@ -50,7 +55,7 @@ export function RegistryToolRow({ tool, hasOverride, busy, onToggle, onSelect }:
 
     return (
         <Tr className={styles.tool_row} onClick={() => onSelect(tool)}>
-            <Td onClick={stopCellClick}>
+            <Td onClick={stopCellClick} className={indented ? styles.tool_indent : undefined}>
                 <Switch
                     on={tool.enabled}
                     onChange={(next) => onToggle(tool.name, next)}
@@ -72,7 +77,6 @@ export function RegistryToolRow({ tool, hasOverride, busy, onToggle, onSelect }:
                 </div>
             </Td>
             <Td><span className={styles.tool_teaser}>{tool.description}</span></Td>
-            <Td muted>{tool.provider}</Td>
         </Tr>
     );
 }

@@ -319,6 +319,37 @@
     cursor: pointer;
 }
 
+/* Per-provider section header row: names the registering plugin/module once for
+ * the tools grouped beneath it, so the provider is not repeated per row. Left
+ * aligned; a muted fill sets it apart from the tool rows it heads. */
+.provider_group_row {
+    background: var(--color-surface-muted);
+}
+
+.provider_group_cell {
+    display: flex;
+    align-items: baseline;
+    gap: var(--gap-sm);
+}
+
+.provider_group_name {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.provider_group_count {
+    font-size: var(--font-size-caption);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+    color: var(--color-text-subtle);
+}
+
+/* Slight indent on a tool row's leading cell so its tools nest visually under the
+ * provider header above them. */
+.tool_indent {
+    padding-left: var(--gap-xl);
+}
+
 /* Tool name rendered as a bare button so it is keyboard-focusable and opens the
  * slide-over without an extra control competing on the row. */
 .tool_name_button {
