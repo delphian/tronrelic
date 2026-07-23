@@ -13,39 +13,18 @@
 
 /*
  * ===========================================================================
- * COLLAPSIBLE PANEL — header toggle + body (save row + prompt list).
+ * SAVED-PROMPTS PANEL — the shared CollapsibleSection carries the disclosure
+ * (header toggle, chevron, `aria-expanded`, section chrome, and the body wrapper);
+ * only the header's leading icon and count badge remain panel-specific.
  * ===========================================================================
  */
-.panel_card {
-    container-type: inline-size;
-    container-name: saved-prompts;
-    padding: 0;
-    overflow: hidden;
-}
 
-.panel_toggle {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-xs);
-    width: 100%;
-    padding: var(--padding-sm) var(--card-padding-sm);
-    background: var(--color-surface-muted);
-    border: none;
-    color: var(--color-text);
-    font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-
-    &:focus-visible {
-        outline: var(--focus-outline-width) solid var(--focus-outline-color);
-        outline-offset: calc(-1 * var(--focus-outline-width));
-    }
-}
-
+/* Bookmark glyph passed as the section's leading `icon`. */
 .panel_icon {
     color: var(--color-primary);
 }
 
+/* Saved-prompt tally passed as the section's `summary`. */
 .panel_count {
     display: inline-flex;
     align-items: center;
@@ -57,19 +36,6 @@
     color: var(--color-primary);
     font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
-}
-
-.panel_chevron {
-    margin-left: auto;
-    color: var(--color-text-muted);
-}
-
-.panel_body {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
-    padding: var(--card-padding-sm);
-    border-top: var(--border-width-thin) solid var(--color-border);
 }
 
 /* Inline save row: name input + Save button to capture the composer text. */
@@ -272,9 +238,12 @@
 }
 
 /* Layout-only extras on top of the shared <Textarea> primitive: a taller resting
- * height and relaxed line spacing for prompt-body editing. */
+ * height and relaxed line spacing for prompt-body editing. The resting height is a
+ * component-local sizing token (no Layer 2 token fits a prompt-editor min-height),
+ * so a theme can retune it without reaching into this rule. */
 .textarea {
-    min-height: 8rem;
+    --saved-prompt-textarea-min-height: 8rem;
+    min-height: var(--saved-prompt-textarea-min-height);
     line-height: var(--line-height-relaxed);
 }
 

@@ -6,55 +6,31 @@
 
 @use '../../../breakpoints' as *;
 
-.container {
+/* Summary strip above the tab row: carries the live pending-approval tally a
+ * menu node cannot. Mirrors the account-history summary row. */
+.summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+/* The in-page tab row (menu module's Submenu Pattern, rendered by MenuNavClient). */
+.submenu {
+    margin-top: var(--gap-sm);
+}
+
+/* Active tab panel. Declares the `ai-tools-dashboard` container so the tables it
+ * hosts (Activity feed, invocation table) can reflow their columns to the panel's
+ * own width via `@container` — correct inside the slideout/modal contexts this
+ * dashboard renders in. */
+.content {
+    margin-top: var(--gap-md);
     display: flex;
     flex-direction: column;
-    gap: var(--gap-lg);
+    gap: var(--gap-md);
     container-type: inline-size;
     container-name: ai-tools-dashboard;
-}
-
-.header_row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--gap-md);
-    flex-wrap: wrap;
-}
-
-.tabs {
-    display: flex;
-    gap: var(--gap-sm);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-    flex-wrap: wrap;
-}
-
-.tab,
-.tab__active {
-    padding: var(--gap-sm) var(--gap-md);
-    background: none;
-    border: none;
-    border-bottom: var(--border-width-medium) solid transparent;
-    cursor: pointer;
-    font-size: var(--font-size-body-lg);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text-muted);
-    transition: color var(--transition-base), border-color var(--transition-base);
-}
-
-.tab:hover {
-    color: var(--color-text);
-}
-
-.tab__active {
-    color: var(--color-primary);
-    border-bottom-color: var(--color-primary);
-}
-
-.content {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-md);
 }
 
 /* Tool name + description stack inside a table cell. */
@@ -406,6 +382,14 @@
     white-space: nowrap;
     font-size: var(--font-size-body-sm);
     color: var(--color-text-muted);
+}
+
+/* Provider dropdown in the filter bar: the leading control that scopes the tool
+ * list to one registering plugin/module. Intrinsic width (sized to the selected
+ * option) suits the wrapping inline filter bar; it never grows to crowd the search
+ * field beside it. */
+.provider_select {
+    flex: 0 0 auto;
 }
 
 /* Search input in the filter bar: grow to fill, but keep a sane floor so it does

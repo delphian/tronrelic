@@ -258,6 +258,28 @@ export interface IAiToolsModuleDependencies {
 }
 
 /**
+ * Dedicated menu namespace for the /system/ai-tools in-page tab row. Kept out of
+ * `main` so the tabs never leak into the global nav chrome — only the page's own
+ * `MenuNavClient` reads this namespace (menu module's Submenu Pattern).
+ */
+const SUBMENU_NAMESPACE = 'ai-tools';
+
+/**
+ * The in-page tab row, declared as menu nodes rather than a hand-rolled button
+ * array so the row inherits per-user gating, ordering, and live `menu:update`
+ * refresh from the menu service. Each `url` carries a `?tab=` the client reads
+ * to drive the active panel; the route is identical across tabs. The order
+ * matches the historical shell (Query default, then Registry, Activity,
+ * Approvals) so the deep links and default panel are unchanged.
+ */
+const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
+    { label: 'Query', tab: 'query', icon: 'MessageSquare', order: 0 },
+    { label: 'Registry', tab: 'registry', icon: 'Boxes', order: 1 },
+    { label: 'Activity', tab: 'activity', icon: 'Activity', order: 2 },
+    { label: 'Approvals', tab: 'approvals', icon: 'ShieldCheck', order: 3 }
+];
+
+/**
  * The AI tool governance module.
  */
 export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
@@ -859,6 +881,27 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             parent: MAIN_SYSTEM_CONTAINER_ID,
             enabled: true
         });
+
+        // Register the in-page tab row as a namespaced menu (menu module's Submenu
+        // Pattern). The nodes are memory-only and live outside the System
+        // container, so the container's non-bypassable `requiresAdmin` force does
+        // not reach them — the module sets `requiresAdmin` per node itself. The
+        // page renders this namespace with MenuNavClient instead of hand-rolling
+        // a `<button>` tab strip, inheriting per-user gating, ordering, and live
+        // `menu:update` refresh.
+        for (const tab of SUBMENU_TABS) {
+            await this.menuService.create({
+                namespace: SUBMENU_NAMESPACE,
+                label: tab.label,
+                url: `/system/ai-tools?tab=${tab.tab}`,
+                icon: tab.icon,
+                order: tab.order,
+                parent: null,
+                enabled: true,
+                requiresAdmin: true
+            });
+        }
+        this.logger.info('AI tools submenu tab nodes registered');
 
         this.logger.info(
             { services: [AI_TOOLS_SERVICE, AI_TOOL_GOVERNOR_SERVICE, AI_PROVIDERS_SERVICE, PROMPT_VARIABLES_SERVICE] },

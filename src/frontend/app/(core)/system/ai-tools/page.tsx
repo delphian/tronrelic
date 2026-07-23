@@ -1,133 +1,69 @@
-'use client';
-
 /**
- * @fileoverview /system/ai-tools — the AI tool governance dashboard.
+ * @fileoverview /system/ai-tools server entry — the AI tool governance dashboard.
  *
- * Four tabs (Query — the default — then Registry, Activity, Approvals) plus a
- * live pending-approval count on the Approvals tab. When holds are already
- * waiting on first load the shell opens on Approvals instead of Query, so the
- * operator lands on the decision that needs them. Curation moved to its own
- * surface at /system/curation. Per-tool policy editing is not its own tab —
- * the Registry slide-over carries it — so this shell has no Policy tab.
- * Admin-gated by the /system layout; like the other system pages it is a client
- * component that fetches over the cookie-authenticated admin API. Governed events
- * arrive as WebSocket refetch signals — the data itself always comes from the
- * gated REST feed, never a global broadcast.
+ * Fetches the page's in-page tab row from the menu service SSR-first and hands it
+ * to the client shell. The tab row is a namespaced menu (menu module's Submenu
+ * Pattern), not a hand-rolled button array, so it inherits per-user gating,
+ * ordering, and live `menu:update` refresh. This server component fetches that
+ * namespace tree once — forwarding the admin's session cookie so the nodes'
+ * `requiresAdmin` gating resolves — exactly as `MenuNavSSR` feeds the global nav;
+ * the client shell then renders it with `MenuNavClient` and drives the active
+ * panel. Admin-gated by the /system layout.
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { Page, PageHeader } from '../../../../components/layout';
-import { Badge } from '../../../../components/ui/Badge';
-import { getSocket } from '../../../../lib/socketClient';
-import { getApprovalsCount } from '../../../../modules/ai-tools';
-import { RegistryTab } from './tabs/RegistryTab';
-import { ActivityTab } from './tabs/ActivityTab';
-import { ApprovalsTab } from './tabs/ApprovalsTab';
-import { QueryTab } from './tabs/QueryTab';
-import styles from './page.module.scss';
+import { cookies } from 'next/headers';
+import type { MenuNodeSerialized } from '@/shared';
+import { getServerSideApiUrl } from '../../../../lib/api-url';
+import { AiToolsAdminClient } from './AiToolsAdminClient';
 
-/** The dashboard tabs. */
-type TabId = 'registry' | 'query' | 'activity' | 'approvals';
-
-const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
-    { id: 'query', label: 'Query' },
-    { id: 'registry', label: 'Registry' },
-    { id: 'activity', label: 'Activity' },
-    { id: 'approvals', label: 'Approvals' }
-];
+/** Namespace holding the page's tab nodes; registered by AiToolsModule. */
+const SUBMENU_NAMESPACE = 'ai-tools';
 
 /**
- * Stable no-op for RegistryTab's required `onChanged`. The callback used to
- * re-check the trifecta banner after a registry change; with that banner
- * removed there is nothing left for the page to do, and a module-level constant
- * keeps RegistryTab's memoized callbacks from re-creating each render.
- */
-const noop = (): void => {};
-
-/**
- * AI tool governance dashboard page.
+ * Fetch the submenu namespace tree from the menu API, forwarding the visitor's
+ * cookies so the backend's per-user `requiresAdmin` gating resolves for the
+ * admin. On any failure it returns an empty tree, mirroring `MenuNavSSR`'s
+ * graceful degradation — the page still renders, just without the tab row until
+ * a live `menu:update` refetch repopulates it.
  *
- * @returns The page.
+ * @returns The namespace root nodes and the tree snapshot timestamp.
  */
-export default function AiToolsAdminPage() {
-    const [activeTab, setActiveTab] = useState<TabId>('query');
-    const [pending, setPending] = useState(0);
-    /** True once the initial pending fetch has auto-routed, so it fires at most once. */
-    const autoRoutedRef = useRef(false);
-    /** True once the operator picks a tab, so auto-routing never yanks them away. */
-    const userPickedRef = useRef(false);
-
-    const refreshPending = useCallback(async (): Promise<number | null> => {
-        try {
-            const count = await getApprovalsCount();
-            setPending(count);
-            return count;
-        } catch {
-            return null;
+async function fetchSubmenu(): Promise<{ roots: MenuNodeSerialized[]; generatedAt: string }> {
+    const fallback = { roots: [] as MenuNodeSerialized[], generatedAt: new Date().toISOString() };
+    try {
+        const cookieHeader = (await cookies()).toString();
+        const response = await fetch(`${getServerSideApiUrl()}/api/menu?namespace=${SUBMENU_NAMESPACE}`, {
+            cache: 'no-store',
+            headers: cookieHeader ? { Cookie: cookieHeader } : undefined
+        });
+        if (!response.ok) {
+            return fallback;
         }
-    }, []);
-
-    // On first load, if holds are already waiting, open on Approvals rather than
-    // the default Query — unless the operator has already chosen a tab.
-    useEffect(() => {
-        void (async () => {
-            const count = await refreshPending();
-            if (count && count > 0 && !autoRoutedRef.current && !userPickedRef.current) {
-                autoRoutedRef.current = true;
-                setActiveTab('approvals');
-            }
-        })();
-    }, [refreshPending]);
-
-    // Keep the pending-approvals badge live regardless of which tab is open.
-    useEffect(() => {
-        const socket = getSocket();
-        const onApprovals = () => { void refreshPending(); };
-        socket.on('ai-tools:approvals-changed', onApprovals);
-        return () => {
-            socket.off('ai-tools:approvals-changed', onApprovals);
+        const data = await response.json() as { tree?: { roots?: MenuNodeSerialized[]; generatedAt?: string } };
+        return {
+            roots: data.tree?.roots ?? [],
+            generatedAt: data.tree?.generatedAt ?? fallback.generatedAt
         };
-    }, [refreshPending]);
+    } catch {
+        return fallback;
+    }
+}
 
-    /**
-     * Select a tab and record that the operator drove the choice, so the initial
-     * auto-route to Approvals cannot later override their pick.
-     *
-     * @param id - The tab to open.
-     */
-    const pickTab = useCallback((id: TabId) => {
-        userPickedRef.current = true;
-        setActiveTab(id);
-    }, []);
-
-    return (
-        <Page>
-            <PageHeader title="AI Tools" subtitle="Govern every tool an AI agent can invoke — registry, activity, approvals, and per-tool policy." />
-            <div className={styles.container}>
-                <div className={styles.tabs} role="tablist" aria-label="AI tool governance sections">
-                    {TABS.map(tab => (
-                        <button
-                            key={tab.id}
-                            role="tab"
-                            aria-selected={activeTab === tab.id}
-                            className={activeTab === tab.id ? styles.tab__active : styles.tab}
-                            onClick={() => pickTab(tab.id)}
-                        >
-                            {tab.label}
-                            {tab.id === 'approvals' && pending > 0 && (
-                                <> <Badge tone="warning">{pending}</Badge></>
-                            )}
-                        </button>
-                    ))}
-                </div>
-
-                <div className={styles.content}>
-                    {activeTab === 'registry' && <RegistryTab onChanged={noop} />}
-                    {activeTab === 'query' && <QueryTab />}
-                    {activeTab === 'activity' && <ActivityTab />}
-                    {activeTab === 'approvals' && <ApprovalsTab onChanged={refreshPending} />}
-                </div>
-            </div>
-        </Page>
-    );
+/**
+ * AI tool governance dashboard page (server entry).
+ *
+ * @param props - Next.js route props.
+ * @param props.searchParams - The `?tab=` deep link (a Promise in Next.js 15+),
+ *   read SSR-first to seed the initially active panel so a refreshed, bookmarked,
+ *   or shared link opens on the selected tab instead of falling back to Query.
+ * @returns The client shell seeded with the SSR-fetched submenu tree.
+ */
+export default async function AiToolsAdminPage({
+    searchParams
+}: {
+    searchParams: Promise<{ tab?: string }>;
+}) {
+    const { roots, generatedAt } = await fetchSubmenu();
+    const { tab } = await searchParams;
+    return <AiToolsAdminClient submenuTree={roots} submenuGeneratedAt={generatedAt} initialTab={tab} />;
 }

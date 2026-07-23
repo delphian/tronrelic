@@ -19,8 +19,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
     Bookmark,
-    ChevronDown,
-    ChevronRight,
     RefreshCw,
     Play,
     Pencil,
@@ -30,11 +28,12 @@ import {
     AlertTriangle
 } from 'lucide-react';
 import type { ISavedPrompt, ISavedPromptTrigger } from '@/types';
-import { Card } from '../../../../../components/ui/Card';
+import { Stack } from '../../../../../components/layout';
 import { Button } from '../../../../../components/ui/Button';
 import { Input } from '../../../../../components/ui/Input';
 import { IconButton } from '../../../../../components/ui/IconButton';
 import { useModal } from '../../../../../components/ui/ModalProvider';
+import { CollapsibleSection } from '../components/CollapsibleSection';
 import { listSavedPrompts, saveSavedPrompt, deleteSavedPrompt } from '../../../../../modules/ai-tools';
 import { describeCron, formatRelativeTime, getMsUntilNextCron, formatTimeUntil } from './savedPromptCron';
 import { PromptEditModal } from './PromptEditModal';
@@ -460,52 +459,41 @@ export function SavedPromptsPanel({
     }
 
     return (
-        <Card className={styles.panel_card}>
-            <button
-                type="button"
-                className={styles.panel_toggle}
-                onClick={() => setOpen(!open)}
-                aria-expanded={open}
-                aria-label="Toggle saved prompts panel"
-            >
-                <Bookmark size={16} className={styles.panel_icon} />
-                <span>Saved Prompts</span>
-                {prompts.length > 0 && <span className={styles.panel_count}>{prompts.length}</span>}
-                {open
-                    ? <ChevronDown size={14} className={styles.panel_chevron} />
-                    : <ChevronRight size={14} className={styles.panel_chevron} />}
-            </button>
-
-            {open && (
-                <div className={styles.panel_body}>
-                    <div className={styles.save_row}>
-                        <Input
-                            type="text"
-                            value={saveName}
-                            onChange={(e) => setSaveName(e.target.value)}
-                            placeholder="Prompt name…"
-                            className={styles.name_input}
-                            aria-label="Prompt name"
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    void handleSave();
-                                }
-                            }}
-                        />
-                        <Button
-                            variant="primary"
-                            size="xs"
-                            onClick={() => { void handleSave(); }}
-                            disabled={!saveName.trim() || !currentPromptText.trim()}
-                            aria-label="Save current prompt"
-                        >
-                            Save
-                        </Button>
-                    </div>
-                    {renderBody()}
+        <CollapsibleSection
+            title="Saved Prompts"
+            icon={<Bookmark size={16} className={styles.panel_icon} />}
+            summary={prompts.length > 0 ? <span className={styles.panel_count}>{prompts.length}</span> : undefined}
+            open={open}
+            onToggle={setOpen}
+        >
+            <Stack gap="sm">
+                <div className={styles.save_row}>
+                    <Input
+                        type="text"
+                        value={saveName}
+                        onChange={(e) => setSaveName(e.target.value)}
+                        placeholder="Prompt name…"
+                        className={styles.name_input}
+                        aria-label="Prompt name"
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                void handleSave();
+                            }
+                        }}
+                    />
+                    <Button
+                        variant="primary"
+                        size="xs"
+                        onClick={() => { void handleSave(); }}
+                        disabled={!saveName.trim() || !currentPromptText.trim()}
+                        aria-label="Save current prompt"
+                    >
+                        Save
+                    </Button>
                 </div>
-            )}
-        </Card>
+                {renderBody()}
+            </Stack>
+        </CollapsibleSection>
     );
 }

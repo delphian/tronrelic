@@ -20,6 +20,7 @@ import { cn } from '../../../../../lib/cn';
 import { Stack } from '../../../../../components/layout';
 import { Table, Thead, Tbody, Tr, Th } from '../../../../../components/ui/Table';
 import { Input } from '../../../../../components/ui/Input';
+import { Select } from '../../../../../components/ui/Select';
 import { SlideOver } from '../../../../../components/ui/SlideOver';
 import { useToast } from '../../../../../components/ui/ToastProvider';
 import { listTools, listProviders, setToolEnabled, getPolicy, type IPolicyResponse } from '../../../../../modules/ai-tools';
@@ -55,6 +56,7 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
     const [error, setError] = useState<string | null>(null);
     const [busyName, setBusyName] = useState<string | null>(null);
     const [onlyOverrides, setOnlyOverrides] = useState(false);
+    const [providerFilter, setProviderFilter] = useState('');
     const [search, setSearch] = useState('');
     const [riskFilter, setRiskFilter] = useState<Set<RiskClass>>(new Set());
     const [selectedName, setSelectedName] = useState<string | null>(null);
@@ -122,6 +124,16 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
     const disabledCount = tools.filter(tool => !tool.enabled).length;
     const toolsSummary = `${tools.length} tools · ${disabledCount} disabled · ${overrideCount} overrides`;
 
+    // Tally tools per registering plugin/module so the provider dropdown can label
+    // each option with its count and stays sorted alphabetically. Counts span the
+    // full registry (not the other active filters) so the dropdown reads as a
+    // stable table of contents rather than shifting as the search narrows.
+    const providerCounts = new Map<string, number>();
+    for (const tool of tools) {
+        providerCounts.set(tool.provider, (providerCounts.get(tool.provider) ?? 0) + 1);
+    }
+    const providerOptions = [...providerCounts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
     // Apply the three filters, then sort: enabled tools first so the live set
     // an operator acts on stays together at the top and disabled tools sink to
     // the bottom; within each group, dangerous-first (then by name) so an audit
@@ -129,6 +141,7 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
     const query = search.trim().toLowerCase();
     const visibleTools = tools
         .filter(tool => !onlyOverrides || policy.overrides[tool.name] !== undefined)
+        .filter(tool => providerFilter === '' || tool.provider === providerFilter)
         .filter(tool => riskFilter.size === 0 || riskFilter.has(riskClassOf(tool.capability)))
         .filter(tool => query === ''
             || tool.name.toLowerCase().includes(query)
@@ -160,6 +173,17 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
                     : (
                         <Stack gap="sm">
                             <div className={styles.filters}>
+                                <Select
+                                    className={styles.provider_select}
+                                    aria-label="Filter by provider"
+                                    value={providerFilter}
+                                    onChange={(e) => setProviderFilter(e.target.value)}
+                                >
+                                    <option value="">All providers ({tools.length})</option>
+                                    {providerOptions.map(([id, count]) => (
+                                        <option key={id} value={id}>{id} ({count})</option>
+                                    ))}
+                                </Select>
                                 <Input
                                     className={styles.search_input}
                                     type="search"
