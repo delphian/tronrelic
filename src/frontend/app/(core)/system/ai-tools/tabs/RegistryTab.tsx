@@ -18,7 +18,7 @@ import { AlertCircle } from 'lucide-react';
 import type { IAiToolInfo, IAiProviderInfo } from '@/types';
 import { cn } from '../../../../../lib/cn';
 import { Stack } from '../../../../../components/layout';
-import { Table, Thead, Tbody, Tr, Th } from '../../../../../components/ui/Table';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { Input } from '../../../../../components/ui/Input';
 import { Select } from '../../../../../components/ui/Select';
 import { SlideOver } from '../../../../../components/ui/SlideOver';
@@ -134,26 +134,44 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
     }
     const providerOptions = [...providerCounts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
-    // Apply the three filters, then sort: enabled tools first so the live set
-    // an operator acts on stays together at the top and disabled tools sink to
-    // the bottom; within each group, dangerous-first (then by name) so an audit
-    // sweep still meets the high-stakes tools at the top of the active list.
+    // Apply the four filters, then group by registering provider. Grouping is the
+    // layout, not a toggle: each provider is its own always-open section (a header
+    // naming the provider, then its tools), so the registry reads as "who
+    // contributed what." The provider dropdown narrows to a single section; the
+    // search, risk, and overrides filters thin the tools inside each. Within a
+    // section tools keep the triage order — enabled first, then dangerous-first,
+    // then by name — and the sections sort alphabetically to match the dropdown.
     const query = search.trim().toLowerCase();
-    const visibleTools = tools
+    const filteredTools = tools
         .filter(tool => !onlyOverrides || policy.overrides[tool.name] !== undefined)
         .filter(tool => providerFilter === '' || tool.provider === providerFilter)
         .filter(tool => riskFilter.size === 0 || riskFilter.has(riskClassOf(tool.capability)))
         .filter(tool => query === ''
             || tool.name.toLowerCase().includes(query)
             || tool.description.toLowerCase().includes(query)
-            || tool.provider.toLowerCase().includes(query))
-        .sort((a, b) => {
-            if (a.enabled !== b.enabled) {
-                return a.enabled ? -1 : 1;
-            }
-            const byRisk = riskRankOf(b.capability) - riskRankOf(a.capability);
-            return byRisk !== 0 ? byRisk : a.name.localeCompare(b.name);
-        });
+            || tool.provider.toLowerCase().includes(query));
+
+    const toolsByProvider = new Map<string, IAiToolInfo[]>();
+    for (const tool of filteredTools) {
+        const existing = toolsByProvider.get(tool.provider);
+        if (existing) {
+            existing.push(tool);
+        } else {
+            toolsByProvider.set(tool.provider, [tool]);
+        }
+    }
+    const providerGroups = [...toolsByProvider.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([provider, groupTools]) => ({
+            provider,
+            tools: [...groupTools].sort((a, b) => {
+                if (a.enabled !== b.enabled) {
+                    return a.enabled ? -1 : 1;
+                }
+                const byRisk = riskRankOf(b.capability) - riskRankOf(a.capability);
+                return byRisk !== 0 ? byRisk : a.name.localeCompare(b.name);
+            })
+        }));
 
     // Derive the open tool from the live list so a reload (after toggle/policy
     // edit) flows fresh data into the panel rather than freezing a stale copy.
@@ -214,7 +232,7 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
                                     Only overrides
                                 </label>
                             </div>
-                            {visibleTools.length === 0
+                            {filteredTools.length === 0
                                 ? <div className={styles.placeholder}>No tools match the current filters.</div>
                                 : (
                                     <div className="table-scroll">
@@ -225,21 +243,31 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
                                                     <Th width="shrink">Risk</Th>
                                                     <Th>Tool</Th>
                                                     <Th width="expand">Description</Th>
-                                                    <Th width="shrink">Provider</Th>
                                                 </Tr>
                                             </Thead>
-                                            <Tbody>
-                                                {visibleTools.map(tool => (
-                                                    <RegistryToolRow
-                                                        key={tool.name}
-                                                        tool={tool}
-                                                        hasOverride={policy.overrides[tool.name] !== undefined}
-                                                        busy={busyName === tool.name}
-                                                        onToggle={handleToggle}
-                                                        onSelect={(selected) => setSelectedName(selected.name)}
-                                                    />
-                                                ))}
-                                            </Tbody>
+                                            {providerGroups.map(group => (
+                                                <Tbody key={group.provider}>
+                                                    <Tr className={styles.provider_group_row}>
+                                                        <Td colSpan={4} className={styles.provider_group_cell}>
+                                                            <span className={styles.provider_group_name}>{group.provider}</span>
+                                                            <span className={styles.provider_group_count}>
+                                                                {group.tools.length} tool{group.tools.length === 1 ? '' : 's'}
+                                                            </span>
+                                                        </Td>
+                                                    </Tr>
+                                                    {group.tools.map(tool => (
+                                                        <RegistryToolRow
+                                                            key={tool.name}
+                                                            tool={tool}
+                                                            indented
+                                                            hasOverride={policy.overrides[tool.name] !== undefined}
+                                                            busy={busyName === tool.name}
+                                                            onToggle={handleToggle}
+                                                            onSelect={(selected) => setSelectedName(selected.name)}
+                                                        />
+                                                    ))}
+                                                </Tbody>
+                                            ))}
                                         </Table>
                                     </div>
                                 )}
