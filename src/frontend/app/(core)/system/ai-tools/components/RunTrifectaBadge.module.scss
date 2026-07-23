@@ -30,10 +30,14 @@
     gap: var(--gap-xs);
 }
 
+/* Fixed label column so the three trifecta legs align their names. The width is a
+ * component-local sizing token (no Layer 2 token fits a label-column width) so a
+ * theme can retune it without editing this rule. */
 .leg_label {
+    --trifecta-leg-label-min-width: 9rem;
     font-size: var(--font-size-caption);
     color: var(--color-text-muted);
-    min-width: 9rem;
+    min-width: var(--trifecta-leg-label-min-width);
 }
 
 .leg_names {

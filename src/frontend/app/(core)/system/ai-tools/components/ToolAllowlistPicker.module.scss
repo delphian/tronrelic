@@ -57,13 +57,17 @@
 /* Bounded height so a long tool registry scrolls inside the picker instead of
  * pushing the modal's save button off-screen. */
 .list {
+    /* Cap the scroll list's height so a long tool set scrolls within the modal
+     * instead of pushing the save button off-screen. Component-local sizing token
+     * (no Layer 2 token fits a scroll-list cap) so a theme can retune it. */
+    --tool-allowlist-list-max-height: 14rem;
     display: flex;
     flex-direction: column;
     gap: var(--gap-2xs);
     list-style: none;
     margin: 0;
     padding: var(--padding-xs);
-    max-height: 14rem;
+    max-height: var(--tool-allowlist-list-max-height);
     overflow-y: auto;
     border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-sm);
