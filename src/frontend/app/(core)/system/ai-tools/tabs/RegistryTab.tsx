@@ -18,7 +18,7 @@ import { AlertCircle } from 'lucide-react';
 import type { IAiToolInfo, IAiProviderInfo } from '@/types';
 import { cn } from '../../../../../lib/cn';
 import { Stack } from '../../../../../components/layout';
-import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
+import { Table, Thead, Tbody, Tr, Th } from '../../../../../components/ui/Table';
 import { Input } from '../../../../../components/ui/Input';
 import { Select } from '../../../../../components/ui/Select';
 import { SlideOver } from '../../../../../components/ui/SlideOver';
@@ -248,12 +248,14 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
                                             {providerGroups.map(group => (
                                                 <Tbody key={group.provider}>
                                                     <Tr className={styles.provider_group_row}>
-                                                        <Td colSpan={4} className={styles.provider_group_cell}>
-                                                            <span className={styles.provider_group_name}>{group.provider}</span>
-                                                            <span className={styles.provider_group_count}>
-                                                                {group.tools.length} tool{group.tools.length === 1 ? '' : 's'}
-                                                            </span>
-                                                        </Td>
+                                                        <Th scope="rowgroup" colSpan={4}>
+                                                            <div className={styles.provider_group_cell}>
+                                                                <span className={styles.provider_group_name}>{group.provider}</span>
+                                                                <span className={styles.provider_group_count}>
+                                                                    {group.tools.length} tool{group.tools.length === 1 ? '' : 's'}
+                                                                </span>
+                                                            </div>
+                                                        </Th>
                                                     </Tr>
                                                     {group.tools.map(tool => (
                                                         <RegistryToolRow

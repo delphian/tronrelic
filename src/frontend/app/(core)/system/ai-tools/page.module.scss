@@ -326,10 +326,21 @@
     background: var(--color-surface-muted);
 }
 
+/* Flex wrapper INSIDE the spanning header cell — never on the `<th>`/`<td>` itself:
+ * a table cell whose display computes to flex loses `table-cell`, which drops the
+ * colSpan and collapses the header into the first (shrink) column. The header cell
+ * is a `<th scope="rowgroup">` (screen-reader association for the tools grouped in
+ * the tbody), so neutralize the `.th` typography (xs / uppercase / wide / medium)
+ * it would otherwise impose on this content; the name reads at body size in normal
+ * case, while the count span keeps its own caption/uppercase treatment. */
 .provider_group_cell {
     display: flex;
     align-items: baseline;
     gap: var(--gap-sm);
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-normal);
+    text-transform: none;
+    letter-spacing: normal;
 }
 
 .provider_group_name {
