@@ -52,6 +52,7 @@ function rowKey(item: { address: string; tag: string }): string {
 export function AddressTagsManager() {
     const [items, setItems] = useState<IAddressTagView[]>([]);
     const [search, setSearch] = useState('');
+    const [committedSearch, setCommittedSearch] = useState('');
     const [skip, setSkip] = useState(0);
     const [hasMore, setHasMore] = useState(false);
     const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -77,7 +78,10 @@ export function AddressTagsManager() {
 
     /**
      * Load one page of assignments for the current search/offset. Requests
-     * one extra row so "Load more" only shows when a next page exists.
+     * one extra row so "Load more" only shows when a next page exists. A fresh
+     * (non-append) load commits `nextSearch` so "Load more" paginates the query
+     * that produced the visible rows rather than the live draft input,
+     * preventing two unrelated result sets from being mixed.
      */
     const load = useCallback(async (nextSearch: string, nextSkip: number, append: boolean) => {
         try {
@@ -85,6 +89,9 @@ export function AddressTagsManager() {
             const visible = page.slice(0, PAGE_SIZE);
             setHasMore(page.length > PAGE_SIZE);
             setItems((current) => (append ? [...current, ...visible] : visible));
+            if (!append) {
+                setCommittedSearch(nextSearch);
+            }
         } catch (error) {
             notify('danger', 'Failed to load address tags', error);
         }
@@ -324,7 +331,7 @@ export function AddressTagsManager() {
                             onClick={() => {
                                 const nextSkip = skip + PAGE_SIZE;
                                 setSkip(nextSkip);
-                                void load(search, nextSkip, true);
+                                void load(committedSearch, nextSkip, true);
                             }}
                         >
                             Load more

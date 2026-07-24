@@ -318,7 +318,11 @@ export class AddressTagService implements IAddressTagService {
     }
 
     /**
-     * Enforce tag shape: non-empty trimmed text within the length ceiling.
+     * Enforce tag shape: non-empty trimmed text within the length ceiling, and
+     * comma-free. The read surface (`parseList` in the user controller) treats
+     * commas as the array delimiter in `?tags=x,y`, so a stored comma-bearing
+     * tag would be unretrievable by `/by-tag`; reject it at the write boundary
+     * — the single validation authority every write path flows through.
      *
      * @param tag - Raw caller input.
      * @returns The trimmed, validated tag.
@@ -327,6 +331,9 @@ export class AddressTagService implements IAddressTagService {
         const trimmed = String(tag ?? '').trim();
         if (trimmed.length === 0 || trimmed.length > MAX_TAG_LENGTH) {
             throw new Error(`Invalid tag: must be 1-${MAX_TAG_LENGTH} characters`);
+        }
+        if (trimmed.includes(',')) {
+            throw new Error('Invalid tag: commas are not allowed');
         }
         return trimmed;
     }
