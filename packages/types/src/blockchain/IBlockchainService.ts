@@ -73,8 +73,8 @@ export interface IActivatingTransaction {
  * transactions, and access timeseries data for charting.
  *
  * Most methods are DB-backed reads over already-synced data. The exception is
- * {@link getActivatingTransaction}, which performs one live, rate-limited
- * provider (TronGrid) lookup per call — still read-only, but slower and subject
+ * {@link getActivatingTransaction}, which performs up to two live, rate-limited
+ * provider (TronGrid) lookups per call — still read-only, but slower and subject
  * to the shared request throttle, so callers must not fan it out on a hot path.
  */
 export interface IBlockchainService {
@@ -129,18 +129,22 @@ export interface IBlockchainService {
 
     /**
      * Resolve the account that activated `base58Address` — the funder of its
-     * oldest on-chain transaction — in a single live provider call.
+     * oldest on-chain transaction — via a live provider lookup.
      *
      * Unlike the other methods here, this is not a DB read: it queries TronGrid
      * for the account's earliest transaction and returns its owner as the
-     * activator. It shares the platform's global TronGrid throttle, so a caller
-     * climbing an ancestry chain must do so sequentially and bound the depth —
-     * never fan this out across many addresses on a request or hot path.
+     * activator. When a candidate edge is found it makes a second lookup to
+     * validate the account's creation time against that transaction, so a call
+     * costs up to two requests. Both share the platform's global TronGrid
+     * throttle, so a caller climbing an ancestry chain must do so sequentially and
+     * bound the depth — never fan this out across many addresses on a hot path.
      *
      * Returns null when the account has no transactions, or when the activator
-     * cannot be resolved from the top-level transaction feed (e.g. an account
-     * created by a contract's internal transfer) — the caller should treat null
-     * as "origin reached or unresolvable" and stop climbing.
+     * cannot be resolved from the top-level transaction feed — including an
+     * account created by a contract's internal transfer, whose real activation is
+     * invisible to this feed and whose oldest visible transaction is a later,
+     * unrelated transfer. The caller should treat null as "origin reached or
+     * unresolvable" and stop climbing.
      *
      * @param base58Address - Account whose activator to resolve, base58 format.
      * @returns The activating edge, or null when unresolved.

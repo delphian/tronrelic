@@ -576,17 +576,19 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
-     * Resolve the account that activated `base58Address` via a single live
-     * TronGrid lookup.
+     * Resolve the account that activated `base58Address` via live TronGrid
+     * lookups.
      *
      * This is the one non-DB read on the service: it delegates to the internal
      * TronGrid client so plugins get activation-ancestry resolution without a
      * direct dependency on the (unpublished) client. The heavy lifting —
-     * fetching the account's oldest transaction, decoding the owner to base58,
-     * and the null semantics for an unresolvable activator — lives in the client;
-     * this method only exposes it through the published `IBlockchainService`
-     * contract. Because every call is one throttled TronGrid request, a caller
-     * climbing a chain must stay sequential and bound its depth.
+     * fetching the account's oldest transaction, validating it against the
+     * account's creation time so an internally-activated account yields null
+     * rather than a false edge, and decoding the owner to base58 — lives in the
+     * client; this method only exposes it through the published
+     * `IBlockchainService` contract. Because a call costs up to two throttled
+     * TronGrid requests, a caller climbing a chain must stay sequential and bound
+     * its depth.
      *
      * @param base58Address - Account whose activator to resolve, base58 format.
      * @returns The activating edge, or null when the account has no transactions
