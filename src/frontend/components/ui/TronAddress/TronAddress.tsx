@@ -10,15 +10,18 @@
  *
  * The chip renders synchronously from its `address` prop (no async, no data
  * fetch), so it is SSR-first by construction: the truncated text is in the
- * server HTML and only the copy button and tools popover are user-triggered
- * after hydration. It is a `'use client'` component purely because those
- * affordances need event handlers and a click-outside listener.
+ * server HTML and only the copy, tools, and explorer affordances are
+ * user-triggered after hydration. All three render as bare icons — the copy
+ * control is a `<TrCopyIcon>` rather than a `<CopyButton>` so it carries no
+ * more visual weight than the wrench and out-link beside it. It is a
+ * `'use client'` component purely because those affordances need event handlers
+ * and a click-outside listener.
  */
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ExternalLink, Wrench } from 'lucide-react';
-import { CopyButton } from '../CopyButton';
+import { TrCopyIcon } from '../TrCopyIcon';
 import { IconButton } from '../IconButton';
 import { Tooltip } from '../Tooltip';
 import { FORWARDABLE_TOOLS, buildToolForwardUrl } from './forwardableTools';
@@ -195,10 +198,14 @@ export function TronAddress({
             </Tooltip>
 
             {copy && (
-                <CopyButton
+                // Icon-only, matching the wrench and out-link beside it: a
+                // bordered button here made copy read as the chip's primary
+                // action rather than one of three equal affordances.
+                <TrCopyIcon
                     value={address}
                     size="xs"
                     aria-label="Copy address"
+                    copiedLabel="Address copied"
                     className={styles.action}
                 />
             )}
