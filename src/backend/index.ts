@@ -45,6 +45,7 @@ import { AccountHistoryModule } from './modules/account-history/index.js';
 import { PriceHistoryModule } from './modules/price-history/index.js';
 import { ProvidersModule } from './modules/providers/index.js';
 import { ValuationModule } from './modules/valuation/index.js';
+import { AddressTagsModule } from './modules/address-tags/index.js';
 import { ToolsModule } from './modules/tools/index.js';
 import { AiToolsModule } from './modules/ai-tools/index.js';
 import { CurationModule } from './modules/curation/index.js';
@@ -248,6 +249,7 @@ interface BootstrapContext {
         priceHistory: PriceHistoryModule;
         providers: ProvidersModule;
         valuation: ValuationModule;
+        addressTags: AddressTagsModule;
         tools: ToolsModule;
         notifications: NotificationsModule;
         curation: CurationModule;
@@ -399,6 +401,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const priceHistoryModule = new PriceHistoryModule();
     const providersModule = new ProvidersModule();
     const valuationModule = new ValuationModule();
+    const addressTagsModule = new AddressTagsModule();
     const toolsModule = new ToolsModule();
     const notificationsModule = new NotificationsModule();
     const curationModule = new CurationModule();
@@ -428,6 +431,10 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // into portfolio summaries. Owns no storage; resolves its data services lazily
     // from the registry, so it only needs the registry at init.
     await valuationModule.init({ serviceRegistry, app });
+    // Address-tags: central CRUD authority for text tags on TRON wallet
+    // addresses, published as 'address-tags'. Owns its own Mongo collection;
+    // no cross-module init ordering constraints.
+    await addressTagsModule.init({ database: coreDatabase, serviceRegistry, menuService, app });
     await toolsModule.init(sharedDeps);
     // Notifications module: builds the category/channel registries, preference,
     // policy, and audit stores. Inits before ai-tools so its run() (which
@@ -487,6 +494,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             priceHistory: priceHistoryModule,
             providers: providersModule,
             valuation: valuationModule,
+            addressTags: addressTagsModule,
             tools: toolsModule,
             notifications: notificationsModule,
             curation: curationModule,
@@ -551,6 +559,9 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     // Valuation publishes `'valuation'`; runs after the services it consumes are
     // published, though it also resolves them lazily at call time.
     await modules.valuation.run();
+    // Address-tags publishes 'address-tags' and mounts its gated routers; no
+    // ordering constraint beyond menu having run (menu runs early above).
+    await modules.addressTags.run();
     await modules.scheduler.run();
 
     // Mount the hook-system introspection endpoint. The route is
