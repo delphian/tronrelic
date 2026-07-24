@@ -18,6 +18,7 @@ import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
+import { TronAddress } from '../../../../components/ui/TronAddress';
 import { checkApprovals } from '../../api/client';
 import type { IApprovalCheckResult } from '../../types';
 import styles from './ApprovalChecker.module.scss';
@@ -146,9 +147,7 @@ export function ApprovalChecker() {
                                                 </span>
                                             </Td>
                                             <Td>
-                                                <code className={styles.address_cell}>
-                                                    {approval.spenderAddress}
-                                                </code>
+                                                <TronAddress address={approval.spenderAddress} />
                                             </Td>
                                             <Td>{approval.allowanceFormatted}</Td>
                                             <Td>

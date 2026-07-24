@@ -81,6 +81,18 @@
     box-shadow: var(--shadow-md);
 }
 
+/*
+ * Flip variant: open the menu above the trigger instead of below. Applied when
+ * the trigger sits near the bottom of the viewport so the menu opens into
+ * visible space rather than a scroll container's clipped overflow.
+ */
+.menu_top {
+    top: auto;
+    bottom: 100%;
+    margin-top: 0;
+    margin-bottom: var(--gap-2xs);
+}
+
 /* Individual forward target link. */
 .menu_item {
     display: block;

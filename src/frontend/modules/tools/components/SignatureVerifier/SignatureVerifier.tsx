@@ -14,6 +14,7 @@ import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
+import { TronAddress } from '../../../../components/ui/TronAddress';
 import { verifySignature } from '../../api/client';
 import styles from './SignatureVerifier.module.scss';
 
@@ -138,7 +139,7 @@ export function SignatureVerifier() {
                                     {verified ? 'Signature Valid' : 'Signature Invalid'}
                                 </span>
                                 {normalizedWallet && (
-                                    <code className={styles.result__wallet}>{normalizedWallet}</code>
+                                    <TronAddress address={normalizedWallet} className={styles.result__wallet} />
                                 )}
                             </div>
                         </div>

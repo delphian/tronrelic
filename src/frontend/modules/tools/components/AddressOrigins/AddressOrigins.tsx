@@ -22,6 +22,7 @@ import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
+import { TronAddress } from '../../../../components/ui/TronAddress';
 import { createAddressOriginsStream } from '../../api/client';
 import type { IOriginHop, IOriginLadder } from '../../types';
 import styles from './AddressOrigins.module.scss';
@@ -32,18 +33,7 @@ const MAX_ADDRESSES = 10;
 /** Strict TRON base58check address, used only to enable the submit button. */
 const TRON_ADDRESS_PATTERN = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 
-const TRONSCAN_ADDRESS_URL = 'https://tronscan.org/#/address/';
 const TRONSCAN_TX_URL = 'https://tronscan.org/#/transaction/';
-
-/**
- * Shorten an address to `Tabcd…wxyz` so ladders stay compact.
- *
- * @param address - Full base58 address.
- * @returns The shortened label.
- */
-function truncateAddress(address: string): string {
-    return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
-}
 
 /**
  * Address Origins tool.
@@ -290,9 +280,7 @@ export function AddressOrigins() {
                                 <ol className={styles.ladder}>
                                     <li className={styles.node}>
                                         <span className={styles.tag}>wallet</span>
-                                        <a className={styles.addr} href={`${TRONSCAN_ADDRESS_URL}${ladder.address}`} target="_blank" rel="noopener noreferrer" title={ladder.address}>
-                                            {truncateAddress(ladder.address)}
-                                        </a>
+                                        <TronAddress address={ladder.address} tools={false} />
                                     </li>
 
                                     {ladder.hops.map((hop, index) => {
@@ -300,9 +288,7 @@ export function AddressOrigins() {
                                         return (
                                             <li key={`${hop.txId}-${index}`} className={`${styles.node} ${isShared ? styles.node_shared : ''}`}>
                                                 <CornerRightUp size={14} className={styles.node_arrow} aria-hidden="true" />
-                                                <a className={styles.addr} href={`${TRONSCAN_ADDRESS_URL}${hop.activatorAddress}`} target="_blank" rel="noopener noreferrer" title={hop.activatorAddress}>
-                                                    {truncateAddress(hop.activatorAddress)}
-                                                </a>
+                                                <TronAddress address={hop.activatorAddress} tools={false} />
                                                 {isShared && (
                                                     <span className={styles.shared_badge} title="Shared across wallets">
                                                         <Users size={14} /> shared
