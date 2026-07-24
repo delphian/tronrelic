@@ -5,11 +5,17 @@
  * rename, and delete over the admin API client.
  *
  * A thin UI over the central AddressTagService — every action maps 1:1 to a
- * service method through `/api/admin/system/address-tags/*`. Loading states
- * appear only for user-triggered actions and search (permitted by the SSR +
- * Live Updates rules for admin action surfaces); the surrounding /system
- * layout gates access for UX while the backend `requireAdmin` middleware is
- * the trust boundary.
+ * service method through `/api/admin/system/address-tags/*`. Like every other
+ * /system manager, it fetches its own admin endpoint on mount rather than
+ * SSR-seeding: the SSR + Live Updates mandate covers public-facing content,
+ * and admin surfaces are exempt by the /system dashboard convention. The
+ * surrounding /system layout gates access for UX while the backend
+ * `requireAdmin` middleware is the trust boundary.
+ *
+ * Pagination deliberately derives its offset from the number of rows already
+ * on screen instead of a running counter. A counter drifts the moment a row is
+ * deleted locally, silently skipping as many server rows as were removed; the
+ * fetched prefix length cannot drift because only fetched rows are deletable.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -53,7 +59,7 @@ export function AddressTagsManager() {
     const [items, setItems] = useState<IAddressTagView[]>([]);
     const [search, setSearch] = useState('');
     const [committedSearch, setCommittedSearch] = useState('');
-    const [skip, setSkip] = useState(0);
+    const [loading, setLoading] = useState(true);
     const [hasMore, setHasMore] = useState(false);
     const [busyKey, setBusyKey] = useState<string | null>(null);
     const [editKey, setEditKey] = useState<string | null>(null);
@@ -81,7 +87,19 @@ export function AddressTagsManager() {
      * one extra row so "Load more" only shows when a next page exists. A fresh
      * (non-append) load commits `nextSearch` so "Load more" paginates the query
      * that produced the visible rows rather than the live draft input,
-     * preventing two unrelated result sets from being mixed.
+     * preventing two unrelated result sets from being mixed. Clearing `loading`
+     * in `finally` retires the first-fetch placeholder even when the request
+     * fails, so a failed initial load falls through to the empty state rather
+     * than spinning forever.
+     *
+     * @param nextSearch - Query to run; committed as the pagination anchor on a
+     *                     non-append load so later pages cannot drift onto a
+     *                     different, unsubmitted filter.
+     * @param nextSkip - Offset to request. Callers derive this from
+     *                   `items.length` rather than a running counter so deleted
+     *                   rows cannot desynchronise the next page.
+     * @param append - True to extend the visible page ("Load more"), false to
+     *                 replace it (initial load, search, post-mutation refresh).
      */
     const load = useCallback(async (nextSearch: string, nextSkip: number, append: boolean) => {
         try {
@@ -94,6 +112,8 @@ export function AddressTagsManager() {
             }
         } catch (error) {
             notify('danger', 'Failed to load address tags', error);
+        } finally {
+            setLoading(false);
         }
     }, [notify]);
 
@@ -105,12 +125,14 @@ export function AddressTagsManager() {
      * Re-run the search from offset zero — triggered by the search form.
      */
     const runSearch = useCallback(async () => {
-        setSkip(0);
         await load(search, 0, false);
     }, [load, search]);
 
     /**
      * Create assignments from the form: one address, comma-separated tags.
+     * Refreshes from the committed query rather than the live input so adding a
+     * tag cannot silently swap the table onto a filter the admin never
+     * submitted — which would hide the row they just created.
      */
     const handleCreate = useCallback(async () => {
         const address = newAddress.trim();
@@ -125,17 +147,18 @@ export function AddressTagsManager() {
             notify('success', `Added ${tags.length} tag${tags.length > 1 ? 's' : ''}`);
             setNewAddress('');
             setNewTags('');
-            setSkip(0);
-            await load(search, 0, false);
+            await load(committedSearch, 0, false);
         } catch (error) {
             notify('danger', 'Failed to create tags', error);
         } finally {
             setCreating(false);
         }
-    }, [load, newAddress, newTags, notify, search]);
+    }, [committedSearch, load, newAddress, newTags, notify]);
 
     /**
-     * Commit an inline rename for the row being edited.
+     * Commit an inline rename for the row being edited. Refreshes from the
+     * committed query for the same reason as creation: the renamed row must
+     * stay visible under the filter the admin is actually looking at.
      */
     const handleRename = useCallback(async (item: IAddressTagView) => {
         const newTag = editValue.trim();
@@ -148,14 +171,13 @@ export function AddressTagsManager() {
             await updateTags([{ address: item.address, oldTag: item.tag, newTag }]);
             notify('success', `Renamed '${item.tag}' to '${newTag}'`);
             setEditKey(null);
-            setSkip(0);
-            await load(search, 0, false);
+            await load(committedSearch, 0, false);
         } catch (error) {
             notify('danger', 'Failed to rename tag', error);
         } finally {
             setBusyKey(null);
         }
-    }, [editValue, load, notify, search]);
+    }, [committedSearch, editValue, load, notify]);
 
     /**
      * Delete one assignment after modal confirmation.
@@ -233,7 +255,9 @@ export function AddressTagsManager() {
                     </form>
 
                     {items.length === 0 ? (
-                        <div className={styles.placeholder}>No address tags found.</div>
+                        <div className={styles.placeholder}>
+                            {loading ? 'Loading address tags…' : 'No address tags found.'}
+                        </div>
                     ) : (
                         <Table className={styles.tags_table}>
                             <Thead>
@@ -328,11 +352,7 @@ export function AddressTagsManager() {
                     {hasMore && (
                         <Button
                             variant="secondary"
-                            onClick={() => {
-                                const nextSkip = skip + PAGE_SIZE;
-                                setSkip(nextSkip);
-                                void load(committedSearch, nextSkip, true);
-                            }}
+                            onClick={() => void load(committedSearch, items.length, true)}
                         >
                             Load more
                         </Button>
