@@ -17,9 +17,7 @@ import type {
     IActivationAncestry,
     IActivationClimbOptions
 } from '@/types';
-
-/** Strict TRON base58check address: `T` + 33 base58 characters. */
-const TRON_ADDRESS_PATTERN = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
+import type { AddressService } from './address.service.js';
 
 /** Anonymous callers may submit a single address. */
 export const ANONYMOUS_MAX_ADDRESSES = 1;
@@ -60,8 +58,15 @@ export class AddressOriginsService {
      * @param serviceRegistry - Registry the `'blockchain'` service is published on;
      *   resolved lazily per request rather than cached at construction so the tool
      *   always uses the live singleton regardless of module init ordering.
+     * @param addressService - Validates each candidate with a full Base58Check
+     *   round trip, so a valid-alphabet typo (which a length/charset regex would
+     *   wave through) is rejected before it becomes a bogus TronGrid lookup that
+     *   would surface a nonexistent address as its own origin.
      */
-    public constructor(private readonly serviceRegistry: IServiceRegistry) {}
+    public constructor(
+        private readonly serviceRegistry: IServiceRegistry,
+        private readonly addressService: AddressService
+    ) {}
 
     /**
      * Turn raw, untrusted input into a safe execution plan for the caller's tier.
@@ -81,7 +86,11 @@ export class AddressOriginsService {
         const valid: string[] = [];
         for (const candidate of rawAddresses) {
             const address = candidate.trim();
-            if (TRON_ADDRESS_PATTERN.test(address) && !seen.has(address)) {
+            // Full Base58Check validation, not a charset regex — a mistyped address
+            // that stays in the base58 alphabet must be rejected here, or it climbs
+            // as a nonexistent account and renders as a spurious origin.
+            const validation = this.addressService.validateAddress(address);
+            if (validation.valid && validation.format === 'base58' && !seen.has(address)) {
                 seen.add(address);
                 valid.push(address);
             }

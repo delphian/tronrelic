@@ -135,8 +135,9 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
         const approvalService = new ApprovalService(TronGridClient.getInstance(), dependencies.cacheService);
         const timestampService = new TimestampService(TronGridClient.getInstance(), dependencies.cacheService);
         // Resolves the 'blockchain' service lazily per request, so no init-order
-        // dependency on it being registered before the tools module.
-        const addressOriginsService = new AddressOriginsService(dependencies.serviceRegistry);
+        // dependency on it being registered before the tools module. Takes the
+        // address service to Base58Check-validate inputs before they climb.
+        const addressOriginsService = new AddressOriginsService(dependencies.serviceRegistry, addressService);
 
         this.controller = new ToolsController(
             addressService, calculatorService, signatureService,
