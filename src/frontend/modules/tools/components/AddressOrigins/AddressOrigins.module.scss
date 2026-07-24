@@ -1,0 +1,202 @@
+/*
+ * Address Origins tool styles.
+ *
+ * Layout structure comes from the shared layout components; this module styles
+ * the input rows, the per-wallet activation ladders, and the shared-ancestor
+ * highlight. Responsive column count is driven by a container query so the tool
+ * adapts whether it sits full-page or inside a narrower shell.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+.container {
+    container-type: inline-size;
+    container-name: address-origins;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+}
+
+.label {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.input_row {
+    display: flex;
+    gap: var(--gap-sm);
+    align-items: center;
+}
+
+.actions {
+    display: flex;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.error {
+    color: var(--color-danger);
+    font-size: var(--font-size-body-sm);
+    margin: 0;
+}
+
+.upsell,
+.legend {
+    display: flex;
+    gap: var(--gap-sm);
+    align-items: center;
+    padding: var(--padding-sm);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+
+    p {
+        margin: 0;
+    }
+}
+
+.ladders {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--gap-md);
+}
+
+@container address-origins (min-width: #{$breakpoint-mobile-md}) {
+    .ladders {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@container address-origins (min-width: #{$breakpoint-tablet}) {
+    .ladders {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+.ladder_card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.ladder {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.node {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+    padding: var(--padding-2xs) var(--padding-xs);
+    border-radius: var(--radius-xs);
+    border: var(--border-width-thin) solid transparent;
+    font-size: var(--font-size-body-sm);
+}
+
+.node_shared {
+    border-color: var(--color-primary);
+    background: var(--color-primary-alpha-10);
+}
+
+.node_arrow {
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+}
+
+.tag {
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    letter-spacing: var(--letter-spacing-wide);
+}
+
+.addr {
+    font-family: var(--font-mono);
+    color: var(--color-primary);
+    text-decoration: none;
+
+    &:hover {
+        text-decoration: underline;
+    }
+}
+
+.shared_badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-primary);
+}
+
+.contract_type {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.tx_link {
+    display: inline-flex;
+    align-items: center;
+    color: var(--color-text-muted);
+
+    &:hover {
+        color: var(--color-primary);
+    }
+}
+
+.status {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+
+    span {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--gap-2xs);
+    }
+}
+
+.climbing {
+    color: var(--color-text-muted);
+}
+
+.status_origin {
+    color: var(--color-success);
+}
+
+.status_warn {
+    color: var(--color-warning);
+}
+
+.status_error {
+    color: var(--color-danger);
+}
+
+.node_upsell {
+    margin: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
+.spin {
+    animation: address-origins-spin 1s linear infinite;
+}
+
+@keyframes address-origins-spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}

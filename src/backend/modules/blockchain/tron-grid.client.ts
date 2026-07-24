@@ -42,6 +42,24 @@ const BASE_URL = 'https://api.trongrid.io';
 // Minimum delay between requests (milliseconds)
 const REQUEST_THROTTLE_MS = 200;
 
+/**
+ * Tolerance for the account `create_time` vs activating-transaction
+ * `block_timestamp` comparison in {@link TronGridClient.getActivatingTransaction}.
+ *
+ * Why this exists: an account's `create_time` is stamped from the activating
+ * transaction's own creation clock, while the v1 transactions feed reports that
+ * same transaction's `block_timestamp` — its block-confirmation time, one block
+ * later. Empirically the two differ by exactly one block (3000 ms) for every
+ * genuine, visible activation. A naive strict `block_timestamp > create_time`
+ * therefore misfires on legitimate activations, wrongly concluding the account
+ * was activated by an invisible internal transfer and returning null for the
+ * overwhelming majority of ordinary wallets. Requiring the gap to exceed a
+ * window comfortably larger than block-timing skew — but far smaller than the
+ * minutes-to-years gap a truly internal activation leaves before its first
+ * VISIBLE transaction — separates the two cases correctly.
+ */
+const ACTIVATION_CREATE_TIME_SKEW_MS = 60_000;
+
 // Collect all available API keys
 function getApiKeys(): string[] {
     const keys: string[] = [];
@@ -895,10 +913,15 @@ export class TronGridClient {
      *
      * How: after finding a candidate edge, validate it against the account's
      * authoritative `create_time` via {@link getAccount}. When the oldest visible
-     * transaction is strictly later than account creation, activation happened
-     * earlier through an internal transfer this feed cannot see, so the activator is
-     * unresolvable here and the method returns null (the caller may fall back to
-     * {@link getAccountInternalTransactions}). This second lookup is paid only when
+     * transaction is later than account creation by more than one block of skew
+     * ({@link ACTIVATION_CREATE_TIME_SKEW_MS}), activation happened earlier through
+     * an internal transfer this feed cannot see, so the activator is unresolvable
+     * here and the method returns null (the caller may fall back to
+     * {@link getAccountInternalTransactions}). The skew tolerance is essential:
+     * `create_time` is the activating tx's creation-clock stamp and trails its
+     * block-confirmed `block_timestamp` by exactly one block (~3000 ms) even for a
+     * genuine visible activation, so a strict comparison would reject every
+     * ordinary wallet. This second lookup is paid only when
      * a candidate edge exists — accounts with no transactions or an outgoing first
      * transaction still resolve in a single request. Both calls share the rotating-
      * key headers and global TronGrid rate budget, so a caller climbing a chain must
@@ -929,7 +952,15 @@ export class TronGridClient {
             // (nothing to disprove the edge) or matches the oldest visible tx.
             const account = await this.getAccount(base58Address);
             const createTime = account?.create_time;
-            const creationPrecedesOldestVisibleTx = typeof createTime === 'number' && oldest.block_timestamp > createTime;
+            // Only strictly LATER than creation counts as a false edge. `create_time`
+            // is the activating tx's creation-clock stamp and lags its block-confirmed
+            // `block_timestamp` by exactly one block (~3000 ms) for a genuine visible
+            // activation, so a bare `>` would reject every ordinary wallet. Require the
+            // gap to exceed the block-skew tolerance — a real internal activation leaves
+            // its first visible tx minutes-to-years after creation, far beyond this.
+            const creationPrecedesOldestVisibleTx =
+                typeof createTime === 'number' &&
+                oldest.block_timestamp - createTime > ACTIVATION_CREATE_TIME_SKEW_MS;
             if (!creationPrecedesOldestVisibleTx) {
                 result = {
                     activatorAddress,

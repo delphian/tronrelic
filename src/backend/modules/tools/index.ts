@@ -16,6 +16,8 @@ export { CalculatorService } from './services/calculator.service.js';
 export { ApprovalService } from './services/approval.service.js';
 export { TimestampService } from './services/timestamp.service.js';
 export { ToolsService } from './services/tools.service.js';
+export { AddressOriginsService } from './services/address-origins.service.js';
+export type { IAddressOriginsPlan } from './services/address-origins.service.js';
 export type { IAddressConversionResult } from './services/address.service.js';
 export type { IEnergyEstimate, IStakeEstimate, IEnergyEstimateInput } from './services/calculator.service.js';
 export type { IApprovalEntry, IApprovalCheckResult } from './services/approval.service.js';

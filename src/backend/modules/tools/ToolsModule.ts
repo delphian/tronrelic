@@ -19,6 +19,7 @@ import { CalculatorService } from './services/calculator.service.js';
 import { ApprovalService } from './services/approval.service.js';
 import { TimestampService } from './services/timestamp.service.js';
 import { ToolsService } from './services/tools.service.js';
+import { AddressOriginsService } from './services/address-origins.service.js';
 import { SignatureService } from '../auth/signature.service.js';
 import { ToolsController } from './api/tools.controller.js';
 import { createToolsRouter } from './api/tools.router.js';
@@ -133,10 +134,13 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
         const signatureService = new SignatureService(tronWeb);
         const approvalService = new ApprovalService(TronGridClient.getInstance(), dependencies.cacheService);
         const timestampService = new TimestampService(TronGridClient.getInstance(), dependencies.cacheService);
+        // Resolves the 'blockchain' service lazily per request, so no init-order
+        // dependency on it being registered before the tools module.
+        const addressOriginsService = new AddressOriginsService(dependencies.serviceRegistry);
 
         this.controller = new ToolsController(
             addressService, calculatorService, signatureService,
-            approvalService, timestampService
+            approvalService, timestampService, addressOriginsService
         );
 
         this.logger.info('Tools module initialized');
@@ -195,6 +199,7 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
                 { label: 'Stake Calculator', url: '/tools/stake-calculator', icon: 'Calculator', order: 30, description: 'Calculate energy and bandwidth from a TRX stake, or TRX needed for a target energy amount.' },
                 { label: 'Signature Verifier', url: '/tools/signature-verifier', icon: 'ShieldCheck', order: 40, description: 'Verify a TRON wallet signed a specific message. Supports direct URL linking.' },
                 { label: 'Approval Checker', url: '/tools/approval-checker', icon: 'Shield', order: 45, description: 'Scan a TRON address for active TRC20 token approvals and unlimited allowances.' },
+                { label: 'Address Origins', url: '/tools/address-origins', icon: 'GitBranch', order: 48, description: 'Trace an address back through its activation chain to its final originator, and spot shared ancestors across wallets.' },
                 { label: 'Timestamp Converter', url: '/tools/timestamp-converter', icon: 'Clock', order: 50, description: 'Convert between Unix timestamps, dates, and TRON block numbers.' },
             ];
 

@@ -66,6 +66,68 @@ export interface IActivatingTransaction {
 }
 
 /**
+ * The activation ancestry of an address: the ordered chain of activator accounts
+ * from the queried address toward its origin, nearest activator first.
+ *
+ * Why callers need this: a single {@link IActivatingTransaction} is one edge;
+ * provenance tooling wants the whole ladder — who funded the funder, and so on —
+ * so that several addresses sharing a common ancestor can be recognized as one
+ * cluster. This is the collected result of a bounded climb over that edge.
+ */
+export interface IActivationAncestry {
+    /** The address whose ancestry this describes — the climb's starting point. */
+    address: string;
+    /**
+     * Resolved activator hops, nearest activator first. Empty when the starting
+     * address has no resolvable activator (it reads as its own origin).
+     */
+    chain: IActivatingTransaction[];
+    /**
+     * True when the climb reached an origin — a hop resolved to no further
+     * activator, so the last entry in `chain` (or the start address, if empty) is
+     * a genuine root as far as the top-level feed can see.
+     */
+    originReached: boolean;
+    /**
+     * True when the depth cap stopped the climb before an origin, so the deepest
+     * entry is a limit artifact, not a real root. Mutually exclusive with
+     * `originReached`; both false means the climb stopped early (cycle guard or a
+     * provider error) and a retry may extend it.
+     */
+    truncated: boolean;
+}
+
+/**
+ * Options controlling an activation-ancestry climb.
+ *
+ * The defaults produce a self-contained, bounded, non-streaming climb; the
+ * callbacks and shared cache exist so a caller can stream a ladder to a client as
+ * it resolves and dedupe shared tails across a batch of addresses.
+ */
+export interface IActivationClimbOptions {
+    /**
+     * Maximum hops to climb before marking the result `truncated`. Defaults to the
+     * service's own cap. Lower it to expose only the immediate parent (e.g. `1`
+     * for an anonymous, single-hop lookup).
+     */
+    maxDepth?: number;
+    /**
+     * Invoked with each activator hop the moment it resolves, before the climb
+     * takes the next step. Enables streaming a ladder to a client as it is
+     * discovered rather than awaiting the whole chain. `index` is the zero-based
+     * hop depth. A throw from the callback aborts the climb.
+     */
+    onHop?: (hop: IActivatingTransaction, index: number) => void;
+    /**
+     * Shared cache of single-hop edges (child address → its activator, or `null`
+     * for an origin/unresolvable). Activations are immutable, so passing one map
+     * across several addresses in a batch fetches each shared tail once — and lets
+     * the caller detect common ancestors as they surface.
+     */
+    edgeCache?: Map<string, IActivatingTransaction | null>;
+}
+
+/**
  * Blockchain service interface for plugins.
  *
  * Provides read-only access to blockchain sync state and processed block data.
@@ -150,4 +212,26 @@ export interface IBlockchainService {
      * @returns The activating edge, or null when unresolved.
      */
     getActivatingTransaction(base58Address: string): Promise<IActivatingTransaction | null>;
+
+    /**
+     * Climb the activation ancestry of `base58Address` toward its origin: resolve
+     * the account's activator via {@link getActivatingTransaction}, then that
+     * activator's activator, and so on — nearest first — stopping at an origin (a
+     * hop with no resolvable activator), the depth cap, a cycle, or a provider
+     * error. This is the whole-ladder counterpart to the single-edge lookup; both
+     * this tool's address-origins climb and plugin discovery-provenance use it, so
+     * the bounded loop lives here once rather than being re-implemented per caller.
+     *
+     * Cost scales with depth — each hop is up to two throttled TronGrid requests
+     * sharing the global budget — so the climb is strictly sequential and bounded
+     * by `options.maxDepth` (default {@link IActivationClimbOptions.maxDepth}'s
+     * service cap). Pass `options.onHop` to stream each hop as it resolves, and a
+     * shared `options.edgeCache` to fetch tails shared across a batch only once.
+     *
+     * @param base58Address - Account whose ancestry to climb, base58 format.
+     * @param options - Depth cap, per-hop streaming callback, and shared edge cache.
+     * @returns The collected ancestry, possibly partial when the cap, a cycle, or a
+     *   provider error stopped the climb (see {@link IActivationAncestry} flags).
+     */
+    climbActivationAncestry(base58Address: string, options?: IActivationClimbOptions): Promise<IActivationAncestry>;
 }

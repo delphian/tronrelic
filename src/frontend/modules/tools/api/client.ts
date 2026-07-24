@@ -96,6 +96,26 @@ export async function checkApprovals(address: string): Promise<IApprovalCheckRes
 }
 
 /**
+ * Open a Server-Sent Events stream that climbs the activation ancestry of the
+ * given addresses, emitting each parent as it resolves.
+ *
+ * Why EventSource rather than the shared axios client: the endpoint streams
+ * incrementally and EventSource handles reconnection and event framing natively.
+ * The URL is relative so the browser hits the same `/api` proxy every other tool
+ * call uses; the session cookie rides along automatically, so the server can tell
+ * anonymous callers (one address, immediate parent only) from registered ones.
+ * The caller attaches `start` / `hop` / `address-done` / `address-error` /
+ * `complete` listeners and is responsible for calling `.close()`.
+ *
+ * @param addresses - Base58 addresses to climb; the server re-validates and caps.
+ * @returns The live EventSource; close it when done or on unmount.
+ */
+export function createAddressOriginsStream(addresses: string[]): EventSource {
+    const query = encodeURIComponent(addresses.join(','));
+    return new EventSource(`/api/tools/origins/stream?addresses=${query}`);
+}
+
+/**
  * Convert between Unix timestamp, ISO date, and TRON block number.
  *
  * @param input - Object with exactly one of timestamp, blockNumber, or dateString

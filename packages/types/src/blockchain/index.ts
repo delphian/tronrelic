@@ -10,6 +10,8 @@ export type { IValueTransfer, ValueTransferOrigin, ValueAssetType } from './IVal
 export type {
     IBlockchainService,
     IActivatingTransaction,
+    IActivationAncestry,
+    IActivationClimbOptions,
     ITransactionTimeseriesPoint,
     IOverviewTimeseriesPoint,
     OverviewTimeseriesWindow

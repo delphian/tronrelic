@@ -9,11 +9,13 @@
 
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import type { IActivatingTransaction } from '@/types';
 import type { AddressService } from '../services/address.service.js';
 import type { CalculatorService } from '../services/calculator.service.js';
 import type { SignatureService } from '../../auth/signature.service.js';
 import type { ApprovalService } from '../services/approval.service.js';
 import type { TimestampService } from '../services/timestamp.service.js';
+import type { AddressOriginsService } from '../services/address-origins.service.js';
 
 const addressSchema = z
     .object({
@@ -48,6 +50,12 @@ const approvalCheckSchema = z.object({
     address: z.string().trim().min(34).max(44)
 });
 
+const addressOriginsQuerySchema = z.object({
+    // Comma-separated base58 addresses; individual validation and per-tier capping
+    // happen in AddressOriginsService.resolvePlan. Bounded length guards the parse.
+    addresses: z.string().trim().min(1).max(1000)
+});
+
 const timestampConvertSchema = z.object({
     timestamp: z.coerce.number().int().min(0).max(32503680000).optional(),
     blockNumber: z.coerce.number().int().min(1).max(999_999_999_999).optional(),
@@ -76,7 +84,8 @@ export class ToolsController {
         private readonly calculatorService: CalculatorService,
         private readonly signatureService: SignatureService,
         private readonly approvalService: ApprovalService,
-        private readonly timestampService: TimestampService
+        private readonly timestampService: TimestampService,
+        private readonly addressOriginsService: AddressOriginsService
     ) {}
 
     /**
@@ -157,5 +166,127 @@ export class ToolsController {
         const body = timestampConvertSchema.parse(req.body);
         const result = await this.timestampService.convert(body);
         res.json({ success: true, result });
+    };
+
+    /**
+     * Stream the activation ancestry of one or more addresses as Server-Sent
+     * Events, emitting each parent the moment it resolves rather than making the
+     * user wait for the whole climb.
+     *
+     * Why SSE: a climb is a bounded, sequential, seconds-long walk of throttled
+     * TronGrid calls; a one-shot stream that pushes each hop and then closes fits
+     * that shape better than either a slow single response or WebSocket room
+     * plumbing. The `no-transform` header is essential — it opts the response out
+     * of the global `compression()` middleware that would otherwise buffer events
+     * instead of flushing them live; `X-Accel-Buffering: no` does the same for any
+     * upstream nginx.
+     *
+     * Access tiers are enforced server-side (never trusting the client): anonymous
+     * callers get one address climbed one hop (the immediate parent); a valid
+     * session unlocks the multi-wallet, full-ladder climb. A shared edge cache
+     * across the batch fetches tails common to several wallets once, which is also
+     * what lets the client highlight shared ancestors as they surface.
+     *
+     * The handler owns its own error and lifecycle handling because once the SSE
+     * headers flush, delegating to the global error middleware would try to rewrite
+     * a committed response; a mid-climb provider failure becomes an `address-error`
+     * event and a client disconnect aborts the remaining work.
+     */
+    streamAddressOrigins = async (req: Request, res: Response): Promise<void> => {
+        const parsed = addressOriginsQuerySchema.safeParse(req.query);
+        if (!parsed.success) {
+            res.status(400).json({ success: false, error: 'Provide an "addresses" query parameter.' });
+            return;
+        }
+
+        // `attachAuthSession` runs globally before this router, so authSession is
+        // null for anonymous callers and an object for authenticated ones.
+        const loggedIn = req.authSession != null;
+        const plan = this.addressOriginsService.resolvePlan(parsed.data.addresses.split(','), loggedIn);
+        if (plan.addresses.length === 0) {
+            res.status(400).json({ success: false, error: 'No valid TRON addresses provided.' });
+            return;
+        }
+
+        res.writeHead(200, {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache, no-transform',
+            Connection: 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        });
+        res.flushHeaders();
+
+        const send = (event: string, data: unknown): void => {
+            res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        };
+
+        let clientGone = false;
+        req.on('close', () => {
+            clientGone = true;
+        });
+
+        send('start', {
+            addresses: plan.addresses,
+            loggedIn,
+            maxDepth: plan.maxDepth ?? null,
+            limited: plan.limited
+        });
+
+        // One edge cache shared across every address: a tail common to several
+        // wallets is fetched once, and the client uses the repeated activator to
+        // highlight a shared ancestor.
+        const edgeCache = new Map<string, IActivatingTransaction | null>();
+
+        try {
+            for (let sourceIndex = 0; sourceIndex < plan.addresses.length; sourceIndex += 1) {
+                if (clientGone) {
+                    break;
+                }
+                const address = plan.addresses[sourceIndex];
+                try {
+                    const result = await this.addressOriginsService.climb(address, {
+                        maxDepth: plan.maxDepth,
+                        edgeCache,
+                        onHop: (hop, depth) => {
+                            // Throwing here aborts the climb promptly when the
+                            // browser has hung up mid-walk.
+                            if (clientGone) {
+                                throw new Error('client disconnected');
+                            }
+                            send('hop', {
+                                sourceIndex,
+                                address,
+                                depth,
+                                activatorAddress: hop.activatorAddress,
+                                txId: hop.txId,
+                                blockTimestamp: hop.blockTimestamp,
+                                contractType: hop.contractType
+                            });
+                        }
+                    });
+                    if (!clientGone) {
+                        send('address-done', {
+                            sourceIndex,
+                            address,
+                            originReached: result.originReached,
+                            truncated: result.truncated,
+                            hops: result.chain.length
+                        });
+                    }
+                } catch {
+                    if (clientGone) {
+                        break;
+                    }
+                    send('address-error', { sourceIndex, address, message: 'Lookup interrupted — please retry.' });
+                }
+            }
+            if (!clientGone) {
+                send('complete', {});
+            }
+        } finally {
+            if (!res.writableEnded) {
+                res.end();
+            }
+        }
     };
 }

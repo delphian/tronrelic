@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { AnyBulkWriteOperation } from 'mongoose';
 import type { Redis as RedisClient } from 'ioredis';
 import type { TronTransactionDocument } from '@/shared';
-import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IDatabaseService, IBlockchainService, IActivatingTransaction, IBlockData } from '@/types';
+import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IDatabaseService, IBlockchainService, IActivatingTransaction, IActivationAncestry, IActivationClimbOptions, IBlockData } from '@/types';
 import { ProcessedTransaction } from '@/types';
 import { TransactionModel, type TransactionDoc, type TransactionFields } from '../../database/models/transaction-model.js';
 import { SyncStateModel, type SyncStateDoc, type SyncStateFields } from '../../database/models/sync-state-model.js';
@@ -35,6 +35,14 @@ interface BlockSyncJob {
 export type TransactionCategoryFlags = ITransactionCategoryFlags;
 export type TransactionPersistencePayload = ITransactionPersistencePayload;
 // ProcessedTransaction is now a class, imported directly from @/types
+
+/**
+ * Default hop cap for {@link BlockchainService.climbActivationAncestry}. A chain
+ * this deep effectively never traces a single operator's own wallets — it runs
+ * into exchange/genesis history — and the cap bounds the worst-case TronGrid cost
+ * of one climb to `MAX_ACTIVATION_ANCESTRY_DEPTH × 2` throttled requests.
+ */
+export const MAX_ACTIVATION_ANCESTRY_DEPTH = 20;
 
 /**
  * Accumulator for tracking smart contract activity within a block.
@@ -596,6 +604,84 @@ export class BlockchainService implements IBlockchainService {
      */
     async getActivatingTransaction(base58Address: string): Promise<IActivatingTransaction | null> {
         return this.tronClient.getActivatingTransaction(base58Address);
+    }
+
+    /**
+     * Climb the activation ancestry of an address toward its origin, resolving one
+     * activator per hop via {@link getActivatingTransaction}.
+     *
+     * Why this lives here: the bounded loop — cap, cycle guard, per-hop streaming,
+     * and shared-tail caching — was previously re-implemented per caller (the
+     * address-origins tool, plugin discovery-provenance). Centralizing it on the
+     * published service keeps the one tricky piece (a mis-bounded climb silently
+     * misreports every address as its own origin) correct in a single place.
+     *
+     * How it stops: a `null` edge marks an origin and ends the climb cleanly; the
+     * depth cap marks the result `truncated`; a repeated activator (impossible on
+     * chain, but a provider quirk must not loop us) or a thrown provider error
+     * stops early with both flags false, signalling a partial that a retry may
+     * extend. Streamed hops (`onHop`) already delivered survive an early stop.
+     *
+     * @param base58Address - Account whose ancestry to climb, base58 format.
+     * @param options - Depth cap, per-hop streaming callback, and shared edge cache
+     *   (see {@link IActivationClimbOptions}); a shared cache dedupes tails across a
+     *   batch and is how callers spot common ancestors.
+     * @returns The collected ancestry with origin/truncated flags.
+     */
+    async climbActivationAncestry(base58Address: string, options: IActivationClimbOptions = {}): Promise<IActivationAncestry> {
+        const maxDepth = options.maxDepth ?? MAX_ACTIVATION_ANCESTRY_DEPTH;
+        const chain: IActivatingTransaction[] = [];
+        const seen = new Set<string>([base58Address]);
+        let current = base58Address;
+        let originReached = false;
+        let truncated = false;
+
+        for (let depth = 0; depth < maxDepth; depth += 1) {
+            let edge: IActivatingTransaction | null;
+            try {
+                // Reuse a shared edge across a batch when provided — activations are
+                // immutable, so a tail common to several addresses is fetched once.
+                if (options.edgeCache?.has(current)) {
+                    edge = options.edgeCache.get(current) ?? null;
+                } else {
+                    edge = await this.getActivatingTransaction(current);
+                    options.edgeCache?.set(current, edge);
+                }
+            } catch (error) {
+                // A throttled TronGrid call failed; stop with whatever streamed so
+                // far rather than discarding progress. Both flags stay false so the
+                // caller can offer a retry.
+                logger.warn(
+                    { base58Address, atAddress: current, depth, error: error instanceof Error ? error.message : String(error) },
+                    'Activation-ancestry climb interrupted by provider error'
+                );
+                break;
+            }
+
+            if (!edge) {
+                originReached = true;
+                break;
+            }
+
+            chain.push(edge);
+            options.onHop?.(edge, depth);
+
+            if (seen.has(edge.activatorAddress)) {
+                break;
+            }
+            seen.add(edge.activatorAddress);
+            current = edge.activatorAddress;
+        }
+
+        if (!originReached && chain.length >= maxDepth) {
+            truncated = true;
+            logger.warn(
+                { base58Address, maxDepth },
+                'Activation ancestry hit the depth cap before reaching an origin'
+            );
+        }
+
+        return { address: base58Address, chain, originReached, truncated };
     }
 
     /**
