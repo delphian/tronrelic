@@ -340,6 +340,48 @@ export interface TronGridAccountResponse {
     };
 }
 
+/**
+ * The transaction that activated an account, together with the account that
+ * performed the activation.
+ *
+ * Why this exists: a TRON address only comes into being after a funded account
+ * pays (~1 TRX) to create it, so an account's oldest transaction is its
+ * activation and that transaction's owner is the activator. Ancestor-climb
+ * tooling — tracing several addresses back toward a shared origin — needs the
+ * activator address to take the next step and the transaction id/timestamp for
+ * provenance and linking. `IActivatingTransaction` is the resolved edge that
+ * {@link TronGridClient.getActivatingTransaction} returns.
+ */
+export interface IActivatingTransaction {
+    /** Base58 address that activated (funded or deployed) the queried account. */
+    activatorAddress: string;
+    /** Transaction id of the activating transaction, for provenance and linking. */
+    txId: string;
+    /** Block timestamp (epoch milliseconds) at which the activation occurred. */
+    blockTimestamp: number;
+    /** Contract type of the activating transaction (e.g. `TransferContract`). */
+    contractType: string;
+}
+
+/**
+ * Minimal shape of the v1 `/accounts/{address}/transactions` response consumed
+ * when resolving an activator — only the oldest row's owner, id, timestamp, and
+ * contract type are read, so the rest of TronGrid's envelope is intentionally
+ * left untyped.
+ */
+interface IAccountTransactionsResponse {
+    data?: Array<{
+        txID: string;
+        block_timestamp: number;
+        raw_data?: {
+            contract?: Array<{
+                type?: string;
+                parameter?: { value?: { owner_address?: string; to_address?: string } };
+            }>;
+        };
+    }>;
+}
+
 export class TronGridClient {
     private static instance: TronGridClient | null = null;
 
@@ -854,6 +896,51 @@ export class TronGridClient {
             );
             return response.data;
         });
+    }
+
+    /**
+     * Resolve the account that activated `base58Address` in a single call.
+     *
+     * Why: every TRON address only exists after a funded account pays (~1 TRX) to
+     * create it, so the account's oldest transaction is its activation and that
+     * transaction's `owner_address` is the activator. Ancestor-climb tooling walks
+     * this edge repeatedly to trace an address back toward its origin; resolving it
+     * from just the single oldest transaction (ascending, `limit=1`) keeps each
+     * climb step to one request on the shared TronGrid throttle rather than a full
+     * history walk.
+     *
+     * How: asks the account-transactions endpoint for the oldest confirmed
+     * transaction and decodes its owner to base58 as the activator. When that owner
+     * is the account itself — which happens when the account was created by a
+     * contract's internal transfer that the top-level transactions feed does not
+     * surface — the activator is unresolvable here, so the method returns null and
+     * the caller can fall back to {@link getAccountInternalTransactions}. Reuses
+     * {@link getAccountTransactions}, inheriting its rotating-key headers and global
+     * rate budget.
+     *
+     * @param base58Address - Account whose activator to resolve, base58 format.
+     * @returns The activating edge, or null when the account has no transactions or
+     *   its activator cannot be resolved from the top-level feed.
+     */
+    async getActivatingTransaction(base58Address: string): Promise<IActivatingTransaction | null> {
+        const response = await this.getAccountTransactions<IAccountTransactionsResponse>(base58Address, {
+            only_confirmed: true,
+            limit: 1,
+            order_by: 'block_timestamp,asc'
+        });
+        let result: IActivatingTransaction | null = null;
+        const oldest = response.data?.[0];
+        const contract = oldest?.raw_data?.contract?.[0];
+        const activatorAddress = TronGridClient.toBase58Address(contract?.parameter?.value?.owner_address);
+        if (oldest && activatorAddress && activatorAddress !== base58Address) {
+            result = {
+                activatorAddress,
+                txId: oldest.txID,
+                blockTimestamp: oldest.block_timestamp,
+                contractType: contract?.type ?? 'unknown'
+            };
+        }
+        return result;
     }
 
     /**

@@ -43,14 +43,39 @@ export interface IOverviewTimeseriesPoint {
 }
 
 /**
+ * The transaction that activated an account, together with the account that
+ * performed the activation.
+ *
+ * Why plugins need this: a TRON address only exists on-chain after a funded
+ * account pays (~1 TRX) to create it, so an account's oldest transaction is its
+ * activation and that transaction's owner is the activator. Ancestry tooling —
+ * tracing an address back toward a shared origin — climbs this edge repeatedly,
+ * using {@link IActivatingTransaction.activatorAddress} to take the next step and
+ * the txId/timestamp for provenance. Returned by
+ * {@link IBlockchainService.getActivatingTransaction}.
+ */
+export interface IActivatingTransaction {
+    /** Base58 address that activated (funded or deployed) the queried account. */
+    activatorAddress: string;
+    /** Transaction id of the activating transaction, for provenance and linking. */
+    txId: string;
+    /** Block timestamp (epoch milliseconds) at which the activation occurred. */
+    blockTimestamp: number;
+    /** Contract type of the activating transaction (e.g. `TransferContract`). */
+    contractType: string;
+}
+
+/**
  * Blockchain service interface for plugins.
  *
  * Provides read-only access to blockchain sync state and processed block data.
  * Plugins use this to query the most recently processed block, retrieve recent
  * transactions, and access timeseries data for charting.
  *
- * This interface exposes only safe, read-only methods. Internal sync operations
- * like block processing and queue management are not exposed to plugins.
+ * Most methods are DB-backed reads over already-synced data. The exception is
+ * {@link getActivatingTransaction}, which performs one live, rate-limited
+ * provider (TronGrid) lookup per call — still read-only, but slower and subject
+ * to the shared request throttle, so callers must not fan it out on a hot path.
  */
 export interface IBlockchainService {
     /**
@@ -101,4 +126,24 @@ export interface IBlockchainService {
      * @returns Buckets sorted chronologically.
      */
     getOverviewTimeseries(window: OverviewTimeseriesWindow): Promise<IOverviewTimeseriesPoint[]>;
+
+    /**
+     * Resolve the account that activated `base58Address` — the funder of its
+     * oldest on-chain transaction — in a single live provider call.
+     *
+     * Unlike the other methods here, this is not a DB read: it queries TronGrid
+     * for the account's earliest transaction and returns its owner as the
+     * activator. It shares the platform's global TronGrid throttle, so a caller
+     * climbing an ancestry chain must do so sequentially and bound the depth —
+     * never fan this out across many addresses on a request or hot path.
+     *
+     * Returns null when the account has no transactions, or when the activator
+     * cannot be resolved from the top-level transaction feed (e.g. an account
+     * created by a contract's internal transfer) — the caller should treat null
+     * as "origin reached or unresolvable" and stop climbing.
+     *
+     * @param base58Address - Account whose activator to resolve, base58 format.
+     * @returns The activating edge, or null when unresolved.
+     */
+    getActivatingTransaction(base58Address: string): Promise<IActivatingTransaction | null>;
 }
