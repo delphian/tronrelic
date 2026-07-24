@@ -4,7 +4,7 @@ import { env } from '../../config/env.js';
 import { blockchainConfig } from '../../config/blockchain.js';
 import { retry } from '../../lib/retry.js';
 import { logger } from '../../lib/logger.js';
-import type { ITrc10 } from '@/types';
+import type { ITrc10, IActivatingTransaction } from '@/types';
 
 /**
  * Raw TRC10 asset-issue record as TronGrid returns it from
@@ -338,29 +338,6 @@ export interface TronGridAccountResponse {
          */
         delegated_frozenV2_balance_for_energy?: number;
     };
-}
-
-/**
- * The transaction that activated an account, together with the account that
- * performed the activation.
- *
- * Why this exists: a TRON address only comes into being after a funded account
- * pays (~1 TRX) to create it, so an account's oldest transaction is its
- * activation and that transaction's owner is the activator. Ancestor-climb
- * tooling — tracing several addresses back toward a shared origin — needs the
- * activator address to take the next step and the transaction id/timestamp for
- * provenance and linking. `IActivatingTransaction` is the resolved edge that
- * {@link TronGridClient.getActivatingTransaction} returns.
- */
-export interface IActivatingTransaction {
-    /** Base58 address that activated (funded or deployed) the queried account. */
-    activatorAddress: string;
-    /** Transaction id of the activating transaction, for provenance and linking. */
-    txId: string;
-    /** Block timestamp (epoch milliseconds) at which the activation occurred. */
-    blockTimestamp: number;
-    /** Contract type of the activating transaction (e.g. `TransferContract`). */
-    contractType: string;
 }
 
 /**
@@ -899,28 +876,38 @@ export class TronGridClient {
     }
 
     /**
-     * Resolve the account that activated `base58Address` in a single call.
+     * Resolve the account that activated `base58Address`, guarding against the
+     * top-level feed's blind spot for internally-activated accounts.
      *
      * Why: every TRON address only exists after a funded account pays (~1 TRX) to
-     * create it, so the account's oldest transaction is its activation and that
+     * create it, so the account's activating transaction is its oldest and that
      * transaction's `owner_address` is the activator. Ancestor-climb tooling walks
-     * this edge repeatedly to trace an address back toward its origin; resolving it
-     * from just the single oldest transaction (ascending, `limit=1`) keeps each
-     * climb step to one request on the shared TronGrid throttle rather than a full
-     * history walk.
+     * this edge repeatedly to trace an address back toward its origin, so resolving
+     * it from just the single oldest transaction (ascending, `limit=1`) keeps the
+     * common path to one request rather than a full history walk.
      *
-     * How: asks the account-transactions endpoint for the oldest confirmed
-     * transaction and decodes its owner to base58 as the activator. When that owner
-     * is the account itself — which happens when the account was created by a
-     * contract's internal transfer that the top-level transactions feed does not
-     * surface — the activator is unresolvable here, so the method returns null and
-     * the caller can fall back to {@link getAccountInternalTransactions}. Reuses
-     * {@link getAccountTransactions}, inheriting its rotating-key headers and global
-     * rate budget.
+     * The trap: the account-transactions feed surfaces only top-level transactions,
+     * NOT the internal (contract) transfer that activates an account created by a
+     * contract. For such an account the oldest VISIBLE transaction is a later,
+     * unrelated transfer, and its `owner_address` is that later sender — not the
+     * activator. The `owner !== self` check alone cannot tell this false edge apart
+     * from a genuine funder→account transfer, because both have a third-party owner.
+     *
+     * How: after finding a candidate edge, validate it against the account's
+     * authoritative `create_time` via {@link getAccount}. When the oldest visible
+     * transaction is strictly later than account creation, activation happened
+     * earlier through an internal transfer this feed cannot see, so the activator is
+     * unresolvable here and the method returns null (the caller may fall back to
+     * {@link getAccountInternalTransactions}). This second lookup is paid only when
+     * a candidate edge exists — accounts with no transactions or an outgoing first
+     * transaction still resolve in a single request. Both calls share the rotating-
+     * key headers and global TronGrid rate budget, so a caller climbing a chain must
+     * still stay sequential and bound its depth.
      *
      * @param base58Address - Account whose activator to resolve, base58 format.
      * @returns The activating edge, or null when the account has no transactions or
-     *   its activator cannot be resolved from the top-level feed.
+     *   its activator cannot be resolved from the top-level feed (including an
+     *   internally-activated account whose creation predates its oldest visible tx).
      */
     async getActivatingTransaction(base58Address: string): Promise<IActivatingTransaction | null> {
         const response = await this.getAccountTransactions<IAccountTransactionsResponse>(base58Address, {
@@ -933,12 +920,24 @@ export class TronGridClient {
         const contract = oldest?.raw_data?.contract?.[0];
         const activatorAddress = TronGridClient.toBase58Address(contract?.parameter?.value?.owner_address);
         if (oldest && activatorAddress && activatorAddress !== base58Address) {
-            result = {
-                activatorAddress,
-                txId: oldest.txID,
-                blockTimestamp: oldest.block_timestamp,
-                contractType: contract?.type ?? 'unknown'
-            };
+            // Confirm the candidate is genuinely the activation and not a later
+            // transfer that merely happens to be the oldest VISIBLE one. The account
+            // was activated at its authoritative create_time; if that predates the
+            // oldest visible transaction, the real (internal) activation is invisible
+            // to this feed and attributing this transfer's sender would be a false
+            // edge, so leave result null. Only proceed when create_time is unknown
+            // (nothing to disprove the edge) or matches the oldest visible tx.
+            const account = await this.getAccount(base58Address);
+            const createTime = account?.create_time;
+            const creationPrecedesOldestVisibleTx = typeof createTime === 'number' && oldest.block_timestamp > createTime;
+            if (!creationPrecedesOldestVisibleTx) {
+                result = {
+                    activatorAddress,
+                    txId: oldest.txID,
+                    blockTimestamp: oldest.block_timestamp,
+                    contractType: contract?.type ?? 'unknown'
+                };
+            }
         }
         return result;
     }
