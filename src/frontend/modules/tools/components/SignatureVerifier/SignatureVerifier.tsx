@@ -37,7 +37,9 @@ export function SignatureVerifier() {
 
     /** Pre-fill from URL parameters and auto-verify if all present. */
     useEffect(() => {
-        const w = searchParams.get('wallet') ?? '';
+        // Accept `?address=` as an alias for `?wallet=` so the shared
+        // TronAddress chip's canonical forward param lands in the wallet field.
+        const w = searchParams.get('wallet') ?? searchParams.get('address') ?? '';
         const m = searchParams.get('message') ?? '';
         const s = searchParams.get('signature') ?? '';
 

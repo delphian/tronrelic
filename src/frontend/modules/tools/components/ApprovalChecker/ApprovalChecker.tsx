@@ -8,7 +8,8 @@
  */
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Shield, ShieldAlert } from 'lucide-react';
 // Direct import (not the modules/user barrel) keeps component CSS out of the bundle.
 import { useAuthSession } from '../../../user/components/SessionProvider';
@@ -30,10 +31,23 @@ import styles from './ApprovalChecker.module.scss';
  */
 export function ApprovalChecker() {
     const { isLoggedIn } = useAuthSession();
+    const searchParams = useSearchParams();
     const [address, setAddress] = useState('');
     const [result, setResult] = useState<IApprovalCheckResult | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+
+    /**
+     * Pre-fill from a forwarded `?address=` param on mount, why: the shared
+     * TronAddress chip forwards a full address here via that param. Pre-filling
+     * still runs when the visitor is signed out, so the field is ready the
+     * moment they authenticate. Mount only so it never overrides later typing.
+     */
+    useEffect(() => {
+        const forwarded = searchParams.get('address');
+        if (forwarded) setAddress(forwarded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     /** Submit the address for approval scanning. */
     const handleCheck = async () => {

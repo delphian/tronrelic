@@ -5,6 +5,7 @@
  * No SSR data — the tool is a user-driven interactive form.
  */
 
+import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../lib/seo';
 import { getServerConfig } from '../../../../lib/serverConfig';
@@ -34,6 +35,15 @@ export async function generateMetadata(): Promise<Metadata> {
     });
 }
 
+/**
+ * Wraps AddressConverter in Suspense because it reads `useSearchParams()`
+ * (to pre-fill a forwarded `?address=`), which Next.js App Router requires be
+ * inside a Suspense boundary when the page has no generateStaticParams.
+ */
 export default function AddressConverterPage() {
-    return <AddressConverter />;
+    return (
+        <Suspense>
+            <AddressConverter />
+        </Suspense>
+    );
 }

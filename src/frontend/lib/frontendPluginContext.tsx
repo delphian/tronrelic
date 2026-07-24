@@ -24,6 +24,7 @@ import { Textarea } from '../components/ui/Textarea';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { ClientTime } from '../components/ui/ClientTime';
 import { Tooltip } from '../components/ui/Tooltip';
+import { TronAddress } from '../components/ui/TronAddress';
 import { LazyIconPickerModal as IconPickerModal } from '../components/ui/IconPickerModal';
 import { AccountPicker } from '../components/ui/AccountPicker';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
@@ -354,6 +355,7 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             Textarea: Textarea as IUIComponents['Textarea'],
             ClientTime,
             Tooltip,
+            TronAddress,
             IconPickerModal,
             ConfirmDialog,
             AccountPicker,
@@ -464,6 +466,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         Textarea: Textarea as IUIComponents['Textarea'],
         ClientTime,
         Tooltip,
+        TronAddress,
         IconPickerModal,
         ConfirmDialog,
         AccountPicker,
