@@ -75,6 +75,39 @@ export interface IApprovalCheckResult {
     truncated: boolean;
 }
 
+/**
+ * One resolved activator step streamed from the Address Origins SSE endpoint.
+ * `sourceIndex` ties the hop back to the input address that produced it so the
+ * UI can grow several ladders in parallel and spot shared ancestors across them.
+ */
+export interface IOriginHop {
+    sourceIndex: number;
+    address: string;
+    depth: number;
+    activatorAddress: string;
+    txId: string;
+    blockTimestamp: number;
+    contractType: string;
+}
+
+/** Lifecycle of a single address's climb in the UI. */
+export type OriginLadderStatus = 'climbing' | 'done' | 'error';
+
+/**
+ * Client-side accumulation of one address's climb: the hops seen so far plus the
+ * terminal state. `originReached` distinguishes a true root from a `truncated`
+ * depth-cap stop; a status of `error` means the climb was interrupted.
+ */
+export interface IOriginLadder {
+    sourceIndex: number;
+    address: string;
+    hops: IOriginHop[];
+    status: OriginLadderStatus;
+    originReached: boolean;
+    truncated: boolean;
+    errorMessage?: string;
+}
+
 /** Timestamp conversion result from the API. */
 export interface ITimestampConversionResult {
     timestamp: number;

@@ -11,6 +11,7 @@ export { EnergyEstimator } from './components/EnergyEstimator';
 export { StakeCalculator } from './components/StakeCalculator';
 export { SignatureVerifier } from './components/SignatureVerifier';
 export { ApprovalChecker } from './components/ApprovalChecker';
+export { AddressOrigins } from './components/AddressOrigins';
 export { TimestampConverter } from './components/TimestampConverter';
 
 // API
@@ -21,6 +22,7 @@ export {
     estimateStakeFromEnergy,
     verifySignature,
     checkApprovals,
+    createAddressOriginsStream,
     convertTimestamp
 } from './api';
 
@@ -33,5 +35,8 @@ export type {
     IToolDescriptor,
     IApprovalEntry,
     IApprovalCheckResult,
+    IOriginHop,
+    IOriginLadder,
+    OriginLadderStatus,
     ITimestampConversionResult
 } from './types';

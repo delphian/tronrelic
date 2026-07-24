@@ -50,5 +50,11 @@ export function createToolsRouter(controller: ToolsController): Router {
     router.post('/approval/check', approvalRateLimiter, requireLogin, asyncHandler(controller.checkApprovals));
     router.post('/timestamp/convert', rateLimiter, asyncHandler(controller.convertTimestamp));
 
+    // Server-Sent Events stream for the Address Origins tool. GET (EventSource is
+    // GET-only); addresses ride the query string. Access tiers are enforced inside
+    // the handler from the session, so the route itself stays public — anonymous
+    // callers still get a single one-hop lookup.
+    router.get('/origins/stream', rateLimiter, asyncHandler(controller.streamAddressOrigins));
+
     return router;
 }

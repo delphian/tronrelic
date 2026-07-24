@@ -9,5 +9,6 @@ export {
     estimateStakeFromEnergy,
     verifySignature,
     checkApprovals,
+    createAddressOriginsStream,
     convertTimestamp
 } from './client';

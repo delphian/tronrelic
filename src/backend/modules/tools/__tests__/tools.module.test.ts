@@ -325,8 +325,8 @@ describe('ToolsModule', () => {
 
             await module.run();
 
-            // 1 container + 7 children = 8 create calls
-            expect(mockMenu.create).toHaveBeenCalledTimes(8);
+            // 1 container + 8 children = 9 create calls
+            expect(mockMenu.create).toHaveBeenCalledTimes(9);
 
             const calls = mockMenu.create.mock.calls;
 
@@ -339,6 +339,7 @@ describe('ToolsModule', () => {
             expect(childLabels).toContain('Stake Calculator');
             expect(childLabels).toContain('Signature Verifier');
             expect(childLabels).toContain('Approval Checker');
+            expect(childLabels).toContain('Address Origins');
             expect(childLabels).toContain('Timestamp Converter');
 
             // All children reference the container parent

@@ -36,6 +36,7 @@ Both are required — `init()` throws if either is missing, causing application 
 | Stake Calculator | `/tools/stake-calculator` | `POST /api/tools/stake/from-trx` and `/from-energy` | Bidirectional TRX/energy calculation |
 | Signature Verifier | `/tools/signature-verifier` | `POST /api/tools/signature/verify` | Wallet signature verification |
 | Approval Checker | `/tools/approval-checker` | `POST /api/tools/approval/check` | Scan TRC20 token approvals (requires login) |
+| Address Origins | `/tools/address-origins` | `GET /api/tools/origins/stream` (SSE) | Trace a wallet's activation chain to its originator; multi-wallet + full ladder require login |
 | Timestamp Converter | `/tools/timestamp-converter` | `POST /api/tools/timestamp/convert` | Bidirectional timestamp/block/date conversion |
 
 The Signature Verifier supports direct URL linking via query parameters: `/tools/signature-verifier?wallet=T...&message=hello&signature=0x...` — it auto-fills and verifies on page load.
@@ -49,6 +50,10 @@ Endpoints are rate-limited at 30 requests per 60-second window per IP address, u
 ### Async Error Handling
 
 All route handlers are wrapped with `asyncHandler` so that thrown errors (Zod validation failures, service exceptions, TronGrid timeouts) reach the global error handler middleware instead of becoming unhandled promise rejections.
+
+### Address Origins Streaming and Access Tiers
+
+`GET /api/tools/origins/stream` is a Server-Sent Events endpoint (the tool's parents must appear as they resolve, not after the whole climb). It is intentionally public but **branches on the session**: an anonymous caller gets one address climbed a single hop (its immediate parent), while a valid session unlocks up to ten wallets climbed to the full depth cap, with ancestors shared across wallets highlighted. The gate is enforced server-side in `AddressOriginsService.resolvePlan` — the client cannot lift its own tier. The climb itself lives on the core blockchain service (`climbActivationAncestry`); the tool only adds the gating policy and the SSE plumbing, sharing one edge cache across the batch so a tail common to several wallets is fetched once. The handler sets `Cache-Control: no-transform` to opt out of the global `compression()` middleware (which would otherwise buffer events) and owns its own error/disconnect handling because the response is already committed once the stream opens.
 
 ### Input Validation
 
