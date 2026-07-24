@@ -310,14 +310,17 @@ export function AddressOrigins() {
                                     {ladder.status === 'error' && (
                                         <span className={styles.status_error}><AlertTriangle size={14} aria-hidden="true" /> {ladder.errorMessage ?? 'Interrupted — please retry.'}</span>
                                     )}
-                                    {ladder.status === 'done' && ladder.originReached && (
+                                    {ladder.status === 'done' && ladder.originReached && ladder.hops.length > 0 && (
                                         <span className={styles.status_origin}><Flag size={14} aria-hidden="true" /> Origin reached — no earlier activator found.</span>
+                                    )}
+                                    {ladder.status === 'done' && ladder.originReached && ladder.hops.length === 0 && (
+                                        <span className={styles.status_warn}><AlertTriangle size={14} aria-hidden="true" /> Activator could not be resolved — this wallet may have been created by an internal contract transfer.</span>
                                     )}
                                     {ladder.status === 'done' && ladder.truncated && (
                                         <span className={styles.status_warn}><AlertTriangle size={14} aria-hidden="true" /> Stopped at the depth cap — a limit, not a true origin.</span>
                                     )}
-                                    {ladder.status === 'done' && !ladder.originReached && !ladder.truncated && ladder.hops.length === 0 && (
-                                        <span className={styles.status_warn}><AlertTriangle size={14} aria-hidden="true" /> No activator resolved for this wallet.</span>
+                                    {ladder.status === 'done' && !ladder.originReached && !ladder.truncated && (
+                                        <span className={styles.status_warn}><AlertTriangle size={14} aria-hidden="true" /> Tracing interrupted before an origin was found — please retry.</span>
                                     )}
                                 </p>
 

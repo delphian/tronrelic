@@ -189,8 +189,11 @@ export class ToolsController {
      *
      * The handler owns its own error and lifecycle handling because once the SSE
      * headers flush, delegating to the global error middleware would try to rewrite
-     * a committed response; a mid-climb provider failure becomes an `address-error`
-     * event and a client disconnect aborts the remaining work.
+     * a committed response. A provider failure mid-climb is caught inside the climb
+     * and returned as a partial (an `address-done` with neither terminal flag set,
+     * which the client renders as an interruption); an `address-error` event fires
+     * only when the climb call itself throws (e.g. the blockchain service is
+     * unavailable), and a client disconnect aborts the remaining work.
      */
     streamAddressOrigins = async (req: Request, res: Response): Promise<void> => {
         const parsed = addressOriginsQuerySchema.safeParse(req.query);

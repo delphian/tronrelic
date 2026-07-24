@@ -9,17 +9,35 @@
 
 import { describe, it, expect } from 'vitest';
 import type { IServiceRegistry } from '@/types';
+import type { AddressService } from '../services/address.service.js';
 import {
     AddressOriginsService,
     ANONYMOUS_MAX_DEPTH,
     AUTHENTICATED_MAX_ADDRESSES
 } from '../services/address-origins.service.js';
 
-/** A valid base58 address is `T` + 33 base58 chars; build distinct fakes cheaply. */
+/**
+ * Synthetic `T…` fixtures that satisfy the base58 charset but not a real
+ * Base58Check round trip, so the gating tests need a stub validator — the real
+ * checksum path is AddressService's own test's concern. This suite covers only
+ * the caps/dedup policy, which sits downstream of validity.
+ */
+const CHARSET = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 const validAddress = (suffix: string): string => `T${'A'.repeat(33 - suffix.length)}${suffix}`;
 
+/** Stub validator: treats any charset-valid `T…` string as a base58 address. */
+const stubAddressService = {
+    validateAddress: (input: string) => {
+        const ok = CHARSET.test(input.trim());
+        return { valid: ok, format: ok ? 'base58' : null };
+    }
+} as unknown as AddressService;
+
 /** resolvePlan does not touch the registry, so a no-op stub is sufficient. */
-const service = new AddressOriginsService({ get: () => undefined } as unknown as IServiceRegistry);
+const service = new AddressOriginsService(
+    { get: () => undefined } as unknown as IServiceRegistry,
+    stubAddressService
+);
 
 describe('AddressOriginsService.resolvePlan', () => {
     it('caps anonymous callers to one address and a single hop', () => {
