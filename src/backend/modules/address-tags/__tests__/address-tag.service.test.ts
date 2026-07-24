@@ -65,6 +65,21 @@ describe('AddressTagService', () => {
             await expect(service.createTags([{ address: ADDRESS_A, tag: 'x'.repeat(65) }]))
                 .rejects.toThrow(/Invalid tag/);
         });
+
+        it('rejects a comma-bearing tag on every write path', async () => {
+            // The HTTP read surface splits `?tags=x,y` on commas, so a stored
+            // comma-bearing tag would be unretrievable by /by-tag. Every write
+            // must be closed, not just create — a rename that accepted one
+            // would reopen the hole behind the create-side guard.
+            await expect(service.createTags([{ address: ADDRESS_A, tag: 'exchange,hot' }]))
+                .rejects.toThrow(/commas are not allowed/);
+            await expect(service.updateTags([{ address: ADDRESS_A, oldTag: 'exchange', newTag: 'exchange,hot' }]))
+                .rejects.toThrow(/commas are not allowed/);
+            await expect(service.updateTags([{ address: ADDRESS_A, oldTag: 'a,b', newTag: 'exchange' }]))
+                .rejects.toThrow(/commas are not allowed/);
+            await expect(service.deleteTags([{ address: ADDRESS_A, tag: 'exchange,hot' }]))
+                .rejects.toThrow(/commas are not allowed/);
+        });
     });
 
     describe('reads', () => {

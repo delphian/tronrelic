@@ -17,7 +17,13 @@
 export interface IAddressTagPair {
     /** TRON wallet address (base58) the tag is attached to. */
     address: string;
-    /** Free-text tag attached to the address. */
+    /**
+     * Free-text tag attached to the address: 1–64 characters after trimming,
+     * and may not contain a comma. The comma is reserved as the delimiter in
+     * the HTTP read surface's `?tags=x,y` array encoding, so a comma-bearing
+     * tag would be stored but never retrievable. Writes that violate either
+     * rule throw rather than silently normalizing.
+     */
     tag: string;
 }
 
@@ -77,6 +83,10 @@ export interface IAddressTagSearchQuery {
  * just one-element arrays. Authorization is the caller's responsibility — the
  * service trusts its inputs, and the HTTP layer gates reads to registered
  * users and mutations to admins.
+ *
+ * Every write validates its addresses and tags and throws on the first bad
+ * entry, so a batch is all-or-nothing at the validation boundary. See
+ * {@link IAddressTagPair.tag} for the tag constraints a caller must satisfy.
  */
 export interface IAddressTagService {
     /**

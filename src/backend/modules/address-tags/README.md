@@ -21,7 +21,9 @@ Tags are a mutable CRUD entity set — renamed, deleted, re-created — not an a
 
 ## Service Contract (`IAddressTagService`)
 
-All methods take and return arrays; single-item calls are one-element arrays. The service validates shape (base58 TRON address, 1–64 char trimmed tag, ≤1000 items per batch) and trusts caller authorization — gating lives in the HTTP layer.
+All methods take and return arrays; single-item calls are one-element arrays. The service validates shape (base58 TRON address, 1–64 char trimmed tag, no commas, ≤1000 items per batch) and trusts caller authorization — gating lives in the HTTP layer.
+
+**Tags may not contain a comma.** The comma is the array delimiter in `?tags=x,y`, so a stored comma-bearing tag would be write-only — `/by-tag` could never return it. `requireTag` rejects it at the one chokepoint every write crosses (create, both sides of rename, delete), so no downstream encoding change is needed.
 
 | Method | Semantics |
 |---|---|
