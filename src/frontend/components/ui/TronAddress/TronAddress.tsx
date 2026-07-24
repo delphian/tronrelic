@@ -16,7 +16,7 @@
  */
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ExternalLink, Wrench } from 'lucide-react';
 import { CopyButton } from '../CopyButton';
 import { IconButton } from '../IconButton';
@@ -40,6 +40,15 @@ const TRONSCAN_ADDRESS_URL = 'https://tronscan.org/#/address/';
  */
 const HEAD_CHARS = 4;
 const TAIL_CHARS = 4;
+
+/**
+ * Minimum gap (px) to keep between the open tools menu and the viewport edge
+ * when deciding which way it opens. The menu flips above its trigger only when
+ * the space below cannot fit the menu plus this breathing room, so a menu near
+ * the bottom of a scroll-clipped container (the shared `Table` wrapper sets
+ * `overflow: auto`) opens upward into visible space instead of being clipped.
+ */
+const MENU_VIEWPORT_GAP_PX = 8;
 
 /**
  * Props for {@link TronAddress}.
@@ -100,7 +109,9 @@ export function TronAddress({
     className
 }: ITronAddressProps) {
     const [menuOpen, setMenuOpen] = useState(false);
+    const [menuPlacement, setMenuPlacement] = useState<'bottom' | 'top'>('bottom');
     const menuRef = useRef<HTMLDivElement | null>(null);
+    const menuListRef = useRef<HTMLDivElement | null>(null);
 
     /**
      * Close the tools popover on any click outside it and on Escape, why: an
@@ -136,6 +147,40 @@ export function TronAddress({
         setMenuOpen(prev => !prev);
     }, []);
 
+    /**
+     * Choose whether the open menu drops below its trigger or flips above it,
+     * why: the menu is absolutely positioned and cannot escape an ancestor's
+     * overflow box (a portal would, but that is heavier machinery than this
+     * primitive warrants — see the flip precedent in the sibling Tooltip). When
+     * the trigger sits near the bottom of the viewport (the common clipped case
+     * inside a scrolling table), opening downward would render the menu into
+     * clipped space; flipping it upward keeps it visible. Runs in a layout
+     * effect so the corrected side is set before paint (no downward flash), and
+     * re-measures on resize so a menu left open through a viewport change stays
+     * placed. Measuring needs the menu in the DOM, so this depends on menuOpen.
+     */
+    useLayoutEffect(() => {
+        if (!menuOpen) {
+            setMenuPlacement('bottom');
+            return undefined;
+        }
+        function updatePlacement(): void {
+            const anchor = menuRef.current;
+            const menu = menuListRef.current;
+            if (!anchor || !menu) return;
+            const anchorRect = anchor.getBoundingClientRect();
+            const menuHeight = menu.getBoundingClientRect().height;
+            const viewportHeight = document.documentElement.clientHeight;
+            const spaceBelow = viewportHeight - anchorRect.bottom;
+            const spaceAbove = anchorRect.top;
+            const fitsBelow = spaceBelow >= menuHeight + MENU_VIEWPORT_GAP_PX;
+            setMenuPlacement(!fitsBelow && spaceAbove > spaceBelow ? 'top' : 'bottom');
+        }
+        updatePlacement();
+        window.addEventListener('resize', updatePlacement);
+        return () => window.removeEventListener('resize', updatePlacement);
+    }, [menuOpen]);
+
     const display = label ?? truncateAddress(address);
 
     return (
@@ -159,7 +204,17 @@ export function TronAddress({
             )}
 
             {tools && (
-                <div className={styles.menu_anchor} ref={menuRef}>
+                // Stop tool clicks (the wrench toggle and the menu-item links,
+                // both descendants of this wrapper) from bubbling to an enclosing
+                // clickable row (`<Tr onClick>`), which would navigate or unmount
+                // the chip before the menu is usable. Mirrors CopyButton, which
+                // stops propagation for the same reason. preventDefault is not
+                // called, so the tool links still navigate.
+                <div
+                    className={styles.menu_anchor}
+                    ref={menuRef}
+                    onClick={event => event.stopPropagation()}
+                >
                     <IconButton
                         variant="primary"
                         size="xs"
@@ -172,7 +227,13 @@ export function TronAddress({
                         <Wrench size={14} />
                     </IconButton>
                     {menuOpen && (
-                        <div className={styles.menu} role="menu">
+                        <div
+                            ref={menuListRef}
+                            className={[styles.menu, menuPlacement === 'top' ? styles.menu_top : '']
+                                .filter(Boolean)
+                                .join(' ')}
+                            role="menu"
+                        >
                             {FORWARDABLE_TOOLS.map(tool => (
                                 <a
                                     key={tool.slug}
