@@ -1,0 +1,81 @@
+@use '../../../breakpoints' as *;
+
+/* Create form: address + tags inputs beside the submit button, wrapping on
+   narrow containers. */
+.create_form {
+    display: flex;
+    gap: var(--gap-sm);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* Both inputs share a comfortable base width and shrink together. */
+.address_input,
+.tags_input {
+    flex: 1 1 var(--max-width-xs);
+    min-width: 0;
+}
+
+/* Search row above the table. */
+.search_form {
+    display: flex;
+    gap: var(--gap-sm);
+    align-items: center;
+}
+
+.search_input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Empty-state placeholder inside the table card. */
+.placeholder {
+    padding: var(--padding-lg);
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+.tag_text {
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+/* Inline row actions (rename/delete or save/cancel). */
+.row_actions {
+    display: flex;
+    gap: var(--gap-xs);
+    align-items: center;
+}
+
+/* Mobile: collapse table rows into stacked cards, reacting to the shared
+   Table's own container width so the switch stays correct inside slideouts
+   and modals. Each cell surfaces its dropped column header via data-label. */
+@container table (max-width: #{$breakpoint-mobile-lg}) {
+    .tags_table thead {
+        display: none;
+    }
+
+    .tags_table tr {
+        display: block;
+        padding: var(--padding-sm);
+        border-bottom: var(--border-width-thin) solid var(--color-border);
+    }
+
+    .tags_table td {
+        display: block;
+        padding: var(--padding-2xs) 0;
+        border-bottom: none;
+    }
+
+    .tags_table td::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: var(--gap-2xs);
+        font-size: var(--font-size-caption);
+        font-weight: var(--font-weight-semibold);
+        letter-spacing: var(--letter-spacing-wide);
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+    }
+}
