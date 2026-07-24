@@ -115,6 +115,12 @@ export interface TronGridTransaction {
         fee_limit?: number;
     };
     raw_data_hex?: string;
+    /**
+     * ECDSA signature(s) over sha256(raw_data) — which equals the txID, so
+     * the signer is recoverable from `txID` + this field alone. Multi-signed
+     * transactions carry one entry per signer.
+     */
+    signature?: string[];
     ret?: Array<{ contractRet: string; fee: number }>;
 }
 

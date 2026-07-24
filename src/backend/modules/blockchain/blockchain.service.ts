@@ -1504,9 +1504,24 @@ export class BlockchainService implements IBlockchainService {
 
         // Include Permission_id in rawValue for observers that need to distinguish pool-controlled delegations
         // Permission_id >= 3 indicates the transaction was authorized by a custom permission (typically pool control)
+        //
+        // Also forward the wire signature(s) unconditionally: txID is
+        // sha256(raw_data) — the signing digest — so an observer can
+        // ecrecover the actual signing key (e.g. a rental market's
+        // controller wallet signing a pool participant's delegation) with
+        // no extra network calls. Permission_id alone cannot carry this:
+        // the default active permission (id 2) has a mutable key set, so
+        // only signer recovery distinguishes an owner signing with their
+        // own active key from a granted third-party key. The strings
+        // already exist on the parsed block (attaching is a reference
+        // copy), and rawValue is observer-facing — core persists only
+        // `payload` to the transactions collection.
         const rawValue: Record<string, unknown> = {
             ...value,
-            Permission_id: contract.Permission_id
+            Permission_id: contract.Permission_id,
+            ...(Array.isArray(transaction.signature)
+                ? { signature: transaction.signature }
+                : {})
         };
 
         const rawTransaction: ITransaction = { payload, snapshot, categories: emptyCategories, rawValue, info };
