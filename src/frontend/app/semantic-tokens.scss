@@ -788,6 +788,13 @@
     --stack-gap-sm: calc(var(--spacing-4)  * var(--density));   /* base 0.5rem */
     --stack-gap-lg: calc(var(--spacing-10) * var(--density));   /* base 1.5rem */
 
+    /* Section gaps — the <Section> component's own rhythm (it previously
+       borrowed --stack-gap-*). md/lg match the stack scale; sm is a step
+       roomier (0.75rem) because a section groups more than a bare stack. */
+    --section-gap-sm: calc(var(--spacing-5)  * var(--density));   /* base 0.75rem */
+    --section-gap-md: calc(var(--spacing-7)  * var(--density));   /* base 1rem    */
+    --section-gap-lg: calc(var(--spacing-10) * var(--density));   /* base 1.5rem  */
+
     /* Grid gaps */
     --grid-gap-sm: calc(var(--spacing-5)  * var(--density));   /* base 0.75rem */
     --grid-gap-md: calc(var(--spacing-10) * var(--density));   /* base 1.5rem  */

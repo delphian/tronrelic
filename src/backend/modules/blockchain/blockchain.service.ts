@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { AnyBulkWriteOperation } from 'mongoose';
 import type { Redis as RedisClient } from 'ioredis';
 import type { TronTransactionDocument } from '@/shared';
-import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IDatabaseService, IBlockchainService, IBlockData } from '@/types';
+import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IDatabaseService, IBlockchainService, IActivatingTransaction, IBlockData } from '@/types';
 import { ProcessedTransaction } from '@/types';
 import { TransactionModel, type TransactionDoc, type TransactionFields } from '../../database/models/transaction-model.js';
 import { SyncStateModel, type SyncStateDoc, type SyncStateFields } from '../../database/models/sync-state-model.js';
@@ -573,6 +573,27 @@ export class BlockchainService implements IBlockchainService {
                 transfers: row.transfers ?? 0,
                 volume: row.volume ?? 0
             }));
+    }
+
+    /**
+     * Resolve the account that activated `base58Address` via a single live
+     * TronGrid lookup.
+     *
+     * This is the one non-DB read on the service: it delegates to the internal
+     * TronGrid client so plugins get activation-ancestry resolution without a
+     * direct dependency on the (unpublished) client. The heavy lifting —
+     * fetching the account's oldest transaction, decoding the owner to base58,
+     * and the null semantics for an unresolvable activator — lives in the client;
+     * this method only exposes it through the published `IBlockchainService`
+     * contract. Because every call is one throttled TronGrid request, a caller
+     * climbing a chain must stay sequential and bound its depth.
+     *
+     * @param base58Address - Account whose activator to resolve, base58 format.
+     * @returns The activating edge, or null when the account has no transactions
+     *   or its activator is not resolvable from the top-level feed.
+     */
+    async getActivatingTransaction(base58Address: string): Promise<IActivatingTransaction | null> {
+        return this.tronClient.getActivatingTransaction(base58Address);
     }
 
     /**

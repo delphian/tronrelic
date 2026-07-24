@@ -50,6 +50,7 @@ The price-history `TronScanPriceHistoryProvider` calls `TronScanClient.getInstan
 
 ## Related
 
+- [Blockchain Module README](../blockchain/README.md) — home of the sibling `TronGridClient`; `TronScanClient` is the second external provider transport alongside it, and TronGrid (not TronScan) resolves chain and account data such as an address's activator
 - [Price History Module README](../price-history/README.md) — the consumer; the TronScan provider and the two ingestion jobs it backs
 - [system-database.md](../../../../docs/system/system-database.md) — `IDatabaseService` KV store the config persists to
 - [Menu Module README](../menu/README.md) — the Submenu Pattern the `/system/system` tab row uses
