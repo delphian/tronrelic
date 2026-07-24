@@ -14,6 +14,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { GitBranch, Plus, X, CornerRightUp, Loader2, Flag, AlertTriangle, Users, ExternalLink, Lock } from 'lucide-react';
 // Direct import (not the modules/user barrel) keeps that component's CSS out of the bundle.
 import { useAuthSession } from '../../../user/components/SessionProvider';
@@ -53,6 +54,7 @@ function truncateAddress(address: string): string {
  */
 export function AddressOrigins() {
     const { isLoggedIn } = useAuthSession();
+    const searchParams = useSearchParams();
     const [addresses, setAddresses] = useState<string[]>(['']);
     const [ladders, setLadders] = useState<Record<number, IOriginLadder>>({});
     const [streaming, setStreaming] = useState(false);
@@ -70,6 +72,18 @@ export function AddressOrigins() {
 
     // Tear the stream down if the component unmounts mid-climb.
     useEffect(() => stopStream, []);
+
+    /**
+     * Seed the first wallet row from a forwarded `?address=` param on mount,
+     * why: the shared TronAddress chip forwards a full address here via that
+     * param. Only the first row is seeded (anonymous users get a single row
+     * anyway); mount-only so it never clobbers rows the user edits afterward.
+     */
+    useEffect(() => {
+        const forwarded = searchParams.get('address');
+        if (forwarded) setAddresses([forwarded]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     /**
      * Map each activator address to the set of input wallets whose ladder passed

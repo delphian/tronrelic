@@ -7,7 +7,8 @@
  */
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ArrowLeftRight } from 'lucide-react';
 import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
@@ -24,10 +25,23 @@ import styles from './AddressConverter.module.scss';
  * receive both representations. No SSR data needed — purely interactive.
  */
 export function AddressConverter() {
+    const searchParams = useSearchParams();
     const [input, setInput] = useState('');
     const [result, setResult] = useState<IAddressConversionResult | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+
+    /**
+     * Pre-fill from a forwarded `?address=` param on mount, why: the shared
+     * TronAddress chip forwards a full address here via that param (its
+     * canonical forward contract), so the field should arrive populated. Mount
+     * only so it never fights the user's own typing after the first paint.
+     */
+    useEffect(() => {
+        const forwarded = searchParams.get('address');
+        if (forwarded) setInput(forwarded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     /** Determine format and submit to the API. */
     const handleConvert = async () => {

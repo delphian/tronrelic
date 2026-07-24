@@ -276,6 +276,36 @@ export interface IUIComponents {
         placement?: 'top' | 'bottom';
     }>;
 
+    /**
+     * TronAddress — the canonical way to render a TRON wallet/contract address.
+     *
+     * Shows the address as a compact monospace chip (`first 4 … last 4`, full
+     * value in a tooltip) with three slim affordances: copy-to-clipboard, a
+     * "forward to a public tool" dropdown, and an external Tronscan link. Use
+     * this instead of hand-truncating an address and hand-building a Tronscan
+     * anchor so every surface — core and plugin — stays visually and
+     * behaviourally identical and only has to be fixed in one place.
+     *
+     * Renders synchronously from `address`, so it is SSR-safe: pass the address
+     * straight from your SSR data. The chip does not resolve labels itself —
+     * pass a pre-resolved `label` (from an SSR fetcher) to display a name in
+     * place of the truncation. Trim affordances off with `copy`/`tools`/
+     * `explorer` for dense read-only contexts.
+     */
+    TronAddress: ComponentType<{
+        /** Full base58check TRON address (`T…`); the value copied and linked. */
+        address: string;
+        /** Pre-resolved human label shown in place of the truncated address. */
+        label?: string;
+        /** Show the copy-to-clipboard affordance. @default true */
+        copy?: boolean;
+        /** Show the "forward to a tool" dropdown. @default true */
+        tools?: boolean;
+        /** Show the external Tronscan link. @default true */
+        explorer?: boolean;
+        className?: string;
+    }>;
+
     /** Icon picker modal component for visual icon selection */
     IconPickerModal: ComponentType<{
         selectedIcon?: string;
@@ -1135,7 +1165,7 @@ export interface IFrontendPluginContext {
     /** Plugin identifier used for namespacing events and API routes */
     pluginId: string;
 
-    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, ClientTime, Tooltip, IconPickerModal, ConfirmDialog, Table family) */
+    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, ClientTime, Tooltip, TronAddress, IconPickerModal, ConfirmDialog, Table family) */
     ui: IUIComponents;
 
     /** Layout component library (Page, PageHeader, Stack, Grid, Section, SubMenu) */

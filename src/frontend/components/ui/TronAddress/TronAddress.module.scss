@@ -1,0 +1,103 @@
+/*
+ * TronAddress chip styling.
+ *
+ * Layout and affordance treatment for the canonical address chip. Structure is
+ * a single inline row (address + slim icon actions); the tools popover is an
+ * absolutely-positioned menu anchored to its trigger. All values reference
+ * semantic (Layer 2) tokens so the chip themes with the rest of the app — the
+ * address uses the shared monospace face (`--font-mono`), and affordance icons
+ * follow the muted -> primary hover convention used by the bare IconButton.
+ */
+
+.root {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    max-width: 100%;
+}
+
+/* Truncated address: monospace so leading/trailing chars align across rows. */
+.address {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    white-space: nowrap;
+    cursor: default;
+}
+
+/* Label-first display: a resolved human name reads as prose, not code. */
+.label {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    white-space: nowrap;
+    cursor: default;
+}
+
+/* Trim the wrapped CopyButton/IconButton so the icons sit slim in the row. */
+.action {
+    flex: 0 0 auto;
+}
+
+/* Anchor establishes the positioning context for the tools popover. */
+.menu_anchor {
+    position: relative;
+    display: inline-flex;
+}
+
+/* Explorer out-link: styled to match the slim icon actions (muted -> primary). */
+.action_link {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--padding-2xs);
+    color: var(--color-text-muted);
+    border-radius: var(--radius-xs);
+    transition: color var(--transition-fast);
+
+    &:hover {
+        color: var(--color-primary);
+    }
+
+    &:focus-visible {
+        outline: var(--border-width-medium) solid var(--color-primary);
+        outline-offset: 2px;
+    }
+}
+
+/* Popover surface floating below the tools trigger. */
+.menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: var(--z-index-dropdown);
+    margin-top: var(--gap-2xs);
+    display: flex;
+    flex-direction: column;
+    padding: var(--padding-2xs);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-md);
+}
+
+/* Individual forward target link. */
+.menu_item {
+    display: block;
+    padding: var(--padding-xs) var(--padding-sm);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    border-radius: var(--radius-xs);
+    white-space: nowrap;
+    text-align: left;
+    transition: background var(--transition-fast);
+
+    &:hover {
+        background: var(--color-surface-muted);
+    }
+
+    &:focus-visible {
+        outline: var(--border-width-medium) solid var(--color-primary);
+        outline-offset: -2px;
+    }
+}

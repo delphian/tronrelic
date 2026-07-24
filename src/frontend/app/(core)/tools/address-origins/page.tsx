@@ -5,6 +5,7 @@
  * No SSR data — results stream in over SSE after the user acts.
  */
 
+import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { buildMetadata } from '../../../../lib/seo';
 import { getServerConfig } from '../../../../lib/serverConfig';
@@ -34,6 +35,16 @@ export async function generateMetadata(): Promise<Metadata> {
     });
 }
 
+/**
+ * Wraps AddressOrigins in Suspense because it reads `useSearchParams()` (to
+ * pre-fill a forwarded `?address=` into the first wallet row), which Next.js
+ * App Router requires be inside a Suspense boundary when the page has no
+ * generateStaticParams.
+ */
 export default function AddressOriginsPage() {
-    return <AddressOrigins />;
+    return (
+        <Suspense>
+            <AddressOrigins />
+        </Suspense>
+    );
 }
