@@ -33,6 +33,7 @@ import { useModal } from '../../../../components/ui/ModalProvider';
 import {
     createTags,
     deleteTags,
+    invalidateAddressTags,
     searchTags,
     updateTags,
     type IAddressTagView
@@ -144,6 +145,10 @@ export function AddressTagsManager() {
         setCreating(true);
         try {
             await createTags(tags.map((tag) => ({ address, tag })));
+            // Every address chip on the page reads its tooltip tags from the
+            // shared module cache, which only re-reads on invalidation — without
+            // this, they keep their pre-mutation list for the rest of the session.
+            invalidateAddressTags(address);
             notify('success', `Added ${tags.length} tag${tags.length > 1 ? 's' : ''}`);
             setNewAddress('');
             setNewTags('');
@@ -169,6 +174,7 @@ export function AddressTagsManager() {
         setBusyKey(rowKey(item));
         try {
             await updateTags([{ address: item.address, oldTag: item.tag, newTag }]);
+            invalidateAddressTags(item.address);
             notify('success', `Renamed '${item.tag}' to '${newTag}'`);
             setEditKey(null);
             await load(committedSearch, 0, false);
@@ -196,6 +202,7 @@ export function AddressTagsManager() {
                     onConfirm={async () => {
                         try {
                             await deleteTags([{ address: item.address, tag: item.tag }]);
+                            invalidateAddressTags(item.address);
                             notify('success', `Removed '${item.tag}'`);
                             setItems((current) => current.filter((row) => rowKey(row) !== rowKey(item)));
                         } catch (error) {

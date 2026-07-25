@@ -3,11 +3,19 @@
  *
  * Tagging an address is a two-second correction an operator makes while reading
  * a table, so the editor is deliberately one text field rather than a chip
- * builder: type a comma-separated list, save, done. The field is seeded with the
- * address's current tags, and saving diffs the submitted list against them so
- * the component issues only the creates and deletes that actually changed —
- * cheaper than a delete-all/recreate, and it leaves untouched assignments' own
- * `createdAt` intact.
+ * builder: type a comma-separated list, save, done. Saving diffs the submitted
+ * list against the address's stored tags so the component issues only the
+ * creates and deletes that actually changed — cheaper than a
+ * delete-all/recreate, and it leaves untouched assignments' `createdAt` intact.
+ *
+ * **The editor reads its own authoritative tag list on mount** and keeps the
+ * field disabled until it lands. It cannot trust a caller-supplied snapshot:
+ * callers get their tags from `useAddressTags`, which reports an unresolved
+ * lookup and a genuinely untagged address identically (both `[]`), so a snapshot
+ * taken before that lookup resolved — or after it failed — would present a
+ * tagged address as empty, and the save diff would then add without removing the
+ * tags the operator never saw. `initialTags` survives only as an optimistic seed
+ * for the pre-load render.
  *
  * Writes are admin-gated by the backend (`/api/admin/system/address-tags/*`), so
  * callers must only offer this editor to admins; a non-admin would meet a 403
@@ -15,10 +23,10 @@
  */
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../../../../components/ui/Button';
 import { Input } from '../../../../components/ui/Input';
-import { createTags, deleteTags } from '../../api/client';
+import { createTags, deleteTags, getTagsByAddresses } from '../../api/client';
 import { invalidateAddressTags } from '../../hooks/useAddressTags';
 import styles from './AddressTagsEditor.module.scss';
 
@@ -28,8 +36,12 @@ import styles from './AddressTagsEditor.module.scss';
 export interface IAddressTagsEditorProps {
     /** Address whose tags are being edited. */
     address: string;
-    /** The address's current tags, used to seed the field and diff the save. */
-    initialTags: string[];
+    /**
+     * Optimistic seed for the field while the editor loads its own list. Purely
+     * cosmetic — the save diff always uses the tags this component fetched, so a
+     * stale or empty seed cannot cause a wrong write.
+     */
+    initialTags?: string[];
     /** Closes the hosting modal; called after a successful save and on cancel. */
     onClose: () => void;
 }
@@ -63,22 +75,48 @@ function parseTags(value: string): string[] {
  * @returns The editor form.
  */
 export function AddressTagsEditor({ address, initialTags, onClose }: IAddressTagsEditorProps) {
-    const [value, setValue] = useState(() => initialTags.join(', '));
+    const [value, setValue] = useState(() => (initialTags ?? []).join(', '));
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    /**
+     * The address's stored tags as this editor read them, and the sole basis for
+     * the save diff. `null` until the read resolves, which is what keeps the form
+     * disabled — an editor that cannot state the current tags must not let an
+     * operator submit a replacement for them.
+     */
+    const [loaded, setLoaded] = useState<string[] | null>(null);
 
-    // Sorted copy so the diff below is order-insensitive: retyping the same tags
-    // in a different order must not delete and recreate every assignment.
-    const existing = useMemo(() => new Set(initialTags), [initialTags]);
+    // Read the authoritative list on mount. A failure is surfaced and leaves the
+    // form disabled rather than falling back to "no tags", because an empty list
+    // is indistinguishable from a wiped one at save time.
+    useEffect(() => {
+        let active = true;
+        getTagsByAddresses([address])
+            .then(rows => {
+                if (!active) return;
+                const tags = rows.filter(row => row.address === address).map(row => row.tag);
+                setLoaded(tags);
+                setValue(tags.join(', '));
+            })
+            .catch(caught => {
+                if (!active) return;
+                setError(caught instanceof Error ? caught.message : 'Failed to load tags');
+            });
+        return () => { active = false; };
+    }, [address]);
 
     /**
      * Apply the field's contents as the address's complete tag list.
      *
-     * Diffs against the seeded tags and issues at most one create batch and one
-     * delete batch, then invalidates the shared read cache so every chip showing
-     * this address updates without a reload.
+     * Diffs against the tags this editor loaded and issues at most one create
+     * batch and one delete batch, then invalidates the shared read cache so every
+     * chip showing this address updates without a reload.
      */
     const handleSave = useCallback(async (): Promise<void> => {
+        if (loaded === null) {
+            return;
+        }
+        const existing = new Set(loaded);
         const next = parseTags(value);
         const added = next.filter(tag => !existing.has(tag));
         const removed = [...existing].filter(tag => !next.includes(tag));
@@ -98,7 +136,7 @@ export function AddressTagsEditor({ address, initialTags, onClose }: IAddressTag
         } finally {
             setSaving(false);
         }
-    }, [address, existing, onClose, value]);
+    }, [address, loaded, onClose, value]);
 
     return (
         <div className={styles.editor}>
@@ -116,10 +154,12 @@ export function AddressTagsEditor({ address, initialTags, onClose }: IAddressTag
                     onChange={event => setValue(event.target.value)}
                     placeholder="exchange, hot-wallet, market-payment"
                     autoFocus
-                    disabled={saving}
+                    disabled={saving || loaded === null}
                 />
                 <span className={styles.hint}>
-                    Comma-separated. Clearing the field removes every tag from this address.
+                    {loaded === null && !error
+                        ? 'Loading this address’s current tags…'
+                        : 'Comma-separated. Clearing the field removes every tag from this address.'}
                 </span>
             </label>
 
@@ -133,6 +173,7 @@ export function AddressTagsEditor({ address, initialTags, onClose }: IAddressTag
                     variant="primary"
                     size="sm"
                     loading={saving}
+                    disabled={loaded === null}
                     onClick={() => { void handleSave(); }}
                 >
                     Save tags
