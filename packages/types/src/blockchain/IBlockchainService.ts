@@ -79,23 +79,58 @@ export interface IActivationAncestry {
     address: string;
     /**
      * Resolved activator hops, nearest activator first. Empty when the starting
-     * address has no resolvable activator (it reads as its own origin).
+     * address has no resolvable activator.
      */
     chain: IActivatingTransaction[];
     /**
-     * True when the climb reached an origin — a hop resolved to no further
-     * activator, so the last entry in `chain` (or the start address, if empty) is
-     * a genuine root as far as the top-level feed can see.
+     * Why the climb stopped — the only field that describes the ending honestly.
+     * See {@link ActivationClimbStopReason}; in particular `'unresolved'` is not
+     * proof of a root.
+     */
+    stopReason: ActivationClimbStopReason;
+    /**
+     * True when no further activator could be resolved (`stopReason` is
+     * `'unresolved'`).
+     *
+     * **This does not mean a genuine origin was reached**, despite the name,
+     * which predates the distinction and is kept for existing consumers. An
+     * unresolvable activator and a true chain root are indistinguishable from
+     * outside: both simply produce no next edge. Presenting this to a user as
+     * "origin reached" asserts something unproven — read `stopReason` instead.
      */
     originReached: boolean;
     /**
-     * True when the depth cap stopped the climb before an origin, so the deepest
-     * entry is a limit artifact, not a real root. Mutually exclusive with
-     * `originReached`; both false means the climb stopped early (cycle guard or a
-     * provider error) and a retry may extend it.
+     * True when the depth cap stopped the climb (`stopReason` is `'depth-cap'`),
+     * so the deepest entry is a limit artifact rather than a root.
      */
     truncated: boolean;
 }
+
+/**
+ * Why an activation-ancestry climb ended.
+ *
+ * Why this exists: the climb used to report a boolean `originReached`, which
+ * conflated "this account has no parent" with "this account's parent could not
+ * be resolved" — and the second is by far the more common case, since an
+ * activator is unresolvable whenever neither the top-level nor the internal
+ * transaction feed attributes the funding transfer. Consumers that rendered the
+ * boolean told users a chain had reached its origin when it had merely run out
+ * of visibility. A climb can only ever report why it stopped, never that a root
+ * was proven.
+ */
+export type ActivationClimbStopReason =
+    /**
+     * No further activator could be resolved. The deepest account may be a true
+     * root or may simply have an activation this provider cannot attribute —
+     * the climb cannot tell which, and neither should its consumers.
+     */
+    | 'unresolved'
+    /** The depth cap was hit; deeper ancestors exist and a larger cap would find them. */
+    | 'depth-cap'
+    /** An activator repeated, which cannot happen on chain; the climb stopped to avoid looping. */
+    | 'cycle'
+    /** A provider call failed. The chain so far is valid but partial, and a retry may extend it. */
+    | 'provider-error';
 
 /**
  * Options controlling an activation-ancestry climb.

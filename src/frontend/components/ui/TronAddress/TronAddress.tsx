@@ -335,12 +335,29 @@ export function TronAddress({
                             }
                             onClick={event => event.stopPropagation()}
                         >
+                            {/*
+                              * Forwarding opens a new tab, why: the chip is an
+                              * aside on whatever the user is actually reading —
+                              * a transaction feed, a ladder, an admin table —
+                              * and sending a tool off in place destroys that
+                              * context (and any in-page state, filters, or live
+                              * stream behind it) for a lookup the user means to
+                              * glance at. A new tab also makes the forward work
+                              * when the target tool *is* the current page: same
+                              * -route client navigation would not remount the
+                              * tool, leaving its mount-only `?address=` pre-fill
+                              * stale and the menu entry looking inert.
+                              * `rel="noopener"` is mandatory with `_blank` —
+                              * without it the opened page gets `window.opener`.
+                              */}
                             {FORWARDABLE_TOOLS.map(tool => (
                                 <a
                                     key={tool.slug}
                                     role="menuitem"
                                     className={styles.menu_item}
                                     href={buildToolForwardUrl(tool.slug, address)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
                                     onClick={() => setMenuOpen(false)}
                                 >
                                     {tool.label}

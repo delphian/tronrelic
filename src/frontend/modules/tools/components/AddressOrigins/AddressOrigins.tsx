@@ -24,7 +24,7 @@ import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
 import { TronAddress } from '../../../../components/ui/TronAddress';
 import { createAddressOriginsStream } from '../../api/client';
-import type { IOriginHop, IOriginLadder } from '../../types';
+import type { IOriginHop, IOriginLadder, OriginStopReason } from '../../types';
 import styles from './AddressOrigins.module.scss';
 
 /** Registered-user cap on wallets per query; mirrors the server-side limit. */
@@ -152,7 +152,7 @@ export function AddressOrigins() {
             setLimited(data.limited);
             const initial: Record<number, IOriginLadder> = {};
             data.addresses.forEach((address, index) => {
-                initial[index] = { sourceIndex: index, address, hops: [], status: 'climbing', originReached: false, truncated: false };
+                initial[index] = { sourceIndex: index, address, hops: [], status: 'climbing' };
             });
             setLadders(initial);
         });
@@ -169,13 +169,13 @@ export function AddressOrigins() {
         });
 
         source.addEventListener('address-done', event => {
-            const data = JSON.parse((event as MessageEvent).data) as { sourceIndex: number; originReached: boolean; truncated: boolean };
+            const data = JSON.parse((event as MessageEvent).data) as { sourceIndex: number; stopReason: OriginStopReason };
             setLadders(prev => {
                 const ladder = prev[data.sourceIndex];
                 if (!ladder) {
                     return prev;
                 }
-                return { ...prev, [data.sourceIndex]: { ...ladder, status: 'done', originReached: data.originReached, truncated: data.truncated } };
+                return { ...prev, [data.sourceIndex]: { ...ladder, status: 'done', stopReason: data.stopReason } };
             });
         });
 
@@ -280,7 +280,7 @@ export function AddressOrigins() {
                                 <ol className={styles.ladder}>
                                     <li className={styles.node}>
                                         <span className={styles.tag}>wallet</span>
-                                        <TronAddress address={ladder.address} tools={false} />
+                                        <TronAddress address={ladder.address} />
                                     </li>
 
                                     {ladder.hops.map((hop, index) => {
@@ -288,7 +288,7 @@ export function AddressOrigins() {
                                         return (
                                             <li key={`${hop.txId}-${index}`} className={`${styles.node} ${isShared ? styles.node_shared : ''}`}>
                                                 <CornerRightUp size={14} className={styles.node_arrow} aria-hidden="true" />
-                                                <TronAddress address={hop.activatorAddress} tools={false} />
+                                                <TronAddress address={hop.activatorAddress} />
                                                 {isShared && (
                                                     <span className={styles.shared_badge} title="Shared across wallets">
                                                         <Users size={14} /> shared
@@ -310,17 +310,20 @@ export function AddressOrigins() {
                                     {ladder.status === 'error' && (
                                         <span className={styles.status_error}><AlertTriangle size={14} aria-hidden="true" /> {ladder.errorMessage ?? 'Interrupted — please retry.'}</span>
                                     )}
-                                    {ladder.status === 'done' && ladder.originReached && ladder.hops.length > 0 && (
-                                        <span className={styles.status_origin}><Flag size={14} aria-hidden="true" /> Origin reached — no earlier activator found.</span>
+                                    {ladder.status === 'done' && ladder.stopReason === 'unresolved' && ladder.hops.length > 0 && (
+                                        <span className={styles.status_origin}><Flag size={14} aria-hidden="true" /> Chain ends here — the last account has no activator we can attribute. It may be a true origin, or its funding may not be traceable.</span>
                                     )}
-                                    {ladder.status === 'done' && ladder.originReached && ladder.hops.length === 0 && (
-                                        <span className={styles.status_warn}><AlertTriangle size={14} aria-hidden="true" /> Activator could not be resolved — this wallet may have been created by an internal contract transfer.</span>
+                                    {ladder.status === 'done' && ladder.stopReason === 'unresolved' && ladder.hops.length === 0 && (
+                                        <span className={styles.status_warn}><AlertTriangle size={14} aria-hidden="true" /> No activator could be attributed for this wallet — its funding transfer is not traceable to a sender.</span>
                                     )}
-                                    {ladder.status === 'done' && ladder.truncated && (
-                                        <span className={styles.status_warn}><AlertTriangle size={14} aria-hidden="true" /> Stopped at the depth cap — a limit, not a true origin.</span>
+                                    {ladder.status === 'done' && ladder.stopReason === 'depth-cap' && (
+                                        <span className={styles.status_warn}><AlertTriangle size={14} aria-hidden="true" /> Stopped at the depth cap — a limit, not the end of the chain.</span>
                                     )}
-                                    {ladder.status === 'done' && !ladder.originReached && !ladder.truncated && (
-                                        <span className={styles.status_warn}><AlertTriangle size={14} aria-hidden="true" /> Tracing interrupted before an origin was found — please retry.</span>
+                                    {ladder.status === 'done' && ladder.stopReason === 'cycle' && (
+                                        <span className={styles.status_warn}><AlertTriangle size={14} aria-hidden="true" /> Stopped — the chain repeated an account it had already passed through.</span>
+                                    )}
+                                    {ladder.status === 'done' && ladder.stopReason === 'provider-error' && (
+                                        <span className={styles.status_warn}><AlertTriangle size={14} aria-hidden="true" /> Tracing interrupted before the chain ended — please retry.</span>
                                     )}
                                 </p>
 
