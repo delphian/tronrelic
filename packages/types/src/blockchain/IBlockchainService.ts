@@ -154,12 +154,20 @@ export interface IActivationClimbOptions {
      */
     onHop?: (hop: IActivatingTransaction, index: number) => void;
     /**
-     * Shared cache of single-hop edges (child address → its activator, or `null`
-     * for an origin/unresolvable). Activations are immutable, so passing one map
-     * across several addresses in a batch fetches each shared tail once — and lets
-     * the caller detect common ancestors as they surface.
+     * Shared cache of single-hop edge *lookups* (child address → a promise of its
+     * activator, or of `null` for an origin/unresolvable). Activations are
+     * immutable, so passing one map across several addresses in a batch fetches
+     * each shared tail once — and lets the caller detect common ancestors as they
+     * surface.
+     *
+     * It caches the in-flight promise rather than the resolved edge deliberately:
+     * when several climbs are interleaved, two ladders converging on the same
+     * ancestor would both miss a resolved-value cache during the window before
+     * either lookup settles, and duplicate the whole shared tail's provider calls.
+     * Caching the promise makes the second climber await the first one's request.
+     * A rejected lookup is evicted so a later climb can retry it.
      */
-    edgeCache?: Map<string, IActivatingTransaction | null>;
+    edgeCache?: Map<string, Promise<IActivatingTransaction | null>>;
 }
 
 /**
@@ -269,4 +277,32 @@ export interface IBlockchainService {
      *   provider error stopped the climb (see {@link IActivationAncestry} flags).
      */
     climbActivationAncestry(base58Address: string, options?: IActivationClimbOptions): Promise<IActivationAncestry>;
+
+    /**
+     * The same climb as {@link climbActivationAncestry}, exposed one hop at a time
+     * so a caller can decide when the next provider call happens.
+     *
+     * Why it exists: a caller climbing several addresses at once (the Address
+     * Origins tool) would otherwise have to run each ladder to completion before
+     * starting the next, because the whole-chain method only returns at the end —
+     * so the last wallet shows nothing until every earlier wallet finished. Driving
+     * the generators round-robin advances every ladder together at the same total
+     * provider cost. Re-implementing the loop per caller is the alternative this
+     * exists to prevent: the cap, cycle guard, and stop-reason accounting stay here.
+     *
+     * Each `next()` performs at most one hop's provider lookup and yields the
+     * resolved edge; the final `next()` yields nothing and *returns* the completed
+     * {@link IActivationAncestry}. Abandoning the generator mid-climb simply stops
+     * it — no further lookups are made.
+     *
+     * @param base58Address - Account whose ancestry to climb, base58 format.
+     * @param options - Depth cap, per-hop streaming callback, and shared edge cache;
+     *   identical semantics to {@link climbActivationAncestry}.
+     * @returns An async generator yielding each activator hop, returning the
+     *   collected ancestry (with its `stopReason`) when the climb ends.
+     */
+    climbActivationAncestrySteps(
+        base58Address: string,
+        options?: IActivationClimbOptions
+    ): AsyncGenerator<IActivatingTransaction, IActivationAncestry, void>;
 }

@@ -181,6 +181,11 @@ export class ToolsController {
      * instead of flushing them live; `X-Accel-Buffering: no` does the same for any
      * upstream nginx.
      *
+     * Wallets are climbed round-robin — one hop from each per pass — rather than
+     * one wallet at a time to completion. The walk is a single throttled provider
+     * call at a time either way, so this costs nothing and stops the last wallet of
+     * a comparison from sitting blank while the earlier ones finish.
+     *
      * Access tiers are enforced server-side (never trusting the client): anonymous
      * callers get one address climbed one hop (the immediate parent); a valid
      * session unlocks the multi-wallet, full-ladder climb. A shared edge cache
@@ -193,7 +198,8 @@ export class ToolsController {
      * and returned as a partial (an `address-done` with neither terminal flag set,
      * which the client renders as an interruption); an `address-error` event fires
      * only when the climb call itself throws (e.g. the blockchain service is
-     * unavailable), and a client disconnect aborts the remaining work.
+     * unavailable), and a client disconnect stops every ladder at its next hop
+     * boundary — the abandoned generators simply make no further calls.
      */
     streamAddressOrigins = async (req: Request, res: Response): Promise<void> => {
         const parsed = addressOriginsQuerySchema.safeParse(req.query);
@@ -237,55 +243,77 @@ export class ToolsController {
 
         // One edge cache shared across every address: a tail common to several
         // wallets is fetched once, and the client uses the repeated activator to
-        // highlight a shared ancestor.
-        const edgeCache = new Map<string, IActivatingTransaction | null>();
+        // highlight a shared ancestor. It caches the in-flight lookup rather than
+        // the resolved edge, which is what keeps two ladders converging on the
+        // same ancestor at the same moment from duplicating the shared tail.
+        const edgeCache = new Map<string, Promise<IActivatingTransaction | null>>();
+
+        // One stepped climb per wallet, advanced round-robin below. Each wallet's
+        // own hop depth is tracked here because the generator yields edges, not
+        // positions.
+        let active = plan.addresses.map((address, sourceIndex) => ({
+            address,
+            sourceIndex,
+            depth: 0,
+            steps: this.addressOriginsService.climbSteps(address, {
+                maxDepth: plan.maxDepth,
+                edgeCache
+            })
+        }));
 
         try {
-            for (let sourceIndex = 0; sourceIndex < plan.addresses.length; sourceIndex += 1) {
-                if (clientGone) {
-                    break;
-                }
-                const address = plan.addresses[sourceIndex];
-                try {
-                    const result = await this.addressOriginsService.climb(address, {
-                        maxDepth: plan.maxDepth,
-                        edgeCache,
-                        onHop: (hop, depth) => {
-                            // Throwing here aborts the climb promptly when the
-                            // browser has hung up mid-walk.
-                            if (clientGone) {
-                                throw new Error('client disconnected');
-                            }
-                            send('hop', {
-                                sourceIndex,
-                                address,
-                                depth,
-                                activatorAddress: hop.activatorAddress,
-                                txId: hop.txId,
-                                blockTimestamp: hop.blockTimestamp,
-                                contractType: hop.contractType
-                            });
-                        }
-                    });
-                    if (!clientGone) {
-                        send('address-done', {
-                            sourceIndex,
-                            address,
-                            // `stopReason` is what the client words its terminal
-                            // message from; the two booleans ride along only for
-                            // any consumer still reading the older shape.
-                            stopReason: result.stopReason,
-                            originReached: result.originReached,
-                            truncated: result.truncated,
-                            hops: result.chain.length
-                        });
-                    }
-                } catch {
+            // Round-robin rather than wallet-by-wallet: every ladder advances one
+            // hop per pass, so a ten-wallet comparison fills in together instead of
+            // leaving the last wallet blank until the first nine complete. Total
+            // provider cost is unchanged — the climb is one throttled call at a
+            // time either way — only the order the hops arrive in differs.
+            while (active.length > 0 && !clientGone) {
+                const survivors: typeof active = [];
+                for (const track of active) {
                     if (clientGone) {
                         break;
                     }
-                    send('address-error', { sourceIndex, address, message: 'Lookup interrupted — please retry.' });
+                    const { sourceIndex, address } = track;
+                    try {
+                        const step = await track.steps.next();
+                        if (clientGone) {
+                            break;
+                        }
+                        if (step.done) {
+                            send('address-done', {
+                                sourceIndex,
+                                address,
+                                // `stopReason` is what the client words its terminal
+                                // message from; the two booleans ride along only for
+                                // any consumer still reading the older shape.
+                                stopReason: step.value.stopReason,
+                                originReached: step.value.originReached,
+                                truncated: step.value.truncated,
+                                hops: step.value.chain.length
+                            });
+                            continue;
+                        }
+                        send('hop', {
+                            sourceIndex,
+                            address,
+                            depth: track.depth,
+                            activatorAddress: step.value.activatorAddress,
+                            txId: step.value.txId,
+                            blockTimestamp: step.value.blockTimestamp,
+                            contractType: step.value.contractType
+                        });
+                        track.depth += 1;
+                        // Only a wallet that yielded a hop has more to climb; a
+                        // finished or failed one is simply not carried forward.
+                        survivors.push(track);
+                    } catch {
+                        if (clientGone) {
+                            break;
+                        }
+                        send('address-error', { sourceIndex, address, message: 'Lookup interrupted — please retry.' });
+                    }
                 }
+                active = survivors;
             }
             if (!clientGone) {
                 send('complete', {});

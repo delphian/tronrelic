@@ -632,6 +632,44 @@ export class BlockchainService implements IBlockchainService {
      * @returns The collected ancestry with origin/truncated flags.
      */
     async climbActivationAncestry(base58Address: string, options: IActivationClimbOptions = {}): Promise<IActivationAncestry> {
+        // Drain the stepped form rather than duplicating the loop: one bounded
+        // climb implementation, two shapes.
+        const steps = this.climbActivationAncestrySteps(base58Address, options);
+        let step = await steps.next();
+        while (!step.done) {
+            step = await steps.next();
+        }
+        return step.value;
+    }
+
+    /**
+     * The same bounded climb, surfaced one hop per `next()` so a caller driving
+     * several ladders can interleave them instead of running each to completion.
+     *
+     * Why a generator rather than a second loop in the caller: everything tricky
+     * about this walk — the depth cap, the cycle guard, the shared-edge cache, and
+     * the `stopReason` accounting a mis-bounded climb silently corrupts — must
+     * exist exactly once, which is why {@link climbActivationAncestry} is now a
+     * thin drain of this method instead of a parallel implementation.
+     *
+     * The shared `edgeCache` holds the in-flight *promise* per child address, not
+     * the resolved edge. Interleaved ladders converging on a common ancestor reach
+     * it at nearly the same moment, and a resolved-value cache is still empty for
+     * the second climber while the first one's request is in flight — so both
+     * would fetch, and keep duplicating every remaining call of the shared tail.
+     * Awaiting the cached promise collapses that back to one climb's worth of
+     * provider traffic. A rejected lookup is evicted so a later climb can retry.
+     *
+     * @param base58Address - Account whose ancestry to climb, base58 format.
+     * @param options - Depth cap, per-hop `onHop` callback (still fired, for the
+     *   drained form's streaming consumers), and the batch's shared edge cache.
+     * @returns Yields each activator hop as it resolves; returns the collected
+     *   ancestry once the climb stops.
+     */
+    async *climbActivationAncestrySteps(
+        base58Address: string,
+        options: IActivationClimbOptions = {}
+    ): AsyncGenerator<IActivatingTransaction, IActivationAncestry, void> {
         const maxDepth = options.maxDepth ?? MAX_ACTIVATION_ANCESTRY_DEPTH;
         const chain: IActivatingTransaction[] = [];
         const seen = new Set<string>([base58Address]);
@@ -643,15 +681,22 @@ export class BlockchainService implements IBlockchainService {
         for (let depth = 0; depth < maxDepth; depth += 1) {
             let edge: IActivatingTransaction | null;
             try {
-                // Reuse a shared edge across a batch when provided — activations are
-                // immutable, so a tail common to several addresses is fetched once.
-                if (options.edgeCache?.has(current)) {
-                    edge = options.edgeCache.get(current) ?? null;
-                } else {
-                    edge = await this.getActivatingTransaction(current);
-                    options.edgeCache?.set(current, edge);
+                // Reuse a shared lookup across a batch when provided — activations
+                // are immutable, so a tail common to several addresses is fetched
+                // once. The promise is cached before it settles so an interleaved
+                // ladder arriving mid-flight joins this request instead of issuing
+                // its own; without that, converging ladders duplicate the whole
+                // shared tail.
+                let lookup = options.edgeCache?.get(current);
+                if (!lookup) {
+                    lookup = this.getActivatingTransaction(current);
+                    options.edgeCache?.set(current, lookup);
                 }
+                edge = await lookup;
             } catch (error) {
+                // Drop the failed lookup so it is not replayed as a permanent
+                // failure to every other ladder sharing this cache, nor to a retry.
+                options.edgeCache?.delete(current);
                 // A throttled TronGrid call failed; stop with whatever streamed so
                 // far rather than discarding progress, and say so, so the caller
                 // can offer a retry instead of presenting a partial as complete.
@@ -670,6 +715,7 @@ export class BlockchainService implements IBlockchainService {
 
             chain.push(edge);
             options.onHop?.(edge, depth);
+            yield edge;
 
             if (seen.has(edge.activatorAddress)) {
                 stopReason = 'cycle';

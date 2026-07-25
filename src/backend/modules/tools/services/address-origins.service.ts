@@ -15,7 +15,8 @@ import type {
     IServiceRegistry,
     IBlockchainService,
     IActivationAncestry,
-    IActivationClimbOptions
+    IActivationClimbOptions,
+    IActivatingTransaction
 } from '@/types';
 import type { AddressService } from './address.service.js';
 
@@ -118,6 +119,27 @@ export class AddressOriginsService {
      */
     public async climb(address: string, options: IActivationClimbOptions): Promise<IActivationAncestry> {
         return this.blockchain().climbActivationAncestry(address, options);
+    }
+
+    /**
+     * The same climb, stepped one hop per `next()`, for the multi-wallet stream.
+     *
+     * Why the streaming handler wants this shape: a whole-chain `climb()` per
+     * wallet can only run to completion before the next wallet starts, so the last
+     * wallet in a ten-wallet comparison shows nothing until the first nine finish.
+     * Advancing one generator per wallet round-robin fills every ladder together at
+     * the same total provider cost — the walk is throttled either way.
+     *
+     * @param address - Base58 address to climb.
+     * @param options - Depth cap and the batch's shared edge cache; passing the
+     *   same cache to every wallet is what keeps a converging tail to one lookup.
+     * @returns Generator yielding each hop, returning the completed ancestry.
+     */
+    public climbSteps(
+        address: string,
+        options: IActivationClimbOptions
+    ): AsyncGenerator<IActivatingTransaction, IActivationAncestry, void> {
+        return this.blockchain().climbActivationAncestrySteps(address, options);
     }
 
     /**
