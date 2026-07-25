@@ -16,16 +16,40 @@
  * more visual weight than the wrench and out-link beside it. It is a
  * `'use client'` component purely because those affordances need event handlers
  * and a click-outside listener.
+ *
+ * The tools menu renders in a `<body>` portal with viewport-fixed coordinates.
+ * An earlier revision anchored it absolutely and only flipped it upward near the
+ * viewport bottom, which left it clipped inside any scrolling ancestor — the
+ * shared `Table` wrapper sets `overflow-x: auto`, and CSS turns the other axis
+ * into `auto` too, so a menu opening below a row was cut at the table's edge
+ * regardless of the space beyond it.
  */
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ExternalLink, Wrench } from 'lucide-react';
 import { TrCopyIcon } from '../TrCopyIcon';
 import { IconButton } from '../IconButton';
 import { Tooltip } from '../Tooltip';
+import { useModal } from '../ModalProvider';
+// Deep imports rather than the module barrels: the address-tags barrel re-exports
+// its editor, which imports core UI primitives, so pulling the barrel in here
+// would close an import cycle through this file. The user barrel is skipped for
+// the established reason that it drags component CSS into every bundle.
+import { useAddressTags } from '../../../modules/address-tags/hooks/useAddressTags';
+import { AddressTagsEditor } from '../../../modules/address-tags/components/AddressTagsEditor/AddressTagsEditor';
+import { useAuthSession } from '../../../modules/user/components/SessionProvider';
 import { FORWARDABLE_TOOLS, buildToolForwardUrl } from './forwardableTools';
 import styles from './TronAddress.module.scss';
+
+/**
+ * Group whose members may change tags. Address-tag reads are open to any
+ * logged-in visitor, but every mutation route is `requireAdmin`, so the edit
+ * affordance is gated on the same membership the backend enforces — offering it
+ * more widely would only produce a 403 after the operator typed.
+ */
+const TAG_EDIT_GROUP = 'admin';
 
 /**
  * Base58 explorer deep-link root. Tronscan is hardcoded because the codebase
@@ -45,13 +69,22 @@ const HEAD_CHARS = 4;
 const TAIL_CHARS = 4;
 
 /**
- * Minimum gap (px) to keep between the open tools menu and the viewport edge
- * when deciding which way it opens. The menu flips above its trigger only when
- * the space below cannot fit the menu plus this breathing room, so a menu near
- * the bottom of a scroll-clipped container (the shared `Table` wrapper sets
- * `overflow: auto`) opens upward into visible space instead of being clipped.
+ * Minimum gap (px) to keep between the open tools menu and both its trigger and
+ * the viewport edge. The menu flips above its trigger only when the space below
+ * cannot fit the menu plus this breathing room.
  */
 const MENU_VIEWPORT_GAP_PX = 8;
+
+/**
+ * Viewport-fixed coordinates for the portaled tools menu, resolved from the
+ * trigger's live bounding rect. Held in state (rather than derived in render)
+ * because measuring requires the DOM, and `null` marks "not yet measured" so
+ * the menu stays invisible instead of flashing at the origin.
+ */
+interface IMenuPosition {
+    top: number;
+    left: number;
+}
 
 /**
  * Props for {@link TronAddress}.
@@ -112,22 +145,31 @@ export function TronAddress({
     className
 }: ITronAddressProps) {
     const [menuOpen, setMenuOpen] = useState(false);
-    const [menuPlacement, setMenuPlacement] = useState<'bottom' | 'top'>('bottom');
+    const [menuPosition, setMenuPosition] = useState<IMenuPosition | null>(null);
     const menuRef = useRef<HTMLDivElement | null>(null);
     const menuListRef = useRef<HTMLDivElement | null>(null);
+    const tags = useAddressTags(address);
+    const { session } = useAuthSession();
+    const modal = useModal();
+    const canEditTags = session?.user?.groups?.includes(TAG_EDIT_GROUP) ?? false;
 
     /**
      * Close the tools popover on any click outside it and on Escape, why: an
      * anchored menu that only dismisses via its own toggle is a well-known
      * usability trap. The listeners attach only while the menu is open, so
      * they are a no-op in the common closed state. Mirrors the Tooltip
-     * primitive's outside-pointer handling.
+     * primitive's outside-pointer handling. The menu itself is portaled to
+     * `<body>`, so it is not a descendant of the anchor — both nodes are
+     * checked or clicking a tool link would dismiss before it navigates.
      */
     useEffect(() => {
         if (!menuOpen) return undefined;
         function handlePointerDown(event: globalThis.PointerEvent): void {
-            const menu = menuRef.current;
-            if (menu && !menu.contains(event.target as Node)) {
+            const anchor = menuRef.current;
+            const menu = menuListRef.current;
+            const target = event.target as Node;
+            const inside = Boolean(anchor?.contains(target)) || Boolean(menu?.contains(target));
+            if (!inside) {
                 setMenuOpen(false);
             }
         }
@@ -151,44 +193,88 @@ export function TronAddress({
     }, []);
 
     /**
-     * Choose whether the open menu drops below its trigger or flips above it,
-     * why: the menu is absolutely positioned and cannot escape an ancestor's
-     * overflow box (a portal would, but that is heavier machinery than this
-     * primitive warrants — see the flip precedent in the sibling Tooltip). When
-     * the trigger sits near the bottom of the viewport (the common clipped case
-     * inside a scrolling table), opening downward would render the menu into
-     * clipped space; flipping it upward keeps it visible. Runs in a layout
-     * effect so the corrected side is set before paint (no downward flash), and
-     * re-measures on resize so a menu left open through a viewport change stays
-     * placed. Measuring needs the menu in the DOM, so this depends on menuOpen.
+     * Resolve the open menu's viewport-fixed coordinates from its trigger, why:
+     * an absolutely-positioned menu cannot escape an ancestor's overflow box, and
+     * the chip's most common home is a scroll container — the shared `Table`
+     * wrapper sets `overflow-x: auto`, which per CSS also clips vertically, so a
+     * menu opening below a row was cut off at the table's edge no matter how much
+     * viewport space remained. The menu therefore renders in a `<body>` portal and
+     * is placed here: below the trigger when the viewport has room, flipped above
+     * it when not, and clamped so it never runs off the right edge.
+     *
+     * Runs in a layout effect so the position is set before paint (no flash at the
+     * origin), and re-measures on scroll and resize because a fixed menu does not
+     * follow its trigger the way an anchored one does. Scroll is captured so
+     * scrolling the *table* — not just the window — repositions too. Measuring
+     * needs the menu mounted, so this depends on `menuOpen`.
      */
     useLayoutEffect(() => {
         if (!menuOpen) {
-            setMenuPlacement('bottom');
+            setMenuPosition(null);
             return undefined;
         }
-        function updatePlacement(): void {
+        function updatePosition(): void {
             const anchor = menuRef.current;
             const menu = menuListRef.current;
             if (!anchor || !menu) return;
             const anchorRect = anchor.getBoundingClientRect();
-            const menuHeight = menu.getBoundingClientRect().height;
+            const menuRect = menu.getBoundingClientRect();
             const viewportHeight = document.documentElement.clientHeight;
+            const viewportWidth = document.documentElement.clientWidth;
             const spaceBelow = viewportHeight - anchorRect.bottom;
             const spaceAbove = anchorRect.top;
-            const fitsBelow = spaceBelow >= menuHeight + MENU_VIEWPORT_GAP_PX;
-            setMenuPlacement(!fitsBelow && spaceAbove > spaceBelow ? 'top' : 'bottom');
+            const fitsBelow = spaceBelow >= menuRect.height + MENU_VIEWPORT_GAP_PX;
+            const openAbove = !fitsBelow && spaceAbove > spaceBelow;
+            const top = openAbove
+                ? anchorRect.top - menuRect.height - MENU_VIEWPORT_GAP_PX
+                : anchorRect.bottom + MENU_VIEWPORT_GAP_PX;
+            const maxLeft = viewportWidth - menuRect.width - MENU_VIEWPORT_GAP_PX;
+            const left = Math.max(MENU_VIEWPORT_GAP_PX, Math.min(anchorRect.left, maxLeft));
+            setMenuPosition({ top, left });
         }
-        updatePlacement();
-        window.addEventListener('resize', updatePlacement);
-        return () => window.removeEventListener('resize', updatePlacement);
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
     }, [menuOpen]);
 
+    /**
+     * Open the freeform tag editor for this address in the shared core modal.
+     *
+     * The editor lives in the address-tags module and is handed the tags already
+     * resolved for the chip, so it opens seeded rather than fetching again. The
+     * modal is closed by id from inside the editor, which also invalidates the
+     * shared read cache so every chip on the page picks the change up.
+     */
+    const openTagEditor = useCallback((): void => {
+        setMenuOpen(false);
+        const id = `address-tags:${address}`;
+        modal.open({
+            id,
+            title: 'Edit tags',
+            size: 'sm',
+            content: (
+                <AddressTagsEditor
+                    address={address}
+                    initialTags={tags}
+                    onClose={() => modal.close(id)}
+                />
+            )
+        });
+    }, [address, modal, tags]);
+
     const display = label ?? truncateAddress(address);
+    // Tags ride in the tooltip rather than beside the chip: they are context for
+    // "which wallet is this", and a chip that grew inline chips would reflow
+    // every dense table it sits in.
+    const tooltip = tags.length > 0 ? `${address} (${tags.join(', ')})` : address;
 
     return (
         <span className={[styles.root, className].filter(Boolean).join(' ')}>
-            <Tooltip content={address}>
+            <Tooltip content={tooltip}>
                 <span
                     className={label ? styles.label : styles.address}
                     data-testid="tron-address-display"
@@ -211,12 +297,14 @@ export function TronAddress({
             )}
 
             {tools && (
-                // Stop tool clicks (the wrench toggle and the menu-item links,
-                // both descendants of this wrapper) from bubbling to an enclosing
-                // clickable row (`<Tr onClick>`), which would navigate or unmount
-                // the chip before the menu is usable. Mirrors CopyButton, which
-                // stops propagation for the same reason. preventDefault is not
-                // called, so the tool links still navigate.
+                // Stop tool clicks from bubbling to an enclosing clickable row
+                // (`<Tr onClick>`), which would navigate or unmount the chip
+                // before the menu is usable. Mirrors CopyButton, which stops
+                // propagation for the same reason. preventDefault is not called,
+                // so the tool links still navigate. The portaled menu is not a
+                // descendant of this wrapper, so it stops propagation itself —
+                // its own DOM position is under `<body>`, but React still
+                // bubbles its events through this tree.
                 <div
                     className={styles.menu_anchor}
                     ref={menuRef}
@@ -233,13 +321,19 @@ export function TronAddress({
                     >
                         <Wrench size={14} />
                     </IconButton>
-                    {menuOpen && (
+                    {menuOpen && createPortal(
                         <div
                             ref={menuListRef}
-                            className={[styles.menu, menuPlacement === 'top' ? styles.menu_top : '']
-                                .filter(Boolean)
-                                .join(' ')}
+                            className={styles.menu}
                             role="menu"
+                            // Hidden until measured so the first paint never
+                            // shows the menu parked at the viewport origin.
+                            style={
+                                menuPosition
+                                    ? { top: menuPosition.top, left: menuPosition.left }
+                                    : { top: 0, left: 0, visibility: 'hidden' }
+                            }
+                            onClick={event => event.stopPropagation()}
                         >
                             {FORWARDABLE_TOOLS.map(tool => (
                                 <a
@@ -252,7 +346,21 @@ export function TronAddress({
                                     {tool.label}
                                 </a>
                             ))}
-                        </div>
+                            {canEditTags && (
+                                // A button, not a link: it opens a modal in place
+                                // rather than navigating, so the tool-forward
+                                // links above stay the only anchors here.
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    className={styles.menu_item}
+                                    onClick={openTagEditor}
+                                >
+                                    Edit tags
+                                </button>
+                            )}
+                        </div>,
+                        document.body
                     )}
                 </div>
             )}

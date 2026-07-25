@@ -13,7 +13,9 @@ Central CRUD authority for free-text tags on TRON wallet addresses. Every surfac
 | User API | `/api/address-tags/*` — `requireLogin` |
 | Admin API | `/api/admin/system/address-tags/*` — `requireAdmin` |
 | Admin UI | `/system/address-tags` |
-| Frontend client | `src/frontend/modules/address-tags/api/client.ts` |
+| Frontend client | `src/frontend/modules/address-tags/api/client.ts` (both surfaces) |
+| Frontend read cache | `useAddressTags(address)` — batches every chip's lookup into one `by-address` call, invalidate with `invalidateAddressTags(address)` |
+| Frontend editor | `AddressTagsEditor` — freeform comma-separated field, opened from the `TronAddress` chip's wrench menu ("Edit tags", admin only) |
 
 ## Why MongoDB
 
@@ -57,6 +59,19 @@ Admin surface (`createAdminRateLimiter` + `requireAdmin`; admin-group session or
 | `POST /tags/delete` | `{ tags: IAddressTagPair[] }` | Delete (POST because the operation carries a body) |
 
 Validation failures return 400 with the service's message; other failures 500.
+
+## Where Tags Surface
+
+Every address on the site renders through the canonical `TronAddress` chip
+(`src/frontend/components/ui/TronAddress/`), so that chip is the module's primary
+consumer: it appends an address's tags to its hover tooltip — `T…abcd (exchange,
+hot-wallet)` — and offers "Edit tags" in its wrench menu, which opens
+`AddressTagsEditor` in the core modal. Reads go through `useAddressTags`, one
+process-wide cache that coalesces a page's chips into a single request; tags are
+treated as an absent enhancement when the visitor is anonymous (reads are
+`requireLogin`) or the lookup fails. The edit item is gated on `admin` group
+membership because every mutation route is `requireAdmin` — widening it would
+only surface a 403 after the operator typed.
 
 ## Source Map
 

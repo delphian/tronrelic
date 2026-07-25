@@ -1,16 +1,22 @@
 /**
- * @fileoverview Admin API client for the address-tags module.
+ * @fileoverview API client for the address-tags module.
  *
- * Thin fetch wrappers over `/api/admin/system/address-tags/*`. Same-origin
- * calls carry the Better Auth session cookie automatically, which the
- * backend's `requireAdmin` middleware consults — no token plumbing here.
- * Every function throws on a non-2xx response so callers surface the failure
- * in the UI.
+ * Thin fetch wrappers over the module's two HTTP surfaces: the read-only user
+ * routes (`/api/address-tags/*`, `requireLogin`) and the mutation routes
+ * (`/api/admin/system/address-tags/*`, `requireAdmin`). Same-origin calls carry
+ * the Better Auth session cookie automatically, which those gates consult — no
+ * token plumbing here. Every function throws on a non-2xx response so callers
+ * surface the failure in the UI.
+ *
+ * The split matters to callers: any logged-in visitor may *read* an address's
+ * tags, but only an admin may change them, so a UI offering an edit affordance
+ * gates it on admin group membership rather than on login.
  */
 
 import type { IAddressTagPair, IAddressTagRename } from '@/types';
 
 const BASE = '/api/admin/system/address-tags';
+const USER_BASE = '/api/address-tags';
 
 export type { IAddressTagPair, IAddressTagRename } from '@/types';
 
@@ -38,6 +44,27 @@ async function parse<T>(response: Response, what: string): Promise<T> {
         throw new Error(body.error || `Failed to ${what} (HTTP ${response.status})`);
     }
     return response.json() as Promise<T>;
+}
+
+/**
+ * Read every tag assigned to the given addresses.
+ *
+ * Batched by design: the caller passes as many addresses as it needs rendered,
+ * so a table of a hundred chips costs one request instead of a hundred. Reads
+ * are gated on `requireLogin`, so an anonymous visitor gets a 401 here — treat
+ * tags as an absent enhancement in that case rather than an error to surface.
+ *
+ * @param addresses - Base58 addresses to look up; a single address is a
+ *        one-element array.
+ * @returns Every stored `(address, tag)` assignment across those addresses.
+ */
+export async function getTagsByAddresses(addresses: string[]): Promise<IAddressTagView[]> {
+    const query = new URLSearchParams({ addresses: addresses.join(',') });
+    const data = await parse<{ tags: IAddressTagView[] }>(
+        await fetch(`${USER_BASE}/by-address?${query.toString()}`),
+        'load address tags'
+    );
+    return data.tags;
 }
 
 /**

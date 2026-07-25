@@ -1,0 +1,58 @@
+/*
+ * AddressTagsEditor styling.
+ *
+ * A single-field form inside the shared modal dialog: the address it edits at
+ * the top, the freeform field, then the action row. The modal owns the surface
+ * and padding, so this module only sets the internal rhythm and the field's
+ * supporting text.
+ */
+
+.editor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+/* The address being edited, restated so the modal stands on its own once it
+   covers the row the operator clicked from. Monospace and wrapping: the whole
+   34-character value is shown on purpose, so it must break rather than widen
+   the dialog. */
+.address {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    word-break: break-all;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.label {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+/* States the destructive case plainly: an emptied field is a delete, which is
+   not obvious from a text input that accepts anything. */
+.hint {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    line-height: var(--line-height-relaxed);
+}
+
+.error {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-danger-text);
+}
+
+.actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+}
