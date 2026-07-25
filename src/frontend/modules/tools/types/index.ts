@@ -94,17 +94,27 @@ export interface IOriginHop {
 export type OriginLadderStatus = 'climbing' | 'done' | 'error';
 
 /**
+ * Why a climb ended, mirroring the backend's `ActivationClimbStopReason`.
+ *
+ * Kept as a local copy rather than imported from the types package because this
+ * is the SSE wire shape the tool page parses, not the service contract. The
+ * distinction that matters to the UI: `'unresolved'` means the chain ran out of
+ * *visibility*, which must never be worded as having reached an origin.
+ */
+export type OriginStopReason = 'unresolved' | 'depth-cap' | 'cycle' | 'provider-error';
+
+/**
  * Client-side accumulation of one address's climb: the hops seen so far plus the
- * terminal state. `originReached` distinguishes a true root from a `truncated`
- * depth-cap stop; a status of `error` means the climb was interrupted.
+ * terminal state. `stopReason` is present once `status` is `done` and is what
+ * the ladder's closing message is worded from; a status of `error` means the
+ * stream itself failed before any terminal event arrived.
  */
 export interface IOriginLadder {
     sourceIndex: number;
     address: string;
     hops: IOriginHop[];
     status: OriginLadderStatus;
-    originReached: boolean;
-    truncated: boolean;
+    stopReason?: OriginStopReason;
     errorMessage?: string;
 }
 

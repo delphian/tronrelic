@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { AnyBulkWriteOperation } from 'mongoose';
 import type { Redis as RedisClient } from 'ioredis';
 import type { TronTransactionDocument } from '@/shared';
-import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IDatabaseService, IBlockchainService, IActivatingTransaction, IActivationAncestry, IActivationClimbOptions, IBlockData } from '@/types';
+import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IDatabaseService, IBlockchainService, IActivatingTransaction, IActivationAncestry, ActivationClimbStopReason, IActivationClimbOptions, IBlockData } from '@/types';
 import { ProcessedTransaction } from '@/types';
 import { TransactionModel, type TransactionDoc, type TransactionFields } from '../../database/models/transaction-model.js';
 import { SyncStateModel, type SyncStateDoc, type SyncStateFields } from '../../database/models/sync-state-model.js';
@@ -616,11 +616,14 @@ export class BlockchainService implements IBlockchainService {
      * published service keeps the one tricky piece (a mis-bounded climb silently
      * misreports every address as its own origin) correct in a single place.
      *
-     * How it stops: a `null` edge marks an origin and ends the climb cleanly; the
-     * depth cap marks the result `truncated`; a repeated activator (impossible on
-     * chain, but a provider quirk must not loop us) or a thrown provider error
-     * stops early with both flags false, signalling a partial that a retry may
-     * extend. Streamed hops (`onHop`) already delivered survive an early stop.
+     * How it stops: every ending is reported through `stopReason` — a `null` edge
+     * is `'unresolved'` (no further activator could be attributed, which is *not*
+     * proof of a root), the depth cap is `'depth-cap'`, a repeated activator
+     * (impossible on chain, but a provider quirk must not loop us) is `'cycle'`,
+     * and a thrown provider call is `'provider-error'`, signalling a partial that
+     * a retry may extend. The legacy `originReached`/`truncated` booleans are
+     * derived from it for existing consumers. Streamed hops (`onHop`) already
+     * delivered survive an early stop.
      *
      * @param base58Address - Account whose ancestry to climb, base58 format.
      * @param options - Depth cap, per-hop streaming callback, and shared edge cache
@@ -633,8 +636,9 @@ export class BlockchainService implements IBlockchainService {
         const chain: IActivatingTransaction[] = [];
         const seen = new Set<string>([base58Address]);
         let current = base58Address;
-        let originReached = false;
-        let truncated = false;
+        // Defaults to the depth-cap ending: the loop below overwrites this on every
+        // other exit path, so the only way it survives is running the cap out.
+        let stopReason: ActivationClimbStopReason = 'depth-cap';
 
         for (let depth = 0; depth < maxDepth; depth += 1) {
             let edge: IActivatingTransaction | null;
@@ -649,17 +653,18 @@ export class BlockchainService implements IBlockchainService {
                 }
             } catch (error) {
                 // A throttled TronGrid call failed; stop with whatever streamed so
-                // far rather than discarding progress. Both flags stay false so the
-                // caller can offer a retry.
+                // far rather than discarding progress, and say so, so the caller
+                // can offer a retry instead of presenting a partial as complete.
                 logger.warn(
                     { base58Address, atAddress: current, depth, error: error instanceof Error ? error.message : String(error) },
                     'Activation-ancestry climb interrupted by provider error'
                 );
+                stopReason = 'provider-error';
                 break;
             }
 
             if (!edge) {
-                originReached = true;
+                stopReason = 'unresolved';
                 break;
             }
 
@@ -667,21 +672,30 @@ export class BlockchainService implements IBlockchainService {
             options.onHop?.(edge, depth);
 
             if (seen.has(edge.activatorAddress)) {
+                stopReason = 'cycle';
                 break;
             }
             seen.add(edge.activatorAddress);
             current = edge.activatorAddress;
         }
 
-        if (!originReached && chain.length >= maxDepth) {
-            truncated = true;
+        if (stopReason === 'depth-cap') {
             logger.warn(
                 { base58Address, maxDepth },
-                'Activation ancestry hit the depth cap before reaching an origin'
+                'Activation ancestry hit the depth cap before running out of resolvable activators'
             );
         }
 
-        return { address: base58Address, chain, originReached, truncated };
+        return {
+            address: base58Address,
+            chain,
+            stopReason,
+            // Derived, not tracked separately: two sources of truth for one ending
+            // is how the original misreport survived. `originReached` keeps its
+            // published name but means only "no further activator resolved".
+            originReached: stopReason === 'unresolved',
+            truncated: stopReason === 'depth-cap'
+        };
     }
 
     /**

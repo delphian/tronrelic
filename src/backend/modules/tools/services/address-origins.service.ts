@@ -113,7 +113,8 @@ export class AddressOriginsService {
      * @param address - Base58 address to climb.
      * @param options - Depth cap, per-hop `onHop` stream callback, and the batch's
      *   shared edge cache (see {@link IActivationClimbOptions}).
-     * @returns The collected ancestry with origin/truncated flags.
+     * @returns The collected ancestry, including the `stopReason` the SSE layer
+     *   forwards so the client can word its terminal message accurately.
      */
     public async climb(address: string, options: IActivationClimbOptions): Promise<IActivationAncestry> {
         return this.blockchain().climbActivationAncestry(address, options);

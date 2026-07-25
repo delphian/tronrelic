@@ -271,6 +271,10 @@ export class ToolsController {
                         send('address-done', {
                             sourceIndex,
                             address,
+                            // `stopReason` is what the client words its terminal
+                            // message from; the two booleans ride along only for
+                            // any consumer still reading the older shape.
+                            stopReason: result.stopReason,
                             originReached: result.originReached,
                             truncated: result.truncated,
                             hops: result.chain.length

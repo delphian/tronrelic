@@ -383,6 +383,52 @@ interface IAccountTransactionsResponse {
     }>;
 }
 
+/**
+ * Minimal internal-transaction envelope, typed to the fields the activator
+ * fallback reads. Declared locally for the same reason as
+ * {@link IAccountTransactionsResponse} — and deliberately not imported from the
+ * account-history module, which keeps its own richer copy: a cross-module type
+ * import would couple this transport to one of its consumers.
+ *
+ * Addresses arrive as 41-prefixed hex. `data.rejected` marks an internal
+ * transfer whose execution reverted — it moved no value and so activated
+ * nothing.
+ */
+interface IAccountInternalTransactionsResponse {
+    data?: Array<{
+        internal_tx_id?: string;
+        tx_id?: string;
+        block_timestamp?: number;
+        from_address?: string;
+        to_address?: string;
+        data?: {
+            note?: string;
+            rejected?: boolean;
+            call_value?: Record<string, number | string>;
+        };
+    }>;
+}
+
+/**
+ * Contract type reported for an edge resolved from the internal-transactions
+ * feed. An internal transfer carries no protocol contract type of its own — the
+ * enclosing transaction's type describes the call, not the value move — so this
+ * synthetic label tells consumers (and the ladder UI that prints it) that the
+ * hop came from TVM-level execution rather than a signed top-level contract.
+ */
+const INTERNAL_ACTIVATION_CONTRACT_TYPE = 'InternalTransaction';
+
+/**
+ * Page size for the internal-transactions activator lookup. The activating
+ * transfer is the oldest inbound one, but the feed also carries outbound and
+ * reverted rows, so `limit: 1` could land on a row that is not a usable edge.
+ * A small page gives the scan something to skip past at the cost of a single
+ * request; an account whose first rows are all unusable is treated as
+ * unresolvable rather than paged further, because the climb must stay bounded
+ * against the shared TronGrid budget.
+ */
+const INTERNAL_ACTIVATION_SCAN_LIMIT = 20;
+
 export class TronGridClient {
     private static instance: TronGridClient | null = null;
 
@@ -922,8 +968,11 @@ export class TronGridClient {
      * transaction is later than account creation by more than one block of skew
      * ({@link ACTIVATION_CREATE_TIME_SKEW_MS}), activation happened earlier through
      * an internal transfer this feed cannot see, so the activator is unresolvable
-     * here and the method returns null (the caller may fall back to
-     * {@link getAccountInternalTransactions}). The skew tolerance is essential:
+     * here from the top-level feed, so the method falls back to
+     * {@link resolveInternalActivator}, which reads the same activation off the
+     * internal-transactions endpoint and returns the contract that paid for it.
+     * Only when that fallback also finds nothing is the activator truly
+     * unresolvable and null returned. The skew tolerance is essential:
      * `create_time` is the activating tx's creation-clock stamp and trails its
      * block-confirmed `block_timestamp` by exactly one block (~3000 ms) even for a
      * genuine visible activation, so a strict comparison would reject every
@@ -934,9 +983,10 @@ export class TronGridClient {
      * still stay sequential and bound its depth.
      *
      * @param base58Address - Account whose activator to resolve, base58 format.
-     * @returns The activating edge, or null when the account has no transactions or
-     *   its activator cannot be resolved from the top-level feed (including an
-     *   internally-activated account whose creation predates its oldest visible tx).
+     * @returns The activating edge — from the top-level feed, or from the internal
+     *   feed when the account was activated by a contract — or null when neither
+     *   feed yields a usable edge (no transactions at all, or an activation whose
+     *   sender cannot be attributed).
      */
     async getActivatingTransaction(base58Address: string): Promise<IActivatingTransaction | null> {
         const response = await this.getAccountTransactions<IAccountTransactionsResponse>(base58Address, {
@@ -945,6 +995,11 @@ export class TronGridClient {
             order_by: 'block_timestamp,asc'
         });
         let result: IActivatingTransaction | null = null;
+        // Tracked separately from `createTime` itself: an account whose create_time
+        // TronGrid omits is indistinguishable from one never looked up, and the
+        // fallback must not pay for a second getAccount call it already made.
+        let createTimeResolved = false;
+        let createTime: number | undefined;
         const oldest = response.data?.[0];
         const contract = oldest?.raw_data?.contract?.[0];
         const activatorAddress = TronGridClient.toBase58Address(contract?.parameter?.value?.owner_address);
@@ -957,7 +1012,8 @@ export class TronGridClient {
             // edge, so leave result null. Only proceed when create_time is unknown
             // (nothing to disprove the edge) or matches the oldest visible tx.
             const account = await this.getAccount(base58Address);
-            const createTime = account?.create_time;
+            createTime = account?.create_time;
+            createTimeResolved = true;
             // Only strictly LATER than creation counts as a false edge. `create_time`
             // is the activating tx's creation-clock stamp and lags its block-confirmed
             // `block_timestamp` by exactly one block (~3000 ms) for a genuine visible
@@ -975,6 +1031,95 @@ export class TronGridClient {
                     contractType: contract?.type ?? 'unknown'
                 };
             }
+        }
+        if (!result) {
+            // Every path that lands here means the top-level feed could not name an
+            // activator: no transactions at all, an oldest transaction the account
+            // sent itself, or a candidate the create_time guard rejected as a false
+            // edge. All three are the signature of a contract-created account, whose
+            // activating value move is an internal transfer. Resolving it costs one
+            // more request and is paid only on this uncommon path.
+            if (!createTimeResolved) {
+                const account = await this.getAccount(base58Address);
+                createTime = account?.create_time;
+                createTimeResolved = true;
+            }
+            result = await this.resolveInternalActivator(base58Address, createTime);
+        }
+        return result;
+    }
+
+    /**
+     * Resolve an activator from the internal-transactions feed, why: an account
+     * created by a contract — an exchange sweeper, a router, a batch disburser —
+     * is funded by a TVM-level transfer that no top-level feed reports, so
+     * {@link getActivatingTransaction} alone stops the ancestry climb at a wall
+     * and reports a false origin. Reading the same activation from
+     * {@link getAccountInternalTransactions} names the contract that paid for it
+     * and lets the climb continue through it.
+     *
+     * How: take the oldest confirmed inbound, non-reverted, value-bearing
+     * internal transfer and treat its sender as the activator. Rows are filtered
+     * rather than trusting position — the feed carries the account's outbound
+     * transfers and reverted rows too, and neither activates anything. The
+     * candidate is then held to the same `create_time` proximity test the
+     * top-level path uses ({@link ACTIVATION_CREATE_TIME_SKEW_MS}): a transfer
+     * arriving long after the account already existed is ordinary later activity,
+     * not the activation, and attributing it would trade one false edge for
+     * another.
+     *
+     * @param base58Address - Account whose activator to resolve, base58 format.
+     * @param createTime - The account's authoritative creation stamp, already
+     *        fetched by the caller so this method adds no second `getAccount`
+     *        call; `undefined` when TronGrid omits it, which disables the
+     *        proximity test rather than rejecting the edge (nothing to disprove
+     *        it with).
+     * @returns The internal activating edge, or null when no inbound transfer
+     *          qualifies — the genuinely unresolvable case.
+     */
+    private async resolveInternalActivator(
+        base58Address: string,
+        createTime: number | undefined
+    ): Promise<IActivatingTransaction | null> {
+        const response = await this.getAccountInternalTransactions<IAccountInternalTransactionsResponse>(base58Address, {
+            only_confirmed: true,
+            limit: INTERNAL_ACTIVATION_SCAN_LIMIT,
+            order_by: 'block_timestamp,asc'
+        });
+        let result: IActivatingTransaction | null = null;
+        for (const item of response.data ?? []) {
+            if (item.data?.rejected) {
+                continue;
+            }
+            // `call_value` maps asset → raw amount; key '_' is TRX (sun), any other
+            // key a TRC10 id. A zero-value or empty map is a bare contract call,
+            // which cannot have paid the account-creation fee.
+            const movesValue = Object.values(item.data?.call_value ?? {})
+                .some(amount => Number(amount) > 0);
+            const recipient = TronGridClient.toBase58Address(item.to_address);
+            const sender = TronGridClient.toBase58Address(item.from_address);
+            const timestamp = item.block_timestamp;
+            if (!movesValue || recipient !== base58Address || !sender || sender === base58Address || typeof timestamp !== 'number') {
+                continue;
+            }
+            const arrivedAfterCreation =
+                typeof createTime === 'number' &&
+                timestamp - createTime > ACTIVATION_CREATE_TIME_SKEW_MS;
+            if (!arrivedAfterCreation) {
+                result = {
+                    activatorAddress: sender,
+                    // The parent transaction hash, not `internal_tx_id`: consumers link
+                    // this id to an explorer, and only the enclosing transaction has a
+                    // page there. The internal hash is the fallback purely so a row
+                    // TronGrid returns without a parent id still yields provenance.
+                    txId: item.tx_id ?? item.internal_tx_id ?? '',
+                    blockTimestamp: timestamp,
+                    contractType: INTERNAL_ACTIVATION_CONTRACT_TYPE
+                };
+            }
+            // The oldest qualifying row decides the outcome either way: if it failed
+            // the proximity test, every later row is further from creation still.
+            break;
         }
         return result;
     }

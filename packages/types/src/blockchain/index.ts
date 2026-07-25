@@ -11,6 +11,7 @@ export type {
     IBlockchainService,
     IActivatingTransaction,
     IActivationAncestry,
+    ActivationClimbStopReason,
     IActivationClimbOptions,
     ITransactionTimeseriesPoint,
     IOverviewTimeseriesPoint,
