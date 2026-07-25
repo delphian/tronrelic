@@ -42,6 +42,23 @@ const subscribers = new Map<string, Set<() => void>>();
 let flushHandle: ReturnType<typeof setTimeout> | null = null;
 
 /**
+ * Consecutive failed lookups per address. The client cannot tell a transient 5xx
+ * from a standing refusal — the API client throws a plain `Error` — so an attempt
+ * count is what bounds retries rather than the status code.
+ */
+const failures = new Map<string, number>();
+
+/**
+ * Attempts before a failing address falls back to the cached empty answer. Small
+ * on purpose: a persistent refusal (a session that expired mid-visit) should
+ * settle in a few requests rather than re-ask for the page's lifetime.
+ */
+const MAX_ATTEMPTS = 3;
+
+/** Backoff before a failed batch is retried, so a flapping backend gets air. */
+const RETRY_DELAY_MS = 2000;
+
+/**
  * Notify every chip watching an address that its tags changed.
  *
  * @param address - The address whose subscribers should re-read the cache.
@@ -53,9 +70,13 @@ function notify(address: string): void {
 /**
  * Fetch the queued addresses and publish the answers.
  *
- * Every requested address is written to the cache — including the ones the
- * response carried no rows for — so an untagged address is answered from cache
- * next time instead of being re-requested by every chip that renders it.
+ * Every successfully requested address is written to the cache — including the
+ * ones the response carried no rows for — so an untagged address is answered from
+ * cache next time instead of being re-requested by every chip that renders it.
+ * A failed address is deliberately left uncached for a bounded number of
+ * attempts: an empty cache entry is indistinguishable from "no tags", so caching
+ * one transient failure would suppress those tags until an explicit invalidation
+ * or a full reload.
  */
 async function flush(): Promise<void> {
     flushHandle = null;
@@ -77,12 +98,29 @@ async function flush(): Promise<void> {
             tags.push(row.tag);
             byAddress.set(row.address, tags);
         });
-        batch.forEach(address => cache.set(address, byAddress.get(address) ?? []));
+        batch.forEach(address => {
+            cache.set(address, byAddress.get(address) ?? []);
+            failures.delete(address);
+        });
     } catch {
-        // Anonymous visitor (401) or a transient failure: cache the empty
-        // answer so the page does not retry per chip, and let an explicit
-        // invalidation be the only thing that asks again.
-        batch.forEach(address => cache.set(address, cache.get(address) ?? []));
+        // Retry a transient failure a bounded number of times, then fall back to
+        // the empty answer. Leaving the earlier attempts uncached is what lets a
+        // 5xx or dropped request heal; the eventual fallback is what stops a
+        // standing refusal (an expired session's 401) from asking forever.
+        // Retries go back through `queued`, so they stay coalesced into one
+        // batch rather than one request per chip.
+        batch.forEach(address => {
+            const attempts = (failures.get(address) ?? 0) + 1;
+            failures.set(address, attempts);
+            if (attempts >= MAX_ATTEMPTS) {
+                cache.set(address, cache.get(address) ?? []);
+                return;
+            }
+            queued.add(address);
+        });
+        if (queued.size > 0 && flushHandle === null) {
+            flushHandle = setTimeout(() => { void flush(); }, RETRY_DELAY_MS);
+        }
     } finally {
         batch.forEach(address => {
             inFlight.delete(address);
@@ -109,6 +147,10 @@ function schedule(): void {
  */
 export function invalidateAddressTags(address: string): void {
     cache.delete(address);
+    // Clear the attempt count too: an address that exhausted its retries earlier
+    // must get a fresh budget now, or a mutation confirmed against the backend
+    // would still be unable to re-read its own result.
+    failures.delete(address);
     queued.add(address);
     schedule();
 }
