@@ -2,17 +2,23 @@
  * TronAddress chip styling.
  *
  * Layout and affordance treatment for the canonical address chip. Structure is
- * a single inline row (address + slim icon actions); the tools popover is an
- * absolutely-positioned menu anchored to its trigger. All values reference
+ * a single inline row (address + slim icon actions); the tools popover is a
+ * viewport-fixed menu rendered in a body portal so no scroll container clips
+ * it, positioned from its trigger by the component. All values reference
  * semantic (Layer 2) tokens so the chip themes with the rest of the app — the
  * address uses the shared monospace face (`--font-mono`), and affordance icons
  * follow the muted -> primary hover convention used by the bare IconButton.
  */
 
+/*
+ * No row gap: the icon controls carry their own padding, so a gap on top of it
+ * spread the three affordances further apart than they read as one cluster. The
+ * address/label instead pays for its own separation from the icons below.
+ */
 .root {
     display: inline-flex;
     align-items: center;
-    gap: var(--gap-2xs);
+    gap: 0;
     max-width: 100%;
 }
 
@@ -23,6 +29,7 @@
     color: var(--color-text);
     white-space: nowrap;
     cursor: default;
+    margin-right: var(--gap-2xs);
 }
 
 /* Label-first display: a resolved human name reads as prose, not code. */
@@ -31,6 +38,7 @@
     color: var(--color-text);
     white-space: nowrap;
     cursor: default;
+    margin-right: var(--gap-2xs);
 }
 
 /* Trim the wrapped TrCopyIcon/IconButton so the icons sit slim in the row. */
@@ -38,7 +46,8 @@
     flex: 0 0 auto;
 }
 
-/* Anchor establishes the positioning context for the tools popover. */
+/* Trigger wrapper for the tools popover. The menu itself is portaled and
+   viewport-fixed, so this only keeps the wrench inline with the chip's row. */
 .menu_anchor {
     position: relative;
     display: inline-flex;
@@ -50,7 +59,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: var(--padding-2xs);
+    /* Matches the bare IconButton's xs padding beside it, so the explorer link
+       and the copy/wrench buttons sit on the same rhythm. */
+    padding: var(--icon-button-bare-padding-xs);
     color: var(--color-text-muted);
     border-radius: var(--radius-xs);
     transition: color var(--transition-fast);
@@ -65,13 +76,19 @@
     }
 }
 
-/* Popover surface floating below the tools trigger. */
+/*
+ * Popover surface for the tools menu. Fixed rather than absolute because the
+ * menu renders in a `<body>` portal so it escapes whatever scroll container
+ * hosts the chip — most often the shared Table wrapper, whose `overflow-x: auto`
+ * also clips vertically and used to cut the menu off at the table's edge. Its
+ * top/left come from the component, which measures the trigger and flips the
+ * menu above it when the viewport has no room below. `--z-index-fixed` (not
+ * `--z-index-dropdown`) because a body-level popover must clear sticky table
+ * headers and the nav shell while staying under modals and toasts.
+ */
 .menu {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    z-index: var(--z-index-dropdown);
-    margin-top: var(--gap-2xs);
+    position: fixed;
+    z-index: var(--z-index-fixed);
     display: flex;
     flex-direction: column;
     padding: var(--padding-2xs);
@@ -81,27 +98,21 @@
     box-shadow: var(--shadow-md);
 }
 
-/*
- * Flip variant: open the menu above the trigger instead of below. Applied when
- * the trigger sits near the bottom of the viewport so the menu opens into
- * visible space rather than a scroll container's clipped overflow.
- */
-.menu_top {
-    top: auto;
-    bottom: 100%;
-    margin-top: 0;
-    margin-bottom: var(--gap-2xs);
-}
-
-/* Individual forward target link. */
+/* One menu row — a tool-forward link, or the tag-editor button, which resets the
+   native button chrome so both render identically. */
 .menu_item {
     display: block;
+    width: 100%;
     padding: var(--padding-xs) var(--padding-sm);
+    font-family: inherit;
     font-size: var(--font-size-body-sm);
     color: var(--color-text);
+    background: none;
+    border: none;
     border-radius: var(--radius-xs);
     white-space: nowrap;
     text-align: left;
+    cursor: pointer;
     transition: background var(--transition-fast);
 
     &:hover {
