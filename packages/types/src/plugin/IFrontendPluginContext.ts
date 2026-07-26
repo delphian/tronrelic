@@ -192,6 +192,53 @@ export interface IUIComponents {
         'aria-label': string;
     }>;
 
+    /**
+     * SegmentedControl — the compact segmented toggle row every chart toolbar
+     * uses for a time window, metric, chart view, or data source. Use it instead
+     * of hand-rolling buttons over the `.segmented-control` class: the primitive
+     * owns the active-state ARIA (`aria-pressed`, or `role="tab"` +
+     * `aria-selected` under `variant="tablist"`) and arrow-key traversal, which
+     * the hand-rolled rows in the dust-tracker and resource-tracker widgets did
+     * not have.
+     *
+     * Fully controlled and presentational — it holds no state and fetches
+     * nothing, so it is SSR-safe. Clicking the already-active segment is
+     * ignored unless `reselect` is set, so wiring `onChange` straight to a
+     * refetch needs no guard of its own. `onSelect` on an individual option
+     * covers the mixed group: a metric segment that pins a rotation timer next
+     * to a window segment that refetches.
+     */
+    SegmentedControl: ComponentType<{
+        /** Segments in display order; also the order arrow keys traverse. */
+        options: ReadonlyArray<{
+            /** Stable id compared against `value` to derive the active segment. */
+            id: string;
+            /** Visible content — usually a short label like `24h`. */
+            label: React.ReactNode;
+            disabled?: boolean;
+            /** Accessible name when `label` is an icon or a terse abbreviation. */
+            ariaLabel?: string;
+            title?: string;
+            /** `aria-controls` target id, for `variant="tablist"`. */
+            controls?: string;
+            /** Per-option side effect, fired after `onChange`. */
+            onSelect?: (id: string) => void;
+        }>;
+        /** Active option id — the caller owns the state. */
+        value: string;
+        /** Receives the newly selected id before that option's own `onSelect`. */
+        onChange?: (id: string) => void;
+        /** Accessible name for the group, e.g. `Time window`. */
+        label: string;
+        /** `group` for a filter/toggle row, `tablist` when segments swap panels. @default 'group' */
+        variant?: 'group' | 'tablist';
+        /** Disables every segment — use while a fetch it would re-trigger is in flight. */
+        disabled?: boolean;
+        /** Re-fire callbacks when the active segment is clicked. @default false */
+        reselect?: boolean;
+        className?: string;
+    }>;
+
     /** Input component for form fields */
     Input: ComponentType<{
         value?: string;
@@ -1165,7 +1212,7 @@ export interface IFrontendPluginContext {
     /** Plugin identifier used for namespacing events and API routes */
     pluginId: string;
 
-    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, ClientTime, Tooltip, TronAddress, IconPickerModal, ConfirmDialog, Table family) */
+    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, SegmentedControl, Input, Select, Textarea, Skeleton, ClientTime, Tooltip, TronAddress, IconPickerModal, ConfirmDialog, Table family) */
     ui: IUIComponents;
 
     /** Layout component library (Page, PageHeader, Stack, Grid, Section, SubMenu) */

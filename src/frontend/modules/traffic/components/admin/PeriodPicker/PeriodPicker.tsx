@@ -1,8 +1,9 @@
 /**
  * PeriodPicker Component
  *
- * Shared lookback-window control for the `/system/traffic` dashboards:
- * preset period buttons (24h / 7d / 30d / 90d) plus a custom date range.
+ * Shared lookback-window control for the `/system/traffic` dashboards: a
+ * `<SegmentedControl>` carrying the presets (24h / 7d / 30d / 90d) and Custom,
+ * plus the date-range inputs Custom reveals.
  * Extracted from the AnalyticsDashboard so one global picker can govern
  * every tab instead of each section carrying its own — the per-section
  * pickers let admins unknowingly compare a 24h table against a 30d chart.
@@ -14,18 +15,34 @@
 'use client';
 
 import React from 'react';
+import type { ReactNode } from 'react';
 import { Calendar } from 'lucide-react';
-import { Button } from '../../../../../components/ui/Button';
+import { SegmentedControl } from '../../../../../components/ui/SegmentedControl';
 import { Input } from '../../../../../components/ui/Input';
 import type { AnalyticsPeriod } from '../../../api';
 import styles from './PeriodPicker.module.scss';
 
-/** Preset period options shown as buttons. */
-const PERIOD_OPTIONS: { value: AnalyticsPeriod; label: string }[] = [
-    { value: '24h', label: '24 Hours' },
-    { value: '7d', label: '7 Days' },
-    { value: '30d', label: '30 Days' },
-    { value: '90d', label: '90 Days' }
+/**
+ * Segments shown in the picker. `custom` rides in the same control rather than
+ * sitting beside it as a separate button, so the five choices read as one
+ * mutually-exclusive group — which is what they are — and only the date inputs
+ * appear conditionally.
+ */
+const PERIOD_OPTIONS: ReadonlyArray<{ id: AnalyticsPeriod; label: ReactNode; ariaLabel?: string }> = [
+    { id: '24h', label: '24 Hours' },
+    { id: '7d', label: '7 Days' },
+    { id: '30d', label: '30 Days' },
+    { id: '90d', label: '90 Days' },
+    {
+        id: 'custom',
+        label: (
+            <>
+                <Calendar size={14} className={styles.controls__icon} aria-hidden="true" />
+                Custom
+            </>
+        ),
+        ariaLabel: 'Custom date range'
+    }
 ];
 
 /**
@@ -57,8 +74,8 @@ interface IPeriodPickerProps {
 }
 
 /**
- * Render the preset-period buttons and, when "Custom" is active, the
- * native date-range inputs.
+ * Render the period segments and, when "Custom" is active, the native
+ * date-range inputs.
  *
  * @param props - Controlled picker state and change handlers.
  * @returns The period picker control group.
@@ -72,26 +89,13 @@ export function PeriodPicker({
     onCustomEndChange
 }: IPeriodPickerProps) {
     return (
-        <div className={styles.controls} role="group" aria-label="Lookback period">
-            {PERIOD_OPTIONS.map(opt => (
-                <Button
-                    key={opt.value}
-                    variant={period === opt.value ? 'primary' : 'secondary'}
-                    size="sm"
-                    onClick={() => onPeriodChange(opt.value)}
-                >
-                    {opt.label}
-                </Button>
-            ))}
-            <Button
-                variant={period === 'custom' ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => onPeriodChange('custom')}
-                aria-label="Custom date range"
-            >
-                <Calendar size={14} className={styles.controls__icon} />
-                Custom
-            </Button>
+        <div className={styles.controls}>
+            <SegmentedControl
+                label="Lookback period"
+                value={period}
+                options={PERIOD_OPTIONS}
+                onChange={onPeriodChange}
+            />
             {period === 'custom' && (
                 <div className={styles.date_range}>
                     <Input

@@ -39,15 +39,24 @@ import { Stack, Grid } from '../../../../../components/layout';
 import { Card } from '../../../../../components/ui/Card';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
+import { SegmentedControl } from '../../../../../components/ui/SegmentedControl';
 import { adminGetGscPages, adminGetGscKeywordPages, adminGetGscKeywordsByDay, adminGetGscStatus } from '../../../api';
 import type { IGscPage, IGscKeywordPage, IGscDailyKeywords, IGscStatus } from '../../../api';
 import styles from './GscKeywords.module.scss';
 
-/** Keyword-table lookback windows. 30d is the backend's hard ceiling. */
-const PERIOD_OPTIONS: Array<{ label: string; hours: number }> = [
-    { label: '24h', hours: 24 },
-    { label: '7d', hours: 168 },
-    { label: '30d', hours: 720 }
+/** Selectable lookback window ids, which double as the button labels. */
+type GscWindowId = '24h' | '7d' | '30d';
+
+/**
+ * Keyword-table lookback windows. 30d is the backend's hard ceiling. The id is
+ * what the picker selects and `hours` is what the API takes, so the id stays a
+ * stable string `<SegmentedControl>` can key on while the request shape is
+ * derived from it.
+ */
+const PERIOD_OPTIONS: ReadonlyArray<{ id: GscWindowId; label: string; hours: number }> = [
+    { id: '24h', label: '24h', hours: 24 },
+    { id: '7d', label: '7d', hours: 168 },
+    { id: '30d', label: '30d', hours: 720 }
 ];
 
 /** Days of daily buckets for the trend charts. */
@@ -71,7 +80,11 @@ function resolveCSSColor(varName: string, fallback: string): string {
  * top-pages and (uncapped) keyword→page pairs tables.
  */
 export function GscKeywords() {
-    const [periodHours, setPeriodHours] = useState<number>(24);
+    const [windowId, setWindowId] = useState<GscWindowId>('24h');
+
+    // The picker owns the window id; every fetch below wants hours, so resolve
+    // once per render rather than threading two pieces of state that can drift.
+    const periodHours = (PERIOD_OPTIONS.find(option => option.id === windowId) ?? PERIOD_OPTIONS[0]).hours;
 
     const [pages, setPages] = useState<IGscPage[] | null>(null);
     const [pagesError, setPagesError] = useState<string | null>(null);
@@ -214,19 +227,12 @@ export function GscKeywords() {
                     )}
                 </div>
                 <div className={styles.picker_stack}>
-                    <div className={styles.window_picker} role="group" aria-label="Lookback window">
-                        {PERIOD_OPTIONS.map(opt => (
-                            <button
-                                key={opt.hours}
-                                type="button"
-                                onClick={() => setPeriodHours(opt.hours)}
-                                className={opt.hours === periodHours ? styles.window_active : styles.window_button}
-                                aria-pressed={opt.hours === periodHours}
-                            >
-                                {opt.label}
-                            </button>
-                        ))}
-                    </div>
+                    <SegmentedControl
+                        label="Lookback window"
+                        value={windowId}
+                        options={PERIOD_OPTIONS}
+                        onChange={setWindowId}
+                    />
                     {pairsWindow && (
                         <p className={styles.meta}>
                             Covers <ClientTime date={pairsWindow.start} format="date" />
