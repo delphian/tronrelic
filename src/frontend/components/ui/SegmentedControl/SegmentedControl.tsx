@@ -125,7 +125,14 @@ export function SegmentedControl<T extends string>({
         if (step === 0 || disabled) {
             return;
         }
-        const current = options.findIndex(option => option.id === value);
+        const buttons = Array.from(event.currentTarget.querySelectorAll('button'));
+        // Traverse from the segment that actually holds focus. In the `group`
+        // variant every segment stays a tab stop, so focus and the controlled
+        // `value` can diverge; seeding from `value` would jump the user to an
+        // unrelated segment instead of the neighbour of the one they are on.
+        const focused = (event.target as HTMLElement).closest('button');
+        const focusedIndex = focused ? buttons.indexOf(focused as HTMLButtonElement) : -1;
+        const current = focusedIndex >= 0 ? focusedIndex : options.findIndex(option => option.id === value);
         let next = current;
         // Walk past disabled segments rather than stalling on them, and bound the
         // scan by the option count so an all-disabled group cannot spin.
@@ -140,7 +147,6 @@ export function SegmentedControl<T extends string>({
         }
         event.preventDefault();
         select(options[next]);
-        const buttons = event.currentTarget.querySelectorAll('button');
         buttons[next]?.focus();
     }, [disabled, options, select, value]);
 
@@ -165,6 +171,7 @@ export function SegmentedControl<T extends string>({
                         aria-controls={option.controls}
                         aria-pressed={isTablist ? undefined : active}
                         aria-selected={isTablist ? active : undefined}
+                        tabIndex={isTablist ? (active ? 0 : -1) : undefined}
                         onClick={() => select(option)}
                     >
                         {option.label}

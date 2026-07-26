@@ -208,11 +208,11 @@ export interface IUIComponents {
      * covers the mixed group: a metric segment that pins a rotation timer next
      * to a window segment that refetches.
      */
-    SegmentedControl: ComponentType<{
+    SegmentedControl: <T extends string = string>(props: {
         /** Segments in display order; also the order arrow keys traverse. */
         options: ReadonlyArray<{
             /** Stable id compared against `value` to derive the active segment. */
-            id: string;
+            id: T;
             /** Visible content — usually a short label like `24h`. */
             label: React.ReactNode;
             disabled?: boolean;
@@ -222,12 +222,12 @@ export interface IUIComponents {
             /** `aria-controls` target id, for `variant="tablist"`. */
             controls?: string;
             /** Per-option side effect, fired after `onChange`. */
-            onSelect?: (id: string) => void;
+            onSelect?: (id: T) => void;
         }>;
         /** Active option id — the caller owns the state. */
-        value: string;
+        value: T;
         /** Receives the newly selected id before that option's own `onSelect`. */
-        onChange?: (id: string) => void;
+        onChange?: (id: T) => void;
         /** Accessible name for the group, e.g. `Time window`. */
         label: string;
         /** `group` for a filter/toggle row, `tablist` when segments swap panels. @default 'group' */
@@ -237,7 +237,7 @@ export interface IUIComponents {
         /** Re-fire callbacks when the active segment is clicked. @default false */
         reselect?: boolean;
         className?: string;
-    }>;
+    }) => React.ReactElement | null;
 
     /** Input component for form fields */
     Input: ComponentType<{
