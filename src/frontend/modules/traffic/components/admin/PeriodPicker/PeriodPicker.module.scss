@@ -1,9 +1,10 @@
 /**
  * PeriodPicker styles.
  *
- * Preset-period buttons plus the custom date-range inputs. Visual
- * treatment mirrors the former AnalyticsDashboard controls so the picker
- * reads identically now that it is hoisted to the page level.
+ * Row layout for the period <SegmentedControl> and the custom date-range
+ * inputs it reveals. The segments themselves are styled by the shared
+ * --segmented-control-* tokens, so only the row and the date fields need rules
+ * here.
  */
 
 .controls {

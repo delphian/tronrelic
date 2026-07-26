@@ -81,6 +81,7 @@ const [tab, setTab] = useState('query');
 | `CopyButton` | `value: string` (required), `label?`, `copiedLabel?`, `resetMs?`, `variant?`, `size?`, `disabled?`, `type?`, `aria-label?`, `className?` |
 | `IconButton` | `variant?: 'ghost'\|'primary'\|'danger'\|'success'`, `size?: 'sm'\|'md'\|'lg'`, `onClick?: (event) => void`, `disabled?`, `title?`, `type?`, **`aria-label` (required)**, `className?`, `children?` |
 | `Switch` | `on: boolean`, `onChange: (next) => void`, `onClick?: (event) => void`, `size?: 'sm'\|'md'\|'lg'`, `disabled?`, `title?`, `type?`, **`aria-label` (required)**, `className?` |
+| `SegmentedControl` | `options: ReadonlyArray<{ id: string; label: ReactNode; disabled?; ariaLabel?; title?; controls?; onSelect?: (id) => void }>`, `value: string`, `onChange?: (id) => void`, **`label` (required group aria-label)**, `variant?: 'group'\|'tablist'`, `disabled?`, `reselect?`, `className?` |
 | `Input` | `value?`, `onChange?`, `onKeyDown?`, `placeholder?`, `disabled?`, `required?`, `variant?: 'default'\|'ghost'`, `type?`, `min?`, `max?`, `step?`, `id?`, `name?`, `aria-label?`, `className?` |
 | `ClientTime` | `date: Date \| string \| null \| undefined`, `format?: 'time'\|'datetime'\|'date'`, `fallback?` |
 | `Tooltip` | `content: string`, `children: ReactNode`, `placement?: 'top'\|'bottom'` |
@@ -91,6 +92,8 @@ const [tab, setTab] = useState('query');
 `IconButton` is for inline row actions where a bordered `Button` would dominate. `aria-label` is required because there's no visible text. The click handler receives the full event so plugin code can call `event.stopPropagation()` to avoid firing an enclosing row's click handler.
 
 `Switch` carries `role="switch"` + `aria-checked` so assistive tech reads it as a toggle. The optional `onClick` runs before `onChange` — calling `event.preventDefault()` vetoes the toggle; `event.stopPropagation()` keeps the click off an enclosing row.
+
+`SegmentedControl` is the chart-toolbar toggle row — time window, metric, chart view, data source. Use it instead of hand-rolling buttons over the `.segmented-control` class: it owns the active-state ARIA (`aria-pressed`, or `role="tab"` + `aria-selected` under `variant="tablist"`) and arrow-key traversal. It is fully controlled and holds no state, so it is SSR-safe. A click on the already-active segment is ignored unless `reselect` is set, so `onChange` can call a refetch directly. Per-option `onSelect` handles the mixed group — a metric segment that pins a rotation timer beside a window segment that refetches.
 
 `ClientTime` is the canonical fix for SSR/client timezone hydration mismatches — never call `new Date().toLocaleString()` directly.
 

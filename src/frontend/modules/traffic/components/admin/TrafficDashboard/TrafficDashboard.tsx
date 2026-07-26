@@ -34,6 +34,7 @@ import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { Stack, Grid } from '../../../../../components/layout';
+import { SegmentedControl } from '../../../../../components/ui/SegmentedControl';
 import styles from './TrafficDashboard.module.scss';
 
 interface AggregateBucket {
@@ -54,12 +55,19 @@ interface AggregateResponse {
     buckets: AggregateBucket[];
 }
 
-/** Lookback windows the dashboard offers. Wider windows hit the 30-day cap. */
-const SINCE_OPTIONS: Array<{ label: string; hours: number }> = [
-    { label: '1h', hours: 1 },
-    { label: '24h', hours: 24 },
-    { label: '7d', hours: 168 },
-    { label: '30d', hours: 720 }
+/** Selectable lookback window ids, which double as the button labels. */
+type TrafficWindowId = '1h' | '24h' | '7d' | '30d';
+
+/**
+ * Lookback windows the dashboard offers. Wider windows hit the 30-day cap. The
+ * id is what the picker selects and `hours` is what the API takes, so the
+ * segmented control keys on a stable string while the request stays derived.
+ */
+const SINCE_OPTIONS: ReadonlyArray<{ id: TrafficWindowId; label: string; hours: number }> = [
+    { id: '1h', label: '1h', hours: 1 },
+    { id: '24h', label: '24h', hours: 24 },
+    { id: '7d', label: '7d', hours: 168 },
+    { id: '30d', label: '30d', hours: 720 }
 ];
 
 /**
@@ -101,7 +109,11 @@ interface ITrafficDashboardProps {
  *   reloads of every panel.
  */
 export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
-    const [sinceHours, setSinceHours] = useState<number>(24);
+    const [windowId, setWindowId] = useState<TrafficWindowId>('24h');
+
+    // The picker owns the window id; the reads want hours, so resolve once per
+    // render rather than carrying two pieces of state that can drift apart.
+    const sinceHours = (SINCE_OPTIONS.find(option => option.id === windowId) ?? SINCE_OPTIONS[0]).hours;
     // Bumped by the Refresh button to re-trigger the fetch effect under
     // the same cleanup-flag guard used for window changes. Avoids a
     // separate manual fetch path that would race with the in-flight one.
@@ -238,19 +250,12 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
                     </p>
                 </div>
                 <div className={styles.controls}>
-                    <div className={styles.window_picker} role="group" aria-label="Lookback window">
-                        {SINCE_OPTIONS.map(opt => (
-                            <button
-                                key={opt.hours}
-                                type="button"
-                                onClick={() => setSinceHours(opt.hours)}
-                                className={opt.hours === sinceHours ? styles.window_active : styles.window_button}
-                                aria-pressed={opt.hours === sinceHours}
-                            >
-                                {opt.label}
-                            </button>
-                        ))}
-                    </div>
+                    <SegmentedControl
+                        label="Lookback window"
+                        value={windowId}
+                        options={SINCE_OPTIONS}
+                        onChange={setWindowId}
+                    />
                     <Button
                         variant="secondary"
                         size="sm"

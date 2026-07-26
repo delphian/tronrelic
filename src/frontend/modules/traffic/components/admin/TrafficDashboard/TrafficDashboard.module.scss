@@ -44,37 +44,9 @@
     flex-wrap: wrap;
 }
 
-.window_picker {
-    display: flex;
-    gap: 0;
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-}
-
-.window_button,
-.window_active {
-    padding: var(--padding-xs) var(--gap-md);
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-medium);
-    border: none;
-    cursor: pointer;
-    transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.window_button {
-    color: var(--color-text-muted);
-    background: var(--color-surface);
-}
-
-.window_button:hover {
-    color: var(--color-text);
-}
-
-.window_active {
-    color: var(--color-text);
-    background: var(--gradient-primary);
-}
+/* The lookback picker's local styling was removed with the hand-rolled button
+   row: the window switch is now <SegmentedControl>, which carries the shared
+   --segmented-control-* tokens so this panel matches every other toolbar. */
 
 .notice_card {
     border-color: var(--color-warning);

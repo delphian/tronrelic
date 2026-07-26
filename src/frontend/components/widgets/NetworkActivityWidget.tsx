@@ -31,6 +31,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { IWidgetComponentProps } from '@/types';
 import { useAppSelector } from '../../store/hooks';
+import { SegmentedControl } from '../ui/SegmentedControl';
 import styles from './NetworkActivityWidget.module.scss';
 
 /**
@@ -341,32 +342,18 @@ export function NetworkActivityWidget({ data, context, instanceConfig }: IWidget
     // they share the title row instead of stacking a toolbar above the chart.
     const controls = (
         <>
-            <div className="segmented-control" role="group" aria-label="Metric">
-                {METRICS.map(item => (
-                    <button
-                        key={item.id}
-                        type="button"
-                        className={metric === item.id ? 'is-active' : undefined}
-                        onClick={() => { setMetric(item.id); setUserPinned(true); }}
-                        aria-pressed={metric === item.id}
-                    >
-                        {item.label}
-                    </button>
-                ))}
-            </div>
-            <div className="segmented-control" role="group" aria-label="Time window">
-                {WINDOWS.map(option => (
-                    <button
-                        key={option.id}
-                        type="button"
-                        className={activeWindow === option.id ? 'is-active' : undefined}
-                        onClick={() => handleWindow(option.id)}
-                        aria-pressed={activeWindow === option.id}
-                    >
-                        {option.label}
-                    </button>
-                ))}
-            </div>
+            <SegmentedControl
+                label="Metric"
+                value={metric}
+                options={METRICS}
+                onChange={(next) => { setMetric(next); setUserPinned(true); }}
+            />
+            <SegmentedControl
+                label="Time window"
+                value={activeWindow}
+                options={WINDOWS}
+                onChange={handleWindow}
+            />
         </>
     );
 

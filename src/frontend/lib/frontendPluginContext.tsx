@@ -18,6 +18,7 @@ import { Button } from '../components/ui/Button';
 import { CopyButton } from '../components/ui/CopyButton';
 import { IconButton } from '../components/ui/IconButton';
 import { Switch } from '../components/ui/Switch';
+import { SegmentedControl } from '../components/ui/SegmentedControl';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Textarea } from '../components/ui/Textarea';
@@ -340,6 +341,10 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             CopyButton,
             IconButton,
             Switch,
+            // The published contract narrows option ids to `string`; the generic
+            // component is instantiated at that width, so the cast only erases the
+            // type parameter plugins cannot express through ComponentType.
+            SegmentedControl: SegmentedControl as IUIComponents['SegmentedControl'],
             // forwardRef gives Input a ForwardRefExoticComponent type whose static
             // `propTypes` field trips TypeScript's invariant check against the
             // narrowed IUIComponents.Input contract (native `value` is wider than
@@ -456,6 +461,9 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         CopyButton,
         IconButton,
         Switch,
+        // See the provider above: the cast only erases the generic option-id type
+        // parameter, which the published ComponentType contract fixes to `string`.
+        SegmentedControl: SegmentedControl as IUIComponents['SegmentedControl'],
         // See FrontendPluginContextProvider above: forwardRef's static propTypes
         // trips the invariant check against the narrowed contract; the runtime
         // component is fully compatible, so the cast is sound.

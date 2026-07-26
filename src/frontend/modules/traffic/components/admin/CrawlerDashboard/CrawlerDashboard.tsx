@@ -36,13 +36,21 @@ import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Ta
 import { Stack } from '../../../../../components/layout';
 import { adminGetBotTrend, adminGetBotPaths } from '../../../api';
 import type { IBotClassDailyPoint, ITrafficBucket } from '../../../api';
+import { SegmentedControl } from '../../../../../components/ui/SegmentedControl';
 import styles from './CrawlerDashboard.module.scss';
 
-/** Lookback windows offered. 30d is the backend's hard ceiling. */
-const SINCE_OPTIONS: Array<{ label: string; hours: number }> = [
-    { label: '24h', hours: 24 },
-    { label: '7d', hours: 168 },
-    { label: '30d', hours: 720 }
+/** Selectable lookback window ids, which double as the button labels. */
+type CrawlerWindowId = '24h' | '7d' | '30d';
+
+/**
+ * Lookback windows offered. 30d is the backend's hard ceiling. The id is what
+ * the picker selects and `hours` is what the API takes, so the segmented control
+ * keys on a stable string while the request shape stays derived from it.
+ */
+const SINCE_OPTIONS: ReadonlyArray<{ id: CrawlerWindowId; label: string; hours: number }> = [
+    { id: '24h', label: '24h', hours: 24 },
+    { id: '7d', label: '7d', hours: 168 },
+    { id: '30d', label: '30d', hours: 720 }
 ];
 
 /**
@@ -107,7 +115,11 @@ interface ICrawlerDashboardProps {
  *   reloads of both panels.
  */
 export function CrawlerDashboard({ refreshSignal }: ICrawlerDashboardProps) {
-    const [sinceHours, setSinceHours] = useState<number>(168);
+    const [windowId, setWindowId] = useState<CrawlerWindowId>('7d');
+
+    // The picker owns the window id; both reads below want hours, so resolve once
+    // per render rather than carrying two pieces of state that can drift apart.
+    const sinceHours = (SINCE_OPTIONS.find(option => option.id === windowId) ?? SINCE_OPTIONS[0]).hours;
     const [pathBotClass, setPathBotClass] = useState<string>('ai_crawler');
 
     const [trend, setTrend] = useState<IBotClassDailyPoint[] | null>(null);
@@ -234,19 +246,12 @@ export function CrawlerDashboard({ refreshSignal }: ICrawlerDashboardProps) {
                         the signal that AI-search standing is improving.
                     </p>
                 </div>
-                <div className={styles.window_picker} role="group" aria-label="Lookback window">
-                    {SINCE_OPTIONS.map(opt => (
-                        <button
-                            key={opt.hours}
-                            type="button"
-                            onClick={() => setSinceHours(opt.hours)}
-                            className={opt.hours === sinceHours ? styles.window_active : styles.window_button}
-                            aria-pressed={opt.hours === sinceHours}
-                        >
-                            {opt.label}
-                        </button>
-                    ))}
-                </div>
+                <SegmentedControl
+                    label="Lookback window"
+                    value={windowId}
+                    options={SINCE_OPTIONS}
+                    onChange={setWindowId}
+                />
             </header>
 
             {!clickhouseEnabled && (

@@ -27,14 +27,25 @@ import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Ta
 import { Stack } from '../../../../../components/layout';
 import { adminGetRedirectAnalytics } from '../../../api';
 import type { AnalyticsPeriod, IRedirectAnalytics } from '../../../api';
+import { SegmentedControl } from '../../../../../components/ui/SegmentedControl';
 import styles from './RedirectAnalytics.module.scss';
 
 /** Lookback windows offered by the panel's own picker. */
-const PERIOD_OPTIONS: ReadonlyArray<{ label: string; value: AnalyticsPeriod }> = [
-    { label: '24h', value: '24h' },
-    { label: '7d', value: '7d' },
-    { label: '30d', value: '30d' },
-    { label: '90d', value: '90d' }
+const PERIOD_OPTIONS: ReadonlyArray<{ id: AnalyticsPeriod; label: string }> = [
+    { id: '24h', label: '24h' },
+    { id: '7d', label: '7d' },
+    { id: '30d', label: '30d' },
+    { id: '90d', label: '90d' }
+];
+
+/**
+ * Bot-filter segments. Modelled as a two-segment control rather than a switch
+ * because both readings are legitimate views of the same data — "humans only"
+ * is the default, not the "on" state of a feature.
+ */
+const BOT_FILTER_OPTIONS: ReadonlyArray<{ id: 'humans' | 'all'; label: string; title: string }> = [
+    { id: 'humans', label: 'Humans only', title: 'Count only redirects served to human-classified requests.' },
+    { id: 'all', label: 'Include bots', title: 'Also count redirects served to classified bots and crawlers.' }
 ];
 
 /**
@@ -140,39 +151,18 @@ export function RedirectAnalytics() {
                     </p>
                 </div>
                 <div className={styles.controls}>
-                    <div className={styles.window_picker} role="group" aria-label="Lookback window">
-                        {PERIOD_OPTIONS.map(opt => (
-                            <button
-                                key={opt.value}
-                                type="button"
-                                onClick={() => setPeriod(opt.value)}
-                                className={opt.value === period ? styles.window_active : styles.window_button}
-                                aria-pressed={opt.value === period}
-                            >
-                                {opt.label}
-                            </button>
-                        ))}
-                    </div>
-                    <div className={styles.bot_toggle} role="group" aria-label="Bot traffic filter">
-                        <button
-                            type="button"
-                            className={humansOnly ? styles.bot_active : styles.bot_button}
-                            onClick={() => setHumansOnly(true)}
-                            aria-pressed={humansOnly}
-                            title="Count only redirects served to human-classified requests."
-                        >
-                            Humans only
-                        </button>
-                        <button
-                            type="button"
-                            className={!humansOnly ? styles.bot_active : styles.bot_button}
-                            onClick={() => setHumansOnly(false)}
-                            aria-pressed={!humansOnly}
-                            title="Also count redirects served to classified bots and crawlers."
-                        >
-                            Include bots
-                        </button>
-                    </div>
+                    <SegmentedControl
+                        label="Lookback window"
+                        value={period}
+                        options={PERIOD_OPTIONS}
+                        onChange={setPeriod}
+                    />
+                    <SegmentedControl
+                        label="Bot traffic filter"
+                        value={humansOnly ? 'humans' : 'all'}
+                        options={BOT_FILTER_OPTIONS}
+                        onChange={(id) => setHumansOnly(id === 'humans')}
+                    />
                 </div>
             </header>
 
