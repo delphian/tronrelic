@@ -77,6 +77,20 @@
     width: 100%;
 }
 
+/*
+ * Numeric column, set on the header and its cells together.
+ *
+ * Right alignment lines values up on their least significant digit, which is
+ * what lets a reader find the largest and smallest by scanning rather than
+ * reading; tabular figures give every digit the same advance so the column
+ * does not shift as values change. Applies to both `.th` and `.td`, so it is
+ * declared once here rather than duplicated per element.
+ */
+.cell_numeric {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
 /* Table Body */
 .tbody {
     background: var(--card-background);
