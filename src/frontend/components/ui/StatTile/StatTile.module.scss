@@ -112,11 +112,18 @@
  * wide console to a slideout, and a fixed count needs a breakpoint rule at
  * every call site to do it. The floor is a local variable so the `minColWidth`
  * prop can override it inline without a second class.
+ *
+ * The floor is capped at 100% for the same reason the core <Grid> primitive
+ * caps its own: a bare `minmax(floor, 1fr)` forces the track to the floor
+ * width in a container narrower than it and overflows horizontally instead of
+ * collapsing — exactly the narrow plugin card, sidebar and slideout this
+ * primitive has to survive. Above the floor the cap resolves to the floor, so
+ * the wide case is unchanged.
  */
 .grid {
     display: grid;
     gap: var(--grid-gap-sm);
-    grid-template-columns: repeat(auto-fit, minmax(var(--stat-tile-col-min), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(var(--stat-tile-col-min), 100%), 1fr));
 }
 
 .grid__md {

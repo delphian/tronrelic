@@ -139,16 +139,29 @@ export function StatTile({
             )}
             style={style}
         >
-            <span className={styles.label}>
+            {/*
+              * Block wrappers, not spans: the three slots are typed
+              * `ReactNode` on the published plugin contract, so a caller can
+              * legitimately pass a block element — `context.ui.Skeleton`
+              * renders a bare `<div>` — and `<span><div/></span>` violates the
+              * span content model. All three are flex children of `.tile`, so
+              * their display is blockified either way and this costs no layout.
+              */}
+            <div className={styles.label}>
+                {/*
+                  * The icon stays a span: it is inline-flex inside the label
+                  * row and is inline content by contract (aria-hidden, a lucide
+                  * <svg>), so it carries no block-child risk.
+                  */}
                 {icon && (
                     <span className={styles.icon} aria-hidden="true">
                         {icon}
                     </span>
                 )}
                 {label}
-            </span>
-            <span className={styles.value}>{value}</span>
-            {note && <span className={styles.note}>{note}</span>}
+            </div>
+            <div className={styles.value}>{value}</div>
+            {note && <div className={styles.note}>{note}</div>}
         </div>
     );
 }
