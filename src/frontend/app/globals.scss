@@ -209,6 +209,13 @@ main {
   align-items: center;
 }
 
+/*
+ * DEPRECATED — superseded by <StatGrid> / <StatTile> in components/ui/StatTile.
+ * These utilities were the first attempt at unifying the KPI-tile pattern and
+ * almost nothing adopted them, which is how ~20 local reimplementations
+ * accumulated instead. Retained only until the remaining call sites migrate;
+ * do not use them in new code.
+ */
 .stat-grid {
   display: grid;
   gap: var(--grid-gap-sm);

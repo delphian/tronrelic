@@ -65,6 +65,7 @@ Buttons and badges are React components with scoped CSS Modules — apply them v
 |---------|-----|
 | Button | `<Button>` from `components/ui/Button` (variants: `primary/secondary/ghost/danger/warning`; sizes: `xs/sm/md/lg`) |
 | Badge | `<Badge>` from `components/ui/Badge` (tones: `neutral/info/success/warning/danger`) |
+| KPI / stat readout | `<StatGrid>` + `<StatTile>` from `components/ui/StatTile` (`size="md"` page band, `size="sm"` admin strip) — never hand-rolled label/value markup, and not the legacy `.stat-grid` / `.stat-card__*` globals |
 | Muted text | class `text-muted` |
 
 ### Icons

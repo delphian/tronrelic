@@ -1,0 +1,128 @@
+/*
+ * StatTile / StatGrid styling.
+ *
+ * Everything here resolves to a --stat-tile-* token so a theme can restyle
+ * every KPI band on the site from one place — which is the point of promoting
+ * this pattern out of the twenty local copies that each hardcoded their own
+ * spacing and type scale.
+ *
+ * The two sizes select different tokens rather than redefining what a token
+ * means, per the immutability rule in ui-design-token-layers.md.
+ */
+
+.tile {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/*
+ * Own chrome. Optional because a strip of figures inside one enclosing card
+ * reads better flat than as a grid of nested boxes.
+ */
+.tile__surface {
+    background: var(--stat-tile-background);
+    border: var(--stat-tile-border);
+    border-radius: var(--stat-tile-border-radius);
+}
+
+.tile__md {
+    gap: var(--stat-tile-gap-md);
+}
+
+.tile__sm {
+    gap: var(--stat-tile-gap-sm);
+}
+
+.tile__md.tile__surface {
+    padding: var(--stat-tile-padding-md);
+}
+
+.tile__sm.tile__surface {
+    padding: var(--stat-tile-padding-sm);
+}
+
+.label {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    color: var(--stat-tile-label-color);
+    font-size: var(--stat-tile-label-font-size);
+    font-weight: var(--stat-tile-label-font-weight);
+    letter-spacing: var(--stat-tile-label-letter-spacing);
+    text-transform: uppercase;
+}
+
+.icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--stat-tile-icon-color);
+}
+
+.value {
+    color: var(--stat-tile-value-color);
+    font-weight: var(--stat-tile-value-font-weight);
+    line-height: var(--line-height-tight);
+}
+
+.tile__md .value {
+    font-size: var(--stat-tile-value-font-size-md);
+}
+
+.tile__sm .value {
+    font-size: var(--stat-tile-value-font-size-sm);
+}
+
+.note {
+    color: var(--stat-tile-note-color);
+    line-height: var(--line-height-normal);
+}
+
+.tile__md .note {
+    font-size: var(--stat-tile-note-font-size-md);
+}
+
+.tile__sm .note {
+    font-size: var(--stat-tile-note-font-size-sm);
+}
+
+/*
+ * Tone colours the value only. The label and note stay muted at every tone:
+ * colouring the whole tile turns a highlighted figure into a coloured block
+ * and costs the emphasis the tone was applied for.
+ */
+.tile__primary .value {
+    color: var(--stat-tile-value-color-primary);
+}
+
+.tile__success .value {
+    color: var(--stat-tile-value-color-success);
+}
+
+.tile__warning .value {
+    color: var(--stat-tile-value-color-warning);
+}
+
+.tile__danger .value {
+    color: var(--stat-tile-value-color-danger);
+}
+
+/*
+ * Auto-fit rather than a fixed column count: the same band has to flow from a
+ * wide console to a slideout, and a fixed count needs a breakpoint rule at
+ * every call site to do it. The floor is a local variable so the `minColWidth`
+ * prop can override it inline without a second class.
+ */
+.grid {
+    display: grid;
+    gap: var(--grid-gap-sm);
+    grid-template-columns: repeat(auto-fit, minmax(var(--stat-tile-col-min), 1fr));
+}
+
+.grid__md {
+    --stat-tile-col-min: var(--stat-tile-col-min-md);
+}
+
+.grid__sm {
+    --stat-tile-col-min: var(--stat-tile-col-min-sm);
+}
