@@ -312,7 +312,14 @@ export interface IUIComponents {
     /** Client-side time rendering component (prevents SSR hydration mismatches) */
     ClientTime: ComponentType<{
         date: Date | string | null | undefined;
-        format?: 'time' | 'datetime' | 'date';
+        /**
+         * `'relative'` ("2m ago") is the right default for a column of
+         * closely-spaced events — a table where every row repeats the same
+         * date spends its widest column on its least useful value. `'short'`
+         * is the compact absolute form. Both have always been implemented;
+         * they were missing from this contract, not from the component.
+         */
+        format?: 'time' | 'datetime' | 'date' | 'relative' | 'short';
         fallback?: string;
     }>;
 
@@ -402,6 +409,14 @@ export interface IUIComponents {
     Table: ComponentType<{
         children?: React.ReactNode;
         variant?: 'default' | 'compact';
+        /**
+         * Pin the header row while the body scrolls. Bounds the wrapper to
+         * `--table-sticky-max-height` (70vh by default) and makes it the
+         * vertical scroll container — without that bound a sticky header has
+         * nothing to stick against. Use on any table long enough to scroll
+         * its own column labels out of view.
+         */
+        stickyHeader?: boolean;
         className?: string;
         style?: React.CSSProperties;
     }>;
@@ -443,6 +458,14 @@ export interface IUIComponents {
     Th: ComponentType<{
         children?: React.ReactNode;
         width?: 'auto' | 'shrink' | 'expand';
+        /**
+         * Right-align the column and render it in tabular figures. Set it on
+         * the header and every cell beneath for any quantity a reader
+         * compares down the column — right alignment lines values up on
+         * their least significant digit and tabular figures stop the column
+         * jittering. Leave it off for text, addresses, and dates.
+         */
+        numeric?: boolean;
         colSpan?: number;
         rowSpan?: number;
         className?: string;
@@ -456,6 +479,8 @@ export interface IUIComponents {
     Td: ComponentType<{
         children?: React.ReactNode;
         muted?: boolean;
+        /** Mirror the `numeric` set on this column's `Th` — see that prop. */
+        numeric?: boolean;
         colSpan?: number;
         rowSpan?: number;
         className?: string;

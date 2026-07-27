@@ -154,6 +154,17 @@ interface ThProps extends ThHTMLAttributes<HTMLTableCellElement> {
      * Column width variant
      */
     width?: 'auto' | 'shrink' | 'expand';
+    /**
+     * Right-align the column and render it in tabular figures.
+     *
+     * Set on both the header and its cells for any quantity a reader
+     * compares down the column: right alignment lines the values up on their
+     * least significant digit, which is what makes the largest and smallest
+     * findable at a glance, and tabular figures stop the column jittering as
+     * digits change. Leave it off for text, identifiers, and dates.
+     * @default false
+     */
+    numeric?: boolean;
 }
 
 /**
@@ -164,13 +175,14 @@ interface ThProps extends ThHTMLAttributes<HTMLTableCellElement> {
  * @param props - Table header cell properties
  * @returns A styled th element
  */
-export function Th({ width, className, children, ...props }: ThProps) {
+export function Th({ width, numeric, className, children, ...props }: ThProps) {
     return (
         <th
             className={cn(
                 styles.th,
                 width === 'shrink' && styles.th_shrink,
                 width === 'expand' && styles.th_expand,
+                numeric && styles.cell_numeric,
                 className
             )}
             {...props}
@@ -189,6 +201,12 @@ interface TdProps extends TdHTMLAttributes<HTMLTableCellElement> {
      * @default false
      */
     muted?: boolean;
+    /**
+     * Right-align the cell and render it in tabular figures. Mirror the
+     * `numeric` set on the column's `Th` — see that prop for why.
+     * @default false
+     */
+    numeric?: boolean;
 }
 
 /**
@@ -199,12 +217,13 @@ interface TdProps extends TdHTMLAttributes<HTMLTableCellElement> {
  * @param props - Table data cell properties
  * @returns A styled td element
  */
-export function Td({ muted, className, children, ...props }: TdProps) {
+export function Td({ muted, numeric, className, children, ...props }: TdProps) {
     return (
         <td
             className={cn(
                 styles.td,
                 muted && styles.td_muted,
+                numeric && styles.cell_numeric,
                 className
             )}
             {...props}
