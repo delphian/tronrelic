@@ -320,6 +320,52 @@
     --card-bg-position: bottom right;           /* Position in card corner */
 
     /* ========================================================================
+     * STAT TILE COMPONENT TOKENS
+     *
+     * One labelled figure — uppercase label, prominent value, optional note.
+     * The pattern was rebuilt locally in ~20 places before it became a
+     * primitive, so these tokens are what stops the next KPI strip from
+     * inventing a twenty-first set of class names.
+     *
+     * Padding, internal gap and the corner live in the density block below;
+     * everything here is colour and type, which density does not scale.
+     * ======================================================================== */
+
+    --stat-tile-background: var(--color-surface-muted);
+    --stat-tile-border: var(--border-width-thin) solid var(--color-border);
+
+    /* Label — uppercase, tracked out, deliberately quiet against the value */
+    --stat-tile-label-color: var(--color-text-muted);
+    --stat-tile-label-font-size: var(--font-size-caption);      /* 0.72rem */
+    --stat-tile-label-font-weight: var(--font-weight-semibold);
+    --stat-tile-label-letter-spacing: var(--letter-spacing-wide);
+
+    /* Value — the figure the tile exists to publish */
+    --stat-tile-value-font-size-md: var(--font-size-heading-md); /* 1.6rem  */
+    --stat-tile-value-font-size-sm: var(--font-size-heading-sm); /* 1.05rem */
+    --stat-tile-value-font-weight: var(--font-weight-bold);
+    --stat-tile-value-color: var(--color-text);
+
+    /* Value tone variants. The -text steps are calibrated for coloured text on
+       a dark surface; the solid status colours are not, and fail contrast here. */
+    --stat-tile-value-color-primary: var(--color-primary);
+    --stat-tile-value-color-success: var(--color-success-text);
+    --stat-tile-value-color-warning: var(--color-warning-text);
+    --stat-tile-value-color-danger: var(--color-danger-text);
+
+    /* Note — the one-line qualifier that keeps a figure from being read
+       out of context */
+    --stat-tile-note-color: var(--color-text-muted);
+    --stat-tile-note-font-size-md: var(--font-size-body-sm);    /* 0.85rem */
+    --stat-tile-note-font-size-sm: var(--font-size-caption);    /* 0.72rem */
+
+    --stat-tile-icon-color: var(--color-text-muted);
+
+    /* Auto-fit column floors for <StatGrid>, per tile size. */
+    --stat-tile-col-min-md: 220px;
+    --stat-tile-col-min-sm: 140px;
+
+    /* ========================================================================
      * BADGE COMPONENT TOKENS
      * ======================================================================== */
 
@@ -842,6 +888,14 @@
     --table-cell-padding: calc(var(--spacing-6) * var(--density)) calc(var(--spacing-8) * var(--density));         /* base 0.75rem 1rem */
     --table-cell-padding-compact: calc(var(--spacing-3) * var(--density)) calc(var(--spacing-4) * var(--density)); /* base 0.5rem 0.5rem */
 
+    /* Stat tile — a content block, so its padding and internal rhythm scale.
+       The two sizes are the same tile at two densities: md is a page-level KPI
+       band, sm an admin readout strip. */
+    --stat-tile-padding-md: calc(var(--spacing-7) * var(--density));  /* base 1rem   */
+    --stat-tile-padding-sm: calc(var(--spacing-4) * var(--density));  /* base 0.5rem */
+    --stat-tile-gap-md: calc(var(--spacing-2) * var(--density));      /* base 0.25rem */
+    --stat-tile-gap-sm: calc(var(--spacing-1) * var(--density));      /* base 0.25rem */
+
     /* Alert body padding — a content block, not a control */
     --alert-padding: calc(var(--spacing-8) * var(--density)) calc(1.4rem * var(--density));  /* base 1rem 1.4rem */
 
@@ -892,6 +946,7 @@
     --icon-button-border-radius: var(--radius-md);
     --toast-item-border-radius: var(--radius-md);
     --table-border-radius: var(--radius-md);
+    --stat-tile-border-radius: var(--radius-md);
     --alert-border-radius: var(--radius-md);
     --card-border-radius: var(--radius-lg);
     --modal-dialog-border-radius: var(--radius-lg);

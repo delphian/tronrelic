@@ -323,6 +323,63 @@ export interface IUIComponents {
         fallback?: string;
     }>;
 
+    /**
+     * StatTile — one labelled figure: uppercase label, prominent value, and an
+     * optional one-line qualifier under it.
+     *
+     * Use this for any KPI band, summary strip, or "at a glance" readout rather
+     * than hand-rolling label/value markup. The pattern had been rebuilt in
+     * roughly twenty places (core modules, the admin console, and most plugins)
+     * before it became a primitive; every copy agreed on the design and
+     * disagreed on class names and spacing, so the drift only ever showed up
+     * visually. The tile also gives themes one handle on the densest
+     * information surface the site has.
+     *
+     * `size` is density, not a different design: `md` for page-level bands,
+     * `sm` for compact admin strips. Set `surface={false}` where several tiles
+     * already sit inside one card and per-tile chrome would read as nested
+     * boxes. Values are rendered exactly as passed — format numbers, units and
+     * locale yourself, since those are domain decisions the primitive would
+     * only guess at.
+     */
+    StatTile: ComponentType<{
+        /** What the figure measures. Rendered uppercase; pass sentence case. */
+        label: React.ReactNode;
+        /** The pre-formatted figure. */
+        value: React.ReactNode;
+        /** One-line qualifier that stops the figure being read out of context. */
+        note?: React.ReactNode;
+        /** Decorative leading icon beside the label; rendered `aria-hidden`. */
+        icon?: React.ReactNode;
+        /** Semantic colour applied to the value only. */
+        tone?: 'neutral' | 'primary' | 'success' | 'warning' | 'danger';
+        /** Density step. */
+        size?: 'sm' | 'md';
+        /** Whether the tile draws its own background, border and corner. */
+        surface?: boolean;
+        className?: string;
+        style?: React.CSSProperties;
+    }>;
+
+    /**
+     * StatGrid — auto-fitting grid for a row of `StatTile`s.
+     *
+     * Ships with the tile because every surface that rebuilt the tile also
+     * rebuilt this grid, and bands whose columns collapse at different widths
+     * are the visible half of that duplication. Auto-fit against a per-size
+     * floor means one band flows from six columns on a wide page to two in a
+     * slideout with no breakpoint rules at the call site. Pass the same `size`
+     * you pass the tiles inside it.
+     */
+    StatGrid: ComponentType<{
+        children?: React.ReactNode;
+        /** Column density; match it to the tiles being laid out. */
+        size?: 'sm' | 'md';
+        /** Override the auto-fit column floor (e.g. `'180px'`). */
+        minColWidth?: string;
+        className?: string;
+    }>;
+
     /** Tooltip component for contextual help text */
     Tooltip: ComponentType<{
         content: string;
@@ -1237,7 +1294,7 @@ export interface IFrontendPluginContext {
     /** Plugin identifier used for namespacing events and API routes */
     pluginId: string;
 
-    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, SegmentedControl, Input, Select, Textarea, Skeleton, ClientTime, Tooltip, TronAddress, IconPickerModal, ConfirmDialog, Table family) */
+    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, SegmentedControl, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, IconPickerModal, ConfirmDialog, Table family) */
     ui: IUIComponents;
 
     /** Layout component library (Page, PageHeader, Stack, Grid, Section, SubMenu) */

@@ -14,6 +14,7 @@ import type {
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Skeleton } from '../components/ui/Skeleton';
+import { StatTile, StatGrid } from '../components/ui/StatTile';
 import { Button } from '../components/ui/Button';
 import { CopyButton } from '../components/ui/CopyButton';
 import { IconButton } from '../components/ui/IconButton';
@@ -337,6 +338,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             Card,
             Badge,
             Skeleton,
+            StatTile,
+            StatGrid,
             Button,
             CopyButton,
             IconButton,
@@ -454,6 +457,8 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         Card,
         Badge,
         Skeleton,
+        StatTile,
+        StatGrid,
         Button,
         CopyButton,
         IconButton,
