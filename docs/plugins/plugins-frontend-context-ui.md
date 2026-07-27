@@ -83,7 +83,7 @@ const [tab, setTab] = useState('query');
 | `Switch` | `on: boolean`, `onChange: (next) => void`, `onClick?: (event) => void`, `size?: 'sm'\|'md'\|'lg'`, `disabled?`, `title?`, `type?`, **`aria-label` (required)**, `className?` |
 | `SegmentedControl` | `options: ReadonlyArray<{ id: string; label: ReactNode; disabled?; ariaLabel?; title?; controls?; onSelect?: (id) => void }>`, `value: string`, `onChange?: (id) => void`, **`label` (required group aria-label)**, `variant?: 'group'\|'tablist'`, `disabled?`, `reselect?`, `className?` |
 | `Input` | `value?`, `onChange?`, `onKeyDown?`, `placeholder?`, `disabled?`, `required?`, `variant?: 'default'\|'ghost'`, `type?`, `min?`, `max?`, `step?`, `id?`, `name?`, `aria-label?`, `className?` |
-| `ClientTime` | `date: Date \| string \| null \| undefined`, `format?: 'time'\|'datetime'\|'date'`, `fallback?` |
+| `ClientTime` | `date: Date \| string \| null \| undefined`, `format?: 'time'\|'datetime'\|'date'\|'relative'\|'short'`, `fallback?` |
 | `Tooltip` | `content: string`, `children: ReactNode`, `placement?: 'top'\|'bottom'` |
 | `IconPickerModal` | `selectedIcon?`, `onSelect: (iconName) => void`, `onClose: () => void` |
 
@@ -95,7 +95,7 @@ const [tab, setTab] = useState('query');
 
 `SegmentedControl` is the chart-toolbar toggle row — time window, metric, chart view, data source. Use it instead of hand-rolling buttons over the `.segmented-control` class: it owns the active-state ARIA (`aria-pressed`, or `role="tab"` + `aria-selected` under `variant="tablist"`) and arrow-key traversal. It is fully controlled and holds no state, so it is SSR-safe. A click on the already-active segment is ignored unless `reselect` is set, so `onChange` can call a refetch directly. Per-option `onSelect` handles the mixed group — a metric segment that pins a rotation timer beside a window segment that refetches.
 
-`ClientTime` is the canonical fix for SSR/client timezone hydration mismatches — never call `new Date().toLocaleString()` directly.
+`ClientTime` is the canonical fix for SSR/client timezone hydration mismatches — never call `new Date().toLocaleString()` directly. Prefer `format="relative"` ("2m ago") for a column of closely-spaced events, where repeating the same absolute date down every row spends the widest column on its least useful value; `format="short"` is the compact absolute form.
 
 ### Table Family
 
@@ -103,14 +103,14 @@ Six related components matching the `/system/*` admin tables. Compose them to in
 
 | Component | Props |
 |-----------|-------|
-| `Table` | `variant?: 'default'\|'compact'`, `className?`, `style?`, `children?` |
+| `Table` | `variant?: 'default'\|'compact'`, `stickyHeader?`, `className?`, `style?`, `children?` |
 | `Thead` | `className?`, `children?` |
 | `Tbody` | `className?`, `children?` |
 | `Tr` | `hasError?`, `isExpanded?`, `onClick?`, `className?`, `children?` |
-| `Th` | `width?: 'auto'\|'shrink'\|'expand'`, `colSpan?`, `rowSpan?`, `className?`, `children?` |
-| `Td` | `muted?`, `colSpan?`, `rowSpan?`, `className?`, `children?` |
+| `Th` | `width?: 'auto'\|'shrink'\|'expand'`, `numeric?`, `colSpan?`, `rowSpan?`, `className?`, `children?` |
+| `Td` | `muted?`, `numeric?`, `colSpan?`, `rowSpan?`, `className?`, `children?` |
 
-`Tr.hasError` applies the error surface tone; `Tr.isExpanded` renders the muted "details drawer" background. `Th.width="shrink"` sizes a column to its content (good for status badges/action buttons); `"expand"` forces it to fill remaining space. `Td.muted` dims secondary metadata.
+`Tr.hasError` applies the error surface tone; `Tr.isExpanded` renders the muted "details drawer" background. `Th.width="shrink"` sizes a column to its content (good for status badges/action buttons); `"expand"` forces it to fill remaining space. `Td.muted` dims secondary metadata. `Table.stickyHeader` pins the header row and bounds the wrapper to `--table-sticky-max-height` (70vh default), making it the vertical scroll container — use it on any table long enough to scroll its own column labels out of view. Set `numeric` on a `Th` **and** every `Td` beneath it for quantities read down a column: it right-aligns and renders tabular figures so values line up on their least significant digit. Leave it off for text, addresses, and dates.
 
 ## Charts (`context.charts`)
 
