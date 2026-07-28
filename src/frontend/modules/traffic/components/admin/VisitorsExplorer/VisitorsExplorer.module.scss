@@ -206,10 +206,94 @@
     color: var(--color-text-subtle);
 }
 
-/* Expanded per-row page-hit clickstream */
+/*
+ * Columns dropped at tablet width and below (First Seen, Channel, Device).
+ *
+ * Chosen because each is either recoverable from another column or the least
+ * load-bearing of its kind: Last Seen answers recency, Source carries
+ * acquisition more specifically than Channel, and device is rarely the reason
+ * an operator opens this table. Nothing is lost — the expanded row publishes
+ * every attribute at every width, so hiding a column narrows the summary rather
+ * than the record.
+ *
+ * Marked with an explicit class rather than :nth-child so reordering a column
+ * cannot silently hide the wrong one.
+ */
+.col_optional {
+    display: table-cell;
+}
+
+/* Expanded per-row detail: full attribute set, then the page-hit clickstream */
 .detail_row td {
     background: var(--color-surface);
     padding: var(--card-padding-sm);
+}
+
+.detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.detail_section_title {
+    margin: 0 0 var(--gap-sm);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+/*
+ * Attribute grid. `auto-fit` with a floor rather than a fixed column count so
+ * the panel reflows on its own — it renders inside a cell spanning the whole
+ * table, so its width tracks the table, not the container query above.
+ */
+.detail_grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(var(--max-width-xs), 1fr));
+    gap: var(--gap-sm) var(--gap-md);
+    margin: 0;
+}
+
+.detail_field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+}
+
+.detail_label {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+/* dd carries a default indent that would misalign every value from its label. */
+.detail_value {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}
+
+.detail_mono {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+}
+
+.detail_device {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+}
+
+.detail_flag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    margin-left: var(--gap-sm);
+    font-size: var(--font-size-caption);
+    color: var(--color-warning-text);
 }
 
 .hits {
@@ -269,6 +353,14 @@
 }
 
 /* Container query responsive overrides */
+
+/* iPad and below: drop the three optional columns — see .col_optional. */
+@container visitors-explorer (max-width: #{$breakpoint-tablet}) {
+    .col_optional {
+        display: none;
+    }
+}
+
 @container visitors-explorer (max-width: #{$breakpoint-mobile-lg}) {
     .section_header {
         flex-direction: column;
