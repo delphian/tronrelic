@@ -1432,9 +1432,29 @@ export class TrafficService {
      * @param havingSessionStart - Optional HAVING fragment on the aggregated
      *   `session_start`, used with the widened scan to attribute each
      *   session to the window containing its start.
+     * @param includeAcquisition - Also project the entry hit's geo, device, and
+     *   UTM values. Opt-in because most session callers only need counts and
+     *   durations, and every extra column widens the scan for all of them; the
+     *   source drill-down needs them to break a session cohort down by
+     *   dimensions that used to be read off `bootstrap` rows.
      * @returns SELECT statement usable as a FROM subquery.
      */
-    private derivedSessionsSql(where: string, havingSessionStart?: string): string {
+    private derivedSessionsSql(where: string, havingSessionStart?: string, includeAcquisition = false): string {
+        // Nullable columns go through `argMin(tuple(x), timestamp).1` — argMin
+        // cannot take a Nullable argument directly on the pinned ClickHouse
+        // version, and the one-element tuple is the standard way around it.
+        const acquisitionAggregates = includeAcquisition ? `,
+                argMin(tuple(country), timestamp).1 AS entry_country,
+                argMin(tuple(device), timestamp).1 AS entry_device,
+                argMin(tuple(utm_source), timestamp).1 AS entry_utm_source,
+                argMin(tuple(utm_medium), timestamp).1 AS entry_utm_medium,
+                argMin(tuple(utm_campaign), timestamp).1 AS entry_utm_campaign` : '';
+        const acquisitionColumns = includeAcquisition ? `,
+                    country,
+                    device,
+                    utm_source,
+                    utm_medium,
+                    utm_campaign` : '';
         return `
             SELECT
                 candidate_uid,
@@ -1444,20 +1464,20 @@ export class TrafficService {
                 count() AS page_count,
                 dateDiff('second', min(timestamp), max(timestamp)) AS duration_s,
                 argMin(path, timestamp) AS entry_path,
-                argMin(tuple(original_referrer), timestamp).1 AS entry_referer
+                argMin(tuple(original_referrer), timestamp).1 AS entry_referer${acquisitionAggregates}
             FROM (
                 SELECT
                     candidate_uid,
                     timestamp,
                     path,
-                    original_referrer,
+                    original_referrer,${acquisitionColumns}
                     sum(is_new) OVER (PARTITION BY candidate_uid ORDER BY timestamp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS session_seq
                 FROM (
                     SELECT
                         candidate_uid,
                         timestamp,
                         path,
-                        original_referrer,
+                        original_referrer,${acquisitionColumns}
                         if(dateDiff('second', lagInFrame(timestamp) OVER (PARTITION BY candidate_uid ORDER BY timestamp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), timestamp) >= ${SESSION_GAP_SECONDS}, 1, 0) AS is_new
                     FROM ${TABLE_NAME}
                     WHERE ${where} AND event_type = 'page'
@@ -1506,6 +1526,17 @@ export class TrafficService {
      * nowhere, so it has no source to attribute and no page anyone landed on.
      * The sessions stay real everywhere a session count is legitimately a
      * session count — engagement, duration, bounce.
+     *
+     * **This depends on the beacon reporting a per-navigation referrer.**
+     * `document.referrer` is fixed at Document creation and survives both
+     * `pushState` and a reload, so a raw `document.referrer` would report the
+     * tab's *original* external source on every hit and a resumed session would
+     * escape this filter entirely — re-credited to that source instead of
+     * recognised as a continuation. `resolveNavigationReferrer` in
+     * `frontend/modules/user/lib/pageBeacon.ts` is what makes an intra-tab
+     * continuation a self-referral; changing it silently breaks this filter.
+     * Rows written before that fix still carry the original referrer, so the
+     * panels stay somewhat inflated until those rows age out of the window.
      *
      * @param siteHost - This deployment's hostname, or null when unresolvable;
      *   with null nothing is excluded, so the panels degrade to GA4's
@@ -1590,11 +1621,12 @@ export class TrafficService {
      * people whose first-ever touch fell inside the window). `count` is
      * therefore a session count, not an event count.
      *
-     * Attributing from `page` rows is what makes this possible, and is also
-     * why {@link sessionSourceExpr} exists: after any internal navigation a
-     * `page` row's referrer is this site itself, and a session that begins on
-     * such a hit is a visitor resuming after the gap, which reads as `direct`
-     * rather than as this site referring itself.
+     * Attributing from `page` rows is what makes this possible. A continuation
+     * hit reports the previous in-tab URL as its referrer (see
+     * {@link acquisitionSessionFilter} for why the beacon must do this), so a
+     * session beginning on such a hit is a resumption and
+     * {@link acquisitionSessionFilter} drops it rather than counting it as a
+     * second arrival from the tab's original source.
      *
      * @param range - Inclusive date window.
      * @param excludeBots - Restrict to human-classified rows (NULL kept).
@@ -2614,18 +2646,29 @@ export class TrafficService {
      * `'direct'`): visitor count, top landing pages / countries / devices / UTM
      * campaigns, engagement, and the binary conversion proxy.
      *
-     * The cohort is first-touch attributed: visitors whose `bootstrap` row's
-     * referrer matches the source. Attribution sections (landing pages,
-     * countries, devices, UTM) read the cohort's bootstrap rows; engagement
-     * and conversion read the cohort's full in-window clickstream. Matching
-     * mirrors {@link getTrafficSources}, so a value returned there round-trips
-     * here. Percentages are each row's share of the cohort's first touches.
+     * **Session-scoped, matching {@link getTrafficSources} exactly.** The cohort
+     * is every derived session that *starts* in the window whose entry referrer
+     * resolves to this source, under the same {@link sessionSourceExpr} and
+     * {@link acquisitionSessionFilter} the aggregate panel uses — so a value
+     * shown there always round-trips here. The attribution sections break those
+     * sessions down by their entry hit's path, country, device, and UTM; the
+     * percentage denominator is the cohort's session count.
+     *
+     * Keeping the two in lockstep is the whole point. A first-touch cohort here
+     * over a session-scoped aggregate row diverged visibly: a visitor first
+     * acquired direct and returning from Google counted in the Google row, yet
+     * had no in-window Google `bootstrap` row, so the expanded panel came back
+     * empty underneath a non-empty row.
+     *
+     * Engagement's `avgPageViews` and conversion still read the cohort's full
+     * in-window clickstream, because `user_id` lives on the event rows rather
+     * than on a derived session.
      *
      * @param range - Inclusive date window.
      * @param source - Referrer domain (e.g. `'duckduckgo.com'`) or `'direct'`.
      * @param excludeBots - Restrict to human-classified rows (NULL kept).
      * @returns The source breakdown, or an empty shell when the source has no
-     *          events in the window.
+     *          sessions starting in the window.
      */
     async getTrafficSourceDetails(range: IAnalyticsDateRange, source: string, excludeBots = false): Promise<ITrafficSourceDetailsResult> {
         const empty: ITrafficSourceDetailsResult = {
@@ -2642,74 +2685,88 @@ export class TrafficService {
         if (!this.clickhouse) return empty;
         const { clause, params } = this.rangeParams(range);
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
-        const sourceExpr = `multiIf(referer IS NULL OR referer = '', 'direct', domain(referer))`;
-        // First-touch rows for this source — the attribution ground truth.
-        const firstTouchWhere = `${clause}${botFilter} AND event_type = 'bootstrap' AND ${sourceExpr} = {source:String} AND ${this.pageVisitorMembership(clause, botFilter)}`;
-        // The cohort's full in-window clickstream (all event types) — the
-        // engagement/conversion ground truth.
-        const where = `${clause}${botFilter} AND candidate_uid IN (
-            SELECT DISTINCT candidate_uid FROM ${TABLE_NAME} WHERE ${firstTouchWhere}
-        )`;
-        // Session scan: same cohort restriction, but time-widened by one gap
-        // with start-attribution (see sessionRangeParams) so boundary
-        // sessions land in exactly one window, matching the overview KPIs.
+        // Session scan: time-widened by one gap with start-attribution (see
+        // sessionRangeParams) so boundary sessions land in exactly one window,
+        // matching the overview KPIs and the aggregate source panel.
         const sessionWindow = this.sessionRangeParams(range, botFilter);
-        const sessionsWhere = `${sessionWindow.where} AND candidate_uid IN (
-            SELECT DISTINCT candidate_uid FROM ${TABLE_NAME} WHERE ${firstTouchWhere}
+        const siteHost = await this.resolveSiteHost();
+        const acquisitionOnly = this.acquisitionSessionFilter(siteHost);
+        // The cohort: sessions whose entry hit attributes to this source. The
+        // predicate is assembled from the same two helpers getTrafficSources
+        // uses, so the two cannot drift apart.
+        const sessionCohort = `
+            SELECT * FROM (${this.derivedSessionsSql(sessionWindow.where, sessionWindow.having, true)})
+            WHERE ${this.sessionSourceExpr()} = {source:String}${acquisitionOnly ? ` AND ${acquisitionOnly}` : ''}
+        `;
+        // The cohort's full in-window clickstream (all event types) — needed
+        // only for conversion and total page events, which read `user_id` and
+        // raw event rows rather than derived sessions.
+        const where = `${clause}${botFilter} AND candidate_uid IN (
+            SELECT DISTINCT candidate_uid FROM (${sessionCohort})
         )`;
-        const p = { ...params, ...sessionWindow.params, source };
+        const p = { ...params, ...sessionWindow.params, ...(siteHost ? { siteHost } : {}), source };
         const round1 = (n: number): number => Math.round(n * 10) / 10;
         try {
-            const [summaryRows, sessionRows] = await Promise.all([
-                this.clickhouse.query<{
-                    visitors: string | number; pageEvents: string | number;
-                    firstTouches: string | number; converted: string | number;
-                }>(`
-                    SELECT
-                        uniqExact(candidate_uid) AS visitors,
-                        countIf(event_type = 'page') AS pageEvents,
-                        countIf(event_type = 'bootstrap') AS firstTouches,
-                        uniqExactIf(candidate_uid, user_id IS NOT NULL) AS converted
-                    FROM ${TABLE_NAME}
-                    WHERE ${where}
-                `, p),
-                // Derived sessions over the cohort's clickstream — bounce and
-                // duration semantics identical to the overview KPIs.
-                this.clickhouse.query<{
-                    sessions: string | number; avgDurationS: string | number | null;
-                }>(`
-                    SELECT count() AS sessions, avg(duration_s) AS avgDurationS
-                    FROM (${this.derivedSessionsSql(sessionsWhere, sessionWindow.having)})
-                `, p)
-            ]);
-            const summary = summaryRows[0];
-            const visitors = summary ? Number(summary.visitors) : 0;
+            // The session aggregate leads: it defines the cohort, so when it is
+            // empty there is nothing to drill into and the clickstream read
+            // would be scoped to an empty IN-list anyway.
+            const sessionRows = await this.clickhouse.query<{
+                visitors: string | number; sessions: string | number;
+                avgDurationS: string | number | null;
+            }>(`
+                SELECT
+                    uniqExact(candidate_uid) AS visitors,
+                    count() AS sessions,
+                    avg(duration_s) AS avgDurationS
+                FROM (${sessionCohort})
+            `, p);
+            const visitors = Number(sessionRows[0]?.visitors ?? 0);
             if (!visitors) return empty;
-            const pageEvents = Number(summary.pageEvents);
-            const firstTouches = Number(summary.firstTouches);
             const sessions = Number(sessionRows[0]?.sessions ?? 0);
             const avgDurationS = Number(sessionRows[0]?.avgDurationS ?? 0);
-            const converted = Number(summary.converted);
-            const pct = (count: number): number => (firstTouches > 0 ? round1((count / firstTouches) * 100) : 0);
 
+            const summaryRows = await this.clickhouse.query<{
+                pageEvents: string | number; converted: string | number;
+            }>(`
+                SELECT
+                    countIf(event_type = 'page') AS pageEvents,
+                    uniqExactIf(candidate_uid, user_id IS NOT NULL) AS converted
+                FROM ${TABLE_NAME}
+                WHERE ${where}
+            `, p);
+            const pageEvents = Number(summaryRows[0]?.pageEvents ?? 0);
+            const converted = Number(summaryRows[0]?.converted ?? 0);
+            // Each breakdown row's share of the cohort's sessions — the unit
+            // the rows are now counted in.
+            const pct = (count: number): number => (sessions > 0 ? round1((count / sessions) * 100) : 0);
+
+            // All four break the same session cohort down by its entry hit, so
+            // every row sums to the session count `pct` divides by.
             const [landingRows, countryRows, deviceRows, utmRows] = await Promise.all([
                 this.clickhouse.query<{ path: string; count: string | number }>(`
-                    SELECT path, count() AS count FROM ${TABLE_NAME} WHERE ${firstTouchWhere}
+                    SELECT entry_path AS path, count() AS count FROM (${sessionCohort})
+                    WHERE entry_path != ''
                     GROUP BY path ORDER BY count DESC LIMIT 10
                 `, p),
                 this.clickhouse.query<{ country: string; count: string | number }>(`
-                    SELECT country, count() AS count FROM ${TABLE_NAME} WHERE ${firstTouchWhere} AND country IS NOT NULL
+                    SELECT entry_country AS country, count() AS count FROM (${sessionCohort})
+                    WHERE entry_country IS NOT NULL
                     GROUP BY country ORDER BY count DESC LIMIT 30
                 `, p),
                 this.clickhouse.query<{ device: string; count: string | number }>(`
-                    SELECT device, count() AS count FROM ${TABLE_NAME} WHERE ${firstTouchWhere}
+                    SELECT entry_device AS device, count() AS count FROM (${sessionCohort})
                     GROUP BY device ORDER BY count DESC
                 `, p),
+                // UTM tagging is recorded at first touch only, so a session
+                // resumed later carries none and this table is usually sparse
+                // relative to the others — campaign-performance remains the
+                // surface with full paid attribution.
                 this.clickhouse.query<{ source: string | null; medium: string | null; campaign: string; count: string | number }>(`
                     SELECT
-                        utm_source AS source, utm_medium AS medium, utm_campaign AS campaign,
-                        count() AS count
-                    FROM ${TABLE_NAME} WHERE ${firstTouchWhere} AND utm_campaign IS NOT NULL
+                        entry_utm_source AS source, entry_utm_medium AS medium,
+                        entry_utm_campaign AS campaign, count() AS count
+                    FROM (${sessionCohort})
+                    WHERE entry_utm_campaign IS NOT NULL
                     GROUP BY source, medium, campaign ORDER BY count DESC LIMIT 10
                 `, p)
             ]);

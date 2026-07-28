@@ -714,6 +714,44 @@ describe('TrafficService', () => {
             expect(service.acquisitionSessionFilter(null)).toBe('');
         });
 
+        it('getTrafficSourceDetails drills into the same session cohort as the aggregate', async () => {
+            // The drill-down must share getTrafficSources' cohort definition.
+            // While it was first-touch and the aggregate was session-scoped, a
+            // visitor acquired direct who returned from Google counted in the
+            // Google row but had no in-window Google bootstrap row — so the
+            // expanded panel rendered empty beneath a non-empty row.
+            // A non-empty cohort is required: a zero visitor count short-circuits
+            // to the empty shell before any breakdown query is built.
+            const sqls: string[] = [];
+            const ch = createMockClickHouse();
+            ch.query = async <T>(sql: string): Promise<T[]> => {
+                sqls.push(sql);
+                return (sql.includes('avg(duration_s)')
+                    ? [{ visitors: 3, sessions: 5, avgDurationS: 42 }]
+                    : []) as T[];
+            };
+            TrafficService.setDependencies(ch, createMockLogger());
+            await TrafficService.getInstance().getTrafficSourceDetails(range, 'google.com');
+            const sql = sqls.join('\n');
+            expect(sql).toContain('session_seq');
+            expect(sql).toContain('{source:String}');
+            // Every breakdown groups the session's entry hit, not raw events.
+            expect(sql).toContain('entry_path AS path');
+            expect(sql).toContain('entry_country AS country');
+            expect(sql).toContain('entry_device AS device');
+            expect(sql).toContain('entry_utm_campaign AS campaign');
+            // The superseded first-touch cohort is gone.
+            expect(sql).not.toContain("event_type = 'bootstrap'");
+        });
+
+        it('only projects acquisition columns when a caller needs them', async () => {
+            // Every session read would otherwise pay for five extra columns to
+            // serve the one caller that breaks a cohort down by them.
+            const captured = captureSql();
+            await TrafficService.getInstance().getEngagementMetrics(range);
+            expect(captured.sqls.join('\n')).not.toContain('entry_country');
+        });
+
         it('getTopLandingPages groups session entry paths, not every navigation', async () => {
             const captured = captureSql();
             await TrafficService.getInstance().getTopLandingPages(range);
