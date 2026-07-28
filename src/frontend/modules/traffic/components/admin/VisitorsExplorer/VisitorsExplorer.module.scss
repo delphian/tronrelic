@@ -40,6 +40,18 @@
     overflow-x: auto;
 }
 
+/* The whole row is the drill-down control — there is no separate button — so
+   it needs the affordance and the keyboard focus ring a <button> would have
+   carried. Gated on :focus-visible so a mouse click doesn't leave a ring. */
+.row {
+    cursor: pointer;
+
+    &:focus-visible {
+        outline: var(--focus-outline-width) solid var(--color-focus);
+        outline-offset: calc(-1 * var(--focus-outline-width));
+    }
+}
+
 .id_cell {
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);

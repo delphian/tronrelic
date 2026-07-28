@@ -181,7 +181,6 @@ export interface IVisitorRow {
     pageViews: number;
     distinctPaths: number;
     lastPath: string | null;
-    sessionsCount: number;
     /** First-touch acquisition channel, or null when unclassified. */
     channel: string | null;
     referrerDomain: string | null;
