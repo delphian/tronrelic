@@ -22,7 +22,13 @@
  * an account id filters the table to that account's tids, which is the
  * replacement for the per-account rollup the old Registered view provided.
  *
- * Clicking anywhere on a row expands that visitor's clickstream. The row stays
+ * Expanding a row publishes that visitor's *complete* record — every stored
+ * attribute for the tid and its account, then the clickstream. That is what
+ * makes the responsive rule safe: at tablet width and below the table drops
+ * First Seen, Channel, and Device (see `.col_optional`), and none of it becomes
+ * unreachable because the panel already carries all of it at every width.
+ *
+ * Clicking anywhere on a row expands that visitor's detail. The row stays
  * a real `<tr>`: giving it `role="button"` would make every `<td>` descendant
  * presentational, orphaning the cell/header relationships so a screen reader
  * hears only the row's label instead of its ten columns — and it would nest the
@@ -58,7 +64,15 @@ const PAGE_LIMIT = 25;
 /** Max page hits fetched for a drill-down. */
 const HITS_LIMIT = 200;
 
-/** Column count, so the expanded drill-down row spans the full table. */
+/**
+ * Column count, so the expanded drill-down row spans the full table.
+ *
+ * Counts every column the header declares, including the three the container
+ * query hides at tablet width and below. Those columns still exist in the table
+ * model, so a smaller colSpan would leave the detail cell short of the right
+ * edge at wide widths; the hidden columns carry no content, so spanning them at
+ * narrow widths costs nothing.
+ */
 const COLUMN_COUNT = 10;
 
 /**
@@ -86,21 +100,56 @@ function formatUtm(utm: IVisitorRow['utm']): string | null {
     return parts.length > 0 ? parts.join(' / ') : null;
 }
 
-interface IPageHitsRowProps {
-    id: string;
+interface IDetailFieldProps {
+    label: string;
+    children: React.ReactNode;
+}
+
+/**
+ * One label/value pair in the expanded row's attribute grid.
+ *
+ * A `<dt>`/`<dd>` pair rather than two `<div>`s: the panel is a set of
+ * name-value pairs about one subject, which is exactly what a definition list
+ * conveys to a screen reader — a grid of anonymous divs would read as a wall of
+ * unassociated text.
+ *
+ * @param props - The field's label and its already-formatted value node.
+ * @returns The paired term and description.
+ */
+function DetailField({ label, children }: IDetailFieldProps) {
+    return (
+        <div className={styles.detail_field}>
+            <dt className={styles.detail_label}>{label}</dt>
+            <dd className={styles.detail_value}>{children}</dd>
+        </div>
+    );
+}
+
+interface IVisitorDetailRowProps {
+    row: IVisitorRow;
+    isFlagged: boolean;
     window: IVisitorsWindow;
 }
 
 /**
- * Expanded clickstream row for a single visitor. Self-contained so each open
- * drill-down owns its fetch — mounting on expand and unmounting on collapse —
- * which eliminates the shared-state race where a late response from a
- * previously-open row could render under the currently-open one.
+ * Expanded detail row for a single visitor: every stored attribute for the tid
+ * (and its account, when it has one) followed by the page-hit clickstream.
  *
- * @param props - The tid to fetch hits for and the active window.
- * @returns A table row spanning the parent's columns with the page-hit list.
+ * Carrying the full attribute set here is what lets the table hide its three
+ * lowest-value columns on narrow viewports without the data becoming
+ * unreachable — the panel is the canonical place a visitor's complete record is
+ * readable, at every width, so nothing is only visible on a wide screen.
+ *
+ * Self-contained fetch so each open drill-down owns its request — mounting on
+ * expand and unmounting on collapse — which eliminates the shared-state race
+ * where a late response from a previously-open row could render under the
+ * currently-open one.
+ *
+ * @param props - The visitor row to describe, whether its source network was
+ *   flagged high-volume, and the active window scoping the clickstream.
+ * @returns A table row spanning the parent's columns with attributes and hits.
  */
-function PageHitsRow({ id, window }: IPageHitsRowProps) {
+function VisitorDetailRow({ row, isFlagged, window }: IVisitorDetailRowProps) {
     const [hits, setHits] = useState<IPageHit[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -113,7 +162,7 @@ function PageHitsRow({ id, window }: IPageHitsRowProps) {
         const fetchHits = async (): Promise<void> => {
             setLoading(true);
             try {
-                const result = await adminGetPageHits('tid', id, { ...window, limit: HITS_LIMIT });
+                const result = await adminGetPageHits('tid', row.id, { ...window, limit: HITS_LIMIT });
                 if (active) {
                     setHits(result);
                 }
@@ -130,39 +179,112 @@ function PageHitsRow({ id, window }: IPageHitsRowProps) {
         };
         fetchHits();
         return () => { active = false; };
-    }, [id, window]);
+    }, [row.id, window]);
+
+    const utm = formatUtm(row.utm);
+    /** Placeholder for an attribute the visitor has no value for. */
+    const none = <span className={styles.muted}>—</span>;
 
     return (
         <Tr className={styles.detail_row}>
             <Td colSpan={COLUMN_COUNT}>
-                {loading ? (
-                    <div className={styles.loading}>Loading pages…</div>
-                ) : hits.length === 0 ? (
-                    <div className={styles.empty}>No page hits in this window.</div>
-                ) : (
-                    <>
-                        <ol className={styles.hits}>
-                            {hits.map((hit, index) => (
-                                <li key={`${hit.timestamp}_${index}`} className={styles.hit}>
-                                    <span className={styles.hit_time}>
-                                        <ClientTime date={hit.timestamp} format="datetime" />
+                <div className={styles.detail}>
+                    <section>
+                        <h3 className={styles.detail_section_title}>Visitor detail</h3>
+                        <dl className={styles.detail_grid}>
+                            <DetailField label="Traffic id">
+                                <code className={styles.detail_mono}>{row.id}</code>
+                            </DetailField>
+                            <DetailField label="Account">
+                                {row.accountId
+                                    ? <code className={styles.detail_mono}>{row.accountId}</code>
+                                    : <span className={styles.muted}>anonymous</span>}
+                            </DetailField>
+                            <DetailField label="Visitor type">
+                                {row.isNew ? 'New in this window' : 'Returning'}
+                            </DetailField>
+                            <DetailField label="Classification">
+                                {row.botClass
+                                    ? (row.botClass === 'human'
+                                        ? 'human'
+                                        : <span className={styles.bot_tag}>{row.botClass}</span>)
+                                    : <span className={styles.muted}>unclassified</span>}
+                            </DetailField>
+                            <DetailField label="First seen">
+                                <ClientTime date={row.firstSeen} format="datetime" />
+                            </DetailField>
+                            <DetailField label="Last seen">
+                                <ClientTime date={row.lastSeen} format="datetime" />
+                            </DetailField>
+                            <DetailField label="Page views">{row.pageViews.toLocaleString()}</DetailField>
+                            <DetailField label="Distinct paths">{row.distinctPaths.toLocaleString()}</DetailField>
+                            <DetailField label="Channel">{row.channel || none}</DetailField>
+                            <DetailField label="Source">
+                                {row.referrerDomain || 'direct'}
+                                {isFlagged && (
+                                    <span className={styles.detail_flag}>
+                                        <AlertTriangle size={14} aria-hidden="true" />
+                                        high-volume network
                                     </span>
-                                    <code className={styles.hit_path}>{hit.path}</code>
-                                    {hit.referer && (
-                                        <span className={styles.hit_referer} title={hit.referer}>
-                                            ← {hit.referer}
-                                        </span>
-                                    )}
-                                </li>
-                            ))}
-                        </ol>
-                        {hits.length >= HITS_LIMIT && (
-                            <p className="text-muted">
-                                Showing the newest {HITS_LIMIT} page hits — more exist in this window.
-                            </p>
+                                )}
+                            </DetailField>
+                            <DetailField label="Campaign (UTM)">{utm || none}</DetailField>
+                            <DetailField label="Landing page">
+                                {row.landingPage
+                                    ? <code className={styles.detail_mono}>{row.landingPage}</code>
+                                    : none}
+                            </DetailField>
+                            <DetailField label="Last path">
+                                {row.lastPath
+                                    ? <code className={styles.detail_mono}>{row.lastPath}</code>
+                                    : none}
+                            </DetailField>
+                            <DetailField label="Country">{row.country || none}</DetailField>
+                            <DetailField label="Device">
+                                <span className={styles.detail_device}>
+                                    {getDeviceIcon(row.device)} {row.device}
+                                </span>
+                            </DetailField>
+                            <DetailField label="Source network">
+                                {row.subnetHash
+                                    ? <code className={styles.detail_mono}>{row.subnetHash}</code>
+                                    : none}
+                            </DetailField>
+                        </dl>
+                    </section>
+
+                    <section>
+                        <h3 className={styles.detail_section_title}>Pages hit</h3>
+                        {loading ? (
+                            <div className={styles.loading}>Loading pages…</div>
+                        ) : hits.length === 0 ? (
+                            <div className={styles.empty}>No page hits in this window.</div>
+                        ) : (
+                            <>
+                                <ol className={styles.hits}>
+                                    {hits.map((hit, index) => (
+                                        <li key={`${hit.timestamp}_${index}`} className={styles.hit}>
+                                            <span className={styles.hit_time}>
+                                                <ClientTime date={hit.timestamp} format="datetime" />
+                                            </span>
+                                            <code className={styles.hit_path}>{hit.path}</code>
+                                            {hit.referer && (
+                                                <span className={styles.hit_referer} title={hit.referer}>
+                                                    ← {hit.referer}
+                                                </span>
+                                            )}
+                                        </li>
+                                    ))}
+                                </ol>
+                                {hits.length >= HITS_LIMIT && (
+                                    <p className="text-muted">
+                                        Showing the newest {HITS_LIMIT} page hits — more exist in this window.
+                                    </p>
+                                )}
+                            </>
                         )}
-                    </>
-                )}
+                    </section>
+                </div>
             </Td>
         </Tr>
     );
@@ -269,7 +391,7 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
 
     /**
      * Toggle a row's page-hit drill-down open or closed. The expanded row owns
-     * its own fetch (see {@link PageHitsRow}), so this only flips which row is
+     * its own fetch (see {@link VisitorDetailRow}), so this only flips which row is
      * open — there is no shared hit state to race.
      *
      * @param id - The tid of the row to expand or collapse.
@@ -291,7 +413,8 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                     otherwise the traffic id; an asterisk marks a visitor whose first-ever contact
                     falls inside this window. Acquisition columns read the visitor&apos;s first
                     server-recorded hit, whenever that was — so a returning visitor still shows where
-                    they originally came from. Select a row to see every page that visitor hit.{' '}
+                    they originally came from. Select a row to see that visitor&apos;s full record and
+                    every page they hit — on narrower screens some columns move there instead.{' '}
                     {includeBots
                         ? 'JavaScript-running bots the classifier caught are included; referrers are client-supplied and often spoofed.'
                         : 'Known bots are excluded — unclassified visitors are kept, so this is not "humans only".'}
@@ -330,15 +453,15 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                 <Thead>
                                     <Tr>
                                         <Th scope="col">Visitor</Th>
-                                        <Th scope="col">First Seen</Th>
+                                        <Th scope="col" className={styles.col_optional}>First Seen</Th>
                                         <Th scope="col">Last Seen</Th>
                                         <Th scope="col">Views</Th>
                                         <Th scope="col">Paths</Th>
-                                        <Th scope="col">Channel</Th>
+                                        <Th scope="col" className={styles.col_optional}>Channel</Th>
                                         <Th scope="col">Source</Th>
                                         <Th scope="col">Landing</Th>
                                         <Th scope="col">Country</Th>
-                                        <Th scope="col">Device</Th>
+                                        <Th scope="col" className={styles.col_optional}>Device</Th>
                                     </Tr>
                                 </Thead>
                                 <Tbody>
@@ -412,11 +535,13 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                                             )}
                                                         </span>
                                                     </Td>
-                                                    <Td><ClientTime date={row.firstSeen} format="relative" /></Td>
+                                                    <Td className={styles.col_optional}>
+                                                        <ClientTime date={row.firstSeen} format="relative" />
+                                                    </Td>
                                                     <Td><ClientTime date={row.lastSeen} format="relative" /></Td>
                                                     <Td>{row.pageViews.toLocaleString()}</Td>
                                                     <Td>{row.distinctPaths.toLocaleString()}</Td>
-                                                    <Td className={styles.channel_cell}>
+                                                    <Td className={`${styles.channel_cell} ${styles.col_optional}`}>
                                                         {row.channel || <span className={styles.muted}>—</span>}
                                                     </Td>
                                                     <Td className={styles.source_cell}>
@@ -440,10 +565,16 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                                     <Td className={styles.country_cell}>
                                                         {row.country || <span className={styles.muted}>—</span>}
                                                     </Td>
-                                                    <Td className={styles.device_cell}>{getDeviceIcon(row.device)}</Td>
+                                                    <Td className={`${styles.device_cell} ${styles.col_optional}`}>
+                                                        {getDeviceIcon(row.device)}
+                                                    </Td>
                                                 </Tr>
                                                 {expandedId === row.id && (
-                                                    <PageHitsRow id={row.id} window={window} />
+                                                    <VisitorDetailRow
+                                                        row={row}
+                                                        isFlagged={isFlagged}
+                                                        window={window}
+                                                    />
                                                 )}
                                             </React.Fragment>
                                         );

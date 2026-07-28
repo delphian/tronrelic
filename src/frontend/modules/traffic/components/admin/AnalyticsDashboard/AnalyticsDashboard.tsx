@@ -330,37 +330,52 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                 <div className={styles.loading}>Loading analytics data...</div>
             ) : (
                 <>
-                    {/* Conversion Funnel + Traffic Sources side by side */}
+                    {/* Top Landing Pages + Traffic Sources side by side */}
                     <Grid columns="responsive">
-                        {/* Conversion Funnel */}
-                        {funnel.length > 0 && (
-                            <Card>
-                                <h3 className={styles.section_title}>
-                                    <Target size={16} className={styles.section_title__icon} />
-                                    Conversion Funnel
-                                </h3>
-                                <div className={styles.funnel}>
-                                    {funnel.map(stage => (
-                                        <div
-                                            key={stage.stage}
-                                            className={styles.funnel_stage}
-                                            title="Counts are unique visitors (browser identities / tids), not accounts. One person logged in from two browsers or devices counts as two logged-in visitors but one account, so these stages nest under Visitors and never exceed it."
-                                        >
-                                            <span className={styles.funnel_stage__label}>{stage.stage}</span>
-                                            <div className={styles.funnel_stage__bar_wrapper}>
-                                                <div
-                                                    className={styles.funnel_stage__bar}
-                                                    style={{ width: `${stage.percentage}%` }}
-                                                />
-                                            </div>
-                                            <span className={styles.funnel_stage__stats}>
-                                                {stage.count.toLocaleString()} ({stage.percentage}%)
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </Card>
-                        )}
+                        {/* Top Landing Pages */}
+                        <Card>
+                            <h3
+                                className={styles.section_title}
+                                title="Session-scoped attribution: the entry page of every session starting in this window, so a returning visitor's re-entry page now appears here — not the most-viewed pages. The figure shown stays distinct visitors, so re-entering on the same page does not count twice. Sessions resumed after the 30-minute idle gap are excluded; nobody landed on them."
+                            >
+                                <MousePointerClick size={16} className={styles.section_title__icon} />
+                                Top Landing Pages
+                                <span className={`text-muted ${styles.section_title__subtitle}`}>
+                                    (by session)
+                                </span>
+                            </h3>
+                            <div>
+                                {landingPages.length === 0 ? (
+                                    <div className={styles.empty_state}>No landing page data for this period</div>
+                                ) : (
+                                    <div className={styles.table_wrapper}>
+                                        <Table>
+                                            <Thead>
+                                                <Tr>
+                                                    <Th scope="col">Page</Th>
+                                                    <Th scope="col" className={styles.table__number}>Visitors</Th>
+                                                    <Th scope="col" className={styles.table__bar_cell}></Th>
+                                                </Tr>
+                                            </Thead>
+                                            <Tbody>
+                                                {landingPages.map(p => (
+                                                    <Tr key={p.path}>
+                                                        <Td className={styles.table__truncate} title={p.path}>{p.path}</Td>
+                                                        <Td className={styles.table__number}>{p.visitors.toLocaleString()}</Td>
+                                                        <Td className={styles.table__bar_cell}>
+                                                            <div
+                                                                className={styles.table__bar}
+                                                                style={{ width: `${(p.visitors / maxPageVisitors) * 100}%` }}
+                                                            />
+                                                        </Td>
+                                                    </Tr>
+                                                ))}
+                                            </Tbody>
+                                        </Table>
+                                    </div>
+                                )}
+                            </div>
+                        </Card>
 
                         {/* Traffic Sources */}
                         <Card>
@@ -609,52 +624,37 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                         </Card>
                     </Grid>
 
-                    {/* Top Landing Pages + Geographic Distribution side by side */}
+                    {/* Conversion Funnel + Geographic Distribution side by side */}
                     <Grid columns="responsive">
-                        {/* Top Landing Pages */}
-                        <Card>
-                            <h3
-                                className={styles.section_title}
-                                title="Session-scoped attribution: the entry page of every session starting in this window, so a returning visitor's re-entry page now appears here — not the most-viewed pages. The figure shown stays distinct visitors, so re-entering on the same page does not count twice. Sessions resumed after the 30-minute idle gap are excluded; nobody landed on them."
-                            >
-                                <MousePointerClick size={16} className={styles.section_title__icon} />
-                                Top Landing Pages
-                                <span className={`text-muted ${styles.section_title__subtitle}`}>
-                                    (by session)
-                                </span>
-                            </h3>
-                            <div>
-                                {landingPages.length === 0 ? (
-                                    <div className={styles.empty_state}>No landing page data for this period</div>
-                                ) : (
-                                    <div className={styles.table_wrapper}>
-                                        <Table>
-                                            <Thead>
-                                                <Tr>
-                                                    <Th scope="col">Page</Th>
-                                                    <Th scope="col" className={styles.table__number}>Visitors</Th>
-                                                    <Th scope="col" className={styles.table__bar_cell}></Th>
-                                                </Tr>
-                                            </Thead>
-                                            <Tbody>
-                                                {landingPages.map(p => (
-                                                    <Tr key={p.path}>
-                                                        <Td className={styles.table__truncate} title={p.path}>{p.path}</Td>
-                                                        <Td className={styles.table__number}>{p.visitors.toLocaleString()}</Td>
-                                                        <Td className={styles.table__bar_cell}>
-                                                            <div
-                                                                className={styles.table__bar}
-                                                                style={{ width: `${(p.visitors / maxPageVisitors) * 100}%` }}
-                                                            />
-                                                        </Td>
-                                                    </Tr>
-                                                ))}
-                                            </Tbody>
-                                        </Table>
-                                    </div>
-                                )}
-                            </div>
-                        </Card>
+                        {/* Conversion Funnel */}
+                        {funnel.length > 0 && (
+                            <Card>
+                                <h3 className={styles.section_title}>
+                                    <Target size={16} className={styles.section_title__icon} />
+                                    Conversion Funnel
+                                </h3>
+                                <div className={styles.funnel}>
+                                    {funnel.map(stage => (
+                                        <div
+                                            key={stage.stage}
+                                            className={styles.funnel_stage}
+                                            title="Counts are unique visitors (browser identities / tids), not accounts. One person logged in from two browsers or devices counts as two logged-in visitors but one account, so these stages nest under Visitors and never exceed it."
+                                        >
+                                            <span className={styles.funnel_stage__label}>{stage.stage}</span>
+                                            <div className={styles.funnel_stage__bar_wrapper}>
+                                                <div
+                                                    className={styles.funnel_stage__bar}
+                                                    style={{ width: `${stage.percentage}%` }}
+                                                />
+                                            </div>
+                                            <span className={styles.funnel_stage__stats}>
+                                                {stage.count.toLocaleString()} ({stage.percentage}%)
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </Card>
+                        )}
 
                         {/* Geographic Distribution */}
                         <Card>
