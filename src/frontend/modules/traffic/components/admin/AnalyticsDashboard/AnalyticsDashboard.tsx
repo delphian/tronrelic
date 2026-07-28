@@ -366,7 +366,7 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                         <Card>
                             <h3
                                 className={styles.section_title}
-                                title="Session-scoped attribution: every session starting in this window credits the referrer it arrived on, so returning visitors count each time they come back — GA4's session-scoped Traffic acquisition report, not 'First user source'. A session resumed after the 30-minute idle gap is excluded rather than counted as direct — a reopened tab arrived from nowhere."
+                                title="Session-scoped attribution: every session starting in this window credits the referrer it arrived on, so a visitor returning through a new source now appears under it — first-touch credited only their first-ever visit. The figure shown stays distinct visitors, so returning through the same source does not count twice. A session resumed after the 30-minute idle gap is excluded rather than counted as direct — a reopened tab arrived from nowhere."
                             >
                                 <Globe size={16} className={styles.section_title__icon} />
                                 Traffic Sources
@@ -615,7 +615,7 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                         <Card>
                             <h3
                                 className={styles.section_title}
-                                title="Session-scoped attribution: the entry page of every session starting in this window, so a returning visitor's re-entry page counts too — not the most-viewed pages. Sessions resumed after the 30-minute idle gap are excluded; nobody landed on them."
+                                title="Session-scoped attribution: the entry page of every session starting in this window, so a returning visitor's re-entry page now appears here — not the most-viewed pages. The figure shown stays distinct visitors, so re-entering on the same page does not count twice. Sessions resumed after the 30-minute idle gap are excluded; nobody landed on them."
                             >
                                 <MousePointerClick size={16} className={styles.section_title__icon} />
                                 Top Landing Pages
