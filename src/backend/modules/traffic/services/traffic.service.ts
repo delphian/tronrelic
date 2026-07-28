@@ -663,36 +663,75 @@ export interface ITrafficSourceDetailsResult {
 }
 
 /**
- * One row of a page-activity clickstream summary: a subject (a tid for
- * anonymous visitors, a Better Auth user id for registered ones) with the
- * lifetime-in-window counts of its `page` events. Powers the per-tid and
- * per-user activity tables on the traffic dashboard. `firstPath`/`lastPath`
- * bound the visit; `distinctPaths` separates a deep explorer from a refresher.
+ * One row of the unified Visitors table: a single tid carrying both halves of
+ * what the dashboard needs to explain a visitor — first-touch acquisition
+ * (resolved from the tid's earliest row, whenever that was) and in-window
+ * behaviour (page events, sessions, last path).
+ *
+ * Keyed on the tid, never the account, because that is the unit the Metrics
+ * Contract defines a Visitor in and the only key anonymous rows have. An
+ * account browsing from three browsers is therefore three rows sharing one
+ * {@link accountId}; `accountId` is a display and filter attribute, not the
+ * row identity. `isNew` and `accountId` replace what used to be three separate
+ * tabs (new / anonymous / registered) with two orthogonal attributes — a
+ * visitor can be new *and* registered, which the tabbed shape could not say.
  */
-export interface IPageActivityRow {
-    /** Subject key — the `candidate_uid` (tid) or `user_id`, depending on the read. */
+export interface IVisitorRow {
+    /** The analytics tid (`candidate_uid`) — the row key and the drill-down key. */
     id: string;
-    /** Earliest in-window `page` event for the subject. */
+    /**
+     * Better Auth account id if this tid carried one at any point in the
+     * window, else `null` (anonymous). Matches the Conversion metric's rule, so
+     * a visitor who logs in mid-window reads as registered.
+     */
+    accountId: string | null;
+    /**
+     * Whether the tid's global first-seen falls inside the window. Window-scoped
+     * by design: "new to us during this period", the same rule the superseded
+     * New Visitors table filtered on — here a flag rather than a filter, so
+     * returning visitors are no longer invisible.
+     */
+    isNew: boolean;
+    /** Global first-seen across the whole table — NOT clamped to the window. */
     firstSeen: string;
-    /** Latest in-window `page` event for the subject. */
+    /** Latest in-window event. */
     lastSeen: string;
-    /** Total `page` events in the window. */
+    /** In-window `page` events (bootstrap rows are first touches, not views). */
     pageViews: number;
-    /** Distinct paths the subject hit in the window. */
+    /** Distinct paths hit in the window. */
     distinctPaths: number;
-    /** Path of the earliest in-window `page` event. */
-    firstPath: string | null;
     /** Path of the latest in-window `page` event. */
     lastPath: string | null;
+    /** In-window derived sessions, attributed by session start. */
+    sessionsCount: number;
+    /** First-touch acquisition channel (`bootstrap` rows only), or `null`. */
+    channel: string | null;
+    /** First-touch referrer domain, or `null` for a direct arrival. */
+    referrerDomain: string | null;
+    /** First-touch landing path. */
+    landingPage: string | null;
+    /** UTM parameters captured at first touch, or `null` when untagged. */
+    utm: { source: string | null; medium: string | null; campaign: string | null; term: string | null; content: string | null } | null;
     /** Country of the latest in-window event (ISO-3166 alpha-2), or `null`. */
     country: string | null;
     /** Device category of the latest in-window event. */
     device: string;
+    /**
+     * Latest in-window `bot_class`, or `null` for unclassified rows. Surfaced
+     * because it is stored on every row and was previously displayed nowhere —
+     * leaving "is this a bot?" unanswerable without a direct ClickHouse query.
+     */
+    botClass: string | null;
+    /**
+     * First-touch salted subnet hash (16 hex chars, migration 015) — the
+     * "same source?" correlation key backing the high-volume-network flag.
+     */
+    subnetHash: string | null;
 }
 
-/** A page of {@link IPageActivityRow} rows plus the unpaginated subject total. */
-export interface IPageActivityPage {
-    rows: IPageActivityRow[];
+/** A page of {@link IVisitorRow} rows plus the unpaginated visitor total. */
+export interface IVisitorsPage {
+    rows: IVisitorRow[];
     total: number;
 }
 
@@ -2597,78 +2636,160 @@ export class TrafficService {
     }
 
     /**
-     * Per-subject `page`-event clickstream summary over the window, newest
-     * activity first. The subject is the analytics tid (`candidate_uid`) for
-     * anonymous browsing or the Better Auth `user_id` for registered browsing;
-     * the two reads are the same shape so the dashboard renders them through one
-     * table component. Only `page` events count — `bootstrap` first-touch rows
-     * (which include bots) are deliberately excluded so this surface reflects
-     * real interactive navigation, not scanner noise.
+     * The unified Visitors read: one row per tid that qualifies as a Visitor in
+     * the window, carrying first-touch acquisition and in-window behaviour
+     * together, newest activity first.
      *
-     * @param subject - `'tid'` groups anonymous page hits by `candidate_uid`
-     *   (rows where `user_id IS NULL`); `'user'` groups by `user_id`
-     *   (`user_id IS NOT NULL`).
+     * This supersedes the three separate reads the Visitors tab used to need
+     * (new arrivals, anonymous activity, registered activity). Those were not
+     * three subsets of one population — two keyed on `candidate_uid` and one on
+     * `user_id` — so an operator could not see that a visitor was, say,
+     * returning *and* registered, and the bot filter applied to one of them but
+     * silently not the others. Collapsing to a single tid-keyed read makes new
+     * vs returning and anonymous vs registered two orthogonal attributes of one
+     * row, and gives the bot filter exactly one place to apply.
+     *
      * @param range - Inclusive date window.
      * @param limit - Page size.
      * @param skip - Pagination offset.
-     * @returns A page of activity rows plus the unpaginated subject total.
+     * @param excludeBots - Restrict to human-classified rows (NULL kept) — the
+     *   "exclude known bots" rule, applied to membership, aggregation, and
+     *   sessions alike so one row cannot be counted under two policies.
+     * @param accountId - Optional Better Auth account id. Narrows the table to
+     *   every tid that account has ever browsed under, which is how an operator
+     *   recovers the per-account view a tid-keyed table cannot show natively —
+     *   one account with three browsers is three rows, and this collects them.
+     * @returns A page of visitor rows plus the unpaginated visitor total.
      */
-    async getPageActivity(subject: PageHitSubject, range: IAnalyticsDateRange, limit = 50, skip = 0): Promise<IPageActivityPage> {
+    async getVisitors(range: IAnalyticsDateRange, limit = 50, skip = 0, excludeBots = false, accountId?: string): Promise<IVisitorsPage> {
         if (!this.clickhouse) return { rows: [], total: 0 };
         const { clause, params } = this.rangeParams(range);
-        // `subject` is a closed union, never user input, so interpolating the
-        // grouping column and its NULL predicate is injection-safe.
-        const idColumn = subject === 'tid' ? 'candidate_uid' : 'user_id';
-        const subjectFilter = subject === 'tid' ? 'user_id IS NULL' : 'user_id IS NOT NULL';
-        const where = `${clause} AND event_type = 'page' AND ${subjectFilter}`;
+        const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
+        // Unwindowed on purpose: the account's tids are identified by every tid
+        // that ever logged in as them, then the window still bounds which of
+        // those qualify as visitors — matching the ignore list's whole-person
+        // resolution rather than "tids that logged in during this window".
+        let accountFilter = '';
+        if (accountId) {
+            params.accountId = accountId;
+            accountFilter = ` AND candidate_uid IN (
+                SELECT DISTINCT candidate_uid FROM ${TABLE_NAME} WHERE user_id = {accountId:String}
+            )`;
+        }
+        // Population = the canonical Visitor rule: a tid that emitted a `page`
+        // event in the window. Membership does all the filtering (window, bots,
+        // ignore list), which is why the outer scan needs no HAVING — every tid
+        // it groups already qualifies.
+        const membership = this.pageVisitorMembership(clause, botFilter);
+        const sessionWindow = this.sessionRangeParams(range, botFilter);
+        // Two time semantics live in one GROUP BY, deliberately. Acquisition
+        // (`argMin(..., timestamp)`) reads the tid's *earliest* row whenever it
+        // happened, so a returning visitor still shows the source that first
+        // brought them; behaviour (`...If(..., <clause>)`) is clamped to the
+        // window. Mixing them is the point — no single-window read can explain
+        // where a returning visitor originally came from.
+        //
+        // `tuple(x)` wrappers preserve a NULL first-touch value that a bare
+        // argMin/argMax would skip over in favour of a later non-NULL row.
+        const inWindowPage = `event_type = 'page' AND ${clause}`;
         const rowsSql = `
-            SELECT
-                ${idColumn} AS id,
-                min(timestamp) AS firstSeen,
-                max(timestamp) AS lastSeen,
-                count() AS pageViews,
-                uniqExact(path) AS distinctPaths,
-                argMin(path, timestamp) AS firstPath,
-                argMax(path, timestamp) AS lastPath,
-                argMax(country, timestamp) AS country,
-                argMax(device, timestamp) AS device
-            FROM ${TABLE_NAME}
-            WHERE ${where}
-            GROUP BY ${idColumn}
+            SELECT base.*, s.sessionsCount AS sessionsCount
+            FROM (
+                SELECT
+                    candidate_uid AS id,
+                    anyIf(user_id, user_id IS NOT NULL AND ${clause}) AS accountId,
+                    min(timestamp) AS firstSeen,
+                    maxIf(timestamp, ${clause}) AS lastSeen,
+                    countIf(${inWindowPage}) AS pageViews,
+                    uniqExactIf(path, ${inWindowPage}) AS distinctPaths,
+                    argMaxIf(path, timestamp, ${inWindowPage}) AS lastPath,
+                    argMin(tuple(channel), timestamp).1 AS channel,
+                    argMin(multiIf(referer IS NULL OR referer = '', NULL, domain(referer)), timestamp) AS referrerDomain,
+                    argMin(path, timestamp) AS landingPage,
+                    argMin(utm_source, timestamp) AS utmSource,
+                    argMin(utm_medium, timestamp) AS utmMedium,
+                    argMin(utm_campaign, timestamp) AS utmCampaign,
+                    argMin(utm_term, timestamp) AS utmTerm,
+                    argMin(utm_content, timestamp) AS utmContent,
+                    argMaxIf(tuple(country), timestamp, ${clause}).1 AS country,
+                    argMaxIf(device, timestamp, ${clause}) AS device,
+                    argMaxIf(tuple(bot_class), timestamp, ${clause}).1 AS botClass,
+                    argMin(tuple(subnet_hash), timestamp).1 AS subnetHash
+                FROM ${TABLE_NAME}
+                WHERE ${membership}${botFilter}${accountFilter}
+                GROUP BY candidate_uid
+                ORDER BY lastSeen DESC
+                LIMIT {limit:UInt32} OFFSET {skip:UInt32}
+            ) AS base
+            LEFT JOIN (
+                SELECT candidate_uid AS id, count() AS sessionsCount
+                FROM (${this.derivedSessionsSql(sessionWindow.where, sessionWindow.having)})
+                GROUP BY candidate_uid
+            ) AS s USING (id)
             ORDER BY lastSeen DESC
-            LIMIT {limit:UInt32} OFFSET {skip:UInt32}
         `;
+        // Counting the membership set directly is far cheaper than a uniqExact
+        // over every row those tids ever wrote.
         const countSql = `
-            SELECT uniqExact(${idColumn}) AS total
-            FROM ${TABLE_NAME}
-            WHERE ${where}
+            SELECT count() AS total FROM (
+                SELECT DISTINCT candidate_uid FROM ${TABLE_NAME}
+                WHERE ${clause}${botFilter}${accountFilter} AND event_type = 'page'
+            )
         `;
         try {
             const [rows, countRows] = await Promise.all([
                 this.clickhouse.query<{
-                    id: string; firstSeen: string; lastSeen: string;
-                    pageViews: string | number; distinctPaths: string | number;
-                    firstPath: string | null; lastPath: string | null;
-                    country: string | null; device: string;
-                }>(rowsSql, { ...params, limit, skip }),
+                    id: string; accountId: string | null; firstSeen: string; lastSeen: string;
+                    pageViews: string | number; distinctPaths: string | number; lastPath: string | null;
+                    sessionsCount: string | number | null;
+                    channel: string | null; referrerDomain: string | null; landingPage: string | null;
+                    utmSource: string | null; utmMedium: string | null; utmCampaign: string | null;
+                    utmTerm: string | null; utmContent: string | null;
+                    country: string | null; device: string; botClass: string | null;
+                    subnetHash: string | null;
+                }>(rowsSql, { ...params, ...sessionWindow.params, limit, skip }),
                 this.clickhouse.query<{ total: string | number }>(countSql, params)
             ]);
             return {
-                rows: rows.map(r => ({
-                    id: r.id,
-                    firstSeen: clickHouseDateToIso(String(r.firstSeen)),
-                    lastSeen: clickHouseDateToIso(String(r.lastSeen)),
-                    pageViews: Number(r.pageViews),
-                    distinctPaths: Number(r.distinctPaths),
-                    firstPath: r.firstPath ?? null,
-                    lastPath: r.lastPath ?? null,
-                    country: r.country ?? null,
-                    device: r.device
-                })),
+                rows: rows.map(r => {
+                    const hasUtm = Boolean(r.utmSource || r.utmMedium || r.utmCampaign || r.utmTerm || r.utmContent);
+                    const firstSeen = clickHouseDateToIso(String(r.firstSeen));
+                    return {
+                        id: r.id,
+                        accountId: r.accountId || null,
+                        // Derived here rather than in SQL so the comparison uses
+                        // the same ISO strings the client renders — a SQL
+                        // boolean would be a second, silently divergent
+                        // definition of the window boundary.
+                        isNew: new Date(firstSeen).getTime() >= range.since.getTime(),
+                        firstSeen,
+                        lastSeen: clickHouseDateToIso(String(r.lastSeen)),
+                        pageViews: Number(r.pageViews),
+                        distinctPaths: Number(r.distinctPaths),
+                        lastPath: r.lastPath || null,
+                        sessionsCount: Number(r.sessionsCount ?? 0),
+                        channel: r.channel ?? null,
+                        referrerDomain: r.referrerDomain ?? null,
+                        landingPage: r.landingPage || null,
+                        utm: hasUtm
+                            ? {
+                                  source: r.utmSource ?? null,
+                                  medium: r.utmMedium ?? null,
+                                  campaign: r.utmCampaign ?? null,
+                                  term: r.utmTerm ?? null,
+                                  content: r.utmContent ?? null
+                              }
+                            : null,
+                        country: r.country ?? null,
+                        device: r.device,
+                        botClass: r.botClass ?? null,
+                        subnetHash: r.subnetHash ?? null
+                    };
+                }),
                 total: Number(countRows[0]?.total ?? 0)
             };
         } catch (error) {
-            this.logger.warn({ error, subject }, 'Failed to read page activity');
+            this.logger.warn({ error }, 'Failed to read visitors');
             return { rows: [], total: 0 };
         }
     }

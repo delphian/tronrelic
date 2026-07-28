@@ -155,26 +155,44 @@ export async function adminGetFlaggedSubnets(options?: { period?: AnalyticsPerio
     return (response.data as { data?: IFlaggedSubnet[] }).data ?? [];
 }
 
-/** Which subject a page-activity clickstream read keys on. */
-export type PageActivitySubject = 'tid' | 'user';
+/** Which subject a page-hit clickstream drill-down keys on. */
+export type PageHitSubject = 'tid' | 'user';
 
 /**
- * One row of a page-activity clickstream summary — a subject (an anonymous tid
- * or a registered account) with its `page`-event counts over the window. Only
- * interactive `page` events count; first-touch `bootstrap` rows are excluded,
- * so bots do not appear here.
+ * One row of the unified Visitors table — a single tid carrying both its
+ * first-touch acquisition and its in-window behaviour.
+ *
+ * Rows are keyed on the tid, never the account: that is the unit a Visitor is
+ * defined in, and the only key an anonymous row has. One account browsing from
+ * several browsers therefore appears as several rows sharing an `accountId`.
+ * `isNew` (window-scoped first-seen) and `accountId` are independent — a
+ * visitor can be new and registered at once.
  */
-export interface IPageActivityRow {
-    /** Subject key — the analytics tid (UUID) or the Better Auth user id. */
+export interface IVisitorRow {
+    /** The analytics tid (UUID) — row key and drill-down key. */
     id: string;
+    /** Better Auth account id if the tid carried one in the window, else null. */
+    accountId: string | null;
+    /** Whether the tid's global first-seen falls inside the window. */
+    isNew: boolean;
+    /** Global first-seen — not clamped to the window. */
     firstSeen: string;
     lastSeen: string;
     pageViews: number;
     distinctPaths: number;
-    firstPath: string | null;
     lastPath: string | null;
+    sessionsCount: number;
+    /** First-touch acquisition channel, or null when unclassified. */
+    channel: string | null;
+    referrerDomain: string | null;
+    landingPage: string | null;
+    utm: IVisitorOrigin['utm'];
     country: string | null;
     device: string;
+    /** Latest in-window bot classification; null means unclassified. */
+    botClass: string | null;
+    /** First-touch subnet hash — matches {@link IFlaggedSubnet.subnetHash}. */
+    subnetHash: string | null;
 }
 
 /** One page hit in a subject's clickstream drill-down. */
@@ -187,25 +205,30 @@ export interface IPageHit {
 }
 
 /**
- * Get the per-subject page-activity clickstream summary (admin endpoint).
+ * Get the unified Visitors table for the window (admin endpoint).
  *
- * `'tid'` returns anonymous visitors keyed on the cookieless traffic id;
- * `'user'` returns registered accounts keyed on the Better Auth user id.
- * @param subject - `'tid'` (anonymous) or `'user'` (registered)
- * @param options - Period, pagination options
- * @returns Paginated activity rows plus the unpaginated subject total
+ * One row per visitor (tid that ran JavaScript in the window), carrying
+ * acquisition and behaviour together. Replaces the three reads the tab used
+ * before — new arrivals, anonymous activity, registered activity — which could
+ * not express that a visitor was both returning and registered, and applied the
+ * bot filter to only the first of the three.
+ * @param options - Period / custom range, pagination, and bot-filter options
+ * @returns Paginated visitor rows plus the unpaginated visitor total
  */
-export async function adminGetPageActivity(subject: PageActivitySubject,
-    options?: { period?: VisitorPeriod; customRange?: { startDate: string; endDate: string }; limit?: number; skip?: number }
-): Promise<{ rows: IPageActivityRow[]; total: number }> {
-    const endpoint = subject === 'tid'
-        ? '/admin/users/analytics/tid-activity'
-        : '/admin/users/analytics/user-activity';
-    const { customRange, period, ...rest } = options ?? {};
-    const response = await apiClient.get(endpoint, {
-        params: { ...rest, ...(customRange ? customRange : { period }) }
+export async function adminGetVisitors(options?: {
+    period?: VisitorPeriod; customRange?: { startDate: string; endDate: string };
+    limit?: number; skip?: number; excludeBots?: boolean; accountId?: string;
+}): Promise<{ rows: IVisitorRow[]; total: number }> {
+    const { customRange, period, excludeBots, accountId, ...rest } = options ?? {};
+    const response = await apiClient.get('/admin/users/analytics/visitors', {
+        params: {
+            ...rest,
+            ...(customRange ? customRange : { period }),
+            ...(excludeBots ? { bots: 'exclude' } : {}),
+            ...(accountId ? { accountId } : {})
+        }
     });
-    return response.data as { rows: IPageActivityRow[]; total: number };
+    return response.data as { rows: IVisitorRow[]; total: number };
 }
 
 /**
@@ -216,7 +239,7 @@ export async function adminGetPageActivity(subject: PageActivitySubject,
  * @param options - Period, limit options
  * @returns The subject's page hits
  */
-export async function adminGetPageHits(subject: PageActivitySubject,
+export async function adminGetPageHits(subject: PageHitSubject,
     id: string,
     options?: { period?: VisitorPeriod; customRange?: { startDate: string; endDate: string }; limit?: number }
 ): Promise<IPageHit[]> {

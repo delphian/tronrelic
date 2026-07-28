@@ -167,12 +167,14 @@ describe('traffic AI tools', () => {
         });
 
         it('exposes no tool backed by the per-subject clickstream reads', async () => {
-            // The stubs deliberately omit getPageActivity/getPageHits, so any
+            // The stubs deliberately omit getVisitors/getPageHits, so any
             // handler reaching for one throws rather than quietly returning a
             // browsing trail. Driving every zero-required-arg handler proves
-            // none of them does.
+            // none of them does. getVisitors carries the same re-identification
+            // risk the retired getPageActivity did — it is per-tid, and a tid
+            // that logged in carries an account id.
             const trafficStub = createTrafficServiceStub();
-            expect(trafficStub).not.toHaveProperty('getPageActivity');
+            expect(trafficStub).not.toHaveProperty('getVisitors');
             expect(trafficStub).not.toHaveProperty('getPageHits');
 
             await expect(tools.get(AI_TOOL_NAMES.overview)!.handler({})).resolves.toBeDefined();

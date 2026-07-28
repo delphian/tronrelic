@@ -14,7 +14,7 @@
  *
  * Two deliberate scope decisions, both privacy-driven:
  *
- * The per-subject clickstream reads (`getPageActivity`, `getPageHits`) are NOT
+ * The per-visitor clickstream reads (`getVisitors`, `getPageHits`) are NOT
  * exposed. They return one person's ordered browsing history — pseudonymous by
  * tid, but re-identifiable the moment a tid carries a `user_id`. Handing that
  * to a model that also holds an egress tool is the exfiltration leg of the

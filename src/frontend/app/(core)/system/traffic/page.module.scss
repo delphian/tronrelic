@@ -57,47 +57,13 @@
     flex-wrap: wrap;
 }
 
-/* Left cluster: the period picker plus any tab-specific view selector, kept
-   together so the bot toggle stays anchored to the right via space-between. */
+/* Left cluster: the period picker, kept as its own group so the bot toggle
+   stays anchored to the right via space-between. */
 .control_group {
     display: flex;
     align-items: center;
     gap: var(--gap-md);
     flex-wrap: wrap;
-}
-
-/* Visitors-tab subject selector (New / Anonymous / Registered). Mirrors the
-   bot toggle's segmented-control styling for a consistent control row. */
-.subject_toggle {
-    display: flex;
-    gap: 0;
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-}
-
-.subject_btn,
-.subject_btn__active {
-    padding: var(--padding-xs) var(--gap-md);
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-medium);
-    border: none;
-    cursor: pointer;
-    transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.subject_btn {
-    color: var(--color-text-muted);
-    background: var(--color-surface);
-}
-
-.subject_btn:hover {
-    color: var(--color-text);
-}
-
-.subject_btn__active {
-    color: var(--color-text);
-    background: var(--gradient-primary);
 }
 
 .bot_toggle {

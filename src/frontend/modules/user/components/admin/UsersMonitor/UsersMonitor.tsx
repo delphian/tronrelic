@@ -46,7 +46,7 @@ interface AccountsResponse {
  *
  * Account-count and wallet-adoption overviews live in the Analytics tab
  * (`AnalyticsDashboard`); first-touch and per-page traffic analytics moved to
- * the Traffic tab (`VisitorAnalytics` / `PageActivity`). This view focuses on
+ * the Traffic tab (`VisitorsExplorer`). This view focuses on
  * the account list.
  *
  * Client-only admin tool: `/system/users` is admin-gated via the Better Auth

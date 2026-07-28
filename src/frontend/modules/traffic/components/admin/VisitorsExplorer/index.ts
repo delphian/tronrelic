@@ -1,6 +1,5 @@
 /**
- * VisitorsExplorer barrel — the merged Visitors-tab entity explorer.
+ * VisitorsExplorer barrel — the unified Visitors-tab table.
  */
 
 export { VisitorsExplorer } from './VisitorsExplorer';
-export type { VisitorsView } from './VisitorsExplorer';
