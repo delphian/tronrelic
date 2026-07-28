@@ -683,6 +683,14 @@ export interface IVisitorRow {
      * Better Auth account id if this tid carried one at any point in the
      * window, else `null` (anonymous). Matches the Conversion metric's rule, so
      * a visitor who logs in mid-window reads as registered.
+     *
+     * The *latest* in-window account, not an arbitrary one: the tid cookie
+     * survives logout, so one browser can sign into two accounts and an
+     * unordered pick would label the same row differently between reads.
+     * Note this still does not reconcile label with filter — the `accountId`
+     * filter is deliberately whole-person and unwindowed, so a tid whose latest
+     * account is B can appear under a filter for A. Modelling every associated
+     * account is a larger design change, not a fix for the ordering.
      */
     accountId: string | null;
     /**
@@ -2691,26 +2699,33 @@ export class TrafficService {
         //
         // `tuple(x)` wrappers preserve a NULL first-touch value that a bare
         // argMin/argMax would skip over in favour of a later non-NULL row.
+        // This matters most for `referer`: only the bootstrap row carries a
+        // true external referrer, so a direct arrival's NULL would otherwise
+        // lose to the first `page` row — whose referrer is this site's own
+        // domain — and every direct visitor would read as a self-referral.
+        // Same for the nullable UTM columns, where a bare argMin would select
+        // a returning visitor's later campaign tags over their untagged first
+        // touch, quietly re-attributing them under a first-touch doctrine.
         const inWindowPage = `event_type = 'page' AND ${clause}`;
         const rowsSql = `
             SELECT base.*, s.sessionsCount AS sessionsCount
             FROM (
                 SELECT
                     candidate_uid AS id,
-                    anyIf(user_id, user_id IS NOT NULL AND ${clause}) AS accountId,
+                    argMaxIf(user_id, timestamp, user_id IS NOT NULL AND ${clause}) AS accountId,
                     min(timestamp) AS firstSeen,
                     maxIf(timestamp, ${clause}) AS lastSeen,
                     countIf(${inWindowPage}) AS pageViews,
                     uniqExactIf(path, ${inWindowPage}) AS distinctPaths,
                     argMaxIf(path, timestamp, ${inWindowPage}) AS lastPath,
                     argMin(tuple(channel), timestamp).1 AS channel,
-                    argMin(multiIf(referer IS NULL OR referer = '', NULL, domain(referer)), timestamp) AS referrerDomain,
+                    argMin(tuple(multiIf(referer IS NULL OR referer = '', NULL, domain(referer))), timestamp).1 AS referrerDomain,
                     argMin(path, timestamp) AS landingPage,
-                    argMin(utm_source, timestamp) AS utmSource,
-                    argMin(utm_medium, timestamp) AS utmMedium,
-                    argMin(utm_campaign, timestamp) AS utmCampaign,
-                    argMin(utm_term, timestamp) AS utmTerm,
-                    argMin(utm_content, timestamp) AS utmContent,
+                    argMin(tuple(utm_source), timestamp).1 AS utmSource,
+                    argMin(tuple(utm_medium), timestamp).1 AS utmMedium,
+                    argMin(tuple(utm_campaign), timestamp).1 AS utmCampaign,
+                    argMin(tuple(utm_term), timestamp).1 AS utmTerm,
+                    argMin(tuple(utm_content), timestamp).1 AS utmContent,
                     argMaxIf(tuple(country), timestamp, ${clause}).1 AS country,
                     argMaxIf(device, timestamp, ${clause}) AS device,
                     argMaxIf(tuple(bot_class), timestamp, ${clause}).1 AS botClass,
@@ -2768,7 +2783,20 @@ export class TrafficService {
                         distinctPaths: Number(r.distinctPaths),
                         lastPath: r.lastPath || null,
                         sessionsCount: Number(r.sessionsCount ?? 0),
-                        channel: r.channel ?? null,
+                        // Prefer the stored write-time classification; for
+                        // pre-migration-016 rows (channel NULL, retained up to
+                        // 18 months) reclassify from the first-touch signals the
+                        // row already carries, mirroring getTrafficSources. The
+                        // UTM columns come from the same argMin first-touch row,
+                        // so paid tagging still beats the referrer heuristic.
+                        // Click-ID *values* are never stored, so an auto-tagged
+                        // paid landing with no UTM tags reads organic here — the
+                        // same limit the sources panel already accepts.
+                        channel: r.channel ?? classifyChannel({
+                            refererDomain: r.referrerDomain ?? null,
+                            utmMedium: r.utmMedium ?? null,
+                            utmSource: r.utmSource ?? null
+                        }),
                         referrerDomain: r.referrerDomain ?? null,
                         landingPage: r.landingPage || null,
                         utm: hasUtm
