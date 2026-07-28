@@ -40,15 +40,29 @@
     overflow-x: auto;
 }
 
-/* The whole row is the drill-down control — there is no separate button — so
-   it needs the affordance and the keyboard focus ring a <button> would have
-   carried. Gated on :focus-visible so a mouse click doesn't leave a ring. */
+/* Clicking the row toggles the drill-down, so it needs the affordance. It is
+   NOT focusable: keeping it a plain <tr> preserves the cell/header semantics
+   that role="button" would strip, and the chevron below carries the keyboard
+   and assistive-technology path instead. */
 .row {
     cursor: pointer;
+}
 
-    &:focus-visible {
-        outline: var(--focus-outline-width) solid var(--color-focus);
-        outline-offset: calc(-1 * var(--focus-outline-width));
+/* The real disclosure control. Reset to a bare icon so it reads as an
+   affordance rather than a second button competing with the row; the global
+   :focus-visible outline in globals.scss still gives it a keyboard ring. */
+.disclosure {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-muted);
+
+    &:hover {
+        color: var(--color-text);
     }
 }
 

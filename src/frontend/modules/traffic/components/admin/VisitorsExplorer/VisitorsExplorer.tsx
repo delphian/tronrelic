@@ -22,11 +22,13 @@
  * an account id filters the table to that account's tids, which is the
  * replacement for the per-account rollup the old Registered view provided.
  *
- * The row itself is the drill-down control — clicking anywhere on it expands
- * that visitor's clickstream. A `<tr>` is not natively focusable or
- * activatable, so the row supplies the `role`, `tabIndex`, key handling, and
- * focus ring a `<button>` would have carried; without them the drill-down
- * would be mouse-only.
+ * Clicking anywhere on a row expands that visitor's clickstream. The row stays
+ * a real `<tr>`: giving it `role="button"` would make every `<td>` descendant
+ * presentational, orphaning the cell/header relationships so a screen reader
+ * hears only the row's label instead of its ten columns — and it would nest the
+ * account-filter button inside an ARIA button, which is invalid. So the row
+ * click is a mouse affordance, and a chevron disclosure button in the first
+ * cell carries the keyboard and assistive-technology path.
  *
  * Client-only admin surface: `/system/traffic` is admin-gated via the Better
  * Auth session cookie, so the SSR + Live Updates pattern does not apply — the
@@ -37,7 +39,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
@@ -276,29 +278,6 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
         setExpandedId(prev => (prev === id ? null : id));
     }, []);
 
-    /**
-     * Keyboard equivalent of clicking the row. A `<tr>` is not natively
-     * focusable or activatable, so making the whole row the control means
-     * supplying what a `<button>` would have given for free — otherwise the
-     * drill-down becomes mouse-only. Space is intercepted to stop the page
-     * scrolling underneath the expansion.
-     *
-     * @param event - The keyboard event from the focused row.
-     * @param id - The tid of the row to expand or collapse.
-     */
-    const handleRowKeyDown = useCallback((event: React.KeyboardEvent<HTMLTableRowElement>, id: string): void => {
-        if (event.key !== 'Enter' && event.key !== ' ') {
-            return;
-        }
-        // A nested control (the account filter button) handles its own keys;
-        // without this the row would also toggle behind it.
-        if (event.target !== event.currentTarget) {
-            return;
-        }
-        event.preventDefault();
-        toggleExpand(id);
-    }, [toggleExpand]);
-
     return (
         <Stack gap="lg" className={styles.container}>
             <Card tone="muted" padding="sm" className={styles.section}>
@@ -374,15 +353,33 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                                     // Keeps the open row tinted now that the View/Hide
                                                     // button no longer marks which one is expanded.
                                                     isExpanded={expandedId === row.id}
+                                                    // Mouse-only convenience. The row stays a real <tr> —
+                                                    // role="button" would make every <td> presentational and
+                                                    // orphan the cell/header relationships — so the keyboard
+                                                    // and screen-reader path is the disclosure button below.
                                                     onClick={() => toggleExpand(row.id)}
-                                                    onKeyDown={event => handleRowKeyDown(event, row.id)}
-                                                    tabIndex={0}
-                                                    role="button"
-                                                    aria-expanded={expandedId === row.id}
-                                                    aria-label={`${expandedId === row.id ? 'Hide' : 'Show'} pages for ${row.id}`}
                                                 >
                                                     <Td className={styles.id_cell} title={row.id}>
                                                         <span className={styles.id_inner}>
+                                                            {/* The accessible drill-down control: a chevron, not the
+                                                                removed View/Hide button, but a real focusable element
+                                                                so expanding is not mouse-only. */}
+                                                            <button
+                                                                type="button"
+                                                                className={styles.disclosure}
+                                                                // The row also toggles, so stop the event or the
+                                                                // click would toggle twice and cancel itself out.
+                                                                onClick={event => {
+                                                                    event.stopPropagation();
+                                                                    toggleExpand(row.id);
+                                                                }}
+                                                                aria-expanded={expandedId === row.id}
+                                                                aria-label={`${expandedId === row.id ? 'Hide' : 'Show'} pages for ${row.id}`}
+                                                            >
+                                                                {expandedId === row.id
+                                                                    ? <ChevronDown size={14} aria-hidden="true" />
+                                                                    : <ChevronRight size={14} aria-hidden="true" />}
+                                                            </button>
                                                             {/* Decorative: the accessible labels below carry "new visitor" in words. */}
                                                             {row.isNew && (
                                                                 <span className={styles.new_marker} aria-hidden="true">*</span>
