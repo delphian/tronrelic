@@ -18,32 +18,6 @@
 }
 
 /* Statistics */
-.stats {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: var(--spacing-7);
-}
-
-.stat_card {
-    background: var(--color-surface);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-7);
-    text-align: center;
-}
-
-.stat_label {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
-    margin-bottom: var(--spacing-4);
-}
-
-.stat_value {
-    font-size: var(--font-size-xl);
-    font-weight: var(--font-weight-bold);
-    color: var(--color-text);
-}
-
 /* Filters */
 .filters {
     display: flex;

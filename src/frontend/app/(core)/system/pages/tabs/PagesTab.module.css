@@ -4,30 +4,6 @@
     gap: var(--spacing-7);
 }
 
-.stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: var(--spacing-10);
-}
-
-.stat {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-2);
-}
-
-.stat_label {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
-    font-weight: var(--font-weight-medium);
-}
-
-.stat_value {
-    font-size: var(--font-size-2xl);
-    font-weight: var(--font-weight-bold);
-    color: var(--color-text);
-}
-
 .error {
     color: var(--color-danger);
     margin: 0;

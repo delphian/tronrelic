@@ -7,6 +7,7 @@ import { Button } from '../../../../../components/ui/Button';
 import { Card } from '../../../../../components/ui/Card';
 import { Input } from '../../../../../components/ui/Input';
 import { Select } from '../../../../../components/ui/Select';
+import { StatTile, StatGrid } from '../../../../../components/ui/StatTile';
 import { Plus, Edit, Trash2, Eye, EyeOff, Search } from 'lucide-react';
 import type { IPage } from '@/types';
 import styles from './PagesTab.module.css';
@@ -153,20 +154,16 @@ export function PagesTab() {
         <div className={styles.container}>
             {/* Stats Summary */}
             <Card padding="md">
-                <div className={styles.stats}>
-                    <div className={styles.stat}>
-                        <span className={styles.stat_label}>Total Pages</span>
-                        <span className={styles.stat_value}>{stats.total}</span>
-                    </div>
-                    <div className={styles.stat}>
-                        <span className={styles.stat_label}>Published</span>
-                        <span className={styles.stat_value}>{stats.published}</span>
-                    </div>
-                    <div className={styles.stat}>
-                        <span className={styles.stat_label}>Drafts</span>
-                        <span className={styles.stat_value}>{stats.drafts}</span>
-                    </div>
-                </div>
+                {/*
+                  * Tiles sit inside this card, so they draw no surface of
+                  * their own — nested boxes would read as a grid of cards
+                  * inside a card.
+                  */}
+                <StatGrid size="sm">
+                    <StatTile size="sm" surface={false} label="Total Pages" value={stats.total} />
+                    <StatTile size="sm" surface={false} label="Published" value={stats.published} />
+                    <StatTile size="sm" surface={false} label="Drafts" value={stats.drafts} />
+                </StatGrid>
             </Card>
 
             {/* Error Display */}

@@ -2,6 +2,7 @@
 
 import type { CSSProperties, ReactNode } from 'react';
 import { cn } from '../../../../../lib/cn';
+import { StatTile } from '../../../../../components/ui/StatTile';
 import styles from './StatStrip.module.scss';
 
 type Tone = 'neutral' | 'success' | 'warning' | 'danger';
@@ -26,30 +27,40 @@ interface StatStripProps {
 /**
  * Compact horizontal stat readout used by the system console.
  *
- * Replaces the older HealthMetric tile pattern. Each cell renders a tiny
- * uppercase label, a monospace numeric value, and an optional detail line —
- * roughly half the vertical footprint of the iconed tile it supersedes. The
- * grid uses CSS auto-fit + a container query so the strip can flow from
- * six columns on a wide console to two on a narrow modal context.
+ * Mission-control telemetry: a dense grid of cells, each a tiny uppercase
+ * label over a monospace figure with an optional detail line — roughly half
+ * the vertical footprint of the iconed tile it superseded. The grid auto-fits
+ * so the strip flows from six columns on a wide console to two in a modal.
+ *
+ * The cells are the core `<StatTile>` at compact density, not a parallel
+ * implementation: the label/value/detail typography comes from the shared
+ * primitive, and this component contributes only what makes a *strip* — the
+ * enclosing chrome, the mono figure, and the tone treatment, all applied by
+ * scope-overriding the tile's own tokens. Tone is a 2px left rule rather than
+ * the tile's coloured value, so the figures stay optically aligned down the
+ * strip while the cell still reads as healthy or degraded at a glance.
  */
 export function StatStrip({ items, minColWidth = '140px', className }: StatStripProps) {
     const style = { '--stat-col-min': minColWidth } as CSSProperties;
     return (
         <div className={cn(styles.strip, className)} style={style}>
             {items.map((item, index) => (
-                <div
+                <StatTile
                     key={`${item.label}-${index}`}
+                    size="sm"
+                    // The strip draws the cell's surface itself, so the tile
+                    // must not draw a second one inside it.
+                    surface={false}
                     className={cn(
                         styles.cell,
                         item.tone === 'success' && styles.cell_success,
                         item.tone === 'warning' && styles.cell_warning,
                         item.tone === 'danger' && styles.cell_danger
                     )}
-                >
-                    <span className={styles.label}>{item.label}</span>
-                    <span className={styles.value}>{item.value}</span>
-                    {item.detail && <span className={styles.detail}>{item.detail}</span>}
-                </div>
+                    label={item.label}
+                    value={item.value}
+                    note={item.detail}
+                />
             ))}
         </div>
     );

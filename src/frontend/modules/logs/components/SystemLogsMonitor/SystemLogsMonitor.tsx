@@ -5,6 +5,7 @@ import { Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import type { LogLevel } from '@/types';
 import { Button } from '../../../../components/ui/Button';
 import { Select } from '../../../../components/ui/Select';
+import { StatTile, StatGrid } from '../../../../components/ui/StatTile';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { Stack } from '../../../../components/layout';
@@ -348,37 +349,21 @@ export function SystemLogsMonitor() {
     return (
         <div className={styles.container}>
             {/* Statistics */}
+            {/*
+              * Dense seven-up level breakdown, so the compact tile density.
+              * The grid auto-fits rather than forcing seven fixed columns,
+              * which squeezed the counts on a narrow console.
+              */}
             {stats && (
-                <div className={styles.stats}>
-                    <div className={styles.stat_card}>
-                        <div className={styles.stat_label}>Total Logs</div>
-                        <div className={styles.stat_value}>{stats.total.toLocaleString()}</div>
-                    </div>
-                    <div className={styles.stat_card}>
-                        <div className={styles.stat_label}>Fatal</div>
-                        <div className={styles.stat_value}>{stats.byLevel.fatal?.toLocaleString() ?? '0'}</div>
-                    </div>
-                    <div className={styles.stat_card}>
-                        <div className={styles.stat_label}>Errors</div>
-                        <div className={styles.stat_value}>{stats.byLevel.error.toLocaleString()}</div>
-                    </div>
-                    <div className={styles.stat_card}>
-                        <div className={styles.stat_label}>Warnings</div>
-                        <div className={styles.stat_value}>{stats.byLevel.warn.toLocaleString()}</div>
-                    </div>
-                    <div className={styles.stat_card}>
-                        <div className={styles.stat_label}>Info</div>
-                        <div className={styles.stat_value}>{stats.byLevel.info.toLocaleString()}</div>
-                    </div>
-                    <div className={styles.stat_card}>
-                        <div className={styles.stat_label}>Debug</div>
-                        <div className={styles.stat_value}>{stats.byLevel.debug.toLocaleString()}</div>
-                    </div>
-                    <div className={styles.stat_card}>
-                        <div className={styles.stat_label}>Trace</div>
-                        <div className={styles.stat_value}>{stats.byLevel.trace?.toLocaleString() ?? '0'}</div>
-                    </div>
-                </div>
+                <StatGrid size="sm">
+                    <StatTile size="sm" label="Total Logs" value={stats.total.toLocaleString()} />
+                    <StatTile size="sm" label="Fatal" value={stats.byLevel.fatal?.toLocaleString() ?? '0'} />
+                    <StatTile size="sm" label="Errors" value={stats.byLevel.error.toLocaleString()} />
+                    <StatTile size="sm" label="Warnings" value={stats.byLevel.warn.toLocaleString()} />
+                    <StatTile size="sm" label="Info" value={stats.byLevel.info.toLocaleString()} />
+                    <StatTile size="sm" label="Debug" value={stats.byLevel.debug.toLocaleString()} />
+                    <StatTile size="sm" label="Trace" value={stats.byLevel.trace?.toLocaleString() ?? '0'} />
+                </StatGrid>
             )}
 
             {/* Filters */}

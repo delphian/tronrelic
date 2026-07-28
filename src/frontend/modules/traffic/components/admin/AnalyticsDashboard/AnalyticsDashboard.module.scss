@@ -28,40 +28,6 @@
 }
 
 /* Engagement summary cards */
-.metrics_grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--grid-gap-sm);
-    container-type: inline-size;
-    container-name: metrics-grid;
-}
-
-@container metrics-grid (min-width: #{$breakpoint-mobile-lg}) {
-    .metrics_grid {
-        grid-template-columns: repeat(4, 1fr);
-    }
-}
-
-.metric_card {
-    text-align: center;
-    padding: var(--card-padding-sm);
-    background: color-mix(in srgb, var(--color-surface-elevated) 50%, transparent);
-    border-radius: var(--radius-md);
-}
-
-.metric_card__value {
-    font-size: var(--font-size-heading-md);
-    font-weight: var(--font-weight-bold);
-    color: var(--color-primary);
-    line-height: var(--line-height-tight);
-}
-
-.metric_card__label {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-    margin-top: var(--gap-xs);
-}
-
 /* Funnel visualization */
 .funnel {
     display: flex;

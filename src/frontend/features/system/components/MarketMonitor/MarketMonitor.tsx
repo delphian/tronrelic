@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Badge, type BadgeTone } from '../../../../components/ui/Badge';
 import { Button } from '../../../../components/ui/Button';
+import { StatTile, StatGrid } from '../../../../components/ui/StatTile';
 import styles from './MarketMonitor.module.css';
 
 interface MarketPlatform {
@@ -188,24 +189,22 @@ export function MarketMonitor() {
                 </header>
 
                 {freshness && (
-                    <div className={styles.metrics_grid}>
-                        <div className={styles.metric_card}>
-                            <div className={styles.metric_card__label}>Stale Platforms</div>
-                            <div className={styles.metric_card__value}>{freshness.stalePlatformCount}</div>
-                        </div>
-
-                        <div className={styles.metric_card}>
-                            <div className={styles.metric_card__label}>Average Data Age</div>
-                            <div className={styles.metric_card__value}>{freshness.averageDataAge.toFixed(1)} min</div>
-                        </div>
-
+                    <StatGrid minColWidth="200px">
+                        <StatTile
+                            label="Stale Platforms"
+                            value={freshness.stalePlatformCount}
+                        />
+                        <StatTile
+                            label="Average Data Age"
+                            value={`${freshness.averageDataAge.toFixed(1)} min`}
+                        />
                         {freshness.oldestDataAge !== null && (
-                            <div className={styles.metric_card}>
-                                <div className={styles.metric_card__label}>Oldest Data</div>
-                                <div className={styles.metric_card__value}>{freshness.oldestDataAge.toFixed(1)} min</div>
-                            </div>
+                            <StatTile
+                                label="Oldest Data"
+                                value={`${freshness.oldestDataAge.toFixed(1)} min`}
+                            />
                         )}
-                    </div>
+                    </StatGrid>
                 )}
 
                 {freshness && freshness.platformsWithOldData.length > 0 && (

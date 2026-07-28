@@ -345,6 +345,9 @@
     --stat-tile-value-font-size-sm: var(--font-size-heading-sm); /* 1.05rem */
     --stat-tile-value-font-weight: var(--font-weight-bold);
     --stat-tile-value-color: var(--color-text);
+    /* Overridable so a telemetry surface can set its figures in mono (the
+       system console's StatStrip does) without forking the tile. */
+    --stat-tile-value-font-family: var(--font-body);
 
     /* Value tone variants. The -text steps are calibrated for coloured text on
        a dark surface; the solid status colours are not, and fail contrast here. */
