@@ -61,6 +61,7 @@
 
 .value {
     color: var(--stat-tile-value-color);
+    font-family: var(--stat-tile-value-font-family);
     font-weight: var(--stat-tile-value-font-weight);
     line-height: var(--line-height-tight);
 }

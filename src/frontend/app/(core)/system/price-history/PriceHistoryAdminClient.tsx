@@ -16,10 +16,11 @@ import { useEffect, useState, useCallback } from 'react';
 import { RefreshCw, ArrowUpToLine, Save } from 'lucide-react';
 import type { MenuNodeSerialized } from '@/shared';
 import type { IPriceHistoryStats, IPriceHistorySettings, IPriceCoverageDiagnostics } from '@/types';
-import { Page, PageHeader, Stack, Grid } from '../../../../components/layout';
+import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
+import { StatTile, StatGrid } from '../../../../components/ui/StatTile';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { MenuNavClient } from '../../../../components/layout/MenuNav/MenuNavClient';
@@ -183,36 +184,32 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
 
             {activeTab === 'coverage' && (
                 <Stack gap="md">
-                    <Grid columns="responsive" gap="md">
-                        <Card padding="md">
-                            <div className="stat-card__label">Tracked assets</div>
-                            <div className="stat-card__value">{stats?.totals.assetCount ?? '—'}</div>
-                        </Card>
-                        <Card padding="md">
-                            <div className="stat-card__label">Oldest day</div>
-                            <div className="stat-card__value">{stats?.totals.oldestDay ?? '—'}</div>
-                        </Card>
-                        <Card padding="md">
-                            <div className="stat-card__label">Newest day</div>
-                            <div className="stat-card__value">{stats?.totals.newestDay ?? '—'}</div>
-                        </Card>
-                        <Card padding="md">
-                            <div className="stat-card__label">Stale assets</div>
-                            <div className="stat-card__value">
-                                {!stats ? '—' : stats.totals.staleAssets > 0 ? <Badge tone="warning">{stats.totals.staleAssets}</Badge> : 0}
-                            </div>
-                        </Card>
-                        <Card padding="md">
-                            <div className="stat-card__label">Provider errors</div>
-                            <div className="stat-card__value">
-                                {!stats
+                    <StatGrid>
+                        <StatTile
+                            label="Tracked assets"
+                            value={stats?.totals.assetCount ?? '—'}
+                        />
+                        <StatTile
+                            label="Oldest day"
+                            value={stats?.totals.oldestDay ?? '—'}
+                        />
+                        <StatTile
+                            label="Newest day"
+                            value={stats?.totals.newestDay ?? '—'}
+                        />
+                        <StatTile
+                            label="Stale assets"
+                            value={!stats ? '—' : stats.totals.staleAssets > 0 ? <Badge tone="warning">{stats.totals.staleAssets}</Badge> : 0}
+                        />
+                        <StatTile
+                            label="Provider errors"
+                            value={!stats
                                     ? '—'
                                     : stats.totals.providerErrors > 0
                                         ? <Badge tone="danger">{stats.totals.providerErrors} / {stats.totals.providerCalls} calls</Badge>
                                         : `0 / ${stats.totals.providerCalls} calls`}
-                            </div>
-                        </Card>
-                    </Grid>
+                        />
+                    </StatGrid>
 
                     <Stack direction="horizontal" gap="sm">
                         <Button variant="secondary" size="sm" icon={<RefreshCw size={18} aria-hidden />} loading={busy === 'backfill'} disabled={!!busy} onClick={() => runAction('backfill', runBackfill)}>
@@ -270,22 +267,20 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
 
             {activeTab === 'diagnostics' && (
                 <Stack gap="md">
-                    <Grid columns="responsive" gap="md">
-                        <Card padding="md">
-                            <div className="stat-card__label">Held tokens</div>
-                            <div className="stat-card__value">{diagnostics?.heldTokenCount ?? '—'}</div>
-                        </Card>
-                        <Card padding="md">
-                            <div className="stat-card__label">Priced</div>
-                            <div className="stat-card__value">{diagnostics?.pricedTokenCount ?? '—'}</div>
-                        </Card>
-                        <Card padding="md">
-                            <div className="stat-card__label">Unpriced</div>
-                            <div className="stat-card__value">
-                                {!diagnostics ? '—' : diagnostics.unpricedTokens.length > 0 ? <Badge tone="warning">{diagnostics.unpricedTokens.length}</Badge> : 0}
-                            </div>
-                        </Card>
-                    </Grid>
+                    <StatGrid>
+                        <StatTile
+                            label="Held tokens"
+                            value={diagnostics?.heldTokenCount ?? '—'}
+                        />
+                        <StatTile
+                            label="Priced"
+                            value={diagnostics?.pricedTokenCount ?? '—'}
+                        />
+                        <StatTile
+                            label="Unpriced"
+                            value={!diagnostics ? '—' : diagnostics.unpricedTokens.length > 0 ? <Badge tone="warning">{diagnostics.unpricedTokens.length}</Badge> : 0}
+                        />
+                    </StatGrid>
                     <Card padding="md">
                         {!diagnostics ? (
                             <span className="text-muted">Loading…</span>

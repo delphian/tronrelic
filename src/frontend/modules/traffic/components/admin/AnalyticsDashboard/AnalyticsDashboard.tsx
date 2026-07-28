@@ -34,6 +34,7 @@ import type { ChartSeries } from '../../../../../features/charts/components/Line
 import { Card } from '../../../../../components/ui/Card';
 import { Badge, type BadgeTone } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
+import { StatTile, StatGrid } from '../../../../../components/ui/StatTile';
 import { Grid, Stack } from '../../../../../components/layout';
 import { OverviewTrend } from '../OverviewTrend';
 import {
@@ -806,26 +807,26 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                                 <Users size={16} className={styles.section_title__icon} />
                                 Accounts
                             </h3>
-                            <div className={styles.metrics_grid}>
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__value}>
-                                        {overview.totalAccounts.toLocaleString()}
-                                    </div>
-                                    <div className={styles.metric_card__label}>Total Accounts</div>
-                                </div>
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__value}>
-                                        {overview.accountsWithWallets.toLocaleString()}
-                                    </div>
-                                    <div className={styles.metric_card__label}>With Wallet</div>
-                                </div>
-                                <div className={styles.metric_card}>
-                                    <div className={styles.metric_card__value}>
-                                        {Math.round(overview.walletAdoptionRate * 100)}%
-                                    </div>
-                                    <div className={styles.metric_card__label}>Wallet Adoption</div>
-                                </div>
-                            </div>
+                            <StatGrid size="sm">
+                                <StatTile
+                                    size="sm"
+                                    tone="primary"
+                                    label="Total Accounts"
+                                    value={overview.totalAccounts.toLocaleString()}
+                                />
+                                <StatTile
+                                    size="sm"
+                                    tone="primary"
+                                    label="With Wallet"
+                                    value={overview.accountsWithWallets.toLocaleString()}
+                                />
+                                <StatTile
+                                    size="sm"
+                                    tone="primary"
+                                    label="Wallet Adoption"
+                                    value={`${Math.round(overview.walletAdoptionRate * 100)}%`}
+                                />
+                            </StatGrid>
                         </Card>
                     )}
                 </>
