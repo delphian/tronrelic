@@ -41,7 +41,6 @@ import {
     toDateInputValue,
     useAutoRefresh
 } from '../../../../modules/traffic';
-import type { VisitorsView } from '../../../../modules/traffic';
 import { adminGetLiveVisitors } from '../../../../modules/traffic/api';
 import type { AnalyticsPeriod, ICustomDateRange } from '../../../../modules/traffic/api';
 import styles from './page.module.scss';
@@ -54,13 +53,6 @@ const SUBMENU_NAMESPACE = 'traffic';
 
 /** Tabs governed by the global period picker. */
 const GOVERNED_TABS: ReadonlySet<TrafficTab> = new Set(['analytics', 'visitors']);
-
-/** Subject views selectable within the Visitors tab, in display order. */
-const VISITOR_VIEWS: ReadonlyArray<{ id: VisitorsView; label: string; title: string }> = [
-    { id: 'new', label: 'New visitors', title: 'New visitors first seen in this window — first-touch acquisition (referrer, landing page, UTM). Bot filter applies here.' },
-    { id: 'anonymous', label: 'Anonymous', title: 'Per-page activity for cookied anonymous visitors, keyed on the traffic id. Expand a row for their full clickstream.' },
-    { id: 'registered', label: 'Registered', title: 'Per-page activity for signed-in accounts, keyed on the Better Auth user id. Expand a row for their full clickstream.' }
-];
 
 /** Polling interval for the live-visitor counter (ms). */
 const LIVE_POLL_MS = 30_000;
@@ -125,9 +117,6 @@ interface ITrafficDashboardClientProps {
  */
 export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initialTab }: ITrafficDashboardClientProps) {
     const [activeTab, setActiveTab] = useState<TrafficTab>(isTrafficTab(initialTab) ? initialTab : 'analytics');
-    // The subject view within the Visitors tab. Defaults to New visitors —
-    // the acquisition view that matches the old Visitors tab's landing state.
-    const [visitorsView, setVisitorsView] = useState<VisitorsView>('new');
 
     // Global window + bot filter for the governed tabs. Defaults to the last
     // 24 hours — the most-actionable recent window — which also makes the
@@ -208,12 +197,10 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
     }, [includeBots]);
 
     const showGlobalControls = GOVERNED_TABS.has(activeTab);
-    // The bot filter is meaningful for aggregate analytics and for the
-    // Visitors tab's New-visitors (first-touch) view — first touches include
-    // cookieless bots. The activity views read only `page` events, which
-    // non-JS crawlers never emit, so the toggle would be inert; hide it there.
-    const showBotToggle = activeTab === 'analytics'
-        || (activeTab === 'visitors' && visitorsView === 'new');
+    // Both governed tabs now honour the bot filter: the unified Visitors table
+    // applies it to one read, where the superseded three-view split applied it
+    // to the first view and silently ignored it on the other two.
+    const showBotToggle = showGlobalControls;
 
     return (
         <div className={styles.container}>
@@ -247,22 +234,6 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
                             onCustomStartChange={setCustomStart}
                             onCustomEndChange={setCustomEnd}
                         />
-                        {activeTab === 'visitors' && (
-                            <div className={styles.subject_toggle} role="group" aria-label="Visitor view">
-                                {VISITOR_VIEWS.map(v => (
-                                    <button
-                                        key={v.id}
-                                        type="button"
-                                        className={visitorsView === v.id ? styles.subject_btn__active : styles.subject_btn}
-                                        onClick={() => setVisitorsView(v.id)}
-                                        aria-pressed={visitorsView === v.id}
-                                        title={v.title}
-                                    >
-                                        {v.label}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
                     </div>
                     {showBotToggle && (
                         <div className={styles.bot_toggle} role="group" aria-label="Bot traffic filter">
@@ -295,7 +266,6 @@ export function TrafficDashboardClient({ submenuTree, submenuGeneratedAt, initia
                 )}
                 {activeTab === 'visitors' && (
                     <VisitorsExplorer
-                        view={visitorsView}
                         period={period}
                         customRange={customRange}
                         includeBots={includeBots}

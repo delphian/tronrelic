@@ -409,58 +409,105 @@ describe('TrafficService', () => {
         });
     });
 
-    describe('getPageActivity()', () => {
+    describe('getVisitors()', () => {
         const range = { since: new Date('2026-04-01T00:00:00.000Z') };
 
-        it('returns an empty page when ClickHouse is unavailable', async () => {
-            TrafficService.setDependencies(undefined, createMockLogger());
-            const out = await TrafficService.getInstance().getPageActivity('tid', range);
-            expect(out).toEqual({ rows: [], total: 0 });
-        });
-
-        it('groups anonymous tid activity on candidate_uid with user_id IS NULL', async () => {
-            const ch = createMockClickHouse();
+        /**
+         * Build a ClickHouse mock that records every SQL statement and answers
+         * the count query separately from the row query.
+         *
+         * @param row - The single visitor row the mock returns, if any.
+         * @returns The mock plus the array collecting executed SQL.
+         */
+        const mockWithRow = (row?: Record<string, unknown>) => {
             const sqls: string[] = [];
+            const ch = createMockClickHouse();
             ch.query = async <T>(sql: string): Promise<T[]> => {
                 sqls.push(sql);
                 if (sql.includes('AS total')) return [{ total: '3' }] as T[];
-                return [{
-                    id: 'tid-1', firstSeen: '2026-04-30 10:00:00.000', lastSeen: '2026-04-30 10:05:00.000',
-                    pageViews: '4', distinctPaths: '3', firstPath: '/', lastPath: '/markets',
-                    country: 'US', device: 'desktop'
-                }] as T[];
+                return (row ? [row] : []) as T[];
             };
+            return { ch, sqls };
+        };
+
+        it('returns an empty page when ClickHouse is unavailable', async () => {
+            TrafficService.setDependencies(undefined, createMockLogger());
+            const out = await TrafficService.getInstance().getVisitors(range);
+            expect(out).toEqual({ rows: [], total: 0 });
+        });
+
+        it('keys on the tid, requires a page event, and merges acquisition with behaviour', async () => {
+            const { ch, sqls } = mockWithRow({
+                id: 'tid-1', accountId: null,
+                firstSeen: '2026-04-30 10:00:00.000', lastSeen: '2026-04-30 10:05:00.000',
+                pageViews: '4', distinctPaths: '3', lastPath: '/markets', sessionsCount: '2',
+                channel: 'organic', referrerDomain: 'google.com', landingPage: '/',
+                utmSource: null, utmMedium: null, utmCampaign: null, utmTerm: null, utmContent: null,
+                country: 'US', device: 'desktop', botClass: 'human', subnetHash: 'abc123'
+            });
             TrafficService.setDependencies(ch, createMockLogger());
 
-            const out = await TrafficService.getInstance().getPageActivity('tid', range, 25, 0);
+            const out = await TrafficService.getInstance().getVisitors(range, 25, 0);
 
             const joined = sqls.join('\n');
-            expect(joined).toContain("event_type = 'page'");
-            expect(joined).toContain('user_id IS NULL');
             expect(joined).toContain('GROUP BY candidate_uid');
+            // The Visitor rule: membership is gated on a page event in the window.
+            expect(joined).toContain("event_type = 'page'");
             expect(out.total).toBe(3);
-            expect(out.rows[0]).toMatchObject({ id: 'tid-1', pageViews: 4, distinctPaths: 3, lastPath: '/markets' });
+            expect(out.rows[0]).toMatchObject({
+                id: 'tid-1', accountId: null, pageViews: 4, distinctPaths: 3,
+                sessionsCount: 2, channel: 'organic', referrerDomain: 'google.com',
+                botClass: 'human', utm: null
+            });
             // ClickHouse's native suffix-less DateTime is normalized to ISO-8601 UTC
             // so the frontend's `new Date(...)` parses it as UTC, not local time.
             expect(out.rows[0].firstSeen).toBe('2026-04-30T10:00:00.000Z');
-            expect(out.rows[0].lastSeen).toBe('2026-04-30T10:05:00.000Z');
         });
 
-        it('groups registered activity on user_id with user_id IS NOT NULL', async () => {
-            const ch = createMockClickHouse();
-            const sqls: string[] = [];
-            ch.query = async <T>(sql: string): Promise<T[]> => {
-                sqls.push(sql);
-                if (sql.includes('AS total')) return [{ total: 1 }] as T[];
-                return [] as T[];
+        it('flags isNew only when the global first-seen falls inside the window', async () => {
+            const returning = {
+                id: 'tid-old', accountId: 'ba_42',
+                firstSeen: '2026-03-01 09:00:00.000', lastSeen: '2026-04-30 10:05:00.000',
+                pageViews: '2', distinctPaths: '1', lastPath: '/', sessionsCount: '1',
+                channel: null, referrerDomain: null, landingPage: '/',
+                utmSource: null, utmMedium: null, utmCampaign: null, utmTerm: null, utmContent: null,
+                country: null, device: 'desktop', botClass: null, subnetHash: null
             };
+            const { ch } = mockWithRow(returning);
             TrafficService.setDependencies(ch, createMockLogger());
 
-            await TrafficService.getInstance().getPageActivity('user', range);
+            const out = await TrafficService.getInstance().getVisitors(range);
+
+            // First seen a month before `since` — a returning visitor, which the
+            // superseded New Visitors read would have filtered out entirely.
+            expect(out.rows[0].isNew).toBe(false);
+            expect(out.rows[0].accountId).toBe('ba_42');
+        });
+
+        it('applies the bot filter to membership, aggregation, and sessions alike', async () => {
+            const { ch, sqls } = mockWithRow();
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            await TrafficService.getInstance().getVisitors(range, 25, 0, true);
 
             const joined = sqls.join('\n');
-            expect(joined).toContain('user_id IS NOT NULL');
-            expect(joined).toContain('GROUP BY user_id');
+            const occurrences = joined.split("bot_class = 'human'").length - 1;
+            // Membership subquery, outer scan, session subquery, and the count
+            // query — one policy, applied everywhere rather than to one leg.
+            expect(occurrences).toBeGreaterThanOrEqual(4);
+        });
+
+        it('narrows to one account by collecting every tid that account ever used', async () => {
+            const { ch, sqls } = mockWithRow();
+            TrafficService.setDependencies(ch, createMockLogger());
+
+            await TrafficService.getInstance().getVisitors(range, 25, 0, false, 'ba_42');
+
+            const joined = sqls.join('\n');
+            expect(joined).toContain('user_id = {accountId:String}');
+            // Unwindowed on purpose: the account's tids are resolved across all
+            // history, then the window still decides which of them are visitors.
+            expect(joined).not.toContain("user_id = {accountId:String} AND timestamp");
         });
     });
 

@@ -10,7 +10,7 @@ export {
     // Visitor analytics
     adminGetDailyVisitors,
     adminGetAnonymousFirstTouches,
-    adminGetPageActivity,
+    adminGetVisitors,
     adminGetPageHits,
     // Aggregate analytics functions
     adminGetTrafficSources,
@@ -57,8 +57,8 @@ export type {
     IUtmParams,
     IFlaggedSubnet,
     VisitorPeriod,
-    PageActivitySubject,
-    IPageActivityRow,
+    PageHitSubject,
+    IVisitorRow,
     IPageHit,
     // Aggregate analytics types
     AnalyticsPeriod,

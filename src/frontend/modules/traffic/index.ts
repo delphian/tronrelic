@@ -23,10 +23,7 @@
 // Components — `/system/traffic` admin dashboards
 // =============================================================================
 
-export { VisitorAnalytics } from './components';
-export { PageActivity } from './components';
 export { VisitorsExplorer } from './components';
-export type { VisitorsView } from './components';
 export { AnalyticsDashboard } from './components';
 export { GscSettings } from './components';
 export { IgnoredUsers } from './components';

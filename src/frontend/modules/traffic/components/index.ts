@@ -5,8 +5,6 @@
  */
 
 export {
-    VisitorAnalytics,
-    PageActivity,
     VisitorsExplorer,
     AnalyticsDashboard,
     GscSettings,
@@ -21,4 +19,3 @@ export {
     PeriodPicker,
     toDateInputValue
 } from './admin';
-export type { VisitorsView } from './admin';

@@ -328,36 +328,23 @@ export class TrafficController {
     }
 
     /**
-     * GET /api/admin/users/analytics/tid-activity?period=&limit=&skip=
-     * Per-tid `page`-event clickstream summary for anonymous visitors. Returns
-     * `{ rows, total }` unwrapped — the client reads it directly.
-     */
-    async getTidActivity(req: Request, res: Response): Promise<void> {
-        const range = resolveAnalyticsRange(req.query);
-        const limit = parsePositiveInt(req.query.limit, 50, MAX_LIMIT);
-        const skip = parseNonNegativeInt(req.query.skip, 0);
-        try {
-            res.json(await this.trafficService.getPageActivity('tid', range, limit, skip));
-        } catch (error) {
-            this.logger.error({ err: error }, 'Failed to fetch tid activity');
-            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch tid activity' });
-        }
-    }
-
-    /**
-     * GET /api/admin/users/analytics/user-activity?period=&limit=&skip=
-     * Per-account `page`-event clickstream summary for registered visitors.
+     * GET /api/admin/users/analytics/visitors?period=&limit=&skip=&bots=exclude&accountId=
+     * The unified Visitors table: one row per in-window visitor (tid) with
+     * first-touch acquisition, in-window behaviour, `isNew`, and `accountId`.
+     * The optional `accountId` narrows the table to one account's tids.
      * Returns `{ rows, total }` unwrapped — the client reads it directly.
      */
-    async getUserActivity(req: Request, res: Response): Promise<void> {
+    async getVisitors(req: Request, res: Response): Promise<void> {
         const range = resolveAnalyticsRange(req.query);
         const limit = parsePositiveInt(req.query.limit, 50, MAX_LIMIT);
         const skip = parseNonNegativeInt(req.query.skip, 0);
+        const excludeBots = parseExcludeBots(req.query.bots);
+        const accountId = typeof req.query.accountId === 'string' && req.query.accountId ? req.query.accountId : undefined;
         try {
-            res.json(await this.trafficService.getPageActivity('user', range, limit, skip));
+            res.json(await this.trafficService.getVisitors(range, limit, skip, excludeBots, accountId));
         } catch (error) {
-            this.logger.error({ err: error }, 'Failed to fetch user activity');
-            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch user activity' });
+            this.logger.error({ err: error }, 'Failed to fetch visitors');
+            res.status(500).json({ error: 'InternalError', message: 'Failed to fetch visitors' });
         }
     }
 
