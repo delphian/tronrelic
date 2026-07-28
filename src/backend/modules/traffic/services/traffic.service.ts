@@ -45,6 +45,8 @@ import { getIpHash, getSubnetHash } from './ip-hash.js';
 import { classifyTrafficRequest, type BotClass } from './bot-classifier.js';
 import { classifyChannel, refererDomainFromUrl, type TrafficChannel } from './channel-classifier.js';
 import { UUID_V4_REGEX } from '../api/traffic-cookies.js';
+import { SystemConfigService } from '../../../services/system-config/system-config.service.js';
+import { env } from '../../../config/env.js';
 
 /**
  * Categorical event types written to `traffic_events.event_type`.
@@ -1440,16 +1442,22 @@ export class TrafficService {
                 min(timestamp) AS session_start,
                 max(timestamp) AS session_end,
                 count() AS page_count,
-                dateDiff('second', min(timestamp), max(timestamp)) AS duration_s
+                dateDiff('second', min(timestamp), max(timestamp)) AS duration_s,
+                argMin(path, timestamp) AS entry_path,
+                argMin(tuple(original_referrer), timestamp).1 AS entry_referer
             FROM (
                 SELECT
                     candidate_uid,
                     timestamp,
+                    path,
+                    original_referrer,
                     sum(is_new) OVER (PARTITION BY candidate_uid ORDER BY timestamp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS session_seq
                 FROM (
                     SELECT
                         candidate_uid,
                         timestamp,
+                        path,
+                        original_referrer,
                         if(dateDiff('second', lagInFrame(timestamp) OVER (PARTITION BY candidate_uid ORDER BY timestamp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), timestamp) >= ${SESSION_GAP_SECONDS}, 1, 0) AS is_new
                     FROM ${TABLE_NAME}
                     WHERE ${where} AND event_type = 'page'
@@ -1458,6 +1466,88 @@ export class TrafficService {
             GROUP BY candidate_uid, session_seq
             ${havingSessionStart ? `HAVING ${havingSessionStart}` : ''}
         `;
+    }
+
+    /**
+     * Collapse a session's entry referrer to a source bucket name.
+     *
+     * The value read is `original_referrer` — the `document.referrer` the page
+     * beacon reports — **not** the `referer` column. On a `page` row `referer`
+     * is the HTTP header of the beacon's own XHR, which is always the current
+     * page's URL, so grouping by it collapses every session to a self-referral.
+     * `original_referrer` is the browser's actual referrer for the navigation.
+     *
+     * An empty entry referrer is a genuine arrival with no source — typed,
+     * bookmarked, opened from an app — and reads `direct`. Anything else is the
+     * domain that sent them.
+     *
+     * Takes no arguments: {@link acquisitionSessionFilter} has already dropped
+     * self-referral sessions by the time this expression runs, so no branch for
+     * them is needed here.
+     *
+     * @returns A SQL expression yielding the source domain or `'direct'`.
+     */
+    private sessionSourceExpr(): string {
+        return `multiIf(entry_referer IS NULL OR entry_referer = '', 'direct', domain(entry_referer))`;
+    }
+
+    /**
+     * Restrict sessionized rows to those that represent an actual *arrival*.
+     *
+     * A session whose first hit carries this site as its referrer is a visitor
+     * resuming after the 30-minute gap — an idle tab clicked again, a refresh
+     * hours later. GA4 would start a new session and report it as `direct`,
+     * and at consumer scale that noise averages out. It does not here: on a
+     * 30-day window 235 of 767 sessions were such continuations, produced by
+     * nine visitors, which is enough for a couple of idle dashboard tabs to
+     * outvote every genuinely-referred visitor in both acquisition panels.
+     *
+     * So the acquisition surfaces drop them: a resumed tab arrived from
+     * nowhere, so it has no source to attribute and no page anyone landed on.
+     * The sessions stay real everywhere a session count is legitimately a
+     * session count — engagement, duration, bounce.
+     *
+     * @param siteHost - This deployment's hostname, or null when unresolvable;
+     *   with null nothing is excluded, so the panels degrade to GA4's
+     *   behaviour rather than silently dropping real arrivals.
+     * @returns A parenthesised boolean predicate ready to compose into a WHERE
+     *   with `AND`, or empty when inapplicable.
+     */
+    private acquisitionSessionFilter(siteHost: string | null): string {
+        if (!siteHost) {
+            return '';
+        }
+        // The NULL/'' branch is load-bearing, not defensive: a direct arrival
+        // has a NULL entry_referer, `domain(NULL)` is NULL, and `NULL NOT IN
+        // (...)` is NULL — which SQL treats as false. Without the explicit
+        // branch this filter would silently delete every direct session, the
+        // largest bucket on the panel. The wrapping parens matter for the same
+        // class of reason: composed after another condition with AND, the bare
+        // ORs would otherwise re-associate and admit rows the caller excluded.
+        return `(entry_referer IS NULL OR entry_referer = ''
+                OR domain(entry_referer) NOT IN ({siteHost:String}, concat('www.', {siteHost:String})))`;
+    }
+
+    /**
+     * Resolve this deployment's hostname for self-referral collapsing.
+     *
+     * Prefers the runtime `siteUrl` in MongoDB (operator-editable at
+     * `/system`, and the authority for the universal Docker image) and falls
+     * back to the `SITE_URL` env seed. Returns null rather than throwing: a
+     * missing host degrades the source split, it must never fail the panel.
+     *
+     * @returns The bare hostname (no `www.`), or null when unresolvable.
+     */
+    private async resolveSiteHost(): Promise<string | null> {
+        try {
+            const siteUrl = await SystemConfigService.getInstance().getSiteUrl() || env.SITE_URL;
+            if (!siteUrl) {
+                return null;
+            }
+            return new URL(siteUrl).hostname.replace(/^www\./, '');
+        } catch {
+            return null;
+        }
     }
 
     /**
@@ -1491,11 +1581,20 @@ export class TrafficService {
      * Referrer-domain breakdown. Null/empty referers collapse to `'direct'`.
      * Distinct visitors lead; raw event counts ride along.
      *
-     * Restricted to `bootstrap` rows so attribution is first-touch only.
-     * `page` events carry `document.referrer`, which after the first internal
-     * navigation is this site's own domain — without the restriction the site
-     * appears as its own referral source, internal navigations inflate the
-     * buckets, and one visitor lands in several source rows at once.
+     * **Session-scoped, not first-touch.** One derived session that *starts*
+     * in the window contributes one entry, attributed to the referrer on its
+     * first `page` hit — so a visitor who returns three times in the window
+     * appears under each of the three things that brought them back, and a
+     * returning visitor is no longer invisible here (the superseded
+     * `bootstrap`-only read counted arrivals, so it could only ever describe
+     * people whose first-ever touch fell inside the window). `count` is
+     * therefore a session count, not an event count.
+     *
+     * Attributing from `page` rows is what makes this possible, and is also
+     * why {@link sessionSourceExpr} exists: after any internal navigation a
+     * `page` row's referrer is this site itself, and a session that begins on
+     * such a hit is a visitor resuming after the gap, which reads as `direct`
+     * rather than as this site referring itself.
      *
      * @param range - Inclusive date window.
      * @param excludeBots - Restrict to human-classified rows (NULL kept).
@@ -1503,52 +1602,38 @@ export class TrafficService {
      */
     async getTrafficSources(range: IAnalyticsDateRange, excludeBots = false): Promise<ITrafficSourceBucket[]> {
         if (!this.clickhouse) return [];
-        const { clause, params } = this.rangeParams(range);
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
+        const sessionWindow = this.sessionRangeParams(range, botFilter);
+        const siteHost = await this.resolveSiteHost();
+        const acquisitionOnly = this.acquisitionSessionFilter(siteHost);
+        const params = { ...sessionWindow.params, ...(siteHost ? { siteHost } : {}) };
         const sql = `
             SELECT
-                multiIf(referer IS NULL OR referer = '', 'direct', domain(referer)) AS source,
+                ${this.sessionSourceExpr()} AS source,
                 uniqExact(candidate_uid) AS visitors,
-                count() AS count,
-                if(countIf(channel IS NOT NULL) = 0, NULL, arrayReduce('argMax',
-                    ['direct', 'organic', 'paid', 'social', 'email', 'ai', 'referral'],
-                    [countIf(channel = 'direct'), countIf(channel = 'organic'),
-                     countIf(channel = 'paid'), countIf(channel = 'social'),
-                     countIf(channel = 'email'), countIf(channel = 'ai'),
-                     countIf(channel = 'referral')])) AS storedChannel
-            FROM ${TABLE_NAME}
-            WHERE ${clause}${botFilter} AND event_type = 'bootstrap' AND ${this.pageVisitorMembership(clause, botFilter)}
+                count() AS count
+            FROM (${this.derivedSessionsSql(sessionWindow.where, sessionWindow.having)})
+            ${acquisitionOnly ? `WHERE ${acquisitionOnly}` : ''}
             GROUP BY source
             ORDER BY visitors DESC, count DESC
         `;
-        // Exact most-frequent channel per source bucket. topK(1) was wrong
-        // here: it reserves only N*load_factor = 3 counter cells, so a bucket
-        // spanning more than three of the seven channels (google.com split
-        // across organic/paid/social/email) can evict and badge an approximate
-        // heavy-hitter. topK(1, 7) would reserve enough cells, but the
-        // load_factor argument postdates ClickHouse 24.3 (the pinned version)
-        // and would throw — silently blanking the panel via the catch below.
-        // Instead each of the seven channels is tallied with countIf and the
-        // max picked via argMax — exact on every version. The
-        // countIf(channel IS NOT NULL) guard returns NULL for an all-NULL
-        // (pre-migration-016) bucket so the domain-only fallback below still
-        // fires; without it argMax would return 'direct' at weight 0 and
-        // suppress the fallback.
         try {
             const rows = await this.clickhouse.query<{
-                source: string; visitors: string | number; count: string | number; storedChannel: string | null;
+                source: string; visitors: string | number; count: string | number;
             }>(sql, params);
             return rows.map(r => ({
                 source: r.source,
                 visitors: Number(r.visitors),
                 count: Number(r.count),
-                // Prefer the stored write-time classification; fall back to
-                // domain-only classification for pre-migration-016 rows. The
-                // falsy check (not ??) also covers a non-Nullable '' default
-                // should the array-element type ever lose its Nullable wrap.
-                channel: r.storedChannel
-                    ? (r.storedChannel as TrafficChannel)
-                    : classifyChannel({ refererDomain: r.source === 'direct' ? null : r.source })
+                // Domain-only classification. The stored write-time `channel`
+                // is not reachable here: it lives on `bootstrap` rows, and a
+                // session-scoped read groups `page` rows. The cost is paid
+                // detection — an auto-tagged ad click carries a `gclid` whose
+                // value is never stored, so it reads `organic` off its
+                // google.com referrer. Campaign Performance stays
+                // bootstrap-attributed and remains the surface that sees paid
+                // tagging.
+                channel: classifyChannel({ refererDomain: r.source === 'direct' ? null : r.source })
             }));
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read traffic sources');
@@ -1559,9 +1644,15 @@ export class TrafficService {
     /**
      * Top landing paths. Distinct visitors lead; raw event counts ride along.
      *
-     * Restricted to `bootstrap` rows so "landing" means the entry page of a
-     * first touch. Without the restriction every `page` navigation counts and
-     * the table silently becomes "most-viewed pages", not landing pages.
+     * **Session-scoped, not first-touch.** "Landing" is the first `page` hit
+     * of each derived session that starts in the window, so a returning
+     * visitor's re-entry page counts too — the superseded `bootstrap`-only
+     * read could only show where people landed on their first-ever visit.
+     * `count` is a session count.
+     *
+     * Sessionizing is what keeps this a landing-page table rather than a
+     * most-viewed-pages table: only the entry hit of each session is grouped,
+     * never every navigation within it.
      *
      * @param range - Inclusive date window.
      * @param limit - Max rows.
@@ -1570,18 +1661,23 @@ export class TrafficService {
      */
     async getTopLandingPages(range: IAnalyticsDateRange, limit = 20, excludeBots = false): Promise<ILandingPageBucket[]> {
         if (!this.clickhouse) return [];
-        const { clause, params } = this.rangeParams(range);
         const botFilter = excludeBots ? ` AND ${HUMAN_ROWS_FILTER}` : '';
+        const sessionWindow = this.sessionRangeParams(range, botFilter);
+        const siteHost = await this.resolveSiteHost();
+        const acquisitionOnly = this.acquisitionSessionFilter(siteHost);
         const sql = `
-            SELECT path AS path, uniqExact(candidate_uid) AS visitors, count() AS count
-            FROM ${TABLE_NAME}
-            WHERE ${clause}${botFilter} AND event_type = 'bootstrap' AND path != '' AND ${this.pageVisitorMembership(clause, botFilter)}
+            SELECT entry_path AS path, uniqExact(candidate_uid) AS visitors, count() AS count
+            FROM (${this.derivedSessionsSql(sessionWindow.where, sessionWindow.having)})
+            WHERE entry_path != ''${acquisitionOnly ? ` AND ${acquisitionOnly}` : ''}
             GROUP BY path
             ORDER BY visitors DESC, count DESC
             LIMIT {limit:UInt32}
         `;
         try {
-            const rows = await this.clickhouse.query<{ path: string; visitors: string | number; count: string | number }>(sql, { ...params, limit });
+            const rows = await this.clickhouse.query<{ path: string; visitors: string | number; count: string | number }>(
+                sql,
+                { ...sessionWindow.params, ...(siteHost ? { siteHost } : {}), limit }
+            );
             return rows.map(r => ({ path: r.path, visitors: Number(r.visitors), count: Number(r.count) }));
         } catch (error) {
             this.logger.warn({ error }, 'Failed to read top landing pages');

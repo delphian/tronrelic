@@ -668,14 +668,61 @@ describe('TrafficService', () => {
             expect(captured.sqls.join('\n')).toContain("uniqExactIf(candidate_uid, event_type = 'page') AS visitors");
         });
 
-        it('getTrafficSources gates its bootstrap-only visitor count on a page-event membership subquery', async () => {
-            // The source scan reads bootstrap rows, which carry no page event,
-            // so the rule can only be enforced via the IN-subquery.
+        it('getTrafficSources attributes per session from the real document.referrer', async () => {
+            // Session-scoped, so the Visitor rule is structural: only `page`
+            // rows sessionize, and a session is one entry. The referrer must
+            // come from original_referrer — on a page row `referer` is the
+            // beacon XHR's own header (the current page), which would collapse
+            // every session to a self-referral.
             const captured = captureSql();
             await TrafficService.getInstance().getTrafficSources(range);
             const sql = captured.sqls.join('\n');
-            expect(sql).toContain('candidate_uid IN (');
             expect(sql).toContain("event_type = 'page'");
+            expect(sql).toContain('entry_referer');
+            expect(sql).toContain('argMin(tuple(original_referrer), timestamp).1');
+            expect(sql).toContain('session_seq');
+        });
+
+        it('excludes resumed sessions without dropping direct arrivals', async () => {
+            // A NULL entry_referer is a genuine direct arrival. `domain(NULL)`
+            // is NULL and `NULL NOT IN (...)` is NULL, which SQL treats as
+            // false — so without the explicit NULL branch this predicate would
+            // delete the largest bucket on the panel. Guard the branch, not
+            // just the exclusion. Exercised directly because the site host is
+            // unresolvable under test (no Mongo config, no SITE_URL).
+            TrafficService.setDependencies(createMockClickHouse(), createMockLogger());
+            const service = TrafficService.getInstance() as unknown as {
+                acquisitionSessionFilter(siteHost: string | null): string;
+            };
+            const predicate = service.acquisitionSessionFilter('tronrelic.com');
+            expect(predicate).toContain('NOT IN ({siteHost:String}');
+            expect(predicate).toContain("entry_referer IS NULL OR entry_referer = ''");
+            // Parenthesised so composing it after another condition with AND
+            // cannot re-associate the ORs and re-admit excluded rows.
+            expect(predicate.trim().startsWith('(')).toBe(true);
+            expect(predicate.trim().endsWith(')')).toBe(true);
+        });
+
+        it('keeps every session when the site host cannot be resolved', async () => {
+            // Degrading to GA4's behaviour is the intended failure mode; the
+            // alternative — an empty host in the NOT IN — would silently drop
+            // real arrivals.
+            TrafficService.setDependencies(createMockClickHouse(), createMockLogger());
+            const service = TrafficService.getInstance() as unknown as {
+                acquisitionSessionFilter(siteHost: string | null): string;
+            };
+            expect(service.acquisitionSessionFilter(null)).toBe('');
+        });
+
+        it('getTopLandingPages groups session entry paths, not every navigation', async () => {
+            const captured = captureSql();
+            await TrafficService.getInstance().getTopLandingPages(range);
+            const sql = captured.sqls.join('\n');
+            expect(sql).toContain('entry_path AS path');
+            expect(sql).toContain('session_seq');
+            // The bootstrap-only restriction is gone; sessionizing is what
+            // keeps this from becoming a most-viewed-pages table.
+            expect(sql).not.toContain("event_type = 'bootstrap'");
         });
 
         it('getNewVisitors requires a page event on both the page and count queries', async () => {
