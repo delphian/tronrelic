@@ -440,7 +440,7 @@ describe('TrafficService', () => {
             const { ch, sqls } = mockWithRow({
                 id: 'tid-1', accountId: null,
                 firstSeen: '2026-04-30 10:00:00.000', lastSeen: '2026-04-30 10:05:00.000',
-                pageViews: '4', distinctPaths: '3', lastPath: '/markets', sessionsCount: '2',
+                pageViews: '4', distinctPaths: '3', lastPath: '/markets',
                 channel: 'organic', referrerDomain: 'google.com', landingPage: '/',
                 utmSource: null, utmMedium: null, utmCampaign: null, utmTerm: null, utmContent: null,
                 country: 'US', device: 'desktop', botClass: 'human', subnetHash: 'abc123'
@@ -456,7 +456,7 @@ describe('TrafficService', () => {
             expect(out.total).toBe(3);
             expect(out.rows[0]).toMatchObject({
                 id: 'tid-1', accountId: null, pageViews: 4, distinctPaths: 3,
-                sessionsCount: 2, channel: 'organic', referrerDomain: 'google.com',
+                channel: 'organic', referrerDomain: 'google.com',
                 botClass: 'human', utm: null
             });
             // ClickHouse's native suffix-less DateTime is normalized to ISO-8601 UTC
@@ -468,7 +468,7 @@ describe('TrafficService', () => {
             const returning = {
                 id: 'tid-old', accountId: 'ba_42',
                 firstSeen: '2026-03-01 09:00:00.000', lastSeen: '2026-04-30 10:05:00.000',
-                pageViews: '2', distinctPaths: '1', lastPath: '/', sessionsCount: '1',
+                pageViews: '2', distinctPaths: '1', lastPath: '/',
                 channel: null, referrerDomain: null, landingPage: '/',
                 utmSource: null, utmMedium: null, utmCampaign: null, utmTerm: null, utmContent: null,
                 country: null, device: 'desktop', botClass: null, subnetHash: null
@@ -484,7 +484,7 @@ describe('TrafficService', () => {
             expect(out.rows[0].accountId).toBe('ba_42');
         });
 
-        it('applies the bot filter to membership, aggregation, and sessions alike', async () => {
+        it('applies the bot filter to membership, aggregation, and the count alike', async () => {
             const { ch, sqls } = mockWithRow();
             TrafficService.setDependencies(ch, createMockLogger());
 
@@ -492,9 +492,11 @@ describe('TrafficService', () => {
 
             const joined = sqls.join('\n');
             const occurrences = joined.split("bot_class = 'human'").length - 1;
-            // Membership subquery, outer scan, session subquery, and the count
-            // query — one policy, applied everywhere rather than to one leg.
-            expect(occurrences).toBeGreaterThanOrEqual(4);
+            // Membership subquery, outer scan, and the count query's own
+            // membership scan — one policy, applied to every leg rather than
+            // to the first one only, which is what the superseded three-view
+            // split did.
+            expect(occurrences).toBeGreaterThanOrEqual(3);
         });
 
         it('narrows to one account by collecting every tid that account ever used', async () => {

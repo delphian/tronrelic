@@ -710,8 +710,6 @@ export interface IVisitorRow {
     distinctPaths: number;
     /** Path of the latest in-window `page` event. */
     lastPath: string | null;
-    /** In-window derived sessions, attributed by session start. */
-    sessionsCount: number;
     /** First-touch acquisition channel (`bootstrap` rows only), or `null`. */
     channel: string | null;
     /** First-touch referrer domain, or `null` for a direct arrival. */
@@ -2422,6 +2420,13 @@ export class TrafficService {
         // time is what actually caps the scan. For this view the semantics
         // match — every listed visitor was first seen inside the window, so
         // their sessions are in-window anyway.
+        // Every nullable first-touch column is read through `argMin(tuple(x)).1`
+        // rather than a bare `argMin(x)`: ClickHouse aggregates skip NULL
+        // arguments, so a direct arrival (NULL bootstrap referrer) would
+        // otherwise fall through to the first `page` row — whose referrer is
+        // this site's own domain — and report as a self-referral. Same trap for
+        // `country` and the UTM columns. `path`/`device` are non-nullable and
+        // need no wrapper.
         const pageSql = `
             SELECT base.*, s.sessionsCount AS sessionsCount
             FROM (
@@ -2429,15 +2434,15 @@ export class TrafficService {
                     candidate_uid AS userId,
                     min(timestamp) AS firstSeen,
                     max(timestamp) AS lastSeen,
-                    argMin(country, timestamp) AS country,
-                    argMin(multiIf(referer IS NULL OR referer = '', NULL, domain(referer)), timestamp) AS referrerDomain,
+                    argMin(tuple(country), timestamp).1 AS country,
+                    argMin(tuple(multiIf(referer IS NULL OR referer = '', NULL, domain(referer))), timestamp).1 AS referrerDomain,
                     argMin(path, timestamp) AS landingPage,
                     argMin(device, timestamp) AS device,
-                    argMin(utm_source, timestamp) AS utmSource,
-                    argMin(utm_medium, timestamp) AS utmMedium,
-                    argMin(utm_campaign, timestamp) AS utmCampaign,
-                    argMin(utm_term, timestamp) AS utmTerm,
-                    argMin(utm_content, timestamp) AS utmContent,
+                    argMin(tuple(utm_source), timestamp).1 AS utmSource,
+                    argMin(tuple(utm_medium), timestamp).1 AS utmMedium,
+                    argMin(tuple(utm_campaign), timestamp).1 AS utmCampaign,
+                    argMin(tuple(utm_term), timestamp).1 AS utmTerm,
+                    argMin(tuple(utm_content), timestamp).1 AS utmContent,
                     argMin(tuple(subnet_hash), timestamp).1 AS subnetHash, -- tuple() preserves a NULL first-touch value; plain argMin skips NULL args
                     countIf(event_type = 'page') AS pageViews -- views are page events only: a bootstrap row is the same navigation as the first page beacon, so count() would add a phantom view per visit-start
                 FROM ${TABLE_NAME}
@@ -2689,7 +2694,6 @@ export class TrafficService {
         // ignore list), which is why the outer scan needs no HAVING — every tid
         // it groups already qualifies.
         const membership = this.pageVisitorMembership(clause, botFilter);
-        const sessionWindow = this.sessionRangeParams(range, botFilter);
         // Two time semantics live in one GROUP BY, deliberately. Acquisition
         // (`argMin(..., timestamp)`) reads the tid's *earliest* row whenever it
         // happened, so a returning visitor still shows the source that first
@@ -2708,8 +2712,6 @@ export class TrafficService {
         // touch, quietly re-attributing them under a first-touch doctrine.
         const inWindowPage = `event_type = 'page' AND ${clause}`;
         const rowsSql = `
-            SELECT base.*, s.sessionsCount AS sessionsCount
-            FROM (
                 SELECT
                     candidate_uid AS id,
                     argMaxIf(user_id, timestamp, user_id IS NOT NULL AND ${clause}) AS accountId,
@@ -2735,13 +2737,6 @@ export class TrafficService {
                 GROUP BY candidate_uid
                 ORDER BY lastSeen DESC
                 LIMIT {limit:UInt32} OFFSET {skip:UInt32}
-            ) AS base
-            LEFT JOIN (
-                SELECT candidate_uid AS id, count() AS sessionsCount
-                FROM (${this.derivedSessionsSql(sessionWindow.where, sessionWindow.having)})
-                GROUP BY candidate_uid
-            ) AS s USING (id)
-            ORDER BY lastSeen DESC
         `;
         // Counting the membership set directly is far cheaper than a uniqExact
         // over every row those tids ever wrote.
@@ -2756,13 +2751,12 @@ export class TrafficService {
                 this.clickhouse.query<{
                     id: string; accountId: string | null; firstSeen: string; lastSeen: string;
                     pageViews: string | number; distinctPaths: string | number; lastPath: string | null;
-                    sessionsCount: string | number | null;
                     channel: string | null; referrerDomain: string | null; landingPage: string | null;
                     utmSource: string | null; utmMedium: string | null; utmCampaign: string | null;
                     utmTerm: string | null; utmContent: string | null;
                     country: string | null; device: string; botClass: string | null;
                     subnetHash: string | null;
-                }>(rowsSql, { ...params, ...sessionWindow.params, limit, skip }),
+                }>(rowsSql, { ...params, limit, skip }),
                 this.clickhouse.query<{ total: string | number }>(countSql, params)
             ]);
             return {
@@ -2782,7 +2776,6 @@ export class TrafficService {
                         pageViews: Number(r.pageViews),
                         distinctPaths: Number(r.distinctPaths),
                         lastPath: r.lastPath || null,
-                        sessionsCount: Number(r.sessionsCount ?? 0),
                         // Prefer the stored write-time classification; for
                         // pre-migration-016 rows (channel NULL, retained up to
                         // 18 months) reclassify from the first-touch signals the

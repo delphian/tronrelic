@@ -22,6 +22,12 @@
  * an account id filters the table to that account's tids, which is the
  * replacement for the per-account rollup the old Registered view provided.
  *
+ * The row itself is the drill-down control — clicking anywhere on it expands
+ * that visitor's clickstream. A `<tr>` is not natively focusable or
+ * activatable, so the row supplies the `role`, `tabIndex`, key handling, and
+ * focus ring a `<button>` would have carried; without them the drill-down
+ * would be mouse-only.
+ *
  * Client-only admin surface: `/system/traffic` is admin-gated via the Better
  * Auth session cookie, so the SSR + Live Updates pattern does not apply — the
  * loading states here are the user-triggered fetch/pagination case the pattern
@@ -51,7 +57,7 @@ const PAGE_LIMIT = 25;
 const HITS_LIMIT = 200;
 
 /** Column count, so the expanded drill-down row spans the full table. */
-const COLUMN_COUNT = 12;
+const COLUMN_COUNT = 10;
 
 /**
  * The resolved lookback window passed to the API client: either a preset period
@@ -270,6 +276,29 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
         setExpandedId(prev => (prev === id ? null : id));
     }, []);
 
+    /**
+     * Keyboard equivalent of clicking the row. A `<tr>` is not natively
+     * focusable or activatable, so making the whole row the control means
+     * supplying what a `<button>` would have given for free — otherwise the
+     * drill-down becomes mouse-only. Space is intercepted to stop the page
+     * scrolling underneath the expansion.
+     *
+     * @param event - The keyboard event from the focused row.
+     * @param id - The tid of the row to expand or collapse.
+     */
+    const handleRowKeyDown = useCallback((event: React.KeyboardEvent<HTMLTableRowElement>, id: string): void => {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+            return;
+        }
+        // A nested control (the account filter button) handles its own keys;
+        // without this the row would also toggle behind it.
+        if (event.target !== event.currentTarget) {
+            return;
+        }
+        event.preventDefault();
+        toggleExpand(id);
+    }, [toggleExpand]);
+
     return (
         <Stack gap="lg" className={styles.container}>
             <Card tone="muted" padding="sm" className={styles.section}>
@@ -283,7 +312,7 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                     otherwise the traffic id; an asterisk marks a visitor whose first-ever contact
                     falls inside this window. Acquisition columns read the visitor&apos;s first
                     server-recorded hit, whenever that was — so a returning visitor still shows where
-                    they originally came from.{' '}
+                    they originally came from. Select a row to see every page that visitor hit.{' '}
                     {includeBots
                         ? 'JavaScript-running bots the classifier caught are included; referrers are client-supplied and often spoofed.'
                         : 'Known bots are excluded — unclassified visitors are kept, so this is not "humans only".'}
@@ -326,13 +355,11 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                         <Th scope="col">Last Seen</Th>
                                         <Th scope="col">Views</Th>
                                         <Th scope="col">Paths</Th>
-                                        <Th scope="col">Sessions</Th>
                                         <Th scope="col">Channel</Th>
                                         <Th scope="col">Source</Th>
                                         <Th scope="col">Landing</Th>
                                         <Th scope="col">Country</Th>
                                         <Th scope="col">Device</Th>
-                                        <Th scope="col"><span className="text-muted">Pages</span></Th>
                                     </Tr>
                                 </Thead>
                                 <Tbody>
@@ -342,7 +369,18 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                         const accountId = row.accountId;
                                         return (
                                             <React.Fragment key={row.id}>
-                                                <Tr>
+                                                <Tr
+                                                    className={styles.row}
+                                                    // Keeps the open row tinted now that the View/Hide
+                                                    // button no longer marks which one is expanded.
+                                                    isExpanded={expandedId === row.id}
+                                                    onClick={() => toggleExpand(row.id)}
+                                                    onKeyDown={event => handleRowKeyDown(event, row.id)}
+                                                    tabIndex={0}
+                                                    role="button"
+                                                    aria-expanded={expandedId === row.id}
+                                                    aria-label={`${expandedId === row.id ? 'Hide' : 'Show'} pages for ${row.id}`}
+                                                >
                                                     <Td className={styles.id_cell} title={row.id}>
                                                         <span className={styles.id_inner}>
                                                             {/* Decorative: the accessible labels below carry "new visitor" in words. */}
@@ -353,7 +391,13 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                                                 <button
                                                                     type="button"
                                                                     className={styles.account_link}
-                                                                    onClick={() => setAccountFilter(accountId)}
+                                                                    // The row itself toggles the drill-down, so this nested
+                                                                    // control must stop the event or filtering by account
+                                                                    // would also expand the row it was clicked in.
+                                                                    onClick={event => {
+                                                                        event.stopPropagation();
+                                                                        setAccountFilter(accountId);
+                                                                    }}
                                                                     aria-label={`Filter to account ${accountId}${row.isNew ? ' (new visitor)' : ''}`}
                                                                 >
                                                                     {accountId}
@@ -375,7 +419,6 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                                     <Td><ClientTime date={row.lastSeen} format="relative" /></Td>
                                                     <Td>{row.pageViews.toLocaleString()}</Td>
                                                     <Td>{row.distinctPaths.toLocaleString()}</Td>
-                                                    <Td>{row.sessionsCount.toLocaleString()}</Td>
                                                     <Td className={styles.channel_cell}>
                                                         {row.channel || <span className={styles.muted}>—</span>}
                                                     </Td>
@@ -401,17 +444,6 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                                         {row.country || <span className={styles.muted}>—</span>}
                                                     </Td>
                                                     <Td className={styles.device_cell}>{getDeviceIcon(row.device)}</Td>
-                                                    <Td>
-                                                        <Button
-                                                            size="xs"
-                                                            variant="ghost"
-                                                            onClick={() => toggleExpand(row.id)}
-                                                            aria-expanded={expandedId === row.id}
-                                                            aria-label={`${expandedId === row.id ? 'Hide' : 'View'} pages for ${row.id}`}
-                                                        >
-                                                            {expandedId === row.id ? 'Hide' : 'View'}
-                                                        </Button>
-                                                    </Td>
                                                 </Tr>
                                                 {expandedId === row.id && (
                                                     <PageHitsRow id={row.id} window={window} />
