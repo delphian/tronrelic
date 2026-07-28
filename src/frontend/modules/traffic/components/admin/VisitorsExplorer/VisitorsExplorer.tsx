@@ -100,6 +100,39 @@ function formatUtm(utm: IVisitorRow['utm']): string | null {
     return parts.length > 0 ? parts.join(' / ') : null;
 }
 
+/**
+ * Format every stored UTM field for the expanded detail panel.
+ *
+ * The detail panel claims to publish the complete stored record, so it cannot
+ * use {@link formatUtm} — that summary deliberately drops `term` and `content`
+ * to keep the table's Source column narrow, which would hide keyword/creative
+ * attribution and render a term-or-content-only first touch as untagged. Fields
+ * are labelled because the positional `a / b / c` form becomes ambiguous once
+ * nulls are filtered out of a five-part list.
+ *
+ * @param utm - UTM parameters object from the visitors read, or null when the
+ *   first-touch row carried no campaign tags at all.
+ * @returns Labelled string like "source=google, medium=cpc, term=trx", or null
+ *   when no field holds a value so the caller can render its placeholder.
+ */
+function formatUtmDetail(utm: IVisitorRow['utm']): string | null {
+    if (!utm) {
+        return null;
+    }
+
+    const parts = ([
+        ['source', utm.source],
+        ['medium', utm.medium],
+        ['campaign', utm.campaign],
+        ['term', utm.term],
+        ['content', utm.content]
+    ] as const)
+        .filter(([, value]) => Boolean(value))
+        .map(([label, value]) => `${label}=${value}`);
+
+    return parts.length > 0 ? parts.join(', ') : null;
+}
+
 interface IDetailFieldProps {
     label: string;
     children: React.ReactNode;
@@ -181,7 +214,7 @@ function VisitorDetailRow({ row, isFlagged, window }: IVisitorDetailRowProps) {
         return () => { active = false; };
     }, [row.id, window]);
 
-    const utm = formatUtm(row.utm);
+    const utm = formatUtmDetail(row.utm);
     /** Placeholder for an attribute the visitor has no value for. */
     const none = <span className={styles.muted}>—</span>;
 
