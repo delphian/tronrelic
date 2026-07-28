@@ -366,12 +366,12 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                         <Card>
                             <h3
                                 className={styles.section_title}
-                                title="First-touch attribution: each visitor credits the referrer of their first-ever visit, permanently — like GA4's 'First user source', not its session-scoped Traffic acquisition report"
+                                title="Session-scoped attribution: every session starting in this window credits the referrer it arrived on, so returning visitors count each time they come back — GA4's session-scoped Traffic acquisition report, not 'First user source'. A session resumed after the 30-minute idle gap is excluded rather than counted as direct — a reopened tab arrived from nowhere."
                             >
                                 <Globe size={16} className={styles.section_title__icon} />
                                 Traffic Sources
                                 <span className={`text-muted ${styles.section_title__subtitle}`}>
-                                    (first-touch{trafficTotal > 0 ? ` · ${trafficTotal.toLocaleString()} visitors` : ''})
+                                    (by session{trafficTotal > 0 ? ` · ${trafficTotal.toLocaleString()} visitors` : ''})
                                 </span>
                             </h3>
                             <div>
@@ -615,12 +615,12 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                         <Card>
                             <h3
                                 className={styles.section_title}
-                                title="First-touch attribution: the entry page of each visitor's first-ever visit — not the most-viewed pages"
+                                title="Session-scoped attribution: the entry page of every session starting in this window, so a returning visitor's re-entry page counts too — not the most-viewed pages. Sessions resumed after the 30-minute idle gap are excluded; nobody landed on them."
                             >
                                 <MousePointerClick size={16} className={styles.section_title__icon} />
                                 Top Landing Pages
                                 <span className={`text-muted ${styles.section_title__subtitle}`}>
-                                    (first-touch)
+                                    (by session)
                                 </span>
                             </h3>
                             <div>
