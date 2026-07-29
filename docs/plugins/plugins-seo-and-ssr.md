@@ -30,6 +30,7 @@ All fields live in `IPageConfig` (`packages/types/src/plugin/IPageConfig.ts`). E
 | `description` | `<meta description>`, `og:description`, `twitter:description` |
 | `keywords` | `<meta name="keywords">` |
 | `ogImage` | `og:image`, `twitter:image` (relative paths resolve against siteUrl — see [Plugin-Owned OG Images](#plugin-owned-og-images)) |
+| `ogImageWidth` / `ogImageHeight` | `og:image:width` / `og:image:height`. Emitted only when **both** are set. Set them only for an image whose real size you know — a fixed asset, or a resized derivative whose output dimensions the resizer reported. A crawler lays the card out from these before the bytes arrive, so a wrong value mis-renders or drops the preview; omitting them makes the crawler measure the file, which is always correct. |
 | `ogType` | `og:type` — defaults to `'website'`, use `'article'` for time-stamped content |
 | `canonical` | Override the canonical URL (defaults to the page's `path`) |
 | `noindex` | Adds `<meta name="robots" content="noindex,nofollow">` for admin pages |

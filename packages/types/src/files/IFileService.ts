@@ -99,13 +99,34 @@ export type IVariantOptions =
         width: number;
         /** Target height in pixels (1–4000). */
         height?: number;
+        fit?: IVariantFit;
     }
     | {
         /** Target width in pixels (1–4000). */
         width?: number;
         /** Target height in pixels (1–4000). */
         height: number;
+        fit?: IVariantFit;
     };
+
+/**
+ * How a variant reconciles the source aspect ratio with the requested box.
+ *
+ * `'inside'` (the default, and the only behavior before this option existed)
+ * scales the image down until it fits entirely within the box, preserving the
+ * source ratio and never upscaling — so the output dimensions are usually
+ * *not* the ones requested. Right for thumbnails, where fitting matters and
+ * the exact box does not.
+ *
+ * `'cover'` fills the box exactly, center-cropping whatever overflows, and
+ * will upscale a source smaller than the box to do it. Ask for this when the
+ * consumer needs a guaranteed aspect ratio rather than the largest image that
+ * fits — social/OpenGraph cards being the motivating case, since link-preview
+ * crawlers lay a card out to a fixed ratio and mis-render or drop art that
+ * arrives square or portrait. The upscale is the deliberate cost of a
+ * predictable ratio; callers wanting no upscale should use `'inside'`.
+ */
+export type IVariantFit = 'inside' | 'cover';
 
 /**
  * Result returned by `getVariant()`. The URL points at the cached variant
@@ -205,8 +226,15 @@ export interface IFileService {
      *
      * Returns null when the id does not resolve or when the source is
      * not a supported raster image (jpeg/png/webp/gif). Dimensions
-     * outside 1–4000 are clamped. Variants never upscale: requesting a
-     * width larger than the source returns the source dimensions.
+     * outside 1–4000 are clamped.
+     *
+     * Under the default `fit: 'inside'` a variant never upscales, so
+     * requesting a box larger than the source returns the source
+     * dimensions. `fit: 'cover'` is the exception: it fills the requested
+     * box exactly, upscaling when the source is smaller, because its
+     * whole purpose is a guaranteed aspect ratio. Either way the returned
+     * {@link IFileVariant} reports the *actual* output dimensions — read
+     * them from the result rather than assuming the request was honored.
      */
     getVariant(id: string, options: IVariantOptions): Promise<IFileVariant | null>;
 
