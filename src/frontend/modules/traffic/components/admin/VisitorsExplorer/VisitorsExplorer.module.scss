@@ -207,14 +207,15 @@
 }
 
 /*
- * Columns dropped at tablet width and below (First Seen, Channel, Device).
+ * Columns dropped at tablet width and below (First Seen, Paths, Channel, Device).
  *
  * Chosen because each is either recoverable from another column or the least
  * load-bearing of its kind: Last Seen answers recency, Source carries
- * acquisition more specifically than Channel, and device is rarely the reason
- * an operator opens this table. Nothing is lost — the expanded row publishes
- * every attribute at every width, so hiding a column narrows the summary rather
- * than the record.
+ * acquisition more specifically than Channel, Views already conveys how much a
+ * visitor read and Paths only refines it, and device is rarely the reason an
+ * operator opens this table. Nothing is lost — the expanded row publishes every
+ * attribute at every width, so hiding a column narrows the summary rather than
+ * the record.
  *
  * Marked with an explicit class rather than :nth-child so reordering a column
  * cannot silently hide the wrong one.
@@ -261,6 +262,16 @@
     flex-direction: column;
     gap: var(--gap-2xs);
     min-width: 0;
+}
+
+/*
+ * Full-width field for values with no useful length ceiling — the User-Agent
+ * runs past 200 characters. Confined to one auto-fit column it wraps to several
+ * lines and stretches every sibling in that grid row to match; spanning the grid
+ * lets it wrap once or twice instead.
+ */
+.detail_field_wide {
+    grid-column: 1 / -1;
 }
 
 .detail_label {

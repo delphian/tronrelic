@@ -744,6 +744,22 @@ describe('TrafficService', () => {
             expect(sql).not.toContain("event_type = 'bootstrap'");
         });
 
+        it('separates the acquisition projection from its neighbours correctly', async () => {
+            // The projection is spliced between a column that already ends in a
+            // comma and the window function that follows, so a leading comma
+            // doubles one separator and drops the other. ClickHouse answers with
+            // a syntax error, the read swallows it and returns the empty shell,
+            // and the panel silently renders zeroes under a populated aggregate
+            // row — a failure no assertion on cohort *shape* can catch, because
+            // every expected fragment is still present in the broken SQL.
+            const captured = captureSql();
+            await TrafficService.getInstance().getTrafficSourceDetails(range, 'google.com');
+            const sql = captured.sqls.join('\n');
+            expect(sql).not.toMatch(/,\s*,/);
+            expect(sql).toMatch(/utm_campaign,\s+sum\(is_new\)/);
+            expect(sql).toMatch(/utm_campaign,\s+if\(dateDiff/);
+        });
+
         it('only projects acquisition columns when a caller needs them', async () => {
             // Every session read would otherwise pay for five extra columns to
             // serve the one caller that breaks a cohort down by them.

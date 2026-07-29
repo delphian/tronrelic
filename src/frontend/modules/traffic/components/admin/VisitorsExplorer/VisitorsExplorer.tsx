@@ -25,8 +25,9 @@
  * Expanding a row publishes that visitor's *complete* record — every stored
  * attribute for the tid and its account, then the clickstream. That is what
  * makes the responsive rule safe: at tablet width and below the table drops
- * First Seen, Channel, and Device (see `.col_optional`), and none of it becomes
- * unreachable because the panel already carries all of it at every width.
+ * First Seen, Paths, Channel, and Device (see `.col_optional`), and none of it
+ * becomes unreachable because the panel already carries all of it at every
+ * width — Paths reads there as "Distinct paths".
  *
  * Clicking anywhere on a row expands that visitor's detail. The row stays
  * a real `<tr>`: giving it `role="button"` would make every `<td>` descendant
@@ -135,6 +136,13 @@ function formatUtmDetail(utm: IVisitorRow['utm']): string | null {
 
 interface IDetailFieldProps {
     label: string;
+    /**
+     * Span every grid column instead of one. For values with no useful upper
+     * length bound — a User-Agent runs past 200 characters — which would
+     * otherwise wrap to five lines inside one narrow column and drag the whole
+     * grid row's height with it.
+     */
+    wide?: boolean;
     children: React.ReactNode;
 }
 
@@ -146,12 +154,13 @@ interface IDetailFieldProps {
  * conveys to a screen reader — a grid of anonymous divs would read as a wall of
  * unassociated text.
  *
- * @param props - The field's label and its already-formatted value node.
+ * @param props - The field's label, whether it claims the full grid width, and
+ *   its already-formatted value node.
  * @returns The paired term and description.
  */
-function DetailField({ label, children }: IDetailFieldProps) {
+function DetailField({ label, wide = false, children }: IDetailFieldProps) {
     return (
-        <div className={styles.detail_field}>
+        <div className={`${styles.detail_field}${wide ? ` ${styles.detail_field_wide}` : ''}`}>
             <dt className={styles.detail_label}>{label}</dt>
             <dd className={styles.detail_value}>{children}</dd>
         </div>
@@ -281,6 +290,16 @@ function VisitorDetailRow({ row, isFlagged, window }: IVisitorDetailRowProps) {
                             <DetailField label="Source network">
                                 {row.subnetHash
                                     ? <code className={styles.detail_mono}>{row.subnetHash}</code>
+                                    : none}
+                            </DetailField>
+                            <DetailField label="Source IP (hashed)">
+                                {row.ipHash
+                                    ? <code className={styles.detail_mono}>{row.ipHash}</code>
+                                    : none}
+                            </DetailField>
+                            <DetailField label="User agent" wide>
+                                {row.userAgent
+                                    ? <code className={styles.detail_mono}>{row.userAgent}</code>
                                     : none}
                             </DetailField>
                         </dl>
@@ -489,7 +508,7 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                         <Th scope="col" className={styles.col_optional}>First Seen</Th>
                                         <Th scope="col">Last Seen</Th>
                                         <Th scope="col">Views</Th>
-                                        <Th scope="col">Paths</Th>
+                                        <Th scope="col" className={styles.col_optional}>Paths</Th>
                                         <Th scope="col" className={styles.col_optional}>Channel</Th>
                                         <Th scope="col">Source</Th>
                                         <Th scope="col">Landing</Th>
@@ -573,7 +592,9 @@ export function VisitorsExplorer({ period, customRange, includeBots }: IVisitors
                                                     </Td>
                                                     <Td><ClientTime date={row.lastSeen} format="relative" /></Td>
                                                     <Td>{row.pageViews.toLocaleString()}</Td>
-                                                    <Td>{row.distinctPaths.toLocaleString()}</Td>
+                                                    <Td className={styles.col_optional}>
+                                                        {row.distinctPaths.toLocaleString()}
+                                                    </Td>
                                                     <Td className={`${styles.channel_cell} ${styles.col_optional}`}>
                                                         {row.channel || <span className={styles.muted}>—</span>}
                                                     </Td>
