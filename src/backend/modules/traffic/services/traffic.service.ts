@@ -735,6 +735,26 @@ export interface IVisitorRow {
      * "same source?" correlation key backing the high-volume-network flag.
      */
     subnetHash: string | null;
+    /**
+     * First-touch salted per-client IP hash (migration 015), paired with
+     * {@link subnetHash} and read from the same earliest row so the two always
+     * describe one moment. Narrower than the subnet hash: it distinguishes two
+     * clients behind one office or carrier network that `subnetHash` collapses
+     * together. Raw IPs are never stored, so this is the finest source-identity
+     * an operator can see.
+     */
+    ipHash: string | null;
+    /**
+     * Latest in-window `user_agent`, or `null` when the row carried none.
+     *
+     * Deliberately *latest* rather than first-touch, to agree with
+     * {@link device} and {@link botClass} — both are derived from the UA and
+     * both read the latest in-window row. A first-touch UA next to a
+     * latest-row device would let the panel show a desktop UA above a `mobile`
+     * device for a visitor who switched, and the operator could not tell which
+     * one was stale.
+     */
+    userAgent: string | null;
 }
 
 /** A page of {@link IVisitorRow} rows plus the unpaginated visitor total. */
@@ -1449,12 +1469,20 @@ export class TrafficService {
                 argMin(tuple(utm_source), timestamp).1 AS entry_utm_source,
                 argMin(tuple(utm_medium), timestamp).1 AS entry_utm_medium,
                 argMin(tuple(utm_campaign), timestamp).1 AS entry_utm_campaign` : '';
-        const acquisitionColumns = includeAcquisition ? `,
+        // Trailing comma, not leading: this fragment is interpolated *after* a
+        // column that already ends in one and *before* the window function, so a
+        // leading comma renders `original_referrer,, country … utm_campaign
+        // sum(is_new)` — one separator doubled, the next missing. ClickHouse
+        // rejects that outright, and because the source drill-down is the only
+        // caller passing `includeAcquisition`, it failed alone and silently: the
+        // read logs and returns its empty shell, so the expanded panel showed
+        // zeroes and no landing pages beneath a non-empty aggregate row.
+        const acquisitionColumns = includeAcquisition ? `
                     country,
                     device,
                     utm_source,
                     utm_medium,
-                    utm_campaign` : '';
+                    utm_campaign,` : '';
         return `
             SELECT
                 candidate_uid,
@@ -2884,7 +2912,12 @@ export class TrafficService {
                     argMaxIf(tuple(country), timestamp, ${clause}).1 AS country,
                     argMaxIf(device, timestamp, ${clause}) AS device,
                     argMaxIf(tuple(bot_class), timestamp, ${clause}).1 AS botClass,
-                    argMin(tuple(subnet_hash), timestamp).1 AS subnetHash
+                    argMin(tuple(subnet_hash), timestamp).1 AS subnetHash,
+                    -- Paired with subnetHash on the same first-touch row; the UA
+                    -- follows device/botClass to the latest in-window row so the
+                    -- three cannot disagree. See IVisitorRow for why they differ.
+                    argMin(tuple(ip_hash), timestamp).1 AS ipHash,
+                    argMaxIf(tuple(user_agent), timestamp, ${clause}).1 AS userAgent
                 FROM ${TABLE_NAME}
                 WHERE ${membership}${botFilter}${accountFilter}
                 GROUP BY candidate_uid
@@ -2908,7 +2941,7 @@ export class TrafficService {
                     utmSource: string | null; utmMedium: string | null; utmCampaign: string | null;
                     utmTerm: string | null; utmContent: string | null;
                     country: string | null; device: string; botClass: string | null;
-                    subnetHash: string | null;
+                    subnetHash: string | null; ipHash: string | null; userAgent: string | null;
                 }>(rowsSql, { ...params, limit, skip }),
                 this.clickhouse.query<{ total: string | number }>(countSql, params)
             ]);
@@ -2957,7 +2990,11 @@ export class TrafficService {
                         country: r.country ?? null,
                         device: r.device,
                         botClass: r.botClass ?? null,
-                        subnetHash: r.subnetHash ?? null
+                        subnetHash: r.subnetHash ?? null,
+                        ipHash: r.ipHash ?? null,
+                        // Empty string and NULL both mean "no UA recorded"; the
+                        // panel renders one placeholder for either.
+                        userAgent: r.userAgent || null
                     };
                 }),
                 total: Number(countRows[0]?.total ?? 0)

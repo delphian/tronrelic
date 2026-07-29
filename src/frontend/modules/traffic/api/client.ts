@@ -192,6 +192,14 @@ export interface IVisitorRow {
     botClass: string | null;
     /** First-touch subnet hash — matches {@link IFlaggedSubnet.subnetHash}. */
     subnetHash: string | null;
+    /**
+     * First-touch salted per-client IP hash, read from the same earliest row as
+     * `subnetHash`. Narrower than the subnet: it separates two clients that
+     * share one office, VPN, or carrier network. Raw IPs are never stored.
+     */
+    ipHash: string | null;
+    /** Latest in-window User-Agent — same row `device` and `botClass` derive from. */
+    userAgent: string | null;
 }
 
 /** One page hit in a subject's clickstream drill-down. */
