@@ -56,6 +56,15 @@ export interface IPluginPageMetadata {
     /** Open Graph image URL (relative to siteUrl or absolute). */
     ogImage?: string;
 
+    /**
+     * True pixel dimensions of {@link ogImage}, supplied together or not at all.
+     * Core emits `og:image:width`/`og:image:height` only when both are present —
+     * see the same pair on {@link IPageConfig} for why a guessed value is worse
+     * than none.
+     */
+    ogImageWidth?: number;
+    ogImageHeight?: number;
+
     /** Open Graph type; use 'article' for time-stamped content. */
     ogType?: 'website' | 'article';
 
@@ -214,6 +223,20 @@ export interface IPageConfig {
      * Recommended dimensions: 1200x630.
      */
     ogImage?: string;
+
+    /**
+     * True pixel dimensions of {@link ogImage}, supplied together or not at all.
+     *
+     * Core emits `og:image:width`/`og:image:height` only when a page declares
+     * both, because a crawler lays the card out from those numbers before the
+     * bytes arrive: values that disagree with the file mis-render the preview
+     * or get it dropped, which is strictly worse than making the crawler
+     * measure the image itself. Declare them only for an asset whose size is
+     * genuinely known — a fixed file, or a resized derivative whose output
+     * dimensions the resizer reported back.
+     */
+    ogImageWidth?: number;
+    ogImageHeight?: number;
 
     /**
      * Open Graph type. Defaults to 'website'.

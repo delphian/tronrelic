@@ -258,6 +258,12 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
             description: dynamic.description ?? pluginPage.description,
             keywords: dynamic.keywords ?? pluginPage.keywords,
             ogImage: dynamic.ogImage ?? pluginPage.ogImage,
+            // Dimensions travel with the image they describe: taking width from
+            // the dynamic fetcher while the URL fell back to the static config
+            // would advertise one image's size for another's bytes.
+            ...(dynamic.ogImage
+                ? { ogImageWidth: dynamic.ogImageWidth, ogImageHeight: dynamic.ogImageHeight }
+                : { ogImageWidth: pluginPage.ogImageWidth, ogImageHeight: pluginPage.ogImageHeight }),
             ogType: dynamic.ogType ?? pluginPage.ogType,
             canonical: dynamic.canonical ?? pluginPage.canonical,
             publishedTime: dynamic.publishedTime ?? pluginPage.publishedTime,
@@ -278,6 +284,8 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
                 description: seo.description,
                 path: slug,
                 image: seo.ogImage,
+                imageWidth: seo.ogImageWidth,
+                imageHeight: seo.ogImageHeight,
                 type: seo.ogType,
                 publishedTime: seo.publishedTime,
                 modifiedTime: seo.modifiedTime,
@@ -312,12 +320,17 @@ export async function generateMetadata({ params }: { params: Promise<IPageParams
                     ...(seo.title ? { title: seo.title } : {}),
                     ...(seo.description ? { description: seo.description } : {}),
                     ...(canonicalUrl ? { url: canonicalUrl } : {}),
+                    // Dimensions only when the page declared both. Stating a size
+                    // the file does not have breaks card layout on crawlers that
+                    // trust the tags over the bytes, so an undeclared image ships
+                    // its URL alone and the crawler measures it. Mirrors buildMetadata.
                     ...(seo.ogImage
                         ? {
                             images: [{
                                 url: seo.ogImage,
-                                width: 1200,
-                                height: 630,
+                                ...(seo.ogImageWidth && seo.ogImageHeight
+                                    ? { width: seo.ogImageWidth, height: seo.ogImageHeight }
+                                    : {}),
                                 alt: seo.title ?? 'TronRelic'
                             }]
                         }

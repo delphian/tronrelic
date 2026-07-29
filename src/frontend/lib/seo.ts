@@ -2,6 +2,21 @@ import type { Metadata } from 'next';
 
 export const SITE_NAME = 'TronRelic';
 
+/** Path of the platform-default social image, served from `public/images/`. */
+export const DEFAULT_OG_IMAGE_PATH = '/images/og-image.jpg';
+
+/**
+ * True pixel dimensions of {@link DEFAULT_OG_IMAGE_PATH}.
+ *
+ * Declared as constants rather than inlined so the numbers stay pinned to the
+ * asset they describe: crawlers lay a card out from `og:image:width`/`height`
+ * before the bytes arrive, so a value that disagrees with the file is worse
+ * than no value at all. If the asset is ever re-exported, update these in the
+ * same commit.
+ */
+export const DEFAULT_OG_IMAGE_WIDTH = 1200;
+export const DEFAULT_OG_IMAGE_HEIGHT = 630;
+
 /**
  * Constructs an absolute URL from a path using the provided site URL.
  *
@@ -30,6 +45,18 @@ interface BuildMetadataOptions {
   description: string;
   path?: string;
   image?: string;
+  /**
+   * True pixel dimensions of {@link image}, when the caller knows them.
+   *
+   * Supplied together or not at all. Omitting them makes the card carry a bare
+   * `og:image` URL, which crawlers resolve by measuring the file — slower to
+   * lay out, but always correct. Declaring dimensions the file does not have
+   * is the failure this pair exists to prevent, so pass them only for an asset
+   * whose size is actually known (a fixed asset, or a resized derivative whose
+   * output dimensions were returned by the resizer).
+   */
+  imageWidth?: number;
+  imageHeight?: number;
   type?: 'website' | 'article';
   publishedTime?: string;
   modifiedTime?: string;
@@ -50,6 +77,8 @@ export function buildMetadata(options: BuildMetadataOptions): Metadata {
     description,
     path = '/',
     image,
+    imageWidth,
+    imageHeight,
     type = 'website',
     publishedTime,
     modifiedTime,
@@ -61,7 +90,17 @@ export function buildMetadata(options: BuildMetadataOptions): Metadata {
   // siteUrl so the rendered <link rel="canonical"> is always absolute.
   // absoluteUrl() passes through values that are already absolute.
   const url = absoluteUrl(siteUrl, canonical ?? path);
-  const ogImage = image ?? `${siteUrl}/images/og-image.jpg`;
+  const ogImage = image ?? `${siteUrl}${DEFAULT_OG_IMAGE_PATH}`;
+
+  // Dimensions are emitted only when they are known to match the bytes: the
+  // platform default is a fixed asset we measure at build time, and a caller
+  // supplying a custom image must supply its size too. Anything else ships the
+  // URL alone rather than guessing — a card laid out to advertised dimensions
+  // that the image does not have renders wrong or is dropped outright, which
+  // is exactly how portrait blog art ended up claiming to be 1200x630.
+  const dimensions = image
+    ? (imageWidth && imageHeight ? { width: imageWidth, height: imageHeight } : {})
+    : { width: DEFAULT_OG_IMAGE_WIDTH, height: DEFAULT_OG_IMAGE_HEIGHT };
 
   return {
     title,
@@ -78,8 +117,7 @@ export function buildMetadata(options: BuildMetadataOptions): Metadata {
       images: [
         {
           url: ogImage,
-          width: 1200,
-          height: 630,
+          ...dimensions,
           alt: title
         }
       ],

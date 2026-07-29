@@ -12,6 +12,7 @@ export type {
     IFileUploadOptions,
     IFileListFilter,
     IVariantOptions,
+    IVariantFit,
     IFileVariant
 } from './IFileService.js';
 export { FILE_SOURCE_KINDS, FileValidationError, FileSizeExceededError } from './IFileService.js';
