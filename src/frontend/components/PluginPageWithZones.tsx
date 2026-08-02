@@ -41,7 +41,124 @@
 
 import { WidgetZone, fetchWidgetsForRoute } from './widgets';
 import { PluginPageHandler } from './PluginPageHandler';
+import { getServerConfig } from '../lib/serverConfig';
 import styles from './PluginPageWithZones.module.css';
+
+/**
+ * Tracked-market catalog facts consumed by the /resource-markets SEO prose.
+ *
+ * Only the two fields the copy actually renders are modelled. The catalog
+ * carries far more per market, and narrowing here stops the prose from
+ * silently coupling to data it never displays.
+ */
+interface IResourceMarketFacts {
+    /** How many markets the capture pipeline currently tracks. */
+    count: number;
+    /** Display names of those markets, in catalog priority order. */
+    names: string[];
+}
+
+/**
+ * Value used when the catalog cannot be reached during SSR.
+ *
+ * A stale hardcoded number is the exact failure this helper exists to prevent,
+ * so the degraded path reports zero and lets the callers below fall back to
+ * count-free phrasing rather than guessing at coverage.
+ */
+const RESOURCE_MARKET_FACTS_FALLBACK: IResourceMarketFacts = { count: 0, names: [] };
+
+/**
+ * How long a resolved catalog may be reused across requests.
+ *
+ * Markets are added by an operator through /system, not by the capture cycle,
+ * so this list changes on a scale of weeks. Caching for an hour keeps the
+ * lookup from adding an origin round-trip to every /resource-markets render —
+ * the slowest route on the site, and one Cloudflare does not currently cache.
+ */
+const RESOURCE_MARKET_FACTS_TTL_SECONDS = 3600;
+
+/**
+ * How many providers the prose spells out before eliding the remainder. Enough
+ * to make the claim concrete without turning a paragraph into a list.
+ */
+const RESOURCE_MARKET_NAME_LIMIT = 4;
+
+/**
+ * Resolve how many energy markets TronRelic actually tracks, and what they are
+ * called, so the page's SEO prose cannot overstate its own coverage.
+ *
+ * This exists because the copy previously asserted "over 20 energy rental
+ * platforms including TronSave, JustLend, Brutus Finance, and CatFee" while the
+ * pipeline tracked nine — and named four providers that appear nowhere on the
+ * page. On a page whose entire commercial claim is price accuracy, a coverage
+ * claim the page itself disproves costs credibility with readers and crawlers
+ * alike. Deriving the sentence from the same catalog the cards render means the
+ * two can never drift apart again.
+ *
+ * Failure is deliberately non-fatal: a missing adjective is a far smaller
+ * problem than a 500 on the site's primary money page.
+ *
+ * @returns Tracked-market count and display names, or a zero-count fallback
+ *   when the catalog is unreachable so callers can choose neutral phrasing.
+ */
+async function fetchResourceMarketFacts(): Promise<IResourceMarketFacts> {
+    let facts = RESOURCE_MARKET_FACTS_FALLBACK;
+    try {
+        const { apiUrl } = await getServerConfig();
+        const response = await fetch(`${apiUrl}/plugins/resource-markets/db-markets`, {
+            next: { revalidate: RESOURCE_MARKET_FACTS_TTL_SECONDS },
+            signal: AbortSignal.timeout(6000)
+        });
+        if (response.ok) {
+            const body = await response.json();
+            const markets: Array<{ displayName?: string }> = Array.isArray(body?.markets)
+                ? body.markets
+                : [];
+            const names = markets
+                .map((market) => market.displayName)
+                .filter((name): name is string => typeof name === 'string' && name.length > 0);
+            facts = { count: markets.length, names };
+        } else {
+            console.error('Failed to fetch resource market catalog:', response.status);
+        }
+    } catch (error) {
+        console.error('Error fetching resource market catalog:', error);
+    }
+    return facts;
+}
+
+/**
+ * Render the tracked-market count as a noun phrase the surrounding sentence can
+ * absorb in every case, including when the catalog lookup failed.
+ *
+ * @param facts - Catalog resolved by `fetchResourceMarketFacts`.
+ * @returns A phrase such as `9 TRON energy rental platforms`, or a count-free
+ *   equivalent that stays true when coverage could not be determined.
+ */
+function describeMarketCount(facts: IResourceMarketFacts): string {
+    return facts.count > 0
+        ? `${facts.count} TRON energy rental platforms`
+        : 'multiple TRON energy rental platforms';
+}
+
+/**
+ * Render the tracked providers as an inline list, naming only markets that are
+ * genuinely in the catalog and on the page below.
+ *
+ * @param facts - Catalog resolved by `fetchResourceMarketFacts`.
+ * @returns A clause such as ` including Feee.io, TRONSAVE, and 7 more`, or an
+ *   empty string when no names resolved so the sentence stays grammatical.
+ */
+function describeMarketNames(facts: IResourceMarketFacts): string {
+    let clause = '';
+    if (facts.names.length > 0) {
+        const shown = facts.names.slice(0, RESOURCE_MARKET_NAME_LIMIT);
+        const remaining = facts.names.length - shown.length;
+        const tail = remaining > 0 ? `, and ${remaining} more` : '';
+        clause = ` including ${shown.join(', ')}${tail}`;
+    }
+    return clause;
+}
 
 interface PluginPageWithZonesProps {
     slug: string;
@@ -79,15 +196,20 @@ export async function PluginPageWithZones({ slug, initialData }: PluginPageWithZ
     let seoContent: JSX.Element | null = null;
 
     if (isResourceMarkets) {
+        // Resolved per render (hourly-cached) so the coverage claims below are
+        // always derived from the live catalog rather than restated by hand.
+        const marketFacts = await fetchResourceMarketFacts();
+        const marketCount = describeMarketCount(marketFacts);
+        const marketNames = describeMarketNames(marketFacts);
         seoContent = (
             <section className={styles.seo_section}>
                 <h2 className={styles.seo_heading}>How TRON Energy Rental Works</h2>
                 <p className={styles.seo_text}>
                     Every TRC-20 token transfer on the TRON network, including USDT, requires energy to execute.
                     Wallets without enough energy pay transaction fees by burning TRX, which can cost 10-50x more
-                    than renting energy from a delegation provider. TronRelic monitors over 20 energy rental platforms
-                    including TronSave, JustLend, Brutus Finance, and CatFee, comparing their prices every 10 minutes
-                    so you can find the cheapest rate and save up to 90% on every transaction.
+                    than renting energy from a delegation provider. TronRelic tracks {marketCount}
+                    {marketNames}, refreshing their prices every capture cycle so you can find the cheapest rate
+                    before you send.
                 </p>
 
                 <h3 className={styles.faq_heading}>Frequently Asked Questions</h3>
@@ -129,21 +251,22 @@ export async function PluginPageWithZones({ slug, initialData }: PluginPageWithZ
                     <details className={styles.faq_item}>
                         <summary className={styles.faq_summary}>Which energy rental platforms does TronRelic compare?</summary>
                         <p className={styles.faq_answer}>
-                            TronRelic monitors over 20 TRON energy rental platforms including TronSave, JustLend,
-                            Brutus Finance, CatFee, TronZap, Feee.io, Tronspark, NRG, and many more. Each platform
-                            is queried for current pricing, minimum order sizes, and availability. The comparison table
-                            normalizes all prices to a per-energy-unit cost so you can instantly identify the cheapest
-                            provider for your transaction size.
+                            TronRelic tracks {marketCount}{marketNames}. Each platform is queried for current
+                            pricing, minimum order sizes, and availability. The comparison table normalizes every
+                            price to the cost of a single USDT TRC-20 transfer so you can identify the cheapest
+                            provider for your transaction size without converting rate cards by hand.
                         </p>
                     </details>
 
                     <details className={styles.faq_item}>
                         <summary className={styles.faq_summary}>How often are market prices updated?</summary>
                         <p className={styles.faq_answer}>
-                            TronRelic refreshes energy market prices every 10 minutes through automated API queries
-                            to each platform. The last-updated timestamp is displayed on the market comparison page
-                            so you always know how fresh the data is. If a platform is temporarily unreachable, the
-                            most recent successful price is shown with a stale indicator until the next successful refresh.
+                            TronRelic captures every tracked platform's rate card on a four-hour cycle, at 00:00,
+                            04:00, 08:00, 12:00, 16:00 and 20:00 UTC. The capture timestamp is displayed on the
+                            market comparison page so you always know how fresh the data is. If a platform is
+                            temporarily unreachable, its most recent successful capture is shown until the next
+                            cycle succeeds. Rates can move between captures, so confirm on the provider's own site
+                            before sending a large order.
                         </p>
                     </details>
                 </div>

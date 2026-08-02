@@ -10,6 +10,8 @@ Plugins fail in isolation, depend on interfaces, and register their own surfaces
 
 A plugin may depend on core or on another plugin **only** through that component's published, versioned types package (`@delphian/tronrelic-types`, `@delphian/trp-<name>-types`) — declared in its own `package.json` and consumed `import type`-only, so the coupling is a compile-time contract with no runtime dependency. The monorepo is a development convenience, never a dependency channel: resolving another plugin's source or types by workspace co-location is a defect even when it compiles here, because it breaks on a standalone install. The test is blunt — a plugin that wouldn't build against only its own declared dependencies is wrong.
 
+**Never hand-edit a types package's `version`.** CI owns that field: each plugin's `publish-types.yml` runs `npm version patch` on every push to `main` touching `packages/types/**` or `src/shared/types/**`, commits the bump, and publishes to GitHub Packages. Bumping it in a feature branch creates two writers for one line — any other types-touching PR that merges while yours is open moves it too, and the resulting conflict blocks a rebase merge outright (`This branch can't be rebased`), forcing a squash that departs from the default strategy. The job only ever bumps patch, so a hand-set minor signals nothing anyway. Leave the field alone; if a working tree already carries a bump, restore both `package.json` and its lockfile from `main` before committing rather than sweeping them in with `git add -A`.
+
 ## Plugin Lifecycle
 
 Five states, controlled from `/system/plugins` without restarts:
