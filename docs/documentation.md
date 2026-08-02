@@ -8,7 +8,7 @@ Load the project rules first. Read `README.md`, project instruction files (e.g.,
 
 Never include sensitive data in documentation: API keys, credentials, database connection strings, or security vulnerability details. Documentation becomes part of AI context and version control history—treat it as publicly visible.
 
-When starting a new document, model it on the closest existing one rather than on this guide alone: [system.md](./system/system.md) and [frontend.md](./frontend/frontend.md) for a directory summary that gateways to details, and [trp-ai-assistant/README.md](../src/plugins/trp-ai-assistant/README.md) for a contract-first plugin or module README.
+When starting a new document, model it on the closest existing one rather than on this guide alone: [system.md](./system/system.md) and [frontend.md](./frontend/frontend.md) for a directory summary that serves as a gateway to details, and [trp-ai-assistant/README.md](../src/plugins/trp-ai-assistant/README.md) for a contract-first plugin or module README.
 
 ## Style Priorities
 

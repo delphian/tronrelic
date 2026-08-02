@@ -41,7 +41,7 @@
 
 import { WidgetZone, fetchWidgetsForRoute } from './widgets';
 import { PluginPageHandler } from './PluginPageHandler';
-import { getServerConfig } from '../lib/serverConfig';
+import { getServerSideApiUrlWithPath } from '../lib/api-url';
 import styles from './PluginPageWithZones.module.css';
 
 /**
@@ -104,7 +104,11 @@ const RESOURCE_MARKET_NAME_LIMIT = 4;
 async function fetchResourceMarketFacts(): Promise<IResourceMarketFacts> {
     let facts = RESOURCE_MARKET_FACTS_FALLBACK;
     try {
-        const { apiUrl } = await getServerConfig();
+        // SSR must reach the backend over the internal SITE_BACKEND origin.
+        // getServerConfig().apiUrl is the public SITE_URL-derived origin, which
+        // a frontend container cannot reliably resolve (TLS failures / 502) —
+        // see docs/frontend/frontend-architecture-runtime-config.md.
+        const apiUrl = getServerSideApiUrlWithPath();
         const response = await fetch(`${apiUrl}/plugins/resource-markets/db-markets`, {
             next: { revalidate: RESOURCE_MARKET_FACTS_TTL_SECONDS },
             signal: AbortSignal.timeout(6000)
