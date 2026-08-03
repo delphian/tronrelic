@@ -136,3 +136,143 @@ describe('DatabaseBrowserRepository.deleteDocument', () => {
         );
     });
 });
+
+/**
+ * Build a fake connection for replaceDocument: findOne returns the stored
+ * document (the type authority), replaceOne captures what would be written.
+ *
+ * @param stored - Document the collection currently holds, or null for a miss.
+ * @returns The fake connection plus the findOne/replaceOne spies.
+ */
+function createReplaceConnection(stored: Record<string, unknown> | null): {
+    connection: Connection;
+    collection: {
+        findOne: ReturnType<typeof vi.fn>;
+        replaceOne: ReturnType<typeof vi.fn>;
+    };
+} {
+    const collection = {
+        findOne: vi.fn().mockResolvedValue(stored),
+        replaceOne: vi.fn().mockResolvedValue({ matchedCount: stored ? 1 : 0 })
+    };
+    const connection = {
+        db: {
+            collection: vi.fn().mockReturnValue(collection)
+        }
+    } as unknown as Connection;
+    return { connection, collection };
+}
+
+describe('DatabaseBrowserRepository.replaceDocument', () => {
+    const HEX_ID = '507f1f77bcf86cd799439011';
+    let logger: MockLogger;
+
+    beforeEach(() => {
+        logger = new MockLogger();
+    });
+
+    /**
+     * The regression this method exists to prevent: the admin editor serializes
+     * a document through JSON, which turns a stored `Date` into an ISO string.
+     * Writing that back verbatim would retype the field and silently break
+     * date-range queries and index use, so an untouched timestamp must reach
+     * the driver as a Date even when the operator edited an unrelated field.
+     */
+    it('preserves a stored Date when an unrelated field is edited', async () => {
+        const storedDate = new Date('2026-01-15T10:30:00.000Z');
+        const { connection, collection } = createReplaceConnection({
+            _id: new ObjectId(HEX_ID),
+            label: 'before',
+            createdAt: storedDate
+        });
+
+        const repo = new DatabaseBrowserRepository(connection, logger as unknown as ISystemLogService);
+        // Exactly what the browser round trip produces: the date as an ISO string.
+        const matched = await repo.replaceDocument('items', HEX_ID, {
+            _id: HEX_ID,
+            label: 'after',
+            createdAt: storedDate.toISOString()
+        });
+
+        expect(matched).toBe(1);
+        const written = collection.replaceOne.mock.calls[0][1];
+        expect(written.createdAt).toBeInstanceOf(Date);
+        expect((written.createdAt as Date).toISOString()).toBe(storedDate.toISOString());
+        expect(written.label).toBe('after');
+    });
+
+    /**
+     * ObjectId references suffer the same flattening as dates — hex on the way
+     * out, hex on the way back — so an untouched reference must not degrade
+     * into a plain string that no lookup will match.
+     */
+    it('preserves a stored ObjectId reference through an edit', async () => {
+        const ref = new ObjectId('507f191e810c19729de860ea');
+        const { connection, collection } = createReplaceConnection({
+            _id: new ObjectId(HEX_ID),
+            ownerId: ref,
+            note: 'before'
+        });
+
+        const repo = new DatabaseBrowserRepository(connection, logger as unknown as ISystemLogService);
+        await repo.replaceDocument('items', HEX_ID, {
+            ownerId: ref.toHexString(),
+            note: 'after'
+        });
+
+        const written = collection.replaceOne.mock.calls[0][1];
+        expect(written.ownerId).toBeInstanceOf(ObjectId);
+        expect((written.ownerId as ObjectId).toHexString()).toBe(ref.toHexString());
+    });
+
+    /**
+     * Preservation must not make timestamps read-only: an operator who
+     * deliberately changes a date should get the new value, still as a Date.
+     */
+    it('casts a deliberately changed date string back to a Date', async () => {
+        const { connection, collection } = createReplaceConnection({
+            _id: new ObjectId(HEX_ID),
+            createdAt: new Date('2026-01-15T10:30:00.000Z')
+        });
+
+        const repo = new DatabaseBrowserRepository(connection, logger as unknown as ISystemLogService);
+        await repo.replaceDocument('items', HEX_ID, {
+            createdAt: '2026-02-20T08:00:00.000Z'
+        });
+
+        const written = collection.replaceOne.mock.calls[0][1];
+        expect(written.createdAt).toBeInstanceOf(Date);
+        expect((written.createdAt as Date).toISOString()).toBe('2026-02-20T08:00:00.000Z');
+    });
+
+    /**
+     * `_id` is not editable — it is dropped rather than rejected so the obvious
+     * load-tweak-save round trip works, and a document can never be re-keyed.
+     */
+    it('never writes _id back into the document', async () => {
+        const { connection, collection } = createReplaceConnection({
+            _id: new ObjectId(HEX_ID),
+            label: 'before'
+        });
+
+        const repo = new DatabaseBrowserRepository(connection, logger as unknown as ISystemLogService);
+        await repo.replaceDocument('items', HEX_ID, { _id: 'attacker-supplied', label: 'after' });
+
+        const written = collection.replaceOne.mock.calls[0][1];
+        expect(written).not.toHaveProperty('_id');
+    });
+
+    /**
+     * A missing document reports 0 so the controller can answer 404 rather than
+     * telling the operator an edit landed when nothing changed.
+     */
+    it('returns 0 and writes nothing when no document matches', async () => {
+        const { connection, collection } = createReplaceConnection(null);
+
+        const repo = new DatabaseBrowserRepository(connection, logger as unknown as ISystemLogService);
+        const matched = await repo.replaceDocument('items', HEX_ID, { label: 'after' });
+
+        expect(matched).toBe(0);
+        expect(collection.replaceOne).not.toHaveBeenCalled();
+    });
+});

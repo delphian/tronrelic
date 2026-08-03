@@ -44,6 +44,16 @@ interface IPaginatedRows {
     hasPrevPage: boolean;
 }
 
+/**
+ * Render the ClickHouse table browser.
+ *
+ * @param prefix - Namespace to scope to; omit for every table in the database.
+ * @param title - Heading above the list. Omitted by default because the
+ * embedding page — the system console included — usually supplies its own, and
+ * a built-in heading would read as a duplicate.
+ * @param hideWhenEmpty - Render nothing when no table matches, rather than an
+ * empty panel that reads as missing data.
+ */
 export function ClickHouseTableBrowser({
     prefix,
     title,

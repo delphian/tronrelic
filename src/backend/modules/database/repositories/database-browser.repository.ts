@@ -334,6 +334,16 @@ export class DatabaseBrowserRepository {
      * mirrors `deleteDocument`: try ObjectId when the shape matches, fall back
      * to a literal string `_id`.
      *
+     * Why the stored document is read before the write: the editor hands the
+     * operator `JSON.stringify(doc)`, and JSON cannot express BSON. A `Date`
+     * reaches the textarea as an ISO string and an `ObjectId` as bare hex, so
+     * writing the submitted body back verbatim would retype `createdAt`,
+     * `updatedAt`, and every stored reference to a plain string — silently
+     * breaking date-range queries, index use, and reference lookups even when
+     * the operator only touched an unrelated field. The stored document is the
+     * type authority the submitted JSON lacks, so values are restored or cast
+     * against it first.
+     *
      * Security posture matches the rest of this router — admin-gated, and
      * `express-mongo-sanitize` has already neutralised `$`-prefixed keys in the
      * body, so an operator cannot smuggle update operators through a field name.
@@ -359,21 +369,104 @@ export class DatabaseBrowserRepository {
         const { _id: _discardedId, ...replacement } = document;
         const looksLikeObjectId = ObjectId.isValid(id) && /^[a-f0-9]{24}$/i.test(id);
 
-        if (looksLikeObjectId) {
-            const objectIdResult = await collection.replaceOne(
-                { _id: new ObjectId(id) } as Record<string, unknown>,
-                replacement
-            );
-            if ((objectIdResult.matchedCount ?? 0) > 0) {
-                return objectIdResult.matchedCount ?? 0;
+        // Candidate lookups mirror deleteDocument: try ObjectId when the shape
+        // matches, fall back to a literal string `_id`. Resolving the document
+        // up front instead of firing replaceOne blind is what makes the
+        // type-restoring merge below possible.
+        const candidateFilters: Record<string, unknown>[] = looksLikeObjectId
+            ? [{ _id: new ObjectId(id) }, { _id: id }]
+            : [{ _id: id }];
+
+        let matchedCount = 0;
+
+        for (const filter of candidateFilters) {
+            const existing = await collection.findOne(filter);
+            if (!existing) {
+                continue;
             }
+
+            const result = await collection.replaceOne(
+                filter,
+                this.restoreBsonTypes(existing, replacement) as Record<string, unknown>
+            );
+            matchedCount = result.matchedCount ?? 0;
+            break;
         }
 
-        const stringResult = await collection.replaceOne(
-            { _id: id } as Record<string, unknown>,
-            replacement
-        );
-        return stringResult.matchedCount ?? 0;
+        return matchedCount;
+    }
+
+    /**
+     * Retypes an edited value against the version already stored.
+     *
+     * Why this is needed: the browser round-trips a document through
+     * `JSON.stringify` on the way out and `JSON.parse` on the way back, which
+     * has no representation for BSON. Every `Date` returns as an ISO string,
+     * every `ObjectId` as hex, a `Binary` as base64. Persisting those stand-ins
+     * would quietly change the document's schema, so each submitted value is
+     * reconciled against the stored one before it is written.
+     *
+     * How it decides: the stored value at the same path is the type authority.
+     * A value the operator left alone still serialises identically to what is
+     * on disk, so the original BSON instance is put back untouched. An ISO
+     * string under a stored `Date` and a 24-hex string under a stored
+     * `ObjectId` are cast, which keeps those two fields genuinely editable;
+     * anything unparseable is left as typed so the operator sees their own
+     * input rather than a silent correction. Keys with no stored counterpart —
+     * fields the operator added — pass through as plain JSON, the only type
+     * information available for them.
+     *
+     * @param existing - Value currently stored at this path, used as the type authority.
+     * @param incoming - Value the operator submitted for the same path.
+     * @returns The value to persist, retyped to match storage wherever possible.
+     */
+    private restoreBsonTypes(existing: unknown, incoming: unknown): unknown {
+        let result: unknown = incoming;
+
+        if (existing instanceof Date && typeof incoming === 'string') {
+            const parsed = new Date(incoming);
+            result = Number.isNaN(parsed.getTime()) ? incoming : parsed;
+        } else if (existing instanceof ObjectId && typeof incoming === 'string') {
+            result = /^[a-f0-9]{24}$/i.test(incoming) ? new ObjectId(incoming) : incoming;
+        } else if (Array.isArray(existing) && Array.isArray(incoming)) {
+            result = incoming.map((item, index) => this.restoreBsonTypes(existing[index], item));
+        } else if (this.isPlainObject(existing) && this.isPlainObject(incoming)) {
+            const merged: Record<string, unknown> = {};
+            for (const [key, value] of Object.entries(incoming)) {
+                merged[key] = this.restoreBsonTypes(existing[key], value);
+            }
+            result = merged;
+        } else if (
+            existing !== null
+            && typeof existing === 'object'
+            && JSON.stringify(existing) === JSON.stringify(incoming)
+        ) {
+            // Any other BSON class (Binary, Long, Decimal128, ...) the operator
+            // left untouched: its JSON projection still matches, so restore the
+            // original instance rather than the flattened stand-in.
+            result = existing;
+        }
+
+        return result;
+    }
+
+    /**
+     * Reports whether a value is an ordinary JSON object rather than a BSON class.
+     *
+     * The merge in `restoreBsonTypes` must recurse into nested plain objects but
+     * treat a BSON instance as one opaque value — walking its internals would
+     * rebuild it as a plain object and destroy the very type the merge exists to
+     * protect.
+     *
+     * @param value - Candidate from either the stored or the submitted document.
+     * @returns True when the value is a plain object that is safe to recurse into.
+     */
+    private isPlainObject(value: unknown): value is Record<string, unknown> {
+        const prototype = typeof value === 'object' && value !== null && !Array.isArray(value)
+            ? Object.getPrototypeOf(value)
+            : undefined;
+
+        return prototype === Object.prototype || prototype === null;
     }
 
     /**
