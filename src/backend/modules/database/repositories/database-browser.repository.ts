@@ -46,10 +46,19 @@ export class DatabaseBrowserRepository {
      * - Collection.stats() provides detailed metrics including size and index info
      * - Querying in series prevents overwhelming the database with concurrent stats requests
      *
+     * Why the optional prefix filter: the browser is no longer exclusive to the
+     * whole-database system console. A plugin admin page embeds it scoped to its
+     * own `plugin_<id>_` namespace, and that caller has no business receiving —
+     * or paying the `collStats` round-trip for — every other collection in the
+     * deployment. Filtering here rather than in the client keeps the untargeted
+     * inventory off the wire entirely.
+     *
+     * @param prefix - When supplied, only collections whose name starts with it
+     * are inspected and returned. Omit for the whole-database view.
      * @returns Database statistics including per-collection metrics
      * @throws {Error} If database connection is not established
      */
-    async getDatabaseStats(): Promise<IDatabaseStats> {
+    async getDatabaseStats(prefix?: string): Promise<IDatabaseStats> {
         if (!this.connection || this.connection.readyState !== 1) {
             throw new Error('Database connection not established');
         }
@@ -63,10 +72,16 @@ export class DatabaseBrowserRepository {
 
         this.logger.debug({ dbName }, 'Fetching database statistics');
 
-        // List all collections
-        const collections = await db.listCollections().toArray();
+        // List all collections, then narrow to the caller's namespace when one
+        // was given. The filter runs before the per-collection stats loop so a
+        // scoped caller never triggers a collStats command for a collection it
+        // will not be shown.
+        const allCollections = await db.listCollections().toArray();
+        const collections = typeof prefix === 'string' && prefix.length > 0
+            ? allCollections.filter(collectionInfo => collectionInfo.name.startsWith(prefix))
+            : allCollections;
 
-        this.logger.debug({ count: collections.length }, 'Collections found');
+        this.logger.debug({ count: collections.length, prefix }, 'Collections found');
 
         // Fetch stats for each collection
         const collectionStats: ICollectionStat[] = [];
@@ -301,6 +316,64 @@ export class DatabaseBrowserRepository {
             { _id: id } as Record<string, unknown>
         );
         return stringResult.deletedCount ?? 0;
+    }
+
+    /**
+     * Replaces a single document's contents, keyed by its `_id`.
+     *
+     * Why replace rather than a `$set` patch: the admin UI edits the document as
+     * one JSON blob, so the operator's intent is "the document should now look
+     * like this" — including fields they deleted. A `$set` would silently retain
+     * removed keys and make the saved result differ from what was on screen.
+     *
+     * Why `_id` is stripped from the incoming body rather than validated: an
+     * operator editing JSON will normally leave the `_id` line in place, and
+     * rejecting that would make the obvious round-trip (load, tweak a field,
+     * save) fail. Dropping it means the key is simply not editable — a document
+     * is replaced in place or not at all, never silently re-keyed. The lookup
+     * mirrors `deleteDocument`: try ObjectId when the shape matches, fall back
+     * to a literal string `_id`.
+     *
+     * Security posture matches the rest of this router — admin-gated, and
+     * `express-mongo-sanitize` has already neutralised `$`-prefixed keys in the
+     * body, so an operator cannot smuggle update operators through a field name.
+     *
+     * @param collectionName - Name of the collection.
+     * @param id - Document `_id` as a string (ObjectId hex or plain string key).
+     * @param document - Replacement contents; any `_id` present is discarded.
+     * @returns Number of documents matched (0 when the id does not exist, else 1).
+     */
+    async replaceDocument(
+        collectionName: string,
+        id: string,
+        document: Record<string, unknown>
+    ): Promise<number> {
+        this.logger.debug({ collectionName, id }, 'Replacing document');
+
+        const db = this.connection.db;
+        if (!db) {
+            throw new Error('Database not connected');
+        }
+
+        const collection = db.collection(collectionName);
+        const { _id: _discardedId, ...replacement } = document;
+        const looksLikeObjectId = ObjectId.isValid(id) && /^[a-f0-9]{24}$/i.test(id);
+
+        if (looksLikeObjectId) {
+            const objectIdResult = await collection.replaceOne(
+                { _id: new ObjectId(id) } as Record<string, unknown>,
+                replacement
+            );
+            if ((objectIdResult.matchedCount ?? 0) > 0) {
+                return objectIdResult.matchedCount ?? 0;
+            }
+        }
+
+        const stringResult = await collection.replaceOne(
+            { _id: id } as Record<string, unknown>,
+            replacement
+        );
+        return stringResult.matchedCount ?? 0;
     }
 
     /**

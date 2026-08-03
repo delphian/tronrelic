@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { formatBytes } from '../../../../../lib/format';
 import { StatStrip } from './StatStrip';
-import { ClickHouseTableBrowser } from './ClickHouseTableBrowser';
+import { ClickHouseTableBrowser } from '../../../../../modules/database';
 import styles from './ClickHouseSection.module.scss';
 
 interface ClickHouseStatus {

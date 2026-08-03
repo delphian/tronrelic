@@ -1,6 +1,19 @@
 import type { HTMLAttributes } from 'react';
+import type { ISkeletonProps } from '@/types';
 import { cn } from '../../../lib/cn';
 import styles from './Skeleton.module.css';
+
+/**
+ * Everything the component accepts: the four props published to plugins, plus
+ * the full set of div attributes that core call sites rely on.
+ *
+ * Splitting it this way keeps the published contract narrow — plugins get the
+ * curated surface, not core's whole internal API — while guaranteeing that the
+ * published subset really is a subset. Restating the shared props here instead
+ * of extending {@link ISkeletonProps} is what let `width` and `height` be
+ * advertised to plugins and silently ignored at runtime.
+ */
+interface SkeletonProps extends HTMLAttributes<HTMLDivElement>, ISkeletonProps {}
 
 /**
  * Skeleton Component
@@ -13,23 +26,33 @@ import styles from './Skeleton.module.css';
  * with standard HTML div attributes including custom classNames for height, width,
  * and border-radius overrides.
  *
- * @example
- * ```tsx
- * <Skeleton style={{ width: '200px', height: '24px' }} />
- * ```
+ * Dimensions can be given either as the `width`/`height` shortcuts or through
+ * `style`. Both exist because the shortcuts read better for the common
+ * single-bar case, while `style` remains available for callers setting several
+ * properties at once. An explicit `style` entry wins over the matching
+ * shortcut, so a caller passing both gets the more specific one.
+ *
+ * The props plugins may use come from the published {@link ISkeletonProps},
+ * which this component's own props extend. The `width`/`height` shortcuts were
+ * previously advertised to plugins while the component accepted only raw
+ * `HTMLAttributes`, so plugin callers typechecked green and had both props
+ * silently dropped — their skeletons collapsed to the stylesheet default.
  *
  * @example
  * ```tsx
- * <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
- *   <Skeleton style={{ width: '60%' }} />
- *   <Skeleton style={{ width: '80%' }} />
- *   <Skeleton style={{ width: '40%' }} />
- * </div>
+ * <Skeleton height="1.6em" />
+ * <Skeleton style={{ width: '60%', height: '24px' }} />
  * ```
  *
- * @param props - Standard HTML div attributes including className and style
+ * @param props - Standard HTML div attributes plus the width/height shortcuts
  * @returns A div element with animated shimmer loading effect
  */
-export function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-    return <div className={cn(styles.skeleton, className)} {...props} />;
+export function Skeleton({ className, width, height, style, ...props }: SkeletonProps) {
+    const dimensions = {
+        ...(width !== undefined ? { width } : {}),
+        ...(height !== undefined ? { height } : {}),
+        ...style
+    };
+
+    return <div className={cn(styles.skeleton, className)} style={dimensions} {...props} />;
 }

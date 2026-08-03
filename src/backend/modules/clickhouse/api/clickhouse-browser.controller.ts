@@ -56,19 +56,34 @@ export class ClickHouseBrowserController {
      * size, engine) plus aggregate database size. Sorted by size descending
      * so the heaviest tables appear first, matching the MongoDB browser.
      */
-    getStats = async (_req: Request, res: Response): Promise<void> => {
+    getStats = async (req: Request, res: Response): Promise<void> => {
         try {
+            // Optional `?prefix=` narrows the response to one namespace so an
+            // embedded browser (a plugin admin page, say) is not handed the
+            // whole deployment's table inventory. Filtering happens in SQL
+            // rather than in the client so the untargeted list never leaves
+            // the server. The value is bound as a query parameter — never
+            // interpolated — because it arrives from the request.
+            const prefixParam = req.query.prefix;
+            const prefix = typeof prefixParam === 'string' && prefixParam.length > 0
+                ? prefixParam
+                : null;
+
             const rawTables = await this.clickhouse.query<{
                 name: string;
                 total_rows: string | null;
                 total_bytes: string | null;
                 engine: string;
-            }>(`
+            }>(
+                `
                 SELECT name, total_rows, total_bytes, engine
                 FROM system.tables
                 WHERE database = currentDatabase()
+                  AND ({prefix:String} = '' OR startsWith(name, {prefix:String}))
                 ORDER BY name
-            `);
+            `,
+                { prefix: prefix ?? '' }
+            );
 
             const dbInfo = await this.clickhouse.query<{ dbName: string }>(
                 `SELECT currentDatabase() AS dbName`

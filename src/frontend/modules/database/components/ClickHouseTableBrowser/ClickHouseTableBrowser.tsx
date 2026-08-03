@@ -12,11 +12,12 @@
  */
 
 import { useState, useEffect, useCallback, Fragment } from 'react';
-import { Button } from '../../../../../components/ui/Button';
-import { Badge } from '../../../../../components/ui/Badge';
-import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
-import { CopyButton } from '../../../../../components/ui/CopyButton';
-import { formatBytes } from '../../../../../lib/format';
+import { Button } from '../../../../components/ui/Button';
+import { Badge } from '../../../../components/ui/Badge';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
+import { CopyButton } from '../../../../components/ui/CopyButton';
+import type { IClickHouseTableBrowserProps } from '@/types';
+import { formatBytes } from '../../../../lib/format';
 import { ChevronDown, ChevronRight, FileText, AlertCircle } from 'lucide-react';
 import styles from './ClickHouseTableBrowser.module.scss';
 
@@ -43,7 +44,11 @@ interface IPaginatedRows {
     hasPrevPage: boolean;
 }
 
-export function ClickHouseTableBrowser() {
+export function ClickHouseTableBrowser({
+    prefix,
+    title,
+    hideWhenEmpty = false
+}: IClickHouseTableBrowserProps) {
     const [stats, setStats] = useState<IClickHouseStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -55,7 +60,12 @@ export function ClickHouseTableBrowser() {
     const fetchStats = useCallback(async () => {
         try {
             setLoading(true);
-            const response = await fetch(`/api/admin/clickhouse/stats`, {
+            // The prefix travels as a query parameter so the server filters in
+            // SQL — an embedded caller never receives the wider table list.
+            const query = typeof prefix === 'string' && prefix.length > 0
+                ? `?prefix=${encodeURIComponent(prefix)}`
+                : '';
+            const response = await fetch(`/api/admin/clickhouse/stats${query}`, {
                 headers: { 'Content-Type': 'application/json' }
             });
 
@@ -71,7 +81,7 @@ export function ClickHouseTableBrowser() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [prefix]);
 
     const fetchRows = useCallback(async (tableName: string, page: number = 1) => {
         try {
@@ -136,8 +146,16 @@ export function ClickHouseTableBrowser() {
         return <p className={styles.empty}>No ClickHouse statistics available.</p>;
     }
 
+    // An embedded caller that stores nothing in ClickHouse should render
+    // nothing at all — an empty ClickHouse panel reads as "data is missing"
+    // rather than "this plugin has no ClickHouse tables".
+    if (hideWhenEmpty && sortedTables.length === 0) {
+        return null;
+    }
+
     return (
         <div className={styles.browser}>
+            {title !== undefined && <h3 className={styles.section_title}>{title}</h3>}
             <p className={styles.overview}>
                 <code className={styles.db_name}>{stats.dbName}</code>
                 <span className={styles.overview_meta}>

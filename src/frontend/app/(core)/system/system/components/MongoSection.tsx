@@ -15,7 +15,7 @@ import { Select } from '../../../../../components/ui/Select';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { formatBytes } from '../../../../../lib/format';
 import { StatStrip } from './StatStrip';
-import { CollectionBrowser } from './CollectionBrowser';
+import { CollectionBrowser } from '../../../../../modules/database';
 import styles from './MongoSection.module.scss';
 
 interface DatabaseStatus {

@@ -14,7 +14,7 @@ interface IFrontendPluginContext {
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
     ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, IconPickerModal, ConfirmDialog, AccountPicker, Table family
     charts: IChartComponents;      // LineChart, BarChart
-    system: ISystemComponents;     // SchedulerMonitor (admin)
+    system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser (admin)
     api: IApiClient;               // get/post/put/patch/delete with runtime base URL
     websocket: IWebSocketClient;   // socket + auto-prefixed helpers
     useUser: () => IPluginUserState;
@@ -37,6 +37,35 @@ export function MyPluginPage({ context }: { context: IFrontendPluginContext }) {
 ```
 
 The `definePlugin({ pages: [{ path, component }] })` registration wires `context` automatically — direct exports won't receive it.
+
+## Admin Surfaces (`context.system`)
+
+Three core admin components are republished to plugins so a plugin's own admin
+page can offer Schedules and Database tabs without sending the operator back to
+`/system`. Import them from the context — never by relative path across the
+workspace.
+
+| Component | Purpose | Scoping |
+|---|---|---|
+| `SchedulerMonitor` | Job status, enable/disable, cron editing | `jobFilter` — names or a predicate |
+| `CollectionBrowser` | MongoDB collections, documents, edit, delete | `prefix`, e.g. `plugin_<id>_` |
+| `ClickHouseTableBrowser` | ClickHouse tables and rows (read-only) | `prefix` |
+
+Both browsers filter **server-side**, so a scoped page never receives the rest
+of the deployment's inventory. `CollectionBrowser` takes `allowEdit` and
+`allowDelete` (default true) — turn them off where your plugin maintains
+invariants across collections that a raw write would break, and point operators
+at your own admin actions instead. `ClickHouseTableBrowser` has no write
+counterpart by design, and accepts `hideWhenEmpty` so a plugin with no
+ClickHouse tables renders nothing rather than an empty panel.
+
+```tsx
+const { system } = context;
+
+<system.SchedulerMonitor jobFilter={(job) => job.name.startsWith('my-plugin:')} hideStats />
+<system.CollectionBrowser prefix="plugin_my-plugin_" allowDelete={false} />
+<system.ClickHouseTableBrowser prefix="my_plugin_" hideWhenEmpty />
+```
 
 ## File Picker (`context.useFilePicker`)
 
