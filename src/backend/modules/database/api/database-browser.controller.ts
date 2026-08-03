@@ -49,7 +49,15 @@ export class DatabaseBrowserController {
      */
     async getStats(req: Request, res: Response): Promise<void> {
         try {
-            const stats = await this.repository.getDatabaseStats();
+            // Optional `?prefix=` narrows the response to one namespace, which is
+            // how an embedded browser (e.g. a plugin admin page scoped to
+            // `plugin_<id>_`) avoids receiving the whole deployment's inventory.
+            const prefixParam = req.query.prefix;
+            const prefix = typeof prefixParam === 'string' && prefixParam.length > 0
+                ? prefixParam
+                : undefined;
+
+            const stats = await this.repository.getDatabaseStats(prefix);
 
             res.status(200).json({
                 success: true,
@@ -274,6 +282,73 @@ export class DatabaseBrowserController {
             res.status(500).json({
                 success: false,
                 error: 'Failed to delete document',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * PUT /api/admin/database/collections/:name/documents/:id
+     *
+     * Replaces a document's contents with the supplied JSON body.
+     *
+     * Why this endpoint exists: browsing without editing forces an operator to
+     * leave for a Mongo shell the moment they need to correct a single field,
+     * which is exactly the context switch the browser exists to remove. Replace
+     * semantics mirror the UI, which edits the whole document as one JSON blob.
+     *
+     * Validation:
+     * - Body must be a JSON object — arrays and primitives are rejected, since
+     *   a MongoDB document is neither and the driver's error would be opaque
+     * - `_id` in the body is ignored by the repository; documents are replaced
+     *   in place, never re-keyed
+     *
+     * Responses:
+     * - 200 with `{ success: true, data: { matchedCount: 1 } }` on success
+     * - 400 when the body is not a JSON object
+     * - 404 when no document carries that `_id`
+     * - 500 on unexpected errors
+     *
+     * @param req - Express request with collection name, document id, and body
+     * @param res - Express response
+     */
+    async replaceDocument(req: Request, res: Response): Promise<void> {
+        const { name, id } = req.params;
+
+        try {
+            const document = req.body;
+
+            if (typeof document !== 'object' || document === null || Array.isArray(document)) {
+                res.status(400).json({
+                    success: false,
+                    error: 'Invalid document',
+                    message: 'Request body must be a JSON object'
+                });
+                return;
+            }
+
+            const matchedCount = await this.repository.replaceDocument(name, id, document);
+
+            if (matchedCount === 0) {
+                res.status(404).json({
+                    success: false,
+                    error: 'Document not found',
+                    data: { matchedCount: 0 }
+                });
+                return;
+            }
+
+            this.logger.info({ collection: name, id, matchedCount }, 'Replaced document');
+            res.status(200).json({
+                success: true,
+                data: { matchedCount }
+            });
+        } catch (error) {
+            this.logger.error({ error, params: req.params }, 'Failed to replace document');
+
+            res.status(500).json({
+                success: false,
+                error: 'Failed to replace document',
                 message: error instanceof Error ? error.message : 'Unknown error'
             });
         }

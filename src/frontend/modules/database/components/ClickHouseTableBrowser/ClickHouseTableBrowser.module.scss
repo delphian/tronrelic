@@ -178,3 +178,11 @@
         align-items: flex-start;
     }
 }
+
+/* Optional heading, rendered only when an embedding page supplies a title. */
+.section_title {
+    margin: 0 0 var(--gap-sm);
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}

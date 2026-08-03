@@ -24,17 +24,9 @@ import { Switch } from '../../../../components/ui/Switch';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { ClientTime } from '../../../../components/ui/ClientTime';
 import { getSchedulerStatus, getSchedulerHealth, updateSchedulerJob, runSchedulerJob } from '../../api';
+import type { ISchedulerMonitorProps } from '@/types';
 import type { SchedulerJob, SchedulerHealth } from '../../types';
 import styles from './SchedulerMonitor.module.scss';
-
-interface Props {
-    /** Optional filter to show only specific jobs. Can be job names or a filter function. */
-    jobFilter?: string[] | ((job: SchedulerJob) => boolean);
-    /** Optional title override for the stats bar */
-    title?: string;
-    /** Hide the stats bar (useful when embedding in other pages) */
-    hideStats?: boolean;
-}
 
 /**
  * Job row component for the scheduler table.
@@ -211,12 +203,19 @@ function JobRow({ job, onToggleEnabled, onScheduleChange, onRunNow, isLoading, l
  * - Expandable rows for detailed job information
  * - Auto-refresh every 10 seconds for near-real-time monitoring
  *
+ * Props come from the published {@link ISchedulerMonitorProps} rather than a
+ * local interface, because this component is republished to plugins on
+ * `context.system`. A second, hand-maintained copy of the shape is what let
+ * the plugin-facing declaration drift out of sync with this signature once
+ * already — an all-optional props type makes the structural check between
+ * them nearly vacuous, so the compiler will not catch the next divergence.
+ *
  * @param props - Component props
  * @param props.jobFilter - Optional filter to show only specific jobs
  * @param props.title - Optional title for the stats bar
  * @param props.hideStats - Hide the stats bar when embedding
  */
-export function SchedulerMonitor({ jobFilter, title = 'Scheduled Jobs', hideStats = false }: Props) {
+export function SchedulerMonitor({ jobFilter, title = 'Scheduled Jobs', hideStats = false }: ISchedulerMonitorProps) {
     const [jobs, setJobs] = useState<SchedulerJob[]>([]);
     const [health, setHealth] = useState<SchedulerHealth | null>(null);
     const [loading, setLoading] = useState(true);

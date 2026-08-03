@@ -17,6 +17,7 @@ class MockDatabaseBrowserRepository {
     getDocuments = vi.fn();
     queryDocuments = vi.fn();
     deleteDocument = vi.fn();
+    replaceDocument = vi.fn();
 }
 
 /**
@@ -782,6 +783,181 @@ describe('DatabaseBrowserController', () => {
             expect(res.json).toHaveBeenCalledWith({
                 success: false,
                 error: 'Failed to delete document',
+                message: 'Mongo unreachable'
+            });
+        });
+    });
+    describe('getStats prefix scoping', () => {
+        /**
+         * Test: a `?prefix=` query narrows the repository call.
+         *
+         * The prefix is what keeps an embedded browser (a plugin admin page)
+         * from receiving the whole deployment's collection inventory, so the
+         * controller must forward it rather than silently drop it.
+         */
+        it('should forward a prefix query parameter to the repository', async () => {
+            mockRepository.getDatabaseStats.mockResolvedValue({
+                dbName: 'tronrelic',
+                totalSize: 0,
+                collections: []
+            });
+
+            const req = createMockRequest({ query: { prefix: 'plugin_onchain-patterns_' } });
+            const res = createMockResponse();
+
+            await controller.getStats(req as Request, res as Response);
+
+            expect(mockRepository.getDatabaseStats).toHaveBeenCalledWith('plugin_onchain-patterns_');
+        });
+
+        /**
+         * Test: an absent prefix requests the unscoped, whole-database view.
+         *
+         * The system console depends on this default; passing an empty string
+         * through would filter to nothing and render an empty console.
+         */
+        it('should request the unscoped view when no prefix is supplied', async () => {
+            mockRepository.getDatabaseStats.mockResolvedValue({
+                dbName: 'tronrelic',
+                totalSize: 0,
+                collections: []
+            });
+
+            const req = createMockRequest({ query: {} });
+            const res = createMockResponse();
+
+            await controller.getStats(req as Request, res as Response);
+
+            expect(mockRepository.getDatabaseStats).toHaveBeenCalledWith(undefined);
+        });
+
+        /**
+         * Test: an empty prefix is treated as absent.
+         *
+         * A UI that binds the prefix to an empty input would otherwise scope
+         * the browser to nothing, which reads as "no collections exist".
+         */
+        it('should treat an empty prefix as unscoped', async () => {
+            mockRepository.getDatabaseStats.mockResolvedValue({
+                dbName: 'tronrelic',
+                totalSize: 0,
+                collections: []
+            });
+
+            const req = createMockRequest({ query: { prefix: '' } });
+            const res = createMockResponse();
+
+            await controller.getStats(req as Request, res as Response);
+
+            expect(mockRepository.getDatabaseStats).toHaveBeenCalledWith(undefined);
+        });
+    });
+
+    describe('replaceDocument', () => {
+        /**
+         * Test: a well-formed body replaces the document and reports the match.
+         */
+        it('should replace a document and return the matched count', async () => {
+            mockRepository.replaceDocument.mockResolvedValue(1);
+
+            const req = createMockRequest({
+                params: { name: 'plugin_onchain-patterns_subjects', id: 'abc' },
+                body: { subjectId: 'abc', enabled: false }
+            });
+            const res = createMockResponse();
+
+            await controller.replaceDocument(req as Request, res as Response);
+
+            expect(mockRepository.replaceDocument).toHaveBeenCalledWith(
+                'plugin_onchain-patterns_subjects',
+                'abc',
+                { subjectId: 'abc', enabled: false }
+            );
+            expect(res.status).toHaveBeenCalledWith(200);
+            expect(res.json).toHaveBeenCalledWith({
+                success: true,
+                data: { matchedCount: 1 }
+            });
+        });
+
+        /**
+         * Test: an unknown id is a 404, not a silent success.
+         *
+         * Reporting success for a document that was never found would let an
+         * operator believe an edit landed when nothing changed.
+         */
+        it('should return 404 when no document carries that id', async () => {
+            mockRepository.replaceDocument.mockResolvedValue(0);
+
+            const req = createMockRequest({
+                params: { name: 'items', id: 'missing' },
+                body: { a: 1 }
+            });
+            const res = createMockResponse();
+
+            await controller.replaceDocument(req as Request, res as Response);
+
+            expect(res.status).toHaveBeenCalledWith(404);
+            expect(res.json).toHaveBeenCalledWith({
+                success: false,
+                error: 'Document not found',
+                data: { matchedCount: 0 }
+            });
+        });
+
+        /**
+         * Test: an array body is rejected before reaching the driver.
+         *
+         * A MongoDB document is an object; letting an array through would
+         * surface as an opaque driver error rather than a usable message.
+         */
+        it('should reject an array body with 400', async () => {
+            const req = createMockRequest({
+                params: { name: 'items', id: 'abc' },
+                body: [1, 2, 3]
+            });
+            const res = createMockResponse();
+
+            await controller.replaceDocument(req as Request, res as Response);
+
+            expect(mockRepository.replaceDocument).not.toHaveBeenCalled();
+            expect(res.status).toHaveBeenCalledWith(400);
+        });
+
+        /**
+         * Test: a primitive body is rejected for the same reason as an array.
+         */
+        it('should reject a non-object body with 400', async () => {
+            const req = createMockRequest({
+                params: { name: 'items', id: 'abc' },
+                body: 'not-a-document' as unknown as Record<string, unknown>
+            });
+            const res = createMockResponse();
+
+            await controller.replaceDocument(req as Request, res as Response);
+
+            expect(mockRepository.replaceDocument).not.toHaveBeenCalled();
+            expect(res.status).toHaveBeenCalledWith(400);
+        });
+
+        /**
+         * Test: repository failures surface as 500 with the message preserved.
+         */
+        it('should return 500 when the repository throws', async () => {
+            mockRepository.replaceDocument.mockRejectedValue(new Error('Mongo unreachable'));
+
+            const req = createMockRequest({
+                params: { name: 'items', id: 'abc' },
+                body: { a: 1 }
+            });
+            const res = createMockResponse();
+
+            await controller.replaceDocument(req as Request, res as Response);
+
+            expect(res.status).toHaveBeenCalledWith(500);
+            expect(res.json).toHaveBeenCalledWith({
+                success: false,
+                error: 'Failed to replace document',
                 message: 'Mongo unreachable'
             });
         });

@@ -201,3 +201,36 @@
         align-items: flex-start;
     }
 }
+
+/*
+ * Inline JSON editor for a document.
+ *
+ * Sits inside the expanded detail row, replacing the read-only <pre> while an
+ * edit is in progress so the operator edits in the same place they were
+ * reading — no modal, no context switch.
+ */
+.document_editor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.editor_actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+.editor_hint {
+    margin-right: auto;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.editor_error {
+    margin: 0;
+    color: var(--color-danger);
+    font-size: var(--font-size-body-sm);
+}

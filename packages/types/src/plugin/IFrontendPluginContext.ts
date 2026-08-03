@@ -1,5 +1,8 @@
 import type { ComponentType } from 'react';
 import type { Socket } from 'socket.io-client';
+import type { ISchedulerMonitorProps } from '../scheduler/ISchedulerJobStatus.js';
+import type { ISkeletonProps } from '../ui/ISkeletonProps.js';
+import type { ICollectionBrowserProps, IClickHouseTableBrowserProps } from '../ui/IDatabaseBrowserProps.js';
 
 /**
  * User state exposed to frontend plugins.
@@ -87,12 +90,7 @@ export interface IUIComponents {
     }>;
 
     /** Loading skeleton placeholder component */
-    Skeleton: ComponentType<{
-        width?: string | number;
-        height?: string | number;
-        className?: string;
-        style?: React.CSSProperties;
-    }>;
+    Skeleton: ComponentType<ISkeletonProps>;
 
     /** Button component for actions */
     Button: ComponentType<{
@@ -829,31 +827,62 @@ export interface ISystemComponents {
      * Provides real-time job status tracking, enable/disable controls, and
      * schedule modification. Supports filtering to show only specific jobs.
      *
-     * @param token - Admin authentication token (from localStorage)
-     * @param jobFilter - Optional array of job names or filter function
-     * @param sectionTitle - Optional title override for the jobs section
-     * @param hideHealth - Whether to hide the scheduler health section
+     * The component authenticates through the caller's admin session cookie,
+     * so it takes no token. Props are declared once in
+     * {@link ISchedulerMonitorProps} and imported by the implementation —
+     * do not restate the shape inline here.
      *
      * @example
      * ```tsx
      * // Show all jobs
-     * <context.system.SchedulerMonitor token={adminToken} />
+     * <context.system.SchedulerMonitor />
      *
      * // Show only specific jobs
      * <context.system.SchedulerMonitor
-     *   token={adminToken}
      *   jobFilter={['markets:refresh']}
-     *   sectionTitle="Market Jobs"
-     *   hideHealth
+     *   title="Market Jobs"
+     *   hideStats
      * />
      * ```
      */
-    SchedulerMonitor: ComponentType<{
-        token: string;
-        jobFilter?: string[] | ((job: any) => boolean);
-        sectionTitle?: string;
-        hideHealth?: boolean;
-    }>;
+    SchedulerMonitor: ComponentType<ISchedulerMonitorProps>;
+
+    /**
+     * MongoDB collection browser, scoped to a collection-name prefix.
+     *
+     * Lets a plugin admin page offer a Database tab over its own
+     * `plugin_<id>_` collections — inspecting sizes and indexes, paging
+     * documents, and correcting or removing them — so an operator never
+     * leaves the plugin's section to reach a Mongo shell. Filtering is
+     * server-side: a scoped caller never receives the wider inventory.
+     *
+     * Pass `allowEdit={false}` / `allowDelete={false}` where the plugin
+     * maintains invariants across collections that a raw write would break.
+     *
+     * @example
+     * ```tsx
+     * <context.system.CollectionBrowser
+     *   prefix="plugin_my-plugin_"
+     *   allowDelete={false}
+     * />
+     * ```
+     */
+    CollectionBrowser: ComponentType<ICollectionBrowserProps>;
+
+    /**
+     * ClickHouse table browser, scoped to a table-name prefix.
+     *
+     * Read-only by design — ClickHouse deletes are asynchronous `ALTER TABLE`
+     * operations, a poor fit for a point-and-click surface. Set
+     * `hideWhenEmpty` when the embedding plugin may store nothing in
+     * ClickHouse, so it renders nothing rather than an empty panel.
+     *
+     * @example
+     * ```tsx
+     * <context.system.ClickHouseTableBrowser prefix="my_plugin_" hideWhenEmpty />
+     * ```
+     */
+    ClickHouseTableBrowser: ComponentType<IClickHouseTableBrowserProps>;
 }
 
 /**

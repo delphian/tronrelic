@@ -7,30 +7,18 @@
  * @module modules/scheduler/types
  */
 
+import type { ISchedulerJobStatus } from '@/types';
+
 /**
  * Scheduler job status information.
  *
- * Represents the current state and execution history of a scheduled job,
- * including schedule configuration, last run timing, and error details.
+ * Aliases the published {@link ISchedulerJobStatus} rather than restating
+ * its fields. The same shape reaches plugins through the filter predicate
+ * on `context.system.SchedulerMonitor`, so two hand-maintained copies of
+ * one contract is precisely the drift this module already suffered once.
+ * The local name is kept so existing module consumers read unchanged.
  */
-export interface SchedulerJob {
-    /** Unique job identifier (e.g., 'blockchain:sync', 'markets:refresh') */
-    name: string;
-    /** Cron expression defining the schedule (e.g., '0 0 * * *' for daily) */
-    schedule: string;
-    /** Whether the job is currently enabled */
-    enabled: boolean;
-    /** ISO timestamp of the last execution, null if never run */
-    lastRun: string | null;
-    /** ISO timestamp of the next scheduled execution, null if unknown */
-    nextRun: string | null;
-    /** Current execution status */
-    status: 'running' | 'success' | 'failed' | 'never_run';
-    /** Duration of last execution in seconds, null if never run */
-    duration: number | null;
-    /** Error message from last failed execution, null if last run succeeded */
-    error: string | null;
-}
+export type SchedulerJob = ISchedulerJobStatus;
 
 /**
  * Scheduler health metrics.
