@@ -39,7 +39,8 @@ export { LOG_LEVELS, shouldLog, type LogLevelName } from './system-log/index.js'
 export type { ISchedulerService, CronJobHandler } from './scheduler/ISchedulerService.js';
 export type { ISchedulerJobStatus, ISchedulerMonitorProps } from './scheduler/ISchedulerJobStatus.js';
 export type { ISkeletonProps } from './ui/ISkeletonProps.js';
-export type { ICollectionBrowserProps, IClickHouseTableBrowserProps } from './ui/IDatabaseBrowserProps.js';
+export type { ICollectionBrowserProps } from './ui/ICollectionBrowserProps.js';
+export type { IClickHouseTableBrowserProps } from './ui/IClickHouseTableBrowserProps.js';
 export type { IDatabaseService } from './database/IDatabaseService.js';
 export type { IMigration, IMigrationContext, MigrationTarget } from './database/IMigration.js';
 export type { IClickHouseService } from './clickhouse/index.js';

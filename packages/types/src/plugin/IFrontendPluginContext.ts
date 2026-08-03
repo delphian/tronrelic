@@ -2,7 +2,8 @@ import type { ComponentType } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { ISchedulerMonitorProps } from '../scheduler/ISchedulerJobStatus.js';
 import type { ISkeletonProps } from '../ui/ISkeletonProps.js';
-import type { ICollectionBrowserProps, IClickHouseTableBrowserProps } from '../ui/IDatabaseBrowserProps.js';
+import type { ICollectionBrowserProps } from '../ui/ICollectionBrowserProps.js';
+import type { IClickHouseTableBrowserProps } from '../ui/IClickHouseTableBrowserProps.js';
 
 /**
  * User state exposed to frontend plugins.
