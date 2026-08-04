@@ -2,14 +2,23 @@
  * Tooltip Component CSS Module
  *
  * Scoped styles for contextual tooltip overlays that appear on hover with
- * arrow indicators and responsive positioning.
+ * arrow indicators.
  *
- * Horizontal viewport clamping: the `--tooltip-shift-x` custom property is
- * applied by Tooltip.tsx after measuring the rendered overlay against the
- * viewport. A positive value shifts the tooltip right (to clear a left-edge
- * overflow); a negative value shifts it left (right-edge overflow). The
- * arrow uses the same variable with the opposite sign so it stays anchored
- * to the trigger no matter how the tooltip body has been nudged inward.
+ * The overlay is `position: fixed` because it renders in a `<body>` portal:
+ * anchored absolutely inside its trigger it was clipped by any ancestor with
+ * `overflow` and painted over by any ancestor forming a stacking context, since
+ * a z-index only orders siblings within the context that contains it. Top and
+ * left come from Tooltip.tsx, which measures the trigger and the overlay and
+ * clamps the result inside the viewport.
+ *
+ * `--z-index-tooltip` (not `--z-index-fixed`) because a body-level overlay has
+ * to clear every surface it may be summoned over — sticky headers, dialogs,
+ * open dropdowns — while staying under toasts.
+ *
+ * `--tooltip-arrow-x` is the arrow's offset from the overlay's own left edge,
+ * also set by Tooltip.tsx. It tracks the trigger rather than the overlay's
+ * centre, so a tooltip clamped against a viewport edge still points at the
+ * element it describes.
  */
 
 .trigger {
@@ -19,11 +28,7 @@
 }
 
 .content {
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px)));
-    margin-bottom: var(--spacing-6);
+    position: fixed;
     background-color: rgba(0, 0, 0, 0.95);
     color: var(--color-text);
     padding: var(--spacing-4) var(--spacing-5);
@@ -32,7 +37,7 @@
     line-height: var(--line-height-tight);
     max-width: 280px;
     width: max-content;
-    z-index: var(--z-index-fixed);
+    z-index: var(--z-index-tooltip);
     pointer-events: none;
     white-space: normal;
     box-shadow: var(--shadow-md);
@@ -40,41 +45,39 @@
     animation: fadeIn var(--transition-fast) ease-out;
 }
 
+/* Below the trigger: the entry animation rises from the trigger instead of
+   settling toward it, so the motion still reads as coming from the anchor. */
 .content_bottom {
-    bottom: auto;
-    top: 100%;
-    margin-bottom: 0;
-    margin-top: var(--spacing-6);
     animation: fadeInBottom var(--transition-fast) ease-out;
 }
 
 @keyframes fadeIn {
     from {
         opacity: 0;
-        transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px))) translateY(4px);
+        transform: translateY(4px);
     }
     to {
         opacity: 1;
-        transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px))) translateY(0);
+        transform: translateY(0);
     }
 }
 
 @keyframes fadeInBottom {
     from {
         opacity: 0;
-        transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px))) translateY(-4px);
+        transform: translateY(-4px);
     }
     to {
         opacity: 1;
-        transform: translateX(calc(-50% + var(--tooltip-shift-x, 0px))) translateY(0);
+        transform: translateY(0);
     }
 }
 
 .arrow {
     position: absolute;
     top: 100%;
-    left: 50%;
-    transform: translateX(calc(-50% - var(--tooltip-shift-x, 0px)));
+    left: var(--tooltip-arrow-x, 50%);
+    transform: translateX(-50%);
     width: 0;
     height: 0;
     border-left: 6px solid transparent;

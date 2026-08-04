@@ -7,6 +7,10 @@
  * choices so the two pickers read as one family.
  */
 
+/* The search row, and the element the portaled dropdown measures itself
+   against. `position: relative` is retained so an in-flow overlay added here
+   later still anchors to the control rather than escaping to the page; the
+   suggestion list itself no longer needs it. */
 .search {
     position: relative;
 }
@@ -27,21 +31,34 @@
     min-width: 0;
 }
 
-/* Suggestions float over following content so opening them does not shift the
-   surrounding form. */
+/*
+ * Suggestions float over following content so opening them does not shift the
+ * surrounding form. Fixed rather than absolute because the list renders in a
+ * `<body>` portal: an absolutely-positioned list stayed subject to the host
+ * page, where any ancestor with `overflow` clipped it and any ancestor forming
+ * a stacking context trapped its z-index, so it kept disappearing behind
+ * neighbouring cards, sticky headers, and dialogs. Top, left, width and
+ * max-height come from the component, which measures the search row.
+ *
+ * `--z-index-popover` (not `--z-index-dropdown`) because a body-level list must
+ * clear every one of those surfaces — including a modal, since this control is
+ * routinely dropped into a modal form — while staying under toasts.
+ *
+ * `overflow: hidden auto` clips the row hover fills at the rounded corners on
+ * the horizontal axis and scrolls on the vertical, so a long result set stays
+ * reachable once the component caps its height near a viewport edge.
+ */
 .results {
-    position: absolute;
-    z-index: var(--z-index-dropdown);
-    left: 0;
-    right: 0;
-    margin: var(--gap-2xs) 0 0;
+    position: fixed;
+    z-index: var(--z-index-popover);
+    margin: 0;
     padding: 0;
     list-style: none;
     background: var(--color-surface);
     border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-md);
-    overflow: hidden;
+    overflow: hidden auto;
 }
 
 .results_note {
