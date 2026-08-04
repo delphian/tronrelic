@@ -229,6 +229,12 @@ export class SystemMonitorService {
    * computation fails, the cache entry is cleared so the next caller retries
    * rather than being served the same rejection for the full TTL.
    *
+   * The TTL measures time since the last successful resolution, not since the
+   * computation started, and an in-flight computation never expires. Measuring
+   * from the start would let a query slower than the TTL be overtaken by a
+   * second concurrent scan — the pile-up this cache exists to prevent, and the
+   * regime a slow query already signals.
+   *
    * @param state - Current sync state document; passed through to the
    *   computation for backfill-queue and error metadata. Within the cache TTL
    *   the state captured by the first caller is used for all callers.
@@ -238,13 +244,25 @@ export class SystemMonitorService {
     const now = Date.now();
 
     if (!this.snapshotCache || now - this.snapshotCache.fetchedAt >= SystemMonitorService.SNAPSHOT_CACHE_TTL_MS) {
-      const promise = this.computeBlockProcessingSnapshot(state);
-      promise.catch(() => {
-        if (this.snapshotCache?.promise === promise) {
-          this.snapshotCache = null;
+      // An infinite fetchedAt keeps the entry unexpirable while the query runs;
+      // it is replaced with the real completion time once the promise settles.
+      const entry: { promise: Promise<BlockProcessingSnapshot>; fetchedAt: number } = {
+        promise: this.computeBlockProcessingSnapshot(state),
+        fetchedAt: Number.POSITIVE_INFINITY
+      };
+
+      entry.promise.then(
+        () => {
+          entry.fetchedAt = Date.now();
+        },
+        () => {
+          if (this.snapshotCache === entry) {
+            this.snapshotCache = null;
+          }
         }
-      });
-      this.snapshotCache = { promise, fetchedAt: now };
+      );
+
+      this.snapshotCache = entry;
     }
 
     return this.snapshotCache.promise;
