@@ -24,9 +24,18 @@
  *
  * This is a user-triggered search control, so its transient "Searching…" state
  * is a permitted loading case under the SSR rules, not primary page content.
+ *
+ * The suggestion dropdown renders in a `<body>` portal with viewport-fixed
+ * coordinates. Anchoring it absolutely inside the control left it at the mercy
+ * of whatever hosted the control: any ancestor with `overflow` clipped it, and
+ * any ancestor forming a stacking context trapped its z-index, so the list
+ * disappeared behind neighbouring cards, sticky headers, and dialogs. A portal
+ * takes it out of that tree entirely, which is the same fix `TronAddress` uses
+ * for its tools menu.
  */
 
-import { useState, useEffect, useCallback, useId, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, X } from 'lucide-react';
 import { Input } from '../Input';
 import { TronAddress } from '../TronAddress';
@@ -42,6 +51,40 @@ const MIN_QUERY_LENGTH = 2;
 
 /** Default ceiling on offered addresses; enough to scan, short enough not to scroll forever. */
 const MAX_SUGGESTIONS = 10;
+
+/**
+ * Gap (px) kept between the dropdown and both its input and the viewport edge.
+ * Matches the visual separation the old `margin` gave it when it was in flow.
+ */
+const DROPDOWN_GAP_PX = 4;
+
+/**
+ * Floor (px) on the dropdown's height when the viewport is too cramped to give
+ * it the space it wants. Without a floor, an input near the bottom of a short
+ * window gets a few pixels of list; with one the dropdown keeps a couple of
+ * rows visible and scrolls the rest, which is always more useful than a sliver.
+ */
+const MIN_DROPDOWN_HEIGHT_PX = 120;
+
+/**
+ * Viewport-fixed geometry for the portaled dropdown, resolved from the search
+ * row's live bounding rect. Held in state rather than derived during render
+ * because measuring needs the DOM; `null` means "not yet measured", which keeps
+ * the list hidden instead of flashing at the viewport origin.
+ */
+interface IDropdownPosition {
+    /** Distance from the viewport top, already flipped above the input if needed. */
+    top: number;
+
+    /** Distance from the viewport left; tracks the input so the two stay aligned. */
+    left: number;
+
+    /** Matches the input's width, so the dropdown reads as part of the same control. */
+    width: number;
+
+    /** Ceiling on height, so a long list scrolls rather than running off-screen. */
+    maxHeight: number;
+}
 
 /**
  * Props for {@link AddressSelector}. Kept structurally identical to the
@@ -102,15 +145,23 @@ export function AddressSelector({
     const [results, setResults] = useState<IAddressTagGroupView[]>([]);
     const [searching, setSearching] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
+    const [position, setPosition] = useState<IDropdownPosition | null>(null);
     const listId = useId();
     const containerRef = useRef<HTMLDivElement>(null);
+    const dropdownRef = useRef<HTMLUListElement>(null);
 
-    // Dismiss the floating dropdown on an outside click, so a stale
-    // absolutely-positioned overlay cannot linger over — and swallow clicks
-    // meant for — the form controls beneath it.
+    // Dismiss the floating dropdown on an outside click, so a stale overlay
+    // cannot linger over — and swallow clicks meant for — the form controls
+    // beneath it. The dropdown is portaled to `<body>`, so it is not a
+    // descendant of the search row: both nodes have to be tested, or the
+    // mousedown that begins a click on a suggestion would close the list before
+    // that suggestion's own click handler ever ran.
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent): void => {
-            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+            const target = event.target as Node;
+            const inside = Boolean(containerRef.current?.contains(target))
+                || Boolean(dropdownRef.current?.contains(target));
+            if (!inside) {
                 setIsOpen(false);
             }
         };
@@ -153,6 +204,71 @@ export function AddressSelector({
             clearTimeout(timer);
         };
     }, [limit, query]);
+
+    // Whether the dropdown should currently be on screen. Derived rather than
+    // stored so the open flag and the term stay a single source of truth.
+    const dropdownVisible = isOpen && query.trim().length >= MIN_QUERY_LENGTH;
+
+    /**
+     * Place the portaled dropdown against its input, why: a `<body>` portal
+     * escapes clipping and stacking, but it also gives up the automatic
+     * alignment an absolutely-positioned child got for free — a fixed element
+     * does not follow its anchor. This measures the search row and pins the
+     * list directly beneath it, flipping above when the space below cannot hold
+     * the list, and capping the height so a long result set scrolls instead of
+     * running off the bottom of the window.
+     *
+     * Runs as a layout effect so the coordinates are set before paint, which is
+     * what keeps the list from flashing at the viewport origin. It re-measures
+     * on scroll (captured, so scrolling an inner container counts, not just the
+     * window) and on resize, and again whenever the content changes height —
+     * the swap from "Searching…" to a ten-row list moves the flip decision.
+     *
+     * The direction test reads `scrollHeight`, the natural content height,
+     * rather than the rendered height: the rendered height is already clamped
+     * by the `maxHeight` this same effect applied, so feeding it back in would
+     * let the dropdown flip direction on alternate measurements.
+     */
+    useLayoutEffect(() => {
+        if (!dropdownVisible) {
+            setPosition(null);
+            return undefined;
+        }
+        function updatePosition(): void {
+            const anchor = containerRef.current;
+            const dropdown = dropdownRef.current;
+            if (!anchor || !dropdown) return;
+            const anchorRect = anchor.getBoundingClientRect();
+            const viewportHeight = document.documentElement.clientHeight;
+            // Width is pinned before the height is read, not just handed to
+            // React afterwards: on the first pass the portaled list has no width
+            // of its own and shrink-to-fits, so an address that will wrap at the
+            // input's width might not wrap yet. Measuring then would decide the
+            // flip and the above-anchor offset from a height the list never
+            // actually has. React writes the same value on the next render.
+            dropdown.style.width = `${anchorRect.width}px`;
+            const naturalHeight = dropdown.scrollHeight;
+            const spaceBelow = viewportHeight - anchorRect.bottom - DROPDOWN_GAP_PX * 2;
+            const spaceAbove = anchorRect.top - DROPDOWN_GAP_PX * 2;
+            const openAbove = naturalHeight > spaceBelow && spaceAbove > spaceBelow;
+            const maxHeight = Math.max(
+                MIN_DROPDOWN_HEIGHT_PX,
+                openAbove ? spaceAbove : spaceBelow
+            );
+            const height = Math.min(naturalHeight, maxHeight);
+            const top = openAbove
+                ? anchorRect.top - DROPDOWN_GAP_PX - height
+                : anchorRect.bottom + DROPDOWN_GAP_PX;
+            setPosition({ top, left: anchorRect.left, width: anchorRect.width, maxHeight });
+        }
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
+    }, [dropdownVisible, results, searching]);
 
     /**
      * Commit an address: notify the parent and reset the search box so
@@ -233,8 +349,25 @@ export function AddressSelector({
                 and listbox semantics would promise arrow-key navigation this
                 control does not implement. Announcing a real button inside a
                 list matches what the component actually does. */}
-            {isOpen && query.trim().length >= MIN_QUERY_LENGTH && (
-                <ul className={styles.results} id={listId} aria-label="Address suggestions">
+            {dropdownVisible && createPortal(
+                <ul
+                    ref={dropdownRef}
+                    className={styles.results}
+                    id={listId}
+                    aria-label="Address suggestions"
+                    // Hidden until measured so the first paint never shows the
+                    // list parked at the viewport origin.
+                    style={
+                        position
+                            ? {
+                                top: position.top,
+                                left: position.left,
+                                width: position.width,
+                                maxHeight: position.maxHeight
+                            }
+                            : { top: 0, left: 0, visibility: 'hidden' }
+                    }
+                >
                     {searching && <li className={styles.results_note}>Searching…</li>}
                     {!searching && results.map((group) => (
                         <li key={group.address}>
@@ -258,7 +391,8 @@ export function AddressSelector({
                             No matching tagged addresses — paste a full address to use it anyway.
                         </li>
                     )}
-                </ul>
+                </ul>,
+                document.body
             )}
         </div>
     );

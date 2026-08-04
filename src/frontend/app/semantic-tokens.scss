@@ -91,6 +91,19 @@
     --z-index-fixed: 1000;
     --z-index-modal-backdrop: 1100;
     --z-index-modal: 1110;
+    /* Popover a control opens for itself — a typeahead dropdown, an anchored
+       menu — rendered in a <body> portal so no ancestor's overflow or stacking
+       context can clip it. Above the modal layer because such a control is
+       routinely placed inside a modal form, and a dropdown painting behind the
+       dialog that owns it is unusable. Below toasts, which must stay readable
+       over everything. Distinct from --z-index-dropdown, which is for an
+       in-flow dropdown that stays inside its parent's stacking context. */
+    --z-index-popover: 1150;
+    /* Tooltips, also body-portaled. Above popovers because a tooltip explains
+       whatever is under the pointer — including a control inside an open
+       dropdown or dialog — so it is the last thing that may be covered. Still
+       below toasts. */
+    --z-index-tooltip: 1160;
     --z-index-toast: 1200;
 
     /* Transitions */
