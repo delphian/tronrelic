@@ -69,7 +69,8 @@ export class BlockchainController {
      * - 7 days: hourly buckets (168 points)
      * - 30+ days: 4-hour windows (180 points for 30 days)
      *
-     * @param req - Express request with `days` query parameter (min 1, max 90)
+     * @param req - Express request with `days` query parameter (min 1; clamped to the
+     *   block retention window, 32 days by default — older blocks are pruned)
      * @param res - Express response containing timeseries data points
      */
     transactionTimeseries = async (req: Request, res: Response) => {

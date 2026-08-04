@@ -23,7 +23,7 @@ Six jobs registered in `src/backend/modules/scheduler/jobs/core-jobs.ts`:
 | Job | Default Schedule | Purpose | Impact if Down |
 |---|---|---|---|
 | `blockchain:sync` | `*/1 * * * *` | Retrieve TRON blocks, enrich, dispatch to observers | Transaction feed and observers go silent |
-| `blockchain:prune` | `0 * * * *` | Drop transactions older than retention window | `transactions` collection grows unbounded |
+| `blockchain:prune` | `0 * * * *` | Drop transactions (7d) and blocks (32d) past retention | `transactions` and `blocks` collections grow unbounded |
 | `chain-parameters:fetch` | `*/10 * * * *` | Pull `energyPerTrx`, `energyFee` from TRON | Energy/TRX conversions drift from network truth |
 | `usdt-parameters:fetch` | `*/10 * * * *` | Pull current USDT transfer energy cost | USDT pricing drifts |
 | `cache:cleanup` | `0 * * * *` | Evict expired cache entries | Memory usage grows |

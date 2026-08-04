@@ -53,7 +53,9 @@ const BlockSchema = new Schema<BlockDoc>({
     totalEnergyCost: { type: Number, default: 0 },
     totalBandwidthUsed: { type: Number, default: 0 }
   },
-  processedAt: { type: Date, default: Date.now }
+  // Indexed: SystemMonitorService samples the most recent blocks sorted by
+  // processedAt; without this index that query collection-scans every block.
+  processedAt: { type: Date, default: Date.now, index: true }
 }, { versionKey: false, timestamps: false });
 
 BlockSchema.index({ witnessAddress: 1, timestamp: -1 });

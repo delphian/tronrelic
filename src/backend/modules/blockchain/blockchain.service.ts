@@ -294,6 +294,82 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
+     * Prune old blocks from the database to prevent unbounded growth.
+     *
+     * Without pruning the blocks collection grows forever (~28,800 documents per day) and
+     * its data plus indexes crowd the WiredTiger cache. Blocks use a longer retention than
+     * transactions because each block document carries its own aggregate stats, which stay
+     * useful for charting after the underlying transactions have been pruned — the
+     * transaction-timeseries endpoint reads exactly this window.
+     *
+     * Mirrors pruneOldTransactions: deletes at most `batchHours` worth of the oldest blocks
+     * per invocation so a large backlog drains gradually across scheduled runs instead of
+     * one long-running delete. The default batch is larger than the transaction prune's
+     * because block documents are far smaller and cheaper to delete.
+     *
+     * @param retentionHours - Hours of block history to keep; defaults to the configured block retention window
+     * @param batchHours - Maximum hours-worth of oldest blocks deleted per invocation, bounding each run's work
+     * @returns Count of blocks deleted and the timestamp of the oldest remaining block
+     */
+    async pruneOldBlocks(
+        retentionHours = blockchainConfig.retention.blockHours,
+        batchHours = 24
+    ): Promise<{ deletedCount: number; oldestRemaining: Date | null }> {
+        const retentionMs = retentionHours * 60 * 60 * 1000;
+        const batchMs = batchHours * 60 * 60 * 1000;
+        const cutoffDate = new Date(Date.now() - retentionMs);
+
+        const blockModel = BlockchainService.getDatabase().getModel<BlockDoc>(BlockchainService.BLOCKS_COLLECTION);
+
+        // Find the oldest block timestamp
+        const oldestDoc = await blockModel.findOne({}, { timestamp: 1 })
+            .sort({ timestamp: 1 })
+            .lean() as BlockFields | null;
+
+        if (!oldestDoc) {
+            logger.debug('No blocks found for pruning');
+            return { deletedCount: 0, oldestRemaining: null };
+        }
+
+        const oldestTimestamp = oldestDoc.timestamp;
+
+        // Only prune if there are blocks older than the retention period
+        if (oldestTimestamp >= cutoffDate) {
+            logger.debug({ oldestTimestamp, cutoffDate, retentionHours }, 'No blocks old enough to prune');
+            return { deletedCount: 0, oldestRemaining: oldestTimestamp };
+        }
+
+        // Delete blocks older than cutoffDate AND within the batch window
+        const batchCutoff = new Date(oldestTimestamp.getTime() + batchMs);
+
+        const result = await blockModel.deleteMany({
+            timestamp: {
+                $lt: new Date(Math.min(batchCutoff.getTime(), cutoffDate.getTime()))
+            }
+        });
+
+        const deletedCount = result.deletedCount ?? 0;
+
+        // Find the new oldest block
+        const newOldestDoc = await blockModel.findOne({}, { timestamp: 1 })
+            .sort({ timestamp: 1 })
+            .lean() as BlockFields | null;
+
+        const oldestRemaining = newOldestDoc?.timestamp ?? null;
+
+        logger.info({
+            deletedCount,
+            retentionHours,
+            batchHours,
+            cutoffDate,
+            batchCutoff,
+            oldestRemaining
+        }, 'Pruned old blocks');
+
+        return { deletedCount, oldestRemaining };
+    }
+
+    /**
      * Retrieve transaction count timeseries data grouped by time windows.
      *
      * Aggregates historical block data from MongoDB to produce time-windowed transaction statistics
@@ -307,7 +383,9 @@ export class BlockchainService implements IBlockchainService {
      * - Total transactions in that time window (sum across blocks)
      * - Average transactions per block in that window
      *
-     * @param days - Number of days of history to retrieve (min 1, max 90, clamped automatically)
+     * @param days - Number of days of history to retrieve (min 1; clamped to the configured
+     *   block retention window, 32 days by default — the blocks backing this series are
+     *   pruned beyond that window, so larger values would silently return truncated data)
      * @returns Array of timeseries points sorted chronologically
      * @throws ValidationError if days parameter is invalid
      */
@@ -316,7 +394,10 @@ export class BlockchainService implements IBlockchainService {
             throw new Error('Days must be a positive number');
         }
 
-        const clampedDays = Math.min(Math.max(days, 1), 90);
+        // Clamp to the block retention window: blocks older than this are pruned,
+        // so a wider range would only zero-pad the series.
+        const maxDays = Math.max(1, Math.floor(blockchainConfig.retention.blockHours / 24));
+        const clampedDays = Math.min(Math.max(days, 1), maxDays);
         const startDate = new Date(Date.now() - clampedDays * 24 * 60 * 60 * 1000);
 
         // Determine grouping format based on time range

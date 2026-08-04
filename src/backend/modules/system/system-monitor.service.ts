@@ -177,7 +177,25 @@ export interface ConfigurationValues {
 }
 
 export class SystemMonitorService {
+  /**
+   * How long a computed block-processing snapshot stays fresh. The /system
+   * dashboard polls the status and metrics endpoints from multiple components
+   * every 10–15 seconds, and both endpoints derive from the same snapshot —
+   * a short TTL lets all of those requests share one database query instead
+   * of each launching its own scan of the blocks collection.
+   */
+  private static readonly SNAPSHOT_CACHE_TTL_MS = 5000;
+
   private readonly database: IDatabaseService;
+
+  /**
+   * In-flight or recently resolved snapshot shared across concurrent callers.
+   * Stores the promise (not the resolved value) so requests arriving while a
+   * computation is still running attach to it rather than issuing a second
+   * query — the pile-up of overlapping snapshot queries is what previously
+   * saturated MongoDB when the dashboard polled faster than queries finished.
+   */
+  private snapshotCache: { promise: Promise<BlockProcessingSnapshot>; fetchedAt: number } | null = null;
 
   constructor(private readonly redis: RedisClient, database: IDatabaseService) {
     this.database = database;
@@ -201,6 +219,51 @@ export class SystemMonitorService {
     return this.database.getModel<TransactionDoc>(TRANSACTIONS_COLLECTION);
   }
 
+  /**
+   * Return the block-processing snapshot, serving concurrent and rapid
+   * repeat callers from a single shared computation.
+   *
+   * Both getBlockchainSyncStatus() and getBlockProcessingMetrics() need this
+   * snapshot, and the dashboard requests them together — without sharing, one
+   * poll cycle runs the underlying blocks query four times. If the cached
+   * computation fails, the cache entry is cleared so the next caller retries
+   * rather than being served the same rejection for the full TTL.
+   *
+   * @param state - Current sync state document; passed through to the
+   *   computation for backfill-queue and error metadata. Within the cache TTL
+   *   the state captured by the first caller is used for all callers.
+   * @returns The shared snapshot of recent block-processing performance.
+   */
+  private getBlockProcessingSnapshot(state: SyncStateFields | null): Promise<BlockProcessingSnapshot> {
+    const now = Date.now();
+
+    if (!this.snapshotCache || now - this.snapshotCache.fetchedAt >= SystemMonitorService.SNAPSHOT_CACHE_TTL_MS) {
+      const promise = this.computeBlockProcessingSnapshot(state);
+      promise.catch(() => {
+        if (this.snapshotCache?.promise === promise) {
+          this.snapshotCache = null;
+        }
+      });
+      this.snapshotCache = { promise, fetchedAt: now };
+    }
+
+    return this.snapshotCache.promise;
+  }
+
+  /**
+   * Compute block-processing metrics (process rate, delay, success rate) from
+   * the most recently processed blocks.
+   *
+   * Samples the newest `metrics.sampleSize` blocks by `processedAt` — that
+   * field is indexed on the block schema specifically so this sort resolves
+   * via the index; do not remove the index without rethinking this query.
+   * Callers should prefer getBlockProcessingSnapshot(), which caches and
+   * deduplicates this computation across concurrent dashboard polls.
+   *
+   * @param state - Current sync state document supplying backfill-queue depth
+   *   and last-error metadata for the success-rate and error fields.
+   * @returns Freshly computed snapshot of recent block-processing performance.
+   */
   private async computeBlockProcessingSnapshot(state: SyncStateFields | null): Promise<BlockProcessingSnapshot> {
     const sampleSize = blockchainConfig.metrics?.sampleSize ?? 180;
 
@@ -383,7 +446,7 @@ export class SystemMonitorService {
       networkBlockValue = currentBlock;
     }
 
-    const snapshot = await this.computeBlockProcessingSnapshot(state);
+    const snapshot = await this.getBlockProcessingSnapshot(state);
     const lag = Math.max(0, networkBlockValue - currentBlock);
 
     const isHealthy =
@@ -466,7 +529,7 @@ export class SystemMonitorService {
 
   async getBlockProcessingMetrics(): Promise<BlockProcessingMetrics> {
     const state = await this.getSyncStateModel().findOne({ key: 'blockchain:last-block' }).lean() as SyncStateFields | null;
-    const snapshot = await this.computeBlockProcessingSnapshot(state);
+    const snapshot = await this.getBlockProcessingSnapshot(state);
 
     const cursorBlockNumber = snapshot.lastProcessedBlockNumber;
     const lastNetworkHeight = (state?.meta as any)?.lastNetworkHeight;
