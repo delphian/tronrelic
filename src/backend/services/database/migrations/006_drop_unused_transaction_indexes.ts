@@ -40,8 +40,9 @@ import type { IMigration, IMigrationContext } from '@/types';
  * create them.
  *
  * **Idempotency:**
- * Each `dropIndex` swallows MongoDB's IndexNotFound error (code 27, message
- * contains "not found"), so re-runs and fresh environments skip cleanly.
+ * Each `dropIndex` swallows MongoDB's IndexNotFound (code 27) and
+ * NamespaceNotFound (code 26) errors — matched by numeric code, with a
+ * message match as fallback — so re-runs and fresh environments skip cleanly.
  * Any other error propagates for the executor to record.
  *
  * **Transaction semantics:**
@@ -78,14 +79,30 @@ export const migration: IMigration = {
                 await transactions.dropIndex(indexName);
                 console.log(`[Migration] Dropped index: ${indexName}`);
             } catch (error) {
-                // MongoDB throws IndexNotFound (code 27) with a "not found"
-                // message when the index is already absent — expected on
-                // re-runs and on fresh environments that never had it.
-                if (error instanceof Error && error.message.includes('not found')) {
+                // Tolerate only "there was nothing to drop": IndexNotFound
+                // (code 27) when the named index is already absent, and
+                // NamespaceNotFound (code 26) when the collection itself does
+                // not exist yet — both expected on re-runs and on fresh
+                // environments. Test the stable numeric code first because the
+                // server's message wording drifts across versions; the message
+                // match is only a fallback for drivers that surface the text
+                // without a structured code. Any other failure (permissions,
+                // stepdown, transient) propagates for the executor to record.
+                const details = error as { code?: number; codeName?: string } | null;
+                const message = error instanceof Error ? error.message : String(error);
+                const isNothingToDrop =
+                    details?.code === 27 ||
+                    details?.code === 26 ||
+                    details?.codeName === 'IndexNotFound' ||
+                    details?.codeName === 'NamespaceNotFound' ||
+                    /index not found/i.test(message) ||
+                    /ns not found/i.test(message);
+
+                if (isNothingToDrop) {
                     console.log(`[Migration] Skipped (not found): ${indexName}`);
                 } else {
                     throw new Error(
-                        `Failed to drop index ${indexName} on transactions: ${error instanceof Error ? error.message : String(error)}`
+                        `Failed to drop index ${indexName} on transactions: ${message}`
                     );
                 }
             }
