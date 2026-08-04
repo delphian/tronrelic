@@ -36,16 +36,25 @@
     font-size: var(--font-size-body-sm);
 }
 
+/* An address row lists all of its tags together, wrapping onto further lines
+   rather than widening the column when an address carries many. */
+.tag_list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+    align-items: center;
+}
+
 .tag_text {
     font-weight: var(--font-weight-medium);
     color: var(--color-text);
 }
 
-/* Inline row actions (rename/delete or save/cancel). */
-.row_actions {
-    display: flex;
-    gap: var(--gap-xs);
-    align-items: center;
+/* The rename field replaces only a tag's text, so it stays chip-sized instead
+   of stretching the row. */
+.tag_input {
+    width: var(--max-width-xs);
+    max-width: 100%;
 }
 
 /* Mobile: collapse table rows into stacked cards, reacting to the shared

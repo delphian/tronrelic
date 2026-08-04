@@ -17,6 +17,7 @@ import { Stack } from '../../../../components/layout';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
 import { Input } from '../../../../components/ui/Input';
+import { AddressSelector } from '../../../../components/ui/AddressSelector';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { ClientTime } from '../../../../components/ui/ClientTime';
 import { useToast } from '../../../../components/ui/ToastProvider';
@@ -107,7 +108,9 @@ function statusTone(status: AccountIngestionStatus): 'success' | 'danger' | 'war
  * @returns The tab.
  */
 export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsView | null; onChanged: () => void }) {
-    const [address, setAddress] = useState('');
+    // Null rather than '' because AddressSelector only ever hands back a
+    // validated address or nothing — there is no partial value to hold.
+    const [address, setAddress] = useState<string | null>(null);
     const [label, setLabel] = useState('');
     const [busy, setBusy] = useState(false);
     const { push } = useToast();
@@ -115,8 +118,8 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
     const add = useCallback(async () => {
         setBusy(true);
         try {
-            await addTrackedAccount(address.trim(), label.trim() || undefined);
-            setAddress('');
+            await addTrackedAccount(address ?? '', label.trim() || undefined);
+            setAddress(null);
             setLabel('');
             push({ tone: 'success', title: 'Account tracked' });
             onChanged();
@@ -202,10 +205,9 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
     return (
         <Stack gap="md">
             <div className={styles.toolbar}>
-                <Input
+                <AddressSelector
                     value={address}
-                    onChange={(event) => setAddress(event.target.value)}
-                    placeholder="TRON address (T...)"
+                    onChange={setAddress}
                     aria-label="Account address to track"
                     disabled={busy}
                 />
@@ -216,7 +218,7 @@ export function AccountsTab({ stats, onChanged }: { stats: IAccountHistoryStatsV
                     aria-label="Account label"
                     disabled={busy}
                 />
-                <Button variant="primary" size="sm" loading={busy} disabled={!address.trim()} onClick={() => { void add(); }}>
+                <Button variant="primary" size="sm" loading={busy} disabled={!address} onClick={() => { void add(); }}>
                     <Plus size={16} /> Track
                 </Button>
                 <Button variant="secondary" size="sm" onClick={() => { void runNow(); }}>

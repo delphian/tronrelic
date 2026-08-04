@@ -29,6 +29,7 @@ import { Tooltip } from '../components/ui/Tooltip';
 import { TronAddress } from '../components/ui/TronAddress';
 import { LazyIconPickerModal as IconPickerModal } from '../components/ui/IconPickerModal';
 import { AccountPicker } from '../components/ui/AccountPicker';
+import { AddressSelector } from '../components/ui/AddressSelector';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
 import { useModal as useModalHook } from '../components/ui/ModalProvider';
 import { useToast as useToastHook } from '../components/ui/ToastProvider';
@@ -365,6 +366,7 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             IconPickerModal,
             ConfirmDialog,
             AccountPicker,
+            AddressSelector,
             Table,
             Thead,
             Tbody,
@@ -481,6 +483,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         IconPickerModal,
         ConfirmDialog,
         AccountPicker,
+        AddressSelector,
         Table,
         Thead,
         Tbody,

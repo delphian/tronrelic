@@ -71,6 +71,26 @@ export class AddressTagsUserController {
     };
 
     /**
+     * GET /suggest?search=&limit= — typeahead backing the shared
+     * `AddressSelector` control.
+     *
+     * Returns whole addresses with their full tag lists, so one keystroke
+     * populates a dropdown that can show both the address and why it matched.
+     * Gated to registered users like every other read here, which is what lets
+     * the selector degrade to a plain validated input for anonymous visitors
+     * rather than exposing the tag vocabulary publicly.
+     */
+    suggest = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+            const limit = req.query.limit ? Number(req.query.limit) : undefined;
+            res.json({ addresses: await this.service.searchAddresses({ search, limit }) });
+        } catch (error) {
+            this.fail(res, error, 'Failed to suggest addresses');
+        }
+    };
+
+    /**
      * Map service validation throws to 400 and everything else to 500.
      *
      * @param res - Response to write the failure to.

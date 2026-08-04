@@ -22,6 +22,7 @@ export function createAddressTagsUserRouter(controller: AddressTagsUserControlle
     router.get('/by-address', controller.getByAddresses);
     router.get('/by-tag', controller.getByTags);
     router.get('/tags', controller.listTags);
+    router.get('/suggest', controller.suggest);
     return router;
 }
 
@@ -35,6 +36,7 @@ export function createAddressTagsUserRouter(controller: AddressTagsUserControlle
 export function createAddressTagsAdminRouter(controller: AddressTagsAdminController): Router {
     const router = Router();
     router.get('/tags', controller.searchTags);
+    router.get('/addresses', controller.searchAddresses);
     router.post('/tags', controller.createTags);
     router.patch('/tags', controller.updateTags);
     router.post('/tags/delete', controller.deleteTags);

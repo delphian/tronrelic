@@ -78,6 +78,22 @@ export interface IAddressTagSearchQuery {
 }
 
 /**
+ * Every tag attached to one address, returned by the address-oriented search
+ * management surfaces use. Grouping happens in the service rather than in each
+ * caller because paging must advance by *address* — a caller that grouped a
+ * page of flat assignments itself would split an address whose tags straddle
+ * the page boundary, showing the same address twice with partial tag lists.
+ */
+export interface IAddressTagGroup {
+    /** TRON wallet address the tags belong to. */
+    address: string;
+    /** Every stored assignment on this address, ordered by tag. */
+    tags: IAddressTag[];
+    /** Most recent `updatedAt` across the address's tags. */
+    updatedAt: Date;
+}
+
+/**
  * Central CRUD authority for text tags on TRON wallet addresses. All methods
  * accept and return arrays so callers batch naturally; single-item calls are
  * just one-element arrays. Authorization is the caller's responsibility — the
@@ -130,6 +146,21 @@ export interface IAddressTagService {
      * @returns Matching assignments ordered by address then tag.
      */
     searchTags(query?: IAddressTagSearchQuery): Promise<IAddressTag[]>;
+
+    /**
+     * Paged search that returns one entry per *address* with every tag on that
+     * address attached, for management tables that present an address as a
+     * single row. An address qualifies when any of its assignments matches the
+     * search text, but the returned group always carries the address's full tag
+     * list — so searching a tag shows what else that address is labelled with.
+     *
+     * `limit` and `skip` count addresses, not assignments, so a page never
+     * splits an address's tags.
+     *
+     * @param query - Optional substring filter and address-wise pagination window.
+     * @returns Matching addresses in ascending order, each with its full tag list.
+     */
+    searchAddresses(query?: IAddressTagSearchQuery): Promise<IAddressTagGroup[]>;
 
     /**
      * Rename tags in place. Each instruction replaces `oldTag` with `newTag`

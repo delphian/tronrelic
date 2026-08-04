@@ -198,6 +198,14 @@ export function useToastContext() {
  * Convenience hook that extracts just the push and dismiss methods from toast context.
  * Commonly used for triggering notifications from components.
  *
+ * The returned object is memoized because callers routinely place it in a
+ * `useCallback` or `useEffect` dependency array. Returning a fresh literal made
+ * every such dependency change on every render, so an effect that transitively
+ * depended on a toast helper re-ran continuously — and when that effect fetched
+ * and stored the response, the resulting state churn drove an unbounded request
+ * loop until the browser ran out of sockets. `push` and `dismiss` are each
+ * already stable, so only the wrapper object needed pinning.
+ *
  * @example
  * ```tsx
  * const { push } = useToast();
@@ -208,12 +216,13 @@ export function useToastContext() {
  * });
  * ```
  *
- * @returns Object with push and dismiss methods
+ * @returns Referentially stable object with push and dismiss methods
  * @throws Error if used outside ToastProvider
  */
 export function useToast() {
     const { push, dismiss } = useToastContext();
-    return { push, dismiss };
+
+    return useMemo(() => ({ push, dismiss }), [push, dismiss]);
 }
 
 /**

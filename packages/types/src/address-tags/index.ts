@@ -6,6 +6,7 @@
 export type {
     IAddressTagPair,
     IAddressTag,
+    IAddressTagGroup,
     IAddressTagRename,
     IAddressTagListQuery,
     IAddressTagSearchQuery,

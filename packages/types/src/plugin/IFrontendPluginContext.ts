@@ -457,6 +457,39 @@ export interface IUIComponents {
     }>;
 
     /**
+     * AddressSelector — the canonical control for *choosing* a TRON wallet
+     * address, as `TronAddress` is the canonical way to render one.
+     *
+     * Accepts a pasted or fully-typed address directly, and offers a typeahead
+     * over the addresses core tracks in its address tags: partial text matches
+     * both address text and tag text, and every suggestion shows its tags, so
+     * an operator can pick "the exchange hot wallet" without recognising
+     * base58. Self-contained — it queries the suggest endpoint itself, so a
+     * consumer binds `value`/`onChange` and nothing else.
+     *
+     * `onChange` only ever emits a validated base58 address (or `null` when
+     * cleared), so a consumer never has to re-validate what it receives.
+     *
+     * Suggestions are an enhancement, not a dependency: the lookup is
+     * login-gated, so for an anonymous visitor the control degrades to a plain
+     * input that still validates and accepts a pasted address. Use this instead
+     * of an `Input` plus your own base58 regex so every address entry point
+     * behaves identically and only has to be fixed in one place.
+     */
+    AddressSelector: ComponentType<{
+        /** Currently-selected address, or null when nothing is chosen. */
+        value: string | null;
+        /** Fired with the newly-selected address, or null when cleared. */
+        onChange: (address: string | null) => void;
+        disabled?: boolean;
+        placeholder?: string;
+        /** Accessible name, for forms whose visible label sits elsewhere. */
+        'aria-label'?: string;
+        /** Maximum number of suggestions to offer. @default 10 */
+        limit?: number;
+    }>;
+
+    /**
      * Table wrapper matching the core `/system/*` admin tables.
      *
      * Compose with `Thead`, `Tbody`, `Tr`, `Th`, `Td` to get the same
@@ -1324,7 +1357,7 @@ export interface IFrontendPluginContext {
     /** Plugin identifier used for namespacing events and API routes */
     pluginId: string;
 
-    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, SegmentedControl, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, IconPickerModal, ConfirmDialog, Table family) */
+    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, SegmentedControl, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, AddressSelector, IconPickerModal, ConfirmDialog, Table family) */
     ui: IUIComponents;
 
     /** Layout component library (Page, PageHeader, Stack, Grid, Section, SubMenu) */

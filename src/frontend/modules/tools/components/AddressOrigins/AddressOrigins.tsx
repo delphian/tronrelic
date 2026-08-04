@@ -20,9 +20,9 @@ import { GitBranch, Plus, X, CornerRightUp, Loader2, Flag, AlertTriangle, Users,
 import { useAuthSession } from '../../../user/components/SessionProvider';
 import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
-import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
 import { TronAddress } from '../../../../components/ui/TronAddress';
+import { AddressSelector } from '../../../../components/ui/AddressSelector';
 import { createAddressOriginsStream } from '../../api/client';
 import type { IOriginHop, IOriginLadder, OriginStopReason } from '../../types';
 import styles from './AddressOrigins.module.scss';
@@ -218,18 +218,20 @@ export function AddressOrigins() {
             <div className={styles.container}>
                 <Card>
                     <Stack gap="md">
-                        <label className={styles.label} htmlFor="origin-address-0">
+                        {/* A span, not a <label>: each row is an AddressSelector
+                            that owns its own input and names it via aria-label,
+                            so a `htmlFor` pointing at an id this component no
+                            longer renders would be a dangling association. */}
+                        <span className={styles.label}>
                             {isLoggedIn ? 'TRON wallet addresses' : 'TRON wallet address'}
-                        </label>
+                        </span>
 
                         {(isLoggedIn ? addresses : addresses.slice(0, 1)).map((value, index) => (
                             <div key={index} className={styles.input_row}>
-                                <Input
-                                    id={`origin-address-${index}`}
-                                    value={value}
-                                    onChange={e => updateAddress(index, e.target.value)}
-                                    placeholder="T..."
-                                    onKeyDown={e => e.key === 'Enter' && canSubmit && handleTrace()}
+                                <AddressSelector
+                                    value={value || null}
+                                    onChange={next => updateAddress(index, next ?? '')}
+                                    aria-label={`TRON wallet address ${index + 1}`}
                                 />
                                 {isLoggedIn && addresses.length > 1 && (
                                     <Button variant="ghost" size="sm" onClick={() => removeAddressRow(index)} aria-label={`Remove address ${index + 1}`}>
