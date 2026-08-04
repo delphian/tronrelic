@@ -31,7 +31,7 @@ import { SchedulerService } from '../services/scheduler.service.js';
  * - chain-parameters:fetch - Fetch TRON chain parameters every 10 minutes
  * - usdt-parameters:fetch - Fetch USDT transfer energy cost every 10 minutes
  * - blockchain:sync - Sync latest blocks every minute
- * - blockchain:prune - Remove old transactions every hour
+ * - blockchain:prune - Remove old transactions and blocks every hour
  * - cache:cleanup - Clean expired cache entries every hour
  * - system-logs:cleanup - Clean old system logs every hour
  *
@@ -73,9 +73,13 @@ export async function registerCoreJobs(
         await blockchainService.syncLatestBlocks();
     });
 
-    // Blockchain pruning: every hour (removes 2 hours of oldest transactions older than 7 days)
+    // Blockchain pruning: every hour. Transactions: removes 2 hours of the oldest
+    // rows older than 7 days. Blocks: removes 24 hours of the oldest rows older
+    // than the configured block retention (32 days by default) — block docs are
+    // tiny, so the larger batch drains the initial backlog in weeks, not months.
     scheduler.register('blockchain:prune', '0 * * * *', async () => {
         await blockchainService.pruneOldTransactions(24 * 7, 2);
+        await blockchainService.pruneOldBlocks();
     });
 
     // Network-activity rollup: every 5 minutes. Pre-aggregates the

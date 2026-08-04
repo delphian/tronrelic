@@ -199,7 +199,9 @@ export interface IBlockchainService {
      * - 7 days: hourly buckets
      * - 30+ days: 4-hour windows
      *
-     * @param days - Number of days of history (min 1, max 90)
+     * @param days - Number of days of history (min 1; clamped to the deployment's
+     *   block retention window, 32 days by default — blocks past that window are
+     *   pruned, so wider ranges cannot be served)
      * @returns Array of timeseries points sorted chronologically
      */
     getTransactionTimeseries(days: number): Promise<ITransactionTimeseriesPoint[]>;
