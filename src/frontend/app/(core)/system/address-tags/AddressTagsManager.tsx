@@ -12,9 +12,15 @@
  * surrounding /system layout gates access for UX while the backend
  * `requireAdmin` middleware is the trust boundary.
  *
+ * One row is one *address*, listing every tag attached to it. That grouping is
+ * done server-side by `searchAddresses` rather than here, because paging has to
+ * advance by address: grouping a page of flat assignments locally would split
+ * any address whose tags straddle the page boundary, rendering it as two rows
+ * with partial tag lists.
+ *
  * Pagination deliberately derives its offset from the number of rows already
  * on screen instead of a running counter. A counter drifts the moment a row is
- * deleted locally, silently skipping as many server rows as were removed; the
+ * removed locally, silently skipping as many server rows as were removed; the
  * fetched prefix length cannot drift because only fetched rows are deletable.
  */
 
@@ -27,6 +33,7 @@ import { Input } from '../../../../components/ui/Input';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { ClientTime } from '../../../../components/ui/ClientTime';
 import { TronAddress } from '../../../../components/ui/TronAddress';
+import { AddressSelector } from '../../../../components/ui/AddressSelector';
 import { ConfirmDialog } from '../../../../components/ui/ConfirmDialog';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { useModal } from '../../../../components/ui/ModalProvider';
@@ -34,8 +41,9 @@ import {
     createTags,
     deleteTags,
     invalidateAddressTags,
-    searchTags,
+    searchAddresses,
     updateTags,
+    type IAddressTagGroupView,
     type IAddressTagView
 } from '../../../../modules/address-tags';
 import styles from './page.module.scss';
@@ -43,21 +51,23 @@ import styles from './page.module.scss';
 const PAGE_SIZE = 50;
 
 /**
- * Stable identity for one assignment row, used for edit/busy state keys.
+ * Stable identity for one assignment, used for edit and busy state keys. Rows
+ * are addresses, but those two states still track a single tag: an admin
+ * renames one tag at a time even when its row holds a dozen.
  *
  * @param item - The assignment the key identifies.
  * @returns A unique `address tag` composite key.
  */
-function rowKey(item: { address: string; tag: string }): string {
+function tagKey(item: { address: string; tag: string }): string {
     return `${item.address} ${item.tag}`;
 }
 
 /**
- * The full management surface: search bar, create form, and the paged
- * assignment table with inline rename and confirmed delete.
+ * The full management surface: create form, search bar, and the paged table of
+ * tagged addresses with per-tag inline rename and confirmed delete.
  */
 export function AddressTagsManager() {
-    const [items, setItems] = useState<IAddressTagView[]>([]);
+    const [groups, setGroups] = useState<IAddressTagGroupView[]>([]);
     const [search, setSearch] = useState('');
     const [committedSearch, setCommittedSearch] = useState('');
     const [loading, setLoading] = useState(true);
@@ -65,7 +75,9 @@ export function AddressTagsManager() {
     const [busyKey, setBusyKey] = useState<string | null>(null);
     const [editKey, setEditKey] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
-    const [newAddress, setNewAddress] = useState('');
+    // Null rather than '' because AddressSelector only ever hands back a
+    // validated address or nothing — there is no partial value to hold.
+    const [newAddress, setNewAddress] = useState<string | null>(null);
     const [newTags, setNewTags] = useState('');
     const [creating, setCreating] = useState(false);
     const { push } = useToast();
@@ -84,10 +96,10 @@ export function AddressTagsManager() {
     }, [push]);
 
     /**
-     * Load one page of assignments for the current search/offset. Requests
-     * one extra row so "Load more" only shows when a next page exists. A fresh
-     * (non-append) load commits `nextSearch` so "Load more" paginates the query
-     * that produced the visible rows rather than the live draft input,
+     * Load one page of tagged addresses for the current search/offset. Requests
+     * one extra address so "Load more" only shows when a next page exists. A
+     * fresh (non-append) load commits `nextSearch` so "Load more" paginates the
+     * query that produced the visible rows rather than the live draft input,
      * preventing two unrelated result sets from being mixed. Clearing `loading`
      * in `finally` retires the first-fetch placeholder even when the request
      * fails, so a failed initial load falls through to the empty state rather
@@ -96,18 +108,22 @@ export function AddressTagsManager() {
      * @param nextSearch - Query to run; committed as the pagination anchor on a
      *                     non-append load so later pages cannot drift onto a
      *                     different, unsubmitted filter.
-     * @param nextSkip - Offset to request. Callers derive this from
-     *                   `items.length` rather than a running counter so deleted
+     * @param nextSkip - Address offset to request. Callers derive this from
+     *                   `groups.length` rather than a running counter so removed
      *                   rows cannot desynchronise the next page.
      * @param append - True to extend the visible page ("Load more"), false to
      *                 replace it (initial load, search, post-mutation refresh).
      */
     const load = useCallback(async (nextSearch: string, nextSkip: number, append: boolean) => {
         try {
-            const page = await searchTags({ search: nextSearch || undefined, limit: PAGE_SIZE + 1, skip: nextSkip });
+            const page = await searchAddresses({
+                search: nextSearch || undefined,
+                limit: PAGE_SIZE + 1,
+                skip: nextSkip
+            });
             const visible = page.slice(0, PAGE_SIZE);
             setHasMore(page.length > PAGE_SIZE);
-            setItems((current) => (append ? [...current, ...visible] : visible));
+            setGroups((current) => (append ? [...current, ...visible] : visible));
             if (!append) {
                 setCommittedSearch(nextSearch);
             }
@@ -136,10 +152,10 @@ export function AddressTagsManager() {
      * submitted — which would hide the row they just created.
      */
     const handleCreate = useCallback(async () => {
-        const address = newAddress.trim();
+        const address = newAddress;
         const tags = newTags.split(',').map((tag) => tag.trim()).filter((tag) => tag.length > 0);
         if (!address || tags.length === 0) {
-            notify('danger', 'Enter an address and at least one tag');
+            notify('danger', 'Select an address and enter at least one tag');
             return;
         }
         setCreating(true);
@@ -150,7 +166,7 @@ export function AddressTagsManager() {
             // this, they keep their pre-mutation list for the rest of the session.
             invalidateAddressTags(address);
             notify('success', `Added ${tags.length} tag${tags.length > 1 ? 's' : ''}`);
-            setNewAddress('');
+            setNewAddress(null);
             setNewTags('');
             await load(committedSearch, 0, false);
         } catch (error) {
@@ -161,8 +177,8 @@ export function AddressTagsManager() {
     }, [committedSearch, load, newAddress, newTags, notify]);
 
     /**
-     * Commit an inline rename for the row being edited. Refreshes from the
-     * committed query for the same reason as creation: the renamed row must
+     * Commit an inline rename for the tag being edited. Refreshes from the
+     * committed query for the same reason as creation: the renamed tag must
      * stay visible under the filter the admin is actually looking at.
      */
     const handleRename = useCallback(async (item: IAddressTagView) => {
@@ -171,7 +187,7 @@ export function AddressTagsManager() {
             setEditKey(null);
             return;
         }
-        setBusyKey(rowKey(item));
+        setBusyKey(tagKey(item));
         try {
             await updateTags([{ address: item.address, oldTag: item.tag, newTag }]);
             invalidateAddressTags(item.address);
@@ -186,10 +202,12 @@ export function AddressTagsManager() {
     }, [committedSearch, editValue, load, notify]);
 
     /**
-     * Delete one assignment after modal confirmation.
+     * Delete one tag after modal confirmation. The tag is spliced out of its
+     * address's row locally, and the row itself drops once its last tag goes —
+     * an address with no tags has nothing left for this table to show.
      */
     const handleDelete = useCallback((item: IAddressTagView) => {
-        const modalId = `address-tag-delete-${rowKey(item)}`;
+        const modalId = `address-tag-delete-${tagKey(item)}`;
         open({
             id: modalId,
             title: 'Delete address tag',
@@ -204,7 +222,11 @@ export function AddressTagsManager() {
                             await deleteTags([{ address: item.address, tag: item.tag }]);
                             invalidateAddressTags(item.address);
                             notify('success', `Removed '${item.tag}'`);
-                            setItems((current) => current.filter((row) => rowKey(row) !== rowKey(item)));
+                            setGroups((current) => current
+                                .map((group) => (group.address === item.address
+                                    ? { ...group, tags: group.tags.filter((row) => row.tag !== item.tag) }
+                                    : group))
+                                .filter((group) => group.tags.length > 0));
                         } catch (error) {
                             notify('danger', 'Failed to delete tag', error);
                         } finally {
@@ -216,17 +238,91 @@ export function AddressTagsManager() {
         });
     }, [close, notify, open]);
 
+    /**
+     * Render one tag as a chip carrying its own rename and delete affordances,
+     * swapping to an input with save/cancel while that chip is being edited.
+     * Actions live on the chip rather than in a row-level column because a row
+     * now holds many tags, and a single action column could not say which one
+     * it acts on.
+     *
+     * @param item - The assignment this chip represents.
+     * @returns The chip element for its address row's tag cell.
+     */
+    const renderTagChip = useCallback((item: IAddressTagView) => {
+        const key = tagKey(item);
+        const editing = editKey === key;
+        const busy = busyKey === key;
+        return (
+            <span key={key} className="chip">
+                {editing ? (
+                    <>
+                        <Input
+                            value={editValue}
+                            onChange={(event) => setEditValue(event.target.value)}
+                            aria-label={`New name for tag ${item.tag}`}
+                            size="sm"
+                            className={styles.tag_input}
+                            autoFocus
+                        />
+                        <Button
+                            variant="primary"
+                            size="xs"
+                            onClick={() => void handleRename(item)}
+                            disabled={busy}
+                            aria-label={`Save rename of tag ${item.tag}`}
+                        >
+                            <Check size={14} />
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => setEditKey(null)}
+                            disabled={busy}
+                            aria-label={`Cancel rename of tag ${item.tag}`}
+                        >
+                            <X size={14} />
+                        </Button>
+                    </>
+                ) : (
+                    <>
+                        <span className={styles.tag_text}>{item.tag}</span>
+                        <Button
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => {
+                                setEditKey(key);
+                                setEditValue(item.tag);
+                            }}
+                            aria-label={`Rename tag ${item.tag}`}
+                        >
+                            <Pencil size={14} />
+                        </Button>
+                        <Button
+                            variant="danger"
+                            size="xs"
+                            onClick={() => handleDelete(item)}
+                            aria-label={`Delete tag ${item.tag}`}
+                        >
+                            <Trash2 size={14} />
+                        </Button>
+                    </>
+                )}
+            </span>
+        );
+    }, [busyKey, editKey, editValue, handleDelete, handleRename]);
+
     return (
         <Stack gap="lg">
             <Card>
                 <div className={styles.create_form}>
-                    <Input
-                        value={newAddress}
-                        onChange={(event) => setNewAddress(event.target.value)}
-                        placeholder="TRON address (T…)"
-                        aria-label="TRON address"
-                        className={styles.address_input}
-                    />
+                    <div className={styles.address_input}>
+                        <AddressSelector
+                            value={newAddress}
+                            onChange={setNewAddress}
+                            disabled={creating}
+                            aria-label="TRON address to tag"
+                        />
+                    </div>
                     <Input
                         value={newTags}
                         onChange={(event) => setNewTags(event.target.value)}
@@ -261,7 +357,7 @@ export function AddressTagsManager() {
                         </Button>
                     </form>
 
-                    {items.length === 0 ? (
+                    {groups.length === 0 ? (
                         <div className={styles.placeholder}>
                             {loading ? 'Loading address tags…' : 'No address tags found.'}
                         </div>
@@ -270,88 +366,26 @@ export function AddressTagsManager() {
                             <Thead>
                                 <Tr>
                                     <Th>Address</Th>
-                                    <Th>Tag</Th>
+                                    <Th>Tags</Th>
                                     <Th>Updated</Th>
-                                    <Th>Actions</Th>
                                 </Tr>
                             </Thead>
                             <Tbody>
-                                {items.map((item) => {
-                                    const key = rowKey(item);
-                                    const editing = editKey === key;
-                                    const busy = busyKey === key;
-                                    return (
-                                        <Tr key={key}>
-                                            <Td data-label="Address">
-                                                <TronAddress address={item.address} />
-                                            </Td>
-                                            <Td data-label="Tag">
-                                                {editing ? (
-                                                    <Input
-                                                        value={editValue}
-                                                        onChange={(event) => setEditValue(event.target.value)}
-                                                        aria-label={`New name for tag ${item.tag}`}
-                                                        size="sm"
-                                                        autoFocus
-                                                    />
-                                                ) : (
-                                                    <span className={styles.tag_text}>{item.tag}</span>
-                                                )}
-                                            </Td>
-                                            <Td data-label="Updated">
-                                                <ClientTime date={item.updatedAt} format="datetime" />
-                                            </Td>
-                                            <Td data-label="Actions">
-                                                <div className={styles.row_actions}>
-                                                    {editing ? (
-                                                        <>
-                                                            <Button
-                                                                variant="primary"
-                                                                size="xs"
-                                                                onClick={() => void handleRename(item)}
-                                                                disabled={busy}
-                                                                aria-label="Save rename"
-                                                            >
-                                                                <Check size={14} />
-                                                            </Button>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="xs"
-                                                                onClick={() => setEditKey(null)}
-                                                                disabled={busy}
-                                                                aria-label="Cancel rename"
-                                                            >
-                                                                <X size={14} />
-                                                            </Button>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="xs"
-                                                                onClick={() => {
-                                                                    setEditKey(key);
-                                                                    setEditValue(item.tag);
-                                                                }}
-                                                                aria-label={`Rename tag ${item.tag}`}
-                                                            >
-                                                                <Pencil size={14} />
-                                                            </Button>
-                                                            <Button
-                                                                variant="danger"
-                                                                size="xs"
-                                                                onClick={() => handleDelete(item)}
-                                                                aria-label={`Delete tag ${item.tag}`}
-                                                            >
-                                                                <Trash2 size={14} />
-                                                            </Button>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </Td>
-                                        </Tr>
-                                    );
-                                })}
+                                {groups.map((group) => (
+                                    <Tr key={group.address}>
+                                        <Td data-label="Address">
+                                            <TronAddress address={group.address} />
+                                        </Td>
+                                        <Td data-label="Tags">
+                                            <div className={styles.tag_list}>
+                                                {group.tags.map((item) => renderTagChip(item))}
+                                            </div>
+                                        </Td>
+                                        <Td data-label="Updated">
+                                            <ClientTime date={group.updatedAt} format="datetime" />
+                                        </Td>
+                                    </Tr>
+                                ))}
                             </Tbody>
                         </Table>
                     )}
@@ -359,7 +393,7 @@ export function AddressTagsManager() {
                     {hasMore && (
                         <Button
                             variant="secondary"
-                            onClick={() => void load(committedSearch, items.length, true)}
+                            onClick={() => void load(committedSearch, groups.length, true)}
                         >
                             Load more
                         </Button>

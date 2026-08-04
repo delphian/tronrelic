@@ -114,6 +114,35 @@ describe('AddressTagService', () => {
             const paged = await service.searchTags({ limit: 2, skip: 2 });
             expect(paged).toHaveLength(1);
         });
+
+        it('searchAddresses returns one entry per address carrying all its tags', async () => {
+            const all = await service.searchAddresses();
+            expect(all.map((group) => group.address)).toEqual([ADDRESS_B, ADDRESS_A].sort());
+            const grouped = all.find((group) => group.address === ADDRESS_A);
+            expect(grouped?.tags.map((tag) => tag.tag)).toEqual(['exchange', 'whale']);
+            expect(grouped?.updatedAt).toBeInstanceOf(Date);
+        });
+
+        it('searchAddresses pages by address, not by assignment', async () => {
+            // ADDRESS_A owns two of the three assignments, and sorts second. A
+            // page size of one must yield exactly one address with its complete
+            // tag list — paging by assignment would split ADDRESS_A across two
+            // pages instead.
+            const first = await service.searchAddresses({ limit: 1 });
+            expect(first).toHaveLength(1);
+            expect(first[0].address).toBe(ADDRESS_B);
+            const second = await service.searchAddresses({ limit: 1, skip: 1 });
+            expect(second).toHaveLength(1);
+            expect(second[0].address).toBe(ADDRESS_A);
+            expect(second[0].tags).toHaveLength(2);
+        });
+
+        it('searchAddresses returns an address matched by one tag with its full tag list', async () => {
+            const result = await service.searchAddresses({ search: 'exch' });
+            expect(result).toHaveLength(1);
+            expect(result[0].address).toBe(ADDRESS_A);
+            expect(result[0].tags.map((tag) => tag.tag)).toEqual(['exchange', 'whale']);
+        });
     });
 
     describe('updateTags', () => {

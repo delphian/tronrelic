@@ -15,7 +15,7 @@ import { Shield, ShieldAlert } from 'lucide-react';
 import { useAuthSession } from '../../../user/components/SessionProvider';
 import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
-import { Input } from '../../../../components/ui/Input';
+import { AddressSelector } from '../../../../components/ui/AddressSelector';
 import { Button } from '../../../../components/ui/Button';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { TronAddress } from '../../../../components/ui/TronAddress';
@@ -33,7 +33,9 @@ import styles from './ApprovalChecker.module.scss';
 export function ApprovalChecker() {
     const { isLoggedIn } = useAuthSession();
     const searchParams = useSearchParams();
-    const [address, setAddress] = useState('');
+    // Null rather than '' because AddressSelector only ever hands back a
+    // validated address or nothing — there is no partial value to hold.
+    const [address, setAddress] = useState<string | null>(null);
     const [result, setResult] = useState<IApprovalCheckResult | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
@@ -52,8 +54,10 @@ export function ApprovalChecker() {
 
     /** Submit the address for approval scanning. */
     const handleCheck = async () => {
-        const trimmed = address.trim();
-        if (trimmed.length < 34) return;
+        // AddressSelector guarantees a validated address or null, so presence
+        // is the whole precondition — no length heuristic needed.
+        const trimmed = address;
+        if (!trimmed) return;
 
         setLoading(true);
         setError(null);
@@ -96,21 +100,21 @@ export function ApprovalChecker() {
             <div className={styles.container}>
             <Card>
                 <Stack gap="md">
-                    <label className={styles.label} htmlFor="approval-address">
-                        TRON Wallet Address
-                    </label>
+                    {/* A span, not a <label>: AddressSelector owns its own
+                        input and names it via aria-label, so a `htmlFor`
+                        pointing at an id this component no longer renders
+                        would be a dangling association. */}
+                    <span className={styles.label}>TRON Wallet Address</span>
                     <div className={styles.input_row}>
-                        <Input
-                            id="approval-address"
+                        <AddressSelector
                             value={address}
-                            onChange={e => setAddress(e.target.value)}
-                            placeholder="T..."
-                            onKeyDown={e => e.key === 'Enter' && handleCheck()}
+                            onChange={setAddress}
+                            aria-label="TRON wallet address"
                         />
                         <Button
                             variant="primary"
                             onClick={handleCheck}
-                            disabled={loading || address.trim().length < 34}
+                            disabled={loading || !address}
                             loading={loading}
                         >
                             <Shield size={18} />

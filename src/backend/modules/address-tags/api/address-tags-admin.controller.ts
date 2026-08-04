@@ -41,6 +41,23 @@ export class AddressTagsAdminController {
     };
 
     /**
+     * GET /addresses?search=&limit=&skip= — address-oriented search backing the
+     * `/system/address-tags` table, where one row is one address carrying all
+     * of its tags. `limit`/`skip` count addresses, so a page never splits an
+     * address's tag list across the boundary.
+     */
+    searchAddresses = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+            const limit = req.query.limit ? Number(req.query.limit) : undefined;
+            const skip = req.query.skip ? Number(req.query.skip) : undefined;
+            res.json({ addresses: await this.service.searchAddresses({ search, limit, skip }) });
+        } catch (error) {
+            this.fail(res, error, 'Failed to search tagged addresses');
+        }
+    };
+
+    /**
      * POST /tags — create assignments. Body: `{ tags: IAddressTagPair[] }`.
      */
     createTags = async (req: Request, res: Response): Promise<void> => {

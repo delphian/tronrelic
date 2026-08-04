@@ -48,6 +48,7 @@ import type { TronAddress as Impl_TronAddress } from '../components/ui/TronAddre
 import type { LazyIconPickerModal as Impl_IconPickerModal } from '../components/ui/IconPickerModal';
 import type { ConfirmDialog as Impl_ConfirmDialog } from '../components/ui/ConfirmDialog';
 import type { AccountPicker as Impl_AccountPicker } from '../components/ui/AccountPicker';
+import type { AddressSelector as Impl_AddressSelector } from '../components/ui/AddressSelector';
 import type { Table as Impl_Table } from '../components/ui/Table';
 import type { Thead as Impl_Thead } from '../components/ui/Table';
 import type { Tbody as Impl_Tbody } from '../components/ui/Table';
@@ -105,6 +106,7 @@ type _Conformance_TronAddress = AssertConformant<NoPhantomProps<ComponentProps<I
 type _Conformance_IconPickerModal = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['IconPickerModal']>, ComponentProps<typeof Impl_IconPickerModal>>>;
 type _Conformance_ConfirmDialog = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['ConfirmDialog']>, ComponentProps<typeof Impl_ConfirmDialog>>>;
 type _Conformance_AccountPicker = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['AccountPicker']>, ComponentProps<typeof Impl_AccountPicker>>>;
+type _Conformance_AddressSelector = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['AddressSelector']>, ComponentProps<typeof Impl_AddressSelector>>>;
 type _Conformance_Table = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Table']>, ComponentProps<typeof Impl_Table>>>;
 type _Conformance_Thead = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Thead']>, ComponentProps<typeof Impl_Thead>>>;
 type _Conformance_Tbody = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Tbody']>, ComponentProps<typeof Impl_Tbody>>>;

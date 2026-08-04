@@ -32,6 +32,19 @@ export interface IAddressTagView extends IAddressTagPair {
 }
 
 /**
+ * Wire shape of one address and every tag on it — `IAddressTagGroup` with its
+ * dates as the ISO strings JSON delivers them in.
+ */
+export interface IAddressTagGroupView {
+    /** The tagged TRON address. */
+    address: string;
+    /** Every assignment on this address, ordered by tag. */
+    tags: IAddressTagView[];
+    /** ISO timestamp of the most recently changed tag on this address. */
+    updatedAt: string;
+}
+
+/**
  * Unwrap a response or raise its error message so the UI can toast it.
  *
  * @param response - The fetch response to check.
@@ -81,6 +94,53 @@ export async function searchTags(query?: { search?: string; limit?: number; skip
     const suffix = params.size > 0 ? `?${params.toString()}` : '';
     const data = await parse<{ tags: IAddressTagView[] }>(await fetch(`${BASE}/tags${suffix}`), 'search address tags');
     return data.tags;
+}
+
+/**
+ * Typeahead lookup backing the shared `AddressSelector` control.
+ *
+ * Matches the term against both address text and tag text and returns whole
+ * addresses with their full tag lists, so the dropdown can show an address
+ * alongside the tags that explain why it surfaced. Reads are `requireLogin`, so
+ * an anonymous visitor gets a 401 — callers should treat suggestions as an
+ * absent enhancement in that case, never as an error to surface.
+ *
+ * @param search - The partial address or tag text the user has typed.
+ * @param limit - Maximum number of addresses to offer.
+ * @returns Matching addresses, each with every tag attached to it.
+ */
+export async function suggestAddresses(search: string, limit?: number): Promise<IAddressTagGroupView[]> {
+    const params = new URLSearchParams({ search });
+    if (limit !== undefined) params.set('limit', String(limit));
+    const data = await parse<{ addresses: IAddressTagGroupView[] }>(
+        await fetch(`${USER_BASE}/suggest?${params.toString()}`),
+        'suggest addresses'
+    );
+    return data.addresses;
+}
+
+/**
+ * Paged, address-oriented search for the management table.
+ *
+ * Prefer this over `searchTags` wherever a row represents an address: the
+ * server pages by address and returns each address's complete tag list, so a
+ * grouped table cannot show the same address twice with a split list — which
+ * is exactly what grouping a page of flat assignments client-side would do.
+ *
+ * @param query - Optional substring filter and address-wise pagination window.
+ * @returns Matching addresses ordered ascending, each with all of its tags.
+ */
+export async function searchAddresses(query?: { search?: string; limit?: number; skip?: number }): Promise<IAddressTagGroupView[]> {
+    const params = new URLSearchParams();
+    if (query?.search) params.set('search', query.search);
+    if (query?.limit !== undefined) params.set('limit', String(query.limit));
+    if (query?.skip !== undefined) params.set('skip', String(query.skip));
+    const suffix = params.size > 0 ? `?${params.toString()}` : '';
+    const data = await parse<{ addresses: IAddressTagGroupView[] }>(
+        await fetch(`${BASE}/addresses${suffix}`),
+        'search tagged addresses'
+    );
+    return data.addresses;
 }
 
 /**

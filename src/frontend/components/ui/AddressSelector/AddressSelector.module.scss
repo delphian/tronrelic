@@ -1,0 +1,129 @@
+/**
+ * AddressSelector styles.
+ *
+ * A debounced address typeahead with a floating suggestion dropdown, plus the
+ * compact "selected address" row shown once a value is chosen. Scoped to this
+ * component; references design tokens only. Mirrors AccountPicker's token
+ * choices so the two pickers read as one family.
+ */
+
+.search {
+    position: relative;
+}
+
+.search_input {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.search_icon {
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+}
+
+.search_field {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Suggestions float over following content so opening them does not shift the
+   surrounding form. */
+.results {
+    position: absolute;
+    z-index: var(--z-index-dropdown);
+    left: 0;
+    right: 0;
+    margin: var(--gap-2xs) 0 0;
+    padding: 0;
+    list-style: none;
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+}
+
+.results_note {
+    padding: var(--padding-xs) var(--padding-sm);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+.result {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--gap-2xs);
+    width: 100%;
+    padding: var(--padding-xs) var(--padding-sm);
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.result:hover:not(:disabled) {
+    background: var(--color-surface-muted);
+}
+
+.result:disabled {
+    cursor: default;
+    opacity: var(--opacity-60);
+}
+
+/* The raw address is shown in full here rather than truncated: the operator is
+   choosing between candidates, so the characters that distinguish them must be
+   visible. It wraps instead of overflowing a narrow container. */
+.result_address {
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    overflow-wrap: anywhere;
+}
+
+.result_tags {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+/* Compact selected-address row shown once a value is chosen. */
+.selected {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    padding: var(--padding-xs) var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+}
+
+.selected_address {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: var(--padding-2xs);
+    color: var(--color-text-muted);
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.clear:hover:not(:disabled) {
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.clear:disabled {
+    cursor: default;
+    opacity: var(--opacity-60);
+}

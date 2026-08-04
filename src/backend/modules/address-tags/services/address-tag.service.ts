@@ -18,6 +18,7 @@
 
 import type {
     IAddressTag,
+    IAddressTagGroup,
     IAddressTagListQuery,
     IAddressTagPair,
     IAddressTagRename,
@@ -188,19 +189,40 @@ export class AddressTagService implements IAddressTagService {
     public async searchTags(query?: IAddressTagSearchQuery): Promise<IAddressTag[]> {
         const limit = this.clampLimit(query?.limit);
         const skip = Math.max(0, Math.floor(query?.skip ?? 0));
-        const filter: Record<string, unknown> = {};
-        const search = query?.search?.trim();
-        if (search) {
-            const pattern = { $regex: escapeRegex(search), $options: 'i' };
-            filter.$or = [{ address: pattern }, { tag: pattern }];
-        }
         const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
-        const docs = await collection.find(filter as Partial<IAddressTagDocument>)
+        const docs = await collection.find(this.buildSearchFilter(query?.search) as Partial<IAddressTagDocument>)
             .sort({ address: 1, tag: 1 })
             .skip(skip)
             .limit(limit)
             .toArray();
         return docs.map((doc) => this.toTag(doc));
+    }
+
+    /** @inheritdoc */
+    public async searchAddresses(query?: IAddressTagSearchQuery): Promise<IAddressTagGroup[]> {
+        const limit = this.clampLimit(query?.limit);
+        const skip = Math.max(0, Math.floor(query?.skip ?? 0));
+        const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
+        // Two reads rather than one grouped pipeline. The pipeline pages the
+        // *addresses* that match; the follow-up find loads their complete tag
+        // lists. Grouping the matched documents alone would return only the
+        // assignments that satisfied the search text, so an address located by
+        // one of its tags would render as if that were its only tag.
+        const matched = await collection.aggregate<{ _id: string }>([
+            { $match: this.buildSearchFilter(query?.search) },
+            { $group: { _id: '$address' } },
+            { $sort: { _id: 1 } },
+            { $skip: skip },
+            { $limit: limit }
+        ]).toArray();
+        const addresses = matched.map((row) => row._id);
+        if (addresses.length === 0) {
+            return [];
+        }
+        const docs = await collection.find({ address: { $in: addresses } })
+            .sort({ address: 1, tag: 1 })
+            .toArray();
+        return this.groupDocumentsByAddress(addresses, docs);
     }
 
     /** @inheritdoc */
@@ -354,6 +376,52 @@ export class AddressTagService implements IAddressTagService {
             .sort({ address: 1, tag: 1 })
             .toArray();
         return docs.map((doc) => this.toTag(doc));
+    }
+
+    /**
+     * Build the Mongo filter for a management search. Shared by the assignment
+     * and address-group searches so both agree on what "matches" means — an
+     * address matches when its own text or any of its tags contains the term.
+     *
+     * @param search - Raw caller-supplied search text, possibly absent or blank.
+     * @returns A filter matching everything when no usable search text was given.
+     */
+    private buildSearchFilter(search?: string): Record<string, unknown> {
+        const trimmed = search?.trim();
+        if (!trimmed) {
+            return {};
+        }
+        const pattern = { $regex: escapeRegex(trimmed), $options: 'i' };
+        return { $or: [{ address: pattern }, { tag: pattern }] };
+    }
+
+    /**
+     * Fold a flat, address-sorted document list into one group per address.
+     *
+     * Iterates the caller's `addresses` array rather than the documents so the
+     * result preserves the paged address order the aggregation established,
+     * which is what keeps successive "load more" pages contiguous.
+     *
+     * @param addresses - The page of addresses, already in display order.
+     * @param docs - Every stored assignment for those addresses.
+     * @returns One group per address, each carrying its full tag list and the
+     *          latest `updatedAt` among those tags.
+     */
+    private groupDocumentsByAddress(addresses: string[], docs: IAddressTagDocument[]): IAddressTagGroup[] {
+        const byAddress = new Map<string, IAddressTag[]>(addresses.map((address) => [address, []]));
+        for (const doc of docs) {
+            byAddress.get(doc.address)?.push(this.toTag(doc));
+        }
+        const groups: IAddressTagGroup[] = [];
+        for (const address of addresses) {
+            const tags = byAddress.get(address) ?? [];
+            const updatedAt = tags.reduce<Date>(
+                (latest, tag) => (tag.updatedAt > latest ? tag.updatedAt : latest),
+                tags[0]?.updatedAt ?? new Date(0)
+            );
+            groups.push({ address, tags, updatedAt });
+        }
+        return groups;
     }
 
     /**
