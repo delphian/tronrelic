@@ -34,7 +34,15 @@
  * for its tools menu.
  */
 
-import { useState, useEffect, useLayoutEffect, useCallback, useId, useRef } from 'react';
+import {
+    useState,
+    useEffect,
+    useLayoutEffect,
+    useCallback,
+    useId,
+    useRef,
+    type KeyboardEvent
+} from 'react';
 import { createPortal } from 'react-dom';
 import { Search, X } from 'lucide-react';
 import { Input } from '../Input';
@@ -59,10 +67,13 @@ const MAX_SUGGESTIONS = 10;
 const DROPDOWN_GAP_PX = 4;
 
 /**
- * Floor (px) on the dropdown's height when the viewport is too cramped to give
- * it the space it wants. Without a floor, an input near the bottom of a short
- * window gets a few pixels of list; with one the dropdown keeps a couple of
- * rows visible and scrolls the rest, which is always more useful than a sliver.
+ * Floor (px) on the dropdown's height for the case where neither side of the
+ * input can offer more. It binds only when the whole window is short — both
+ * sides have to be cramped at once, which takes a viewport under roughly 290px
+ * — because an input merely sitting near a viewport edge is handled by flipping
+ * to the roomier side, not by this floor. In that narrow case the dropdown
+ * keeps a couple of scrollable rows rather than a useless sliver, and the
+ * clamp below is what stops those rows leaving the screen.
  */
 const MIN_DROPDOWN_HEIGHT_PX = 120;
 
@@ -73,7 +84,7 @@ const MIN_DROPDOWN_HEIGHT_PX = 120;
  * the list hidden instead of flashing at the viewport origin.
  */
 interface IDropdownPosition {
-    /** Distance from the viewport top, already flipped above the input if needed. */
+    /** Distance from the viewport top, already flipped above the input if needed and clamped inside the viewport. */
     top: number;
 
     /** Distance from the viewport left; tracks the input so the two stay aligned. */
@@ -215,8 +226,10 @@ export function AddressSelector({
      * alignment an absolutely-positioned child got for free — a fixed element
      * does not follow its anchor. This measures the search row and pins the
      * list directly beneath it, flipping above when the space below cannot hold
-     * the list, and capping the height so a long result set scrolls instead of
-     * running off the bottom of the window.
+     * the list, capping the height so a long result set scrolls instead of
+     * running off the bottom of the window, and clamping the final offset into
+     * the viewport for the case where neither side can hold even the minimum
+     * height.
      *
      * Runs as a layout effect so the coordinates are set before paint, which is
      * what keeps the list from flashing at the viewport origin. It re-measures
@@ -256,9 +269,21 @@ export function AddressSelector({
                 openAbove ? spaceAbove : spaceBelow
             );
             const height = Math.min(naturalHeight, maxHeight);
-            const top = openAbove
+            // Pinning to the anchor is only the preference. `maxHeight` is
+            // floored at MIN_DROPDOWN_HEIGHT_PX on purpose, so when neither
+            // side has even that much room the preferred offset would push a
+            // fixed element past a viewport edge, where no scroll can bring it
+            // back. Clamping keeps the floored list on screen — biased to the
+            // top edge when it is taller than the window, so the first
+            // suggestions stay readable — at the cost of overlapping the input
+            // in a viewport too short to hold both.
+            const preferredTop = openAbove
                 ? anchorRect.top - DROPDOWN_GAP_PX - height
                 : anchorRect.bottom + DROPDOWN_GAP_PX;
+            const top = Math.max(
+                DROPDOWN_GAP_PX,
+                Math.min(preferredTop, viewportHeight - height - DROPDOWN_GAP_PX)
+            );
             setPosition({ top, left: anchorRect.left, width: anchorRect.width, maxHeight });
         }
         updatePosition();
@@ -307,6 +332,46 @@ export function AddressSelector({
         setResults([]);
     }, [onChange]);
 
+    /**
+     * Keyboard access to the portaled suggestions, why: the list used to sit in
+     * the DOM directly after the input, so Tab reached the first suggestion for
+     * free. Portaling it to `<body>` moves those buttons to the end of the tab
+     * order, and inside a dialog they leave the focus scope entirely — the
+     * modal trap only cycles descendants of the dialog — so without explicit
+     * focus management the list becomes mouse-only. ArrowDown/ArrowUp therefore
+     * rove across the suggestions, Enter activates the focused one natively
+     * (they are real buttons), and Escape closes the list and returns the caret
+     * to the field so focus is never stranded on a button React just unmounted.
+     *
+     * Bound to the search row rather than to each element because React bubbles
+     * events out of a portal through the component tree, not the DOM tree, so
+     * one handler covers both the input and the portaled buttons.
+     *
+     * @param event - Key event from the search field or from a suggestion button.
+     */
+    const handleKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>): void => {
+        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Escape') {
+            return;
+        }
+        event.preventDefault();
+        if (event.key === 'Escape') {
+            setIsOpen(false);
+            containerRef.current?.querySelector('input')?.focus();
+            return;
+        }
+        const buttons = dropdownRef.current
+            ? Array.from(dropdownRef.current.querySelectorAll<HTMLButtonElement>('button:not([disabled])'))
+            : [];
+        if (buttons.length === 0) {
+            return;
+        }
+        const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        const next = current === -1
+            ? (event.key === 'ArrowDown' ? 0 : buttons.length - 1)
+            : (current + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+        buttons[next].focus();
+    }, []);
+
     // Selected state: the address chip plus a clear button.
     if (value) {
         return (
@@ -327,7 +392,7 @@ export function AddressSelector({
 
     // Search state: debounced typeahead with a results dropdown.
     return (
-        <div className={styles.search} ref={containerRef}>
+        <div className={styles.search} ref={containerRef} onKeyDown={handleKeyDown}>
             <div className={styles.search_input}>
                 <Search size={16} aria-hidden="true" className={styles.search_icon} />
                 <Input
@@ -345,10 +410,11 @@ export function AddressSelector({
 
             {/* A plain list of buttons, not a listbox. ARIA makes `option`'s
                 children presentational, so wrapping a button in one suppresses
-                the very role that tells assistive tech the item is activatable —
-                and listbox semantics would promise arrow-key navigation this
-                control does not implement. Announcing a real button inside a
-                list matches what the component actually does. */}
+                the very role that tells assistive tech the item is activatable.
+                Announcing a real button inside a list matches what the component
+                actually does — the buttons are focusable in their own right and
+                are reached by the arrow keys handled on the search row above,
+                rather than through a listbox's roving-tabindex contract. */}
             {dropdownVisible && createPortal(
                 <ul
                     ref={dropdownRef}

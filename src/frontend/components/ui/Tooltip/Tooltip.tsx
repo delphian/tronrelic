@@ -15,7 +15,8 @@
  * Escaping the tree means giving up the CSS centering the overlay got for free,
  * so this component now measures the trigger and places the overlay itself:
  * centered on the trigger, clamped inside the viewport, on the preferred side
- * when it fits and flipped to the other side when it does not.
+ * when it fits, flipped to the other side when it does not, and sent to
+ * whichever side has more room when neither can hold it.
  */
 
 import {
@@ -60,7 +61,7 @@ const ARROW_INSET_PX = 12;
  * flashing wherever an unpositioned fixed element happens to land.
  */
 interface ITooltipPosition {
-    /** Distance from the viewport top, already flipped to the fitting side. */
+    /** Distance from the viewport top, already flipped to the fitting side and clamped inside the viewport. */
     top: number;
 
     /** Distance from the viewport left, already clamped inside the viewport. */
@@ -117,7 +118,8 @@ function clamp(value: number, min: number, max: number): number {
  * other.
  *
  * `placement` states a preference, not a guarantee: the overlay flips to the
- * opposite side when the preferred one has no room. Callers that previously
+ * opposite side when the preferred one has no room, and falls back to whichever
+ * side has more room when neither can hold it. Callers that previously
  * passed `placement="bottom"` purely to dodge clipping in a scrolling container
  * no longer need to — the portal removes that failure mode — but the prop is
  * still the right way to say which side reads better.
@@ -233,12 +235,29 @@ export function Tooltip({ content, children, placement = 'top' }: TooltipProps) 
             const fitsBelow =
                 triggerRect.bottom + tipRect.height + TRIGGER_GAP_PX
                     <= viewportHeight - VIEWPORT_PADDING_PX;
-            const below = placement === 'bottom'
-                ? (fitsBelow || !fitsAbove)
-                : (!fitsAbove && fitsBelow);
-            const top = below
-                ? triggerRect.bottom + TRIGGER_GAP_PX
-                : triggerRect.top - tipRect.height - TRIGGER_GAP_PX;
+            // Neither side fitting is not a tie. The clamp below pins the
+            // overlay against whichever viewport edge it was sent toward, so
+            // sending it to the roomier side is what keeps it reaching least far
+            // back across the trigger it describes — and keeps the arrow, which
+            // points to the side `below` claims, as honest as it can be.
+            const roomierSideIsBelow =
+                viewportHeight - triggerRect.bottom > triggerRect.top;
+            const below = fitsAbove && fitsBelow
+                ? placement === 'bottom'
+                : (fitsBelow || (!fitsAbove && roomierSideIsBelow));
+            // Clamped on the vertical axis for the same reason as the horizontal
+            // one: when neither side has room — a tall tooltip in a short
+            // viewport — the chosen side would otherwise leave a fixed element
+            // partly off-screen, where no scroll can bring it back. `clamp`
+            // biases to the top edge when the tooltip is taller than the
+            // viewport, keeping its opening lines readable.
+            const top = clamp(
+                below
+                    ? triggerRect.bottom + TRIGGER_GAP_PX
+                    : triggerRect.top - tipRect.height - TRIGGER_GAP_PX,
+                VIEWPORT_PADDING_PX,
+                viewportHeight - tipRect.height - VIEWPORT_PADDING_PX
+            );
 
             // Horizontal placement: centered on the trigger, then pulled back
             // inside the viewport. `clamp` biases to the left edge when the
