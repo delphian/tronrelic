@@ -12,8 +12,19 @@ import type { Request, Response } from 'express';
 import type { IAddressTagService, ISystemLogService } from '@/types';
 
 /**
- * Controller exposing the three read shapes: tags by addresses, addresses by
- * tags, and the distinct tag vocabulary.
+ * Minimum search term length before `/suggest` will touch storage.
+ *
+ * The suggestion search matches a substring anywhere in an address or a tag,
+ * which no existing index can bound, so a blank or one-character term would
+ * make MongoDB group the entire assignment collection. Mirroring the client's
+ * own minimum on the server means a hand-rolled or misbehaving caller cannot
+ * trigger that sweep simply by omitting `search`.
+ */
+const MIN_SUGGEST_QUERY_LENGTH = 2;
+
+/**
+ * Controller exposing the read shapes: tags by addresses, addresses by tags,
+ * the distinct tag vocabulary, and the address typeahead.
  */
 export class AddressTagsUserController {
     /**
@@ -79,10 +90,18 @@ export class AddressTagsUserController {
      * Gated to registered users like every other read here, which is what lets
      * the selector degrade to a plain validated input for anonymous visitors
      * rather than exposing the tag vocabulary publicly.
+     *
+     * A term shorter than `MIN_SUGGEST_QUERY_LENGTH` returns an empty list
+     * without touching storage, so no caller can turn the typeahead into an
+     * unfiltered sweep of every assignment.
      */
     suggest = async (req: Request, res: Response): Promise<void> => {
         try {
-            const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+            const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+            if (search.length < MIN_SUGGEST_QUERY_LENGTH) {
+                res.json({ addresses: [] });
+                return;
+            }
             const limit = req.query.limit ? Number(req.query.limit) : undefined;
             res.json({ addresses: await this.service.searchAddresses({ search, limit }) });
         } catch (error) {

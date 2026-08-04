@@ -16,7 +16,7 @@ Central CRUD authority for free-text tags on TRON wallet addresses. Every surfac
 | Frontend client | `src/frontend/modules/address-tags/api/client.ts` (both surfaces) |
 | Frontend read cache | `useAddressTags(address)` — batches every chip's lookup into one `by-address` call, invalidate with `invalidateAddressTags(address)` |
 | Frontend editor | `AddressTagsEditor` — freeform comma-separated field, opened from the `TronAddress` chip's wrench menu ("Edit tags", admin only) |
-| Frontend selector | `AddressSelector` (`components/ui/AddressSelector`, also `context.ui.AddressSelector`) — the canonical control for *choosing* an address; typeahead over `/suggest`, emits validated base58 only |
+| Frontend selector | `AddressSelector` (`components/ui/AddressSelector`, also `context.ui.AddressSelector`) — the canonical control for *choosing* an address; typeahead over `/suggest`, emits checksum-verified base58 only (`lib/tronAddress.isValidTronAddress`) |
 
 ## Why MongoDB
 
@@ -81,7 +81,10 @@ Where `TronAddress` renders an address, `AddressSelector` *chooses* one. It is
 the module's second frontend consumer and the reason `/suggest` exists: typed
 text matches address text and tag text alike, and each suggestion shows its
 tags so an operator can pick "the exchange hot wallet" without recognising
-base58. It emits only validated addresses, so consumers never re-validate.
+base58. It emits only checksum-verified addresses, so consumers never
+re-validate — note that bar is stricter than this service's own
+`requireAddress`, which is shape-only, so the API still accepts a
+checksum-invalid address from a non-selector caller.
 Because the lookup is `requireLogin`, an anonymous visitor simply gets no
 suggestions and the control degrades to a plain input that still accepts a
 pasted address — the same "tags are an absent enhancement" rule the chip

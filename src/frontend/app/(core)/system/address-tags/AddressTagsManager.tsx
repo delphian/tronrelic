@@ -19,9 +19,12 @@
  * with partial tag lists.
  *
  * Pagination deliberately derives its offset from the number of rows already
- * on screen instead of a running counter. A counter drifts the moment a row is
- * removed locally, silently skipping as many server rows as were removed; the
- * fetched prefix length cannot drift because only fetched rows are deletable.
+ * on screen instead of a running counter, which would have to be corrected by
+ * hand after every mutation and drifts the moment anyone forgets. The rendered
+ * rows are the fetched prefix of the result set by construction, so their count
+ * is always the right offset. Every mutation refreshes from the committed query
+ * rather than patching rows in place, which keeps that identity true — see
+ * `handleDelete` for why a local edit cannot safely stand in for a refetch.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -202,9 +205,19 @@ export function AddressTagsManager() {
     }, [committedSearch, editValue, load, notify]);
 
     /**
-     * Delete one tag after modal confirmation. The tag is spliced out of its
-     * address's row locally, and the row itself drops once its last tag goes —
-     * an address with no tags has nothing left for this table to show.
+     * Delete one tag after modal confirmation, then refresh from the committed
+     * query exactly as create and rename do.
+     *
+     * A local splice is not sufficient, because the server decides three things
+     * this component cannot cheaply re-derive. It recomputes a row's "Updated"
+     * value as the latest timestamp among the tags that remain, so a local
+     * removal would leave the deleted tag's timestamp on screen. It also matches
+     * an address when either its own text *or* any of its tags contains the
+     * search term, while still returning that address's full tag list — so
+     * deleting the only tag that matched can drop the whole row from the result
+     * set even though the address still has other tags. Keeping such a row would
+     * both show a non-matching address and inflate `groups.length`, which is the
+     * offset "Load more" pages from, silently skipping one unseen address.
      */
     const handleDelete = useCallback((item: IAddressTagView) => {
         const modalId = `address-tag-delete-${tagKey(item)}`;
@@ -222,11 +235,7 @@ export function AddressTagsManager() {
                             await deleteTags([{ address: item.address, tag: item.tag }]);
                             invalidateAddressTags(item.address);
                             notify('success', `Removed '${item.tag}'`);
-                            setGroups((current) => current
-                                .map((group) => (group.address === item.address
-                                    ? { ...group, tags: group.tags.filter((row) => row.tag !== item.tag) }
-                                    : group))
-                                .filter((group) => group.tags.length > 0));
+                            await load(committedSearch, 0, false);
                         } catch (error) {
                             notify('danger', 'Failed to delete tag', error);
                         } finally {
@@ -236,7 +245,7 @@ export function AddressTagsManager() {
                 />
             )
         });
-    }, [close, notify, open]);
+    }, [close, committedSearch, load, notify, open]);
 
     /**
      * Render one tag as a chip carrying its own rename and delete affordances,
