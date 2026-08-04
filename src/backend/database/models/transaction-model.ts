@@ -69,10 +69,13 @@ const TransactionSchema = new Schema<TransactionDoc>({
 // Secondary indexes are deliberately minimal. Every index key is maintained on
 // each of the ~350 upserts per block, and with 85M+ documents the index working
 // set dwarfs the WiredTiger cache — so unused indexes translate directly into
-// disk-read-bound bulk-write latency. timestamp descending, analysis.pattern,
-// memo+timestamp, internalTransactions.hash, and blockNumber were removed after
-// index-usage stats showed zero reads (timestamp_1 already serves descending
-// sorts via reverse traversal); see migration 006_drop_unused_transaction_indexes.
+// disk-read-bound bulk-write latency. Five were removed after index-usage stats
+// showed zero reads: the standalone `timestamp_-1`, analysis.pattern,
+// memo+timestamp, internalTransactions.hash, and blockNumber. Only the
+// single-field descending index on timestamp went away — the field-level
+// `timestamp` index declared above still serves descending sorts via reverse
+// traversal, and the compound indexes below keep their own `timestamp: -1`
+// component. See migration 006_drop_unused_transaction_indexes.
 TransactionSchema.index({ type: 1, timestamp: -1 });
 TransactionSchema.index({ 'from.address': 1, timestamp: -1 });
 TransactionSchema.index({ 'to.address': 1, timestamp: -1 });
