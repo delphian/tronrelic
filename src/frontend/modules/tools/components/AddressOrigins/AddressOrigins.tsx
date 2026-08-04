@@ -23,15 +23,13 @@ import { Card } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
 import { TronAddress } from '../../../../components/ui/TronAddress';
 import { AddressSelector } from '../../../../components/ui/AddressSelector';
+import { isValidTronAddress } from '../../../../lib/tronAddress';
 import { createAddressOriginsStream } from '../../api/client';
 import type { IOriginHop, IOriginLadder, OriginStopReason } from '../../types';
 import styles from './AddressOrigins.module.scss';
 
 /** Registered-user cap on wallets per query; mirrors the server-side limit. */
 const MAX_ADDRESSES = 10;
-
-/** Strict TRON base58check address, used only to enable the submit button. */
-const TRON_ADDRESS_PATTERN = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 
 const TRONSCAN_TX_URL = 'https://tronscan.org/#/transaction/';
 
@@ -70,8 +68,8 @@ export function AddressOrigins() {
      * anyway); mount-only so it never clobbers rows the user edits afterward.
      */
     useEffect(() => {
-        const forwarded = searchParams.get('address');
-        if (forwarded) setAddresses([forwarded]);
+        const forwarded = searchParams.get('address')?.trim();
+        if (forwarded && isValidTronAddress(forwarded)) setAddresses([forwarded]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -104,7 +102,7 @@ export function AddressOrigins() {
         const valid: string[] = [];
         for (const raw of addresses) {
             const address = raw.trim();
-            if (TRON_ADDRESS_PATTERN.test(address) && !seen.has(address)) {
+            if (isValidTronAddress(address) && !seen.has(address)) {
                 seen.add(address);
                 valid.push(address);
             }

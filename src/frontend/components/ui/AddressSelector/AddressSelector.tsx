@@ -31,6 +31,7 @@ import { Search, X } from 'lucide-react';
 import { Input } from '../Input';
 import { TronAddress } from '../TronAddress';
 import { suggestAddresses, type IAddressTagGroupView } from '../../../modules/address-tags';
+import { isValidTronAddress } from '../../../lib/tronAddress';
 import styles from './AddressSelector.module.scss';
 
 /** Debounce (ms) before a lookup fires as the user types — matches `AccountPicker`. */
@@ -41,13 +42,6 @@ const MIN_QUERY_LENGTH = 2;
 
 /** Default ceiling on offered addresses; enough to scan, short enough not to scroll forever. */
 const MAX_SUGGESTIONS = 10;
-
-/**
- * Base58 TRON address shape: 'T' followed by 33 base58 characters. Mirrors the
- * backend's `TRON_ADDRESS_PATTERN` so the control accepts exactly what the
- * services behind it will accept.
- */
-const TRON_ADDRESS_PATTERN = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 
 /**
  * Props for {@link AddressSelector}. Kept structurally identical to the
@@ -77,11 +71,15 @@ export interface AddressSelectorProps {
 /**
  * Decide whether typed text is already a complete, valid TRON address.
  *
+ * Checksum-verified, not merely base58-shaped: a mistyped character usually
+ * lands on another alphabet character, so a shape test would commit a typo as
+ * a real address and every consumer downstream would trust it.
+ *
  * @param text - Raw contents of the search field.
  * @returns True when the text can be committed as a selection as-is.
  */
 function isCompleteAddress(text: string): boolean {
-    return TRON_ADDRESS_PATTERN.test(text.trim());
+    return isValidTronAddress(text.trim());
 }
 
 /**
@@ -229,11 +227,17 @@ export function AddressSelector({
                 />
             </div>
 
+            {/* A plain list of buttons, not a listbox. ARIA makes `option`'s
+                children presentational, so wrapping a button in one suppresses
+                the very role that tells assistive tech the item is activatable —
+                and listbox semantics would promise arrow-key navigation this
+                control does not implement. Announcing a real button inside a
+                list matches what the component actually does. */}
             {isOpen && query.trim().length >= MIN_QUERY_LENGTH && (
-                <ul className={styles.results} id={listId} role="listbox" aria-label="Address suggestions">
+                <ul className={styles.results} id={listId} aria-label="Address suggestions">
                     {searching && <li className={styles.results_note}>Searching…</li>}
                     {!searching && results.map((group) => (
-                        <li key={group.address} role="option" aria-selected={false}>
+                        <li key={group.address}>
                             <button
                                 type="button"
                                 className={styles.result}

@@ -16,6 +16,7 @@ import { useAuthSession } from '../../../user/components/SessionProvider';
 import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { AddressSelector } from '../../../../components/ui/AddressSelector';
+import { isValidTronAddress } from '../../../../lib/tronAddress';
 import { Button } from '../../../../components/ui/Button';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { TronAddress } from '../../../../components/ui/TronAddress';
@@ -42,13 +43,16 @@ export function ApprovalChecker() {
 
     /**
      * Pre-fill from a forwarded `?address=` param on mount, why: the shared
-     * TronAddress chip forwards a full address here via that param. Pre-filling
+     * TronAddress chip forwards a full address here via that param. The param
+     * is anyone-editable, so it is validated before it becomes state — an
+     * unchecked value would render as AddressSelector's selected chip and arm
+     * the Check button with something the backend will reject. Pre-filling
      * still runs when the visitor is signed out, so the field is ready the
      * moment they authenticate. Mount only so it never overrides later typing.
      */
     useEffect(() => {
-        const forwarded = searchParams.get('address');
-        if (forwarded) setAddress(forwarded);
+        const forwarded = searchParams.get('address')?.trim();
+        if (forwarded && isValidTronAddress(forwarded)) setAddress(forwarded);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
