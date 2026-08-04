@@ -307,14 +307,23 @@ export class BlockchainService implements IBlockchainService {
      * one long-running delete. The default batch is larger than the transaction prune's
      * because block documents are far smaller and cheaper to delete.
      *
-     * @param retentionHours - Hours of block history to keep; defaults to the configured block retention window
-     * @param batchHours - Maximum hours-worth of oldest blocks deleted per invocation, bounding each run's work
+     * @param requestedRetentionHours - Hours of block history to keep; defaults to the configured
+     *   block retention window, and is floored at one hour before use
+     * @param requestedBatchHours - Maximum hours-worth of oldest blocks deleted per invocation,
+     *   bounding each run's work; also floored at one hour
      * @returns Count of blocks deleted and the timestamp of the oldest remaining block
      */
     async pruneOldBlocks(
-        retentionHours = blockchainConfig.retention.blockHours,
-        batchHours = 24
+        requestedRetentionHours = blockchainConfig.retention.blockHours,
+        requestedBatchHours = 24
     ): Promise<{ deletedCount: number; oldestRemaining: Date | null }> {
+        // Floor both windows at one hour. The retention default is read straight from
+        // BLOCKCHAIN_RETENTION_BLOCK_HOURS, which is only checked for finiteness, so a zero or
+        // negative value would place the cutoff at or beyond the present and turn this job into
+        // a slow drain of the entire collection. A non-positive batch is the opposite failure:
+        // it would prune nothing at all while still reporting success.
+        const retentionHours = Math.max(1, requestedRetentionHours);
+        const batchHours = Math.max(1, requestedBatchHours);
         const retentionMs = retentionHours * 60 * 60 * 1000;
         const batchMs = batchHours * 60 * 60 * 1000;
         const cutoffDate = new Date(Date.now() - retentionMs);
