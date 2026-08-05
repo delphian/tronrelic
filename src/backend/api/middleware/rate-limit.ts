@@ -78,3 +78,55 @@ export function createAdminRateLimiter(keyPrefix: string) {
     keyPrefix
   });
 }
+
+/**
+ * Build one admin rate limiter that charges a request to a bucket chosen by
+ * the first segment of its path.
+ *
+ * A router whose endpoints are polled at different rates should not put them
+ * all in one bucket. The `/system/system` dashboard demonstrated why: its
+ * telemetry strip and consoles together drove ~58 requests per minute through
+ * a single 60-per-minute bucket, so aligned polling bursts intermittently
+ * exhausted it and returned 429 for whichever endpoints lost the race. Giving
+ * each group its own bucket spreads that load without lowering any ceiling —
+ * every bucket keeps the platform admin window and max.
+ *
+ * Selection happens inside one middleware rather than by chaining path-scoped
+ * `router.use('/group', limiter)` calls plus a catch-all. That distinction is
+ * load-bearing: a catch-all `router.use` also matches the scoped paths, so
+ * chaining would spend a slot from both the group bucket and the shared one on
+ * every request, and the shared bucket would keep exhausting. One request
+ * spends exactly one slot here.
+ *
+ * Mount it before `requireAdmin` so brute-force cost against the auth gate
+ * stays bounded, consistent with the rest of the admin surface.
+ *
+ * @param groupPrefixes - Maps a leading path segment (e.g. `blockchain` for
+ *   `/blockchain/status`) to that group's bucket prefix. Callers supply this so
+ *   the split mirrors how their endpoints are actually polled.
+ * @param defaultPrefix - Bucket for any path no group claims. Supplying a
+ *   default is what keeps the split safe: an endpoint added later is still
+ *   rate-limited without anyone remembering to register a group, so the
+ *   failure mode is a shared bucket rather than no limiting at all.
+ * @returns Express middleware that consumes exactly one slot per request from
+ *   the selected bucket and responds 429 when that bucket is exhausted.
+ */
+export function createGroupedAdminRateLimiter(
+  groupPrefixes: Record<string, string>,
+  defaultPrefix: string
+) {
+  const limiters = new Map(
+    Object.entries(groupPrefixes).map(([group, prefix]) => [group, createAdminRateLimiter(prefix)])
+  );
+  const fallback = createAdminRateLimiter(defaultPrefix);
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    // `req.path` is relative to the router's mount point, so `/blockchain/status`
+    // splits to ['', 'blockchain', 'status'] and yields the `blockchain` group.
+    const group = req.path.split('/')[1] ?? '';
+    const limiter = limiters.get(group) ?? fallback;
+    // Returned rather than awaited so the selected limiter keeps ownership of
+    // its own async rejection handling.
+    return limiter(req, res, next);
+  };
+}

@@ -59,7 +59,7 @@ interface IOverviewBarProps {
      * Optional tile activation handler, mirroring `MenuNavClient`'s
      * `onItemSelect(item, event)` convention.
      *
-     * Each tile is an anchor to the matching console row's `#id`. That only
+     * Each tile is an anchor to the matching section card's `#id`. That only
      * resolves for subsystems still rendered on the Overview tab; the ones that
      * moved to their own tab have no such target, so the page shell passes this
      * handler and calls `preventDefault()` for those, switching tabs instead.
@@ -75,7 +75,7 @@ interface IOverviewBarProps {
  * true bird's-eye view of every subsystem — including those that now live on
  * their own tabs — without leaving the Overview. Each tile shows a status dot,
  * the system name in caps, and one or two monospace KPIs. Clicking a tile either
- * scrolls to its console row or activates its tab, depending on where the
+ * scrolls to its section card or activates its tab, depending on where the
  * subsystem now renders.
  *
  * Polling is independent of the per-section bodies — the strip stays live even

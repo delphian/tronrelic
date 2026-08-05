@@ -1,0 +1,23 @@
+/**
+ * Overview tab styles.
+ *
+ * Server and Blockchain each stand in their own card rather than behind a
+ * disclosure row, so each needs a heading the row header used to supply. The
+ * heading keeps that header's treatment — uppercase, letter-spaced, body-sm —
+ * which reads as a section label rather than page-level type, and sits one step
+ * above the `block_title` headings the sections render internally so the
+ * hierarchy stays legible.
+ *
+ * The class overrides the global bare-h3 rule on specificity, which is what
+ * replaces the global heading size and tight letter-spacing with the console
+ * treatment.
+ */
+
+.section_title {
+    margin: 0 0 var(--gap-sm);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text);
+}

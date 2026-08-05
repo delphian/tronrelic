@@ -11,10 +11,10 @@
  * identical across them.
  *
  * "Overview" carries the telemetry strip plus the Server and Blockchain consoles.
- * Configuration, WebSockets, MongoDB, and ClickHouse each own a tab so those
- * subsystems render expanded instead of behind a collapsed console row; each
- * panel mounts only while its tab is active, so their fetches still fire on
- * arrival rather than on page load. "Providers" hosts external-provider config.
+ * Configuration, WebSockets, MongoDB, and ClickHouse each own a tab; every
+ * section on this page renders expanded, and a panel mounts only while its tab
+ * is active, so its fetches fire on arrival rather than on page load.
+ * "Providers" hosts external-provider config.
  */
 
 import { useState, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
@@ -129,12 +129,12 @@ export function SystemAdminClient({ submenuTree, submenuGeneratedAt, initialTab 
     /**
      * Route a telemetry tile click to the tab that owns its subsystem.
      *
-     * Tiles are anchors to a console row's `#id`. For the four subsystems that
+     * Tiles are anchors to a section card's `#id`. For the four subsystems that
      * moved to their own tab that target no longer exists on the Overview tab, so
-     * suppress the anchor and switch tabs instead; tiles still backed by a row on
-     * this tab keep their scroll behavior untouched.
+     * suppress the anchor and switch tabs instead; tiles still backed by a card
+     * on this tab keep their scroll behavior untouched.
      *
-     * @param tileId - The clicked tile's id, matching its console row id.
+     * @param tileId - The clicked tile's id, matching its section card id.
      * @param event - The click, cancelled only when the tile owns a tab.
      */
     const handleTileSelect = useCallback((tileId: string, event: ReactMouseEvent<HTMLAnchorElement>) => {

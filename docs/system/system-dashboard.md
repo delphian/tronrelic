@@ -33,7 +33,9 @@ Every section still fetches its own admin endpoint and renders independently —
 | ClickHouse | ClickHouse | `ClickHouseSection` | `/health/clickhouse` | Connection state, table count, db size |
 | Providers | TronScan | `TronScanProviderSection` | GET/PATCH provider config | Runtime configuration for external data providers |
 
-The two sections that remain on Overview sit behind collapsible `ConsoleRow`s; the four that own a tab render expanded, since selecting the tab already expresses the intent. Overview Bar tiles stay clickable throughout — a tile scrolls to its console row when the subsystem is on the Overview tab, and switches tabs when it is not.
+Every section renders expanded — nothing on this page hides behind a disclosure row. Server and Blockchain each occupy their own card on the Overview tab; the other four each fill a tab of their own, where selecting the tab already expresses the intent. Overview Bar tiles stay clickable throughout: a tile scrolls to the matching card when the subsystem sits on the Overview tab, and switches tabs when it does not.
+
+Because a section mounts with its tab (or, on Overview, with the page), its polling runs only while an operator is actually looking at it. That load is what the split rate-limit buckets on `/api/admin/system` are sized against — see the 429 note in [system-api.md](./system-api.md#troubleshooting).
 
 Tab nodes are registered memory-only in `registerTemporaryMenuItems` (`src/backend/index.ts`), so the row rebuilds on every boot. Section sources: `src/frontend/app/(core)/system/system/components/`. For payload details and the cross-link to runtime config restart semantics, see [system-api-overview.md](./system-api-overview.md).
 

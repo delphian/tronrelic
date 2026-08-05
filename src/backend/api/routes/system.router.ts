@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { IDatabaseService } from '@/types';
 import { requireAdmin } from '../middleware/admin-auth.js';
-import { createAdminRateLimiter } from '../middleware/rate-limit.js';
+import { createGroupedAdminRateLimiter } from '../middleware/rate-limit.js';
 import { SystemMonitorController } from '../../modules/system/system-monitor.controller.js';
 import { getRedisClient } from '../../loaders/redis.js';
 import { PluginWebSocketRegistry } from '../../services/plugin-websocket-registry.js';
@@ -12,7 +12,24 @@ export function systemRouter(database: IDatabaseService) {
   const controller = new SystemMonitorController(getRedisClient(), database);
   const wsRegistry = PluginWebSocketRegistry.getInstance();
 
-  router.use(createAdminRateLimiter('system-monitor'));
+  // One rate-limit bucket per endpoint group rather than a single bucket for
+  // the whole router. The /system/system dashboard polls this router from one
+  // IP continuously — the telemetry strip alone issues 7 requests every 15s,
+  // and the Blockchain and Server consoles add 5 more every 10s — reaching 58
+  // of the 60-per-minute admin allowance. Bursts align every 30s, so a shared
+  // bucket intermittently exhausted and answered 429 to whichever requests
+  // arrived last, usually the blockchain trio. Splitting holds each bucket
+  // near 28/min while every bucket keeps the platform admin ceiling. `/config`
+  // and anything added later fall through to the `system-monitor` default.
+  router.use(createGroupedAdminRateLimiter(
+    {
+      blockchain: 'system-blockchain',
+      health: 'system-health',
+      websockets: 'system-websockets',
+      logs: 'system-logs'
+    },
+    'system-monitor'
+  ));
   router.use(requireAdmin);
 
   // Blockchain endpoints
