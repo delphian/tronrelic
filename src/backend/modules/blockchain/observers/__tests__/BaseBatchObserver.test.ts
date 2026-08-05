@@ -564,4 +564,60 @@ describe('BaseBatchObserver', () => {
             expect(typeof stats.maxBatchSize).toBe('number');
         });
     });
+
+    describe('stop()', () => {
+        it('should ignore batches enqueued after stopping', async () => {
+            observer.stop();
+
+            await observer.enqueueBatch(createMockBatch(3));
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            expect(observer.processedBatches).toHaveLength(0);
+            expect(observer.getStats().queueDepth).toBe(0);
+        });
+
+        it('should discard a backlog rather than draining it after the plugin is disabled', async () => {
+            // A slow processor leaves work queued behind the in-flight batch, which is exactly
+            // the state a disabled plugin would otherwise keep writing from.
+            observer.setProcessingDelay(40);
+            await observer.enqueueBatch(createMockBatch(1));
+            await observer.enqueueBatch(createMockBatch(1));
+            await observer.enqueueBatch(createMockBatch(1));
+
+            observer.stop();
+            await new Promise(resolve => setTimeout(resolve, 200));
+
+            expect(observer.getStats().queueDepth).toBe(0);
+            expect(observer.processedBatches.length).toBeLessThan(3);
+        });
+
+        it('should record discarded transactions rather than dropping them silently', async () => {
+            observer.setProcessingDelay(40);
+            await observer.enqueueBatch(createMockBatch(2));
+            await observer.enqueueBatch(createMockBatch(5));
+
+            observer.stop();
+
+            expect(observer.getStats().totalDropped).toBeGreaterThan(0);
+        });
+
+        it('should preserve statistics gathered before stopping', async () => {
+            await observer.enqueueBatch(createMockBatch(2));
+            await new Promise(resolve => setTimeout(resolve, 50));
+            const processedBeforeStop = observer.getStats().totalProcessed;
+
+            observer.stop();
+
+            expect(processedBeforeStop).toBeGreaterThan(0);
+            expect(observer.getStats().totalProcessed).toBe(processedBeforeStop);
+        });
+
+        it('should be idempotent', () => {
+            observer.stop();
+            mockLogger.reset();
+
+            expect(() => observer.stop()).not.toThrow();
+            expect(mockLogger.info).not.toHaveBeenCalled();
+        });
+    });
 });

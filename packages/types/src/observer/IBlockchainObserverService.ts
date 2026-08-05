@@ -151,4 +151,52 @@ export interface IBlockchainObserverService {
      * Returns the count of block observers subscribed.
      */
     getBlockSubscriptionStats(): { subscriberCount: number };
+
+    // Unsubscription methods
+
+    /**
+     * Unsubscribe an observer from a specific transaction type.
+     *
+     * Without this, an observer registered by a plugin keeps receiving transactions after the
+     * plugin is disabled — it continues writing to its collections and emitting WebSocket events
+     * for the lifetime of the process. Plugins are runtime-toggleable, so subscriptions must be
+     * revocable.
+     *
+     * @param transactionType - The transaction type to stop observing
+     * @param observer - The observer instance to remove from that type's subscriber set
+     * @returns True if the observer was subscribed and has been removed, false if it was not
+     */
+    unsubscribeTransactionType(transactionType: string, observer: IBaseObserver): boolean;
+
+    /**
+     * Unsubscribe a batch observer from all transaction types it subscribed to.
+     *
+     * Batch observers register once for a set of types, so removal is all-or-nothing rather than
+     * per-type — callers that registered via `subscribeTransactionTypesBatch` hold no per-type
+     * handle to revoke individually.
+     *
+     * @param observer - The batch observer instance to remove
+     * @returns True if the observer was subscribed and has been removed, false if it was not
+     */
+    unsubscribeTransactionTypesBatch(observer: IBaseBatchObserver): boolean;
+
+    /**
+     * Unsubscribe a block observer from block notifications.
+     *
+     * @param observer - The block observer instance to remove
+     * @returns True if the observer was subscribed and has been removed, false if it was not
+     */
+    unsubscribeBlock(observer: IBaseBlockObserver): boolean;
+
+    /**
+     * Remove an observer from every subscription it holds, whatever its kind.
+     *
+     * The platform disables plugins without knowing how each of their observers registered, so
+     * this sweeps all three collections (per-type, batch, block) in one call. Prefer it on
+     * lifecycle teardown paths; use the targeted variants when revoking one known subscription.
+     *
+     * @param observer - The observer instance to remove from all subscriber collections
+     * @returns Count of subscriptions removed — 0 means the observer held none
+     */
+    unsubscribeObserver(observer: IBaseObserver | IBaseBatchObserver | IBaseBlockObserver): number;
 }

@@ -129,20 +129,6 @@ export interface TimeseriesPoint {
   max?: number;
 }
 
-export interface DelegationTimeseriesPoint {
-  date: string;
-  delegated: number;
-  undelegated: number;
-  count: number;
-}
-
-export interface StakingTimeseriesPoint {
-  date: string;
-  staked: number;
-  unstaked: number;
-  count: number;
-}
-
 export interface WhaleHighlightRecord {
   txId: string;
   timestamp: string;
@@ -164,22 +150,6 @@ export interface MemoRecord {
 }
 
 
-
-export async function getDelegationTimeseries(days = 14): Promise<DelegationTimeseriesPoint[]> {
-  const response = await apiClient.get('/dashboard/delegations/timeseries', {
-    params: { days }
-  });
-  const { series } = response.data as { success: boolean; series: DelegationTimeseriesPoint[] };
-  return series;
-}
-
-export async function getStakingTimeseries(days = 14): Promise<StakingTimeseriesPoint[]> {
-  const response = await apiClient.get('/dashboard/staking/timeseries', {
-    params: { days }
-  });
-  const { series } = response.data as { success: boolean; series: StakingTimeseriesPoint[] };
-  return series;
-}
 
 export interface EnergyEstimateRequest {
   contractAddress?: string;
@@ -217,17 +187,6 @@ export async function estimateEnergy(payload: EnergyEstimateRequest): Promise<En
     energyPenalty,
     message
   };
-}
-
-export async function getMemoFeed(limit = 50): Promise<MemoRecord[]> {
-  const response = await apiClient.get('/dashboard/memos/feed', {
-    params: { limit }
-  });
-  const { memos } = response.data as { success: boolean; memos: Array<MemoRecord & { _id?: string }> };
-  return memos.map(memo => ({
-    ...memo,
-    memoId: memo.memoId ?? memo._id ?? memo.txId
-  }));
 }
 
 export interface CommentAttachmentView {

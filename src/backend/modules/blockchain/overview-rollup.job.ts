@@ -44,13 +44,21 @@ const MINUTE_MS = 60 * 1000;
 const HOURLY_FORMAT = '%Y-%m-%d %H:00';
 const MINUTE_FORMAT = '%Y-%m-%d %H:%M';
 
-/** Hourly buckets a 7d window needs (168), so backfill targets `current − 167h`. */
-const TARGET_HOURLY_BUCKETS = 168;
+/**
+ * Backfill depth in hourly buckets (6d), so backfill targets `current − 143h`.
+ * Must never exceed the raw transaction retention (`blockchain:prune` in
+ * core-jobs.ts, 6 days): backfilling an hour whose raw transactions were
+ * already pruned would materialize zero-volume buckets that read as real data.
+ * The widget's 7d view still renders fully in steady state because computed
+ * buckets persist for `HOURLY_RETENTION_HOURS` (8d), outliving the raw rows
+ * they were built from — only gap-backfill after downtime is bounded here.
+ */
+const TARGET_HOURLY_BUCKETS = 144;
 /** Recent hourly buckets recomputed each run: the in-progress hour plus 2 prior, to absorb late blocks. */
 const RECENT_HOURLY_HOURS = 3;
 /** Recent minute buckets recomputed each run — covers the 60-point 1h window plus margin. */
 const RECENT_MINUTE_MINUTES = 75;
-/** Older history filled per run, newest-first, until the 7d window is covered. */
+/** Older history filled per run, newest-first, until the backfill target is covered. */
 const BACKFILL_CHUNK_HOURS = 48;
 /** Hourly buckets kept (8d) — margin beyond the 7d read window. */
 const HOURLY_RETENTION_HOURS = 8 * 24;

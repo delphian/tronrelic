@@ -19,6 +19,7 @@ export abstract class BaseBatchObserver implements IBaseBatchObserver {
     private static readonly MAX_QUEUE_SIZE = 100;
     private queue: TransactionBatches[] = [];
     private isProcessing = false;
+    private stopped = false;
 
     protected abstract readonly name: string;
     protected readonly logger: ISystemLogService;
@@ -89,6 +90,10 @@ export abstract class BaseBatchObserver implements IBaseBatchObserver {
      * @param batches - Record mapping transaction types to arrays of enriched transactions
      */
     public async enqueueBatch(batches: TransactionBatches): Promise<void> {
+        if (this.stopped) {
+            return;
+        }
+
         const totalTransactions = Object.values(batches).reduce((sum, arr) => sum + arr.length, 0);
 
         if (this.queue.length >= BaseBatchObserver.MAX_QUEUE_SIZE) {
@@ -132,6 +137,14 @@ export abstract class BaseBatchObserver implements IBaseBatchObserver {
 
         try {
             while (this.queue.length > 0) {
+                // Re-checked every iteration, not just on entry: stop() can land while an
+                // await above is in flight, and a long backlog would otherwise keep writing
+                // for minutes after the owning plugin was disabled.
+                if (this.stopped) {
+                    this.queue = [];
+                    break;
+                }
+
                 const batches = this.queue.shift();
                 if (!batches || Object.keys(batches).length === 0) {
                     continue;
@@ -189,6 +202,57 @@ export abstract class BaseBatchObserver implements IBaseBatchObserver {
             return 0;
         }
         return Number((this.totalErrors / total).toFixed(4));
+    }
+
+    /**
+     * Permanently stop this batch observer and discard its backlog.
+     *
+     * Unsubscribing stops new batches reaching the observer, but anything already queued would
+     * still drain — so a disabled plugin would keep writing to its collections until the backlog
+     * cleared. Dropping the queue here makes "disabled" mean stopped immediately. Counters are
+     * preserved so final statistics stay readable, and discarded transactions are recorded
+     * against totalDropped rather than vanishing silently.
+     *
+     * Idempotent: stopping an already-stopped observer does nothing. There is no restart —
+     * re-enabling a plugin runs its init hook, which constructs a fresh observer.
+     */
+    public stop(): void {
+        if (this.stopped) {
+            return;
+        }
+
+        this.stopped = true;
+
+        const discardedBatches = this.queue.length;
+        if (discardedBatches > 0) {
+            const discardedTransactions = this.queue.reduce(
+                (sum, batches) => sum + Object.values(batches).reduce((inner, arr) => inner + arr.length, 0),
+                0
+            );
+            this.totalDropped += discardedTransactions;
+            this.queue = [];
+
+            this.logger.info(
+                {
+                    observer: this.name,
+                    discardedBatches,
+                    discardedTransactions,
+                    batchesProcessed: this.batchesProcessed
+                },
+                'Batch observer stopped - queue discarded, no further batches will be processed'
+            );
+
+            return;
+        }
+
+        this.logger.info(
+            {
+                observer: this.name,
+                discardedBatches: 0,
+                batchesProcessed: this.batchesProcessed
+            },
+            'Batch observer stopped - no further batches will be processed'
+        );
     }
 
     /**

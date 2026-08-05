@@ -908,6 +908,121 @@ describe('BlockchainObserverService', () => {
             expect(service.getBlockSubscriptionStats().subscriberCount).toBe(0);
         });
     });
+
+    // =========================================================================
+    // Unsubscription
+    // =========================================================================
+
+    describe('Observer Unsubscription', () => {
+        it('should stop delivering transactions to an unsubscribed observer', async () => {
+            const observer = new MockObserver('leaky-observer');
+            service.subscribeTransactionType('TransferContract', observer);
+
+            await service.notifyTransaction(createMockTransaction('TransferContract'));
+            expect(observer.getEnqueuedTransactions()).toHaveLength(1);
+
+            const removed = service.unsubscribeTransactionType('TransferContract', observer);
+            await service.notifyTransaction(createMockTransaction('TransferContract'));
+
+            expect(removed).toBe(true);
+            expect(observer.getEnqueuedTransactions()).toHaveLength(1);
+        });
+
+        it('should report false when unsubscribing an observer that was never subscribed', () => {
+            const observer = new MockObserver('never-subscribed');
+
+            expect(service.unsubscribeTransactionType('TransferContract', observer)).toBe(false);
+        });
+
+        it('should leave other observers on the same type subscribed', async () => {
+            const leaving = new MockObserver('leaving');
+            const staying = new MockObserver('staying');
+            service.subscribeTransactionType('TransferContract', leaving);
+            service.subscribeTransactionType('TransferContract', staying);
+
+            service.unsubscribeTransactionType('TransferContract', leaving);
+            await service.notifyTransaction(createMockTransaction('TransferContract'));
+
+            expect(leaving.getEnqueuedTransactions()).toHaveLength(0);
+            expect(staying.getEnqueuedTransactions()).toHaveLength(1);
+        });
+
+        it('should drop the type entry once its last subscriber leaves', () => {
+            const observer = new MockObserver('only-subscriber');
+            service.subscribeTransactionType('TransferContract', observer);
+
+            service.unsubscribeTransactionType('TransferContract', observer);
+
+            expect(service.getSubscriptionStats()).toEqual({});
+        });
+
+        it('should stop delivering batches to an unsubscribed batch observer', async () => {
+            const observer = new MockBatchObserver('batch-observer');
+            service.subscribeTransactionTypesBatch(['TransferContract'], observer);
+
+            service.accumulateForBatch(createMockTransaction('TransferContract'));
+            await service.flushBatches();
+            expect(observer.getEnqueuedBatches()).toHaveLength(1);
+
+            const removed = service.unsubscribeTransactionTypesBatch(observer);
+            service.accumulateForBatch(createMockTransaction('TransferContract'));
+            await service.flushBatches();
+
+            expect(removed).toBe(true);
+            expect(observer.getEnqueuedBatches()).toHaveLength(1);
+            expect(service.getBatchSubscriptionStats()).toEqual({});
+        });
+
+        it('should stop delivering blocks to an unsubscribed block observer', async () => {
+            const observer = new MockBlockObserver('block-observer');
+            service.subscribeBlock(observer);
+
+            const blockData = {
+                blockNumber: 1,
+                timestamp: new Date(),
+                transactionCount: 0,
+                transactions: []
+            } as unknown as IBlockData;
+
+            await service.notifyBlock(blockData);
+            expect(observer.getEnqueuedBlocks()).toHaveLength(1);
+
+            const removed = service.unsubscribeBlock(observer);
+            await service.notifyBlock(blockData);
+
+            expect(removed).toBe(true);
+            expect(observer.getEnqueuedBlocks()).toHaveLength(1);
+            expect(service.getBlockSubscriptionStats().subscriberCount).toBe(0);
+        });
+
+        it('should remove an observer from every subscription it holds', () => {
+            const observer = new MockObserver('multi-type');
+            service.subscribeTransactionType('TransferContract', observer);
+            service.subscribeTransactionType('TriggerSmartContract', observer);
+
+            const removed = service.unsubscribeObserver(observer);
+
+            expect(removed).toBe(2);
+            expect(service.getSubscriptionStats()).toEqual({});
+        });
+
+        it('should report zero when sweeping an observer that holds no subscriptions', () => {
+            const observer = new MockObserver('unsubscribed');
+
+            expect(service.unsubscribeObserver(observer)).toBe(0);
+        });
+
+        it('should drop an unsubscribed observer from the admin stats table', () => {
+            const observer = new MockObserver('admin-table-observer');
+            service.subscribeTransactionType('TransferContract', observer);
+            expect(service.getAllObserverStats()).toHaveLength(1);
+
+            service.unsubscribeObserver(observer);
+
+            expect(service.getAllObserverStats()).toHaveLength(0);
+            expect(service.getAggregateStats().totalObservers).toBe(0);
+        });
+    });
 });
 
 // =========================================================================

@@ -2,6 +2,7 @@ import axios from 'axios';
 import mongoose from 'mongoose';
 import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService, IServiceRegistry, IHookRegistry } from '@/types';
 import { PluginHooks } from '../hooks/index.js';
+import { PluginObserverRegistry } from '../observers/plugin-observer-registry.js';
 import { logger } from '../lib/logger.js';
 import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
 import { BaseObserver, BaseBatchObserver, BaseBlockObserver } from '../modules/blockchain/observers/index.js';
@@ -144,13 +145,24 @@ export async function loadPlugins(
             // disabled or uninstalled.
             const pluginHooks = new PluginHooks(plugin.manifest.id, hookRegistry, pluginLogger);
 
+            // Per-plugin observer facade. Records every subscription the plugin
+            // makes so the plugin manager can revoke them — and stop the
+            // observers behind them — when it is disabled. Without this a
+            // disabled plugin's observer keeps consuming every matching
+            // transaction for the life of the process.
+            const pluginObservers = new PluginObserverRegistry(
+                plugin.manifest.id,
+                observerService,
+                pluginLogger
+            );
+
             // Create plugin context with injected dependencies. Widget
             // operations go through `services.get('widgets')` — see
             // IWidgetsService — so no widget-specific facade rides on
             // the context.
             const context: IPluginContext = {
                 http: httpClient,
-                observerRegistry: observerService,
+                observerRegistry: pluginObservers,
                 websocketService,
                 websocket: websocketManager as any, // Will be defined if io exists
                 BaseObserver,
@@ -173,7 +185,7 @@ export async function loadPlugins(
             };
 
             // Register plugin in the manager (does not initialize)
-            pluginManager.registerPlugin(plugin, context, pluginHooks);
+            pluginManager.registerPlugin(plugin, context, pluginHooks, pluginObservers);
 
             pluginLogger.debug('Plugin discovered and registered');
         } catch (error) {

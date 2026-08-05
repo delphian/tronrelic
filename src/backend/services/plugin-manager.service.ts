@@ -15,6 +15,7 @@ import { BaseObserver } from '../modules/blockchain/observers/BaseObserver.js';
 import { WebSocketService } from './websocket.service.js';
 import { logger } from '../lib/logger.js';
 import { PluginHooks } from '../hooks/index.js';
+import { PluginObserverRegistry } from '../observers/plugin-observer-registry.js';
 
 /**
  * Lifecycle event payloads emitted by PluginManagerService.
@@ -44,6 +45,12 @@ interface ILoadedPlugin {
     context: IPluginContext;
     manifest: IPluginManifest;
     hooks: PluginHooks;
+    /**
+     * Per-plugin observer facade. Optional because plugins registered before the
+     * facade existed — and tests that construct plugins directly — carry none; a
+     * missing facade simply means there is no observer teardown to perform.
+     */
+    observers?: PluginObserverRegistry;
 }
 
 /**
@@ -166,17 +173,25 @@ export class PluginManagerService {
      * @param hooks - Per-plugin hook facade tied to this context, used by
      *   disable/uninstall paths to close the lifecycle window and drop
      *   every handler the plugin has registered.
+     * @param observers - Per-plugin observer facade tied to this context, used by
+     *   disable/uninstall paths to revoke every blockchain subscription the plugin
+     *   made and stop the observers behind them. Optional so callers that predate
+     *   the facade (and tests constructing plugins directly) keep working; when
+     *   absent, observer teardown is skipped and the plugin's observers survive
+     *   disable exactly as they did before.
      */
     public registerPlugin(
         plugin: IPlugin,
         context: IPluginContext,
-        hooks: PluginHooks
+        hooks: PluginHooks,
+        observers?: PluginObserverRegistry
     ): void {
         this.loadedPlugins.set(plugin.manifest.id, {
             plugin,
             context,
             manifest: plugin.manifest,
-            hooks
+            hooks,
+            observers
         });
     }
 
@@ -224,6 +239,49 @@ export class PluginManagerService {
      *
      * @param loaded - Loaded plugin record.
      */
+    /**
+     * Reopen the plugin's observer facade so its init hook may subscribe again.
+     *
+     * A previous disable closed the facade, and enable re-runs `init()` — which constructs fresh
+     * observers and subscribes them. Without rearming, those calls would throw against a closed
+     * facade and the re-enabled plugin would silently observe nothing. Mirrors `rearmHooks` on
+     * the same lifecycle transitions.
+     *
+     * @param loaded - The loaded plugin whose observer facade should accept subscriptions again.
+     */
+    private rearmObservers(loaded: ILoadedPlugin): void {
+        loaded.observers?.rearm();
+    }
+
+    /**
+     * Revoke every blockchain observer subscription the plugin owns.
+     *
+     * Observer subscriptions were the one registration the disable path never tore down, so a
+     * disabled plugin's observer kept receiving transactions — writing to its collections and
+     * emitting WebSocket events — until the process restarted, while the admin observer table
+     * still listed it. The facade also stops each observer, so anything already queued is
+     * discarded rather than draining after the plugin is gone.
+     *
+     * @param loaded - The loaded plugin whose observer subscriptions should be revoked.
+     */
+    private disposeObservers(loaded: ILoadedPlugin): void {
+        if (!loaded.observers) {
+            return;
+        }
+
+        try {
+            const revoked = loaded.observers.closeAndDisposeAll();
+            if (revoked > 0) {
+                logger.info(
+                    { pluginId: loaded.manifest.id, subscriptionsRevoked: revoked },
+                    'Revoked plugin observer subscriptions'
+                );
+            }
+        } catch (err) {
+            logger.warn({ err, pluginId: loaded.manifest.id }, 'Observer facade dispose threw');
+        }
+    }
+
     private disposeHooks(loaded: ILoadedPlugin): void {
         try {
             loaded.hooks.closeAndDisposeAll();
@@ -302,6 +360,7 @@ export class PluginManagerService {
             // registered through IWidgetsService on the service
             // registry and are not gated by this facade.
             this.rearmHooks(loaded);
+            this.rearmObservers(loaded);
 
             // Run install hook if not already installed
             if (!metadata.installed && plugin.install) {
@@ -382,10 +441,12 @@ export class PluginManagerService {
         }
 
         try {
-            // Close the plugin's hook facade and tear down every widget
-            // registration it owns, regardless of whether the plugin's
-            // disable hook remembered to call disposers itself.
+            // Close the plugin's hook facade, revoke its blockchain observer
+            // subscriptions, and tear down every widget registration it owns,
+            // regardless of whether the plugin's disable hook remembered to
+            // call disposers itself.
             this.disposeHooks(loaded);
+            this.disposeObservers(loaded);
             await this.disposeWidgetsForPlugin(loaded.manifest.id);
 
             // Mark as disabled in database
@@ -451,6 +512,7 @@ export class PluginManagerService {
             // facade; they are registered through IWidgetsService on the
             // service registry.
             this.rearmHooks(loaded);
+            this.rearmObservers(loaded);
 
             // Run install hook if defined
             if (plugin.install) {
@@ -589,6 +651,7 @@ export class PluginManagerService {
             // registered through IWidgetsService on the service
             // registry and are not gated by this facade.
             this.rearmHooks(loaded);
+            this.rearmObservers(loaded);
 
             // Run enable hook if defined
             if (plugin.enable) {
@@ -668,10 +731,12 @@ export class PluginManagerService {
         }
 
         try {
-            // Close the plugin's hook facade and tear down every widget
-            // registration it owns, regardless of whether the plugin's
-            // disable hook remembered to call disposers itself.
+            // Close the plugin's hook facade, revoke its blockchain observer
+            // subscriptions, and tear down every widget registration it owns,
+            // regardless of whether the plugin's disable hook remembered to
+            // call disposers itself.
             this.disposeHooks(loaded);
+            this.disposeObservers(loaded);
             await this.disposeWidgetsForPlugin(loaded.manifest.id);
 
             // Mark as disabled in database
