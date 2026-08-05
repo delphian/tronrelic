@@ -8,7 +8,7 @@ import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { StatStrip } from './StatStrip';
-import { LAG_DANGER_BLOCKS, LAG_WARNING_BLOCKS } from './lag-thresholds';
+import { LAG_DANGER_BLOCKS, resolveLagWarningBlocks } from './lag-thresholds';
 import styles from './BlockchainSection.module.scss';
 
 interface BlockchainError {
@@ -36,6 +36,7 @@ interface BlockchainStatus {
     lastTimings: Record<string, number> | null;
     lastTransactionCount: number | null;
     liveChainThrottleBlocks: number;
+    backfillEntryBlocks: number;
 }
 
 interface BlockProcessingMetrics {
@@ -236,7 +237,7 @@ function SyncStatusBlock({ status, metrics, schedulerEnabled, syncing, onTrigger
                             detail: status.averageProcessingDelaySeconds !== null
                                 ? `${formatDuration(status.averageProcessingDelaySeconds)} behind`
                                 : `${status.lag.toLocaleString()} blocks behind`,
-                            tone: getLagMetricTone(status.lag)
+                            tone: getLagMetricTone(status.lag, status.backfillEntryBlocks)
                         },
                         ...(status.processingBlocksPerMinute !== null
                             ? [{
@@ -431,16 +432,19 @@ function ObserverPerformanceBlock({ observers }: ObserverPerformanceBlockProps) 
 /**
  * Colour the Lag figure by how far behind the chain the indexer is.
  *
- * Thresholds come from `lag-thresholds.ts` rather than from the syncer's
- * `liveChainThrottleBlocks`, so the same lag reads identically here and on the
- * Overview strip's Chain tile — see that module for why the two were decoupled.
+ * The amber step comes from the payload's own entry threshold, so the figure
+ * turns amber exactly where the syncer gives up the live throttle even in a
+ * deployment that tuned it. Only the danger step is a console judgement. Both
+ * resolve through `lag-thresholds.ts`, so the same lag reads identically here
+ * and on the Overview strip's Chain tile.
  *
  * @param lag - Blocks the local index is behind the network head.
+ * @param backfillEntryBlocks - Entry threshold from the status payload; the syncer's own mode boundary.
  * @returns The tone the Lag stat cell should carry.
  */
-function getLagMetricTone(lag: number): 'success' | 'warning' | 'danger' {
+function getLagMetricTone(lag: number, backfillEntryBlocks: number): 'success' | 'warning' | 'danger' {
     if (lag >= LAG_DANGER_BLOCKS) return 'danger';
-    if (lag >= LAG_WARNING_BLOCKS) return 'warning';
+    if (lag >= resolveLagWarningBlocks(backfillEntryBlocks)) return 'warning';
     return 'success';
 }
 

@@ -79,6 +79,7 @@ export interface BlockchainSyncStatus {
   lastTimings: Record<string, number> | null;
   lastTransactionCount: number | null;
   liveChainThrottleBlocks: number;
+  backfillEntryBlocks: number;
 }
 
 export interface TransactionStats {
@@ -333,6 +334,17 @@ export class SystemMonitorService {
 
   /** Previous process CPU counters and the wall-clock moment they were taken. */
   private lastProcessCpu: { usage: NodeJS.CpuUsage; atMs: number };
+
+  /**
+   * Last CPU percentage accepted from a long-enough sampling window.
+   *
+   * Held so a sub-50ms repeat call republishes the previous reading instead of
+   * a literal 0%, which reads as an idle backend to whoever is watching the
+   * console. The console makes that a routine case rather than a corner one:
+   * the Overview strip and the Server section poll the same endpoint on their
+   * own timers and both fire when the page mounts.
+   */
+  private lastProcessCpuPercent = 0;
 
   constructor(
     private readonly redis: RedisClient,
@@ -658,7 +670,8 @@ export class SystemMonitorService {
       averageProcessingDelaySeconds: snapshot.averageProcessingDelaySeconds,
       lastTimings,
       lastTransactionCount,
-      liveChainThrottleBlocks: blockchainConfig.network.liveChainThrottleBlocks
+      liveChainThrottleBlocks: blockchainConfig.network.liveChainThrottleBlocks,
+      backfillEntryBlocks: blockchainConfig.network.backfillEntryBlocks
     };
   }
 
@@ -841,12 +854,13 @@ export class SystemMonitorService {
       usage.user - this.lastProcessCpu.usage.user + (usage.system - this.lastProcessCpu.usage.system);
 
     // Below ~50ms the sample is dominated by timer granularity and produces
-    // wild readings, so hold the previous window rather than publish noise.
-    let cpuUsage = 0;
+    // wild readings, so republish the last accepted window rather than noise —
+    // a literal 0% reads as an idle backend to whoever is watching the console.
     if (elapsedMs >= 50) {
-      cpuUsage = Math.max(0, (busyMicros / 1000 / elapsedMs) * 100);
+      this.lastProcessCpuPercent = Math.max(0, (busyMicros / 1000 / elapsedMs) * 100);
       this.lastProcessCpu = { usage, atMs: now };
     }
+    const cpuUsage = this.lastProcessCpuPercent;
 
     return {
       uptime: process.uptime(),
