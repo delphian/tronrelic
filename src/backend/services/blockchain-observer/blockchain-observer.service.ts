@@ -122,8 +122,9 @@ export class BlockchainObserverService implements IBlockchainObserverService {
      *
      * Observers should subscribe during plugin initialization (in the init lifecycle hook) to
      * ensure they begin receiving transactions as soon as the plugin becomes active. Subscriptions
-     * persist for the lifetime of the application - there is currently no unsubscribe mechanism
-     * since plugins remain active until application restart.
+     * last until explicitly revoked via unsubscribeTransactionType or unsubscribeObserver. Plugins
+     * registering through the per-plugin observer facade do not need to revoke anything by hand —
+     * the plugin manager disposes everything the plugin registered when it is disabled.
      *
      * @param transactionType - The transaction type to observe (e.g., 'TransferContract')
      * @param observer - The observer instance to notify when matching transactions occur
@@ -536,6 +537,138 @@ export class BlockchainObserverService implements IBlockchainObserverService {
         }
 
         return Array.from(allObservers).map(observer => observer.getStats());
+    }
+
+    // =========================================================================
+    // Unsubscription
+    // =========================================================================
+
+    /**
+     * Unsubscribe an observer from a specific transaction type.
+     *
+     * Plugins are toggleable at runtime, so a subscription that could only be created and never
+     * revoked meant a disabled plugin's observer kept receiving every matching transaction —
+     * still writing to its collections, still emitting WebSocket events — until the process
+     * restarted. Removal empties the type's entry when its last subscriber leaves so
+     * `notifyTransaction` can keep short-circuiting on an absent key.
+     *
+     * @param transactionType - The transaction type to stop observing
+     * @param observer - The observer to remove from that type's subscriber set
+     * @returns True when the observer was subscribed and has been removed
+     */
+    public unsubscribeTransactionType(transactionType: string, observer: IBaseObserver): boolean {
+        const subscribers = this.transactionTypeSubscribers.get(transactionType as TransactionType);
+        if (!subscribers) {
+            return false;
+        }
+
+        const removed = subscribers.delete(observer);
+
+        if (subscribers.size === 0) {
+            this.transactionTypeSubscribers.delete(transactionType as TransactionType);
+        }
+
+        if (removed) {
+            this.logger.info(
+                {
+                    transactionType,
+                    observerName: observer.getName(),
+                    remainingSubscribers: subscribers.size
+                },
+                'Observer unsubscribed from transaction type'
+            );
+        }
+
+        return removed;
+    }
+
+    /**
+     * Unsubscribe a batch observer from every transaction type it registered for.
+     *
+     * Batch observers register one entry covering a set of types, so the entry is the unit of
+     * removal — there is no per-type handle to revoke individually.
+     *
+     * @param observer - The batch observer to remove
+     * @returns True when the observer was subscribed and has been removed
+     */
+    public unsubscribeTransactionTypesBatch(observer: IBaseBatchObserver): boolean {
+        const removed = this.batchObserverTypes.delete(observer);
+
+        if (removed) {
+            this.logger.info(
+                {
+                    observerName: observer.getName(),
+                    remainingBatchObservers: this.batchObserverTypes.size
+                },
+                'Batch observer unsubscribed'
+            );
+        }
+
+        return removed;
+    }
+
+    /**
+     * Unsubscribe a block observer from block notifications.
+     *
+     * @param observer - The block observer to remove
+     * @returns True when the observer was subscribed and has been removed
+     */
+    public unsubscribeBlock(observer: IBaseBlockObserver): boolean {
+        const removed = this.blockSubscribers.delete(observer);
+
+        if (removed) {
+            this.logger.info(
+                {
+                    observerName: observer.getName(),
+                    remainingBlockSubscribers: this.blockSubscribers.size
+                },
+                'Block observer unsubscribed'
+            );
+        }
+
+        return removed;
+    }
+
+    /**
+     * Remove an observer from every subscription collection it appears in.
+     *
+     * The plugin lifecycle tears down observers without knowing how each one registered, and a
+     * single observer may legitimately hold more than one kind of subscription. Sweeping all
+     * three collections in one call keeps the teardown path from having to reconstruct that
+     * knowledge, which is exactly the bookkeeping that went missing and let disabled plugins
+     * keep processing.
+     *
+     * @param observer - The observer to remove from all subscriber collections
+     * @returns Count of subscriptions removed; 0 means it held none
+     */
+    public unsubscribeObserver(observer: IBaseObserver | IBaseBatchObserver | IBaseBlockObserver): number {
+        let removed = 0;
+
+        for (const transactionType of Array.from(this.transactionTypeSubscribers.keys())) {
+            if (this.unsubscribeTransactionType(transactionType, observer as IBaseObserver)) {
+                removed += 1;
+            }
+        }
+
+        if (this.batchObserverTypes.delete(observer as IBaseBatchObserver)) {
+            removed += 1;
+        }
+
+        if (this.blockSubscribers.delete(observer as IBaseBlockObserver)) {
+            removed += 1;
+        }
+
+        if (removed > 0) {
+            this.logger.info(
+                {
+                    observerName: observer.getName(),
+                    subscriptionsRemoved: removed
+                },
+                'Observer removed from all subscriptions'
+            );
+        }
+
+        return removed;
     }
 
     /**

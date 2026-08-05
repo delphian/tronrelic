@@ -5,7 +5,6 @@ import { transactionsRouter } from './transactions.router.js';
 import { transactionRouter } from './transaction.router.js';
 import { inflowsRouter } from './inflows.router.js';
 import { outflowsRouter } from './outflows.router.js';
-import { dashboardRouter } from './dashboard.router.js';
 import { energyRouter } from './energy.router.js';
 import { liveRouter } from './live.router.js';
 import { tokensRouter } from './tokens.router.js';
@@ -49,7 +48,6 @@ export function createApiRouter(database: IDatabaseService, hookRegistry: IHookR
   router.use('/live', liveRouter(database));
   router.use('/tokens', tokensRouter(database));
   router.use('/admin/system', systemRouter(database));
-  router.use('/dashboard', dashboardRouter(database));
   router.use('/sitemap-data', sitemapRouter(database, hookRegistry));
 
   // Note: Menu, Pages, and Database (migrations) routers are mounted directly

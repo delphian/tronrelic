@@ -34,4 +34,18 @@ export interface IBaseObserver {
      * to aggregate statistics across all observers for monitoring dashboards.
      */
     getStats(): IObserverStats;
+
+    /**
+     * Permanently stop this observer and discard anything still queued.
+     *
+     * Unsubscribing stops *new* work reaching an observer, but anything already queued would
+     * still drain — a disabled plugin would keep writing to its collections for as long as its
+     * backlog lasts. The platform calls this on teardown so "disabled" means stopped now, not
+     * eventually. Implementations must be idempotent and must leave accumulated statistics
+     * readable, since the observer may still be inspected after it stops.
+     *
+     * Optional so existing observer implementations remain valid; the platform treats its
+     * absence as "nothing to stop".
+     */
+    stop?(): void;
 }

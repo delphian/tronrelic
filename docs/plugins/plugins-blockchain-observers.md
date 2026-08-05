@@ -28,6 +28,8 @@ observerRegistry.subscribeTransactionType('TransferContract', this);
 
 Multiple observers may subscribe to the same type. Each receives the transaction independently.
 
+Subscribe during `init()` and nothing else is required: `context.observerRegistry` is a per-plugin facade that records every subscription, so disabling the plugin revokes all of them and stops the observers behind them — queued work is discarded rather than left to drain. Do not subscribe from a request handler or scheduled job; the facade only accepts registrations during the install/enable/init window and throws outside it, because a subscription made later could not be tracked and would survive teardown. Re-enabling re-runs `init()`, so construct observers there rather than reusing an instance across the cycle.
+
 ## Transaction Flow and Timing
 
 Blockchain Service fetches a block, parses raw contract data, enriches it (USD pricing, address metadata, energy/bandwidth, whale categorization), and builds a `ProcessedTransaction` (implements `ITransaction`). Then it calls `observerRegistry.notifyTransaction(transaction)` — **after enrichment but before the database write**, so observers see fully-parsed data and run concurrently with persistence. Observer failures cannot affect database writes or block sync.

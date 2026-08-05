@@ -14,6 +14,7 @@ export abstract class BaseObserver implements IBaseObserver {
     private static readonly MAX_QUEUE_SIZE = 1000;
     private queue: ITransaction[] = [];
     private isProcessing = false;
+    private stopped = false;
 
     protected abstract readonly name: string;
     protected readonly logger: ISystemLogService;
@@ -62,6 +63,10 @@ export abstract class BaseObserver implements IBaseObserver {
      * @param transaction - The enriched transaction to process
      */
     public async enqueue(transaction: ITransaction): Promise<void> {
+        if (this.stopped) {
+            return;
+        }
+
         if (this.queue.length >= BaseObserver.MAX_QUEUE_SIZE) {
             const droppedCount = this.queue.length;
             this.totalDropped += droppedCount;
@@ -103,6 +108,14 @@ export abstract class BaseObserver implements IBaseObserver {
 
         try {
             while (this.queue.length > 0) {
+                // Re-checked every iteration, not just on entry: stop() can land while an
+                // await above is in flight, and a long backlog would otherwise keep writing
+                // for minutes after the owning plugin was disabled.
+                if (this.stopped) {
+                    this.queue = [];
+                    break;
+                }
+
                 const transaction = this.queue.shift();
                 if (!transaction) {
                     continue;
@@ -159,6 +172,41 @@ export abstract class BaseObserver implements IBaseObserver {
      */
     public getName(): string {
         return this.name;
+    }
+
+    /**
+     * Permanently stop this observer and discard its backlog.
+     *
+     * Unsubscribing an observer stops new work reaching it, but anything already queued would
+     * still drain — so a disabled plugin would keep writing to its collections until the backlog
+     * cleared. Dropping the queue here makes "disabled" mean stopped immediately. Counters are
+     * deliberately preserved so the observer's final statistics stay readable, and the drop is
+     * recorded against totalDropped so the discarded work is visible rather than silent.
+     *
+     * Idempotent: stopping an already-stopped observer does nothing. There is no restart —
+     * re-enabling a plugin runs its init hook, which constructs a fresh observer.
+     */
+    public stop(): void {
+        if (this.stopped) {
+            return;
+        }
+
+        this.stopped = true;
+
+        const discarded = this.queue.length;
+        if (discarded > 0) {
+            this.totalDropped += discarded;
+            this.queue = [];
+        }
+
+        this.logger.info(
+            {
+                observer: this.name,
+                discardedTransactions: discarded,
+                totalProcessed: this.totalProcessed
+            },
+            'Observer stopped - queue discarded, no further transactions will be processed'
+        );
     }
 
     /**

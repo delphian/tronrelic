@@ -19,6 +19,7 @@ export abstract class BaseBlockObserver implements IBaseBlockObserver {
     private static readonly MAX_QUEUE_SIZE = 50;
     private queue: IBlockData[] = [];
     private isProcessing = false;
+    private stopped = false;
 
     protected abstract readonly name: string;
     protected readonly logger: ISystemLogService;
@@ -88,6 +89,10 @@ export abstract class BaseBlockObserver implements IBaseBlockObserver {
      * @param blockData - Block metadata and all enriched transactions
      */
     public async enqueueBlock(blockData: IBlockData): Promise<void> {
+        if (this.stopped) {
+            return;
+        }
+
         if (this.queue.length >= BaseBlockObserver.MAX_QUEUE_SIZE) {
             const droppedTransactions = blockData.transactionCount;
             this.totalDropped += droppedTransactions;
@@ -130,6 +135,14 @@ export abstract class BaseBlockObserver implements IBaseBlockObserver {
 
         try {
             while (this.queue.length > 0) {
+                // Re-checked every iteration, not just on entry: stop() can land while an
+                // await above is in flight, and a long backlog would otherwise keep writing
+                // for minutes after the owning plugin was disabled.
+                if (this.stopped) {
+                    this.queue = [];
+                    break;
+                }
+
                 const blockData = this.queue.shift();
                 if (!blockData) {
                     continue;
@@ -184,6 +197,44 @@ export abstract class BaseBlockObserver implements IBaseBlockObserver {
             return 0;
         }
         return Number((this.totalErrors / total).toFixed(4));
+    }
+
+    /**
+     * Permanently stop this block observer and discard its backlog.
+     *
+     * Unsubscribing stops new blocks reaching the observer, but anything already queued would
+     * still drain — so a disabled plugin would keep writing to its collections until the backlog
+     * cleared. Dropping the queue here makes "disabled" mean stopped immediately. Counters are
+     * preserved so final statistics stay readable, and discarded transactions are recorded
+     * against totalDropped rather than vanishing silently.
+     *
+     * Idempotent: stopping an already-stopped observer does nothing. There is no restart —
+     * re-enabling a plugin runs its init hook, which constructs a fresh observer.
+     */
+    public stop(): void {
+        if (this.stopped) {
+            return;
+        }
+
+        this.stopped = true;
+
+        const discardedBlocks = this.queue.length;
+        const discardedTransactions = this.queue.reduce((sum, block) => sum + block.transactionCount, 0);
+
+        if (discardedBlocks > 0) {
+            this.totalDropped += discardedTransactions;
+            this.queue = [];
+        }
+
+        this.logger.info(
+            {
+                observer: this.name,
+                discardedBlocks,
+                discardedTransactions,
+                blocksProcessed: this.blocksProcessed
+            },
+            'Block observer stopped - queue discarded, no further blocks will be processed'
+        );
     }
 
     /**
