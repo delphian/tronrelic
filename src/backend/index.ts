@@ -689,12 +689,23 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
 
     // In-page submenu tabs for the consolidated System page (the menu Submenu
     // Pattern). These live in the dedicated 'system' namespace, not under the
-    // System container, so each node sets requiresAdmin itself. 'Overview' wraps
-    // the existing subsystem consoles; 'Providers' hosts external-provider config
-    // (TronScan). Registered here for now since the page is not yet a module.
+    // System container, so each node sets requiresAdmin itself. Registered here
+    // for now since the page is not yet a module.
+    //
+    // 'Overview' keeps the always-on telemetry strip plus the Server and
+    // Blockchain consoles. Configuration, WebSockets, MongoDB, and ClickHouse
+    // each own a tab: they were the deepest consoles on the overview, and a
+    // dedicated panel lets each render expanded instead of behind a collapsed
+    // ConsoleRow. Because a panel only mounts while its tab is active, the
+    // "no API storm on page load" guarantee the collapsed rows provided is
+    // preserved. 'Providers' hosts external-provider config (TronScan).
     const systemTabs = [
         { label: 'Overview', tab: 'overview', icon: 'SlidersHorizontal', order: 0 },
-        { label: 'Providers', tab: 'providers', icon: 'Plug', order: 1 }
+        { label: 'Configuration', tab: 'config', icon: 'Settings', order: 1 },
+        { label: 'WebSockets', tab: 'websockets', icon: 'Radio', order: 2 },
+        { label: 'MongoDB', tab: 'mongo', icon: 'Database', order: 3 },
+        { label: 'ClickHouse', tab: 'clickhouse', icon: 'Table2', order: 4 },
+        { label: 'Providers', tab: 'providers', icon: 'Plug', order: 5 }
     ];
     for (const tab of systemTabs) {
         await menuService.create({

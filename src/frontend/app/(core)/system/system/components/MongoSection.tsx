@@ -68,7 +68,7 @@ interface IMigrationHistory {
  * MongoDB; the executor still dispatches ClickHouse-targeted migrations
  * to the ClickHouse engine, but the operator-facing record of what ran
  * and when belongs to Mongo. ClickHouse health and the table browser
- * are a separate console row (see ClickHouseSection).
+ * are a separate tab (see ClickHouseSection).
  */
 export function MongoSection() {
     return (
