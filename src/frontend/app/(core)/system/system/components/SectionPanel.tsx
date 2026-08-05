@@ -5,10 +5,10 @@
  *
  * Configuration, WebSockets, MongoDB, and ClickHouse each own a tab whose whole
  * body is one subsystem section. Those sections render bare — they were written
- * to sit inside a `ConsoleRow` on the Overview tab and so supply no card surface
- * of their own. Rather than repeat the same `Stack` + `Card` wrapper across four
+ * to sit inside a wrapper that supplied the surface, so none carries a card of
+ * its own. Rather than repeat the same `Stack` + `Card` wrapper across four
  * near-identical tab components, they share this one, keeping the panels visually
- * identical to the Overview console and to each other.
+ * identical to the Overview cards and to each other.
  */
 
 import type { ReactNode } from 'react';

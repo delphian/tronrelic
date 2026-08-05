@@ -695,10 +695,10 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
     // 'Overview' keeps the always-on telemetry strip plus the Server and
     // Blockchain consoles. Configuration, WebSockets, MongoDB, and ClickHouse
     // each own a tab: they were the deepest consoles on the overview, and a
-    // dedicated panel lets each render expanded instead of behind a collapsed
-    // ConsoleRow. Because a panel only mounts while its tab is active, the
-    // "no API storm on page load" guarantee the collapsed rows provided is
-    // preserved. 'Providers' hosts external-provider config (TronScan).
+    // dedicated panel lets each render expanded rather than collapsed behind a
+    // disclosure row. Because a panel only mounts while its tab is active, its
+    // fetches still fire on arrival rather than on page load.
+    // 'Providers' hosts external-provider config (TronScan).
     const systemTabs = [
         { label: 'Overview', tab: 'overview', icon: 'SlidersHorizontal', order: 0 },
         { label: 'Configuration', tab: 'config', icon: 'Settings', order: 1 },

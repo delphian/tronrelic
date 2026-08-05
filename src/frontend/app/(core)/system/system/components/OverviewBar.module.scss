@@ -3,9 +3,10 @@
  *
  * Always-on telemetry strip rendered above the system console. Each tile
  * is a one-row anchor link (status dot + caps label + monospace KPI pair)
- * that scrolls to the matching ConsoleRow. The bar is its own surface
- * card with hairline border so it visually parents the console without
- * inheriting the heavier card padding the underlying rows used to carry.
+ * that either scrolls to the matching section card on this tab or, for a
+ * subsystem that now owns its own tab, activates that tab instead. The bar
+ * is its own surface card with hairline border so it visually parents the
+ * sections below without inheriting their heavier card padding.
  */
 
 @use '../../../../../app/breakpoints' as *;

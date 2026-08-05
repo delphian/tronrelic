@@ -49,6 +49,8 @@ When both succeed, the cookie wins: `req.adminVia = 'user'`. Token-only is tagge
 
 **503 Service Unavailable.** `ADMIN_API_TOKEN` is unset and no admin user resolved — admin surface intentionally disabled.
 
+**429 Too Many Requests.** Admin endpoints are rate-limited per IP at 60 requests per 60-second window, applied *before* `requireAdmin` so brute-force cost against the auth gate stays bounded. Under `/api/admin/system`, endpoints do not share one bucket: `/blockchain/*`, `/health/*`, `/websockets/*`, and `/logs/*` each get their own, and everything else (`/config/*`) falls back to a default. Each bucket carries the full 60-per-minute ceiling. The split exists because the `/system/system` dashboard polls several of these groups at once — a single bucket put it at ~58/min, and aligned polling bursts tipped it over every few minutes. If you still see 429s, you are polling one group harder than 60/min from one IP: lengthen the interval or spread the calls, rather than raising the ceiling.
+
 **Empty data.** Fresh install: wait for the scheduler to populate. Check `ENABLE_SCHEDULER=true`, then `/health/database` and `/health/redis`.
 
 **Scheduler PATCH had no effect.** Confirm the job is enabled (not just rescheduled), the global `ENABLE_SCHEDULER` is on, and the response confirmed the update. Changes apply on the next tick — they don't retroactively trigger.
