@@ -113,8 +113,12 @@ services:
     #
     # Reachable only over tronrelic-docker-api, which the backend and this
     # proxy alone join; no port is published to the host.
+    #
+    # The tag carries a `v` prefix on purpose: upstream published unprefixed
+    # tags only through 0.3.0 and switched to `vX.Y.Z` at 0.4.0, so a bare
+    # `0.4.2` resolves to no manifest and fails the deploy at the pull step.
     docker-proxy:
-        image: tecnativa/docker-socket-proxy:0.4.2
+        image: tecnativa/docker-socket-proxy:v0.4.2
         container_name: tronrelic-docker-proxy
         restart: always
         environment:
