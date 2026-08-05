@@ -371,5 +371,28 @@ describe('PluginObserverRegistry', () => {
             expect(facade.unsubscribeTransactionType('TransferContract', observer)).toBe(true);
             expect(facade.closeAndDisposeAll()).toBe(0);
         });
+
+        it('revokes an install-time subscription, which no later teardown would catch', async () => {
+            // installPlugin leaves the plugin installed but still disabled, and disablePlugin
+            // early-returns on a plugin that is not enabled — so an observer subscribed from an
+            // install hook would otherwise run live and survive even uninstall. The manager
+            // disposes the facade at the end of install for exactly this reason.
+            const installTimeObserver = new MockObserver('install-hook');
+            facade.subscribeTransactionType('TransferContract', installTimeObserver);
+
+            facade.closeAndDisposeAll();
+            await service.notifyTransaction(createTransaction('TransferContract'));
+
+            expect(installTimeObserver.received).toHaveLength(0);
+            expect(installTimeObserver.stop).toHaveBeenCalledTimes(1);
+
+            // The subsequent enable cycle rearms and subscribes for real.
+            facade.rearm();
+            const initTimeObserver = new MockObserver('init-hook');
+            facade.subscribeTransactionType('TransferContract', initTimeObserver);
+            await service.notifyTransaction(createTransaction('TransferContract'));
+
+            expect(initTimeObserver.received).toHaveLength(1);
+        });
     });
 });

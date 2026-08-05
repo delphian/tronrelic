@@ -233,7 +233,9 @@ export abstract class BaseBlockObserver implements IBaseBlockObserver {
                 discardedTransactions,
                 blocksProcessed: this.blocksProcessed
             },
-            'Block observer stopped - queue discarded, no further blocks will be processed'
+            discardedBlocks > 0
+                ? 'Block observer stopped - queue discarded, no further blocks will be processed'
+                : 'Block observer stopped - queue was empty, no further blocks will be processed'
         );
     }
 

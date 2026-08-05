@@ -205,7 +205,9 @@ export abstract class BaseObserver implements IBaseObserver {
                 discardedTransactions: discarded,
                 totalProcessed: this.totalProcessed
             },
-            'Observer stopped - queue discarded, no further transactions will be processed'
+            discarded > 0
+                ? 'Observer stopped - queue discarded, no further transactions will be processed'
+                : 'Observer stopped - queue was empty, no further transactions will be processed'
         );
     }
 

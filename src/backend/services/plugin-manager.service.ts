@@ -525,6 +525,15 @@ export class PluginManagerService {
             // runs.
             loaded.hooks.seal();
 
+            // Close the observer facade and revoke anything the install hook
+            // subscribed. Install leaves the plugin disabled, and a disabled
+            // plugin must not observe transactions — nor would any later
+            // teardown catch these subscriptions, since disablePlugin()
+            // refuses a plugin that is not enabled and uninstallPlugin() only
+            // unloads an enabled one. The next enable cycle rearms the facade
+            // before init() subscribes for real.
+            this.disposeObservers(loaded);
+
             // Mark as installed in database
             await this.metadataService.markInstalled(pluginId);
 
