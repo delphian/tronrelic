@@ -17,9 +17,9 @@ interface ClickHouseStatus {
 /**
  * ClickHouse administration body — health and table browser.
  *
- * Lives as its own console row separate from MongoDB. Health polls
- * every 10s; the table browser fetches stats once on mount and rows
- * on demand when a table is expanded.
+ * Owns the ClickHouse tab, separate from MongoDB. Health polls every
+ * 10s; the table browser fetches stats once on mount and rows on
+ * demand when a table is expanded.
  *
  * Table browse endpoints (`/api/admin/clickhouse/{stats,tables/:name/rows}`)
  * are mounted by ClickHouseModule.run() at boot. When ClickHouse is not

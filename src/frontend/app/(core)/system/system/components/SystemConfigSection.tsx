@@ -15,8 +15,8 @@ interface SystemConfigPayload {
 /**
  * Site URL configuration body.
  *
- * Mounts only when its console row is expanded so the initial fetch is
- * deferred until the admin opens the section. The save handler is
+ * Owns the Configuration tab, mounting only while that tab is active so the
+ * initial fetch is deferred until the admin opens it. The save handler is
  * PATCH-only and sends just `siteUrl` to avoid overwriting unrelated
  * fields stored on the same document (log retention, log level, etc.,
  * now edited from the logs page).

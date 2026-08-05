@@ -1,6 +1,6 @@
 # System Dashboard
 
-The System Dashboard is the cross-cutting observability surface at `/system/system` (default landing page when navigating to `/system`). It joins per-subsystem health probes into one scroll for triage, and acts as the operator's entry point to the module-owned admin pages that live as siblings under `/system/*`.
+The System Dashboard is the cross-cutting observability surface at `/system/system` (default landing page when navigating to `/system`). It joins per-subsystem health probes into one tabbed surface for triage, and acts as the operator's entry point to the module-owned admin pages that live as siblings under `/system/*`.
 
 ## Why This Matters
 
@@ -18,19 +18,24 @@ Admin authority comes from `admin` group membership, not a JS-readable token. Th
 
 ## The System Page
 
-`/system/system` is one page rendered as a vertical stack of independent sections. Each section fetches its own admin endpoint and renders independently — there is no aggregating `/overview` API; the page joins probe results client-side. Sections (in render order):
+`/system/system` splits its sections across an in-page tab row. The row is a menu, not a hand-rolled control: the tabs are nodes in the `system` menu namespace rendered with `MenuNavClient` (the menu module's [Submenu Pattern](../../src/backend/modules/menu/README.md#submenu-pattern-namespaced-tab-rows)), so they inherit per-user gating, ordering, and live `menu:update` refresh. Each tab carries a `?tab=` deep link the server entry reads SSR-first.
 
-| Section | Component | Fetches | Purpose |
-|---|---|---|---|
-| Overview Bar | `OverviewBar` | All seven probes | At-a-glance status strip across the top |
-| Blockchain | `BlockchainSection` | `/blockchain/status`, `/metrics`, `/observers`, `/scheduler/health` | Sync lag, throughput, observer queues, **Trigger Sync Now** button |
-| MongoDB | `MongoSection` | `/health/database`, `/migrations/status`, `/migrations/history` | Connection state, db size, migration runs |
-| ClickHouse | `ClickHouseSection` | `/health/clickhouse` | Connection state, table count, db size |
-| Server / Redis | `ServerSection` | `/health/redis`, `/health/server` | Process uptime, heap, CPU; Redis ping, key count, evictions |
-| WebSockets | `WebSocketsSection` | `/websockets/stats`, `/websockets/aggregate` | Per-plugin and aggregate WS metrics |
-| System Config | `SystemConfigSection` | GET/PATCH `/config/system` | Edit `siteUrl`, `logLevel`, log retention from the UI |
+Every section still fetches its own admin endpoint and renders independently — there is no aggregating `/overview` API; the page joins probe results client-side. A tab's panel mounts only while that tab is active, so a section's fetch fires when the operator arrives rather than on page load.
 
-Section sources: `src/frontend/app/(core)/system/system/components/`. For payload details and the cross-link to runtime config restart semantics, see [system-api-overview.md](./system-api-overview.md).
+| Tab | Section | Component | Fetches | Purpose |
+|---|---|---|---|---|
+| Overview | Overview Bar | `OverviewBar` | All seven probes | At-a-glance status strip across every subsystem, including those on other tabs |
+| Overview | Server / Redis | `ServerSection` | `/health/redis`, `/health/server` | Process uptime, heap, CPU; Redis ping, key count, evictions |
+| Overview | Blockchain | `BlockchainSection` | `/blockchain/status`, `/metrics`, `/observers`, `/scheduler/health` | Sync lag, throughput, observer queues, **Trigger Sync Now** button |
+| Configuration | System Config | `SystemConfigSection` | GET/PATCH `/config/system` | Edit `siteUrl` from the UI |
+| WebSockets | WebSockets | `WebSocketsSection` | `/websockets/stats`, `/websockets/aggregate` | Per-plugin and aggregate WS metrics |
+| MongoDB | MongoDB | `MongoSection` | `/health/database`, `/migrations/status`, `/migrations/history` | Connection state, db size, migration runs |
+| ClickHouse | ClickHouse | `ClickHouseSection` | `/health/clickhouse` | Connection state, table count, db size |
+| Providers | TronScan | `TronScanProviderSection` | GET/PATCH provider config | Runtime configuration for external data providers |
+
+The two sections that remain on Overview sit behind collapsible `ConsoleRow`s; the four that own a tab render expanded, since selecting the tab already expresses the intent. Overview Bar tiles stay clickable throughout — a tile scrolls to its console row when the subsystem is on the Overview tab, and switches tabs when it is not.
+
+Tab nodes are registered memory-only in `registerTemporaryMenuItems` (`src/backend/index.ts`), so the row rebuilds on every boot. Section sources: `src/frontend/app/(core)/system/system/components/`. For payload details and the cross-link to runtime config restart semantics, see [system-api-overview.md](./system-api-overview.md).
 
 ## Module-Owned Admin Pages
 
@@ -53,14 +58,15 @@ Other admin features live on dedicated pages — each owned by its module and do
 
 The System page is the triage map. Identify *which* subsystem is degraded, then either act on it from the page directly or click into the owning module's admin page for deeper control.
 
-| Symptom | Section to check | Action |
+| Symptom | Where to look | Action |
 |---|---|---|
-| Frontend transactions stale, observers silent | Blockchain — verify `lag` and `lastError`; check observers for rising `queueDepth` or `totalDropped` | Click **Trigger Sync Now**; for persistent backlog see [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) |
-| Scheduler not advancing | Overview Bar `scheduler.uptime` — non-zero means scheduler running | Open `/system/scheduler` to toggle/reschedule a specific job |
-| Memory or CPU climbing | Server — heap/RSS/cpu trend | Restart container if growth doesn't plateau; correlate with observer queue depth |
-| Redis evictions > 0 | Server (Redis card) | Memory pressure; investigate caching keys or raise Redis maxmemory |
-| WebSocket spikes | WebSockets — find offending plugin via `mostActiveEmitter` | Inspect that plugin's logs at `/system/logs` filtered by `service` |
-| Site URL or log retention need updating | System Config | Edit inline; **restart the frontend container** for SSR cache to refresh (see [system-runtime-config.md](./system-runtime-config.md#runtime-reconfiguration)) |
+| Frontend transactions stale, observers silent | Overview → Blockchain — verify `lag` and `lastError`; check observers for rising `queueDepth` or `totalDropped` | Click **Trigger Sync Now**; for persistent backlog see [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) |
+| Scheduler not advancing | Overview → Overview Bar `scheduler.uptime` — non-zero means scheduler running | Open `/system/scheduler` to toggle/reschedule a specific job |
+| Memory or CPU climbing | Overview → Server — heap/RSS/cpu trend | Restart container if growth doesn't plateau; correlate with observer queue depth |
+| Redis evictions > 0 | Overview → Server (Redis card) | Memory pressure; investigate caching keys or raise Redis maxmemory |
+| WebSocket spikes | WebSockets tab — find offending plugin via `mostActiveEmitter` | Inspect that plugin's logs at `/system/logs` filtered by `service` |
+| Site URL needs updating | Configuration tab | Edit inline; **restart the frontend container** for SSR cache to refresh (see [system-runtime-config.md](./system-runtime-config.md#runtime-reconfiguration)) |
+| Log level or retention needs updating | Logs page (`/system/logs`) | Moved off this page — edit there (see [system-logging.md](./system-logging.md)) |
 | Need to inspect a specific error | Logs page (`/system/logs`) | Filter by level/service; resolve to clear from unresolved counts |
 
 ## Troubleshooting

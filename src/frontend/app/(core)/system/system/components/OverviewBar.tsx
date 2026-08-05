@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { cn } from '../../../../../lib/cn';
 import styles from './OverviewBar.module.scss';
@@ -52,18 +52,39 @@ interface AggregateWebSocketStats {
 }
 
 /**
+ * Props for the telemetry strip.
+ */
+interface IOverviewBarProps {
+    /**
+     * Optional tile activation handler, mirroring `MenuNavClient`'s
+     * `onItemSelect(item, event)` convention.
+     *
+     * Each tile is an anchor to the matching console row's `#id`. That only
+     * resolves for subsystems still rendered on the Overview tab; the ones that
+     * moved to their own tab have no such target, so the page shell passes this
+     * handler and calls `preventDefault()` for those, switching tabs instead.
+     * Left undefined, every tile keeps plain anchor behavior.
+     */
+    onTileSelect?: (tileId: string, event: ReactMouseEvent<HTMLAnchorElement>) => void;
+}
+
+/**
  * Always-on telemetry strip rendered above the system console.
  *
- * Polls the lightest health endpoint on each subsystem every 15s so
- * admins get a true bird's-eye view without expanding any console row.
- * Each tile shows a status dot, the system name in caps, and one or two
- * monospace KPIs. Clicking a tile scrolls to the matching ConsoleRow.
+ * Polls the lightest health endpoint on each subsystem every 15s so admins get a
+ * true bird's-eye view of every subsystem — including those that now live on
+ * their own tabs — without leaving the Overview. Each tile shows a status dot,
+ * the system name in caps, and one or two monospace KPIs. Clicking a tile either
+ * scrolls to its console row or activates its tab, depending on where the
+ * subsystem now renders.
  *
- * Polling is independent of the per-section bodies — the strip stays
- * live even with every section collapsed, which is the entire reason
- * for its existence.
+ * Polling is independent of the per-section bodies — the strip stays live even
+ * with every section collapsed, which is the entire reason for its existence.
+ *
+ * @param props - Optional tile activation handler from the page shell.
+ * @returns The telemetry strip.
  */
-export function OverviewBar() {
+export function OverviewBar({ onTileSelect }: IOverviewBarProps) {
     const [tiles, setTiles] = useState<SystemTile[]>(initialTiles());
     const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
@@ -110,7 +131,12 @@ export function OverviewBar() {
         <div className={styles.bar} role="region" aria-label="System telemetry overview">
             <div className={styles.tiles}>
                 {tiles.map((tile) => (
-                    <a key={tile.id} href={`#${tile.id}`} className={styles.tile}>
+                    <a
+                        key={tile.id}
+                        href={`#${tile.id}`}
+                        className={styles.tile}
+                        onClick={(event) => onTileSelect?.(tile.id, event)}
+                    >
                         <span
                             className={cn(
                                 styles.dot,
