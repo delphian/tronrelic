@@ -25,7 +25,7 @@ Every section still fetches its own admin endpoint and renders independently —
 | Tab | Section | Component | Fetches | Purpose |
 |---|---|---|---|---|
 | Overview | Overview Bar | `OverviewBar` | All seven probes | At-a-glance status strip across every subsystem, including those on other tabs |
-| Overview | Server / Redis | `ServerSection` | `/health/redis`, `/health/server` | Process uptime, heap, CPU; Redis ping, key count, evictions |
+| Overview | Server | `ServerSection` | `/health/redis`, `/health/server`, `/health/infrastructure` | Droplet CPU/load/memory/disk; per-container CPU, memory, health, restarts; Redis ping, key count, evictions; process uptime and heap |
 | Overview | Blockchain | `BlockchainSection` | `/blockchain/status`, `/metrics`, `/observers`, `/scheduler/health` | Sync lag, throughput, observer queues, **Trigger Sync Now** button |
 | Configuration | System Config | `SystemConfigSection` | GET/PATCH `/config/system` | Edit `siteUrl` from the UI |
 | WebSockets | WebSockets | `WebSocketsSection` | `/websockets/stats`, `/websockets/aggregate` | Per-plugin and aggregate WS metrics |
@@ -64,8 +64,11 @@ The System page is the triage map. Identify *which* subsystem is degraded, then 
 |---|---|---|
 | Frontend transactions stale, observers silent | Overview → Blockchain — verify `lag` and `lastError`; check observers for rising `queueDepth` or `totalDropped` | Click **Trigger Sync Now**; for persistent backlog see [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) |
 | Scheduler not advancing | Overview → Overview Bar `scheduler.uptime` — non-zero means scheduler running | Open `/system/scheduler` to toggle/reschedule a specific job |
-| Memory or CPU climbing | Overview → Server — heap/RSS/cpu trend | Restart container if growth doesn't plateau; correlate with observer queue depth |
-| Redis evictions > 0 | Overview → Server (Redis card) | Memory pressure; investigate caching keys or raise Redis maxmemory |
+| Droplet CPU or memory climbing | Overview → Server → Droplet, then the Containers table to attribute it | Resize the droplet, or restart the container carrying the growth once identified |
+| Backend memory climbing | Overview → Server → Backend Process — heap/RSS trend | Restart the container if growth doesn't plateau; correlate with observer queue depth |
+| A container crash-looping | Overview → Server → Containers — non-zero **Restarts**, or a state other than `running` | Tail that container's logs; the row's health column distinguishes a failing healthcheck from a stopped process |
+| Disk filling | Overview → Server → Droplet — `Disk /` and `Disk clickhouse:*` cells turn amber at 75%, red at 90% | ClickHouse `traffic_events` is the usual cause; see the storage notes in [operations-server-info.md](../../../docs/operations/operations-server-info.md) |
+| Redis evictions > 0 | Overview → Server (Redis Cache block) | Memory pressure; investigate caching keys or raise Redis maxmemory |
 | WebSocket spikes | WebSockets tab — find offending plugin via `mostActiveEmitter` | Inspect that plugin's logs at `/system/logs` filtered by `service` |
 | Site URL needs updating | Configuration tab | Edit inline; **restart the frontend container** for SSR cache to refresh (see [system-runtime-config.md](./system-runtime-config.md#runtime-reconfiguration)) |
 | Log level or retention needs updating | Logs page (`/system/logs`) | Moved off this page — edit there (see [system-logging.md](./system-logging.md)) |

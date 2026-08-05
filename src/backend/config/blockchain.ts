@@ -19,7 +19,17 @@ export const blockchainConfig = {
   network: {
     blocksPerMinute: toNumber(process.env.BLOCKCHAIN_NETWORK_BLOCKS_PER_MINUTE, 20),
     blockIntervalSeconds: toNumber(process.env.BLOCKCHAIN_BLOCK_INTERVAL_SECONDS, 3),
-    liveChainThrottleBlocks: toNumber(process.env.BLOCKCHAIN_LIVE_CHAIN_THROTTLE_BLOCKS, 20)
+    // The two blocks-behind figures below are a hysteresis pair, not one
+    // threshold written twice. A single boundary makes the syncer flap: with lag
+    // hovering on it, ticks alternate between the live 3-second throttle and
+    // flat-out catch-up, which stutters the frontend feed and fills the log with
+    // mode transitions. Sync drops the throttle only once lag reaches
+    // `backfillEntryBlocks`, and resumes it only once lag falls back to
+    // `liveChainThrottleBlocks`; between the two it holds whichever mode it is
+    // already in. Keep entry strictly above the throttle value — equal values
+    // collapse the band and bring the flapping back.
+    liveChainThrottleBlocks: toNumber(process.env.BLOCKCHAIN_LIVE_CHAIN_THROTTLE_BLOCKS, 20),
+    backfillEntryBlocks: toNumber(process.env.BLOCKCHAIN_BACKFILL_ENTRY_BLOCKS, 30)
   },
   lock: {
     key: `${env.REDIS_NAMESPACE}:locks:blockchain-sync`,

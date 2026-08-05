@@ -107,6 +107,20 @@ const envSchema = z.object({
         .transform(value => ['1', 'true', 'yes', 'on'].includes(value))
     ])
     .default(true),
+  /**
+   * Location of a read-only Docker Engine API, used by the system console to
+   * report per-container CPU, memory, health and restart counts.
+   *
+   * Accepts `http://host:port` (a socket proxy) or `unix:///path/to.sock` (the
+   * daemon directly, for local development). Unset — the default everywhere the
+   * proxy is not deployed — disables container metrics; the console reports the
+   * subsystem as unavailable and every other health probe is unaffected.
+   *
+   * Point this at an allowlisting proxy, never the raw daemon socket over TCP:
+   * unrestricted Docker API access is equivalent to root on the host, and this
+   * process terminates public traffic and runs plugin code.
+   */
+  DOCKER_API_URL: z.string().optional(),
   STORAGE_ENDPOINT: z.string().optional(),
   STORAGE_REGION: z.string().optional(),
   STORAGE_ACCESS_KEY_ID: z.string().optional(),

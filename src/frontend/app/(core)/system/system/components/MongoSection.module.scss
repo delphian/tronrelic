@@ -1,27 +1,32 @@
 /**
  * MongoSection styles.
  *
- * Three blocks (Health, Migrations, Browser) inside the MongoDB console
- * row. Block titles are tiny caps captions and second-level captions
- * (Pending, History) drop another tier — the section reads as one tight
- * panel rather than transplanted pages stitched together. ClickHouse
- * lives in a sibling section (see ClickHouseSection.module.scss).
+ * Three blocks (Health, Collection Browser, Migrations), each standing in its
+ * own card on the MongoDB tab. The card heading matches the Overview tab's
+ * section titles, and the second-level captions (Pending, History) drop a tier
+ * below it so the hierarchy stays legible inside a card. Each block declares
+ * the container query context itself, because the card — not the tab — is now
+ * the space its contents have to fit. ClickHouse lives in a sibling section
+ * (see ClickHouseSection.module.scss).
  */
 
 @use '../../../../../app/breakpoints' as *;
 
-.subsection {
+.block {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-md);
+    gap: var(--gap-sm);
     container-type: inline-size;
     container-name: mongo-subsection;
 }
 
-.block {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-xs);
+.section_title {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text);
 }
 
 .block_header {
@@ -30,15 +35,6 @@
     justify-content: space-between;
     gap: var(--gap-sm);
     flex-wrap: wrap;
-}
-
-.block_title {
-    margin: 0;
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-semibold);
-    text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
-    color: var(--color-text-muted);
 }
 
 .subblock {

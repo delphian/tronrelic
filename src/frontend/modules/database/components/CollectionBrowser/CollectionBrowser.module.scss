@@ -1,23 +1,40 @@
 /**
  * Styles for CollectionBrowser component.
  *
- * Uses design tokens from globals.css and follows TronRelic's CSS Module patterns.
- * Container queries enable responsive behavior in different layout contexts.
+ * The inventory is a data table, not a list of disclosure panels: the quantities
+ * an operator compares (document count, stored size, index count) are columns, so
+ * a sorted column can be scanned down. What is left here is the chrome the table
+ * primitive does not supply — the sort affordance in each header, the expand
+ * control in the row, and the document panel that unfolds beneath a row.
+ *
+ * Uses design tokens from semantic-tokens.scss and follows TronRelic's CSS Module
+ * patterns. Container queries enable responsive behavior in different layout
+ * contexts.
  */
+
+@use '../../../../app/breakpoints' as *;
 
 .browser {
     container-type: inline-size;
     container-name: browser;
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-7);
+    gap: var(--gap-sm);
 }
 
+/*
+ * Database identity line: which database is being browsed, how many collections
+ * it holds, and what it costs on disk. One quiet line rather than a hero block —
+ * the table below is the content, and this only has to orient the reader.
+ */
 .overview {
     display: flex;
     align-items: center;
-    gap: var(--spacing-7);
-    padding: var(--spacing-5) 0;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+    margin: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
 }
 
 .overview svg {
@@ -25,99 +42,96 @@
     flex-shrink: 0;
 }
 
-.overview_title {
-    margin: 0;
-    font-size: var(--font-size-2xl);
-    font-weight: var(--font-weight-bold);
+.db_name {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
     color: var(--color-text);
 }
 
-.overview_subtitle {
-    margin: var(--spacing-2) 0 0;
-    font-size: var(--font-size-sm);
+.overview_meta {
     color: var(--color-text-muted);
 }
 
 .section_title {
-    margin: 0 0 var(--spacing-7);
-    font-size: var(--font-size-lg);
+    margin: 0;
+    font-size: var(--font-size-heading-xs);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
 }
 
-.collections {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-3);
-}
-
-.collection_item {
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-    background: var(--color-surface-muted);
-    transition: border-color var(--transition-fast);
-}
-
-.collection_item:hover {
-    border-color: var(--color-border-strong);
-}
-
-.collection_header {
-    display: flex;
+/*
+ * Sort affordance inside a column header.
+ *
+ * A real <button> so the column is operable by keyboard and announced as
+ * actionable; it inherits the header's own typography so the row still reads as
+ * a table head rather than a strip of controls. Inline-flex keeps it subject to
+ * the header's text-align, which is what right-aligns it in numeric columns.
+ */
+.sort_button {
+    display: inline-flex;
     align-items: center;
-    gap: var(--spacing-4);
-    width: 100%;
-    padding: var(--spacing-5) var(--spacing-6);
-    background: transparent;
+    gap: var(--gap-2xs);
+    padding: 0;
+    background: none;
     border: none;
     cursor: pointer;
-    text-align: left;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+}
+
+.sort_button:hover {
     color: var(--color-text);
-    transition: background-color var(--transition-fast);
 }
 
-.collection_header:hover {
-    background: var(--color-surface-elevated);
+/* Idle direction glyph — present so the column reads as sortable, dimmed so it
+   does not compete with the arrow on the column actually being sorted. */
+.sort_icon_idle {
+    opacity: var(--opacity-35);
 }
 
-.collection_header:focus {
-    outline: var(--border-width-medium) solid var(--color-primary);
-    outline-offset: calc(-1 * var(--border-width-medium));
+.collection_row {
+    cursor: pointer;
 }
 
-.collection_header svg {
+.expand_button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--padding-2xs);
+    background: none;
+    border: none;
+    cursor: pointer;
     color: var(--color-text-muted);
-    flex-shrink: 0;
+}
+
+.expand_button:hover {
+    color: var(--color-text);
 }
 
 .collection_name {
-    flex: 1;
-    font-weight: var(--font-weight-medium);
     font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    word-break: break-all;
 }
 
-.collection_stats {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-    flex-wrap: wrap;
-    justify-content: flex-end;
+.documents_row {
+    background: var(--color-surface-muted);
 }
 
 .documents_panel {
-    border-top: var(--border-width-thin) solid var(--color-border);
-    padding: var(--spacing-7);
-    background: var(--color-surface);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
 }
 
 .documents_header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: var(--spacing-7);
-    padding-bottom: var(--spacing-5);
+    padding-bottom: var(--padding-xs);
     border-bottom: var(--border-width-thin) solid var(--color-border);
     font-size: var(--font-size-sm);
     color: var(--color-text-muted);
@@ -179,23 +193,21 @@
 }
 
 .loading {
-    padding: var(--spacing-10);
+    margin: 0;
+    padding: var(--padding-md);
     text-align: center;
     color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+.error_inline {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
 }
 
 /* Responsive adjustments */
-@container browser (max-width: 600px) {
-    .collection_header {
-        flex-wrap: wrap;
-    }
-
-    .collection_stats {
-        width: 100%;
-        justify-content: flex-start;
-        margin-top: var(--spacing-3);
-    }
-
+@container browser (max-width: #{$breakpoint-mobile-lg}) {
     .documents_header {
         flex-direction: column;
         align-items: flex-start;

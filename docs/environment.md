@@ -40,6 +40,14 @@ Disable `ENABLE_SCHEDULER` during local dev to avoid this pressure entirely — 
 
 `NOTIFICATION_EMAIL_THROTTLE_MS` defaults to 300000 (5 minutes) where `NOTIFICATION_WEBSOCKET_THROTTLE_MS` defaults to 5000. Email costs more per send and inbox tolerance is much lower than UI tolerance — don't equalize them without thinking about user experience and provider cost.
 
+## DOCKER_API_URL
+
+Powers the per-container CPU/memory/health table in the `/system` console's Server section. Unset is a fully supported state — the console reports container metrics as unavailable and every other probe is unaffected — which is why local development needs no wiring.
+
+In Docker deployments the value is hardcoded in `docker-compose.yml` to `http://docker-proxy:2375` rather than read from `.env`. That is deliberate: the droplet's `.env` is generated once at provisioning and `droplet-update.sh` never rewrites it, so an `.env`-sourced value would leave the feature silently disabled in production forever.
+
+Never point this at an unrestricted Docker daemon. Full Docker API access is equivalent to root on the host, and the backend terminates public traffic and runs plugin code. The deployed target is `tecnativa/docker-socket-proxy` with `CONTAINERS=1` and `POST` left at its disabled default, on an `internal` network joined only by the proxy and the backend. Note that mounting the socket `:ro` is not a mitigation — read-only governs the mount, not requests written into the socket.
+
 ## Object Storage Reserved Vars
 
 Page module file uploads currently always use the local filesystem provider — `PagesModule` instantiates `LocalStorageProvider` unconditionally. The `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, and `STORAGE_FORCE_PATH_STYLE` env vars are reserved for a future S3-style provider that has not yet been wired up. Setting them today has no effect.

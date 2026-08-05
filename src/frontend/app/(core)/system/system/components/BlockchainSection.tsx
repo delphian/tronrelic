@@ -8,6 +8,7 @@ import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { StatStrip } from './StatStrip';
+import { LAG_DANGER_BLOCKS, LAG_WARNING_BLOCKS } from './lag-thresholds';
 import styles from './BlockchainSection.module.scss';
 
 interface BlockchainError {
@@ -235,7 +236,7 @@ function SyncStatusBlock({ status, metrics, schedulerEnabled, syncing, onTrigger
                             detail: status.averageProcessingDelaySeconds !== null
                                 ? `${formatDuration(status.averageProcessingDelaySeconds)} behind`
                                 : `${status.lag.toLocaleString()} blocks behind`,
-                            tone: getLagMetricTone(status.lag, status.liveChainThrottleBlocks)
+                            tone: getLagMetricTone(status.lag)
                         },
                         ...(status.processingBlocksPerMinute !== null
                             ? [{
@@ -427,10 +428,20 @@ function ObserverPerformanceBlock({ observers }: ObserverPerformanceBlockProps) 
     );
 }
 
-function getLagMetricTone(lag: number, throttleThreshold: number): 'success' | 'warning' | 'danger' {
-    if (lag < throttleThreshold) return 'success';
-    if (lag >= 100) return 'danger';
-    return 'warning';
+/**
+ * Colour the Lag figure by how far behind the chain the indexer is.
+ *
+ * Thresholds come from `lag-thresholds.ts` rather than from the syncer's
+ * `liveChainThrottleBlocks`, so the same lag reads identically here and on the
+ * Overview strip's Chain tile — see that module for why the two were decoupled.
+ *
+ * @param lag - Blocks the local index is behind the network head.
+ * @returns The tone the Lag stat cell should carry.
+ */
+function getLagMetricTone(lag: number): 'success' | 'warning' | 'danger' {
+    if (lag >= LAG_DANGER_BLOCKS) return 'danger';
+    if (lag >= LAG_WARNING_BLOCKS) return 'warning';
+    return 'success';
 }
 
 function getSuccessRateTone(rate: number): 'success' | 'warning' | 'danger' {

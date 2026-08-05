@@ -44,8 +44,10 @@ export interface ICollectionBrowserProps {
     allowDelete?: boolean;
 
     /**
-     * Heading for the collection list. Defaults to "Collections". Override it
-     * when the surrounding page would otherwise leave the scope ambiguous.
+     * Heading for the collection list. Omitted by default, because the
+     * embedding page usually supplies its own and a built-in heading would read
+     * as a duplicate. Set it when the surrounding page would otherwise leave
+     * the scope ambiguous.
      */
     title?: string;
 }

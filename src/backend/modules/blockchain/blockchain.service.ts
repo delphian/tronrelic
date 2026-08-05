@@ -13,6 +13,7 @@ import { QueueService } from '../../services/queue.service.js';
 import { blockchainConfig } from '../../config/blockchain.js';
 import { TronGridClient, type TronGridBlock, type TronGridTransaction, type TronGridTransactionInfo } from './tron-grid.client.js';
 import { normalizeContractType, resolveOwnerAddress, resolveRecipient, resolveAmounts, describeContract } from './transaction-parse.js';
+import { resolveCaughtUpMode } from './sync-mode.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { getRedisClient } from '../../loaders/redis.js';
@@ -921,6 +922,25 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
+     * Decide whether sync should treat itself as caught up to the chain head.
+     *
+     * The answer drives the per-block adaptive throttle: caught up paces blocks
+     * to TRON's ~3s cadence so the live feed reads smoothly, behind runs flat
+     * out to close the gap. The decision itself is a pure function in
+     * `sync-mode.ts` — this method only supplies the configured thresholds and
+     * the mode remembered from the previous tick.
+     *
+     * @param blocksBehind - How far the local cursor trails the network head.
+     * @returns True to throttle to live cadence, false to run flat out.
+     */
+    private resolveCaughtUp(blocksBehind: number): boolean {
+        return resolveCaughtUpMode(blocksBehind, this.wasCaughtUp, {
+            resumeBlocks: blockchainConfig.network.liveChainThrottleBlocks,
+            entryBlocks: blockchainConfig.network.backfillEntryBlocks
+        });
+    }
+
+    /**
      * Schedule new blocks for processing by comparing local state against the latest network height.
      *
      * This method runs periodically (via scheduler) to queue blocks that need ingestion. It prioritizes missing blocks from
@@ -980,7 +1000,7 @@ export class BlockchainService implements IBlockchainService {
 
             // Calculate if we're caught up to determine throttle behavior for all queued blocks
             const blocksBehind = latestNetworkBlock - lastProcessed;
-            const isCaughtUp = blocksBehind <= blockchainConfig.network.liveChainThrottleBlocks;
+            const isCaughtUp = this.resolveCaughtUp(blocksBehind);
 
             // Log transitions between caught-up and backfill modes
             if (this.wasCaughtUp !== null && isCaughtUp !== this.wasCaughtUp) {

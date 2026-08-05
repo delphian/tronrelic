@@ -15,12 +15,16 @@ export function systemRouter(database: IDatabaseService) {
   // One rate-limit bucket per endpoint group rather than a single bucket for
   // the whole router. The /system/system dashboard polls this router from one
   // IP continuously — the telemetry strip alone issues 7 requests every 15s,
-  // and the Blockchain and Server consoles add 5 more every 10s — reaching 58
-  // of the 60-per-minute admin allowance. Bursts align every 30s, so a shared
-  // bucket intermittently exhausted and answered 429 to whichever requests
-  // arrived last, usually the blockchain trio. Splitting holds each bucket
-  // near 28/min while every bucket keeps the platform admin ceiling. `/config`
-  // and anything added later fall through to the `system-monitor` default.
+  // and the Blockchain and Server consoles add 6 more every 10s — well past
+  // the 60-per-minute admin allowance for a shared bucket. Bursts align every
+  // 30s, so that bucket intermittently exhausted and answered 429 to whichever
+  // requests arrived last, usually the blockchain trio. Splitting holds
+  // blockchain near 26/min and health near 34/min, each against its own
+  // 60/min ceiling. Health carries the larger share because ServerSection
+  // polls three probes rather than two — `/health/infrastructure` joined
+  // redis and server when the console started reporting droplet and
+  // per-container metrics. `/config` and anything added later fall through to
+  // the `system-monitor` default.
   router.use(createGroupedAdminRateLimiter(
     {
       blockchain: 'system-blockchain',
@@ -51,6 +55,7 @@ export function systemRouter(database: IDatabaseService) {
   router.get('/health/clickhouse', controller.getClickHouseStatus);
   router.get('/health/redis', controller.getRedisStatus);
   router.get('/health/server', controller.getServerMetrics);
+  router.get('/health/infrastructure', controller.getInfrastructureStatus);
 
   // Configuration endpoints
   router.get('/config', controller.getConfiguration);

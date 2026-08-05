@@ -36,10 +36,18 @@ Block fetches use exponential backoff: `retries: 3, delayMs: 750, factor: 2`. Tr
 
 After a block finishes processing, sync applies an *adaptive* throttle — not a fixed delay:
 
-- **Caught up** (within `liveChainThrottleBlocks = 20` of network height): targets a 3-second total per block (TRON's native block time). If processing already took ≥3 seconds, no extra wait. If it took 1s, sleeps 2s. This keeps the live feed cadence smooth and predictable on the frontend.
-- **Behind** (more than 20 blocks lag): no throttle. Sync runs flat-out, bounded only by the `batchSize=60` ceiling and the 200ms TronGrid request gap.
+- **Caught up**: targets a 3-second total per block (TRON's native block time). If processing already took ≥3 seconds, no extra wait. If it took 1s, sleeps 2s. This keeps the live feed cadence smooth and predictable on the frontend.
+- **Behind**: no throttle. Sync runs flat-out, bounded only by the `batchSize=60` ceiling and the 200ms TronGrid request gap.
 
 This replaces an earlier fixed 3-second post-block delay that compounded with processing time and produced 4–5 second intervals.
+
+### Which Mode Sync Is In
+
+The two modes are separated by a dead band rather than a single boundary, because one threshold made the syncer flap: a lag hovering on it flipped mode nearly every tick, stuttering the feed and burying real transitions in log noise.
+
+Sync gives up the throttle only once lag reaches `backfillEntryBlocks = 30` (`BLOCKCHAIN_BACKFILL_ENTRY_BLOCKS`), and takes it back only once lag falls to `liveChainThrottleBlocks = 20` (`BLOCKCHAIN_LIVE_CHAIN_THROTTLE_BLOCKS`). Between 21 and 29 blocks behind it holds whichever mode it is already in, so lag oscillating inside the band changes nothing. Entry must stay strictly above the throttle value — equal values collapse the band and restore the flapping.
+
+The remembered mode is per-process. After a restart, or when the scheduler lock moves to another instance, a lag inside the band resolves to **behind**: an unthrottled tick costs only speed and drives lag straight down to where the throttle resumes, whereas assuming "caught up" would pace a genuinely lagging syncer at 3s per block and let it fall further behind. The `/system` console draws the same line — the Lag figure and the Overview strip's Chain tile turn amber at 30 blocks behind.
 
 ## Per-Block Pipeline Stages
 
