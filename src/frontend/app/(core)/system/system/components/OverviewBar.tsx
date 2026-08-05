@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { cn } from '../../../../../lib/cn';
+import { LAG_DANGER_BLOCKS, LAG_WARNING_BLOCKS } from './lag-thresholds';
 import styles from './OverviewBar.module.scss';
 
 type Status = 'ok' | 'warn' | 'down' | 'idle' | 'loading';
@@ -197,10 +198,9 @@ function buildBlockchainTile(status: BlockchainStatus | null, metrics: Blockchai
         return { id: 'blockchain', label: 'Chain', status: 'down', primary: 'Offline' };
     }
     const lag = status.lag;
-    const throttle = status.liveChainThrottleBlocks;
     let tone: Status = 'ok';
-    if (lag >= 100) tone = 'down';
-    else if (lag >= throttle) tone = 'warn';
+    if (lag >= LAG_DANGER_BLOCKS) tone = 'down';
+    else if (lag >= LAG_WARNING_BLOCKS) tone = 'warn';
     if (status.netCatchUpRate !== null && status.netCatchUpRate < 0) tone = 'warn';
     if (!status.isHealthy) tone = 'down';
 

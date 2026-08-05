@@ -8,6 +8,8 @@ import {
     RefreshCw,
     XCircle
 } from 'lucide-react';
+import { Stack } from '../../../../../components/layout';
+import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
@@ -62,24 +64,45 @@ interface IMigrationHistory {
 }
 
 /**
- * MongoDB administration body — health, migrations, and the collection browser.
+ * MongoDB administration body — health, the collection browser, and migrations.
  *
- * Migrations live here because the `migrations` audit log is stored in
+ * Each concern stands in its own card rather than sharing one enclosing panel:
+ * they are independent surfaces an operator reads separately, and stacking them
+ * inside a single card gave no boundary between a health readout, a data
+ * browser, and an execution log. Order follows how the tab is actually used —
+ * health first as the at-a-glance condition, the browser next as the reason to
+ * open the tab, and migrations last because they are consulted during a
+ * deploy rather than during routine inspection.
+ *
+ * Migrations live on this tab because the `migrations` audit log is stored in
  * MongoDB; the executor still dispatches ClickHouse-targeted migrations
  * to the ClickHouse engine, but the operator-facing record of what ran
  * and when belongs to Mongo. ClickHouse health and the table browser
  * are a separate tab (see ClickHouseSection).
+ *
+ * @returns The MongoDB tab body as three sibling cards.
  */
 export function MongoSection() {
     return (
-        <div className={styles.subsection}>
-            <MongoHealth />
-            <Migrations />
-            <Browser />
-        </div>
+        <Stack gap="sm">
+            <Card padding="sm" noBackgroundImage>
+                <MongoHealth />
+            </Card>
+            <Card padding="sm" noBackgroundImage>
+                <Browser />
+            </Card>
+            <Card padding="sm" noBackgroundImage>
+                <Migrations />
+            </Card>
+        </Stack>
     );
 }
 
+/**
+ * MongoDB connection health, polled every ten seconds.
+ *
+ * @returns The health card body.
+ */
 function MongoHealth() {
     const [database, setDatabase] = useState<DatabaseStatus | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -109,7 +132,7 @@ function MongoHealth() {
 
     return (
         <div className={styles.block}>
-            <h4 className={styles.block_title}>Health</h4>
+            <h3 className={styles.section_title}>Health</h3>
             {error && (
                 <div className="alert alert--danger" role="alert">
                     <span className={styles.error_inline}>
@@ -140,6 +163,11 @@ function MongoHealth() {
     );
 }
 
+/**
+ * Migration status, pending queue, and execution history.
+ *
+ * @returns The migrations card body.
+ */
 function Migrations() {
     const [status, setStatus] = useState<IMigrationStatus | null>(null);
     const [history, setHistory] = useState<IMigrationHistory | null>(null);
@@ -278,7 +306,7 @@ function Migrations() {
     return (
         <div className={styles.block}>
             <header className={styles.block_header}>
-                <h4 className={styles.block_title}>Migrations</h4>
+                <h3 className={styles.section_title}>Migrations</h3>
                 <div className={styles.actions}>
                     <Button
                         variant="primary"
@@ -486,10 +514,18 @@ function Migrations() {
     );
 }
 
+/**
+ * Collection browser card body.
+ *
+ * The browser supplies no heading of its own here — this card owns the label,
+ * and a second one inside would read as a duplicate.
+ *
+ * @returns The collection browser card body.
+ */
 function Browser() {
     return (
         <div className={styles.block}>
-            <h4 className={styles.block_title}>Collection Browser</h4>
+            <h3 className={styles.section_title}>Collection Browser</h3>
             <CollectionBrowser />
         </div>
     );

@@ -4,12 +4,22 @@
  * Slim sub-block layout used inside the section's card. Block titles
  * are tiny caps labels rather than display headings — they introduce a
  * stat strip rather than dominate it.
+ *
+ * The container table is the shared <Table> primitive, so column alignment,
+ * density and the error-row treatment come from there. This module adds only
+ * what that primitive has no concept of: a warning row state to sit beside its
+ * built-in error state, and the tone tint applied to individual figures that
+ * have crossed a saturation threshold.
  */
+
+@use '../../../../../app/breakpoints' as *;
 
 .subsection {
     display: flex;
     flex-direction: column;
     gap: var(--gap-md);
+    container-type: inline-size;
+    container-name: server-section;
 }
 
 .block {
@@ -31,4 +41,59 @@
     display: inline-flex;
     align-items: center;
     gap: var(--gap-xs);
+}
+
+/*
+ * Degraded-probe note. Reads as prose rather than as an alert: an absent
+ * Docker API is the expected state in local development, not an incident.
+ */
+.unavailable {
+    margin: 0;
+    padding: var(--padding-xs) var(--padding-sm);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+/*
+ * Warning counterpart to the primitive's `hasError` row state, tinted from the
+ * same alpha ladder its error row uses so the two read as one severity scale.
+ */
+.row_warning {
+    background: var(--color-warning-alpha-15);
+}
+
+.name_cell {
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.self_marker {
+    color: var(--color-text-subtle);
+    font-weight: var(--font-weight-normal);
+}
+
+.cell_detail {
+    color: var(--color-text-subtle);
+}
+
+.tone--warning {
+    color: var(--color-warning-text);
+}
+
+.tone--danger {
+    color: var(--color-danger-text);
+}
+
+/*
+ * In a narrow container the memory ceiling is the first thing worth dropping:
+ * the used figure beside it still conveys pressure, and the row tint already
+ * flags saturation.
+ */
+@container server-section (max-width: #{$breakpoint-mobile-md}) {
+    .cell_detail {
+        display: none;
+    }
 }

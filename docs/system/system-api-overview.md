@@ -14,6 +14,7 @@ There is no aggregating "overview" endpoint. The `/system` dashboard fans out to
 | GET | `/admin/system/health/clickhouse` | ClickHouse ping, table count, db size (if initialized) |
 | GET | `/admin/system/health/redis` | Redis ping, memory, key count, evictions |
 | GET | `/admin/system/health/server` | Process uptime, heap, RSS, CPU, external memory |
+| GET | `/admin/system/health/infrastructure` | Droplet CPU/load/memory/disk plus per-container metrics |
 | GET | `/admin/system/config` | Effective env: features, integration presence |
 | GET | `/admin/system/config/system` | Runtime-editable system config (Mongo-backed) |
 | PATCH | `/admin/system/config/system` | Update `siteUrl`, `logLevel`, log retention settings |
@@ -63,10 +64,43 @@ If ClickHouse is not initialized, returns `{ connected: false, responseTime: nul
 | `memoryUsage.heapTotal` | number | Bytes |
 | `memoryUsage.rss` | number | Bytes — total process memory |
 | `memoryUsage.external` | number | Bytes — V8 external allocations |
-| `cpuUsage` | number | Percent across all cores |
+| `cpuUsage` | number | **This process**, as a percent of one core, over the interval since the previous call. Until August 2026 this field reported `os.cpus()` averaged since boot — the *host's* lifetime average, not the process and not current. Host CPU now lives on `/health/infrastructure` |
+| `cpuCoreCount` | number | Cores visible to the host, for reading `cpuUsage` against capacity |
 | `activeConnections` | number | Always 0 (reserved) |
 | `requestRate` | null | Reserved |
 | `errorRate` | null | Reserved |
+
+### `GET /health/infrastructure` — `infrastructure` payload
+
+Answers "is the machine under pressure, and which container is responsible" — the two questions `/health/server` cannot, because it sees only this process. Returned together to spend one request against the `system-health` rate-limit bucket, which the dashboard already polls hard.
+
+Always 200 when the probe ran. Docker carries its own failure state in `docker.error` rather than failing the request, because the host readings in the same payload stay valid when the socket proxy is unreachable.
+
+`infrastructure.host`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `hostname` | string | Container hostname, not the droplet's |
+| `platform` | string | `os.type()` + `os.release()` |
+| `uptime` | number | Seconds since the **host** booted |
+| `cpuCoreCount` | number | |
+| `cpuPercent` | number \| null | Across all cores, windowed since the previous call; `null` only if two samples never differed |
+| `loadAverage` | [number, number, number] | 1, 5, 15 minute |
+| `memoryTotal` / `memoryFree` / `memoryUsed` | number | Bytes. Host totals — the compose services declare no memory limits, so this is the real ceiling |
+| `memoryPercent` | number | |
+| `disks` | array | One entry per probed filesystem: `path`, `totalBytes`, `freeBytes`, `usedBytes`, `usedPercent`. Always the container root (`/`); adds `clickhouse:<name>` entries from ClickHouse's `system.disks` when connected, which is the only vantage point onto its dedicated block device |
+
+`infrastructure.docker`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `available` | boolean | False when `DOCKER_API_URL` is unset or the proxy is unreachable |
+| `error` | string \| null | Operator-facing reason when unavailable |
+| `containers` | array | Per container: `id`, `name`, `service`, `image`, `state`, `health`, `uptime`, `restartCount`, `cpuPercent`, `memoryUsage`, `memoryLimit`, `memoryPercent`, `isSelf` |
+
+`cpuPercent` and `memoryUsage` match what `docker stats` prints — CPU scaled by online CPU count (so it may exceed 100 on a multi-core host), memory net of reclaimable page cache. Both are `null` for a container that is not running. Results are cached for 5 seconds; a collection costs roughly a second because Docker samples CPU twice to produce a delta.
+
+**Security.** The backend reaches Docker through an allowlisting socket proxy (`CONTAINERS=1`, `POST` disabled) on a dedicated internal network — never the raw socket, which is equivalent to root on the host. Docker's inspect endpoint returns each container's full environment and the proxy cannot strip it, so the service returns only the whitelisted fields above. Never widen that whitelist or serialize a raw Docker response: every database credential in the deployment sits in those environments.
 
 ### `GET /config` — `config` payload
 

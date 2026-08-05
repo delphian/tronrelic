@@ -163,7 +163,10 @@ export function SystemAdminClient({ submenuTree, submenuGeneratedAt, initialTab 
                 {activeTab === 'overview' && <OverviewTab onTileSelect={handleTileSelect} />}
                 {activeTab === 'config' && <SectionPanel><SystemConfigSection /></SectionPanel>}
                 {activeTab === 'websockets' && <SectionPanel><WebSocketsSection /></SectionPanel>}
-                {activeTab === 'mongo' && <SectionPanel><MongoSection /></SectionPanel>}
+                {/* MongoDB supplies its own cards — health, browser, and migrations are
+                  * independent surfaces, so they sit as siblings rather than inside the
+                  * shared single-section panel. */}
+                {activeTab === 'mongo' && <MongoSection />}
                 {activeTab === 'clickhouse' && <SectionPanel><ClickHouseSection /></SectionPanel>}
                 {activeTab === 'providers' && <ProvidersTab />}
             </div>

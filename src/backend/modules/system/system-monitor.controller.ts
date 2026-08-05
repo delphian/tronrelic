@@ -58,6 +58,19 @@ export class SystemMonitorController {
     res.json({ success: true, metrics });
   };
 
+  /**
+   * Serve droplet-level metrics alongside per-container runtime state.
+   *
+   * Always 200 when the probe itself ran: an unreachable Docker API is carried
+   * in `infrastructure.docker.error` rather than surfaced as a request failure,
+   * because the host readings in the same payload remain valid and the console
+   * would otherwise blank an entire section over one degraded dependency.
+   */
+  getInfrastructureStatus = async (_req: Request, res: Response) => {
+    const infrastructure = await this.service.getInfrastructureStatus();
+    res.json({ success: true, infrastructure });
+  };
+
   getConfiguration = async (_req: Request, res: Response) => {
     const config = await this.service.getConfiguration();
     res.json({ success: true, config });

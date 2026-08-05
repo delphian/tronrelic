@@ -1,7 +1,9 @@
 import type { Redis as RedisClient } from 'ioredis';
 import type { IDatabaseService } from '@/types';
 import * as os from 'os';
+import { statfs } from 'fs/promises';
 import mongoose from 'mongoose';
+import { DockerStatsService, type DockerStatus } from './docker-stats.service.js';
 import { SyncStateModel, type SyncStateFields } from '../../database/models/sync-state-model.js';
 import { BlockModel, type BlockFields, type BlockDoc } from '../../database/models/block-model.js';
 import { TransactionModel, type TransactionDoc } from '../../database/models/transaction-model.js';
@@ -155,10 +157,85 @@ export interface ServerMetrics {
     rss: number;
     external: number;
   };
+  /**
+   * This process's CPU consumption as a percentage of one core, measured over
+   * the interval since the previous call.
+   *
+   * Previously this reported `os.cpus()` averaged since boot, which inside a
+   * container is the *host's* lifetime CPU average — neither the backend
+   * process nor a current reading, despite the field name. Host CPU now lives
+   * on `HostMetrics.cpuPercent`, where it is also windowed.
+   */
   cpuUsage: number;
+  /** Cores visible to the host, for reading `cpuUsage` against capacity. */
+  cpuCoreCount: number;
   activeConnections: number;
   requestRate: number | null;
   errorRate: number | null;
+}
+
+/**
+ * Space consumption for one mounted filesystem.
+ *
+ * Reported because the ClickHouse `traffic_events` table grows without bound
+ * and, before it was moved to a dedicated block device, was capable of filling
+ * the droplet root disk and taking every container down with it.
+ */
+export interface DiskUsage {
+  /** Mount point as seen from inside this container. */
+  path: string;
+  totalBytes: number;
+  freeBytes: number;
+  usedBytes: number;
+  usedPercent: number;
+}
+
+/**
+ * Droplet-level readings, as distinct from this process or any one container.
+ *
+ * Container metrics answer "which service is consuming the machine"; these
+ * answer "is the machine itself under pressure" — the question that decides
+ * whether to resize the droplet or hunt for a leak.
+ */
+export interface HostMetrics {
+  hostname: string;
+  platform: string;
+  /** Seconds since the host booted, not since this process started. */
+  uptime: number;
+  cpuCoreCount: number;
+  /**
+   * Host CPU across all cores over the interval since the previous call, or
+   * null on the very first reading before a window exists.
+   */
+  cpuPercent: number | null;
+  /** One, five and fifteen minute load averages. */
+  loadAverage: [number, number, number];
+  memoryTotal: number;
+  memoryFree: number;
+  memoryUsed: number;
+  memoryPercent: number;
+  /** Filesystems probed from inside this container; empty if statfs failed. */
+  disks: DiskUsage[];
+}
+
+/**
+ * Combined droplet and container view backing the console's Server section.
+ *
+ * The two travel together because they answer one operator question and would
+ * otherwise cost two polls against a rate-limited admin router, but each keeps
+ * its own failure state so a Docker outage cannot blank the host readings.
+ */
+export interface InfrastructureStatus {
+  host: HostMetrics;
+  docker: DockerStatus;
+}
+
+/** Cumulative CPU counters plus the moment they were sampled. */
+interface ICpuSample {
+  /** Aggregate busy time across all cores, in milliseconds. */
+  busyMs: number;
+  /** Aggregate time across all cores including idle, in milliseconds. */
+  totalMs: number;
 }
 
 export interface ConfigurationValues {
@@ -173,6 +250,52 @@ export interface ConfigurationValues {
   integrations: {
     hasTronGridKey: boolean;
     hasStorageConfigured: boolean;
+  };
+}
+
+/**
+ * Snapshot the host's cumulative CPU counters across every core.
+ *
+ * Kept separate from the percentage calculation because a rate needs two
+ * samples taken at different times; this produces the raw reading, and the
+ * caller owns the pair it compares.
+ *
+ * @returns Aggregate busy and total core time in milliseconds.
+ */
+function readHostCpuSample(): ICpuSample {
+  let busyMs = 0;
+  let totalMs = 0;
+
+  for (const cpu of os.cpus()) {
+    const coreTotal = Object.values(cpu.times).reduce((sum, value) => sum + value, 0);
+    busyMs += coreTotal - cpu.times.idle;
+    totalMs += coreTotal;
+  }
+
+  return { busyMs, totalMs };
+}
+
+/**
+ * Derive the used/percentage fields callers actually display from raw capacity.
+ *
+ * Centralized so the root filesystem and ClickHouse's own disks — which arrive
+ * from entirely different sources — cannot drift into reporting "used" by
+ * different definitions.
+ *
+ * @param path - Identifier shown to the operator.
+ * @param totalBytes - Filesystem capacity.
+ * @param freeBytes - Space available to unprivileged writers.
+ * @returns The populated usage record.
+ */
+function toDiskUsage(path: string, totalBytes: number, freeBytes: number): DiskUsage {
+  const usedBytes = Math.max(0, totalBytes - freeBytes);
+
+  return {
+    path,
+    totalBytes,
+    freeBytes,
+    usedBytes,
+    usedPercent: totalBytes > 0 ? (usedBytes / totalBytes) * 100 : 0
   };
 }
 
@@ -197,11 +320,32 @@ export class SystemMonitorService {
    */
   private snapshotCache: { promise: Promise<BlockProcessingSnapshot>; fetchedAt: number } | null = null;
 
-  constructor(private readonly redis: RedisClient, database: IDatabaseService) {
+  /** Reads sibling-container metrics; reports unavailable when no Docker API is configured. */
+  private readonly dockerStats: DockerStatsService;
+
+  /**
+   * Previous host CPU counters, for turning cumulative times into a rate.
+   *
+   * Seeded in the constructor so the first request already has a window to
+   * measure against, rather than returning null until a second poll arrives.
+   */
+  private lastHostCpu: ICpuSample;
+
+  /** Previous process CPU counters and the wall-clock moment they were taken. */
+  private lastProcessCpu: { usage: NodeJS.CpuUsage; atMs: number };
+
+  constructor(
+    private readonly redis: RedisClient,
+    database: IDatabaseService,
+    dockerStats: DockerStatsService = new DockerStatsService()
+  ) {
     this.database = database;
     this.database.registerModel(SYNC_STATE_COLLECTION, SyncStateModel);
     this.database.registerModel(BLOCKS_COLLECTION, BlockModel);
     this.database.registerModel(TRANSACTIONS_COLLECTION, TransactionModel);
+    this.dockerStats = dockerStats;
+    this.lastHostCpu = readHostCpuSample();
+    this.lastProcessCpu = { usage: process.cpuUsage(), atMs: Date.now() };
   }
 
   /**
@@ -677,14 +821,32 @@ export class SystemMonitorService {
     };
   }
 
+  /**
+   * Report this Node process's own resource consumption.
+   *
+   * CPU is measured as a delta against the previous call rather than read from
+   * `os.cpus()`. The old approach averaged host core times since boot, so in a
+   * container it reported neither this process nor anything current — a busy
+   * backend and an idle one produced the same figure, and the number barely
+   * moved once the droplet had been up a few days.
+   *
+   * @returns Process uptime, memory breakdown, and windowed CPU percentage.
+   */
   async getServerMetrics(): Promise<ServerMetrics> {
     const mem = process.memoryUsage();
-    const cpus = os.cpus();
-    const cpuUsage = cpus.reduce((acc, cpu) => {
-      const total = Object.values(cpu.times).reduce((a, b) => a + b, 0);
-      const idle = cpu.times.idle;
-      return acc + (100 - (idle / total) * 100);
-    }, 0) / cpus.length;
+    const now = Date.now();
+    const usage = process.cpuUsage();
+    const elapsedMs = now - this.lastProcessCpu.atMs;
+    const busyMicros =
+      usage.user - this.lastProcessCpu.usage.user + (usage.system - this.lastProcessCpu.usage.system);
+
+    // Below ~50ms the sample is dominated by timer granularity and produces
+    // wild readings, so hold the previous window rather than publish noise.
+    let cpuUsage = 0;
+    if (elapsedMs >= 50) {
+      cpuUsage = Math.max(0, (busyMicros / 1000 / elapsedMs) * 100);
+      this.lastProcessCpu = { usage, atMs: now };
+    }
 
     return {
       uptime: process.uptime(),
@@ -695,10 +857,115 @@ export class SystemMonitorService {
         external: mem.external
       },
       cpuUsage,
+      cpuCoreCount: os.cpus().length,
       activeConnections: 0, // Would need tracking
       requestRate: null,
       errorRate: null
     };
+  }
+
+  /**
+   * Report droplet-level and per-container state in one payload.
+   *
+   * Collected together so the console's Server section costs a single request
+   * against a rate-limited admin router, but assembled independently: Docker
+   * carries its own failure state, so an unreachable socket proxy still leaves
+   * the host readings usable.
+   *
+   * @returns Host metrics alongside the container sweep.
+   */
+  async getInfrastructureStatus(): Promise<InfrastructureStatus> {
+    const [host, docker] = await Promise.all([this.getHostMetrics(), this.dockerStats.getStatus()]);
+
+    return { host, docker };
+  }
+
+  /**
+   * Measure the droplet the containers share.
+   *
+   * CPU is windowed against the previous call for the same reason as the
+   * process reading. Memory comes from `os` rather than a cgroup file because
+   * the compose services declare no memory limits, so the host totals are the
+   * real ceiling every container competes for.
+   *
+   * @returns Host CPU, load, memory, and filesystem usage.
+   */
+  async getHostMetrics(): Promise<HostMetrics> {
+    const sample = readHostCpuSample();
+    const busyDelta = sample.busyMs - this.lastHostCpu.busyMs;
+    const totalDelta = sample.totalMs - this.lastHostCpu.totalMs;
+    let cpuPercent: number | null = null;
+
+    if (totalDelta > 0 && busyDelta >= 0) {
+      cpuPercent = (busyDelta / totalDelta) * 100;
+      this.lastHostCpu = sample;
+    }
+
+    const memoryTotal = os.totalmem();
+    const memoryFree = os.freemem();
+    const load = os.loadavg();
+
+    return {
+      hostname: os.hostname(),
+      platform: `${os.type()} ${os.release()}`,
+      uptime: os.uptime(),
+      cpuCoreCount: os.cpus().length,
+      cpuPercent,
+      loadAverage: [load[0], load[1], load[2]],
+      memoryTotal,
+      memoryFree,
+      memoryUsed: memoryTotal - memoryFree,
+      memoryPercent: memoryTotal > 0 ? ((memoryTotal - memoryFree) / memoryTotal) * 100 : 0,
+      disks: await this.readDisks()
+    };
+  }
+
+  /**
+   * Probe the filesystems whose exhaustion would take the deployment down.
+   *
+   * The container's root mount stands in for the droplet's system disk. The
+   * ClickHouse volume is bound to a dedicated block device that this container
+   * cannot see, so its figures come from ClickHouse's own `system.disks` — the
+   * only vantage point with visibility into it, and the disk most likely to
+   * fill given `traffic_events` grows without bound.
+   *
+   * @returns One entry per filesystem successfully probed; never throws.
+   */
+  private async readDisks(): Promise<DiskUsage[]> {
+    const disks: DiskUsage[] = [];
+
+    try {
+      const stats = await statfs('/');
+      const totalBytes = stats.blocks * stats.bsize;
+      const freeBytes = stats.bavail * stats.bsize;
+      disks.push(toDiskUsage('/', totalBytes, freeBytes));
+    } catch (error) {
+      logger.warn({ error }, 'Failed to read root filesystem usage');
+    }
+
+    try {
+      const { ClickHouseService } = await import('../clickhouse/services/clickhouse.service.js');
+      if (ClickHouseService.isInitialized()) {
+        const clickhouse = ClickHouseService.getInstance();
+        if (clickhouse.isConnected()) {
+          const rows = await clickhouse.query<{ name: string; free_space: string; total_space: string }>(`
+            SELECT name, free_space, total_space
+            FROM system.disks
+          `);
+          for (const row of rows) {
+            const totalBytes = parseInt(row.total_space, 10);
+            const freeBytes = parseInt(row.free_space, 10);
+            if (Number.isFinite(totalBytes) && Number.isFinite(freeBytes) && totalBytes > 0) {
+              disks.push(toDiskUsage(`clickhouse:${row.name}`, totalBytes, freeBytes));
+            }
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn({ error }, 'Failed to read ClickHouse disk usage');
+    }
+
+    return disks;
   }
 
   /**

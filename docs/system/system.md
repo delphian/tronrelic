@@ -51,7 +51,7 @@ Docs not owned by a single component row above:
 
 | Document | Covers |
 |---|---|
-| [system-api-overview.md](./system-api-overview.md) | `/health/*` (database, clickhouse, redis, server), `/config`, `/config/system` |
+| [system-api-overview.md](./system-api-overview.md) | `/health/*` (database, clickhouse, redis, server, infrastructure), `/config`, `/config/system` |
 | [system-api-blockchain.md](./system-api-blockchain.md) | Blockchain sync status, metrics, manual trigger |
 | [system-api-scheduler.md](./system-api-scheduler.md) | Scheduler status, health, job PATCH |
 | [system-api-logs.md](./system-api-logs.md) | System log query/resolve/delete endpoints |

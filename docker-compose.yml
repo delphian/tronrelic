@@ -97,6 +97,40 @@ services:
             retries: 5
             start_period: 10s
 
+    # Read-only Docker Engine API for the /system console's container metrics.
+    #
+    # SECURITY CRITICAL: access to /var/run/docker.sock is equivalent to root on
+    # the host — anything holding it can start a privileged container that
+    # mounts the host filesystem. The backend terminates public traffic and runs
+    # plugin code, so the socket is mounted here instead and the backend is
+    # given only what HAProxy's allowlist forwards.
+    #
+    # POST defaults to 0, so the entire API is GET/HEAD; CONTAINERS=1 is the
+    # only section opened, and no start/stop/restart grants are set. Note that
+    # the `:ro` on the socket mount below buys nothing on its own (read-only
+    # governs the mount, not requests written into the socket) — it matches
+    # upstream's documented example, and the allowlist is what constrains this.
+    #
+    # Reachable only over tronrelic-docker-api, which the backend and this
+    # proxy alone join; no port is published to the host.
+    docker-proxy:
+        image: tecnativa/docker-socket-proxy:0.4.2
+        container_name: tronrelic-docker-proxy
+        restart: always
+        environment:
+            - CONTAINERS=1
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock:ro
+        networks:
+            - tronrelic-docker-api
+        security_opt:
+            - no-new-privileges:true
+        logging:
+            driver: "json-file"
+            options:
+                max-size: "10m"
+                max-file: "3"
+
     # Backend API Server
     backend:
         image: ghcr.io/${GITHUB_USERNAME}/tronrelic-backend:${IMAGE_TAG:-production}
@@ -148,6 +182,12 @@ services:
             - CLICKHOUSE_DATABASE=tronrelic
             - CLICKHOUSE_USER=${CLICKHOUSE_USER:-default}
             - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-}
+
+            # Container metrics for the /system console, via the read-only
+            # socket proxy. Hardcoded rather than read from .env so the feature
+            # arrives with a compose deploy — the droplet's .env is generated
+            # once at provisioning and is not rewritten by droplet-update.sh.
+            - DOCKER_API_URL=http://docker-proxy:2375
         depends_on:
             mongodb:
                 condition: service_healthy
@@ -157,6 +197,10 @@ services:
                 condition: service_healthy
         networks:
             - tronrelic-network
+            # Second network carrying only this container and docker-proxy, so
+            # the Docker API is not reachable from Mongo, Redis, ClickHouse or
+            # the frontend.
+            - tronrelic-docker-api
         volumes:
             # Mount logs directory for debugging
             - ./.run:/app/.run
@@ -229,6 +273,14 @@ services:
 networks:
     tronrelic-network:
         driver: bridge
+
+    # Isolates the Docker API. Upstream's guidance is to place the socket proxy
+    # on a network holding only itself and its consumer; putting it on the
+    # shared application network would let every container reach the daemon.
+    # `internal` blocks egress, so a compromised proxy cannot call out.
+    tronrelic-docker-api:
+        driver: bridge
+        internal: true
 
 volumes:
     tronrelic-mongo-data:

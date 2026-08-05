@@ -36,7 +36,7 @@ When both succeed, the cookie wins: `req.adminVia = 'user'`. Token-only is tagge
 
 | Document | Covers |
 |---|---|
-| [system-api-overview.md](./system-api-overview.md) | Health (`/health/database`, `/health/clickhouse`, `/health/redis`, `/health/server`) and `/config` |
+| [system-api-overview.md](./system-api-overview.md) | Health (`/health/database`, `/health/clickhouse`, `/health/redis`, `/health/server`, `/health/infrastructure`) and `/config` |
 | [system-api-blockchain.md](./system-api-blockchain.md) | `/blockchain/status`, `/blockchain/transactions`, `/blockchain/metrics`, `/blockchain/observers`, `POST /blockchain/sync` |
 | [system-api-scheduler.md](./system-api-scheduler.md) | `/scheduler/status`, `/scheduler/health`, `PATCH /scheduler/job/:jobName` |
 | [system-api-logs.md](./system-api-logs.md) | `/logs` query/stats/get/resolve/unresolve/delete |

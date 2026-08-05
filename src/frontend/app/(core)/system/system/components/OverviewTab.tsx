@@ -37,7 +37,7 @@ interface IOverviewTabProps {
  *
  * Both sections now mount with the tab rather than on expand, so both poll
  * whenever Overview is open. That is the load the split rate-limit buckets were
- * sized against — blockchain 26/min and health 28/min against a 60/min ceiling
+ * sized against — blockchain 26/min and health 34/min against a 60/min ceiling
  * each — so always-on polling stays well inside budget.
  *
  * @param props - Tile activation handler supplied by the page shell.
