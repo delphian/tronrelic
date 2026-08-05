@@ -47,7 +47,7 @@ The two modes are separated by a dead band rather than a single boundary, becaus
 
 Sync gives up the throttle only once lag reaches `backfillEntryBlocks = 30` (`BLOCKCHAIN_BACKFILL_ENTRY_BLOCKS`), and takes it back only once lag falls to `liveChainThrottleBlocks = 20` (`BLOCKCHAIN_LIVE_CHAIN_THROTTLE_BLOCKS`). Between 21 and 29 blocks behind it holds whichever mode it is already in, so lag oscillating inside the band changes nothing. Entry must stay strictly above the throttle value — equal values collapse the band and restore the flapping.
 
-The remembered mode is per-process. After a restart, or when the scheduler lock moves to another instance, a lag inside the band resolves to **behind**: an unthrottled tick costs only speed and drives lag straight down to where the throttle resumes, whereas assuming "caught up" would pace a genuinely lagging syncer at 3s per block and let it fall further behind. The `/system` console draws the same line — the Lag figure and the Overview strip's Chain tile turn amber at 30 blocks behind.
+The remembered mode is per-process. After a restart, or when the scheduler lock moves to another instance, a lag inside the band resolves to **behind**: an unthrottled tick costs only speed and drives lag straight down to where the throttle resumes, whereas assuming "caught up" would pace a genuinely lagging syncer at 3s per block and let it fall further behind. The `/system` console draws the same line — the Lag figure and the Overview strip's Chain tile turn amber at that same entry threshold, whatever it is configured to, reading it from the `backfillEntryBlocks` field of the blockchain status payload rather than assuming the default.
 
 ## Per-Block Pipeline Stages
 

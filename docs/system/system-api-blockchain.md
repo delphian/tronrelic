@@ -40,6 +40,7 @@ Sync lag is the single most important production signal — every observer and d
 | `lastTimings` | object \| null | Per-stage timings from the most recent block (stages 1–11; see [sync architecture](./system-blockchain-sync-architecture.md#per-block-pipeline-stages)) |
 | `lastTransactionCount` | number \| null | Transactions processed in the last block |
 | `liveChainThrottleBlocks` | number | Config echo: lag at or below which sync *resumes* the adaptive 3s throttle (default 20). It gives the throttle up at a higher lag — see the [dead band](./system-blockchain-sync-architecture.md#which-mode-sync-is-in) — so this value alone does not tell you the current mode |
+| `backfillEntryBlocks` | number | Config echo: lag at or above which sync *drops* the 3s throttle and catches up flat out (default 30). The `/system` console's amber lag step is read from this field |
 
 ```bash
 LAG=$(curl -s -H "X-Admin-Token: $TOKEN" \

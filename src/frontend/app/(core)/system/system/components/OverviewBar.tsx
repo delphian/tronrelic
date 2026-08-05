@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { cn } from '../../../../../lib/cn';
-import { LAG_DANGER_BLOCKS, LAG_WARNING_BLOCKS } from './lag-thresholds';
+import { LAG_DANGER_BLOCKS, resolveLagWarningBlocks } from './lag-thresholds';
 import styles from './OverviewBar.module.scss';
 
 type Status = 'ok' | 'warn' | 'down' | 'idle' | 'loading';
@@ -25,7 +25,7 @@ interface BlockchainStatus {
     lag: number;
     isHealthy: boolean;
     netCatchUpRate: number | null;
-    liveChainThrottleBlocks: number;
+    backfillEntryBlocks: number;
 }
 
 interface BlockchainMetrics {
@@ -198,9 +198,10 @@ function buildBlockchainTile(status: BlockchainStatus | null, metrics: Blockchai
         return { id: 'blockchain', label: 'Chain', status: 'down', primary: 'Offline' };
     }
     const lag = status.lag;
+    const warningBlocks = resolveLagWarningBlocks(status.backfillEntryBlocks);
     let tone: Status = 'ok';
     if (lag >= LAG_DANGER_BLOCKS) tone = 'down';
-    else if (lag >= LAG_WARNING_BLOCKS) tone = 'warn';
+    else if (lag >= warningBlocks) tone = 'warn';
     if (status.netCatchUpRate !== null && status.netCatchUpRate < 0) tone = 'warn';
     if (!status.isHealthy) tone = 'down';
 
