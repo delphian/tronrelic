@@ -253,10 +253,17 @@ export class RedirectService {
     /**
      * All rules, newest first, for the admin management table.
      *
+     * `_id` breaks ties on `createdAt` so the order is deterministic across
+     * calls. Migration 017 stamps every seeded rule with one shared timestamp,
+     * so twenty rules tie on the sort key and Mongo is free to return them in
+     * any order — harmless for a table rendered in one read, but the AI tool
+     * pages this inventory, and two pages fetched from two orderings can
+     * overlap or skip a rule.
+     *
      * @returns Every rule in the admin shape (enabled and disabled).
      */
     async listRules(): Promise<IRedirectRuleAdmin[]> {
-        const docs = await this.collection.find({}).sort({ createdAt: -1 }).toArray();
+        const docs = await this.collection.find({}).sort({ createdAt: -1, _id: -1 }).toArray();
         const rules = docs.map(doc => this.toAdmin(doc));
         return rules;
     }

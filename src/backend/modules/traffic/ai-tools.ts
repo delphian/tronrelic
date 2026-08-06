@@ -390,6 +390,9 @@ function buildTools(
             'Windows: pass `period` for a preset, or `startDate`+`endDate` (ISO-8601) for a custom range; always report ' +
             'the returned windowStart/windowEnd. ' +
             'Does NOT include registered-account totals — call ' + AI_TOOL_NAMES.audience + ' for those. ' +
+            'Wide windows (more than ' + MAX_BUCKETS + ' buckets, e.g. 90d) return the visitors/pageviews series WITHOUT ' +
+            'its per-bucket top paths, countries, and sources, and set seriesDetailTrimmed:true — call ' +
+            AI_TOOL_NAMES.breakdown + ' for those dimensions over the window rather than reporting them as absent. ' +
             'Returns clickhouseEnabled:false with empty figures when the analytics store is down. This tool is read-only.',
         // Capability: read / internal / surfaces-untrusted — the KPIs and the
         // visitor/pageview series are aggregate counts with no per-visitor rows,
@@ -428,13 +431,36 @@ function buildTools(
                 trafficService.getEngagementMetrics({ since, until }, excludeBots)
             ]);
 
+            // Bound the series against the model's context window. Capping the
+            // input span bounds the bucket COUNT, not the payload: any window
+            // wider than 48 hours is daily-bucketed, so 90 days emits 91 points
+            // and each carries its own top three paths, countries, and sources —
+            // up to 819 nested objects, where the widest preset before this one
+            // produced 31 points. Past MAX_BUCKETS the per-bucket detail is
+            // dropped and the shape of the series (visitors/pageviews per
+            // bucket) is kept: the AI tool standard's truncate-and-point-to-
+            // detail rule, and those same dimensions remain available
+            // window-wide at full precision through the breakdown tool.
+            const seriesDetailTrimmed = (trend.series?.length ?? 0) > MAX_BUCKETS;
+            const boundedTrend = seriesDetailTrimmed
+                ? {
+                    ...trend,
+                    series: trend.series.map(point => ({
+                        bucket: point.bucket,
+                        visitors: point.visitors,
+                        pageviews: point.pageviews
+                    }))
+                }
+                : trend;
+
             return {
                 period,
                 windowStart,
                 windowEnd,
                 excludeBots,
                 clickhouseEnabled: trafficService.isEnabled(),
-                trend,
+                trend: boundedTrend,
+                seriesDetailTrimmed,
                 engagement,
                 liveVisitors,
                 liveWindowMinutes: 5
@@ -723,9 +749,11 @@ function buildTools(
             'All-traffic views: "summary" (row counts per bot class, every class INCLUDING human), "top-paths" (most-hit ' +
             'paths), and "top-countries" (most-active countries). ' +
             'THESE THREE ARE RAW EVENT-ROW COUNTS, NOT VISITORS: they count every recorded request — bot and human, ' +
-            'first-touch and pageview — apply no bot filter and no operator ignore-list, and are therefore always larger ' +
-            'than, and must never be reconciled against, the visitor and pageview figures from ' + AI_TOOL_NAMES.overview + ' ' +
-            'or ' + AI_TOOL_NAMES.breakdown + '. For "which pages do people actually land on", use ' + AI_TOOL_NAMES.breakdown + ' ' +
+            'first-touch and pageview — apply no bot filter and no operator ignore-list, and each row counts one group ' +
+            '(a single bot class, path, or country), never a site-wide total. They are a different measure from the ' +
+            'visitor and pageview figures of ' + AI_TOOL_NAMES.overview + ' or ' + AI_TOOL_NAMES.breakdown + ': never ' +
+            'reconcile them against those figures, and never call one higher or lower than the other. ' +
+            'For "which pages do people actually land on", use ' + AI_TOOL_NAMES.breakdown + ' ' +
             'with dimension "landing-pages"; for "which countries do visitors come from", use dimension "geo". ' +
             'Rows the classifier could not place appear as "unclassified" rather than being hidden, so coverage gaps stay visible. ' +
             'This tool takes no bot filter (the views define their own scope) and its window stops at 30d. ' +
@@ -985,13 +1013,18 @@ function buildTools(
                 // series. Reported explicitly so the model does not narrate the
                 // rules as "rules during the last 24 hours".
                 const rules = await redirectService.listRules();
-                // Paged rather than returned whole: listRules() is an unbounded
-                // find({}) over an operator-grown collection, and every full
-                // rule document (pattern, destination, notes, timestamps) would
-                // land in the context window at once. `total`/`enabled` stay
-                // computed over the WHOLE inventory so the model can still count
-                // rules it has not been shown, and `hasMore` tells it to page
-                // rather than conclude it has seen everything.
+                // Paged to bound the CONTEXT WINDOW, not the database read.
+                // Without this every full rule document (pattern, destination,
+                // notes, timestamps) lands in front of the model at once, which
+                // is the AI tool standard's cap-result-size obligation. The read
+                // itself stays whole deliberately: the collection is one
+                // operator-managed rule list, and the admin table and the public
+                // middleware feed both want all of it, so paging the query would
+                // buy nothing and cost two extra round trips for the counts.
+                // `total`/`enabled` are therefore computed over the WHOLE
+                // inventory — the model can still count rules it has not been
+                // shown — and `hasMore` tells it to page rather than conclude it
+                // has seen everything.
                 const limit = resolveLimit(input.limit);
                 const requestedOffset = Number(input.offset);
                 const offset = Number.isFinite(requestedOffset) && requestedOffset > 0

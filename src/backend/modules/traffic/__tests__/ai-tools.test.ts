@@ -114,11 +114,15 @@ function createRedirectServiceStub() {
  * @param seededServices - Optional services the registry `get()` resolves, keyed
  *                         by name. Defaults to none, which exercises the
  *                         graceful identity-absent path.
+ * @param trafficStub - Optional TrafficService double, so a caller can shape a
+ *                      read's return — a wide trend series, for instance — that
+ *                      the default sentinel stub deliberately keeps small.
  * @returns The registered tools keyed by name, plus the stub registry.
  */
 function registerAndCapture(
     gscStub: ReturnType<typeof createGscServiceStub> = createGscServiceStub(),
-    seededServices: Record<string, unknown> = {}
+    seededServices: Record<string, unknown> = {},
+    trafficStub: ReturnType<typeof createTrafficServiceStub> = createTrafficServiceStub()
 ): { tools: Map<string, IAiTool>; registry: IAiToolRegistry } {
     const tools = new Map<string, IAiTool>();
     const registry = {
@@ -155,7 +159,7 @@ function registerAndCapture(
 
     registerTrafficAiTools(
         serviceRegistry,
-        createTrafficServiceStub() as unknown as TrafficService,
+        trafficStub as unknown as TrafficService,
         gscStub as unknown as GscService,
         createRedirectServiceStub() as unknown as RedirectService,
         logger
@@ -314,6 +318,65 @@ describe('traffic AI tools', () => {
             expect(result.period).toBe('custom');
         });
 
+        it('drops per-bucket detail once the trend series outgrows the bucket budget', async () => {
+            // Capping the input span bounds the bucket COUNT, not the payload:
+            // every window over 48h is daily-bucketed and each point carries its
+            // own top three paths, countries, and sources, so 90d would ship
+            // hundreds of nested objects into the context window.
+            const wide = createTrafficServiceStub();
+            wide.getOverviewTrend = vi.fn(async () => ({
+                current: { visitors: 10 },
+                series: Array.from({ length: 91 }, (_, day) => ({
+                    bucket: `2026-05-${String((day % 28) + 1).padStart(2, '0')}`,
+                    visitors: day,
+                    pageviews: day * 2,
+                    topPaths: [{ path: '/markets', hits: 3 }],
+                    topCountries: [{ country: 'US', hits: 2 }],
+                    topSources: [{ source: 'google.com', hits: 1 }]
+                }))
+            })) as typeof wide.getOverviewTrend;
+            const { tools: built } = registerAndCapture(createGscServiceStub(), {}, wide);
+
+            const result = await built.get(AI_TOOL_NAMES.overview)!.handler({ period: '90d' }) as {
+                seriesDetailTrimmed: boolean;
+                trend: { series: Array<Record<string, unknown>> };
+            };
+
+            expect(result.seriesDetailTrimmed).toBe(true);
+            expect(result.trend.series).toHaveLength(91);
+            // The series SHAPE survives — only the nested dimensions go, and the
+            // description points the model at the breakdown tool for them.
+            expect(result.trend.series[0]).toEqual({ bucket: '2026-05-01', visitors: 0, pageviews: 0 });
+            expect(result.trend.series.every(point => !('topPaths' in point))).toBe(true);
+        });
+
+        it('keeps per-bucket detail on windows inside the bucket budget', async () => {
+            // The trim must not fire on the windows an operator reads most: at
+            // 24h and 30d the series is well under the cap and the per-bucket
+            // dimensions are the tool's whole value.
+            const narrow = createTrafficServiceStub();
+            narrow.getOverviewTrend = vi.fn(async () => ({
+                current: { visitors: 10 },
+                series: Array.from({ length: 31 }, (_, day) => ({
+                    bucket: `2026-05-${String(day + 1).padStart(2, '0')}`,
+                    visitors: day,
+                    pageviews: day * 2,
+                    topPaths: [{ path: '/markets', hits: 3 }],
+                    topCountries: [],
+                    topSources: []
+                }))
+            })) as typeof narrow.getOverviewTrend;
+            const { tools: built } = registerAndCapture(createGscServiceStub(), {}, narrow);
+
+            const result = await built.get(AI_TOOL_NAMES.overview)!.handler({ period: '30d' }) as {
+                seriesDetailTrimmed: boolean;
+                trend: { series: Array<Record<string, unknown>> };
+            };
+
+            expect(result.seriesDetailTrimmed).toBe(false);
+            expect(result.trend.series[0]).toHaveProperty('topPaths');
+        });
+
         it('advertises the custom range on every date-range tool description', async () => {
             // A capability the description omits is invisible to the model, which
             // reads descriptions rather than schemas when deciding how to call.
@@ -339,8 +402,9 @@ describe('traffic AI tools', () => {
             };
 
             // The label is the guard against the reconciliation trap: these count
-            // every event row, bot and human, with no ignore-list filter, so they
-            // are always larger than the visitor figures they sit beside.
+            // every event row, bot and human, with no ignore-list filter, and each
+            // row is one group rather than a site-wide total — a different measure
+            // from the visitor figures beside them, in neither direction.
             expect(paths.measure).toMatch(/not visitors/);
             expect(countries.measure).toMatch(/not visitors/);
             expect(paths.data).toEqual([{ key: '/markets', count: 41 }]);
@@ -375,10 +439,9 @@ describe('traffic AI tools', () => {
         });
 
         it('pages the rule inventory while still counting the whole of it', async () => {
-            // listRules() is an unbounded find({}) over a collection operators
-            // grow indefinitely, so the page is capped — but `total` must keep
-            // counting rules the model has not been shown, or a truncated page
-            // reads as the complete inventory.
+            // The page caps what reaches the model's context window, not the DB
+            // read — but `total` must keep counting rules the model has not been
+            // shown, or a truncated page reads as the complete inventory.
             const redirects = tools.get(AI_TOOL_NAMES.redirects)!;
             const first = await redirects.handler({ view: 'rules', limit: 1 }) as {
                 total: number; returned: number; hasMore: boolean; rules: Array<{ pattern: string }>;
