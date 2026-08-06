@@ -37,14 +37,61 @@ export interface IRefreshReport {
 }
 
 /**
+ * What the readout remembers about one console across its poll cycles.
+ *
+ * Keeping only the latest outcome cannot answer the operator's question, because
+ * the cycle that just failed carries no useful time: overwriting the console's
+ * last good stamp with a failure erases the only evidence of how stale the
+ * screen is, and if every console fails the readout falls silent exactly when it
+ * is being relied on. So the last success and the current health are tracked
+ * separately — the stamp freezes, the failure is announced, and both persist
+ * while it lasts.
+ */
+export interface IRefreshFreshness {
+    /**
+     * When its most recent successful cycle finished, or null if none has yet.
+     *
+     * Deliberately survives later failures untouched: this is the age of the
+     * data still on screen, not the age of the last attempt.
+     */
+    lastSuccessAt: string | null;
+
+    /** Whether its most recently completed cycle failed. */
+    failing: boolean;
+}
+
+/** Freshness of a console that has not completed a cycle yet. */
+export const INITIAL_FRESHNESS: IRefreshFreshness = { lastSuccessAt: null, failing: false };
+
+/**
+ * Fold one poll outcome into what is already known about a console.
+ *
+ * Lives beside the contract so both sections' outcomes are absorbed by the same
+ * rule, and so that rule sits in one place: a success moves the stamp forward, a
+ * failure leaves the stamp exactly where it was and only raises the flag.
+ *
+ * @param previous - The console's freshness before this cycle reported, needed
+ * because a failed cycle can only be described in terms of the last good one.
+ * @param report - The outcome the console just stamped.
+ * @returns The console's freshness after absorbing the outcome.
+ */
+export function foldRefresh(
+    previous: IRefreshFreshness,
+    report: IRefreshReport
+): IRefreshFreshness {
+    const next: IRefreshFreshness = report.ok
+        ? { lastSuccessAt: report.at, failing: false }
+        : { lastSuccessAt: previous.lastSuccessAt, failing: true };
+
+    return next;
+}
+
+/**
  * One console the readout speaks for.
  */
-export interface IRefreshSource {
+export interface IRefreshSource extends IRefreshFreshness {
     /** How the console is named if the readout has to report it failing. */
     label: string;
-
-    /** Its latest outcome, or null before its first cycle completes. */
-    report: IRefreshReport | null;
 }
 
 /**
