@@ -30,7 +30,7 @@ import {
     type TronScanPriceSource,
     type ITronScanTestResult
 } from './providers-api';
-import styles from './TronScanProviderSection.module.scss';
+import styles from './ProviderSection.module.scss';
 
 /** Where an operator obtains a TronScan API key (optional). */
 const TRONSCAN_KEYS_URL = 'https://docs.tronscan.org/api-endpoints/api-keys';
@@ -190,6 +190,7 @@ export function TronScanProviderSection() {
                 <div className={styles.field}>
                     <label className={styles.label} htmlFor="tronscan-enabled">Enabled</label>
                     <Switch
+                        id="tronscan-enabled"
                         on={enabled}
                         onChange={setEnabled}
                         disabled={saving}

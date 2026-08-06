@@ -17,6 +17,7 @@ import { Stack } from '../../../../../components/layout';
 import { SectionPanel } from './SectionPanel';
 import { SystemConfigSection } from './SystemConfigSection';
 import { TronScanProviderSection } from './TronScanProviderSection';
+import { TronGridProviderSection } from './TronGridProviderSection';
 
 /**
  * Render the Configuration tab.
@@ -30,6 +31,7 @@ export function ConfigurationTab() {
                 <SystemConfigSection />
             </SectionPanel>
             <TronScanProviderSection />
+            <TronGridProviderSection />
         </Stack>
     );
 }

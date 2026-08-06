@@ -38,6 +38,7 @@ interface BlockchainStatus {
     lastTransactionCount: number | null;
     liveChainThrottleBlocks: number;
     backfillEntryBlocks: number;
+    blockIntervalSeconds: number;
 }
 
 interface BlockProcessingMetrics {
@@ -65,6 +66,27 @@ interface ObserverStats {
     lastErrorAt: string | null;
     errorRate: number;
 }
+
+/**
+ * Block period assumed until the status payload resolves, or when it omits the
+ * field. Mirrors `blockIntervalSeconds`' own default so a console rendered
+ * before its first poll lands still judges pipeline timing the way a default
+ * deployment behaves.
+ */
+const BLOCK_INTERVAL_SECONDS_FALLBACK = 3;
+
+/**
+ * Overshoot above one block period that still counts as normal pacing jitter.
+ * Beyond it the Total figure turns amber.
+ */
+const PIPELINE_TOTAL_WARNING_OVERSHOOT_MS = 20;
+
+/**
+ * Overshoot above one block period at which a cycle is slow enough to lose
+ * ground against the chain rather than merely arrive late. Beyond it the figure
+ * turns red.
+ */
+const PIPELINE_TOTAL_DANGER_OVERSHOOT_MS = 100;
 
 /**
  * Inputs for the blockchain console.
@@ -354,7 +376,7 @@ function PipelineMetricsBlock({ status }: PipelineMetricsBlockProps) {
                         label: 'Total',
                         value: `${totalMs.toFixed(0)} ms`,
                         detail: 'End-to-end',
-                        tone: totalMs > 3000 ? ('danger' as const) : undefined
+                        tone: getPipelineTotalTone(totalMs, status.blockIntervalSeconds)
                     }
                 ]}
             />
@@ -464,6 +486,42 @@ function getLagMetricTone(lag: number, backfillEntryBlocks: number): 'success' |
     if (lag >= LAG_DANGER_BLOCKS) return 'danger';
     if (lag >= resolveLagWarningBlocks(backfillEntryBlocks)) return 'warning';
     return 'success';
+}
+
+/**
+ * Colour the pipeline Total figure by how far it overshoots one block period.
+ *
+ * The syncer's throttle paces each cycle to one block period, so a healthy
+ * Total sits at roughly that figure — a strict `> 3000 ms` rule painted the cell
+ * red during normal operation and trained operators to ignore it. The amber step
+ * allows a small pacing overshoot before flagging anything, and only a cycle
+ * slow enough to actually lose ground against the chain turns the figure red.
+ *
+ * The period itself is read from the status payload rather than assumed,
+ * because the syncer paces to `blockIntervalSeconds`
+ * (`BLOCKCHAIN_BLOCK_INTERVAL_SECONDS`) and a deployment that sets that to six
+ * would otherwise show every healthy cycle in red — recreating the exact alert
+ * fatigue these steps exist to remove. The value is guarded because it arrives
+ * over the network: it is absent before the first poll resolves and could be
+ * missing or nonsensical from a mismatched backend.
+ *
+ * @param totalMs - End-to-end duration of the last block cycle, in milliseconds.
+ * @param blockIntervalSeconds - Block period echoed by the status payload; the pace the syncer's throttle targets.
+ * @returns The tone the Total stat cell should carry, or `undefined` to leave it neutral when the cycle is on pace.
+ */
+function getPipelineTotalTone(
+    totalMs: number,
+    blockIntervalSeconds: number | null | undefined
+): 'warning' | 'danger' | undefined {
+    const intervalSeconds =
+        typeof blockIntervalSeconds === 'number' && Number.isFinite(blockIntervalSeconds) && blockIntervalSeconds > 0
+            ? blockIntervalSeconds
+            : BLOCK_INTERVAL_SECONDS_FALLBACK;
+    const blockPeriodMs = intervalSeconds * 1000;
+
+    if (totalMs > blockPeriodMs + PIPELINE_TOTAL_DANGER_OVERSHOOT_MS) return 'danger';
+    if (totalMs > blockPeriodMs + PIPELINE_TOTAL_WARNING_OVERSHOOT_MS) return 'warning';
+    return undefined;
 }
 
 function getSuccessRateTone(rate: number): 'success' | 'warning' | 'danger' {

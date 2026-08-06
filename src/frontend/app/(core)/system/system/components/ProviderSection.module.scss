@@ -1,0 +1,121 @@
+/**
+ * Shared styles for the Configuration tab's provider cards (TronScan, TronGrid).
+ *
+ * Colocated with the sections rather than living in the page-level module, so
+ * the provider forms' styles travel with the components that own them — the
+ * same arrangement every other section on this page already uses. One file
+ * serves both cards because they are the same form: a header with badges,
+ * labelled fields, an action row, inline feedback. A per-provider copy would
+ * drift, and two cards drifting apart on one tab reads as a bug.
+ *
+ * Only the forms' own layout and inline feedback live here. The controls
+ * themselves are primitives (`Input`, `Select`, `IconButton`, `Button`,
+ * `Switch`), so their padding, border, radius, focus ring, and disabled
+ * treatment come from the shared input/button tokens and are deliberately not
+ * restated in this file.
+ */
+
+.provider_header {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.provider_title {
+    margin: 0;
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.label {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+}
+
+.hint {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.input_row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.docs_link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    color: var(--color-primary);
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+/*
+ * Rotating key pool (TronGrid). The keys are only ever shown masked, so the row
+ * carries its rotation position as the operator's handle for removing one —
+ * without it, two keys ending in the same four characters are indistinguishable.
+ */
+.key_list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.key_row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    padding: var(--padding-2xs) 0;
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.key_position {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+}
+
+.key_value {
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+}
+
+/* One result line per probed key, so a single dead key in the pool is visible. */
+.probe_row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-body-sm);
+}
+
+.feedback_success {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    color: var(--color-success);
+    font-size: var(--font-size-body-sm);
+}
+
+.feedback_error {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    color: var(--color-danger);
+    font-size: var(--font-size-body-sm);
+}
