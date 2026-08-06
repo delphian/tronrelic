@@ -15,7 +15,9 @@ import { useEffect, useState, useCallback, type ChangeEvent } from 'react';
 import { Plug, Eye, EyeOff, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
+import { IconButton } from '../../../../../components/ui/IconButton';
 import { Input } from '../../../../../components/ui/Input';
+import { Select } from '../../../../../components/ui/Select';
 import { Switch } from '../../../../../components/ui/Switch';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Stack } from '../../../../../components/layout';
@@ -28,7 +30,7 @@ import {
     type TronScanPriceSource,
     type ITronScanTestResult
 } from './providers-api';
-import styles from '../page.module.scss';
+import styles from './TronScanProviderSection.module.scss';
 
 /** Where an operator obtains a TronScan API key (optional). */
 const TRONSCAN_KEYS_URL = 'https://docs.tronscan.org/api-endpoints/api-keys';
@@ -162,11 +164,11 @@ export function TronScanProviderSection() {
     }, []);
 
     if (loading) {
-        return <Card padding="md"><span className="text-muted">Loading TronScan configuration…</span></Card>;
+        return <Card padding="sm" noBackgroundImage><span className="text-muted">Loading TronScan configuration…</span></Card>;
     }
 
     return (
-        <Card padding="md">
+        <Card padding="sm" noBackgroundImage>
             <Stack gap="md">
                 <div className={styles.provider_header}>
                     <Plug size={16} aria-hidden style={{ color: 'var(--color-primary)' }} />
@@ -208,15 +210,13 @@ export function TronScanProviderSection() {
                             disabled={saving}
                             aria-label="TronScan API key"
                         />
-                        <button
-                            type="button"
+                        <IconButton
                             onClick={() => setShowKey((v) => !v)}
-                            className={styles.icon_btn}
                             disabled={saving}
                             aria-label={showKey ? 'Hide key' : 'Show key'}
                         >
                             {showKey ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </button>
+                        </IconButton>
                         {config?.apiKeyConfigured && (
                             <Button variant="ghost" size="sm" onClick={handleClearKey} disabled={saving}>Clear</Button>
                         )}
@@ -224,7 +224,7 @@ export function TronScanProviderSection() {
                     <span className={styles.hint}>
                         Get a key from{' '}
                         <a className={styles.docs_link} href={TRONSCAN_KEYS_URL} target="_blank" rel="noopener noreferrer">
-                            TronScan API keys <ExternalLink size={12} aria-hidden />
+                            TronScan API keys <ExternalLink size={14} aria-hidden />
                         </a>
                         . Leave blank to stay keyless.
                     </span>
@@ -232,16 +232,15 @@ export function TronScanProviderSection() {
 
                 <div className={styles.field}>
                     <label className={styles.label} htmlFor="tronscan-source">Price source</label>
-                    <select
+                    <Select
                         id="tronscan-source"
-                        className={styles.source_select}
                         value={source}
                         onChange={(e: ChangeEvent<HTMLSelectElement>) => setSource(e.target.value as TronScanPriceSource)}
                         disabled={saving}
                     >
                         <option value="coinmarketcap">CoinMarketCap</option>
                         <option value="coingecko">CoinGecko</option>
-                    </select>
+                    </Select>
                     <span className={styles.hint}>Which upstream TronScan reports TRX prices from.</span>
                 </div>
 

@@ -638,6 +638,20 @@
     --divider-background: rgba(255, 255, 255, 0.06);
 
     /* ========================================================================
+     * CODE BLOCK TOKENS
+     *
+     * Preformatted machine output an operator scans rather than reads — stack
+     * traces, command output, raw payloads. The scroll cap is what stops one
+     * long trace from pushing everything after it off the screen; the block
+     * scrolls internally instead. Fixed rather than density-scaled for the same
+     * reason --modal-dialog-max-height is: it bounds a scroll container against
+     * the screen, and shrinking it under a compact density would hide more
+     * output exactly where the operator asked to see more at once.
+     * ======================================================================== */
+
+    --code-block-max-height: 200px;
+
+    /* ========================================================================
      * ALERT COMPONENT TOKENS
      * ======================================================================== */
 

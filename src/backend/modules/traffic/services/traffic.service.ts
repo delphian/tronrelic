@@ -1972,9 +1972,13 @@ export class TrafficService {
     /**
      * UTM-campaign performance joined to the binary conversion.
      *
-     * First-touch attributed, matching the Metrics Contract and the sources /
-     * landing-pages reads: a campaign's visitors are the tids whose
-     * `bootstrap` row carried it. Conversion still reads the cohort's full
+     * First-touch attributed, and now the *only* read that still is: the
+     * sources and landing-pages reads moved to session scope, so this is
+     * deliberately the odd one out rather than a leftover. Ad click-IDs and UTM
+     * tags are recorded only at first touch, so a campaign's visitors can only
+     * be the tids whose `bootstrap` row carried it — session-scoping this read
+     * would attribute a returning visitor's session to no campaign at all.
+     * Conversion still reads the cohort's full
      * in-window clickstream (the login usually happens on a later `page`
      * row, never on the first touch), via the IN-subquery of logged-in tids.
      *

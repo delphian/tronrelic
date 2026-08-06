@@ -1,14 +1,17 @@
-/* Styles for the consolidated System admin page (submenu tab row + panels). */
+/**
+ * TronScanProviderSection styles.
+ *
+ * Colocated with the section rather than living in the page-level module, so
+ * the provider form's styles travel with the component that owns them — the
+ * same arrangement every other section on this page already uses.
+ *
+ * Only the form's own layout and inline feedback live here. The controls
+ * themselves are primitives (`Input`, `Select`, `IconButton`, `Button`,
+ * `Switch`), so their padding, border, radius, focus ring, and disabled
+ * treatment come from the shared input/button tokens and are deliberately not
+ * restated in this file.
+ */
 
-.submenu {
-    margin-bottom: var(--gap-md);
-}
-
-.content {
-    display: block;
-}
-
-/* TronScan provider section */
 .provider_header {
     display: flex;
     align-items: center;
@@ -41,31 +44,6 @@
     display: flex;
     align-items: center;
     gap: var(--gap-xs);
-}
-
-.icon_btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--padding-2xs);
-    background: transparent;
-    border: none;
-    border-radius: var(--radius-sm);
-    color: var(--color-text-muted);
-    cursor: pointer;
-}
-
-.icon_btn:hover {
-    color: var(--color-text);
-}
-
-.source_select {
-    padding: var(--input-padding-sm);
-    background: var(--color-surface);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    color: var(--color-text);
-    font-size: var(--font-size-body-sm);
 }
 
 .docs_link {

@@ -148,7 +148,7 @@ function PluginStats({ stats }: PluginStatsProps) {
                         onClick={() => setExpanded((prev) => !prev)}
                         aria-expanded={expanded}
                     >
-                        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                         Room details ({stats.roomStats.length})
                     </button>
                     {expanded && (

@@ -17,8 +17,10 @@ interface StatItem {
 interface StatStripProps {
     items: StatItem[];
     /**
-     * Minimum cell width for the auto-fit grid (e.g. "140px"). Drives how
+     * Minimum cell width for the auto-fit grid (e.g. "100px"). Drives how
      * many columns the strip can host before wrapping inside its container.
+     * Omit to inherit the shared compact-tile column floor
+     * (`--stat-tile-col-min-sm`); pass a value only to run denser than that.
      */
     minColWidth?: string;
     className?: string;
@@ -40,8 +42,11 @@ interface StatStripProps {
  * the tile's coloured value, so the figures stay optically aligned down the
  * strip while the cell still reads as healthy or degraded at a glance.
  */
-export function StatStrip({ items, minColWidth = '140px', className }: StatStripProps) {
-    const style = { '--stat-col-min': minColWidth } as CSSProperties;
+export function StatStrip({ items, minColWidth, className }: StatStripProps) {
+    // Left unset when the caller supplies no override, so the stylesheet's
+    // var() fallback supplies the shared column floor rather than this
+    // component restating the value.
+    const style = minColWidth ? ({ '--stat-col-min': minColWidth } as CSSProperties) : undefined;
     return (
         <div className={cn(styles.strip, className)} style={style}>
             {items.map((item, index) => (

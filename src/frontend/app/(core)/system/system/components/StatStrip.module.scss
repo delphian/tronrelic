@@ -15,7 +15,9 @@
 
 .strip {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(var(--stat-col-min, 140px), 100%), 1fr));
+    /* The floor defaults to the shared compact-tile column width; a caller that
+       needs a denser strip overrides --stat-col-min via the minColWidth prop. */
+    grid-template-columns: repeat(auto-fit, minmax(min(var(--stat-col-min, var(--stat-tile-col-min-sm)), 100%), 1fr));
     gap: var(--gap-2xs);
     background: var(--color-surface-base);
     border: var(--border-width-thin) solid var(--color-border);

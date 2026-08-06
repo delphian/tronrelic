@@ -294,6 +294,7 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
             this.serviceRegistry,
             this.trafficService,
             this.gscService,
+            this.redirectService,
             this.logger
         );
 
