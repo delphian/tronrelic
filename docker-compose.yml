@@ -48,8 +48,12 @@ services:
             # backend's `depends_on: service_healthy` gate at startup and the
             # /system console badge. That makes steady-state cadence cheap to
             # relax and startup cadence the part worth keeping tight, which is
-            # what start_interval buys: probe every 5s until first healthy
-            # (faster than the old 10s), then settle to once a minute.
+            # what start_interval buys: probe every 5s while the container is
+            # still starting, for as long as the 60s start_period lasts (faster
+            # than the old 10s), then settle to once a minute. A mongo that has
+            # not reported healthy by the end of that window drops to the 60s
+            # interval too, so slow recovery costs at most one extra minute at
+            # the `depends_on: service_healthy` gate.
             #
             # timeout is 10s rather than 5s because a 5s kill under load was what
             # orphaned mongosh in the first place; tini now reaps those, but not
