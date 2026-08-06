@@ -216,7 +216,7 @@
     color: var(--color-text-muted);
     white-space: pre-wrap;
     word-break: break-all;
-    max-height: 200px;
+    max-height: var(--code-block-max-height);
     overflow-y: auto;
 }
 
