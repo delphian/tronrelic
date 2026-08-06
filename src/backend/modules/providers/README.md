@@ -4,7 +4,7 @@ Owns runtime configuration and HTTP clients for external data providers, kept ou
 
 ## Why It Is a Module
 
-Provider credentials and transports are core, always-on infrastructure that core ingestion (price-history) depends on and the admin Providers tab edits. It is not runtime-toggleable and publishes shared singletons (the config store, the TronScan client), so it is a module, not a plugin. Storing the API key in the database — never env — is the whole point: it must be editable at runtime, survive restarts, and never appear in source.
+Provider credentials and transports are core, always-on infrastructure that core ingestion (price-history) depends on and the system console's Configuration tab edits. It is not runtime-toggleable and publishes shared singletons (the config store, the TronScan client), so it is a module, not a plugin. Storing the API key in the database — never env — is the whole point: it must be editable at runtime, survive restarts, and never appear in source.
 
 ## Agent Quick Surface
 
@@ -12,7 +12,7 @@ Provider credentials and transports are core, always-on infrastructure that core
 |---------|-------|
 | Module id | `providers` |
 | Module class | `src/backend/modules/providers/ProvidersModule.ts` |
-| Admin page | `/system/system` → **Providers** tab (menu Submenu Pattern; the `system` namespace tabs are registered in bootstrap) |
+| Admin page | `/system/system?tab=config` → **Configuration** tab (menu Submenu Pattern; the `system` namespace tabs are registered in bootstrap) |
 | Mounted routes | `/api/admin/system/providers/*` (`createAdminRateLimiter` + `requireAdmin`) |
 | Singletons | `ProviderConfigService` (DB-backed config + masking), `TronScanClient` (transport) |
 | Owned storage | One KV blob per provider via `IDatabaseService.set` — key `provider:tronscan` |

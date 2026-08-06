@@ -15,7 +15,19 @@
 
 import type { Request, Response } from 'express';
 import type { ISystemLogService } from '@/types';
-import { DatabaseBrowserRepository } from '../repositories/database-browser.repository.js';
+import {
+    DatabaseBrowserRepository,
+    InvalidCursorError
+} from '../repositories/database-browser.repository.js';
+import type { CursorDirection } from '../types/browser.js';
+
+/** The travel directions the cursor-paged branch accepts. */
+const CURSOR_DIRECTIONS: ReadonlySet<string> = new Set<CursorDirection>([
+    'first',
+    'next',
+    'prev',
+    'last'
+]);
 
 export class DatabaseBrowserController {
     /**
@@ -79,14 +91,21 @@ export class DatabaseBrowserController {
      *
      * Retrieves paginated documents from a specific collection.
      *
-     * Query parameters:
+     * Serves two paging strategies from one route, chosen by whether the
+     * request carries a `direction`. Cursor paging is what the admin browser
+     * uses and the only strategy that can reach a deep page safely; the
+     * offset branch below is retained because `?page=` is a published contract
+     * and remains perfectly reasonable on a small collection.
+     *
+     * Query parameters (cursor paging):
+     * - direction: `first` | `next` | `prev` | `last`
+     * - cursor: `_id` to step from; required by `next` and `prev`
+     * - limit: Documents per page (default: 20, max: 100)
+     *
+     * Query parameters (offset paging):
      * - page: Page number (1-indexed, default: 1)
      * - limit: Documents per page (default: 20, max: 100)
      * - sort: Sort field (default: '-_id' for newest first)
-     *
-     * Response includes:
-     * - Documents array
-     * - Pagination metadata (total, page, totalPages, hasNext/PrevPage)
      *
      * Why this endpoint:
      * - Allows browsing collection contents without external tools
@@ -97,6 +116,11 @@ export class DatabaseBrowserController {
      * @param res - Express response object
      */
     async getDocuments(req: Request, res: Response): Promise<void> {
+        if (typeof req.query.direction === 'string') {
+            await this.getDocumentPage(req, res);
+            return;
+        }
+
         try {
             const { name } = req.params;
             const page = parseInt(req.query.page as string) || 1;
@@ -133,6 +157,97 @@ export class DatabaseBrowserController {
             });
         } catch (error) {
             this.logger.error({ error, params: req.params, query: req.query }, 'Failed to fetch documents');
+
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch documents',
+                message: error instanceof Error ? error.message : 'Unknown error'
+            });
+        }
+    }
+
+    /**
+     * Cursor-paged branch of `GET /collections/:name/documents`.
+     *
+     * Reached when the request carries a `direction`. Exists so the browser can
+     * offer First and Last at all: an offset jump to the end of a large
+     * collection makes MongoDB walk every skipped index entry, which on the
+     * 80M-document `transactions` collection is a production-grade stall for
+     * ten rows. A cursor page touches `limit + 1` index entries wherever it
+     * sits — see `getDocumentPage` for how.
+     *
+     * A missing cursor on `next`/`prev` is a 400 rather than a silent fallback
+     * to the first page, because the two outcomes are indistinguishable on
+     * screen: the operator would click Next and appear to be sent back to the
+     * start with no indication anything went wrong.
+     *
+     * @param req - Express request carrying collection name, direction, cursor, limit.
+     * @param res - Express response object.
+     */
+    private async getDocumentPage(req: Request, res: Response): Promise<void> {
+        try {
+            const { name } = req.params;
+            const direction = req.query.direction as string;
+            const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+            const cursor = typeof req.query.cursor === 'string' && req.query.cursor.length > 0
+                ? req.query.cursor
+                : undefined;
+
+            if (!CURSOR_DIRECTIONS.has(direction)) {
+                res.status(400).json({
+                    success: false,
+                    error: 'Invalid direction',
+                    message: `Direction must be one of: ${[...CURSOR_DIRECTIONS].join(', ')}`
+                });
+                return;
+            }
+
+            if (limit < 1 || limit > 100) {
+                res.status(400).json({
+                    success: false,
+                    error: 'Invalid limit',
+                    message: 'Limit must be between 1 and 100'
+                });
+                return;
+            }
+
+            if ((direction === 'next' || direction === 'prev') && cursor === undefined) {
+                res.status(400).json({
+                    success: false,
+                    error: 'Missing cursor',
+                    message: `Direction "${direction}" requires a cursor to step from`
+                });
+                return;
+            }
+
+            const result = await this.repository.getDocumentPage(name, {
+                limit,
+                direction: direction as CursorDirection,
+                cursor
+            });
+
+            res.status(200).json({
+                success: true,
+                data: result
+            });
+        } catch (error) {
+            // A cursor this server cannot read is the client's problem, not a
+            // server fault — most often a token minted before a deploy. Answer
+            // 400 with a recoverable instruction rather than a 500 that reads
+            // like the database is down.
+            if (error instanceof InvalidCursorError) {
+                res.status(400).json({
+                    success: false,
+                    error: 'Invalid cursor',
+                    message: `${error.message}. Reload the page to start from the first page.`
+                });
+                return;
+            }
+
+            this.logger.error(
+                { error, params: req.params, query: req.query },
+                'Failed to fetch document page'
+            );
 
             res.status(500).json({
                 success: false,

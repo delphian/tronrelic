@@ -70,6 +70,12 @@ const sizeClass: Record<ButtonSize, string> = {
  * text to prevent duplicate submissions and provide user feedback during
  * asynchronous operations.
  *
+ * An icon with no children is a supported shape — a toolbar or table-row control
+ * labelled by `aria-label` alone. Such a button renders the icon and nothing
+ * else: emitting the label span unconditionally would leave an empty element
+ * behind, and because `.btn` sets `gap`, that empty span pushes the glyph off
+ * centre and widens the control for no visible reason.
+ *
  * @example
  * ```tsx
  * <Button variant="primary" size="lg">
@@ -99,6 +105,13 @@ export function Button({
 }: PropsWithChildren<ButtonProps>) {
     const isDisabled = disabled || loading;
 
+    // What the label span would contain, and whether that amounts to anything
+    // worth rendering. A conditional child (`{cond && <span/>}`) arrives as
+    // `false` and an absent one as `undefined`; both would otherwise produce an
+    // empty span that `gap` still spaces away from the icon.
+    const label = loading ? 'Working…' : children;
+    const hasLabel = label !== undefined && label !== null && label !== false && label !== '';
+
     return (
         <button
             className={cn(
@@ -111,7 +124,7 @@ export function Button({
             {...props}
         >
             {icon && <span className={styles.btn__icon}>{icon}</span>}
-            <span>{loading ? 'Working…' : children}</span>
+            {hasLabel && <span>{label}</span>}
         </button>
     );
 }

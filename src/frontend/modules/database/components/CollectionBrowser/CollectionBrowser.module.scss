@@ -117,6 +117,12 @@
     word-break: break-all;
 }
 
+/* A formatted size reads as one quantity ("61.96 GB"); letting the unit wrap to
+ * its own line splits that quantity in two and doubles the row's height. */
+.size_cell {
+    white-space: nowrap;
+}
+
 .documents_row {
     background: var(--color-surface-muted);
 }
@@ -139,10 +145,16 @@
     gap: var(--spacing-4);
 }
 
+/*
+ * Page controls: jump-to-first, step back, position, step forward,
+ * jump-to-last. Wraps because five controls plus a page readout no longer fit
+ * a narrow embedded browser on one line.
+ */
 .pagination {
     display: flex;
     align-items: center;
-    gap: var(--spacing-4);
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
 }
 
 .page_info {

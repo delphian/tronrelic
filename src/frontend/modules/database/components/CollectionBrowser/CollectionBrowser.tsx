@@ -42,6 +42,8 @@ import {
     ArrowUpDown,
     ChevronDown,
     ChevronRight,
+    ChevronsLeft,
+    ChevronsRight,
     Database,
     Trash2,
     Pencil
@@ -124,14 +126,63 @@ interface IDatabaseStats {
     collections: ICollectionStat[];
 }
 
-interface IPaginatedDocuments {
+/** Documents shown per page of a collection. */
+const PAGE_SIZE = 10;
+
+/**
+ * One page of documents, located by cursor rather than by page number.
+ *
+ * The API pages this table by keyset — each page is a bounded range on the
+ * `_id` index — because offset paging charges for every document it skips, and
+ * on an 80-million-document collection a jump to the end would make MongoDB
+ * walk the entire index for ten rows. That is why `page` is absent here: a
+ * cursor knows where its own edges are, not how many pages precede it. The
+ * displayed page number is this component's running count instead.
+ */
+interface ICursorDocuments {
     documents: any[];
     total: number;
-    page: number;
     limit: number;
     totalPages: number;
+    startCursor: string | null;
+    endCursor: string | null;
     hasNextPage: boolean;
     hasPrevPage: boolean;
+}
+
+/**
+ * A request for one page: which way to travel, and from where.
+ *
+ * Retained after the page loads so a refresh — after an edit or a delete — can
+ * replay the exact request that produced the current view. Replay is safe even
+ * when the anchoring document was the one just removed, because a cursor is a
+ * value comparison rather than a reference to a living document.
+ */
+interface IPageRequest {
+    direction: 'first' | 'next' | 'prev' | 'last';
+    cursor?: string;
+}
+
+/** Opening request for any collection: the newest documents, no cursor. */
+const FIRST_PAGE: IPageRequest = { direction: 'first' };
+
+/**
+ * Reconcile the page count on screen with the page the operator is actually on.
+ *
+ * The two come from different authorities and can disagree. The count derives
+ * from `estimatedDocumentCount`, which reads collection metadata rather than
+ * counting, and can under-report — badly, if that metadata is stale after an
+ * unclean shutdown. The position is a real tally of pages walked, each step
+ * backed by a cursor the server confirmed documents lie beyond. When the
+ * estimate loses, "Page 3 of 1" makes the readout look broken; widening the
+ * total to the position keeps it coherent instead.
+ *
+ * @param totalPages - Page count estimated by the API.
+ * @param page - Page the operator has walked to.
+ * @returns The larger of the two, never below one.
+ */
+function displayedTotalPages(totalPages: number, page: number): number {
+    return Math.max(totalPages, page, 1);
 }
 
 /**
@@ -155,8 +206,14 @@ export function CollectionBrowser({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [expandedCollection, setExpandedCollection] = useState<string | null>(null);
-    const [documents, setDocuments] = useState<IPaginatedDocuments | null>(null);
+    const [documents, setDocuments] = useState<ICursorDocuments | null>(null);
     const [loadingDocuments, setLoadingDocuments] = useState(false);
+
+    // Page position is tracked here rather than returned by the API — see
+    // ICursorDocuments. `pageRequest` is the request that produced the current
+    // view, kept so a post-edit refresh can replay it verbatim.
+    const [page, setPage] = useState(1);
+    const [pageRequest, setPageRequest] = useState<IPageRequest>(FIRST_PAGE);
     const [expandedDocumentId, setExpandedDocumentId] = useState<string | null>(null);
     const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
 
@@ -208,14 +265,43 @@ export function CollectionBrowser({
     /**
      * Load one page of documents from a collection.
      *
+     * The page number travels alongside the request rather than inside it: the
+     * API locates pages by cursor and cannot count them, so the caller states
+     * where the page it asked for lands. A jump to the last page is the one
+     * case the caller cannot know in advance, so it defers to the page count
+     * that comes back with the response.
+     *
+     * Both page numbers are floored at one before they reach state. Neither is
+     * trustworthy on its own: a caller steps back from whatever it currently
+     * displays, and a jump to the end adopts a count derived from an estimate
+     * that can under-report. Either can therefore propose a position below the
+     * first page, and a counter reading "Page 0" — or "Page -1" after a second
+     * step — is worse than a counter that merely lags.
+     *
      * @param collectionName - Collection to read.
-     * @param page - 1-indexed page number.
+     * @param request - Which way to travel and, for a relative step, from where.
+     * @param landsOnPage - The page number the result should be labelled with;
+     * ignored for a jump to the last page, which reads its own position from
+     * the response.
      */
-    const fetchDocuments = useCallback(async (collectionName: string, page: number = 1) => {
+    const fetchDocuments = useCallback(async (
+        collectionName: string,
+        request: IPageRequest = FIRST_PAGE,
+        landsOnPage: number = 1
+    ) => {
         try {
             setLoadingDocuments(true);
+
+            const params = new URLSearchParams({
+                limit: String(PAGE_SIZE),
+                direction: request.direction
+            });
+            if (request.cursor) {
+                params.set('cursor', request.cursor);
+            }
+
             const response = await fetch(
-                `/api/admin/database/collections/${collectionName}/documents?page=${page}&limit=10&sort=-_id`,
+                `/api/admin/database/collections/${collectionName}/documents?${params.toString()}`,
                 {
                     headers: { 'Content-Type': 'application/json' }
                 }
@@ -226,13 +312,30 @@ export function CollectionBrowser({
             }
 
             const result = await response.json();
-            setDocuments(result.data);
+            const data = result.data as ICursorDocuments;
+
+            setDocuments(data);
+            setPageRequest(request);
+            setPage(Math.max(1, request.direction === 'last' ? data.totalPages : landsOnPage));
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch documents');
         } finally {
             setLoadingDocuments(false);
         }
     }, []);
+
+    /**
+     * Reload the page currently on screen.
+     *
+     * Used after an edit or a delete, where the operator should stay exactly
+     * where they were. Replaying the stored request is what makes that
+     * possible without a page number the API could seek to.
+     *
+     * @param collectionName - Collection being browsed.
+     */
+    const refreshCurrentPage = useCallback((collectionName: string) => {
+        return fetchDocuments(collectionName, pageRequest, page);
+    }, [fetchDocuments, pageRequest, page]);
 
     useEffect(() => {
         void fetchStats();
@@ -246,7 +349,9 @@ export function CollectionBrowser({
             setDocuments(null);
         } else {
             setExpandedCollection(collectionName);
-            void fetchDocuments(collectionName);
+            // Opening a collection always starts at the newest documents, so
+            // the page counter resets with it.
+            void fetchDocuments(collectionName, FIRST_PAGE, 1);
         }
     };
 
@@ -325,7 +430,7 @@ export function CollectionBrowser({
 
             cancelEditing();
             await Promise.all([
-                fetchDocuments(collectionName, documents?.page ?? 1),
+                refreshCurrentPage(collectionName),
                 fetchStats()
             ]);
         } catch (err) {
@@ -333,7 +438,7 @@ export function CollectionBrowser({
         } finally {
             setSavingDocumentId(null);
         }
-    }, [editDraft, pushToast, cancelEditing, fetchDocuments, fetchStats, documents?.page]);
+    }, [editDraft, pushToast, cancelEditing, refreshCurrentPage, fetchStats]);
 
     const deleteDocument = useCallback(async (collectionName: string, documentId: string) => {
         const confirmed = typeof window !== 'undefined'
@@ -366,10 +471,9 @@ export function CollectionBrowser({
 
             if (expandedDocumentId === documentId) setExpandedDocumentId(null);
 
-            // Refresh the current page of documents and the top-level counts.
-            const currentPage = documents?.page ?? 1;
+            // Refresh the page the operator is on, plus the top-level counts.
             await Promise.all([
-                fetchDocuments(collectionName, currentPage),
+                refreshCurrentPage(collectionName),
                 fetchStats()
             ]);
         } catch (err) {
@@ -381,7 +485,7 @@ export function CollectionBrowser({
         } finally {
             setDeletingDocumentId(null);
         }
-    }, [pushToast, expandedDocumentId, documents?.page, fetchDocuments, fetchStats]);
+    }, [pushToast, expandedDocumentId, refreshCurrentPage, fetchStats]);
 
     /**
      * Rank a column, or flip it if it is already the ranked one.
@@ -521,7 +625,7 @@ export function CollectionBrowser({
                                             <code className={styles.collection_name}>{collection.name}</code>
                                         </Td>
                                         <Td muted numeric>{collection.count.toLocaleString()}</Td>
-                                        <Td muted numeric>{formatBytes(collection.size)}</Td>
+                                        <Td muted numeric className={styles.size_cell}>{formatBytes(collection.size)}</Td>
                                         <Td muted numeric>{collection.indexes.toLocaleString()}</Td>
                                     </Tr>
 
@@ -538,25 +642,56 @@ export function CollectionBrowser({
                                                                     Showing {documents.documents.length} of {documents.total} documents
                                                                 </span>
                                                                 <div className={styles.pagination}>
+                                                                    {/* First is gated on position, not on `hasPrevPage`. It is an
+                                                                      * absolute anchor needing no cursor, so it stays meaningful
+                                                                      * where a relative step cannot go: a `prev` landing on a page
+                                                                      * emptied by concurrent deletes returns no cursors and both
+                                                                      * flags false, and gating on the flag would disable every
+                                                                      * control at once — stranding the operator on a blank table. */}
                                                                     <Button
                                                                         variant="ghost"
                                                                         size="sm"
-                                                                        disabled={!documents.hasPrevPage}
-                                                                        onClick={() => void fetchDocuments(collection.name, documents.page - 1)}
+                                                                        icon={<ChevronsLeft size={16} />}
+                                                                        aria-label="First page"
+                                                                        disabled={page <= 1}
+                                                                        onClick={() => void fetchDocuments(collection.name, FIRST_PAGE, 1)}
+                                                                    />
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        disabled={!documents.hasPrevPage || documents.startCursor === null}
+                                                                        onClick={() => void fetchDocuments(
+                                                                            collection.name,
+                                                                            { direction: 'prev', cursor: documents.startCursor ?? undefined },
+                                                                            page - 1
+                                                                        )}
                                                                     >
                                                                         Previous
                                                                     </Button>
                                                                     <span className={styles.page_info}>
-                                                                        Page {documents.page} of {documents.totalPages}
+                                                                        Page {page.toLocaleString()} of{' '}
+                                                                        {displayedTotalPages(documents.totalPages, page).toLocaleString()}
                                                                     </span>
                                                                     <Button
                                                                         variant="ghost"
                                                                         size="sm"
-                                                                        disabled={!documents.hasNextPage}
-                                                                        onClick={() => void fetchDocuments(collection.name, documents.page + 1)}
+                                                                        disabled={!documents.hasNextPage || documents.endCursor === null}
+                                                                        onClick={() => void fetchDocuments(
+                                                                            collection.name,
+                                                                            { direction: 'next', cursor: documents.endCursor ?? undefined },
+                                                                            page + 1
+                                                                        )}
                                                                     >
                                                                         Next
                                                                     </Button>
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        icon={<ChevronsRight size={16} />}
+                                                                        aria-label="Last page"
+                                                                        disabled={!documents.hasNextPage}
+                                                                        onClick={() => void fetchDocuments(collection.name, { direction: 'last' })}
+                                                                    />
                                                                 </div>
                                                             </div>
                                                             <div className={styles.documents_list}>

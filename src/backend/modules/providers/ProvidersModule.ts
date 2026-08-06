@@ -3,12 +3,13 @@
  * external data providers, starting with TronScan.
  *
  * Why a module: the platform needs an always-on, core home for provider
- * credentials and transports that the admin Providers tab edits and that core
+ * credentials and transports that the system console edits and that core
  * ingestion (price-history) consumes. It is not runtime-toggleable and provides
  * shared singletons (the config store and the TronScan client), so it is a module,
  * not a plugin. `init()` wires the config service and client singletons and builds
- * the controller; `run()` mounts the admin API. The system page's Providers tab is
- * registered centrally in bootstrap alongside the other system submenu tabs.
+ * the controller; `run()` mounts the admin API. The editing surface is the system
+ * page's Configuration tab, registered centrally in bootstrap alongside the other
+ * system submenu tabs.
  */
 
 import type { Express, Router } from 'express';

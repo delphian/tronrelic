@@ -1,10 +1,13 @@
 /**
  * ClickHouseTableBrowser styles.
  *
- * Mirrors the dense list-of-tables layout used by the Mongo CollectionBrowser
- * inside the same console row, with mono numerics and tone-neutral chrome
- * so it sits inside a sub-block of the ClickHouse section without competing
- * for attention.
+ * The inventory is a data table, not a list of disclosure panels, for the same
+ * reason the Mongo CollectionBrowser's is: row count and stored size are
+ * quantities an operator compares across tables, and a sorted column can be
+ * scanned down where badges strung along each row cannot. What is left here is
+ * the chrome the table primitive does not supply — the sort affordance in each
+ * header, the expand control in the row, and the row panel that unfolds beneath
+ * a table.
  */
 
 @use '../../../../app/breakpoints' as *;
@@ -37,59 +40,83 @@
     color: var(--color-text-subtle);
 }
 
-.tables {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-}
-
-.table_item {
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface-muted);
-    overflow: hidden;
-}
-
-.table_header {
-    width: 100%;
-    display: flex;
+/*
+ * Sort affordance inside a column header.
+ *
+ * A real <button> so the column is operable by keyboard and announced as
+ * actionable; it inherits the header's own typography so the row still reads as
+ * a table head rather than a strip of controls. Inline-flex keeps it subject to
+ * the header's text-align, which is what right-aligns it in numeric columns.
+ */
+.sort_button {
+    display: inline-flex;
     align-items: center;
-    gap: var(--gap-xs);
-    background: transparent;
+    gap: var(--gap-2xs);
+    padding: 0;
+    background: none;
     border: none;
-    padding: var(--padding-xs) var(--padding-sm);
     cursor: pointer;
-    color: var(--color-text);
-    font-family: inherit;
-    text-align: left;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
 }
 
-.table_header:hover {
-    background: var(--color-primary-alpha-10);
+.sort_button:hover {
+    color: var(--color-text);
+}
+
+/* Idle direction glyph — present so the column reads as sortable, dimmed so it
+   does not compete with the arrow on the column actually being sorted. */
+.sort_icon_idle {
+    opacity: var(--opacity-35);
+}
+
+.table_row {
+    cursor: pointer;
+}
+
+.expand_button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--padding-2xs);
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-muted);
+}
+
+.expand_button:hover {
+    color: var(--color-text);
 }
 
 .table_name {
     font-family: var(--font-mono);
     font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-semibold);
     color: var(--color-text);
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    word-break: break-all;
 }
 
-.table_stats {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--gap-2xs);
-    flex-wrap: wrap;
+/* A formatted size reads as one quantity ("17.06 GB"); letting the unit wrap to
+ * its own line splits that quantity in two and doubles the row's height. */
+.size_cell {
+    white-space: nowrap;
+}
+
+/* Engine names are single long tokens (REPLACINGMERGETREE) that a break-all
+   rule elsewhere would happily split mid-word into something unreadable. */
+.engine_cell {
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+}
+
+.rows_row {
+    background: var(--color-surface-muted);
 }
 
 .rows_panel {
-    border-top: var(--border-width-thin) solid var(--color-border);
-    background: var(--color-surface);
-    padding: var(--padding-sm);
     display: flex;
     flex-direction: column;
     gap: var(--gap-xs);
@@ -169,10 +196,6 @@
 }
 
 @container clickhouse-browser (max-width: #{$breakpoint-mobile-md}) {
-    .table_header {
-        flex-wrap: wrap;
-    }
-
     .rows_header {
         flex-direction: column;
         align-items: flex-start;

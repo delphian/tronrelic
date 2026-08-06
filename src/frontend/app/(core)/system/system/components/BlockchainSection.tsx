@@ -9,6 +9,7 @@ import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Ta
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { StatStrip } from './StatStrip';
 import { LAG_DANGER_BLOCKS, resolveLagWarningBlocks } from './lag-thresholds';
+import { REFRESH_INTERVAL_MS, stampRefresh, type IRefreshReport } from './overview-refresh';
 import styles from './BlockchainSection.module.scss';
 
 interface BlockchainError {
@@ -66,6 +67,21 @@ interface ObserverStats {
 }
 
 /**
+ * Inputs for the blockchain console.
+ */
+interface IBlockchainSectionProps {
+    /**
+     * Called once per completed poll cycle with its outcome.
+     *
+     * The Overview tab's refresh readout has no probe of its own, so it can only
+     * report staleness that the consoles tell it about. Must be referentially
+     * stable — it feeds the polling effect's dependency list, and a fresh
+     * identity each render would tear down and restart the interval.
+     */
+    onRefresh?: (report: IRefreshReport) => void;
+}
+
+/**
  * Blockchain monitoring body — sync status, pipeline timings, observer table.
  *
  * One fetch cycle hits four endpoints in parallel; sub-blocks render as
@@ -74,7 +90,7 @@ interface ObserverStats {
  * compact table because six numeric columns line up better than they
  * would as stat tiles.
  */
-export function BlockchainSection() {
+export function BlockchainSection({ onRefresh }: IBlockchainSectionProps) {
     const [status, setStatus] = useState<BlockchainStatus | null>(null);
     const [metrics, setMetrics] = useState<BlockProcessingMetrics | null>(null);
     const [observers, setObservers] = useState<ObserverStats[]>([]);
@@ -104,14 +120,16 @@ export function BlockchainSection() {
                 );
             }
             setError(null);
+            onRefresh?.(stampRefresh(true));
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch blockchain data');
+            onRefresh?.(stampRefresh(false));
         }
-    }, []);
+    }, [onRefresh]);
 
     useEffect(() => {
         void fetchData();
-        const interval = setInterval(() => void fetchData(), 10000);
+        const interval = setInterval(() => void fetchData(), REFRESH_INTERVAL_MS);
         return () => clearInterval(interval);
     }, [fetchData]);
 

@@ -8,7 +8,7 @@
  * details and gives the provider a single place to grow more TronScan methods.
  *
  * Configuration is read from {@link ProviderConfigService} on every call rather
- * than captured at construction, so an operator's edit on the admin Providers tab
+ * than captured at construction, so an operator's edit on the admin Configuration tab
  * (key, base URL, source, enable flag) takes effect immediately without a
  * restart. The key is sensitive and is only ever read here for the outbound
  * header — it is never returned to a caller.

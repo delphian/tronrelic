@@ -6,6 +6,7 @@ import { formatBytes } from '../../../../../lib/format';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { StatStrip } from './StatStrip';
+import { REFRESH_INTERVAL_MS, stampRefresh, type IRefreshReport } from './overview-refresh';
 import styles from './ServerSection.module.scss';
 
 interface RedisStatus {
@@ -85,6 +86,21 @@ interface InfrastructureStatus {
 type Tone = 'success' | 'warning' | 'danger';
 
 /**
+ * Inputs for the server console.
+ */
+interface IServerSectionProps {
+    /**
+     * Called once per completed poll cycle with its outcome.
+     *
+     * The Overview tab's refresh readout has no probe of its own, so it can only
+     * report staleness that the consoles tell it about. Must be referentially
+     * stable — it feeds the polling effect's dependency list, and a fresh
+     * identity each render would tear down and restart the interval.
+     */
+    onRefresh?: (report: IRefreshReport) => void;
+}
+
+/**
  * Server / infrastructure health body.
  *
  * Reports the deployment at three altitudes, because any one of them alone
@@ -94,10 +110,11 @@ type Tone = 'success' | 'warning' | 'danger';
  * own Node heap. Only the last of those existed before, so a droplet pinned at
  * 90% CPU gave no indication which of the five containers to look at.
  *
- * Polls every 10s while mounted. Each probe degrades independently: an
- * unreachable Docker API empties the container table and nothing else.
+ * Polls on the shared Overview cadence while mounted. Each probe degrades
+ * independently: an unreachable Docker API empties the container table and
+ * nothing else.
  */
-export function ServerSection() {
+export function ServerSection({ onRefresh }: IServerSectionProps) {
     const [redis, setRedis] = useState<RedisStatus | null>(null);
     const [server, setServer] = useState<ServerMetrics | null>(null);
     const [infrastructure, setInfrastructure] = useState<InfrastructureStatus | null>(null);
@@ -136,14 +153,16 @@ export function ServerSection() {
                 );
             }
             setError(null);
+            onRefresh?.(stampRefresh(true));
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch server health');
+            onRefresh?.(stampRefresh(false));
         }
-    }, []);
+    }, [onRefresh]);
 
     useEffect(() => {
         void fetchData();
-        const interval = setInterval(() => void fetchData(), 10000);
+        const interval = setInterval(() => void fetchData(), REFRESH_INTERVAL_MS);
         return () => clearInterval(interval);
     }, [fetchData]);
 

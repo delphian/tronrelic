@@ -698,14 +698,14 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
     // dedicated panel lets each render expanded rather than collapsed behind a
     // disclosure row. Because a panel only mounts while its tab is active, its
     // fetches still fire on arrival rather than on page load.
-    // 'Providers' hosts external-provider config (TronScan).
+    // External-provider config (TronScan) lives on the Configuration tab rather
+    // than a tab of its own — it is one more runtime setting, not a subsystem.
     const systemTabs = [
         { label: 'Overview', tab: 'overview', icon: 'SlidersHorizontal', order: 0 },
         { label: 'Configuration', tab: 'config', icon: 'Settings', order: 1 },
         { label: 'WebSockets', tab: 'websockets', icon: 'Radio', order: 2 },
         { label: 'MongoDB', tab: 'mongo', icon: 'Database', order: 3 },
-        { label: 'ClickHouse', tab: 'clickhouse', icon: 'Table2', order: 4 },
-        { label: 'Providers', tab: 'providers', icon: 'Plug', order: 5 }
+        { label: 'ClickHouse', tab: 'clickhouse', icon: 'Table2', order: 4 }
     ];
     for (const tab of systemTabs) {
         await menuService.create({

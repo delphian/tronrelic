@@ -1,0 +1,45 @@
+/**
+ * RefreshIndicator styles.
+ *
+ * A caption-weight readout aligned to the right edge above the Overview
+ * consoles. Deliberately unsurfaced — no card, border, or background — because
+ * it annotates the cards below rather than being a panel of its own. Carried
+ * over verbatim from the telemetry strip's meta row so the readout keeps the
+ * position and weight operators already know it by.
+ */
+
+.meta {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: var(--gap-sm);
+    padding: 0 var(--padding-xs);
+}
+
+.meta_label {
+    font-size: var(--font-size-caption);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text-subtle);
+}
+
+.meta_time {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+/**
+ * Failure cue, rendered only while a console's latest poll came back unusable.
+ *
+ * Warning rather than danger: the figures on screen are still real, they have
+ * merely stopped advancing, and the console that failed raises its own danger
+ * alert in the card below.
+ */
+.meta_stale {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-warning-text);
+}
