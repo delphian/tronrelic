@@ -3,8 +3,8 @@
  *
  * The consolidated System page now carries an in-page tab row (the menu module's
  * Submenu Pattern) so it can host distinct concerns — the Server and Blockchain
- * consoles under "Overview", a dedicated tab each for Configuration, WebSockets,
- * MongoDB, and ClickHouse, and external-provider config under "Providers" —
+ * consoles under "Overview" and a dedicated tab each for Configuration (site URL
+ * plus external-provider config), WebSockets, MongoDB, and ClickHouse —
  * without a hand-rolled control. This server component fetches the `system` namespace tree
  * SSR-first (forwarding the admin's cookie so per-node `requiresAdmin` resolves)
  * and reads `?tab=` to seed the active panel, mirroring /system/account-history.

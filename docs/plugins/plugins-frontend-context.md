@@ -59,6 +59,19 @@ at your own admin actions instead. `ClickHouseTableBrowser` has no write
 counterpart by design, and accepts `hideWhenEmpty` so a plugin with no
 ClickHouse tables renders nothing rather than an empty panel.
 
+`CollectionBrowser` pages documents by cursor rather than by page number, which
+is why it offers First and Last on any collection regardless of size. An offset
+jump charges the server for every document it skips, so on a collection of tens
+of millions of documents reaching the far end would stall MongoDB for a screen
+of rows; each cursor page is instead a bounded range on the `_id` index and
+costs the same wherever it sits. Two consequences worth knowing when you embed
+it: documents are always ordered by `_id` descending, since a keyset boundary
+needs a field that is unique and indexed on every collection; and the page count
+comes from `estimatedDocumentCount()`, so on a collection taking live writes it
+is close rather than exact. Whatever your collection keys on works — the page
+cursors carry the `_id`'s BSON type along with its value, so a plugin collection
+keyed on a number, a UUID, or a date pages the same as an ObjectId one.
+
 ```tsx
 const { system } = context;
 

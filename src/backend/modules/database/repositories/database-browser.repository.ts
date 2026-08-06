@@ -14,14 +14,135 @@
  */
 
 import type { Connection } from 'mongoose';
-import { ObjectId } from 'mongodb';
+import { BSON, ObjectId } from 'mongodb';
 import type { ISystemLogService } from '@/types';
 import type {
+    CursorDirection,
     ICollectionStat,
+    ICursorDocuments,
+    ICursorQueryOptions,
     IPaginatedDocuments,
     IQueryOptions,
     IDatabaseStats
 } from '../types/browser.js';
+
+/**
+ * Raised when a page cursor cannot be decoded back into an `_id` value.
+ *
+ * Distinct from a generic failure so the controller can answer 400 instead of
+ * 500: a cursor the server cannot read is a bad request, and a cursor minted by
+ * an older deployment is the ordinary way that happens — an operator with the
+ * browser open across a release clicks Next and sends a token this build no
+ * longer understands. A 500 would send them looking for a broken database.
+ */
+export class InvalidCursorError extends Error {
+    /**
+     * @param message - What was wrong with the cursor, surfaced to the operator.
+     */
+    constructor(message = 'Cursor is not a valid page cursor') {
+        super(message);
+        this.name = 'InvalidCursorError';
+    }
+}
+
+/**
+ * Encode an `_id` into the opaque token the client hands back to walk the page.
+ *
+ * A cursor has to survive a round trip through a URL query string and come back
+ * as the *same BSON value*, and that is exactly what `String(_id)` cannot do.
+ * MongoDB brackets range comparisons by type — `$lt` and `$gt` only compare a
+ * field against a bound of the same BSON type, numeric types aside — so a bound
+ * that arrives retyped does not error, it silently matches nothing, and the
+ * operator sees an empty page with no explanation. Sending the type along with
+ * the value is what closes that.
+ *
+ * Canonical Extended JSON does the encoding because it is MongoDB's own
+ * type-preserving wire format: ObjectId, every numeric width, Date,
+ * Binary/UUID, Decimal128 and composite keys each round-trip as themselves,
+ * with no per-type branch here to fall out of date. The base64url wrapper is
+ * not security — it is a signal that the token is the server's business and not
+ * a value to be parsed or constructed by a client.
+ *
+ * Canonical mode hands back BSON wrapper instances (`Int32`, `Long`,
+ * `Decimal128`) where a JS primitive would lose the distinction between an int
+ * and a long — which is the point, since a `Long` `_id` past 2^53 would decode
+ * to the wrong number as a plain JS number. The driver serializes those
+ * wrappers to the same bytes the stored `_id` occupies, so the bound compares
+ * exactly.
+ *
+ * @param id - The `_id` exactly as the driver returned it.
+ * @returns An opaque token safe to place in a query string.
+ */
+export function encodeCursor(id: unknown): string {
+    const canonical = BSON.EJSON.stringify({ v: id }, { relaxed: false });
+
+    return Buffer.from(canonical, 'utf8').toString('base64url');
+}
+
+/**
+ * Restore a cursor token to the exact `_id` value the server issued it for.
+ *
+ * @param cursor - The token as the client returned it.
+ * @returns The `_id` value, typed as it was stored.
+ * @throws {InvalidCursorError} If the token is not one this server minted.
+ */
+export function decodeCursor(cursor: string): unknown {
+    let parsed: unknown;
+    try {
+        parsed = BSON.EJSON.parse(
+            Buffer.from(cursor, 'base64url').toString('utf8'),
+            { relaxed: false }
+        );
+    } catch {
+        throw new InvalidCursorError();
+    }
+
+    if (typeof parsed !== 'object' || parsed === null || !('v' in parsed)) {
+        throw new InvalidCursorError();
+    }
+
+    const value = (parsed as { v: unknown }).v;
+    assertNoQueryOperators(value);
+
+    return value;
+}
+
+/**
+ * Reject a decoded cursor that carries MongoDB operator keys.
+ *
+ * The `express-mongo-sanitize` middleware strips `$` from request input, but it
+ * sees the cursor as one opaque string and cannot look inside it, so anything
+ * smuggled through the encoding arrives unexamined. This is defence in depth
+ * rather than a privilege boundary — the endpoint is already admin-only, and an
+ * admin can post arbitrary filters to the query endpoint next door — but a
+ * decoded value goes straight into a filter, and a filter is the one place a
+ * `$` key changes meaning instead of matching.
+ *
+ * Only a plain object can carry such a key: a BSON value comes back as a class
+ * instance (`ObjectId`, `Date`, `Binary`), never as `{ $oid: … }`.
+ *
+ * @param value - The decoded cursor value, or a nested part of one.
+ * @throws {InvalidCursorError} If any key in the value begins with `$`.
+ */
+function assertNoQueryOperators(value: unknown): void {
+    if (Array.isArray(value)) {
+        value.forEach(assertNoQueryOperators);
+        return;
+    }
+
+    const isPlainObject = value !== null
+        && typeof value === 'object'
+        && Object.getPrototypeOf(value) === Object.prototype;
+
+    if (isPlainObject) {
+        for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+            if (key.startsWith('$')) {
+                throw new InvalidCursorError('Cursor may not contain query operators');
+            }
+            assertNoQueryOperators(nested);
+        }
+    }
+}
 
 export class DatabaseBrowserRepository {
     /**
@@ -186,6 +307,153 @@ export class DatabaseBrowserRepository {
             hasNextPage,
             hasPrevPage
         };
+    }
+
+    /**
+     * Reads one page of documents by keyset, so that every page costs the same
+     * regardless of how deep into the collection it sits.
+     *
+     * **Why this exists alongside `getDocuments`:** offset paging charges for
+     * everything it skips. `skip: n` makes the server walk n index entries and
+     * discard them, so on the 80M-document `transactions` collection the last
+     * page costs a traversal of the entire `_id` index — seconds of CPU and a
+     * cache eviction storm, for ten rows. That is why the browser previously
+     * offered only Previous/Next: any control that could *reach* a deep page
+     * was a control that could stall production MongoDB. Keyset paging removes
+     * the skip entirely, which is what makes First and Last safe to offer.
+     *
+     * **How it avoids the skip:** every page is a bounded range scan on the
+     * `_id` index. Stepping forward asks for documents whose `_id` sorts below
+     * the last one shown; stepping back asks for those above the first one
+     * shown. The end anchors need no cursor at all, because the last page in
+     * descending order is simply the first page in *ascending* order — read
+     * from the cheap end and reversed for display. Every direction therefore
+     * touches at most `limit + 1` index entries and their documents.
+     *
+     * **What it gives up:** a page number. A keyset cursor knows where its own
+     * edges are, not how many pages precede it, so the caller tracks the
+     * displayed page count itself. That trade is close to free here, because
+     * the count it would be checked against comes from
+     * `estimatedDocumentCount()` and was never exact on a live collection.
+     *
+     * **Ordering:** always `_id`, descending for display. `_id` is the one
+     * field guaranteed present, unique, and indexed on every collection, which
+     * is precisely what a keyset boundary requires — a sort on any other field
+     * could tie, and a tie makes a cursor ambiguous. Callers needing a
+     * different sort keep using the offset path.
+     *
+     * **Cursor typing:** the edge cursors it returns carry the `_id`'s BSON type
+     * alongside its value (see `encodeCursor`), so a step back in bounds the
+     * range with the same type it was read as. That is what lets this path serve
+     * a collection keyed on something other than an ObjectId — a number, a Date,
+     * a UUID — which type-bracketed range comparison would otherwise turn into a
+     * silently empty page.
+     *
+     * @param collectionName - Name of the collection to read.
+     * @param options - Page size, travel direction, and the cursor to step from.
+     * @returns The page, its edge cursors, and whether documents lie beyond it.
+     * @throws {Error} If the database is unavailable, or a relative direction
+     * arrives without a cursor to anchor it.
+     * @throws {InvalidCursorError} If a supplied cursor is not one this server
+     * minted.
+     */
+    async getDocumentPage(
+        collectionName: string,
+        options: ICursorQueryOptions
+    ): Promise<ICursorDocuments> {
+        const { limit, direction, cursor } = options;
+
+        this.logger.debug({ collectionName, limit, direction, cursor }, 'Fetching document page');
+
+        const db = this.connection.db;
+        if (!db) {
+            throw new Error('Database not connected');
+        }
+
+        if ((direction === 'next' || direction === 'prev') && !cursor) {
+            throw new Error(`Direction "${direction}" requires a cursor to step from`);
+        }
+
+        const collection = db.collection(collectionName);
+
+        // `prev` and `last` travel toward the start of the collection, so they
+        // read in ascending order and are reversed back into display order
+        // below. Reading from whichever end is nearer is the whole trick.
+        const readsAscending = direction === 'prev' || direction === 'last';
+
+        // One document past the page, purely to answer "is there more that way"
+        // without a second query or a count.
+        const fetched = await collection
+            .find(this.buildCursorFilter(direction, cursor))
+            .sort({ _id: readsAscending ? 1 : -1 })
+            .limit(limit + 1)
+            .toArray();
+
+        const moreBeyondLeadingEdge = fetched.length > limit;
+        const documents = fetched.slice(0, limit);
+        if (readsAscending) {
+            documents.reverse();
+        }
+
+        // Only the edge we travelled toward needs the probe. The side we came
+        // from demonstrably has documents — we were just looking at them — and
+        // an absolute anchor sits against the end of the collection by
+        // definition, so its trailing side has nothing beyond it.
+        const hasNextPage = readsAscending ? direction === 'prev' : moreBeyondLeadingEdge;
+        const hasPrevPage = readsAscending ? moreBeyondLeadingEdge : direction === 'next';
+
+        const total = await collection.estimatedDocumentCount();
+
+        return {
+            documents,
+            total,
+            limit,
+            totalPages: Math.max(1, Math.ceil(total / limit)),
+            startCursor: documents.length > 0 ? encodeCursor(documents[0]._id) : null,
+            endCursor: documents.length > 0
+                ? encodeCursor(documents[documents.length - 1]._id)
+                : null,
+            hasNextPage,
+            hasPrevPage
+        };
+    }
+
+    /**
+     * Builds the `_id` range that bounds a keyset page.
+     *
+     * The absolute anchors need no bound — they read from an end of the index
+     * and let the sort do the work. A relative step bounds one side only, which
+     * is what keeps the scan proportional to the page rather than to the
+     * offset: `next` wants documents ordered after the last one shown (a
+     * *lower* `_id`, since display order is descending), `prev` those before
+     * the first one shown.
+     *
+     * The bound is decoded from the cursor rather than inferred from the
+     * collection. An earlier version sampled one document with an unsorted
+     * `findOne` and cast the cursor to ObjectId when that sample was one, which
+     * left every other key type comparing across BSON types — matching nothing,
+     * on a collection whose documents were plainly there — and let a single
+     * arbitrary document speak for a collection with mixed `_id` types. A
+     * self-describing cursor needs no such guess, and saves the sample query.
+     *
+     * @param direction - Which way the page travels.
+     * @param cursor - The encoded cursor to step from; unused by the anchors.
+     * @returns A filter bounding one side of the `_id` range, or an empty
+     * filter for an absolute anchor.
+     * @throws {InvalidCursorError} If the cursor cannot be decoded.
+     */
+    private buildCursorFilter(
+        direction: CursorDirection,
+        cursor: string | undefined
+    ): Record<string, unknown> {
+        let filter: Record<string, unknown> = {};
+
+        if (cursor && (direction === 'next' || direction === 'prev')) {
+            const boundary = decodeCursor(cursor);
+            filter = { _id: direction === 'next' ? { $lt: boundary } : { $gt: boundary } };
+        }
+
+        return filter;
     }
 
     /**

@@ -24,16 +24,18 @@ Every section still fetches its own admin endpoint and renders independently —
 
 | Tab | Section | Component | Fetches | Purpose |
 |---|---|---|---|---|
-| Overview | Overview Bar | `OverviewBar` | All seven probes | At-a-glance status strip across every subsystem, including those on other tabs |
+| Overview | Refresh readout | `RefreshIndicator` | none | Reports the cadence the Overview consoles poll at, when one last succeeded, and which (if any) has stopped answering |
 | Overview | Server | `ServerSection` | `/health/redis`, `/health/server`, `/health/infrastructure` | Droplet CPU/load/memory/disk; per-container CPU, memory, health, restarts; Redis ping, key count, evictions; process uptime and heap |
 | Overview | Blockchain | `BlockchainSection` | `/blockchain/status`, `/metrics`, `/observers`, `/scheduler/health` | Sync lag, throughput, observer queues, **Trigger Sync Now** button |
 | Configuration | System Config | `SystemConfigSection` | GET/PATCH `/config/system` | Edit `siteUrl` from the UI |
+| Configuration | TronScan | `TronScanProviderSection` | GET/PATCH provider config | Runtime configuration for external data providers |
 | WebSockets | WebSockets | `WebSocketsSection` | `/websockets/stats`, `/websockets/aggregate` | Per-plugin and aggregate WS metrics |
 | MongoDB | MongoDB | `MongoSection` | `/health/database`, `/migrations/status`, `/migrations/history` | Connection state, db size, migration runs |
 | ClickHouse | ClickHouse | `ClickHouseSection` | `/health/clickhouse` | Connection state, table count, db size |
-| Providers | TronScan | `TronScanProviderSection` | GET/PATCH provider config | Runtime configuration for external data providers |
 
-Every section renders expanded — nothing on this page hides behind a disclosure row. Server and Blockchain each occupy their own card on the Overview tab; the other four each fill a tab of their own, where selecting the tab already expresses the intent. Overview Bar tiles stay clickable throughout: a tile scrolls to the matching card when the subsystem sits on the Overview tab, and switches tabs when it does not.
+Every section renders expanded — nothing on this page hides behind a disclosure row. Server and Blockchain each occupy their own card on the Overview tab; the other four each fill a tab of their own, where selecting the tab already expresses the intent.
+
+The Overview tab previously opened with a telemetry strip — six tiles summarizing every subsystem, each linking to its card or tab. It was removed because the two subsystems still on that tab report the same state below in full, and the strip re-probed all seven endpoints every 15 seconds to say less. Only its refresh readout remains, since nothing else on the page reports when the consoles last updated.
 
 Because a section mounts with its tab (or, on Overview, with the page), its polling runs only while an operator is actually looking at it. That load is what the split rate-limit buckets on `/api/admin/system` are sized against — see the 429 note in [system-api.md](./system-api.md#troubleshooting).
 
