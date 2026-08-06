@@ -80,6 +80,13 @@ export interface BlockchainSyncStatus {
   lastTransactionCount: number | null;
   liveChainThrottleBlocks: number;
   backfillEntryBlocks: number;
+  /**
+   * Seconds between blocks the syncer paces itself to
+   * (`BLOCKCHAIN_BLOCK_INTERVAL_SECONDS`). Echoed so the console can judge a
+   * cycle's end-to-end duration against the deployment's own block period
+   * rather than assuming TRON's default three seconds.
+   */
+  blockIntervalSeconds: number;
 }
 
 export interface TransactionStats {
@@ -671,7 +678,8 @@ export class SystemMonitorService {
       lastTimings,
       lastTransactionCount,
       liveChainThrottleBlocks: blockchainConfig.network.liveChainThrottleBlocks,
-      backfillEntryBlocks: blockchainConfig.network.backfillEntryBlocks
+      backfillEntryBlocks: blockchainConfig.network.backfillEntryBlocks,
+      blockIntervalSeconds: blockchainConfig.network.blockIntervalSeconds
     };
   }
 

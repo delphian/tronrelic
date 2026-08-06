@@ -5,11 +5,15 @@
  * Why a module: the platform needs an always-on, core home for provider
  * credentials and transports that the system console edits and that core
  * ingestion (price-history) consumes. It is not runtime-toggleable and provides
- * shared singletons (the config store and the TronScan client), so it is a module,
- * not a plugin. `init()` wires the config service and client singletons and builds
- * the controller; `run()` mounts the admin API. The editing surface is the system
- * page's Configuration tab, registered centrally in bootstrap alongside the other
- * system submenu tabs.
+ * shared singletons (the config store and the provider clients), so it is a
+ * module, not a plugin. `init()` wires the config service and client singletons
+ * and builds the controller; `run()` mounts the admin API. The editing surface is
+ * the system page's Configuration tab, registered centrally in bootstrap
+ * alongside the other system submenu tabs.
+ *
+ * TronScan is live here. TronGrid is staged: its config and connectivity test are
+ * wired, but blockchain sync still reads `TRONGRID_API_KEY*` from env until the
+ * switchover moves it onto this module.
  */
 
 import type { Express, Router } from 'express';
@@ -19,6 +23,7 @@ import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
 import { ProviderConfigService } from './services/provider-config.service.js';
 import { TronScanClient } from './clients/tron-scan.client.js';
+import { TronGridProviderClient } from './clients/tron-grid.client.js';
 import { ProvidersController } from './api/providers.controller.js';
 import { createProvidersRouter } from './api/providers.routes.js';
 
@@ -57,10 +62,12 @@ export class ProvidersModule implements IModule<IProvidersModuleDependencies> {
 
         ProviderConfigService.setDependencies(deps.database, this.logger.child({ service: 'provider-config' }));
         TronScanClient.setDependencies(this.logger.child({ client: 'tronscan' }));
+        TronGridProviderClient.setDependencies(this.logger.child({ client: 'trongrid' }));
 
         this.controller = new ProvidersController(
             ProviderConfigService.getInstance(),
             TronScanClient.getInstance(),
+            TronGridProviderClient.getInstance(),
             this.logger
         );
 

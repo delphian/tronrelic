@@ -3,25 +3,53 @@
  *
  * Why a service (not env): a provider's API key and pacing must be editable by an
  * operator at runtime from the admin UI, survive restarts, and never appear in
- * source or process env. This singleton owns the read/write of the TronScan
- * config blob in the KV store, plus the secret-masking projection the admin API
- * returns so a key is never sent back to the browser in the clear.
+ * source or process env. This singleton owns the read/write of each provider's
+ * config blob in the KV store (TronScan, TronGrid), plus the secret-masking
+ * projection the admin API returns so a key is never sent back to the browser in
+ * the clear.
  *
- * It is the single source of truth both the {@link TronScanClient} (which reads
- * the raw key per request) and the admin controller (which reads the masked view)
- * depend on, so the key has exactly one home.
+ * It is the single source of truth both the provider clients (which read raw
+ * keys per request) and the admin controller (which reads the masked view)
+ * depend on, so each key has exactly one home.
+ *
+ * The TronGrid blob is staged ahead of its switchover: it is written and read
+ * here and by the connectivity test only — the live TronGrid client still takes
+ * its keys from `TRONGRID_API_KEY*` in env.
  */
 
 import type { IDatabaseService, ISystemLogService } from '@/types';
 import {
     TRONSCAN_CONFIG_KEY,
     DEFAULT_TRONSCAN_CONFIG,
+    TRONGRID_CONFIG_KEY,
+    DEFAULT_TRONGRID_CONFIG,
+    MAX_TRONGRID_API_KEYS,
     type ITronScanProviderConfig,
-    type ITronScanProviderConfigMasked
+    type ITronScanProviderConfigMasked,
+    type ITronGridProviderConfig,
+    type ITronGridProviderConfigMasked
 } from '../database/index.js';
 
 /** Number of trailing key characters left visible when masking. */
 const MASK_VISIBLE_CHARS = 4;
+
+/**
+ * Raised when an operator's edit is rejected on its own terms — a blank key, a
+ * duplicate, one key too many, a position that does not exist.
+ *
+ * A distinct type so the controller can answer 400 (the operator can fix it) for
+ * these while still answering 500 for a genuine storage failure, instead of
+ * flattening both into one opaque error.
+ */
+export class ProviderConfigValidationError extends Error {
+    /**
+     * @param message - Operator-facing reason, surfaced verbatim in the admin UI.
+     */
+    constructor(message: string) {
+        super(message);
+        this.name = 'ProviderConfigValidationError';
+    }
+}
 
 /**
  * Singleton provider-config service. Dependencies are injected once at bootstrap
@@ -130,6 +158,130 @@ export class ProviderConfigService {
             'TronScan provider config saved'
         );
         return this.getMaskedTronScanConfig();
+    }
+
+    /**
+     * Read the full TronGrid config, merged over defaults so callers always get a
+     * complete object even before anything has been saved. Returns the raw keys —
+     * backend use only, never the admin API.
+     *
+     * Nothing consumes this yet: the live TronGrid client still reads env. It
+     * exists so the switchover is a change of call site, not of contract.
+     *
+     * @returns The effective TronGrid config.
+     */
+    public async getTronGridConfig(): Promise<ITronGridProviderConfig> {
+        const stored = await this.database.get<Partial<ITronGridProviderConfig>>(TRONGRID_CONFIG_KEY);
+        const merged: ITronGridProviderConfig = { ...DEFAULT_TRONGRID_CONFIG, ...(stored ?? {}) };
+        // A blob written by an older shape (or hand-edited) could carry a
+        // non-array under `apiKeys`; the rotator would then iterate a string
+        // character by character, so normalise before anyone sees it.
+        merged.apiKeys = Array.isArray(merged.apiKeys)
+            ? merged.apiKeys.filter((key): key is string => typeof key === 'string' && key.length > 0)
+            : [];
+        return merged;
+    }
+
+    /**
+     * The admin-safe view: every key reduced to `****` plus its last four
+     * characters, in rotation order, so the UI can list and remove keys by
+     * position without a secret crossing the wire.
+     *
+     * @returns The masked TronGrid config.
+     */
+    public async getMaskedTronGridConfig(): Promise<ITronGridProviderConfigMasked> {
+        const config = await this.getTronGridConfig();
+        return {
+            enabled: config.enabled,
+            baseUrl: config.baseUrl,
+            apiKeys: config.apiKeys.map((key) => ProviderConfigService.maskKey(key)),
+            apiKeyCount: config.apiKeys.length,
+            requestThrottleMs: config.requestThrottleMs,
+            maxQueueSize: config.maxQueueSize,
+            requestTimeoutMs: config.requestTimeoutMs
+        };
+    }
+
+    /**
+     * Merge a partial update of the non-secret TronGrid fields over the stored
+     * config and persist it.
+     *
+     * Keys are deliberately not writable here. A form that round-trips a list of
+     * masked keys can overwrite real secrets with `****abcd` the moment two keys
+     * share their last four characters, so key edits go through the explicit
+     * {@link addTronGridApiKey} / {@link removeTronGridApiKey} pair instead.
+     *
+     * @param updates - Non-secret fields to change; omitted fields are preserved.
+     * @returns The new masked config.
+     */
+    public async saveTronGridConfig(
+        updates: Partial<Omit<ITronGridProviderConfig, 'apiKeys'>>
+    ): Promise<ITronGridProviderConfigMasked> {
+        const current = await this.getTronGridConfig();
+        const merged: ITronGridProviderConfig = { ...current, ...updates };
+        await this.database.set(TRONGRID_CONFIG_KEY, merged);
+        this.logger.info(
+            {
+                enabled: merged.enabled,
+                baseUrl: merged.baseUrl,
+                apiKeyCount: merged.apiKeys.length
+            },
+            'TronGrid provider config saved'
+        );
+        return this.getMaskedTronGridConfig();
+    }
+
+    /**
+     * Append a key to the rotation pool.
+     *
+     * Duplicates are refused rather than tolerated: a repeated key would take two
+     * slots in the round-robin and quietly double that account's share of the
+     * request load, which looks like a rotation bug long after the paste that
+     * caused it.
+     *
+     * @param apiKey - The raw key an operator pasted.
+     * @returns The new masked config.
+     * @throws ProviderConfigValidationError When the key is blank, already stored, or would exceed {@link MAX_TRONGRID_API_KEYS}.
+     */
+    public async addTronGridApiKey(apiKey: string): Promise<ITronGridProviderConfigMasked> {
+        const trimmed = apiKey.trim();
+        if (!trimmed) {
+            throw new ProviderConfigValidationError('An API key is required.');
+        }
+        const current = await this.getTronGridConfig();
+        if (current.apiKeys.includes(trimmed)) {
+            throw new ProviderConfigValidationError('That API key is already stored.');
+        }
+        if (current.apiKeys.length >= MAX_TRONGRID_API_KEYS) {
+            throw new ProviderConfigValidationError(
+                `At most ${MAX_TRONGRID_API_KEYS} API keys can be stored. Remove one first.`
+            );
+        }
+        const merged: ITronGridProviderConfig = { ...current, apiKeys: [...current.apiKeys, trimmed] };
+        await this.database.set(TRONGRID_CONFIG_KEY, merged);
+        this.logger.info({ apiKeyCount: merged.apiKeys.length }, 'TronGrid API key added');
+        return this.getMaskedTronGridConfig();
+    }
+
+    /**
+     * Remove the key at a rotation position. The admin UI addresses keys by index
+     * because it only ever sees masked values, so the position is the one handle
+     * both sides can agree on.
+     *
+     * @param index - Zero-based position in the rotation order.
+     * @returns The new masked config.
+     * @throws ProviderConfigValidationError When no key occupies that position.
+     */
+    public async removeTronGridApiKey(index: number): Promise<ITronGridProviderConfigMasked> {
+        const current = await this.getTronGridConfig();
+        if (!Number.isInteger(index) || index < 0 || index >= current.apiKeys.length) {
+            throw new ProviderConfigValidationError('No API key at that position.');
+        }
+        const apiKeys = current.apiKeys.filter((_key, position) => position !== index);
+        const merged: ITronGridProviderConfig = { ...current, apiKeys };
+        await this.database.set(TRONGRID_CONFIG_KEY, merged);
+        this.logger.info({ apiKeyCount: apiKeys.length }, 'TronGrid API key removed');
+        return this.getMaskedTronGridConfig();
     }
 
     /**
