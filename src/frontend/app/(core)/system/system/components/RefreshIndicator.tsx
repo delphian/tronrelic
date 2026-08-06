@@ -47,23 +47,30 @@ interface IRefreshIndicatorProps {
  * the timestamp keeps showing the last cycle that did succeed, so the pair reads
  * as "this is how old the data is, and it is no longer advancing."
  *
+ * With more than one console reporting, the stamp is the *oldest* of their last
+ * successes. Taking the newest would let a still-healthy console speak for a
+ * stalled sibling, quietly advancing the age of data that stopped arriving;
+ * the oldest answers the question the operator is actually asking, which is how
+ * current the *whole* screen is.
+ *
  * @param sources - Consoles to summarize, with their latest poll outcomes.
  * @returns The right-aligned refresh readout.
  */
 export function RefreshIndicator({ sources }: IRefreshIndicatorProps) {
-    const succeeded = sources
-        .map(source => source.report)
-        .filter((report): report is NonNullable<typeof report> => report !== null && report.ok);
+    const successes = sources
+        .map(source => source.lastSuccessAt)
+        .filter((at): at is string => at !== null);
 
-    // Newest success across the consoles: the freshest thing on screen is as
-    // recent as the most recent console that actually delivered.
-    const lastSuccessAt = succeeded.length > 0
-        ? succeeded.reduce((newest, report) => (report.at > newest.at ? report : newest)).at
+    // Oldest success across the consoles: the screen is only as current as the
+    // console that has gone longest without delivering, so a still-healthy
+    // console cannot advance the stamp on behalf of one that stopped answering.
+    // `stampRefresh` emits fixed-width UTC ISO strings, so string order is time
+    // order.
+    const lastSuccessAt = successes.length > 0
+        ? successes.reduce((oldest, at) => (at < oldest ? at : oldest))
         : null;
 
-    const failing = sources
-        .filter(source => source.report !== null && !source.report.ok)
-        .map(source => source.label);
+    const failing = sources.filter(source => source.failing).map(source => source.label);
 
     return (
         <div className={styles.meta} role="status" aria-label="Console refresh cadence">

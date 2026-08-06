@@ -209,6 +209,14 @@ export function CollectionBrowser({
     const [documents, setDocuments] = useState<ICursorDocuments | null>(null);
     const [loadingDocuments, setLoadingDocuments] = useState(false);
 
+    // A paging failure is a per-collection concern, so it is held apart from
+    // `error` — which reports a stats failure and replaces the whole browser.
+    // Routing a rejected cursor through `error` would blank the inventory and
+    // the pagination controls together, leaving the operator no way back to the
+    // documents but a reload; scoped here, the failed page is reported in place
+    // and the controls that retry it stay on screen.
+    const [documentsError, setDocumentsError] = useState<string | null>(null);
+
     // Page position is tracked here rather than returned by the API — see
     // ICursorDocuments. `pageRequest` is the request that produced the current
     // view, kept so a post-edit refresh can replay it verbatim.
@@ -291,6 +299,7 @@ export function CollectionBrowser({
     ) => {
         try {
             setLoadingDocuments(true);
+            setDocumentsError(null);
 
             const params = new URLSearchParams({
                 limit: String(PAGE_SIZE),
@@ -308,7 +317,13 @@ export function CollectionBrowser({
             );
 
             if (!response.ok) {
-                throw new Error(`Failed to fetch documents: ${response.statusText}`);
+                // A stale cursor comes back as a 400 whose message tells the
+                // operator how to recover; keeping only statusText would reduce
+                // that instruction to a bare "Bad Request".
+                const body = await response.json().catch(() => ({}));
+                throw new Error(
+                    body?.message || body?.error || `Failed to fetch documents: ${response.statusText}`
+                );
             }
 
             const result = await response.json();
@@ -318,7 +333,7 @@ export function CollectionBrowser({
             setPageRequest(request);
             setPage(Math.max(1, request.direction === 'last' ? data.totalPages : landsOnPage));
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to fetch documents');
+            setDocumentsError(err instanceof Error ? err.message : 'Failed to fetch documents');
         } finally {
             setLoadingDocuments(false);
         }
@@ -633,6 +648,14 @@ export function CollectionBrowser({
                                         <Tr className={styles.documents_row}>
                                             <Td colSpan={COLLECTION_COLUMNS.length + 1}>
                                                 <div className={styles.documents_panel}>
+                                                    {documentsError !== null && (
+                                                        <div className="alert alert--danger" role="alert">
+                                                            <span className={styles.error_inline}>
+                                                                <AlertCircle size={14} aria-hidden="true" />
+                                                                {documentsError}
+                                                            </span>
+                                                        </div>
+                                                    )}
                                                     {loadingDocuments ? (
                                                         <p className={styles.loading}>Loading documents...</p>
                                                     ) : documents ? (
