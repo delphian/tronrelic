@@ -28,9 +28,12 @@ import type { IMigration, IMigrationContext } from '@/types';
  * The hourly `blockchain:prune` job in `BlockchainService.pruneOldTransactions`
  * `deleteMany`s transactions older than 4 days in 2-hour batches. Every
  * existing document that still carries `analysis.relatedTransactions` or
- * `analysis.clusterId` will be deleted within at most 4 days through
+ * `analysis.clusterId` ages out of that 4-day retention window through
  * normal rotation, so a wholesale `$unset` over the entire collection
- * would just duplicate I/O the prune already does.
+ * would just duplicate I/O the prune already does. The 2-hour batch caps
+ * each run's work rather than guaranteeing a maximum age: after downtime
+ * or a retention reduction the drain trails the cutoff and catches up at
+ * roughly one hour of backlog per hourly run.
  *
  * **Idempotency:**
  * Each `dropIndex` call is wrapped in a try/catch that swallows
@@ -57,7 +60,7 @@ import type { IMigration, IMigrationContext } from '@/types';
  */
 export const migration: IMigration = {
     id: '002_drop_transaction_clustering_indexes',
-    description: 'Drop unused analysis.relatedTransactions_1 and analysis.clusterId_1_timestamp_-1 indexes from the transactions collection. Field data ages out via the existing blockchain:prune job within 4 days.',
+    description: 'Drop unused analysis.relatedTransactions_1 and analysis.clusterId_1_timestamp_-1 indexes from the transactions collection. Field data ages out via the existing blockchain:prune job (4-day retention window, bounded catch-up after a backlog).',
     dependencies: [],
 
     async up(context: IMigrationContext): Promise<void> {
