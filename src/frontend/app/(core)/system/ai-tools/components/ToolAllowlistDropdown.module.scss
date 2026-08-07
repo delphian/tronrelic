@@ -1,0 +1,84 @@
+/**
+ * Styles for ToolAllowlistDropdown — the composer's per-run tool grant.
+ *
+ * The trigger deliberately borrows the shared input tokens so it reads as a
+ * sibling of the model `<Select>` it sits beside, rather than as a button that
+ * happens to be nearby. The panel is portaled to `<body>` and positioned in JS,
+ * so everything here is presentation only; `top`/`left`/`width`/`max-height`
+ * arrive as inline style from the component.
+ */
+
+.trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    padding: var(--input-padding-md);
+    border: var(--input-border);
+    border-radius: var(--input-border-radius);
+    background: var(--input-background);
+    color: var(--color-text);
+    font-size: var(--input-font-size);
+    line-height: var(--line-height-normal);
+    transition: var(--input-transition);
+    cursor: pointer;
+
+    &:disabled {
+        opacity: var(--opacity-55);
+        cursor: not-allowed;
+    }
+
+    /* Keyboard-only ring: a mouse click should not leave one behind. */
+    &:focus-visible {
+        outline: none;
+        border-color: var(--input-border-focus);
+        box-shadow: var(--input-shadow-focus);
+    }
+}
+
+.trigger_label {
+    white-space: nowrap;
+}
+
+/* Muted so the caret reads as affordance rather than content. */
+.trigger_caret {
+    color: var(--color-text-muted);
+}
+
+/*
+ * The floating option panel. `position: fixed` because it is portaled out of the
+ * composer to escape the chat card's clipped overflow — it is placed against the
+ * trigger by the component, and scrolls internally when the option list outgrows
+ * the room available on screen.
+ */
+.panel {
+    position: fixed;
+    z-index: var(--z-index-popover);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    padding: var(--card-padding-sm);
+    overflow-y: auto;
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-lg);
+
+    /*
+     * The panel takes focus itself when it opens — portaling puts it outside the
+     * tab order, so it has to. Ring its own border rather than drawing an
+     * outline outside the rounded corner, so "focus landed in here" reads as
+     * part of the panel instead of a stray rectangle around it. Keyboard-only:
+     * a mouse click that opens the dropdown leaves no ring behind.
+     */
+    &:focus-visible {
+        outline: none;
+        border-color: var(--input-border-focus);
+        box-shadow: var(--shadow-lg), var(--input-shadow-focus);
+    }
+}
+
+.hint {
+    margin: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}

@@ -239,6 +239,60 @@
     overflow-wrap: anywhere;
 }
 
+/*
+ * Per-turn tool strip, sitting tight under the prompt it describes: the "save as
+ * prompt" bookmark, then one chip per tool the turn was granted or called. The
+ * extra gap after the bookmark separates an action from the read-only chips
+ * beside it, so the button never reads as the first chip in the row.
+ */
+.turn_tools {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+}
+
+.turn_tools_save {
+    margin-right: var(--gap-2xs);
+}
+
+.turn_tool_list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-2xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/*
+ * A granted-but-unused tool: outlined and muted, so the row reads as background
+ * information until something in it actually fired.
+ */
+.turn_tool_chip {
+    padding: 0 var(--padding-2xs);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-relaxed);
+    color: var(--color-text-muted);
+    overflow-wrap: anywhere;
+}
+
+/*
+ * A tool the model actually called. Filled surface, brighter text, and heavier
+ * weight all shift together — the state stays legible without relying on hue
+ * alone, and every chip also names its state in a `title`.
+ */
+.turn_tool_chip--called {
+    border-color: var(--color-success-alpha-45);
+    background: var(--color-success-alpha-18);
+    color: var(--color-success-text);
+    font-weight: var(--font-weight-medium);
+}
+
 .turn_usage {
     display: flex;
     flex-wrap: wrap;
@@ -259,6 +313,24 @@
     gap: var(--gap-xs);
     font-size: var(--font-size-caption);
     color: var(--color-danger);
+}
+
+/*
+ * Leftover audit records the transcript has no link to. Sits at the foot of the
+ * transcript, set apart by a rule and a quiet label so it reads as a footnote to
+ * the conversation rather than as the summary table the transcript replaced.
+ */
+.unlinked_records {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    padding-top: var(--padding-sm);
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+.unlinked_records_note {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
 }
 
 /* Assistant message: rendered markdown. */
@@ -430,37 +502,54 @@
     gap: var(--gap-sm);
 }
 
-/* Per-run tool allowlist, tucked into a disclosure between the textarea and the
-   toolbar so it never crowds the composer. Collapsed by default (the run gets no
-   tools); opening it reveals the picker and the scoped trifecta badge. */
-.composer_tools {
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    padding: var(--padding-sm);
-}
-
-.composer_tools_summary {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-xs);
-    cursor: pointer;
-    font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-}
-
-.composer_tools_body {
-    margin-top: var(--gap-sm);
+/* Textarea plus its granted-tool chips as one composer child, so the chips can
+   sit on a tighter gap than the composer's own spacing gives its children. */
+.composer_input_group {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-sm);
+    gap: var(--gap-2xs);
 }
 
-.composer_tools_hint {
+/* Chips for the tools the next message may call, granted from the toolbar
+   dropdown. Each is a button: clicking one revokes that tool for this message. */
+.composer_chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-2xs);
     margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.composer_chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: 0 var(--padding-2xs);
+    border: var(--border-width-thin) solid var(--color-primary-alpha-38);
+    border-radius: var(--radius-full);
+    background: var(--color-primary-alpha-15);
+    font-family: var(--font-mono);
     font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
+    line-height: var(--line-height-relaxed);
+    color: var(--color-text);
+    cursor: pointer;
+    overflow-wrap: anywhere;
+
+    &:hover:not(:disabled) {
+        border-color: var(--color-danger);
+        color: var(--color-danger);
+    }
+
+    &:disabled {
+        opacity: var(--opacity-55);
+        cursor: not-allowed;
+    }
+
+    &:focus-visible {
+        outline: var(--focus-outline-width) solid var(--focus-outline-color);
+        outline-offset: var(--focus-outline-offset);
+    }
 }
 
 .composer_send {
@@ -660,8 +749,12 @@
     overflow-wrap: anywhere;
 }
 
-/* Tool call + result blocks share a bordered, muted-surface frame; the result
-   carries a left accent (success) that flips to danger when the tool errored. */
+/* Tool call + result blocks share a bordered, muted-surface frame. A call whose
+   result was paired to it hosts that result inside its own frame, making the frame
+   the single "tool event" container: arguments payload, result label, result
+   payload. `.tool_result` as a standalone block remains for an unpaired result,
+   which still reaches the transcript when history is truncated or a provider
+   omitted the pairing id. */
 .tool_call,
 .tool_result {
     border: var(--border-width-thin) solid var(--color-border);
@@ -670,6 +763,7 @@
     padding: var(--padding-xs) var(--padding-sm);
 }
 
+/* Standalone (unpaired) result block — the left accent marks the outcome. */
 .tool_result {
     border-left: var(--border-width-thick) solid var(--color-success);
 }
@@ -698,30 +792,6 @@
     margin-left: auto;
 }
 
-/* Collapsible "tools used in this conversation" feed — the Activity-tab surface
-   scoped to the open chat, tucked into a disclosure so it never competes with the
-   transcript until an operator opens it. */
-.tools_used {
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface);
-    padding: var(--padding-sm);
-}
-
-.tools_used_summary {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-xs);
-    cursor: pointer;
-    font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-}
-
-.tools_used_body {
-    margin-top: var(--gap-sm);
-}
-
 .tool_payload {
     margin: var(--gap-xs) 0 0 0;
     padding: var(--padding-xs);
@@ -736,4 +806,25 @@
     line-height: var(--line-height-relaxed);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+}
+
+/* "Tool result" label inside a call's frame. Extra top space separates it from
+   the arguments payload above so the two payloads never read as one block. */
+.tool_result_header {
+    margin-top: var(--gap-sm);
+}
+
+/*
+ * Nested result payload. The outcome accent sits on the payload itself because
+ * the enclosing frame now belongs to the call, not the result. Declared after
+ * `.tool_payload` on purpose: the two classes carry equal specificity and are
+ * applied to the same element, so the accent only survives `.tool_payload`'s
+ * `border` shorthand by being written later in the sheet.
+ */
+.tool_result_payload {
+    border-left: var(--border-width-thick) solid var(--color-success);
+}
+
+.tool_result_payload--error {
+    border-left-color: var(--color-danger);
 }
