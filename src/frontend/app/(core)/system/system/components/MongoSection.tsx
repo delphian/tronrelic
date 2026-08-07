@@ -84,7 +84,7 @@ interface IMigrationHistory {
  */
 export function MongoSection() {
     return (
-        <Stack gap="sm">
+        <Stack gap="lg">
             <Card padding="sm" noBackgroundImage>
                 <MongoHealth />
             </Card>

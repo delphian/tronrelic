@@ -22,9 +22,10 @@
  * `--page-gap` (3rem) — the right distance between page-level sections, and far
  * too much between a tab row and the panel it controls. Giving `Page` a single
  * child confines that 3rem to the page edge and lets the stack own the interior:
- * 1rem from tabs to panel, and 0.5rem between cards inside each panel's own
- * `Stack gap="sm"`. The result descends 3rem -> 1rem -> 0.5rem instead of
- * jumping between unrelated scales.
+ * `--stack-gap-lg` (1.5rem) from tabs to panel, and the same 1.5rem between
+ * cards inside each panel's own `Stack gap="lg"`. The result steps down 3rem ->
+ * 1.5rem and then holds, so every tab breathes at one interior spacing rather
+ * than jumping between unrelated scales.
  *
  * This page renders no `PageHeader` on purpose. The tab row already names the
  * surface, a title would push the first console another 3rem down the screen,
@@ -127,7 +128,7 @@ export function SystemAdminClient({ submenuTree, submenuGeneratedAt, initialTab 
 
     return (
         <Page>
-            <Stack gap="md">
+            <Stack gap="lg">
                 <MenuNavClient
                     namespace={SUBMENU_NAMESPACE}
                     items={submenuTree}

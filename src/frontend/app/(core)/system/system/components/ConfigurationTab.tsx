@@ -26,7 +26,7 @@ import { TronGridProviderSection } from './TronGridProviderSection';
  */
 export function ConfigurationTab() {
     return (
-        <Stack gap="sm">
+        <Stack gap="lg">
             <SectionPanel>
                 <SystemConfigSection />
             </SectionPanel>

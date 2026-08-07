@@ -86,7 +86,7 @@ export function OverviewTab() {
     ], [serverFreshness, blockchainFreshness]);
 
     return (
-        <Stack gap="sm">
+        <Stack gap="lg">
             <RefreshIndicator sources={refreshSources} />
 
             <Card id="server" padding="sm" noBackgroundImage>
