@@ -41,7 +41,7 @@ interface ISectionPanelProps {
  */
 export function SectionPanel({ children }: ISectionPanelProps) {
     return (
-        <Stack gap="sm">
+        <Stack gap="lg">
             <Card padding="sm" noBackgroundImage>
                 {children}
             </Card>
