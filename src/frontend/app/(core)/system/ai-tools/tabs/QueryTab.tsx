@@ -12,23 +12,23 @@
  * admin client surface, not an SSR-first public component — loading states are
  * appropriate for its secondary data and user-triggered sends.
  *
- * A per-run tool allowlist (a collapsed disclosure in the composer) narrows which
+ * A per-run tool allowlist (a dropdown in the composer toolbar) narrows which
  * tools the next send may call. It defaults to no tools — least privilege — so a
  * manual query is inert until the operator deliberately grants a tool for that
  * run. Being one-shot, it has no three-state contract to preserve: the explicit
  * selection is sent verbatim on every send (`[]` = no tools; a name list = that
- * subset), and a scoped lethal-trifecta preview updates while the disclosure is open.
+ * subset), and a scoped lethal-trifecta preview updates while the dropdown is open.
  */
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { Send, Bot, User, AlertCircle, X, Copy, CheckCircle, Plus, History, MessageSquare, RefreshCw, ChevronDown, ChevronRight, Brain, Wrench, CornerDownRight, Info, Play } from 'lucide-react';
+import { Send, Bot, User, AlertCircle, X, Copy, CheckCircle, Plus, History, MessageSquare, RefreshCw, ChevronDown, ChevronRight, Brain, Wrench, CornerDownRight, Info, Play, Bookmark } from 'lucide-react';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
-import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IAiToolInfo, IAiTranscriptSegment, IModelInfo, ISavedPrompt, IToolInvocationRecord, ITrifectaStatus } from '@/types';
+import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IAiToolInfo, IAiToolResultSegment, IAiTranscriptSegment, IModelInfo, ISavedPrompt, IToolInvocationRecord, ITrifectaStatus } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
@@ -49,14 +49,15 @@ import {
     listTools,
     getTrifectaPreview,
     runSavedPromptNow,
+    listSavedPrompts,
+    saveSavedPrompt,
     type IStreamAck
 } from '../../../../../modules/ai-tools';
 import { useToast } from '../../../../../components/ui/ToastProvider';
 import { SavedPromptsPanel } from './SavedPromptsPanel';
 import { InvocationDetailPanel } from '../components/InvocationDetailPanel';
 import { InvocationTable } from '../components/InvocationTable';
-import { ToolAllowlistPicker } from '../components/ToolAllowlistPicker';
-import { RunTrifectaBadge } from '../components/RunTrifectaBadge';
+import { ToolAllowlistDropdown } from '../components/ToolAllowlistDropdown';
 import pageStyles from '../page.module.scss';
 import styles from './QueryTab.module.scss';
 
@@ -115,6 +116,17 @@ interface ChatTurn {
      * fall back to `content`).
      */
     segments?: IAiTranscriptSegment[];
+
+    /**
+     * Tool names this send was allowed to call — the composer's per-run
+     * allowlist, captured at send time. Recorded on the user turn because the
+     * grant belongs to the prompt, not the answer: it drives the per-turn tool
+     * chips and is what "save this prompt with its tools" persists. A turn
+     * reopened from history has no value here, since the allowlist is not part
+     * of the stored query record; those turns show only the tools the assistant
+     * actually called, recovered from its transcript.
+     */
+    tools?: string[];
 }
 
 /** A run of consecutive history records sharing one `conversationId`. */
@@ -223,7 +235,10 @@ function formatToolPayload(value: unknown): string {
  * instead of only its final answer: history persists no other structure, so
  * without this the thinking and tool activity would be invisible. Thinking is
  * tucked into a collapsed `<details>` so a long chain of reasoning never buries
- * the answer; tool calls and results render as labelled blocks, errors flagged.
+ * the answer. A call and the result that answered it are one event, so the
+ * result nests inside the call's own card — arguments payload, then a "Tool
+ * result" label, then the result payload carrying the success/error accent —
+ * rather than sitting in a sibling block the reader has to re-pair by eye.
  * Answer text reuses the same sanitized-Markdown pipeline as a streaming turn so
  * the prose reads identically whether live or replayed.
  *
@@ -241,6 +256,34 @@ function AssistantSegments({ segments, recordsById, onSelectRecord }: {
     recordsById?: Map<string, IToolInvocationRecord>;
     onSelectRecord?: (record: IToolInvocationRecord) => void;
 }) {
+    // Index each result by the call it answered so the call can render it inline.
+    // A result whose `toolUseId` matches no call in this transcript — truncated
+    // history, or a provider that emitted the pairing id inconsistently — stays
+    // unclaimed and still renders as its own block below, so nothing a turn
+    // produced is silently dropped from the transcript.
+    const resultsByToolUseId = new Map<string, { segment: IAiToolResultSegment; index: number }>();
+    const callIds = new Set<string>();
+    segments.forEach((segment, index) => {
+        if (segment.type === 'tool_use' && segment.id) {
+            callIds.add(segment.id);
+        } else if (segment.type === 'tool_result' && segment.toolUseId && !resultsByToolUseId.has(segment.toolUseId)) {
+            resultsByToolUseId.set(segment.toolUseId, { segment, index });
+        }
+    });
+
+    // The exact results that will be drawn inside a call's card. Skipping by
+    // *position* rather than by `toolUseId` is what keeps the no-silent-drop
+    // rule honest: only the first result per id is claimed inline, so a second
+    // result carrying the same id — which an id-based skip would swallow
+    // entirely — still renders below as its own block.
+    const claimedResultIndices = new Set<number>();
+    for (const id of callIds) {
+        const claimed = resultsByToolUseId.get(id);
+        if (claimed) {
+            claimedResultIndices.add(claimed.index);
+        }
+    }
+
     return (
         <div className={styles.segments}>
             {segments.map((segment, index) => {
@@ -260,6 +303,7 @@ function AssistantSegments({ segments, recordsById, onSelectRecord }: {
                     // invocation detail (status, duration, cost, forensic error,
                     // screen verdict) the transcript alone can't show.
                     const auditRecord = segment.id ? recordsById?.get(segment.id) : undefined;
+                    const result = segment.id ? resultsByToolUseId.get(segment.id)?.segment : undefined;
                     return (
                         <div key={index} className={styles.tool_call}>
                             <div className={styles.tool_call_header}>
@@ -279,10 +323,29 @@ function AssistantSegments({ segments, recordsById, onSelectRecord }: {
                                 )}
                             </div>
                             <pre className={styles.tool_payload}>{formatToolPayload(segment.input)}</pre>
+                            {result && (
+                                <>
+                                    <div className={`${styles.tool_call_header} ${styles.tool_result_header}`}>
+                                        <CornerDownRight size={14} />
+                                        <span className={styles.tool_call_name}>{result.isError ? 'Tool error' : 'Tool result'}</span>
+                                    </div>
+                                    <pre
+                                        className={`${styles.tool_payload} ${styles.tool_result_payload} ${result.isError ? styles['tool_result_payload--error'] : ''}`}
+                                    >
+                                        {formatToolPayload(result.content)}
+                                    </pre>
+                                </>
+                            )}
                         </div>
                     );
                 }
                 if (segment.type === 'tool_result') {
+                    // This exact result is already drawn inside its call's card —
+                    // skip the duplicate. Any other result, including a second one
+                    // sharing the same `toolUseId`, falls through and renders here.
+                    if (claimedResultIndices.has(index)) {
+                        return null;
+                    }
                     return (
                         <div
                             key={index}
@@ -374,6 +437,40 @@ function formatUsd(amount: number | null | undefined): string {
     return `$${amount.toFixed(2)}`;
 }
 
+/** Name prefix for prompts saved straight from a chat turn. */
+const TURN_PROMPT_NAME_PREFIX = 'Saved Prompt';
+
+/** Matches an auto-generated turn-saved prompt name so its number can be read back. */
+const TURN_PROMPT_NAME_PATTERN = /^Saved Prompt (\d+)$/i;
+
+/**
+ * Pick the next auto-generated name for a prompt saved from a chat turn. Saving
+ * from a turn is a one-click action with nowhere to type a name, so the name has
+ * to be derived — and it must not collide, because the backend enforces a
+ * case-insensitive unique index and would reject a duplicate with a 409. Counting
+ * up from the highest existing `Saved Prompt NN` gives a name that is stable for a
+ * given list and never reuses a number still in play, even after earlier ones are
+ * deleted.
+ *
+ * @param existing - The current saved prompts, whose names are scanned for the
+ *   auto-generated pattern; names an operator typed are ignored.
+ * @returns The next name, zero-padded to two digits (e.g. `Saved Prompt 03`).
+ */
+function nextTurnPromptName(existing: ISavedPrompt[]): string {
+    let highest = 0;
+    for (const prompt of existing) {
+        const match = TURN_PROMPT_NAME_PATTERN.exec(prompt.name.trim());
+        if (!match) {
+            continue;
+        }
+        const value = Number.parseInt(match[1], 10);
+        if (Number.isFinite(value) && value > highest) {
+            highest = value;
+        }
+    }
+    return `${TURN_PROMPT_NAME_PREFIX} ${String(highest + 1).padStart(2, '0')}`;
+}
+
 /**
  * Query tab content. Owns the chat transcript, the streaming lifecycle keyed by
  * a per-send `queryId`, the model picker, and the grouped history view.
@@ -397,7 +494,7 @@ export function QueryTab() {
      * that subset (no three-state contract, since a one-shot run persists nothing).
      */
     const [toolSelection, setToolSelection] = useState<string[]>([]);
-    /** Whether the composer's Tools disclosure is open; gates the trifecta preview so it runs only when visible. */
+    /** Whether the composer's Tools dropdown is open; gates the trifecta preview so it runs only when visible. */
     const [toolsOpen, setToolsOpen] = useState(false);
     /** Scoped lethal-trifecta verdict for the current selection, or null before the first preview resolves. */
     const [trifecta, setTrifecta] = useState<ITrifectaStatus | null>(null);
@@ -410,6 +507,8 @@ export function QueryTab() {
     const [historyError, setHistoryError] = useState<string | null>(null);
     /** Shared saved-prompts list; the panel loads it on first open and the composer reads it. */
     const [savedPrompts, setSavedPrompts] = useState<ISavedPrompt[]>([]);
+    /** Id of the user turn whose "save as prompt" write is in flight, or null when idle. */
+    const [savingTurnId, setSavingTurnId] = useState<string | null>(null);
     /** Conversation ids whose full opening prompt is expanded inline in the history list. */
     const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
     /**
@@ -428,7 +527,9 @@ export function QueryTab() {
     /**
      * Tool-invocation audit records for the open conversation, loaded from the
      * Activity feed scoped by conversationId. Backs the transcript's per-call
-     * "Details" deep-links and the "tools used" summary feed.
+     * "Details" deep-links — the transcript itself shows what ran, so the chat
+     * view carries no summary table over the records it can already reach. The
+     * leftovers it cannot reach are listed separately (see {@link unlinkedRecords}).
      */
     const [conversationRecords, setConversationRecords] = useState<IToolInvocationRecord[]>([]);
     /** The audit record whose detail slide-over is open, or null when closed. */
@@ -448,6 +549,109 @@ export function QueryTab() {
         }
         return map;
     }, [conversationRecords]);
+
+    /**
+     * Registry tool names actually invoked in answer to each user turn, keyed by
+     * that turn's id. Read from the assistant turns that follow a prompt (up to
+     * the next prompt), because the transcript is the only per-turn record of
+     * what the model chose to call — the audit feed is conversation-scoped and
+     * cannot say which prompt triggered a given call. Drives the "called" state
+     * of the per-turn tool chips, and works identically for a live turn and one
+     * reopened from history since both carry the same segments.
+     *
+     * Provider-hosted calls (`segment.server`) are excluded on purpose. They run
+     * on the provider's own infrastructure and are exempt from the allowlist
+     * entirely, so they are not grantable: showing one as a chip would imply an
+     * allowlist entry that cannot exist, and — since this set is also what the
+     * bookmark persists — naming one in a saved prompt's `toolAllowlist` would
+     * resolve to no registered tool and fail the whole run.
+     */
+    const calledToolsByTurnId = useMemo(() => {
+        const map = new Map<string, Set<string>>();
+        messages.forEach((turn, index) => {
+            if (turn.role !== 'user') {
+                return;
+            }
+            const called = new Set<string>();
+            for (let next = index + 1; next < messages.length && messages[next].role === 'assistant'; next += 1) {
+                for (const segment of messages[next].segments ?? []) {
+                    if (segment.type === 'tool_use' && segment.name && !segment.server) {
+                        called.add(segment.name);
+                    }
+                }
+            }
+            map.set(turn.id, called);
+        });
+        return map;
+    }, [messages]);
+
+    /**
+     * The tools each user turn is credited with, keyed by turn id: the grant
+     * captured at send time unioned with the registry tools the answer actually
+     * called. One source for both the chips a turn renders and the allowlist its
+     * bookmark saves, so what an operator sees beside the bookmark is exactly
+     * what the bookmark persists.
+     *
+     * The union is what makes a turn reopened from history saveable at all. The
+     * grant is not part of the stored query record, so `turn.tools` is undefined
+     * there and the transcript's calls are the only surviving evidence of what
+     * that prompt was permitted to do. Crediting them reconstructs an allowlist
+     * that is narrower than the original but sufficient to reproduce the run —
+     * which is the point of saving it, and safer than widening to every enabled
+     * tool.
+     */
+    const turnToolsByTurnId = useMemo(() => {
+        const map = new Map<string, string[]>();
+        for (const turn of messages) {
+            if (turn.role !== 'user') {
+                continue;
+            }
+            const union = new Set([...(turn.tools ?? []), ...(calledToolsByTurnId.get(turn.id) ?? [])]);
+            map.set(turn.id, [...union].sort((a, b) => a.localeCompare(b)));
+        }
+        return map;
+    }, [messages, calledToolsByTurnId]);
+
+    /**
+     * Audit records the transcript has no route to. A record is reachable from a
+     * transcript only when its `toolUseId` matches a `tool_use` segment, so a
+     * record written without one — a legacy row, or a provider that never
+     * emitted the pairing id — carries no "Details" link and would be
+     * unreachable on this view entirely. Listing exactly those leftovers keeps
+     * the transcript the primary account of what ran while making sure no
+     * invocation goes missing from the chat.
+     */
+    const unlinkedRecords = useMemo(() => {
+        const linked = new Set<string>();
+        for (const turn of messages) {
+            for (const segment of turn.segments ?? []) {
+                if (segment.type === 'tool_use' && segment.id) {
+                    linked.add(segment.id);
+                }
+            }
+        }
+        return conversationRecords.filter(record => !record.toolUseId || !linked.has(record.toolUseId));
+    }, [messages, conversationRecords]);
+
+    /**
+     * The pending grant as chips under the composer, sorted so the row does not
+     * reshuffle as options are ticked in the dropdown.
+     */
+    const grantedTools = useMemo(
+        () => [...toolSelection].sort((a, b) => a.localeCompare(b)),
+        [toolSelection]
+    );
+
+    /**
+     * Drop one tool from the pending grant, so the chips are a control and not
+     * just a readout — narrowing a selection should not mean reopening the
+     * dropdown to hunt for the checkbox.
+     *
+     * @param name - The tool name to revoke for the next message.
+     */
+    const handleRevokeTool = useCallback((name: string) => {
+        setToolSelection(prev => prev.filter(entry => entry !== name));
+    }, []);
 
     /** The queryId whose stream chunks the handler currently accepts. */
     const activeQueryIdRef = useRef<string | null>(null);
@@ -510,7 +714,7 @@ export function QueryTab() {
     }, []);
 
     // Preview the lethal-trifecta posture of the current selection, but only
-    // while the Tools disclosure is open — a closed disclosure needs no preview,
+    // while the Tools dropdown is open — a closed dropdown needs no preview,
     // so an operator who never opens it pays for no requests. Debounced so rapid
     // toggling issues one request. The verdict is server-computed (it folds in
     // provider server-tools and secret variables an allowlist cannot gate), so
@@ -564,10 +768,10 @@ export function QueryTab() {
 
     /**
      * Load a conversation's tool-invocation audit records so the transcript's tool
-     * calls can deep-link to their exact invocation detail and the "tools used"
-     * feed can list them. Secondary data — a failure just leaves the audit
-     * affordances absent, never blocks the chat. Reads the same admin-gated feed
-     * the Activity tab uses, scoped by conversationId.
+     * calls can deep-link to their exact invocation detail. Secondary data — a
+     * failure just leaves the audit affordances absent, never blocks the chat.
+     * Reads the same admin-gated feed the Activity tab uses, scoped by
+     * conversationId.
      *
      * @param conversationId - The conversation whose tool calls to load.
      */
@@ -576,8 +780,8 @@ export function QueryTab() {
             const page = await listActivity({ conversationId, limit: 200 });
             // Drop out-of-order responses: a slower fetch for a conversation the
             // operator has since navigated away from must not overwrite the
-            // active conversation's records (which back the "Tools used" feed and
-            // the transcript's per-call "Details" deep-links).
+            // active conversation's records (which back the transcript's per-call
+            // "Details" deep-links and the leftover-record list beneath it).
             if (isMountedRef.current && conversationId === conversationIdRef.current) {
                 setConversationRecords(page.records);
             }
@@ -674,8 +878,8 @@ export function QueryTab() {
             streamingTurnIdRef.current = null;
             activeQueryIdRef.current = null;
             // The turn produced its audit records as it ran; pull them so the
-            // just-completed tool calls gain their "Details" deep-link and the
-            // tools-used feed reflects this turn without reopening from history.
+            // just-completed tool calls gain their "Details" deep-link without
+            // the operator having to reopen the conversation from history.
             const settledConversationId = conversationIdRef.current;
             if (settledConversationId) {
                 void refreshConversationActivity(settledConversationId);
@@ -743,7 +947,10 @@ export function QueryTab() {
         }
         const conversationId = conversationIdRef.current;
 
-        const userTurn: ChatTurn = { id: generateUUID(), role: 'user', content: trimmed };
+        // Snapshot the grant onto the turn: `toolSelection` is cleared once the
+        // send is accepted, so the turn must carry its own copy to keep showing
+        // which tools this prompt was allowed to use.
+        const userTurn: ChatTurn = { id: generateUUID(), role: 'user', content: trimmed, tools: [...toolSelection] };
         const assistantTurnId = generateUUID();
         const assistantTurn: ChatTurn = {
             id: assistantTurnId,
@@ -797,6 +1004,69 @@ export function QueryTab() {
             });
         }
     }, [input, streaming, messages, modelOverride, toolSelection, updateTurn]);
+
+    /**
+     * Save a chat turn's prompt — together with the tools that turn was granted
+     * — as a new saved prompt, from the bookmark beside the turn's tool chips.
+     * The point is to capture a run that worked: a prompt is only reproducible
+     * alongside the allowlist it ran under, so the two are persisted together
+     * rather than leaving the operator to re-pick tools in the editor afterwards.
+     *
+     * The allowlist saved is {@link turnToolsByTurnId} — the same set the turn
+     * shows as chips, so the bookmark persists what the operator can see. Read
+     * from there rather than from `turn.tools`, which is populated only at send
+     * time: a turn reopened from history has none, and saving that absence as
+     * `[]` would write a hard deny (the backend reads `[]` as "no tools", not
+     * "unspecified") into a prompt whose chips were advertising tools.
+     *
+     * The saved-prompt list is re-read before naming instead of trusting local
+     * state, because the panel only loads its list on first open — naming from a
+     * stale (often empty) list would collide with an existing `Saved Prompt NN`
+     * and be rejected by the backend's case-insensitive unique-name index.
+     *
+     * @param turn - The user turn to persist; its `content` becomes the prompt body.
+     */
+    const handleSaveTurnAsPrompt = useCallback(async (turn: ChatTurn) => {
+        const prompt = turn.content.trim();
+        if (!prompt || savingTurnId) {
+            return;
+        }
+        setSavingTurnId(turn.id);
+        try {
+            const name = nextTurnPromptName(await listSavedPrompts());
+            const granted = turnToolsByTurnId.get(turn.id) ?? [];
+            const updated = await saveSavedPrompt({ name, prompt, toolAllowlist: granted });
+            if (!isMountedRef.current) {
+                return;
+            }
+            setSavedPrompts(updated);
+            push({
+                tone: 'success',
+                title: 'Prompt saved',
+                // Name the inert case outright rather than reporting "0 tools":
+                // an empty allowlist is a deny, and a prompt that can call
+                // nothing is worth flagging before it is put on a schedule.
+                description: granted.length === 0
+                    ? `Saved as "${name}" with no tools — it will run inert until you grant some.`
+                    : granted.length === 1
+                        ? `Saved as "${name}" with 1 tool.`
+                        : `Saved as "${name}" with ${granted.length} tools.`
+            });
+        } catch (err) {
+            if (!isMountedRef.current) {
+                return;
+            }
+            push({
+                tone: 'danger',
+                title: 'Could not save prompt',
+                description: err instanceof Error ? err.message : 'Failed to save the prompt.'
+            });
+        } finally {
+            if (isMountedRef.current) {
+                setSavingTurnId(null);
+            }
+        }
+    }, [savingTurnId, push, turnToolsByTurnId]);
 
     /**
      * Execute a saved prompt immediately from the saved-prompts panel — a
@@ -996,17 +1266,17 @@ export function QueryTab() {
             conversationIdRef.current = conversationId;
             setMessages(rebuilt);
             // Drop the previous conversation's audit records up front so the
-            // "Tools used" summary and the transcript's tool-detail lookup never
-            // show the prior thread's tools during this conversation's in-flight
-            // activity fetch — or permanently, if that fetch fails. The clear
-            // lives here, not in refreshConversationActivity, because the live
-            // streaming `done` path shares that refresh and must not flash empty.
+            // transcript's tool-detail lookup never shows the prior thread's
+            // tools during this conversation's in-flight activity fetch — or
+            // permanently, if that fetch fails. The clear lives here, not in
+            // refreshConversationActivity, because the live streaming `done`
+            // path shares that refresh and must not flash empty.
             setConversationRecords([]);
             setSelectedRecord(null);
             setView('chat');
             // Load this conversation's tool-call audit records so the transcript's
-            // tool calls link to their exact invocation detail and the tools-used
-            // feed populates. Fire-and-forget: it must not gate reopening the chat.
+            // tool calls link to their exact invocation detail. Fire-and-forget:
+            // it must not gate reopening the chat.
             void refreshConversationActivity(conversationId);
         } catch (err) {
             if (isMountedRef.current) {
@@ -1122,6 +1392,12 @@ export function QueryTab() {
                             messages.map(turn => {
                                 const isUser = turn.role === 'user';
                                 const usage = turn.usage;
+                                // Chips for a user turn: what the prompt was granted, unioned
+                                // with the registry tools the answer actually called. Both come
+                                // from turnToolsByTurnId, which is also what the bookmark saves,
+                                // so the row and the saved allowlist can never disagree.
+                                const calledTools = isUser ? calledToolsByTurnId.get(turn.id) : undefined;
+                                const turnTools = isUser ? (turnToolsByTurnId.get(turn.id) ?? []) : [];
                                 return (
                                     <div
                                         key={turn.id}
@@ -1147,7 +1423,40 @@ export function QueryTab() {
                                             </div>
 
                                             {isUser ? (
-                                                <div className={styles.turn_text}>{turn.content}</div>
+                                                <>
+                                                    <div className={styles.turn_text}>{turn.content}</div>
+                                                    <div className={styles.turn_tools}>
+                                                        <IconButton
+                                                            variant="ghost"
+                                                            size="xs"
+                                                            className={styles.turn_tools_save}
+                                                            onClick={() => { void handleSaveTurnAsPrompt(turn); }}
+                                                            disabled={savingTurnId !== null || !turn.content.trim()}
+                                                            title="Save this prompt and its tools below"
+                                                            aria-label="Save this prompt and its tools as a saved prompt"
+                                                        >
+                                                            <Bookmark size={14} />
+                                                        </IconButton>
+                                                        {turnTools.length > 0 && (
+                                                            <ul className={styles.turn_tool_list}>
+                                                                {turnTools.map(name => {
+                                                                    const wasCalled = calledTools?.has(name) ?? false;
+                                                                    return (
+                                                                        <li
+                                                                            key={name}
+                                                                            className={`${styles.turn_tool_chip} ${wasCalled ? styles['turn_tool_chip--called'] : ''}`}
+                                                                            title={wasCalled
+                                                                                ? `${name} — called in this turn`
+                                                                                : `${name} — allowed for this turn, not called`}
+                                                                        >
+                                                                            {name}
+                                                                        </li>
+                                                                    );
+                                                                })}
+                                                            </ul>
+                                                        )}
+                                                    </div>
+                                                </>
                                             ) : turn.segments && turn.segments.length > 0 ? (
                                                 // A settled turn (live `done` or reopened from history) renders its
                                                 // full transcript — thinking, tool calls, results, and text in order.
@@ -1197,46 +1506,56 @@ export function QueryTab() {
                                 </div>
                             )
                         )}
+
+                        {unlinkedRecords.length > 0 && (
+                            // Invocations the transcript above cannot link to, because they
+                            // carry no `toolUseId` to pair with a call. Without this block
+                            // their detail — status, duration, cost, screen verdict — would
+                            // be unreachable from the chat view.
+                            <div className={styles.unlinked_records}>
+                                <span className={styles.unlinked_records_note}>
+                                    Tool calls this transcript cannot link to
+                                </span>
+                                <InvocationTable records={unlinkedRecords} onSelect={setSelectedRecord} />
+                            </div>
+                        )}
                     </div>
 
                     <div className={styles.composer}>
-                        <Textarea
-                            ref={textareaRef}
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            placeholder="Send a message… (Ctrl+Enter to send)"
-                            className={styles.composer_input}
-                            rows={3}
-                            aria-label="Message input"
-                            disabled={streaming}
-                        />
-                        <details
-                            className={styles.composer_tools}
-                            onToggle={(e) => setToolsOpen(e.currentTarget.open)}
-                        >
-                            <summary className={styles.composer_tools_summary}>
-                                <Wrench size={16} />
-                                Tools — {toolSelection.length === 0
-                                    ? 'none (default)'
-                                    : `${toolSelection.length} selected`}
-                            </summary>
-                            <div className={styles.composer_tools_body}>
-                                <p className={styles.composer_tools_hint}>
-                                    Registry tools this query may call. Defaults to none — grant only what
-                                    this run needs. Provider-hosted tools (web search / fetch), when enabled
-                                    for the model, still run regardless of this selection. Naming a tool
-                                    that is disabled or removed fails the run.
-                                </p>
-                                <ToolAllowlistPicker
-                                    tools={tools}
-                                    selected={toolSelection}
-                                    onChange={setToolSelection}
-                                    disabled={streaming}
-                                />
-                                <RunTrifectaBadge status={trifecta} loading={trifectaLoading} />
-                            </div>
-                        </details>
+                        {/* Textarea and granted-tool chips are one group so the chips sit
+                            tight under the input rather than a full composer gap away. */}
+                        <div className={styles.composer_input_group}>
+                            <Textarea
+                                ref={textareaRef}
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                placeholder="Send a message… (Ctrl+Enter to send)"
+                                className={styles.composer_input}
+                                rows={3}
+                                aria-label="Message input"
+                                disabled={streaming}
+                            />
+                            {grantedTools.length > 0 && (
+                                <ul className={styles.composer_chips}>
+                                    {grantedTools.map(name => (
+                                        <li key={name}>
+                                            <button
+                                                type="button"
+                                                className={styles.composer_chip}
+                                                onClick={() => handleRevokeTool(name)}
+                                                disabled={streaming}
+                                                title={`Remove ${name} from this message`}
+                                                aria-label={`Remove ${name} from the tools this message may call`}
+                                            >
+                                                {name}
+                                                <X size={12} aria-hidden="true" />
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
                         <div className={styles.composer_toolbar}>
                             {models.length > 0 && (
                                 <Select
@@ -1252,6 +1571,15 @@ export function QueryTab() {
                                     ))}
                                 </Select>
                             )}
+                            <ToolAllowlistDropdown
+                                tools={tools}
+                                selected={toolSelection}
+                                onChange={setToolSelection}
+                                trifecta={trifecta}
+                                trifectaLoading={trifectaLoading}
+                                onOpenChange={setToolsOpen}
+                                disabled={streaming}
+                            />
                             <div className={styles.composer_send}>
                                 {streaming ? (
                                     <Button
@@ -1277,16 +1605,6 @@ export function QueryTab() {
                         </div>
                     </div>
                 </Card>
-                {conversationRecords.length > 0 && (
-                    <details className={styles.tools_used}>
-                        <summary className={styles.tools_used_summary}>
-                            <Wrench size={16} /> Tools used in this conversation ({conversationRecords.length})
-                        </summary>
-                        <div className={styles.tools_used_body}>
-                            <InvocationTable records={conversationRecords} onSelect={setSelectedRecord} />
-                        </div>
-                    </details>
-                )}
                 <SavedPromptsPanel
                     prompts={savedPrompts}
                     onPromptsChange={setSavedPrompts}
