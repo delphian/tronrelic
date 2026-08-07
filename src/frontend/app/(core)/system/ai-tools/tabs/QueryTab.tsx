@@ -440,8 +440,27 @@ function formatUsd(amount: number | null | undefined): string {
 /** Name prefix for prompts saved straight from a chat turn. */
 const TURN_PROMPT_NAME_PREFIX = 'Saved Prompt';
 
-/** Matches an auto-generated turn-saved prompt name so its number can be read back. */
-const TURN_PROMPT_NAME_PATTERN = /^Saved Prompt (\d+)$/i;
+/**
+ * Neutralise regex metacharacters so a plain string can be embedded in a pattern
+ * literally. Needed because the turn-prompt pattern below is built from the
+ * display prefix above; if that prefix ever gains a character like `(` or `.`,
+ * an unescaped interpolation would compile into a pattern that quietly matches
+ * the wrong names — or throws — instead of the literal text an operator sees.
+ *
+ * @param value - The literal text to embed; callers pass display strings that
+ *   were never written with regex syntax in mind.
+ * @returns The same text with every metacharacter backslash-escaped.
+ */
+function escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Matches an auto-generated turn-saved prompt name so its number can be read
+ * back. Derived from `TURN_PROMPT_NAME_PREFIX` rather than repeating it, so the
+ * generator and the parser cannot drift apart if the prefix ever changes.
+ */
+const TURN_PROMPT_NAME_PATTERN = new RegExp(`^${escapeRegex(TURN_PROMPT_NAME_PREFIX)} (\\d+)$`, 'i');
 
 /**
  * Pick the next auto-generated name for a prompt saved from a chat turn. Saving
