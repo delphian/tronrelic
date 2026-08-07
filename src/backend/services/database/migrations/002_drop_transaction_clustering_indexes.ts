@@ -26,9 +26,9 @@ import type { IMigration, IMigrationContext } from '@/types';
  *
  * **Field data is not unset:**
  * The hourly `blockchain:prune` job in `BlockchainService.pruneOldTransactions`
- * `deleteMany`s transactions older than 7 days in 2-hour batches. Every
+ * `deleteMany`s transactions older than 4 days in 2-hour batches. Every
  * existing document that still carries `analysis.relatedTransactions` or
- * `analysis.clusterId` will be deleted within at most 7 days through
+ * `analysis.clusterId` will be deleted within at most 4 days through
  * normal rotation, so a wholesale `$unset` over the entire collection
  * would just duplicate I/O the prune already does.
  *
@@ -57,7 +57,7 @@ import type { IMigration, IMigrationContext } from '@/types';
  */
 export const migration: IMigration = {
     id: '002_drop_transaction_clustering_indexes',
-    description: 'Drop unused analysis.relatedTransactions_1 and analysis.clusterId_1_timestamp_-1 indexes from the transactions collection. Field data ages out via the existing blockchain:prune job within 7 days.',
+    description: 'Drop unused analysis.relatedTransactions_1 and analysis.clusterId_1_timestamp_-1 indexes from the transactions collection. Field data ages out via the existing blockchain:prune job within 4 days.',
     dependencies: [],
 
     async up(context: IMigrationContext): Promise<void> {
