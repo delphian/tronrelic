@@ -229,7 +229,7 @@ export class BlockchainService implements IBlockchainService {
     /**
      * Prune old transactions from the database to prevent unbounded growth.
      *
-     * This method removes transactions older than the retention period (default 5 days) to keep the
+     * This method removes transactions older than the retention period (default 4 days) to keep the
      * working set — and especially the random-key txId/address indexes — small enough that bulk
      * writes stay cache-resident rather than faulting cold B-tree pages from disk.
      * It deletes transactions in 2-hour batches to avoid long-running operations that could block other queries.
@@ -239,11 +239,11 @@ export class BlockchainService implements IBlockchainService {
      * must never reach past this cutoff, or it fabricates zero-volume buckets from pruned hours.
      * Shorten retention only in lockstep with that constant.
      *
-     * @param retentionHours - Number of hours to retain transactions (default: 120 = 5 days)
+     * @param retentionHours - Number of hours to retain transactions (default: 96 = 4 days)
      * @param batchHours - Number of hours of old transactions to delete per run (default: 2)
      * @returns Object containing number of transactions deleted and the oldest remaining transaction timestamp
      */
-    async pruneOldTransactions(retentionHours = 120, batchHours = 2): Promise<{ deletedCount: number; oldestRemaining: Date | null }> {
+    async pruneOldTransactions(retentionHours = 96, batchHours = 2): Promise<{ deletedCount: number; oldestRemaining: Date | null }> {
         const retentionMs = retentionHours * 60 * 60 * 1000;
         const batchMs = batchHours * 60 * 60 * 1000;
         const cutoffDate = new Date(Date.now() - retentionMs);

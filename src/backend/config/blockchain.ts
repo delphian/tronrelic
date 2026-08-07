@@ -45,7 +45,7 @@ export const blockchainConfig = {
     delegationAmountTRX: toNumber(process.env.BLOCKCHAIN_DELEGATION_AMOUNT_TRX, 50_000)
   },
   retention: {
-    // Blocks are kept longer than transactions (7 days) because each block document
+    // Blocks are kept longer than transactions (4 days) because each block document
     // carries its own aggregate stats, which stay chartable after the underlying
     // transactions are pruned. The transaction-timeseries API clamps its `days`
     // parameter to this window, so shrinking it shortens that endpoint's reach.
