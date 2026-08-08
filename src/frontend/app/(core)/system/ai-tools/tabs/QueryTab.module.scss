@@ -570,6 +570,15 @@
     max-width: var(--max-width-xs);
 }
 
+/* Shown when the picked model belongs to a provider that is not the active
+   transport. The pin still saves onto the prompt for its autonomous runs, but it
+   cannot answer the next interactive message — saying so beats leaving the
+   operator to wonder why a different model replied. */
+.model_pin_note {
+    font-size: var(--font-size-caption);
+    color: var(--color-warning-text);
+}
+
 /*
  * ===========================================================================
  * HISTORY — past conversations grouped by conversationId.

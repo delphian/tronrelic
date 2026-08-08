@@ -66,7 +66,25 @@ interface ToolAllowlistDropdownProps {
     onOpenChange: (open: boolean) => void;
     /** Disable the trigger while a send is in flight. */
     disabled?: boolean;
+    /**
+     * Overrides the panel's explanatory text. The default describes a one-shot
+     * per-message grant, which stops being true once the composer is editing a
+     * saved prompt — there the same selection *is* that prompt's persisted
+     * allowlist, and telling the operator it defaults to none and applies to one
+     * message would be actively wrong.
+     */
+    hint?: string;
 }
+
+/**
+ * Panel copy for the ordinary case: a one-shot grant for the next message only.
+ * Lives at module scope so the default and the {@link ToolAllowlistDropdownProps.hint}
+ * override are obviously the same slot rather than a string buried in the JSX.
+ */
+const DEFAULT_HINT = 'Registry tools this query may call. Defaults to none — grant only what '
+    + 'this run needs. Provider-hosted tools (web search / fetch), when enabled '
+    + 'for the model, still run regardless of this selection. Naming a tool '
+    + 'that is disabled or removed fails the run.';
 
 /**
  * Render the tools trigger button and, while open, its portaled option panel.
@@ -81,7 +99,8 @@ export function ToolAllowlistDropdown({
     trifecta,
     trifectaLoading,
     onOpenChange,
-    disabled = false
+    disabled = false,
+    hint = DEFAULT_HINT
 }: ToolAllowlistDropdownProps) {
     const [open, setOpen] = useState(false);
     const [position, setPosition] = useState<IPanelPosition | null>(null);
@@ -211,7 +230,7 @@ export function ToolAllowlistDropdown({
             window.removeEventListener('resize', updatePosition);
             window.removeEventListener('scroll', updatePosition, true);
         };
-    }, [open, tools, selected, trifecta, trifectaLoading]);
+    }, [open, tools, selected, trifecta, trifectaLoading, hint]);
 
     /*
      * Hand focus to the panel once it is open and placed. Portaling moves the
@@ -281,7 +300,7 @@ export function ToolAllowlistDropdown({
                 aria-haspopup="dialog"
                 aria-expanded={open}
                 aria-controls={open ? panelId : undefined}
-                title="Tools the next message may call — defaults to none"
+                title="Tools this query may call"
             >
                 <Wrench size={16} />
                 <span className={styles.trigger_label}>Tools — {label}</span>
@@ -304,12 +323,7 @@ export function ToolAllowlistDropdown({
                         ? { top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight }
                         : { visibility: 'hidden' }}
                 >
-                    <p className={styles.hint}>
-                        Registry tools this query may call. Defaults to none — grant only what
-                        this run needs. Provider-hosted tools (web search / fetch), when enabled
-                        for the model, still run regardless of this selection. Naming a tool
-                        that is disabled or removed fails the run.
-                    </p>
+                    <p className={styles.hint}>{hint}</p>
                     <ToolAllowlistPicker tools={tools} selected={selected} onChange={onChange} />
                     <RunTrifectaBadge status={trifecta} loading={trifectaLoading} />
                 </div>,

@@ -1,0 +1,247 @@
+/**
+ * Styles for SavedPromptSelector — the saved-prompt library collapsed into a
+ * dropdown beside the Conversation header label.
+ *
+ * The trigger is deliberately lighter than the composer's tool dropdown: it sits
+ * inside a header strip rather than on a control row, so it reads as a chip
+ * rather than a form field, and takes the primary wash only while a prompt is
+ * loaded — the one state where it stops being a picker and starts naming what is
+ * being edited. The panel is portaled to `<body>` and positioned in JS, so
+ * `top`/`left`/`width`/`max-height` arrive as inline style from the component
+ * and everything here is presentation only.
+ */
+
+.trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    max-width: var(--max-width-xs);
+    padding: var(--padding-2xs) var(--padding-xs);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-normal);
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+        color: var(--color-text);
+        border-color: var(--color-primary-alpha-38);
+    }
+
+    &:disabled {
+        opacity: var(--opacity-55);
+        cursor: not-allowed;
+    }
+}
+
+/* A loaded prompt makes the chip a label for what is being edited, not a picker. */
+.trigger_loaded {
+    border-color: var(--color-primary-alpha-38);
+    background: var(--color-primary-alpha-15);
+    color: var(--color-primary);
+}
+
+.trigger_label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: var(--font-weight-medium);
+}
+
+/* Saved-prompt tally, shown only while nothing is loaded. */
+.trigger_count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--icon-size-sm);
+    padding: 0 var(--padding-2xs);
+    border-radius: var(--radius-full);
+    background: var(--color-primary-alpha-15);
+    color: var(--color-primary);
+    font-weight: var(--font-weight-semibold);
+}
+
+/* Muted so the caret reads as affordance rather than content. */
+.trigger_caret {
+    color: var(--color-text-muted);
+}
+
+/*
+ * The floating list. `position: fixed` because it is portaled out of the header
+ * to escape the chat card's clipped overflow — it is placed against the trigger
+ * by the component, and scrolls internally when the prompt list outgrows the
+ * room available on screen.
+ */
+.panel {
+    position: fixed;
+    z-index: var(--z-index-popover);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    padding: var(--card-padding-xs);
+    overflow-y: auto;
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-lg);
+
+    /*
+     * The panel takes focus itself when it opens — portaling puts it outside the
+     * tab order, so it has to. Ring its own border rather than drawing an outline
+     * outside the rounded corner, so "focus landed in here" reads as part of the
+     * panel instead of a stray rectangle around it. Keyboard-only: a mouse click
+     * that opens the dropdown leaves no ring behind.
+     */
+    &:focus-visible {
+        outline: none;
+        border-color: var(--input-border-focus);
+        box-shadow: var(--shadow-lg), var(--input-shadow-focus);
+    }
+}
+
+/*
+ * "New prompt from composer" — the only creation path now that the retired
+ * panel's inline name+Save row is gone, so it leads the list rather than
+ * trailing it.
+ */
+.create_row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    width: 100%;
+    padding: var(--padding-xs) var(--padding-sm);
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--color-primary);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+        background: var(--color-primary-alpha-15);
+    }
+}
+
+.separator {
+    height: var(--divider-height);
+    margin: var(--gap-2xs) 0;
+    background: var(--divider-background);
+}
+
+.empty {
+    margin: 0;
+    padding: var(--padding-sm);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    width: 100%;
+    padding: var(--padding-xs) var(--padding-sm);
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+        background: var(--color-surface-muted);
+    }
+
+    /* Pull the global focus ring inside the row: the panel clips its own
+       overflow, so an outset outline on the first or last row is cut off. */
+    &:focus-visible {
+        outline-offset: calc(var(--focus-outline-offset) * -1);
+    }
+}
+
+/* The prompt currently open in the Conversation card. */
+.row_loaded {
+    background: var(--color-primary-alpha-15);
+
+    &:hover {
+        background: var(--color-primary-alpha-15);
+    }
+}
+
+.row_main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.row_name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+}
+
+.row_meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.row_error {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    color: var(--color-danger);
+}
+
+/*
+ * Trigger summary chip — active uses the success wash, paused the warning wash,
+ * matching the treatment the retired panel used so the states stay learnable.
+ */
+.row_chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    max-width: var(--max-width-xs);
+    padding: var(--padding-2xs) var(--padding-xs);
+    border-radius: var(--radius-full);
+    border: var(--border-width-thin) solid var(--color-border);
+    font-size: var(--font-size-caption);
+}
+
+.row_chip_active {
+    border-color: var(--color-success-alpha-45);
+    background: var(--color-success-alpha-18);
+    color: var(--color-success-text);
+}
+
+.row_chip_paused {
+    border-color: var(--color-warning-alpha-40);
+    background: var(--color-warning-alpha-15);
+    color: var(--color-warning-text);
+}
+
+.row_chip_text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

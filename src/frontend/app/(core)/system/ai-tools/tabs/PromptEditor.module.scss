@@ -1,0 +1,309 @@
+/**
+ * Styles for the saved-prompt editing surface now embedded in the Query tab's
+ * Conversation card: the prompt bar under the header (PromptEditorBar) and the
+ * triggers editor that unfolds beneath the composer (PromptTriggersEditor).
+ *
+ * Both sit *inside* the chat card rather than in a panel of their own, so the
+ * treatment here is deliberately quieter than the retired modal's: muted
+ * surfaces and hairline rules that read as part of the card, not as a second
+ * card stacked inside it. Cron/trigger visual states (valid, invalid, paused,
+ * failed) carry over from the modal unchanged so they stay learnable.
+ *
+ * Visual surfaces come from the Input / Button / IconButton / Switch primitives;
+ * this module adds only layout, the states those primitives do not carry, and
+ * the delete-confirm body.
+ */
+
+/*
+ * ===========================================================================
+ * PROMPT BAR — name, unsaved indicator, single Save, and the row actions.
+ * ===========================================================================
+ */
+.bar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    padding: var(--padding-xs) var(--card-padding-sm);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    background: var(--color-surface-muted);
+    /* The chat card is a flex column that clips its overflow, and the transcript
+       is the only child meant to absorb pressure. Matching .composer's opt-out of
+       shrinking keeps this strip whole instead of letting it compress and clip. */
+    flex-shrink: 0;
+}
+
+/* A failing trigger is worth seeing from the header, not only in the editor. */
+.bar_error {
+    border-bottom-color: var(--color-danger-alpha-50);
+}
+
+.bar_row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+/* Layout-only on top of the shared <Input>: fill the row, and allow the flex
+   item to shrink below its content width so the actions never wrap alone. */
+.name_input {
+    flex: 1 1 12rem;
+    min-width: 0;
+}
+
+.dirty {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-warning-text);
+}
+
+.dirty_dot {
+    width: var(--gap-xs);
+    height: var(--gap-xs);
+    border-radius: var(--radius-full);
+    background: var(--color-warning);
+}
+
+.bar_actions {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    margin-left: auto;
+}
+
+/*
+ * Triggers disclosure — a chip rather than a button so it reads as a section
+ * toggle beside the icon actions, and takes the primary wash while open to
+ * pair with the editor showing below the composer.
+ */
+.triggers_toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: var(--padding-2xs) var(--padding-xs);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    cursor: pointer;
+
+    &:hover {
+        color: var(--color-text);
+        border-color: var(--color-primary-alpha-38);
+    }
+}
+
+.triggers_toggle_open {
+    border-color: var(--color-primary-alpha-38);
+    background: var(--color-primary-alpha-15);
+    color: var(--color-primary);
+}
+
+.bar_meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.bar_meta_error {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    color: var(--color-danger);
+}
+
+/* Pushed to the end so the run status stays first on a narrow card. */
+.bar_meta_hint {
+    margin-left: auto;
+    color: var(--color-text-subtle);
+}
+
+/*
+ * ===========================================================================
+ * TRIGGERS EDITOR — unfolds under the composer, inside the same card.
+ * ===========================================================================
+ */
+.triggers {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    padding: var(--padding-sm) var(--card-padding-sm) var(--card-padding-sm);
+    border-top: var(--border-width-thin) solid var(--color-border);
+    background: var(--color-surface-muted);
+    /* Same reason as .bar: several trigger rows must grow the card, not be
+       squeezed against the clipped edge of a fixed-height flex column. */
+    flex-shrink: 0;
+}
+
+.field_label {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+/* Helper text under a field, explaining when and why it applies. */
+.field_hint {
+    margin: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+/* Hook picker fills the field column (class lands on the <Select> wrapper). */
+.full_width_select {
+    width: 100%;
+}
+
+/* The cron field keeps a monospace face for the expression and reddens its
+   border on an invalid value — neither is carried by the shared <Input>. */
+.cron_input {
+    font-family: var(--font-mono);
+
+    &[aria-invalid='true'] {
+        border-color: var(--color-danger-alpha-50);
+    }
+}
+
+.schedule_description {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+}
+
+.schedule_description_ok {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    color: var(--color-success-text);
+}
+
+.schedule_description_error {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    color: var(--color-danger);
+}
+
+.next_run {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.next_run_paused {
+    color: var(--color-warning-text);
+}
+
+.presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-2xs);
+}
+
+.last_run {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.last_run_error {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    color: var(--color-danger);
+}
+
+/*
+ * One trigger element — a bordered sub-block holding the kind header (icon +
+ * enable switch + remove) and the kind-specific fields (cron expression +
+ * presets, or hook picker + type filter). Sits on the card surface so it lifts
+ * off the muted section background around it.
+ */
+.trigger_row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    padding: var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+}
+
+.trigger_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+.trigger_kind {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text-muted);
+}
+
+.trigger_header_actions {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.trigger_enabled_label {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.trigger_actions {
+    display: flex;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+/*
+ * ===========================================================================
+ * DELETE-CONFIRM MODAL BODY — the one dialog the editor still opens, because
+ * deleting a scheduled prompt is not an action to take on a stray click.
+ * ===========================================================================
+ */
+.confirm {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.confirm_text {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+}
+
+.confirm_warning {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    margin: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-warning-text);
+}
+
+.confirm_actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+}

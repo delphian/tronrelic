@@ -1,8 +1,9 @@
 /**
  * @file savedPromptCron.ts
  *
- * Cron + relative-time utilities for the Query tab's saved-prompts surface
- * (SavedPromptsPanel, PromptEditModal). All cron evaluation is pinned to UTC
+ * Cron + relative-time utilities for the Query tab's saved-prompt surfaces — the
+ * header selector, the prompt bar, and the triggers editor, all of which reach
+ * these through `savedPromptDraft.ts`. All cron evaluation is pinned to UTC
  * end-to-end so it matches the backend `scheduled-prompts-runner`, which passes
  * `{ tz: 'UTC' }` to the same cron-parser. Mixing local time anywhere here would
  * let the countdown lie to a non-UTC viewer.

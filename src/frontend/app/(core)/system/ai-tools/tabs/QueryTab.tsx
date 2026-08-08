@@ -6,7 +6,7 @@
  * shared core socket: each send mints a client-side `queryId`, POSTs the prompt
  * with the prior turns as history, and appends the streamed deltas to a pending
  * assistant turn by filtering the GLOBAL `ai-tools:query-stream` event on that
- * id. A model picker reads `GET /query/models` (graceful when empty), and a
+ * id. A model picker reads `GET /query/providers` (graceful when empty), and a
  * history view groups past records by `conversationId` so any thread can be
  * reopened into the transcript. Like the sibling tabs this is an interactive
  * admin client surface, not an SSR-first public component — loading states are
@@ -18,17 +18,40 @@
  * run. Being one-shot, it has no three-state contract to preserve: the explicit
  * selection is sent verbatim on every send (`[]` = no tools; a name list = that
  * subset), and a scoped lethal-trifecta preview updates while the dropdown is open.
+ *
+ * This card is also the **saved-prompt editor**. The library is a dropdown beside
+ * the header label; picking a prompt starts a fresh chat and loads that prompt's
+ * text into the composer, its model pin into the picker, its allowlist into the
+ * tools dropdown, and its triggers into the editor below — so one Save writes the
+ * whole document and there is no separate modal. Three consequences follow from
+ * the composer doubling as the body field, and each is enforced below:
+ *
+ * - **Send does not clear the composer while a prompt is loaded.** The text is
+ *   the prompt body; clearing it would empty what Save writes. Plain chat with no
+ *   prompt loaded still clears as before.
+ * - **The tool selection is sticky while a prompt is loaded**, because it *is*
+ *   that prompt's allowlist rather than a one-shot grant. The one-shot
+ *   clear-after-send applies only to plain chat.
+ * - **The allowlist keeps its three-state contract.** `undefined` means "every
+ *   enabled tool, kept current" and is only pre-filled for display; `toolsTouched`
+ *   records whether the operator really engaged the picker, so an untouched save
+ *   writes `null` instead of freezing today's enabled set.
+ *
+ * The model picker spans every registered provider so a prompt can pin a model on
+ * a non-active one. An interactive send always runs on the *active* provider, so a
+ * pin belonging to a different provider is deliberately not forwarded as the
+ * per-send model override — it still saves onto the prompt for its autonomous runs.
  */
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { Send, Bot, User, AlertCircle, X, Copy, CheckCircle, Plus, History, MessageSquare, RefreshCw, ChevronDown, ChevronRight, Brain, Wrench, CornerDownRight, Info, Play, Bookmark } from 'lucide-react';
+import { Send, Bot, User, AlertCircle, X, Copy, CheckCircle, Plus, History, MessageSquare, RefreshCw, ChevronDown, ChevronRight, Brain, Wrench, CornerDownRight, Info, Bookmark, Trash2, AlertTriangle } from 'lucide-react';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
-import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IAiToolInfo, IAiToolResultSegment, IAiTranscriptSegment, IModelInfo, ISavedPrompt, IToolInvocationRecord, ITrifectaStatus } from '@/types';
+import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IAiToolInfo, IAiToolResultSegment, IAiTranscriptSegment, ISavedPrompt, IToolInvocationRecord, ITrifectaStatus } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
@@ -44,21 +67,39 @@ import {
     cancelQuery,
     getQueryHistory,
     getConversation,
-    getQueryModels,
+    getQueryProviders,
     listActivity,
     listTools,
     getTrifectaPreview,
     runSavedPromptNow,
     listSavedPrompts,
     saveSavedPrompt,
+    deleteSavedPrompt,
+    listPromptTriggerHooks,
+    type IAiProviderModels,
+    type IBindableHookInfo,
     type IStreamAck
 } from '../../../../../modules/ai-tools';
 import { useToast } from '../../../../../components/ui/ToastProvider';
-import { SavedPromptsPanel } from './SavedPromptsPanel';
+import { useModal } from '../../../../../components/ui/ModalProvider';
 import { InvocationDetailPanel } from '../components/InvocationDetailPanel';
 import { InvocationTable } from '../components/InvocationTable';
 import { ToolAllowlistDropdown } from '../components/ToolAllowlistDropdown';
+import { SavedPromptSelector } from '../components/SavedPromptSelector';
+import { PromptEditorBar } from './PromptEditorBar';
+import { PromptTriggersEditor } from './PromptTriggersEditor';
+import {
+    type ITriggerDraft,
+    toTriggerDrafts,
+    toTriggerRequests,
+    hasInvalidTriggerDraft,
+    encodeModelPin,
+    decodeModelPin,
+    resolveToolAllowlistForSave,
+    isPromptDirty
+} from './savedPromptDraft';
 import pageStyles from '../page.module.scss';
+import promptStyles from './PromptEditor.module.scss';
 import styles from './QueryTab.module.scss';
 
 /** WebSocket event carrying a streamed AI response chunk to the dashboard. */
@@ -66,6 +107,16 @@ const QUERY_STREAM_EVENT = 'ai-tools:query-stream';
 
 /** Number of history records pulled for the grouped conversation list. */
 const HISTORY_LIMIT = 100;
+
+/**
+ * How often (ms) the saved-prompt list is refetched while at least one trigger
+ * is enabled, so a `lastRunAt` written by the backend scheduler appears without
+ * a page refresh. There is no WebSocket signal for an autonomous run, so this
+ * poll is the refresh channel; the backend job ticks every two minutes, so a 30s
+ * cadence surfaces a new run quickly while staying light. Gated on there being
+ * an active trigger, so an all-manual prompt library never polls.
+ */
+const SAVED_PROMPT_REFRESH_MS = 30_000;
 
 /**
  * Singleton unified processor converting assistant markdown to sanitized HTML.
@@ -498,11 +549,23 @@ function nextTurnPromptName(existing: ISavedPrompt[]): string {
  */
 export function QueryTab() {
     const { push } = useToast();
+    const modal = useModal();
     const [messages, setMessages] = useState<ChatTurn[]>([]);
     const [input, setInput] = useState('');
     const [streaming, setStreaming] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [models, setModels] = useState<IModelInfo[]>([]);
+    /**
+     * Every registered AI provider with its model catalog. Spans providers (not
+     * just the active one) because a saved prompt may pin a model on a provider
+     * that is not currently the transport — the picker has to be able to offer it.
+     */
+    const [providers, setProviders] = useState<IAiProviderModels[]>([]);
+    /**
+     * The composer's model choice, encoded `providerId|model`; `''` = the active
+     * provider's default. One control serves two purposes: the override for the
+     * next interactive send, and — while a prompt is loaded — that prompt's
+     * persisted pin.
+     */
     const [modelOverride, setModelOverride] = useState<string>('');
     /** The full tool registry (enabled + disabled), backing the per-run allowlist picker. */
     const [tools, setTools] = useState<IAiToolInfo[]>([]);
@@ -524,10 +587,41 @@ export function QueryTab() {
     const [conversations, setConversations] = useState<ConversationGroup[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyError, setHistoryError] = useState<string | null>(null);
-    /** Shared saved-prompts list; the panel loads it on first open and the composer reads it. */
+    /** The saved-prompt library, backing the header selector and the editor. */
     const [savedPrompts, setSavedPrompts] = useState<ISavedPrompt[]>([]);
     /** Id of the user turn whose "save as prompt" write is in flight, or null when idle. */
     const [savingTurnId, setSavingTurnId] = useState<string | null>(null);
+
+    /*
+     * ---- Saved-prompt editor -------------------------------------------------
+     * Whether the prompt bar is showing, which stored prompt it edits (null while
+     * writing a brand-new one), and the drafts for the fields the composer does
+     * not already own. Body, model, and tools live in the composer controls above
+     * — that is the whole point of retiring the modal — so only the name and the
+     * trigger rows need state of their own.
+     */
+    /** Whether a prompt is being edited; drives the bar and the triggers section. */
+    const [editingPrompt, setEditingPrompt] = useState(false);
+    /** Id of the stored prompt under edit, or null for one not yet created. */
+    const [loadedPromptId, setLoadedPromptId] = useState<string | null>(null);
+    /** The name field's draft value. */
+    const [promptName, setPromptName] = useState('');
+    /** The trigger rows as edited; saved together with everything else. */
+    const [triggerDrafts, setTriggerDrafts] = useState<ITriggerDraft[]>([]);
+    /** Whether the triggers editor is revealed beneath the composer. */
+    const [triggersOpen, setTriggersOpen] = useState(false);
+    /** Whether the single prompt save is in flight. */
+    const [promptSaving, setPromptSaving] = useState(false);
+    /**
+     * Whether the operator actually engaged the Tools picker while editing this
+     * prompt. The pre-fill seeds the selection to the full enabled set for
+     * display, which is indistinguishable from a deliberate "select all"; this
+     * flag records real intent so an untouched save of an unset prompt writes
+     * `null` (all enabled, auto-updating) rather than freezing today's set.
+     */
+    const [toolsTouched, setToolsTouched] = useState(false);
+    /** Declared hook seams a hook trigger may bind to, for the triggers editor. */
+    const [bindableHooks, setBindableHooks] = useState<IBindableHookInfo[]>([]);
     /** Conversation ids whose full opening prompt is expanded inline in the history list. */
     const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
     /**
@@ -666,9 +760,15 @@ export function QueryTab() {
      * just a readout — narrowing a selection should not mean reopening the
      * dropdown to hunt for the checkbox.
      *
-     * @param name - The tool name to revoke for the next message.
+     * Marks the selection as touched for the same reason the dropdown's onChange
+     * does: while a saved prompt is loaded this chip row edits that prompt's
+     * allowlist, and a removal here has to count as real intent or the save path
+     * would discard it as part of the display-only pre-fill.
+     *
+     * @param name - The tool name to revoke.
      */
     const handleRevokeTool = useCallback((name: string) => {
+        setToolsTouched(true);
         setToolSelection(prev => prev.filter(entry => entry !== name));
     }, []);
 
@@ -687,6 +787,13 @@ export function QueryTab() {
      * this flag prevents setState-after-unmount work.
      */
     const isMountedRef = useRef(true);
+    /**
+     * Bumped on every authoritative write to {@link savedPrompts} (a save, a
+     * duplicate, a delete). The background refresh poll captures it before its
+     * request and discards its own response if the value moved, so a slow poll
+     * can never overwrite fresher data it started before.
+     */
+    const savedPromptsWriteRef = useRef(0);
 
     useEffect(() => {
         isMountedRef.current = true;
@@ -698,17 +805,52 @@ export function QueryTab() {
         };
     }, []);
 
-    // Load the active provider's models once. Empty array ⇒ no override choices.
+    // Load every provider's model catalog once. Empty array ⇒ no override choices.
     useEffect(() => {
         let cancelled = false;
         void (async () => {
             try {
-                const list = await getQueryModels();
+                const list = await getQueryProviders();
                 if (!cancelled) {
-                    setModels(list);
+                    setProviders(list);
                 }
             } catch {
                 /* secondary data — the picker simply offers no choices on failure */
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    // Load the saved-prompt library once, so the header selector is populated
+    // before the operator opens it. Secondary data on an admin surface: a quiet
+    // failure leaves the selector empty, never a broken chat.
+    useEffect(() => {
+        let cancelled = false;
+        void (async () => {
+            try {
+                const list = await listSavedPrompts();
+                if (!cancelled) {
+                    setSavedPrompts(list);
+                }
+            } catch {
+                /* selector renders its empty state */
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    // Load the bindable-hook catalog for the triggers editor's hook picker. A
+    // quiet failure leaves the picker empty and "Add hook trigger" disabled.
+    useEffect(() => {
+        let cancelled = false;
+        void (async () => {
+            try {
+                const hooks = await listPromptTriggerHooks();
+                if (!cancelled) {
+                    setBindableHooks(hooks);
+                }
+            } catch {
+                /* picker stays empty; hook triggers cannot be added */
             }
         })();
         return () => { cancelled = true; };
@@ -731,6 +873,166 @@ export function QueryTab() {
         })();
         return () => { cancelled = true; };
     }, []);
+
+    /** The stored document behind the editor, or null while creating a new one. */
+    const loadedPrompt = useMemo(
+        () => savedPrompts.find(prompt => prompt.id === loadedPromptId) ?? null,
+        [savedPrompts, loadedPromptId]
+    );
+
+    /** The provider an interactive send actually runs on, or null when none is installed. */
+    const activeProvider = useMemo(
+        () => providers.find(provider => provider.active) ?? null,
+        [providers]
+    );
+
+    /**
+     * The model override forwarded with the next interactive send. An interactive
+     * query always executes on the active provider, so a pin belonging to a
+     * different provider is deliberately dropped here rather than handed over as
+     * a model that provider cannot resolve. The pin itself is untouched and still
+     * saves onto the prompt, where its autonomous runs resolve the right transport.
+     */
+    const sendModel = useMemo(() => {
+        const { providerId, model } = decodeModelPin(modelOverride);
+        if (!model) {
+            return undefined;
+        }
+        return providerId === activeProvider?.id ? model : undefined;
+    }, [modelOverride, activeProvider]);
+
+    /**
+     * Whether the composer's pin names a provider that is not the active one — the
+     * case {@link sendModel} drops. Surfaced beside the picker so the operator is
+     * told the pin applies to scheduled runs only, rather than silently wondering
+     * why their chosen model did not answer.
+     */
+    const pinnedProviderInactive = useMemo(() => {
+        const { providerId } = decodeModelPin(modelOverride);
+        return providerId !== null && providerId !== activeProvider?.id;
+    }, [modelOverride, activeProvider]);
+
+    /** Whether any prompt carries an enabled trigger; gates the refresh poll. */
+    const hasActiveSchedule = useMemo(
+        () => savedPrompts.some(prompt => (prompt.triggers ?? []).some(trigger => trigger.enabled)),
+        [savedPrompts]
+    );
+
+    // Refetch the library while a schedule is live so a backend-written
+    // `lastRunAt` surfaces without a manual refresh. Errors are swallowed — the
+    // next tick retries — and only the stored list is replaced, so an in-progress
+    // edit in the bar or the triggers editor is never disturbed.
+    useEffect(() => {
+        if (!hasActiveSchedule) {
+            return;
+        }
+        const id = setInterval(() => {
+            // Two writers share `savedPrompts`: this poll and the save response.
+            // A poll that started before a save would land afterwards carrying
+            // pre-save data — for a create that momentarily un-resolves
+            // `loadedPrompt`, flipping the bar back to "Not saved yet" and hiding
+            // its actions. Discarding any response whose generation is stale
+            // makes the save the winner without serialising the two.
+            const generation = savedPromptsWriteRef.current;
+            listSavedPrompts()
+                .then(list => {
+                    if (isMountedRef.current && savedPromptsWriteRef.current === generation) {
+                        setSavedPrompts(list);
+                    }
+                })
+                .catch(() => {});
+        }, SAVED_PROMPT_REFRESH_MS);
+        return () => clearInterval(id);
+    }, [hasActiveSchedule]);
+
+    /** Names of every enabled tool — the display-only pre-fill set. */
+    const enabledToolNames = useMemo(
+        () => tools.filter(tool => tool.enabled).map(tool => tool.name),
+        [tools]
+    );
+
+    /**
+     * Whether the Tools picker should show the pre-fill. True for an editor whose
+     * prompt carries no explicit allowlist — a stored prompt with `undefined`, or
+     * a brand-new one — and only while the operator has not engaged the picker.
+     * Deliberately a boolean rather than a prompt object, so the 30s library poll
+     * minting a fresh `loadedPrompt` identity cannot re-trigger the effect below.
+     */
+    const needsToolPrefill = editingPrompt
+        && !toolsTouched
+        && (loadedPrompt ? loadedPrompt.toolAllowlist === undefined : true);
+
+    // Show every enabled tool for a prompt that restricts none. Display only:
+    // `toolsTouched` stays false, so the save path still writes `null` — freezing
+    // today's set here would silently exclude every tool enabled later. The
+    // equality bail matters as much as the fill: without it each poll response
+    // would rewrite an identical array and re-issue the trifecta preview.
+    useEffect(() => {
+        if (!needsToolPrefill || enabledToolNames.length === 0) {
+            return;
+        }
+        setToolSelection(prev => (
+            prev.length === enabledToolNames.length && prev.every(name => enabledToolNames.includes(name))
+                ? prev
+                : enabledToolNames
+        ));
+    }, [needsToolPrefill, enabledToolNames]);
+
+    /**
+     * Whether the editor holds changes the stored prompt does not have yet,
+     * across every field the single Save writes. Drives the unsaved dot — the
+     * only signal that the composer text an operator is iterating on has diverged
+     * from what a schedule would actually fire — and gates the discard guard below.
+     */
+    const promptDirty = useMemo(() => editingPrompt && isPromptDirty(loadedPrompt, {
+        name: promptName,
+        body: input,
+        modelPin: modelOverride,
+        toolSelection,
+        toolsTouched,
+        triggers: triggerDrafts
+    }), [editingPrompt, loadedPrompt, promptName, input, modelOverride, toolSelection, toolsTouched, triggerDrafts]);
+
+    /**
+     * Run an action that would overwrite the editor, asking first when there are
+     * unsaved changes. Every entry point that replaces editor state — loading
+     * another prompt, New chat, closing the bar, reopening a past conversation —
+     * routes through here, because those edits are invisible once discarded and
+     * the unsaved dot is the only warning an operator ever gets. Passes straight
+     * through when nothing is dirty, so the common path stays one click.
+     *
+     * @param action - The state-replacing work to run once it is safe.
+     */
+    const guardUnsavedPrompt = useCallback((action: () => void) => {
+        if (!promptDirty) {
+            action();
+            return;
+        }
+        const modalId = modal.open({
+            title: 'Discard unsaved changes?',
+            size: 'sm',
+            dismissible: true,
+            content: (
+                <div className={promptStyles.confirm}>
+                    <p className={promptStyles.confirm_text}>
+                        This prompt has edits that have not been saved. Continuing discards them.
+                    </p>
+                    <div className={promptStyles.confirm_actions}>
+                        <Button variant="ghost" size="xs" onClick={() => modal.close(modalId)}>
+                            Keep editing
+                        </Button>
+                        <Button
+                            variant="danger"
+                            size="xs"
+                            onClick={() => { modal.close(modalId); action(); }}
+                        >
+                            Discard changes
+                        </Button>
+                    </div>
+                </div>
+            )
+        });
+    }, [promptDirty, modal]);
 
     // Preview the lethal-trifecta posture of the current selection, but only
     // while the Tools dropdown is open — a closed dropdown needs no preview,
@@ -976,10 +1278,18 @@ export function QueryTab() {
             role: 'assistant',
             content: '',
             pending: true,
-            model: modelOverride || undefined
+            // The resolved override, not the raw pin: a pin on a non-active
+            // provider is not what actually answers, so labelling the turn with
+            // it would misreport which model produced the text.
+            model: sendModel
         };
         setMessages(prev => [...prev, userTurn, assistantTurn]);
-        setInput('');
+        // While a prompt is loaded the composer holds that prompt's body, so the
+        // text stays put — the operator is iterating on a prompt, not spending a
+        // one-shot chat turn, and clearing it would empty what Save writes.
+        if (!editingPrompt) {
+            setInput('');
+        }
 
         const queryId = generateUUID();
         activeQueryIdRef.current = queryId;
@@ -991,7 +1301,7 @@ export function QueryTab() {
                 prompt: trimmed,
                 queryId,
                 socketId,
-                model: modelOverride || undefined,
+                model: sendModel,
                 messages: priorMessages,
                 conversationId,
                 stream: true,
@@ -1009,7 +1319,13 @@ export function QueryTab() {
             // accepted this run so a later ordinary message cannot silently
             // reuse a previously granted side-effecting tool. Honors the
             // "grant only what this run needs" contract this picker advertises.
-            setToolSelection([]);
+            //
+            // Skipped while a prompt is loaded: there the selection is that
+            // prompt's persisted allowlist rather than a one-shot grant, so
+            // clearing it would stage "no tools" onto the next Save.
+            if (!editingPrompt) {
+                setToolSelection([]);
+            }
         } catch (err) {
             streamingTurnIdRef.current = null;
             activeQueryIdRef.current = null;
@@ -1022,7 +1338,7 @@ export function QueryTab() {
                 error: err instanceof Error ? err.message : 'Failed to submit query'
             });
         }
-    }, [input, streaming, messages, modelOverride, toolSelection, updateTurn]);
+    }, [input, streaming, messages, modelOverride, sendModel, editingPrompt, toolSelection, updateTurn]);
 
     /**
      * Save a chat turn's prompt — together with the tools that turn was granted
@@ -1132,11 +1448,13 @@ export function QueryTab() {
         }
     }, []);
 
-    /** Start a fresh conversation: clear the transcript and mint a new id. */
-    const handleNewChat = useCallback(() => {
-        if (streaming) {
-            return;
-        }
+    /**
+     * Reset the conversation surface itself — transcript, ids, and audit records.
+     * Split out from {@link handleNewChat} because loading a saved prompt needs
+     * exactly this much (a fresh chat to try the prompt in) and must not touch
+     * the composer, which is about to receive the prompt's body.
+     */
+    const resetConversation = useCallback(() => {
         setMessages([]);
         setError(null);
         streamingTurnIdRef.current = null;
@@ -1144,7 +1462,308 @@ export function QueryTab() {
         conversationIdRef.current = null;
         setConversationRecords([]);
         setSelectedRecord(null);
-    }, [streaming]);
+    }, []);
+
+    /**
+     * Start over completely: a fresh conversation *and* a cleared composer, model
+     * pin, and tool grant, with any prompt editor dismissed. This is the escape
+     * hatch from prompt-authoring mode — where the composer deliberately keeps its
+     * text after a send — back to an empty least-privilege chat, so it clears more
+     * than the transcript.
+     */
+    const handleNewChat = useCallback(() => {
+        if (streaming) {
+            return;
+        }
+        guardUnsavedPrompt(() => {
+            resetConversation();
+            setInput('');
+            setModelOverride('');
+            setToolSelection([]);
+            setToolsTouched(false);
+            setEditingPrompt(false);
+            setLoadedPromptId(null);
+            setPromptName('');
+            setTriggerDrafts([]);
+            setTriggersOpen(false);
+        });
+    }, [streaming, resetConversation, guardUnsavedPrompt]);
+
+    /**
+     * Load a saved prompt for editing: start a fresh chat, then fill every control
+     * that makes up the prompt — composer body, model pin, tool allowlist, and
+     * trigger rows. This is what replaces the old edit modal; from here a single
+     * Save writes all of it back.
+     *
+     * The allowlist seeding carries the three-state contract: a prompt with an
+     * explicit list (including `[]`) seeds verbatim, while one with none is
+     * pre-filled with the enabled set for display only, leaving `toolsTouched`
+     * false so an untouched save still writes `null`.
+     *
+     * @param prompt - The prompt picked from the header selector.
+     */
+    const handleSelectPrompt = useCallback((prompt: ISavedPrompt) => {
+        if (streaming) {
+            return;
+        }
+        guardUnsavedPrompt(() => {
+            resetConversation();
+            setInput(prompt.prompt);
+            setPromptName(prompt.name);
+            setModelOverride(encodeModelPin(prompt));
+            // `??` not `||`: a stored `[]` is a deliberate "no tools" and must
+            // survive, where the pre-fill effect handles the `undefined` case.
+            setToolSelection(prompt.toolAllowlist ?? []);
+            setToolsTouched(false);
+            setTriggerDrafts(toTriggerDrafts(prompt.triggers));
+            setLoadedPromptId(prompt.id);
+            setEditingPrompt(true);
+            setTriggersOpen(false);
+            textareaRef.current?.focus();
+        });
+    }, [streaming, resetConversation, guardUnsavedPrompt]);
+
+    /**
+     * Begin a new saved prompt from what is already in the composer. Deliberately
+     * keeps the composer text, model choice, and tool grant — "from composer" is
+     * the whole affordance, and it is how a query an operator just tuned by hand
+     * becomes a reusable prompt without retyping it.
+     */
+    const handleCreateNewPrompt = useCallback(() => {
+        guardUnsavedPrompt(() => {
+            setLoadedPromptId(null);
+            setPromptName('');
+            setTriggerDrafts([]);
+            // Only an actual grant counts as intent. Forcing this true would make
+            // the composer's least-privilege default (`[]`) save as a hard deny,
+            // producing a prompt that runs inert on every scheduled firing; left
+            // false, an empty selection falls through to the pre-fill and saves
+            // as "unset", which is what a new prompt is supposed to mean.
+            setToolsTouched(toolSelection.length > 0);
+            setEditingPrompt(true);
+            setTriggersOpen(false);
+        });
+    }, [guardUnsavedPrompt, toolSelection]);
+
+    /**
+     * Stop editing without altering the conversation. The composer keeps its text
+     * — an operator dismissing the bar is stepping out of prompt-editing mode, not
+     * discarding the query they were working on — but the tool grant is reset.
+     *
+     * That reset is deliberate and not symmetric with the text: while editing, the
+     * selection may be the display-only pre-fill of *every enabled tool*, which
+     * was never a grant the operator made. Carrying it into the next ad-hoc
+     * message would hand a one-off question every enabled tool, contradicting the
+     * dropdown's own least-privilege contract.
+     */
+    const handleCloseEditor = useCallback(() => {
+        guardUnsavedPrompt(() => {
+            setEditingPrompt(false);
+            setLoadedPromptId(null);
+            setPromptName('');
+            setTriggerDrafts([]);
+            setTriggersOpen(false);
+            setToolsTouched(false);
+            setToolSelection([]);
+        });
+    }, [guardUnsavedPrompt]);
+
+    /**
+     * Record a real selection edit and update the grant. Wraps the tool dropdown's
+     * onChange so every toggle marks the selection as engaged — distinguishing a
+     * deliberate choice from the display-only pre-fill, which the save path treats
+     * differently.
+     *
+     * @param names - The next selected tool names from the picker.
+     */
+    const handleToolSelectionChange = useCallback((names: string[]) => {
+        setToolsTouched(true);
+        setToolSelection(names);
+    }, []);
+
+    /**
+     * Persist the whole prompt in one write — name, body, model pin, tool
+     * allowlist, and triggers. One Save because the operator edits all of it in
+     * one surface; sending every field together also means the stored document
+     * always matches what the card is showing, which is what the unsaved
+     * indicator promises.
+     */
+    const handleSavePrompt = useCallback(async () => {
+        const trimmedName = promptName.trim();
+        const trimmedBody = input.trim();
+        if (!trimmedName || !trimmedBody) {
+            return;
+        }
+        setPromptSaving(true);
+        try {
+            const { providerId, model } = decodeModelPin(modelOverride);
+            const saved = await saveSavedPrompt({
+                ...(loadedPromptId ? { id: loadedPromptId } : {}),
+                name: trimmedName,
+                prompt: trimmedBody,
+                providerId,
+                model,
+                toolAllowlist: resolveToolAllowlistForSave(loadedPrompt, toolSelection, toolsTouched),
+                triggers: toTriggerRequests(triggerDrafts)
+            });
+            if (!isMountedRef.current) {
+                return;
+            }
+            savedPromptsWriteRef.current += 1;
+            setSavedPrompts(saved);
+            // Adopt the server's identity and its normalized triggers. A create
+            // has no id to match on, so it is found by name — the backend's
+            // unique index is case-insensitive, so this cannot be ambiguous.
+            // Without adopting the id, the next Save would create a second copy;
+            // without adopting the triggers, newly added rows would resend
+            // `id: undefined` and be treated as brand new, re-anchoring their
+            // cron and discarding their run bookkeeping.
+            const stored = loadedPromptId
+                ? saved.find(prompt => prompt.id === loadedPromptId)
+                : saved.find(prompt => prompt.name.toLowerCase() === trimmedName.toLowerCase());
+            if (stored) {
+                setLoadedPromptId(stored.id);
+                setTriggerDrafts(toTriggerDrafts(stored.triggers));
+                // The stored document is the new baseline, so intent is recorded
+                // in it now rather than in this flag.
+                setToolsTouched(false);
+            }
+            push({
+                tone: 'success',
+                title: loadedPromptId ? 'Prompt updated' : 'Prompt created',
+                description: `"${trimmedName}" saved.`
+            });
+        } catch (err) {
+            if (isMountedRef.current) {
+                push({
+                    tone: 'danger',
+                    title: 'Could not save prompt',
+                    description: err instanceof Error ? err.message : 'Failed to save the prompt.'
+                });
+            }
+        } finally {
+            if (isMountedRef.current) {
+                setPromptSaving(false);
+            }
+        }
+    }, [promptName, input, modelOverride, loadedPromptId, loadedPrompt, toolSelection, toolsTouched, triggerDrafts, push]);
+
+    /**
+     * Duplicate the prompt under an auto-suffixed name. The candidate is compared
+     * lowercased because the backend's unique-name index is case-insensitive, so
+     * a case-variant match must count as a collision here too — otherwise the save
+     * round-trips to a 409.
+     */
+    const handleDuplicatePrompt = useCallback(async () => {
+        if (!loadedPrompt) {
+            return;
+        }
+        const existingNames = new Set(savedPrompts.map(prompt => prompt.name.toLowerCase()));
+        let candidate = `${loadedPrompt.name} (copy)`;
+        let counter = 2;
+        while (existingNames.has(candidate.toLowerCase())) {
+            candidate = `${loadedPrompt.name} (copy ${counter})`;
+            counter += 1;
+        }
+        try {
+            savedPromptsWriteRef.current += 1;
+            // Carry the model pin and the allowlist, not just name + body. An
+            // omitted `toolAllowlist` reads as "every enabled tool", so copying a
+            // narrowly-scoped prompt without it would silently hand the copy more
+            // privilege than the original — `null` reproduces a source that
+            // genuinely restricts nothing. Triggers are deliberately NOT copied:
+            // a duplicate that inherits a cron would start firing on a schedule
+            // the operator never asked for.
+            setSavedPrompts(await saveSavedPrompt({
+                name: candidate,
+                prompt: loadedPrompt.prompt,
+                providerId: loadedPrompt.providerId ?? null,
+                model: loadedPrompt.model ?? null,
+                toolAllowlist: loadedPrompt.toolAllowlist ?? null
+            }));
+            push({
+                tone: 'success',
+                title: 'Prompt duplicated',
+                description: `Created "${candidate}" with the same model and tools. Triggers were not copied.`
+            });
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to duplicate prompt');
+        }
+    }, [loadedPrompt, savedPrompts, push]);
+
+    /**
+     * Delete the prompt under edit and dismiss the editor. Called only from the
+     * confirm dialog below.
+     *
+     * @param id - The prompt id to delete.
+     */
+    const handleDeletePrompt = useCallback(async (id: string) => {
+        try {
+            await deleteSavedPrompt(id);
+            savedPromptsWriteRef.current += 1;
+            setSavedPrompts(prev => prev.filter(prompt => prompt.id !== id));
+            // Straight to the raw reset: the document is gone, so there is nothing
+            // left for the discard guard in handleCloseEditor to protect.
+            setEditingPrompt(false);
+            setLoadedPromptId(null);
+            setPromptName('');
+            setTriggerDrafts([]);
+            setTriggersOpen(false);
+            setToolsTouched(false);
+            setToolSelection([]);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to delete prompt');
+        }
+    }, []);
+
+    /**
+     * Confirm before deleting, calling out attached triggers. This is the one
+     * dialog the inline editor still opens: deleting a prompt that something is
+     * scheduled to fire is not an action to take on a stray click, and the
+     * consequence (a schedule silently stopping) is invisible from the bar.
+     */
+    const confirmDeletePrompt = useCallback(() => {
+        if (!loadedPrompt) {
+            return;
+        }
+        const prompt = loadedPrompt;
+        const triggers = prompt.triggers ?? [];
+        const scheduleIsActive = triggers.some(trigger => trigger.enabled);
+        const modalId = modal.open({
+            title: 'Delete saved prompt?',
+            size: 'sm',
+            dismissible: true,
+            content: (
+                <div className={promptStyles.confirm}>
+                    <p className={promptStyles.confirm_text}>
+                        Delete <strong>{prompt.name}</strong>? This cannot be undone.
+                    </p>
+                    {scheduleIsActive && (
+                        <p className={promptStyles.confirm_warning}>
+                            <AlertTriangle size={14} /> Active triggers will stop firing.
+                        </p>
+                    )}
+                    {triggers.length > 0 && !scheduleIsActive && (
+                        <p className={promptStyles.confirm_warning}>
+                            <AlertTriangle size={14} /> Paused triggers will be removed with the prompt.
+                        </p>
+                    )}
+                    <div className={promptStyles.confirm_actions}>
+                        <Button variant="ghost" size="xs" onClick={() => modal.close(modalId)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="danger"
+                            size="xs"
+                            onClick={() => { modal.close(modalId); void handleDeletePrompt(prompt.id); }}
+                        >
+                            <Trash2 size={12} /> Delete
+                        </Button>
+                    </div>
+                </div>
+            )
+        });
+    }, [modal, loadedPrompt, handleDeletePrompt]);
 
     /**
      * Copy arbitrary text to the clipboard, flashing a check on whichever control
@@ -1284,6 +1903,18 @@ export function QueryTab() {
             activeQueryIdRef.current = null;
             conversationIdRef.current = conversationId;
             setMessages(rebuilt);
+            // Leave prompt-editing mode. The composer holds the prompt's body,
+            // and the operator has just moved into an unrelated thread that the
+            // next send would extend — keeping the bar up would claim they are
+            // still authoring a prompt while the surface below says otherwise.
+            // The caller has already cleared the discard guard.
+            setEditingPrompt(false);
+            setLoadedPromptId(null);
+            setPromptName('');
+            setTriggerDrafts([]);
+            setTriggersOpen(false);
+            setToolsTouched(false);
+            setToolSelection([]);
             // Drop the previous conversation's audit records up front so the
             // transcript's tool-detail lookup never shows the prior thread's
             // tools during this conversation's in-flight activity fetch — or
@@ -1317,10 +1948,32 @@ export function QueryTab() {
     }, [handleSend]);
 
     const hasTurns = messages.length > 0;
+    // Labels span every provider's catalog, not just the active one: a turn
+    // reopened from history may name a model whose provider is no longer active,
+    // and showing its raw id there would be a needless regression.
     const modelLabel = useMemo(
-        () => new Map(models.map(model => [model.id, model.display_name])),
-        [models]
+        () => new Map(providers.flatMap(provider => provider.models).map(model => [model.id, model.display_name])),
+        [providers]
     );
+
+    /**
+     * Why Save is unavailable, or null when it is available. Returned as prose
+     * rather than a boolean because the blocking condition can live in a section
+     * the operator is not looking at — an invalid cron is two clicks away — and a
+     * Save that is greyed out for no visible reason reads as a bug.
+     */
+    const saveBlockedReason = useMemo(() => {
+        if (!promptName.trim()) {
+            return 'Give the prompt a name before saving.';
+        }
+        if (!input.trim()) {
+            return 'The composer is empty — it holds this prompt’s text.';
+        }
+        if (hasInvalidTriggerDraft(triggerDrafts)) {
+            return 'A trigger is incomplete — open Triggers to fix it.';
+        }
+        return null;
+    }, [promptName, input, triggerDrafts]);
     // Running conversation cost: sum every priced turn. `null` when not a single
     // turn could be priced, so the header hides the figure rather than showing
     // a misleading $0.00 (mirrors the provider's own sum-or-hide behavior).
@@ -1341,8 +1994,8 @@ export function QueryTab() {
             <div className={styles.provider_line}>
                 <Bot size={16} className={styles.chat_header_icon} />
                 <span>
-                    {models.length > 0
-                        ? <>Active provider ready — <span className={styles.provider_label}>{models.length}</span> model{models.length === 1 ? '' : 's'} available.</>
+                    {activeProvider
+                        ? <>Active provider ready — <span className={styles.provider_label}>{activeProvider.models.length}</span> model{activeProvider.models.length === 1 ? '' : 's'} available.</>
                         : 'No active AI provider is installed — install and enable a provider plugin to run queries.'}
                 </span>
                 <span style={{ marginLeft: 'auto' }}>
@@ -1372,6 +2025,13 @@ export function QueryTab() {
                     <div className={styles.chat_header}>
                         <Bot size={16} className={styles.chat_header_icon} />
                         <span className={styles.chat_header_label}>Conversation</span>
+                        <SavedPromptSelector
+                            prompts={savedPrompts}
+                            loadedPromptId={loadedPromptId}
+                            onSelect={handleSelectPrompt}
+                            onCreateNew={handleCreateNewPrompt}
+                            disabled={streaming}
+                        />
                         {conversationCost != null && (
                             <span
                                 className={styles.conversation_cost}
@@ -1398,6 +2058,28 @@ export function QueryTab() {
                             </Button>
                         </div>
                     </div>
+
+                    {editingPrompt && (
+                        <PromptEditorBar
+                            prompt={loadedPrompt}
+                            name={promptName}
+                            onNameChange={setPromptName}
+                            dirty={promptDirty}
+                            saving={promptSaving}
+                            saveBlockedReason={saveBlockedReason}
+                            onSave={() => { void handleSavePrompt(); }}
+                            runBlockedReason={promptDirty
+                                ? 'Save first — Run executes the stored prompt, not your unsaved edits.'
+                                : null}
+                            onRun={() => { if (loadedPrompt) { void handleRunSavedPrompt(loadedPrompt); } }}
+                            onDuplicate={() => { void handleDuplicatePrompt(); }}
+                            onDelete={confirmDeletePrompt}
+                            onClose={handleCloseEditor}
+                            triggersOpen={triggersOpen}
+                            onToggleTriggers={() => setTriggersOpen(open => !open)}
+                            triggerCount={triggerDrafts.length}
+                        />
+                    )}
 
                     <div ref={transcriptRef} className={styles.transcript}>
                         {error && (
@@ -1576,28 +2258,47 @@ export function QueryTab() {
                             )}
                         </div>
                         <div className={styles.composer_toolbar}>
-                            {models.length > 0 && (
+                            {providers.length > 0 && (
                                 <Select
                                     value={modelOverride}
                                     onChange={(e) => setModelOverride(e.target.value)}
                                     className={styles.model_select}
                                     aria-label="Model for the next message"
-                                    title="Model for the next message — Default uses the provider's configured model"
+                                    title={editingPrompt
+                                        ? 'Model for the next message, and the model this prompt pins for its autonomous runs'
+                                        : "Model for the next message — Default uses the active provider's configured model"}
                                 >
                                     <option value="">Default model</option>
-                                    {models.map(model => (
-                                        <option key={model.id} value={model.id}>{model.display_name}</option>
+                                    {providers.map(provider => (
+                                        <optgroup
+                                            key={provider.id}
+                                            label={provider.active ? `${provider.label} (active)` : provider.label}
+                                        >
+                                            {provider.models.map(model => (
+                                                <option key={`${provider.id}|${model.id}`} value={`${provider.id}|${model.id}`}>
+                                                    {model.display_name}
+                                                </option>
+                                            ))}
+                                        </optgroup>
                                     ))}
                                 </Select>
+                            )}
+                            {pinnedProviderInactive && (
+                                <span className={styles.model_pin_note}>
+                                    Not the active provider — applies to scheduled runs only.
+                                </span>
                             )}
                             <ToolAllowlistDropdown
                                 tools={tools}
                                 selected={toolSelection}
-                                onChange={setToolSelection}
+                                onChange={handleToolSelectionChange}
                                 trifecta={trifecta}
                                 trifectaLoading={trifectaLoading}
                                 onOpenChange={setToolsOpen}
                                 disabled={streaming}
+                                hint={editingPrompt
+                                    ? 'Tools this saved prompt may call, on this message and on every autonomous run. An empty selection runs it with no tools. Provider-hosted tools (web search / fetch), when enabled for the model, still run regardless. Naming a tool that is later disabled or removed fails the run.'
+                                    : undefined}
                             />
                             <div className={styles.composer_send}>
                                 {streaming ? (
@@ -1623,15 +2324,18 @@ export function QueryTab() {
                             </div>
                         </div>
                     </div>
+
+                    {editingPrompt && triggersOpen && (
+                        <PromptTriggersEditor
+                            promptId={loadedPromptId ?? 'new'}
+                            drafts={triggerDrafts}
+                            onChange={setTriggerDrafts}
+                            stored={loadedPrompt?.triggers ?? []}
+                            bindableHooks={bindableHooks}
+                            disabled={promptSaving}
+                        />
+                    )}
                 </Card>
-                <SavedPromptsPanel
-                    prompts={savedPrompts}
-                    onPromptsChange={setSavedPrompts}
-                    currentPromptText={input}
-                    onLoadPromptText={(text) => { setInput(text); textareaRef.current?.focus(); }}
-                    onRun={(sp) => { void handleRunSavedPrompt(sp); }}
-                    onError={setError}
-                />
                 </>
             ) : (
                 <Stack gap="md">
@@ -1700,7 +2404,7 @@ export function QueryTab() {
                                             <Button
                                                 variant="secondary"
                                                 size="sm"
-                                                onClick={() => { void openConversation(group.conversationId); }}
+                                                onClick={() => guardUnsavedPrompt(() => { void openConversation(group.conversationId); })}
                                                 aria-label={`Open conversation starting "${group.firstPrompt}" in chat`}
                                             >
                                                 <MessageSquare size={16} /> Open in chat
