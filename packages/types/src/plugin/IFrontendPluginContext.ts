@@ -1272,20 +1272,43 @@ export interface IImageGenOptions {
     prompt: string;
 
     /**
-     * Optional reference image to edit or vary instead of generating from
-     * scratch. When supplied, the prompt describes the *change* to make to this
-     * image and the provider runs its image-to-image (edit) path rather than a
-     * from-nothing generation. Pass the SAME {@link IFileSelection} the file
-     * picker or a prior generation yields — the provider reads its opaque
-     * `fileId`, so the reference must already live in the platform file
-     * inventory (no external URL is ever fetched). Omit it — or pass `null` —
-     * for ordinary prompt-only generation; `null` is accepted so a consumer
-     * holding the selection in `useState<IFileSelection | null>(null)` can pass
-     * it straight through without coercing to `undefined`, matching the
-     * `IFileSelection | null` that {@link IFilePickerClient.pick} and
-     * {@link IImageGenClient.generate} return. A provider whose active generator
-     * cannot edit rejects the call, so a consumer that offers a reference
-     * control must be prepared to surface that rejection.
+     * Reference images the prompt may draw on, instead of generating from
+     * nothing. Pass the SAME {@link IFileSelection} objects the file picker or a
+     * prior generation yields — the provider reads their opaque `fileId`s, so
+     * every reference must already live in the platform file inventory (no
+     * external URL is ever fetched).
+     *
+     * How many you pass changes what the provider does, because "revise this
+     * picture" and "build a new picture out of these pictures" are genuinely
+     * different requests:
+     *
+     * - **none** (omitted, `null`, or empty) — prompt-only generation.
+     * - **one** — image-to-image edit. The prompt describes the *change* to make
+     *   to that image.
+     * - **two or more** — composition. The prompt describes a *new* image and
+     *   refers to elements of the supplied references ("put the watch from the
+     *   first image on the wrist in the second").
+     *
+     * Providers cap how many references they accept and reject an over-limit
+     * call with a message naming the limit, so a consumer offering a
+     * multi-reference control must surface that rejection. Order is meaningful:
+     * pass them in the order the prompt refers to them.
+     */
+    referenceImages?: IFileSelection[] | null;
+
+    /**
+     * Single reference image.
+     *
+     * @deprecated Use {@link IImageGenOptions.referenceImages} instead — it
+     * covers this case as a one-element list and additionally supports
+     * composition from several references. Retained so existing callers keep
+     * working: the core seam normalizes this into `referenceImages` before the
+     * active provider sees it, and a non-empty `referenceImages` always wins
+     * when both are supplied. Core keeps this field populated when exactly one
+     * reference survives normalization, so a provider pinned to a types release
+     * predating `referenceImages` still receives it. `null` is accepted so a consumer holding
+     * `useState<IFileSelection | null>(null)` can pass it through without
+     * coercing to `undefined`.
      */
     referenceImage?: IFileSelection | null;
 
@@ -1312,10 +1335,18 @@ export interface IImageGenProvider {
     providerId: string;
 
     /**
-     * Generate an image, persist it, and resolve the saved file selection. When
-     * `options.referenceImage` is set the provider runs its edit path against
-     * that image instead of generating from scratch; it rejects if its active
-     * generator cannot edit.
+     * Generate an image, persist it, and resolve the saved file selection. The
+     * reference count in `options.referenceImages` selects the path: none
+     * generates from scratch, one edits that image, several compose a new image
+     * from them. The provider rejects when its active generator cannot do the
+     * selected operation or when the reference count exceeds its limit.
+     *
+     * Implementations read `options.referenceImages` only. Core normalizes the
+     * deprecated singular `options.referenceImage` into it before calling, so a
+     * provider never has to handle both fields. Core additionally mirrors a lone
+     * reference back onto the singular field purely so providers pinned to a
+     * types release predating `referenceImages` keep working; a provider written
+     * against this contract ignores it.
      */
     generate: (options: IImageGenOptions) => Promise<IFileSelection>;
 }

@@ -66,16 +66,56 @@ export function registerImageGenProvider(provider: IImageGenProvider): () => voi
 }
 
 /**
+ * Collapse the two reference-image fields into just `referenceImages` so every
+ * provider reads one canonical shape and none has to know the deprecated
+ * singular `referenceImage` ever existed. Keeping this compat shim in core — one
+ * place — is what lets the singular field stay supported for existing callers
+ * without taxing every current and future provider with the same branch.
+ *
+ * A non-empty `referenceImages` wins outright, so a consumer that has migrated
+ * is never second-guessed. The singular field is consulted only when the plural
+ * one is absent or empty, and nullish entries are dropped from either field
+ * rather than reaching a provider as a `[null]` it would have to defend against
+ * — a multi-slot reference UI with an unfilled slot would otherwise both inflate
+ * the count (routing an edit to compose) and crash the provider's `fileId` read.
+ *
+ * The singular field is then *mirrored* rather than blanked, because providers
+ * are independently versioned packages: one still pinned to a types release
+ * predating `referenceImages` compiles fine while reading only `referenceImage`,
+ * so clearing it would silently drop the reference and hand the user an
+ * unrelated from-scratch image. Mirroring applies only at exactly one reference
+ * — the sole case the singular field expresses faithfully. Composition from
+ * several has no singular equivalent, leaving it the one capability such a
+ * provider cannot serve.
+ *
+ * @param options - Caller options, possibly using either or both reference fields.
+ * @returns Equivalent options whose canonical references live in `referenceImages`.
+ */
+function normalizeReferences(options: IImageGenOptions): IImageGenOptions {
+    const plural = (options.referenceImages ?? []).filter(Boolean);
+    const single = options.referenceImage;
+    const references = plural.length > 0 ? plural : single ? [single] : [];
+    return {
+        ...options,
+        referenceImages: references,
+        referenceImage: references.length === 1 ? references[0] : undefined
+    };
+}
+
+/**
  * Generate through the active provider, or resolve null when none is registered
  * — so consumers can `await generate()` uniformly and treat "no image provider
  * enabled" as a graceful no-op. A registered provider that fails rejects, so the
  * consumer can surface the reason.
  *
- * @param options - The prompt plus advisory provider options.
+ * Options are normalized first so the provider receives references only in
+ * `referenceImages`, whichever field the caller used.
+ *
+ * @param options - The prompt, any reference images, plus advisory provider options.
  * @returns The persisted image selection, or null when unavailable.
  */
 export async function generateImage(options: IImageGenOptions): Promise<IFileSelection | null> {
-    return activeProvider ? activeProvider.generate(options) : null;
+    return activeProvider ? activeProvider.generate(normalizeReferences(options)) : null;
 }
 
 /**
