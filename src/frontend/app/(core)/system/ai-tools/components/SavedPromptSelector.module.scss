@@ -16,6 +16,11 @@
     align-items: center;
     gap: var(--gap-2xs);
     max-width: var(--max-width-xs);
+    /* Without this the chip's automatic minimum size is its 320px max-width for
+       any long prompt name, so it refuses to compress and shoves the rest of the
+       header out of the clipped card. `.trigger_label` already hides its overflow,
+       which zeroes its own minimum, so truncation degrades to the ellipsis. */
+    min-width: 0;
     padding: var(--padding-2xs) var(--padding-xs);
     border: var(--border-width-thin) solid var(--color-border);
     border-radius: var(--radius-full);
@@ -63,8 +68,11 @@
     font-weight: var(--font-weight-semibold);
 }
 
-/* Muted so the caret reads as affordance rather than content. */
+/* Muted so the caret reads as affordance rather than content. Held at its own
+   size so a hard-compressed chip truncates the name rather than squashing the
+   glyph that signals the control opens. */
 .trigger_caret {
+    flex-shrink: 0;
     color: var(--color-text-muted);
 }
 

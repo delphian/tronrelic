@@ -80,8 +80,14 @@
     }
 }
 
+/* Wraps because the row carries a saved-prompt chip whose name can be long: in a
+   mobile-width or embedded container an unwrapped row would push the streaming
+   state and the New chat button past `.chat_card`'s clipped edge, making the
+   control unreachable rather than merely cramped. Inert when there is room, so no
+   container query is needed. */
 .chat_header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--gap-xs);
     padding: var(--padding-sm) var(--card-padding-sm);
