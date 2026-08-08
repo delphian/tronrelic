@@ -570,6 +570,13 @@ export function QueryTab() {
     /** The full tool registry (enabled + disabled), backing the per-run allowlist picker. */
     const [tools, setTools] = useState<IAiToolInfo[]>([]);
     /**
+     * Whether the tool-registry request is still in flight. Distinguishes "no
+     * tools granted" from "not known yet": an unrestricted prompt's selection is
+     * `[]` until the pre-fill runs, and `[]` is an explicit deny on the wire, so
+     * a send during this window would run the test with no tools at all.
+     */
+    const [toolsLoading, setToolsLoading] = useState(true);
+    /**
      * Tool names the next send is allowed to call. Defaults to none — a manual
      * query does nothing dangerous unless the operator grants a tool for that
      * run. Sent verbatim to the governor on every send: `[]` = no tools, a list =
@@ -869,6 +876,10 @@ export function QueryTab() {
                 }
             } catch {
                 /* picker shows no options; the run simply gets no tools */
+            } finally {
+                if (!cancelled) {
+                    setToolsLoading(false);
+                }
             }
         })();
         return () => { cancelled = true; };
@@ -904,8 +915,10 @@ export function QueryTab() {
     /**
      * Whether the composer's pin names a provider that is not the active one — the
      * case {@link sendModel} drops. Surfaced beside the picker so the operator is
-     * told the pin applies to scheduled runs only, rather than silently wondering
-     * why their chosen model did not answer.
+     * never left wondering why a different model answered. The note's wording is
+     * conditional because the consequence differs: while editing a prompt the pin
+     * still governs its autonomous runs, but in plain chat there is no prompt and
+     * no schedule, so the choice simply does not apply to anything.
      */
     const pinnedProviderInactive = useMemo(() => {
         const { providerId } = decodeModelPin(modelOverride);
@@ -1248,6 +1261,17 @@ export function QueryTab() {
         }
         setError(null);
 
+        // A prompt with no stored allowlist means "every enabled tool" — a state
+        // the composer can only express once the registry has loaded and the
+        // pre-fill has filled the picker. Sending before that resolves would
+        // submit `[]`, an explicit "no tools", so the interactive test would run
+        // unlike the prompt's own autonomous runs. Ctrl+Enter reaches this
+        // handler past the disabled Send button, so the guard belongs here too.
+        if (needsToolPrefill && toolsLoading) {
+            setError('Tool registry still loading — wait a moment and try again.');
+            return;
+        }
+
         // The backend scopes stream chunks to the requesting socket, so the live
         // socket id is required. It is only undefined before the deferred socket
         // connects; surface that instead of POSTing an empty value the server
@@ -1338,7 +1362,7 @@ export function QueryTab() {
                 error: err instanceof Error ? err.message : 'Failed to submit query'
             });
         }
-    }, [input, streaming, messages, modelOverride, sendModel, editingPrompt, toolSelection, updateTurn]);
+    }, [input, streaming, messages, modelOverride, sendModel, editingPrompt, toolSelection, needsToolPrefill, toolsLoading, updateTurn]);
 
     /**
      * Save a chat turn's prompt — together with the tools that turn was granted
@@ -1374,6 +1398,7 @@ export function QueryTab() {
             if (!isMountedRef.current) {
                 return;
             }
+            savedPromptsWriteRef.current += 1;
             setSavedPrompts(updated);
             push({
                 tone: 'success',
@@ -1666,7 +1691,6 @@ export function QueryTab() {
             counter += 1;
         }
         try {
-            savedPromptsWriteRef.current += 1;
             // Carry the model pin and the allowlist, not just name + body. An
             // omitted `toolAllowlist` reads as "every enabled tool", so copying a
             // narrowly-scoped prompt without it would silently hand the copy more
@@ -1674,13 +1698,19 @@ export function QueryTab() {
             // genuinely restricts nothing. Triggers are deliberately NOT copied:
             // a duplicate that inherits a cron would start firing on a schedule
             // the operator never asked for.
-            setSavedPrompts(await saveSavedPrompt({
+            const duplicated = await saveSavedPrompt({
                 name: candidate,
                 prompt: loadedPrompt.prompt,
                 providerId: loadedPrompt.providerId ?? null,
                 model: loadedPrompt.model ?? null,
                 toolAllowlist: loadedPrompt.toolAllowlist ?? null
-            }));
+            });
+            // Bump only once the write has landed and immediately before adopting
+            // its response, matching handleSavePrompt: a poll that started while
+            // the POST was in flight is then guaranteed to fail the generation
+            // check rather than replay a list that predates the duplicate.
+            savedPromptsWriteRef.current += 1;
+            setSavedPrompts(duplicated);
             push({
                 tone: 'success',
                 title: 'Prompt duplicated',
@@ -2285,7 +2315,9 @@ export function QueryTab() {
                             )}
                             {pinnedProviderInactive && (
                                 <span className={styles.model_pin_note}>
-                                    Not the active provider — applies to scheduled runs only.
+                                    {editingPrompt
+                                        ? 'Not the active provider — applies to scheduled runs only.'
+                                        : 'Not the active provider — this message runs on the active provider’s default model.'}
                                 </span>
                             )}
                             <ToolAllowlistDropdown
@@ -2315,7 +2347,7 @@ export function QueryTab() {
                                         variant="primary"
                                         size="md"
                                         onClick={() => { void handleSend(); }}
-                                        disabled={!input.trim()}
+                                        disabled={!input.trim() || (needsToolPrefill && toolsLoading)}
                                         aria-label="Send message"
                                     >
                                         <Send size={18} /> Send
