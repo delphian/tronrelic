@@ -1293,6 +1293,11 @@ export interface IImageGenOptions {
      * call with a message naming the limit, so a consumer offering a
      * multi-reference control must surface that rejection. Order is meaningful:
      * pass them in the order the prompt refers to them.
+     *
+     * Elements are non-nullable: a control with fixed slots that can be empty
+     * drops the empty ones before calling. Core does filter nullish entries at
+     * runtime, but that is defense for untyped callers rather than a widening of
+     * this contract — a provider is guaranteed a fully populated array.
      */
     referenceImages?: IFileSelection[] | null;
 
@@ -1333,6 +1338,20 @@ export interface IImageGenOptions {
 export interface IImageGenProvider {
     /** Id of the delivering provider plugin, for diagnostics/telemetry. */
     providerId: string;
+
+    /**
+     * Whether this provider can compose one image from two or more references.
+     * Omitted means no, which is what keeps providers pinned to a types release
+     * predating `referenceImages` safe: such a provider reads only the
+     * deprecated singular field, which core clears at two or more references, so
+     * a composition call would otherwise reach it as a bare prompt and persist
+     * an unrelated image instead of failing. Declaring `true` is therefore the
+     * opt-in that says "this provider reads `referenceImages`". It is a
+     * capability flag, not a limit — a composing provider still enforces its own
+     * numeric ceiling, which is model-dependent and rejects over-limit calls
+     * with a message naming the limit.
+     */
+    supportsComposition?: boolean;
 
     /**
      * Generate an image, persist it, and resolve the saved file selection. The

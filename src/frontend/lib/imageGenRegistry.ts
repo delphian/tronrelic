@@ -74,10 +74,12 @@ export function registerImageGenProvider(provider: IImageGenProvider): () => voi
  *
  * A non-empty `referenceImages` wins outright, so a consumer that has migrated
  * is never second-guessed. The singular field is consulted only when the plural
- * one is absent or empty, and nullish entries are dropped from either field
- * rather than reaching a provider as a `[null]` it would have to defend against
- * — a multi-slot reference UI with an unfilled slot would otherwise both inflate
- * the count (routing an edit to compose) and crash the provider's `fileId` read.
+ * one is absent or empty. The `filter(Boolean)` below is defense-in-depth for
+ * untyped callers, not a supported input shape: the contract's element type is
+ * non-nullable, so a multi-slot reference UI holding `(IFileSelection | null)[]`
+ * drops its unfilled slots before calling. The filter stays because a JavaScript
+ * caller that skipped that step would otherwise both inflate the count (routing
+ * an edit to compose) and crash the provider's `fileId` read.
  *
  * The singular field is then *mirrored* rather than blanked, because providers
  * are independently versioned packages: one still pinned to a types release
@@ -111,11 +113,31 @@ function normalizeReferences(options: IImageGenOptions): IImageGenOptions {
  * Options are normalized first so the provider receives references only in
  * `referenceImages`, whichever field the caller used.
  *
+ * Composition (two or more references) is then gated on the provider having
+ * declared `supportsComposition`. A provider pinned to a types release predating
+ * `referenceImages` reads only the deprecated singular field, which
+ * normalization clears at two or more references, so delegating would hand it a
+ * bare prompt and persist an unrelated image instead of failing. Rejecting here
+ * turns that silent wrong result into a message the consumer already surfaces.
+ * The provider's own numeric ceiling stays with the provider — it is
+ * model-dependent and cannot be expressed as a static registration field.
+ *
  * @param options - The prompt, any reference images, plus advisory provider options.
  * @returns The persisted image selection, or null when unavailable.
  */
 export async function generateImage(options: IImageGenOptions): Promise<IFileSelection | null> {
-    return activeProvider ? activeProvider.generate(normalizeReferences(options)) : null;
+    let result: IFileSelection | null = null;
+    if (activeProvider) {
+        const normalized = normalizeReferences(options);
+        const count = normalized.referenceImages?.length ?? 0;
+        if (count > 1 && !activeProvider.supportsComposition) {
+            throw new Error(
+                `The active image provider (${activeProvider.providerId}) cannot compose an image from multiple reference images. Use a single reference image.`
+            );
+        }
+        result = await activeProvider.generate(normalized);
+    }
+    return result;
 }
 
 /**
