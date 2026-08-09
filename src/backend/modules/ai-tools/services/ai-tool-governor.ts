@@ -18,6 +18,7 @@ import type {
     IAiTool,
     IAiToolCapability,
     IAiToolGovernor,
+    IAiTranscriptSegment,
     IContentScreenVerdict,
     IHookRegistry,
     ISystemLogService,
@@ -248,8 +249,114 @@ export class AiToolGovernor implements IAiToolGovernor {
         this.broadcast?.('ai-tools:approvals-changed', { timestamp: new Date().toISOString() });
     }
 
-    /** @inheritdoc */
+    /**
+     * Optional sink for live transcript segments, wired by the module to the
+     * running query's own stream. Left unset (tests, a boot without WebSockets)
+     * emission is a no-op and the turn's structure still arrives in the terminal
+     * `done` transcript.
+     */
+    private liveSegment?: (queryId: string, segment: IAiTranscriptSegment) => void;
+
+    /**
+     * Wire the live-segment sink so a streaming query's watcher sees tool
+     * activity as it happens rather than only once the whole turn settles. A
+     * tool call is the part of a turn most likely to stall the answer for
+     * seconds at a time, so withholding it until the end is exactly the wrong
+     * silence. Unlike {@link setBroadcast} — which carries timestamps only,
+     * because it fans out globally — this sink delivers to the single socket
+     * that asked for the query, the same one the provider's own chunks and the
+     * terminal transcript already go to, so it exposes nothing new.
+     *
+     * @param fn - Emit callback invoked with the run's `queryId` and the segment.
+     */
+    setLiveSegmentSink(fn: (queryId: string, segment: IAiTranscriptSegment) => void): void {
+        this.liveSegment = fn;
+    }
+
+    /**
+     * Push one transcript segment into its query's live stream, if that query is
+     * still streaming to someone. Best-effort by construction: a run with no
+     * `queryId` (a programmatic call), a settled run, or an unwired sink emits
+     * nothing, and a throwing sink is logged rather than propagated — a delivery
+     * fault must never fail an already-executing tool call.
+     *
+     * @param ctx - The invocation context carrying the run's `queryId`.
+     * @param segment - The settled segment to show.
+     */
+    private emitLiveSegment(ctx: IToolInvocationContext, segment: IAiTranscriptSegment): void {
+        if (!ctx.queryId || !this.liveSegment) {
+            return;
+        }
+        try {
+            this.liveSegment(ctx.queryId, segment);
+        } catch (error: unknown) {
+            this.logger.warn({ error, queryId: ctx.queryId }, 'Failed to emit a live transcript segment');
+        }
+    }
+
+    /**
+     * @inheritdoc
+     *
+     * Wraps the governed pipeline with live-stream emission so an operator
+     * watching an interactive query sees the call appear when it is dispatched
+     * and its result land when it returns. The emitted pair mirrors what the
+     * provider will put in the terminal transcript — same `toolUseId` pairing,
+     * same content the model is handed — so the live preview and the settled
+     * record agree, and the authoritative transcript simply replaces it.
+     */
     async invoke(name: string, input: Record<string, unknown>, ctx: IToolInvocationContext): Promise<IToolInvocationResult> {
+        // The live view pairs a call with its result by the per-call id, so a run
+        // whose provider supplies none cannot be previewed coherently: the call
+        // card would sit at "running…" for the rest of the turn while its own
+        // result rendered as an orphan block beneath it. Show nothing rather than
+        // something self-contradictory, and let the settled transcript — which
+        // pairs by position as well as by id — be the account of that turn.
+        const toolUseId = ctx.toolUseId;
+        if (toolUseId) {
+            this.emitLiveSegment(ctx, { type: 'tool_use', id: toolUseId, name, input });
+        }
+        try {
+            const result = await this.govern(name, input, ctx);
+            if (toolUseId) {
+                this.emitLiveSegment(ctx, {
+                    type: 'tool_result',
+                    toolUseId,
+                    content: typeof result.content === 'string' ? result.content : JSON.stringify(result.content ?? ''),
+                    isError: result.status === 'denied' || result.status === 'error'
+                });
+            }
+            return result;
+        } catch (error: unknown) {
+            // The pipeline is built never to throw — every fault denies instead —
+            // but the provider still guards this call for the same reason, and an
+            // escaped throw would otherwise leave the card claiming the tool is
+            // still running until the turn ends. Close the pair before rethrowing;
+            // the reason itself stays generic here, since the provider's own catch
+            // is what decides what the model and the settled transcript are told.
+            if (toolUseId) {
+                this.emitLiveSegment(ctx, {
+                    type: 'tool_result',
+                    toolUseId,
+                    content: JSON.stringify({ error: 'The tool call failed before governance returned a result.' }),
+                    isError: true
+                });
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * The governed pipeline itself — every gate, in order, from tool resolution
+     * to execution. Split out of {@link invoke} so the live-stream emission
+     * wrapping it has one entry and one exit to hook, rather than being repeated
+     * at each of the pipeline's several early returns.
+     *
+     * @param name - Tool name the model asked for.
+     * @param input - Raw arguments the model supplied.
+     * @param ctx - Caller/trigger context for policy and audit attribution.
+     * @returns The governed outcome handed back to the provider.
+     */
+    private async govern(name: string, input: Record<string, unknown>, ctx: IToolInvocationContext): Promise<IToolInvocationResult> {
         const tool = this.registry.getTool(name);
         if (!tool) {
             return this.fail(name, 'unknown', input, ctx, DEFAULT_CAPABILITY, 'denied', `Tool "${name}" is not available.`);

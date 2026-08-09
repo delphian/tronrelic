@@ -9,11 +9,12 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { HookAbortError, UNTRUSTED_CONTENT_NOTICE } from '@/types';
-import type { IAiProvider, IAiProviderInfo, IAiTool, IAiToolCapability, IAiToolInfo, IBlockchainObserverService, IBlockchainService, ICacheService, IChainParametersService, IContentScreenVerdict, ICurationType, IHookRegistry, IMenuService, ISchedulerService, ISystemConfigService, ISystemLogService, IToolInvocationContext, IUsdtParametersService } from '@/types';
+import type { IAiProvider, IAiProviderInfo, IAiTool, IAiToolCapability, IAiToolInfo, IAiTranscriptSegment, IBlockchainObserverService, IBlockchainService, ICacheService, IChainParametersService, IContentScreenVerdict, ICurationType, IHookRegistry, IMenuService, ISchedulerService, ISystemConfigService, ISystemLogService, IToolInvocationContext, IUsdtParametersService } from '@/types';
 import { AiToolsModule, AUDIT_PRUNE_JOB, ToolApprovalQueue, detectTrifecta, lintToolCapability } from '../index.js';
 import { CurationService, CurationQueue } from '../../curation/index.js';
 import { ToolPolicyEngine } from '../services/tool-policy-engine.js';
 import { ScreenConfigService } from '../services/screen-config.service.js';
+import { QueryStreamRegistry } from '../services/query-stream-registry.js';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 import { ContentRegistry, CONTENT_TYPES_SERVICE } from '../../../services/content-registry.js';
@@ -318,6 +319,121 @@ describe('AiToolsModule', () => {
             const { resolved, missing } = registry.resolveAllowlist(['test-external']);
             expect(resolved).toEqual(['test-external']);
             expect(missing).toEqual([]);
+        });
+    });
+
+    describe('governor live transcript segments', () => {
+        /** Context for a streaming run: carries the ids the live stream keys on. */
+        const streamCtx: IToolInvocationContext = { ...interactiveCtx, queryId: 'query-1', toolUseId: 'call-1' };
+
+        it('emits the call when it dispatches and the result when it returns', async () => {
+            const emitted: Array<{ queryId: string; segment: IAiTranscriptSegment }> = [];
+            module.getGovernor().setLiveSegmentSink((queryId, segment) => emitted.push({ queryId, segment }));
+            module.getRegistry().registerTool(readTool(vi.fn(async () => ({ ok: true }))), 'test');
+
+            await module.getGovernor().invoke('test-read', {}, streamCtx);
+
+            // The pair mirrors what the provider will put in the terminal
+            // transcript — same toolUseId pairing, same content the model is
+            // handed — so the live preview and the settled record agree.
+            expect(emitted).toEqual([
+                { queryId: 'query-1', segment: { type: 'tool_use', id: 'call-1', name: 'test-read', input: {} } },
+                { queryId: 'query-1', segment: { type: 'tool_result', toolUseId: 'call-1', content: JSON.stringify({ ok: true }), isError: false } }
+            ]);
+        });
+
+        it('marks a denied call as an error result so the live view does not read it as success', async () => {
+            const emitted: IAiTranscriptSegment[] = [];
+            module.getGovernor().setLiveSegmentSink((_queryId, segment) => emitted.push(segment));
+
+            await module.getGovernor().invoke('nope', {}, streamCtx);
+
+            expect(emitted).toHaveLength(2);
+            expect(emitted[1]).toMatchObject({ type: 'tool_result', toolUseId: 'call-1', isError: true });
+        });
+
+        it('emits nothing for a run with no queryId, so a programmatic call stays silent', async () => {
+            const sink = vi.fn();
+            module.getGovernor().setLiveSegmentSink(sink);
+            module.getRegistry().registerTool(readTool(vi.fn(async () => ({ ok: true }))), 'test');
+
+            await module.getGovernor().invoke('test-read', {}, interactiveCtx);
+
+            expect(sink).not.toHaveBeenCalled();
+        });
+
+        it('emits nothing when the provider supplies no per-call id, which the live view cannot pair', async () => {
+            const sink = vi.fn();
+            module.getGovernor().setLiveSegmentSink(sink);
+            module.getRegistry().registerTool(readTool(vi.fn(async () => ({ ok: true }))), 'test');
+
+            await module.getGovernor().invoke('test-read', {}, { ...interactiveCtx, queryId: 'query-1' });
+
+            // A call and its result pair by that id; emitting an empty one would
+            // leave the card at "running…" beside an orphan result block.
+            expect(sink).not.toHaveBeenCalled();
+        });
+
+        it('completes the invocation even when the sink throws', async () => {
+            // Delivery is best-effort: a socket fault must never fail a tool call
+            // that has already run.
+            module.getGovernor().setLiveSegmentSink(() => { throw new Error('socket gone'); });
+            module.getRegistry().registerTool(readTool(vi.fn(async () => ({ ok: true }))), 'test');
+
+            const result = await module.getGovernor().invoke('test-read', {}, streamCtx);
+
+            expect(result.status).toBe('ok');
+        });
+    });
+
+    describe('QueryStreamRegistry', () => {
+        it('delivers a chunk to the run that registered the id', () => {
+            const registry = new QueryStreamRegistry();
+            const sink = vi.fn();
+            registry.register('query-1', sink);
+
+            expect(registry.emit('query-1', { queryId: 'query-1', type: 'chunk', text: 'hi' })).toBe(true);
+            expect(sink).toHaveBeenCalledOnce();
+        });
+
+        it('refuses a second run under an id already streaming', () => {
+            // The id is client-minted, so this map is where two operators' runs
+            // could meet; overwriting would route the first run's tool arguments
+            // and results to the second operator's socket.
+            const registry = new QueryStreamRegistry();
+            const first = vi.fn();
+            const second = vi.fn();
+
+            expect(registry.register('query-1', first)).toBe(true);
+            expect(registry.register('query-1', second)).toBe(false);
+
+            registry.emit('query-1', { queryId: 'query-1', type: 'chunk', text: 'hi' });
+            expect(first).toHaveBeenCalledOnce();
+            expect(second).not.toHaveBeenCalled();
+        });
+
+        it('ignores a release from a run that no longer owns the id', () => {
+            const registry = new QueryStreamRegistry();
+            const owner = vi.fn();
+            const stale = vi.fn();
+            registry.register('query-1', owner);
+
+            registry.release('query-1', stale);
+
+            expect(registry.emit('query-1', { queryId: 'query-1', type: 'chunk' })).toBe(true);
+        });
+
+        it('contains a throwing sink instead of failing the caller', () => {
+            const registry = new QueryStreamRegistry();
+            registry.register('query-1', () => { throw new Error('socket gone'); });
+
+            expect(registry.emit('query-1', { queryId: 'query-1', type: 'chunk' })).toBe(false);
+        });
+
+        it('reports no delivery for a query that never streamed', () => {
+            const registry = new QueryStreamRegistry();
+
+            expect(registry.emit('unknown', { queryId: 'unknown', type: 'chunk' })).toBe(false);
         });
     });
 

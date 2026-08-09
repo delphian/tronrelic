@@ -38,6 +38,7 @@ import { PromptVariableValidationError } from '../services/prompt-variable-regis
 import type { SystemPromptsService } from '../services/system-prompts.service.js';
 import { SystemPromptValidationError } from '../services/system-prompts.service.js';
 import type { ScreenConfigService } from '../services/screen-config.service.js';
+import type { QueryStreamRegistry } from '../services/query-stream-registry.js';
 import { WebSocketService } from '../../../services/websocket.service.js';
 import { detectTrifecta } from '../services/trifecta-detector.js';
 
@@ -161,6 +162,7 @@ export class AiToolsController {
         private readonly systemPrompts: SystemPromptsService,
         private readonly resolveEndUser: EndUserResolver,
         private readonly screenConfig: ScreenConfigService,
+        private readonly queryStreams: QueryStreamRegistry,
         private readonly runSavedPromptNow: (promptId: string) => Promise<void>,
         private readonly bindableHooks: ReadonlyArray<{ id: string; description: string }> = []
     ) {}
@@ -629,15 +631,30 @@ export class AiToolsController {
             }
 
             const createdAt = new Date().toISOString();
+            const sink = (chunk: IAiStreamChunk): void => {
+                WebSocketService.getInstance().emitToSocket(socketId, QUERY_STREAM_EVENT, chunk);
+            };
+            // Open this run to core-side emitters for as long as it streams, so
+            // the governor can show each tool call as it is dispatched instead of
+            // the operator waiting out a long tool in silence. Released below the
+            // moment the run settles, whichever way it settles.
+            //
+            // A refusal means another run is already streaming under this id.
+            // Since the id is client-minted and also keys the provider's cancel
+            // map, the two runs would cross: this one's tool arguments and
+            // results would reach the other operator's socket, and either could
+            // cancel the other. Reject rather than run them on top of each other.
+            if (!this.queryStreams.register(queryId, sink)) {
+                res.status(409).json({ error: 'A query is already streaming under this "queryId". Use a fresh id.' });
+                return;
+            }
             // Fire-and-forget: do not await the stream. Chunks reach the client
             // over WebSocket as they arrive; the record is appended when the
             // promise settles.
             provider
                 .queryStream(
                     { prompt, queryId, model, messages, conversationId, mode: 'stream', endUser, injectedSystemPrompt, toolAllowlist },
-                    (chunk: IAiStreamChunk) => {
-                        WebSocketService.getInstance().emitToSocket(socketId, QUERY_STREAM_EVENT, chunk);
-                    }
+                    sink
                 )
                 .then((result) => {
                     void this.history.append(
@@ -666,6 +683,9 @@ export class AiToolsController {
                             model
                         )
                     );
+                })
+                .finally(() => {
+                    this.queryStreams.release(queryId, sink);
                 });
 
             res.json({ success: true, queryId });
