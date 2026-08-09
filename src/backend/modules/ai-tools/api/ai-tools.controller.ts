@@ -651,10 +651,21 @@ export class AiToolsController {
             // Fire-and-forget: do not await the stream. Chunks reach the client
             // over WebSocket as they arrive; the record is appended when the
             // promise settles.
-            provider
-                .queryStream(
-                    { prompt, queryId, model, messages, conversationId, mode: 'stream', endUser, injectedSystemPrompt, toolAllowlist },
-                    sink
+            //
+            // The provider call is started inside `Promise.resolve().then(...)`
+            // because `provider` is plugin code core does not control: a
+            // provider whose `queryStream` is not declared `async` — or is
+            // missing entirely — throws synchronously, before the handlers
+            // below are attached. That would leave the sink registered for the
+            // process lifetime and the request answered by nothing at all.
+            // Deferring the call turns any such throw into a rejection the
+            // existing `.catch()`/`.finally()` already cover.
+            Promise.resolve()
+                .then(() =>
+                    provider.queryStream(
+                        { prompt, queryId, model, messages, conversationId, mode: 'stream', endUser, injectedSystemPrompt, toolAllowlist },
+                        sink
+                    )
                 )
                 .then((result) => {
                     void this.history.append(
