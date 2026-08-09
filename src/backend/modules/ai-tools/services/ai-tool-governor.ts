@@ -318,10 +318,23 @@ export class AiToolGovernor implements IAiToolGovernor {
         try {
             const result = await this.govern(name, input, ctx);
             if (toolUseId) {
+                // The preview mirrors the body the provider will hand the model,
+                // but building it must never cost the caller its result: a handler
+                // returns `unknown`, so the value can be one JSON.stringify refuses
+                // (a BigInt, a circular object). Throwing here would report an
+                // already-executed — possibly effectful — tool as a failure and
+                // invite the model to retry it. Fall back to a placeholder; the
+                // settled transcript still carries the provider's own rendering.
+                let content: string;
+                try {
+                    content = typeof result.content === 'string' ? result.content : JSON.stringify(result.content ?? '');
+                } catch {
+                    content = '[tool result could not be serialized for the live view]';
+                }
                 this.emitLiveSegment(ctx, {
                     type: 'tool_result',
                     toolUseId,
-                    content: typeof result.content === 'string' ? result.content : JSON.stringify(result.content ?? ''),
+                    content,
                     isError: result.status === 'denied' || result.status === 'error'
                 });
             }
