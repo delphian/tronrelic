@@ -15,6 +15,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { AiToolsController } from '../api/ai-tools.controller.js';
+import { QueryStreamRegistry } from '../services/query-stream-registry.js';
 
 /**
  * Build a mock Express response capturing status + json.
@@ -71,6 +72,7 @@ function makeController(overrides: Record<string, any> = {}) {
         systemPrompts as any,
         resolveEndUser as any,
         {} as any, // screenConfig
+        overrides.queryStreams ?? new QueryStreamRegistry(),
         (async () => undefined) as any // runSavedPromptNow
     );
 

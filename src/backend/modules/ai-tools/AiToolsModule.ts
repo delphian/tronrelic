@@ -49,6 +49,7 @@ import { ToolApprovalQueue } from './services/tool-approval-queue.js';
 import { AiToolGovernor } from './services/ai-tool-governor.js';
 import { AiProviderRegistry } from './services/ai-provider-registry.js';
 import { ScreenConfigService } from './services/screen-config.service.js';
+import { QueryStreamRegistry } from './services/query-stream-registry.js';
 import { AiQueryHistoryService } from './services/ai-query-history.service.js';
 import { CONTENT_TYPES_SERVICE } from '../../services/content-registry.js';
 import { SavedPromptsService } from './services/saved-prompts.service.js';
@@ -312,6 +313,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
     private governor!: AiToolGovernor;
     private providerRegistry!: AiProviderRegistry;
     private screenConfig!: ScreenConfigService;
+    private readonly queryStreams = new QueryStreamRegistry();
     private queryHistory!: AiQueryHistoryService;
     private savedPrompts!: SavedPromptsService;
     private socialPosts!: SocialPostStore;
@@ -464,7 +466,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             () => this.serviceRegistry.get<IAccountDirectoryService>('accounts')
         );
 
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig, (id: string) => this.runSavedPromptNow(id), BINDABLE_HOOK_INFOS);
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig, this.queryStreams, (id: string) => this.runSavedPromptNow(id), BINDABLE_HOOK_INFOS);
 
         this.logger.info('ai-tools module initialized');
     }
@@ -651,6 +653,16 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         // WebSockets are disabled its emit is a no-op, so governance still runs.
         this.governor.setBroadcast((event, payload) => {
             WebSocketService.getInstance().emit({ event, payload });
+        });
+
+        // Show tool activity inside the running query rather than only in the
+        // terminal transcript: the governor emits each call and result as it
+        // settles, and the registry routes it to that query's own stream — the
+        // same socket the provider's chunks already reach, and only while the
+        // query is still streaming. A query that is not streaming has no sink,
+        // so this is inert on scheduled and programmatic runs.
+        this.governor.setLiveSegmentSink((queryId, segment) => {
+            this.queryStreams.emit(queryId, { queryId, type: 'segment', segment });
         });
 
         this.serviceRegistry.register(AI_TOOLS_SERVICE, this.registry);

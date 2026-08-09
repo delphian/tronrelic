@@ -734,6 +734,35 @@
     gap: var(--gap-sm);
 }
 
+/* Every non-prose transcript event is a collapsed <details>: thinking, a tool
+   call with its result, an unpaired result. One turn can hold several thousand
+   lines of JSON, and the answer is what the reader came for.
+
+   The chevron is the only affordance saying "there is more here", so it rotates
+   with the card's own open state, and the native disclosure triangle is
+   suppressed (`display: none` for WebKit, `list-style` for the rest) to keep one
+   consistent glyph across browsers. */
+.disclosure_chevron {
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+    transition: transform var(--transition-base);
+}
+
+details[open] > summary > .disclosure_chevron {
+    transform: rotate(90deg);
+}
+
+.thinking_summary,
+.tool_call > summary,
+.tool_result > summary {
+    list-style: none;
+    cursor: pointer;
+
+    &::-webkit-details-marker {
+        display: none;
+    }
+}
+
 /* Thinking — collapsed by default so a long reasoning chain never buries the
    answer; the muted body reads as secondary, set off by a left accent rule. */
 .thinking {
@@ -799,6 +828,15 @@
 .tool_call_name {
     font-family: var(--font-mono);
     color: var(--color-text);
+}
+
+/* A call the model has dispatched but that has not answered yet. Shown only on a
+   still-streaming turn, where it is the difference between "this tool is
+   working" and "this tool came back with nothing" — and it is the collapsed
+   card's only sign that the wait is expected. */
+.tool_call_status {
+    color: var(--color-text-muted);
+    font-style: italic;
 }
 
 /* Pushes the "audit detail" affordance to the right of the tool-call header so a

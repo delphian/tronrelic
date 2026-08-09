@@ -4,7 +4,8 @@
  * WebSocket payload for a streamed AI response chunk. Provider-neutral and
  * core-owned so any provider plugin and any core surface (e.g. the
  * `/system/ai-tools` Query tab) share one streaming shape. Each chunk is a text
- * delta, a terminal completion signal with usage, or an error notification.
+ * delta, a transcript segment that settled mid-turn, a terminal completion
+ * signal with usage, or an error notification.
  */
 
 import type { IAiTranscriptSegment } from './IAiTranscriptSegment.js';
@@ -17,10 +18,25 @@ export interface IAiStreamChunk {
     queryId: string;
 
     /** Discriminator for chunk type. */
-    type: 'chunk' | 'done' | 'error';
+    type: 'chunk' | 'segment' | 'done' | 'error';
 
     /** Partial response text (present when type is 'chunk'). */
     text?: string;
+
+    /**
+     * One transcript segment that settled while the turn was still running
+     * (present when type is 'segment'). Text streams as `chunk` deltas, but a
+     * tool call and its result only exist as whole events, and waiting for the
+     * terminal `done` transcript to show them leaves the reader staring at a
+     * stalled answer for however long the tool takes. Emitting each segment as
+     * it settles lets a surface build the turn's structure live, in the order
+     * it happened.
+     *
+     * These are a live preview, never the record: the `done` transcript stays
+     * authoritative and replaces whatever the surface accumulated, so a segment
+     * missed or emitted out of order self-corrects when the turn settles.
+     */
+    segment?: IAiTranscriptSegment;
 
     /** Error message (present when type is 'error'). */
     error?: string;

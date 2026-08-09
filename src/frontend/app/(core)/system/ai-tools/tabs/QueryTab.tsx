@@ -280,18 +280,54 @@ function formatToolPayload(value: unknown): string {
 }
 
 /**
+ * Fold a streamed text delta into a turn's live transcript, extending the run of
+ * prose already in progress or starting a new one after a tool call.
+ *
+ * A streaming turn builds the same segment structure the settled transcript
+ * uses, so the answer and the tool activity render in one ordered list rather
+ * than prose in one place and tool cards appended somewhere after it. Text
+ * merges into a trailing text segment because the provider streams prose token
+ * by token — a segment per delta would fragment one paragraph into dozens of
+ * separately-rendered Markdown blocks.
+ *
+ * Returns a new array rather than mutating, since the caller stores the result
+ * in React state where an in-place edit would not re-render.
+ *
+ * @param segments - The turn's live segments so far, if any.
+ * @param text - The delta just received.
+ * @returns The segments with the delta folded in.
+ */
+function appendLiveText(segments: IAiTranscriptSegment[] | undefined, text: string): IAiTranscriptSegment[] {
+    const next = [...(segments ?? [])];
+    const last = next[next.length - 1];
+    if (last && last.type === 'text') {
+        next[next.length - 1] = { type: 'text', text: last.text + text };
+    } else {
+        next.push({ type: 'text', text });
+    }
+    return next;
+}
+
+/**
  * Render an assistant turn's structured transcript — the thinking, tool calls,
  * tool results, and answer text in the order they occurred. This is what lets a
- * reopened conversation (or a just-completed live turn) show the whole turn
- * instead of only its final answer: history persists no other structure, so
- * without this the thinking and tool activity would be invisible. Thinking is
- * tucked into a collapsed `<details>` so a long chain of reasoning never buries
- * the answer. A call and the result that answered it are one event, so the
- * result nests inside the call's own card — arguments payload, then a "Tool
- * result" label, then the result payload carrying the success/error accent —
- * rather than sitting in a sibling block the reader has to re-pair by eye.
- * Answer text reuses the same sanitized-Markdown pipeline as a streaming turn so
- * the prose reads identically whether live or replayed.
+ * conversation (live, or reopened from history) show the whole turn instead of
+ * only its final answer: history persists no other structure, so without this
+ * the thinking and tool activity would be invisible.
+ *
+ * Every non-prose event renders as a **collapsed** `<details>` — thinking, a
+ * tool call and its result, an unpaired result. The answer is what the reader
+ * came for, and a turn that calls three tools would otherwise bury it under
+ * screens of JSON. The summary row carries what matters at a glance (the tool
+ * name, whether it is still running, whether it failed), so nothing has to be
+ * expanded to know whether it needs to be.
+ *
+ * A call and the result that answered it are one event, so the result nests
+ * inside the call's own card — arguments payload, then a "Tool result" label,
+ * then the result payload carrying the success/error accent — rather than
+ * sitting in a sibling block the reader has to re-pair by eye. Answer text uses
+ * the same sanitized-Markdown pipeline whether it is streaming or replayed, so
+ * the prose reads identically either way.
  *
  * @param segments - The turn's ordered transcript segments.
  * @param recordsById - The conversation's audit records keyed by their `toolUseId`,
@@ -300,12 +336,17 @@ function formatToolPayload(value: unknown): string {
  *   the pre-`toolUseId` provider degrade gracefully rather than breaking.
  * @param onSelectRecord - Opens the matched record's detail panel. Omitted when the
  *   host has no detail surface (nothing becomes clickable).
+ * @param pending - Whether the turn is still streaming. Drives the cursor on the
+ *   trailing prose and the "running" hint on a call whose result has not landed,
+ *   which is the difference between "this tool is working" and "this tool
+ *   answered with nothing".
  * @returns The rendered transcript.
  */
-function AssistantSegments({ segments, recordsById, onSelectRecord }: {
+function AssistantSegments({ segments, recordsById, onSelectRecord, pending = false }: {
     segments: IAiTranscriptSegment[];
     recordsById?: Map<string, IToolInvocationRecord>;
     onSelectRecord?: (record: IToolInvocationRecord) => void;
+    pending?: boolean;
 }) {
     // Index each result by the call it answered so the call can render it inline.
     // A result whose `toolUseId` matches no call in this transcript — truncated
@@ -338,10 +379,27 @@ function AssistantSegments({ segments, recordsById, onSelectRecord }: {
     return (
         <div className={styles.segments}>
             {segments.map((segment, index) => {
+                // Key a tool card by the call it belongs to, not by its position.
+                // When the turn settles, the authoritative transcript replaces the
+                // live one and can interleave segments the live stream never sent
+                // (thinking blocks), shifting every index after them. Under
+                // positional keys React would reuse the DOM node — and with it the
+                // open/closed state of an uncontrolled <details> — for whatever
+                // segment now occupies that slot, so a card the reader had just
+                // expanded would silently start showing a different payload. Text
+                // and thinking carry no id and keep the positional key; neither
+                // holds state a shift can corrupt (text is not collapsible, and
+                // thinking only ever moves relative to other thinking).
+                const key = segment.type === 'tool_use' && segment.id
+                    ? `use:${segment.id}`
+                    : segment.type === 'tool_result' && segment.toolUseId
+                        ? `result:${segment.toolUseId}:${index}`
+                        : `segment:${index}`;
                 if (segment.type === 'thinking') {
                     return (
-                        <details key={index} className={styles.thinking}>
+                        <details key={key} className={styles.thinking}>
                             <summary className={styles.thinking_summary}>
+                                <ChevronRight size={14} className={styles.disclosure_chevron} aria-hidden="true" />
                                 <Brain size={14} /> Thinking
                             </summary>
                             <div className={styles.thinking_body}>{segment.text}</div>
@@ -356,23 +414,40 @@ function AssistantSegments({ segments, recordsById, onSelectRecord }: {
                     const auditRecord = segment.id ? recordsById?.get(segment.id) : undefined;
                     const result = segment.id ? resultsByToolUseId.get(segment.id)?.segment : undefined;
                     return (
-                        <div key={index} className={styles.tool_call}>
-                            <div className={styles.tool_call_header}>
+                        <details key={key} className={styles.tool_call}>
+                            <summary className={styles.tool_call_header}>
+                                <ChevronRight size={14} className={styles.disclosure_chevron} aria-hidden="true" />
                                 <Wrench size={14} />
                                 <span className={styles.tool_call_name}>{segment.name || 'tool'}</span>
                                 {segment.server && <Badge tone="info">server</Badge>}
+                                {/* The outcome has to survive the collapse: without it a
+                                    reader would have to open every card to find the one
+                                    that failed, or to tell a slow call from a finished one. */}
+                                {result?.isError && <Badge tone="danger">error</Badge>}
+                                {!result && pending && (
+                                    <span className={styles.tool_call_status}>running…</span>
+                                )}
                                 {auditRecord && onSelectRecord && (
                                     <Button
                                         variant="ghost"
                                         size="xs"
                                         className={styles.tool_call_action}
-                                        onClick={() => onSelectRecord(auditRecord)}
+                                        onClick={(event) => {
+                                            // The button lives inside the <summary>, whose
+                                            // default action is to toggle the card. Opening
+                                            // the audit panel is a different intent, so stop
+                                            // the click from also collapsing what the reader
+                                            // is looking at.
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            onSelectRecord(auditRecord);
+                                        }}
                                         aria-label={`View the audit record for the ${segment.name || 'tool'} call`}
                                     >
                                         <Info size={14} /> Details
                                     </Button>
                                 )}
-                            </div>
+                            </summary>
                             <pre className={styles.tool_payload}>{formatToolPayload(segment.input)}</pre>
                             {result && (
                                 <>
@@ -387,7 +462,7 @@ function AssistantSegments({ segments, recordsById, onSelectRecord }: {
                                     </pre>
                                 </>
                             )}
-                        </div>
+                        </details>
                     );
                 }
                 if (segment.type === 'tool_result') {
@@ -398,24 +473,30 @@ function AssistantSegments({ segments, recordsById, onSelectRecord }: {
                         return null;
                     }
                     return (
-                        <div
-                            key={index}
+                        <details
+                            key={key}
                             className={`${styles.tool_result} ${segment.isError ? styles['tool_result--error'] : ''}`}
                         >
-                            <div className={styles.tool_call_header}>
+                            <summary className={styles.tool_call_header}>
+                                <ChevronRight size={14} className={styles.disclosure_chevron} aria-hidden="true" />
                                 <CornerDownRight size={14} />
                                 <span className={styles.tool_call_name}>{segment.isError ? 'Tool error' : 'Tool result'}</span>
-                            </div>
+                            </summary>
                             <pre className={styles.tool_payload}>{formatToolPayload(segment.content)}</pre>
-                        </div>
+                        </details>
                     );
                 }
+                // The blinking cursor belongs on the prose the model is writing
+                // right now — the last segment of a still-streaming turn. Putting
+                // it on an earlier text run would park a cursor above a finished
+                // tool call.
+                const isTrailingText = pending && index === segments.length - 1;
                 return (
                     <div
-                        key={index}
+                        key={key}
                         className={styles.turn_markdown}
                         // Assistant text is sanitized by the rehype-sanitize pipeline in renderAssistantHtml.
-                        dangerouslySetInnerHTML={{ __html: renderAssistantHtml(segment.text, false) }}
+                        dangerouslySetInnerHTML={{ __html: renderAssistantHtml(segment.text, isTrailingText) }}
                     />
                 );
             })}
@@ -1181,9 +1262,11 @@ export function QueryTab() {
 
     /**
      * Route an incoming stream chunk to the pending assistant turn. Filters by
-     * the active queryId so a stale or unrelated query's chunks are ignored —
-     * the backend broadcasts `ai-tools:query-stream` globally, so this client
-     * is responsible for the correlation.
+     * the active queryId so a stale or unrelated query's chunks are ignored.
+     * The backend addresses `ai-tools:query-stream` to the requesting socket, so
+     * this filter is not what keeps another operator's run out — it is what
+     * keeps *this* socket's own runs apart, since one socket can start a second
+     * query while an abandoned one is still settling.
      *
      * @param chunk - The stream chunk payload.
      */
@@ -1197,12 +1280,29 @@ export function QueryTab() {
         }
         if (chunk.type === 'chunk' && chunk.text) {
             const text = chunk.text;
-            updateTurn(turnId, turn => ({ content: turn.content + text }));
+            // `content` stays the flat answer (the copy button and the history
+            // payload read it); `segments` is that same text placed in the live
+            // structure, so prose arriving after a tool call renders below that
+            // call instead of being merged into one block above it.
+            updateTurn(turnId, turn => ({
+                content: turn.content + text,
+                segments: appendLiveText(turn.segments, text)
+            }));
+        } else if (chunk.type === 'segment' && chunk.segment) {
+            // A tool call or its result, reported the moment it settled. Append
+            // in arrival order — the governor emits a call when it dispatches it
+            // and its result when the handler returns, so arrival order is the
+            // order things actually happened.
+            const segment = chunk.segment;
+            updateTurn(turnId, turn => ({ segments: [...(turn.segments ?? []), segment] }));
         } else if (chunk.type === 'done') {
             setStreaming(false);
             // Adopt the finalized transcript so the just-completed turn shows the
-            // same thinking/tool structure history does, without a reload. Absent
-            // for a plain text turn — the streamed `content` already covers it.
+            // same thinking/tool structure history does, without a reload. It
+            // replaces whatever the live stream accumulated, which is what makes
+            // the live view safe to be approximate — a segment that arrived
+            // unpaired or out of order is corrected here. Absent for a plain text
+            // turn, where the live segments (or `content`) already cover it.
             updateTurn(turnId, {
                 pending: false,
                 usage: chunk.usage ?? null,
@@ -2189,10 +2289,17 @@ export function QueryTab() {
                                                     </div>
                                                 </>
                                             ) : turn.segments && turn.segments.length > 0 ? (
-                                                // A settled turn (live `done` or reopened from history) renders its
-                                                // full transcript — thinking, tool calls, results, and text in order.
-                                                // The audit-record map lets each tool call deep-link to its record.
-                                                <AssistantSegments segments={turn.segments} recordsById={toolRecordsById} onSelectRecord={setSelectedRecord} />
+                                                // Any turn with structure renders it: a settled one (live `done` or
+                                                // reopened from history) shows its full transcript, and a streaming
+                                                // one shows what has settled so far, so a tool call is visible while
+                                                // it runs rather than only once the turn ends. The audit-record map
+                                                // lets each tool call deep-link to its record.
+                                                <AssistantSegments
+                                                    segments={turn.segments}
+                                                    recordsById={toolRecordsById}
+                                                    onSelectRecord={setSelectedRecord}
+                                                    pending={!!turn.pending}
+                                                />
                                             ) : (
                                                 <div
                                                     className={styles.turn_markdown}
