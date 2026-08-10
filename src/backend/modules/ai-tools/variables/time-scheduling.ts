@@ -67,7 +67,7 @@ export function registerTimeSchedulingVariables(registry: IPromptVariableRegistr
     registry.registerVariable({
         name: 'run-window-24',
         category: 'Time & Scheduling',
-        description: 'Trailing 24-hour reporting window: both bounds in citation and ISO-8601 form. Reference it once per prompt — the system and user prompts expand separately',
+        description: 'Trailing 24-hour reporting window: both bounds in citation and ISO-8601 form. Use it in only one prompt per query — system or user, not both, since each expands on its own clock read',
         sensitivity: 'public',
         resolve: async () => {
             // All four lines derive from one clock read, so the bounds cannot
@@ -80,7 +80,9 @@ export function registerTimeSchedulingVariables(registry: IPromptVariableRegistr
             // `expandAll` calls (see `SystemPromptsService.compose` and the
             // provider's own expansion), so referencing this token in BOTH
             // yields two independent reads that can differ by a minute. Put it
-            // in one place per prompt.
+            // in one prompt only — system or user, never both. Repeats within a
+            // single prompt are safe: one `expandAll` resolves each unique name
+            // once and reuses that value for every occurrence.
             const now = new Date();
             const start = new Date(now.getTime() - WINDOW_MS);
 
