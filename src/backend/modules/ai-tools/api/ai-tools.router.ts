@@ -69,9 +69,15 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
     //
     // Filtering `secret` variables out of expansion is not the fix: injecting
     // them is the feature (they are the lethal trifecta's private-data leg by
-    // design). Gating the surface is. Together with the two variable routes
-    // this closes every path by which the `ADMIN_API_TOKEN` service path can
-    // reach a secret variable's value.
+    // design). Gating the surface is.
+    //
+    // This narrows the service token's reach; it does not eliminate it. The
+    // system-prompt writes above (`PUT /system-prompts/master`, `POST
+    // /system-prompts`) are deliberately still on the shared gate, and a
+    // composed system prompt is `{%name%}`-expanded too — so a service token
+    // can still plant a secret reference into a prompt that expands on someone
+    // else's later run. Closing that is a separate change; do not read the
+    // gates below as a complete boundary.
     router.post('/query', requireAdminUser, controller.query);
     router.post('/query/:queryId/cancel', controller.cancelQuery);
     router.get('/query/history', requireAdminUser, controller.listQueryHistory);
@@ -81,8 +87,16 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
 
     router.get('/query/prompts/hooks', controller.listPromptHooks);
     router.get('/query/prompts', controller.listPrompts);
-    router.post('/query/prompts', controller.savePrompt);
-    router.post('/query/prompts/:id/run', controller.runPrompt);
+    // A saved prompt is a stored query, so both of these reach the same
+    // expansion `/query` does: executeSavedPrompt substitutes only its per-run
+    // `{%hook.*%}` variables locally and leaves registry `{%name%}` tokens for
+    // the provider, which expands them by default. Saving is enough on its own
+    // — a prompt saved through the service token is unowned and still fires on
+    // its own cron or hook trigger — so gating only the run route would leave
+    // the hole open. Reading the templates stays on the shared gate: the stored
+    // text holds the unexpanded token, not the value.
+    router.post('/query/prompts', requireAdminUser, controller.savePrompt);
+    router.post('/query/prompts/:id/run', requireAdminUser, controller.runPrompt);
     router.delete('/query/prompts/:id', controller.deletePrompt);
 
     router.get('/activity', controller.listActivity);
