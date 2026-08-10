@@ -333,10 +333,29 @@ export class AiToolsController {
         res.json(updated);
     };
 
-    /** GET /variables — every prompt variable (dynamic + static) with classification and size. */
-    listVariables = async (_req: Request, res: Response): Promise<void> => {
+    /**
+     * GET /variables — every prompt variable (dynamic + static) with classification and size.
+     *
+     * The payload embeds each *static* variable's stored `content` so the edit
+     * form can prefill it, and a new static defaults to `secret` — so one call
+     * here discloses more secret material than the single-variable reveal route
+     * does. That makes it the same class of act, and it earns the same
+     * actor-attributed trace: who read it, which variables were disclosed, and
+     * how much text, never the text itself (writing the values would copy the
+     * secrets into the log store, queryable from a different surface).
+     */
+    listVariables = async (req: Request, res: Response): Promise<void> => {
         try {
-            res.json({ variables: await this.promptVariables.listInfo() });
+            const variables = await this.promptVariables.listInfo();
+            const disclosed = variables.filter(variable => typeof variable.content === 'string');
+            adminActionLog.info({
+                actor: actorId(req),
+                variables: disclosed.map(variable => variable.name),
+                variableCount: disclosed.length,
+                secretCount: disclosed.filter(variable => variable.sensitivity === 'secret').length,
+                sizeBytes: disclosed.reduce((total, variable) => total + variable.sizeBytes, 0)
+            }, 'Prompt variable contents listed');
+            res.json({ variables });
         } catch {
             res.status(500).json({ error: 'Failed to load prompt variables.' });
         }
@@ -410,13 +429,14 @@ export class AiToolsController {
      * now, without composing a query. A dynamic resolver runs live here, so the
      * value reflects this instant; a static variable returns its stored constant.
      *
-     * Kept off the bulk `listVariables` payload deliberately: a resolved value may
-     * be large or `secret`, so it is fetched only when an operator expands the row
-     * that needs it. Rate-limited by the router and gated more tightly than its
-     * sibling variable routes: `requireAdminUser` refuses the `ADMIN_API_TOKEN`
-     * service path here, because this is the one endpoint that returns a stored
-     * secret rather than metadata about it, and a shared environment variable
-     * names nobody in the audit trail.
+     * This is the only way to read a *dynamic* variable's value: `listVariables`
+     * carries a stored `content` for statics only, and a live resolve may be
+     * large or slow, so it runs when an operator expands the row that needs it
+     * rather than on every listing. Rate-limited by the router and, like the
+     * bulk listing, gated by `requireAdminUser` — both return plaintext a
+     * `secret` classification applies to, so a shared environment variable is
+     * too broad a key for either, and neither names anybody in the audit trail
+     * on its own (hence the reveal log below).
      *
      * A resolver that currently throws is itself the "current state" the admin is
      * inspecting, so its message is surfaced (502) rather than hidden; an unknown
