@@ -201,6 +201,22 @@ function digestResult(result: unknown): string {
 }
 
 /**
+ * Everything a governed refetch signal is allowed to carry.
+ *
+ * The signals (`ai-tools:activity`, `ai-tools:approvals-changed`) are doorbells,
+ * not data: a listener learns only that something changed and re-reads the
+ * detail through an admin-gated REST endpoint. Declaring that as a type rather
+ * than a convention is the point — the sink used to accept `unknown`, so
+ * handing it the whole `IToolInvocationRecord` (tool name, arguments, result
+ * digest, actor) compiled cleanly and put governed data on a socket. Now it
+ * does not compile, and the rule survives whoever edits this file next.
+ */
+export interface IGovernorSignal {
+    /** ISO timestamp of the change prompting the refetch. */
+    timestamp: string;
+}
+
+/**
  * Core-owned mediator for AI tool execution.
  */
 export class AiToolGovernor implements IAiToolGovernor {
@@ -226,18 +242,23 @@ export class AiToolGovernor implements IAiToolGovernor {
     ) {}
 
     /** Optional sink for refetch signals over WebSocket; wired by the module. */
-    private broadcast?: (event: string, payload: unknown) => void;
+    private broadcast?: (event: string, payload: IGovernorSignal) => void;
 
     /**
      * Wire a broadcast sink so governed events surface to the admin dashboard as
      * lightweight refetch signals. The module passes a closure over
-     * `WebSocketService`; left unset (e.g. in tests) emission is a no-op. Signals
-     * carry only a timestamp — never the invocation record — so the data stays
-     * behind the admin-gated REST feed rather than a global socket broadcast.
+     * `WebSocketService`; left unset (e.g. in tests) emission is a no-op.
+     *
+     * The {@link IGovernorSignal} payload type is the enforcement point: a
+     * signal carries a timestamp and nothing else, never the invocation record,
+     * so the governed detail stays behind the admin-gated REST feed. The
+     * WebSocket layer additionally routes these two events to the `admin` group
+     * room rather than to every socket, but that is defence in depth — the type
+     * is what guarantees there is nothing sensitive in the packet to begin with.
      *
      * @param fn - Emit callback invoked with an event name and signal payload.
      */
-    setBroadcast(fn: (event: string, payload: unknown) => void): void {
+    setBroadcast(fn: (event: string, payload: IGovernorSignal) => void): void {
         this.broadcast = fn;
     }
 

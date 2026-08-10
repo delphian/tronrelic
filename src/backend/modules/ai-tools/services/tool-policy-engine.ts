@@ -469,16 +469,25 @@ export class ToolPolicyEngine {
      *
      * @param name - Tool name.
      * @param policy - The override, or null to revert to class defaults.
+     * @param actor - Better Auth user id of the operator making the change, for
+     *   the audit line. An override is how a tool's approval requirement or
+     *   unattended-run ban comes off, so "who relaxed this" is the question the
+     *   log has to answer later. The admin route is gated to a signed-in admin
+     *   precisely so a real id is always available; it stays optional here only
+     *   because a future non-HTTP caller (a migration, a test) has no operator.
      * @returns Resolves when persisted.
      */
-    async setOverride(name: string, policy: IToolPolicy | null): Promise<void> {
+    async setOverride(name: string, policy: IToolPolicy | null, actor?: string): Promise<void> {
         if (policy) {
             this.overrides[name] = policy;
         } else {
             delete this.overrides[name];
         }
         await this.database.set(POLICY_OVERRIDES_KEY, this.overrides);
-        this.logger.info({ tool: name, cleared: !policy }, `AI tool policy override ${policy ? 'set' : 'cleared'}: ${name}`);
+        this.logger.info(
+            { tool: name, cleared: !policy, policy: policy ?? undefined, actor: actor ?? 'unattributed' },
+            `AI tool policy override ${policy ? 'set' : 'cleared'}: ${name}`
+        );
     }
 
     /** Current per-tool override map (admin view). */

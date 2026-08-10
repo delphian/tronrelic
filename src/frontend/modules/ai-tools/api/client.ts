@@ -375,7 +375,10 @@ export async function clearPolicy(name: string): Promise<void> {
  * `socketId` is the id of the live core socket the caller subscribes on. The
  * backend scopes `ai-tools:query-stream` chunks to that single socket instead of
  * broadcasting globally, so other admin sessions never receive this query's
- * deltas. Required for a streaming request.
+ * deltas. Required for a streaming request, and the backend rejects it with 403
+ * unless that socket is signed in as the calling admin — pass the caller's own
+ * `getSocket().id`, never an id from anywhere else. A socket that connected
+ * before sign-in still reads as anonymous, so a 403 here means reload the page.
  *
  * `toolAllowlist` narrows which tools this one run may call, enforced at the
  * governor. Unlike a saved prompt (which persists a three-state field), an

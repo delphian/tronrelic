@@ -5,15 +5,51 @@
  * `savePrompt` forwards a client-supplied `toolAllowlist` into the saved-prompts
  * service (create and update), and that the interactive `query` handler
  * re-validates the selector and forwards a valid one to the active provider.
+ * Also covers the streaming path's socket-ownership gate, which decides whether
+ * a run may write to the socket its caller named.
  *
  * The controller has twelve constructor dependencies; only `savedPrompts`,
  * `providers`, `history`, `systemPrompts`, and `resolveEndUser` are exercised
- * here, so the rest are inert stubs. Only the non-streaming query path is
- * driven, keeping the WebSocket singleton (used exclusively by the streaming
- * branch) out of scope.
+ * here, so the rest are inert stubs. The WebSocket singleton is stubbed at the
+ * module boundary because the streaming branch consults it for socket ownership
+ * before it will start a run.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+/**
+ * Mutable stand-in for the WebSocket singleton the streaming branch consults.
+ * `socketOwner` is what `getSocketUserId` reports for any socket id, so a test
+ * sets it to the caller's id to simulate owning the socket, to another id to
+ * simulate aiming at someone else's browser, and to null for a socket that is
+ * unknown or anonymous. Hoisted so the `vi.mock` factory below can close over
+ * it despite Vitest lifting the mock above the imports.
+ */
+const wsMock = vi.hoisted(() => ({
+    socketOwner: null as string | null,
+    emitToSocket: vi.fn()
+}));
+
+vi.mock('../../../services/websocket.service.js', () => ({
+    WebSocketService: {
+        /**
+         * Stand in for the real singleton accessor.
+         *
+         * @returns A double exposing only the two members the controller calls.
+         */
+        getInstance: () => ({
+            /**
+             * Report the configured owner regardless of which socket is asked
+             * about — the gate's input, not its lookup, is what these tests vary.
+             *
+             * @returns The user id currently configured as the socket's owner.
+             */
+            getSocketUserId: (): string | null => wsMock.socketOwner,
+            emitToSocket: wsMock.emitToSocket
+        })
+    }
+}));
+
 import { AiToolsController } from '../api/ai-tools.controller.js';
 import { QueryStreamRegistry } from '../services/query-stream-registry.js';
 
@@ -192,6 +228,95 @@ describe('AiToolsController — toolAllowlist wiring', () => {
 
             expect(provider.query).toHaveBeenCalledTimes(1);
             expect(provider.query.mock.calls[0][0].toolAllowlist).toBeUndefined();
+        });
+    });
+
+    describe('query (streaming) — socket ownership', () => {
+        /**
+         * Build a controller whose active provider records every `queryStream`
+         * call, so a test can assert the run never started when the gate denies.
+         *
+         * @returns The controller and the provider double.
+         */
+        function streamingController() {
+            const provider = {
+                queryStream: vi.fn(async () => ({ responseText: 'ok' })),
+                cancel: vi.fn(() => true)
+            };
+            const providers = { getActive: vi.fn(() => provider) };
+            const { controller } = makeController({ providers });
+            return { controller, provider };
+        }
+
+        /** A well-formed streaming body; only the caller identity varies below. */
+        const STREAM_BODY = { prompt: 'hi', queryId: 'q-1', socketId: 'sock-1' };
+
+        beforeEach(() => {
+            wsMock.socketOwner = null;
+            wsMock.emitToSocket.mockClear();
+        });
+
+        it('starts the run when the named socket is signed in as the caller', async () => {
+            const { controller, provider } = streamingController();
+            const res = createMockResponse();
+            wsMock.socketOwner = 'admin-1';
+
+            await controller.query({ body: STREAM_BODY, userId: 'admin-1' } as any, res);
+
+            expect(res._json).toMatchObject({ success: true, queryId: 'q-1' });
+            expect(provider.queryStream).toHaveBeenCalledTimes(1);
+        });
+
+        it('refuses a socket signed in as somebody else', async () => {
+            const { controller, provider } = streamingController();
+            const res = createMockResponse();
+            wsMock.socketOwner = 'admin-2';
+
+            await controller.query({ body: STREAM_BODY, userId: 'admin-1' } as any, res);
+
+            expect(res._status).toBe(403);
+            expect(provider.queryStream).not.toHaveBeenCalled();
+        });
+
+        it('refuses a socket that is unknown or anonymous', async () => {
+            const { controller, provider } = streamingController();
+            const res = createMockResponse();
+            wsMock.socketOwner = null;
+
+            await controller.query({ body: STREAM_BODY, userId: 'admin-1' } as any, res);
+
+            expect(res._status).toBe(403);
+            expect(provider.queryStream).not.toHaveBeenCalled();
+        });
+
+        it('refuses a service-token call, which owns no socket', async () => {
+            // requireAdmin leaves req.userId unset on the service-token path, so
+            // there is no identity a socket could be matched against — even a
+            // socket that happens to be live belongs to some other person.
+            const { controller, provider } = streamingController();
+            const res = createMockResponse();
+            wsMock.socketOwner = 'admin-1';
+
+            await controller.query({ body: STREAM_BODY } as any, res);
+
+            expect(res._status).toBe(403);
+            expect(provider.queryStream).not.toHaveBeenCalled();
+        });
+
+        it('leaves the stream registry clean after a refusal, so a retry can claim the id', async () => {
+            // The gate runs before the sink is registered; if it did not, the
+            // refused queryId would stay claimed and the operator's next attempt
+            // would 409 against their own abandoned run.
+            const queryStreams = new QueryStreamRegistry();
+            const provider = { queryStream: vi.fn(async () => ({ responseText: 'ok' })) };
+            const { controller } = makeController({ providers: { getActive: vi.fn(() => provider) }, queryStreams });
+            const res = createMockResponse();
+            wsMock.socketOwner = 'admin-2';
+
+            await controller.query({ body: STREAM_BODY, userId: 'admin-1' } as any, res);
+
+            expect(res._status).toBe(403);
+            expect(queryStreams.register('q-1', () => {})).toBe(true);
         });
     });
 
