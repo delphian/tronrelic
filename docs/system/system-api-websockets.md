@@ -152,6 +152,27 @@ Refetch signal — `{ event, namespace, nodeId, timestamp }`. Per-user gating me
 
 `{ namespace, config: Record<string, unknown>, timestamp }`.
 
+## Event Audience
+
+`WebSocketService.emit` picks each event's audience by name, and the choice is part of the event's contract rather than an implementation detail — an over-broad emit still reaches the intended surface, so the mistake shows up in neither review nor manual testing. `src/backend/services/__tests__/websocket-routing.test.ts` pins the decision for every case.
+
+| Audience | Events | Why |
+|---|---|---|
+| Subscribed rooms | `transaction:large`, `delegation:new`, `stake:new`, `comments:new`, `chat:update`, `memo:new` | Clients opt in through `subscribe`; the room is the filter |
+| `group:admin` | `ai-tools:activity`, `ai-tools:approvals-changed`, `curation:changed`, `price-history:stats` | Refetch nudges whose only subscribers live under `/system/*`. Payloads are already timestamp-or-count only, so scoping removes a timing side channel rather than a data leak — and keeps the blast radius at "admins" if a payload is ever widened |
+| `user:${id}` rooms | `notification` | Resolved per-recipient by the notifications dispatch pipeline |
+| Every socket | `block:new`, `menu:update`, `menu:namespace-config:update`, `widgets:placements-update`, `account-history:stats`, `content:published`, `toast` | Genuinely public, or consumed by a non-admin surface. `account-history:stats` is the one to watch: besides the admin dashboard it drives `WalletManager` on a signed-in user's own profile, and identity rooms address one user or one group, so there is no "every authenticated socket" room to narrow it to |
+
+### Keeping identity rooms current
+
+Room-scoped delivery makes handshake-time identity load-bearing, and its failure mode is quiet: a socket outside `group:admin` still connects and renders, it just stops receiving updates. Three mechanisms keep that from happening silently.
+
+`joinIdentityRooms` populates `user:${id}` and one `group:${id}` per group from the session resolved during the handshake. `SocketBridge` re-handshakes (disconnect + connect) whenever the client-visible identity changes — **user id or group membership**, so both signing in and being promoted to `admin` mid-session rejoin without a page reload. And because a Socket.IO handshake captures its cookie once and never refreshes it, a session resolution that *throws* is retried once server-side before the socket is allowed to connect anonymous; an anonymous visitor resolves to `null` without throwing, so ordinary public traffic is never retried.
+
+One residual: if resolution fails twice, the socket connects with no identity rooms and stays that way until it reconnects. That path logs at `error` naming the consequence, which is the thread to pull on a report of "the dashboard stopped updating."
+
+Adding an event means adding a `case` and choosing its audience deliberately. There is no catch-all `emit`: an unrecognised event is logged and dropped, so a new event is inert until someone picks its audience — silent is the correct failure direction, broadcast-to-everyone is not.
+
 ```javascript
 socket.emit('subscribe', { transactions: { minAmount: 1_000_000 } });
 socket.on('transaction:large', tx =>

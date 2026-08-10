@@ -67,6 +67,18 @@ handler: async (req, res) => {
 
 Login-gated REST routes can carry `requiresAuth: true` so the shared `requireLogin` middleware (`api/middleware/require-login.ts`) enforces the gate — 401 for anonymous callers, `req.userId` set for authenticated ones. Admin-gated routes carry `requiresAdmin: true` so `requireAdmin` enforces the gate (it admits a Better Auth admin session or the `ADMIN_API_TOKEN` service token). Both middlewares are available to core routers and plugin route configs alike. See [plugins-api-registration.md](../plugins/plugins-api-registration.md).
 
+### Narrowing an admin route to a human — `requireAdminUser`
+
+`requireAdmin` deliberately admits two unlike callers under one name: a signed-in member of the `admin` group, and anything holding `ADMIN_API_TOKEN`. That is the right trade almost everywhere, but a few endpoints are too consequential to key on a shared secret — handing back a stored secret in plaintext, or removing a safety gate. A single environment variable lives in CI config, a deployment `.env`, and somebody's shell history at once, and the token path sets no `req.userId`, so the audit trail can record *that* the action happened but never *who* did it.
+
+`requireAdminUser` (`api/middleware/admin-auth.ts`) closes that gap for individual routes. Mount it **immediately after** `requireAdmin` on the route itself — it authenticates nothing of its own, it only inspects the `req.adminVia` verdict `requireAdmin` already recorded, so mounting it alone leaves a route wide open. It admits `adminVia === 'user'` with a populated `req.userId` and answers 403 otherwise, which means a handler behind it can rely on having a real actor id to attribute its work to.
+
+**The gate is only half the job — log the actor.** Refusing the shared secret buys little if the action it protects still leaves no record of who performed it, so a handler behind this gate must write `req.userId` into its audit line; the middleware guarantees the id is there. In the AI tools module that is the `adminActionLog` entry in `revealVariable` (which records the variable name and byte size, never the value — copying a secret into the log store just moves it to a different queryable surface) and the `actor` field `setOverride` now stamps on every policy change.
+
+**Gate a capability, not a route.** Narrowing one endpoint accomplishes nothing if the same data has a second door, and a partial boundary is worse than none — it invites the belief that something is contained when it is not. Enumerate every path to the thing you are protecting, then gate the set. In the AI tools module, reading a `secret` prompt variable has four: resolving it directly, the bulk listing (which embeds each static's `content`), a query prompt containing `{%name%}` (the provider expands it before the model sees it), and the persisted history of that query's answer. All four are gated together. The policy **writes** are gated for a different reason — they remove a safety gate — while the matching reads stay on the shared gate, so a monitoring script can still observe a posture it is no longer allowed to change.
+
+Two honest limits. Gating narrows what a token can reach; it does not demote the token, which still opens every other admin route. And any existing automation calling a narrowed route starts receiving 403 and has to move to a real admin session — grep your CI configs and ops scripts for `x-admin-token` before shipping one of these.
+
 ## Further Reading
 
 - [Identity Module README](../../src/backend/modules/identity/README.md) — the module that hosts the Better Auth instance, facade, `GroupService`, the `'user-groups'`/`'wallets'`/`'accounts'` published services, and the wallet store.

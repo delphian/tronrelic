@@ -22,7 +22,7 @@ import {
     setAuthInstance,
     resetAuthInstanceForTests
 } from '../../../modules/identity/services/auth-facade.js';
-import { requireAdmin } from '../admin-auth.js';
+import { requireAdmin, requireAdminUser } from '../admin-auth.js';
 
 class NullLogger implements ISystemLogService {
     info() {} warn() {} error() {} debug() {} trace() {} fatal() {}
@@ -227,5 +227,51 @@ describe('requireAdmin middleware', () => {
             expect(req.adminVia).toBe('user');
             expect(req.userId).toBe(ADMIN_USER_3);
         });
+    });
+});
+
+describe('requireAdminUser middleware', () => {
+    it('admits a request the session path already approved', () => {
+        const { req, res, next, called } = makeReqRes();
+        req.adminVia = 'user';
+        req.userId = ADMIN_USER_1;
+
+        requireAdminUser(req, res, next);
+
+        expect(called()).toBe(true);
+    });
+
+    it('refuses a request approved by the service token', () => {
+        // The whole point of the gate: requireAdmin already said yes, and this
+        // narrows that yes to a named human.
+        const { req, res, next, called } = makeReqRes();
+        req.adminVia = 'service-token';
+
+        requireAdminUser(req, res, next);
+
+        expect(called()).toBe(false);
+        expect(res.statusCode).toBe(403);
+    });
+
+    it('refuses a session-tagged request carrying no user id', () => {
+        // Defensive: the gate promises the handler a real actor to attribute
+        // to, so a half-populated request must not slip through on the tag.
+        const { req, res, next, called } = makeReqRes();
+        req.adminVia = 'user';
+        req.userId = undefined;
+
+        requireAdminUser(req, res, next);
+
+        expect(called()).toBe(false);
+        expect(res.statusCode).toBe(403);
+    });
+
+    it('refuses an untagged request, so mounting it alone never opens a route', () => {
+        const { req, res, next, called } = makeReqRes();
+
+        requireAdminUser(req, res, next);
+
+        expect(called()).toBe(false);
+        expect(res.statusCode).toBe(403);
     });
 });

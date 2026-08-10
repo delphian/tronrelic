@@ -40,10 +40,24 @@ import { SystemPromptValidationError } from '../services/system-prompts.service.
 import type { ScreenConfigService } from '../services/screen-config.service.js';
 import type { QueryStreamRegistry } from '../services/query-stream-registry.js';
 import { WebSocketService } from '../../../services/websocket.service.js';
+import { logger } from '../../../lib/logger.js';
 import { detectTrifecta } from '../services/trifecta-detector.js';
 
 /** WebSocket event carrying a streamed AI response chunk to the dashboard. */
 const QUERY_STREAM_EVENT = 'ai-tools:query-stream';
+
+/**
+ * Logger for the handful of admin actions that need a named operator on record.
+ *
+ * The `requireAdminUser`-gated routes — revealing a variable's value, writing or
+ * clearing a policy override — are gated precisely because they read a secret or
+ * take a safety gate off, and that gate is only half the answer: refusing the
+ * shared token is worth little if the resulting action leaves no trace of who
+ * performed it. These entries are the other half. The middleware guarantees
+ * `req.userId` is populated on every route that logs here, so the actor field is
+ * never a placeholder.
+ */
+const adminActionLog = logger.child({ module: 'ai-tools', surface: 'admin-api' });
 
 /** Shape of the POST /query request body. */
 interface IQueryRequestBody {
@@ -398,8 +412,11 @@ export class AiToolsController {
      *
      * Kept off the bulk `listVariables` payload deliberately: a resolved value may
      * be large or `secret`, so it is fetched only when an operator expands the row
-     * that needs it. Admin-gated and rate-limited by the router — the same posture
-     * that already lets an admin create, edit, and classify these variables.
+     * that needs it. Rate-limited by the router and gated more tightly than its
+     * sibling variable routes: `requireAdminUser` refuses the `ADMIN_API_TOKEN`
+     * service path here, because this is the one endpoint that returns a stored
+     * secret rather than metadata about it, and a shared environment variable
+     * names nobody in the audit trail.
      *
      * A resolver that currently throws is itself the "current state" the admin is
      * inspecting, so its message is surfaced (502) rather than hidden; an unknown
@@ -407,19 +424,28 @@ export class AiToolsController {
      */
     revealVariable = async (req: Request, res: Response): Promise<void> => {
         const name = req.params.name;
+        const actor = actorId(req);
         try {
             const content = await this.promptVariables.resolve(name);
+            const sizeBytes = Buffer.byteLength(content, 'utf-8');
+            // Record that this operator read this variable, never what it held —
+            // writing the value here would defeat the point by copying a secret
+            // into the log store, which is queryable from a different surface.
+            adminActionLog.info({ actor, variable: name, sizeBytes }, 'Prompt variable value revealed');
             res.json({
                 variable: {
                     name,
                     pattern: `{%${name}%}`,
                     content,
-                    sizeBytes: Buffer.byteLength(content, 'utf-8')
+                    sizeBytes
                 }
             });
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'Failed to resolve variable.';
             const status = message.startsWith('Unknown prompt variable') ? 404 : 502;
+            // A failed read is still an attempt worth attributing — a sweep for
+            // variable names looks exactly like a run of these.
+            adminActionLog.warn({ actor, variable: name, status }, 'Prompt variable reveal failed');
             res.status(status).json({ error: message });
         }
     };
@@ -542,6 +568,12 @@ export class AiToolsController {
      * completion or failure. On early failure a terminal error chunk is emitted
      * so the client unsticks.
      *
+     * The named socket must be a live socket signed in as the calling admin —
+     * a body-supplied id would otherwise let one operator stream their own
+     * transcript into another person's browser. That also means only the
+     * session path can stream; a service-token call owns no socket and is told
+     * to use `stream: false`.
+     *
      * Non-streaming (`stream === false`): awaits `provider.query`, appends a
      * record, and returns the result.
      */
@@ -627,6 +659,33 @@ export class AiToolsController {
             const socketId = body.socketId;
             if (typeof socketId !== 'string' || socketId.trim().length === 0) {
                 res.status(400).json({ error: 'Streaming queries require a non-empty string "socketId".' });
+                return;
+            }
+
+            // The chunks about to flow down that socket carry this query's
+            // answer text, tool arguments, and tool results. `socketId` is
+            // caller-supplied, so it has to be proven to belong to the caller
+            // before anything is written to it — otherwise one authenticated
+            // operator could aim another person's browser at their own
+            // transcript, which `requireAdmin` on its own does not prevent.
+            //
+            // The route's own `requireAdminUser` already guarantees a session
+            // caller, so this branch is unreachable today. Kept as a local
+            // precondition rather than deleted: the ownership comparison below
+            // is only meaningful against a real identity, and `undefined ===
+            // undefined` would pass it. Should this handler ever be mounted
+            // without that middleware, it denies instead of matching one absent
+            // identity against another.
+            if (!callerId) {
+                res.status(403).json({
+                    error: 'Streaming requires an admin session, which this request does not carry.'
+                });
+                return;
+            }
+            if (WebSocketService.getInstance().getSocketUserId(socketId) !== callerId) {
+                res.status(403).json({
+                    error: 'That "socketId" is not a live socket signed in as you. Reload the page so the socket reconnects carrying your session, then retry.'
+                });
                 return;
             }
 
@@ -1077,13 +1136,13 @@ export class AiToolsController {
             res.status(400).json({ error: "curation must be 'require' or 'auto-approve'." });
             return;
         }
-        await this.policy.setOverride(req.params.name, policy);
+        await this.policy.setOverride(req.params.name, policy, actorId(req));
         res.json({ name: req.params.name, policy });
     };
 
     /** DELETE /policy/:name — clear a per-tool override (revert to class defaults). */
     clearPolicy = async (req: Request, res: Response): Promise<void> => {
-        await this.policy.setOverride(req.params.name, null);
+        await this.policy.setOverride(req.params.name, null, actorId(req));
         res.json({ name: req.params.name, cleared: true });
     };
 

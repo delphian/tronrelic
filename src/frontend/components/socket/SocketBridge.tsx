@@ -53,10 +53,27 @@ export function SocketBridge() {
   // Better Auth identity, read straight from BA's client store. SocketBridge
   // mounts as a sibling above SessionProvider, so it cannot use the
   // SessionProvider context — but `useSession` is BA's own reactive hook and
-  // works anywhere under the providers. Only the stable user id matters here.
+  // works anywhere under the providers.
   const { data: sessionData } = useSession();
+
+  // The socket's identity rooms are `user:${id}` plus one `group:${id}` per
+  // group, so both halves of the identity have to be watched — a change in
+  // either leaves the rooms stale. Groups are easy to overlook and their
+  // staleness is the quieter failure: events addressed to `group:admin` (the
+  // /system dashboards' refetch nudges) simply never reach a socket that
+  // handshook before the account was promoted, and nothing surfaces an error —
+  // the page renders, it just silently stops updating.
+  //
+  // `groups` is a Better Auth additional field, so it rides along on the
+  // session's user record; it is read defensively because BA's inferred client
+  // user type does not surface custom fields. Sorted before joining so a
+  // reordering on the server side does not read as a membership change.
   const sessionUserId = sessionData?.user?.id ?? null;
-  const establishedUserIdRef = useRef<string | null | undefined>(undefined);
+  const sessionGroups = (sessionData?.user as { groups?: string[] } | undefined)?.groups;
+  const identityKey = sessionUserId === null
+    ? null
+    : `${sessionUserId}|${[...(sessionGroups ?? [])].sort().join(',')}`;
+  const establishedIdentityRef = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     desiredRef.current = desired ?? null;
@@ -71,32 +88,39 @@ export function SocketBridge() {
   // connect time, and never refreshes it — so a long-lived socket keeps the
   // identity rooms (`user:${id}`/`group:${id}`) it joined when it first
   // connected. Without this, after sign-out a tab would stay in its old user
-  // room and keep receiving that account's targeted/admin notifications, and
-  // after sign-in it would never join the new room. Forcing disconnect+connect
-  // makes the server treat the reconnect as a fresh connection: the old socket
-  // leaves its rooms on disconnect, and the new handshake re-resolves identity
-  // rooms from the current cookie. Handlers stay attached to the same client
-  // instance and `handleConnect` re-subscribes from `desiredRef`, so app
-  // subscriptions survive (a full effect teardown would clear them). The first
-  // observed id is recorded without reconnecting — the initial handshake
-  // already carries the right cookie — and a socket that has not connected yet
-  // is left alone, since its first handshake will use the current cookie.
+  // room and keep receiving that account's targeted/admin notifications; after
+  // sign-in it would never join the new room; and after a group promotion it
+  // would never join `group:admin`, so every admin-scoped refetch nudge would
+  // pass it by. Forcing disconnect+connect makes the server treat the
+  // reconnect as a fresh connection: the old socket leaves its rooms on
+  // disconnect, and the new handshake re-resolves identity rooms from the
+  // current cookie. Handlers stay attached to the same client instance and
+  // `handleConnect` re-subscribes from `desiredRef`, so app subscriptions
+  // survive (a full effect teardown would clear them). The first observed
+  // identity is recorded without reconnecting — the initial handshake already
+  // carries the right cookie — and a socket that has not connected yet is left
+  // alone, since its first handshake will use the current cookie.
+  //
+  // This closes the client-observable half of room staleness. A membership
+  // change the client's session has not picked up yet, or a handshake whose
+  // server-side session resolution failed, are not visible here; the server
+  // retries a failed resolution during the handshake itself.
   useEffect(() => {
-    if (establishedUserIdRef.current === undefined) {
-      establishedUserIdRef.current = sessionUserId;
+    if (establishedIdentityRef.current === undefined) {
+      establishedIdentityRef.current = identityKey;
       return;
     }
-    if (establishedUserIdRef.current === sessionUserId) {
+    if (establishedIdentityRef.current === identityKey) {
       return;
     }
-    establishedUserIdRef.current = sessionUserId;
+    establishedIdentityRef.current = identityKey;
 
     const socket = socketRef.current;
     if (socket && socket.connected) {
       socket.disconnect();
       socket.connect();
     }
-  }, [sessionUserId]);
+  }, [identityKey]);
 
   useEffect(() => {
     const socket = getSocket();

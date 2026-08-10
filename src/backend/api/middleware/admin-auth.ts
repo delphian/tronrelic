@@ -121,3 +121,38 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
         res.status(500).json({ success: false, error: 'Auth check failed' });
     }
 }
+
+/**
+ * Narrow an already-authorized admin request to the human-operator path,
+ * refusing the service token.
+ *
+ * `requireAdmin` admits two very different callers under one name: a signed-in
+ * member of the `admin` group, and anyone holding `ADMIN_API_TOKEN`. That is
+ * the right trade for most of the admin surface, but a few endpoints are too
+ * consequential to key on a shared secret — reading a secret back in plaintext,
+ * or relaxing a safety gate. For those, a single environment variable sitting
+ * in CI config, a `.env`, and someone's shell history is too broad a key, and
+ * the token path also leaves no operator to attribute the action to
+ * (`req.userId` is only set on the session path), so the audit trail records
+ * *that* it happened but not *who* did it.
+ *
+ * Mount this immediately after `requireAdmin` on the routes that need it. It
+ * performs no authentication of its own — it only inspects the verdict
+ * `requireAdmin` already recorded — so mounting it alone leaves an endpoint
+ * open. Requiring `userId` alongside `adminVia` is deliberate: a handler behind
+ * this gate can rely on having a real actor id to attribute its work to.
+ *
+ * @param req - Express request, already tagged by `requireAdmin`.
+ * @param res - Express response.
+ * @param next - Express next function to pass control to the handler.
+ */
+export function requireAdminUser(req: Request, res: Response, next: NextFunction): void {
+    if (req.adminVia === 'user' && req.userId) {
+        next();
+    } else {
+        res.status(403).json({
+            success: false,
+            error: 'This endpoint requires a signed-in admin account. The ADMIN_API_TOKEN service path is not accepted here.'
+        });
+    }
+}

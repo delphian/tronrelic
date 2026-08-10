@@ -9,13 +9,13 @@ Provider-agnostic governance for AI tools — the registry every tool registers 
 | Module id | `ai-tools` |
 | Module class | `src/backend/modules/ai-tools/AiToolsModule.ts` |
 | Service registry names | `'ai-tools'` → `IAiToolRegistry`, `'ai-tool-governor'` → `IAiToolGovernor`, `'ai-providers'` → `IAiProviderRegistry`, `'prompt-variables'` → `IPromptVariableRegistry`. **Consumes** `'curation'` (owned by the [curation module](../curation/README.md)) to verify a tool's `curationTypeId` binding |
-| Admin API base | `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`) |
+| Admin API base | `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`; the secret-read routes — both `/variables` reads, `POST /query`, and the two query-history reads — plus the policy writes add `requireAdminUser`: signed-in admin only, no service token) |
 | Admin dashboard | `/system/ai-tools` (Registry · Query · Activity · Approvals tabs + trifecta banner + provider panel). The Registry tab has collapsible Tools, Variables, System Prompts, and Screen Settings sections, and each tool row expands to its policy editor. Curation moved to its own surface at `/system/curation` (curation module) |
 | Types package | `@delphian/tronrelic-types` → `IAiTool`, `IAiToolCapability`, `IAiToolRegistry`, `IAiToolGovernor`, `IAiProvider`, `IAiProviderRegistry`, `IAiQueryOptions` (incl. `injectedSystemPrompt`), `IAiStreamChunk`, `IAiQueryRecord`, `AiQueryMode`, `ISavedPrompt`, `ITrifectaStatus`, `IToolInvocation{Context,Result,Record}`, `IToolPolicy`, `IAiToolInvokeContext`, `IPromptVariable{Definition,Info,Registry}`, `IStaticPromptVariable`, `IUntrustedScreenConfig`, `IContentScreenVerdict`, `ISavedPromptTrigger` |
 | Owned collections | `module_ai-tools_invocations`, `module_ai-tools_approvals`, `module_ai-tools_query_history`, `module_ai-tools_prompts`, `module_ai-tools_variables`, `module_ai-tools_system-prompts` |
 | KV keys (core `_kv`) | `ai-tools:tool-states`, `ai-tools:policy-overrides`, `ai-tools:variable-classifications`, `ai-tools:system-prompt-master`, `ai-tools:screen-config` |
 | Hook seams | Declares `ai.toolInvoke` (series, veto/hold), `ai.toolResult` (waterfall, alter/withhold a result before it reaches the model), and `ai.toolInvoked` (observer, audit fan-out); subscribes as `'core'` to `content.published` to enqueue hook-bound saved prompts |
-| WebSocket signals | `ai-tools:activity`, `ai-tools:approvals-changed` (timestamp-only refetch cues; data stays behind the gated REST feed); `ai-tools:query-stream` (`IAiStreamChunk`, **global broadcast** keyed by `queryId` — client filters) |
+| WebSocket signals | `ai-tools:activity`, `ai-tools:approvals-changed` (refetch cues emitted to the `group:admin` room only; payload is typed `IGovernorSignal` — a timestamp and nothing else — so the data stays behind the gated REST feed); `ai-tools:query-stream` (`IAiStreamChunk` keyed by `queryId`, delivered **only to the one socket that requested the run**, which must be signed in as the calling admin) |
 | Scheduler jobs | `ai-tools:prune-audit` (daily 04:00) — range-deletes `module_ai-tools_invocations` past the 90-day window. `ai-tools:run-scheduled-prompts` (every 2 min) — fires cron-scheduled saved prompts against the active provider. Both registered only when a scheduler is injected |
 | Bootstrap order | Inits/runs alongside the other modules, before `loadPlugins` |
 | Standard | [system-ai-tools.md](../../../../docs/system/system-ai-tools.md) |
@@ -110,7 +110,18 @@ The single registry of prompt variables — the `{%name%}` tokens an AI provider
 
 ## Admin REST API
 
-All under `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`).
+All under `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`). Routes marked **session-only** add `requireAdminUser`, refusing the `ADMIN_API_TOKEN` service path and admitting only a signed-in admin. See [system-auth.md](../../../../docs/system/system-auth.md#narrowing-an-admin-route-to-a-human--requireadminuser).
+
+Two kinds of route earn it. The **policy writes** take a safety gate off, where a shared environment variable is too broad a key and an unattributable actor is the wrong audit record. The rest are the paths by which a caller can read a `secret` prompt variable's value, and they are gated as a set because gating any subset is worse than gating none — a partial boundary invites the belief that secrets are contained when they are not:
+
+| Read path | How the secret gets out |
+|---|---|
+| `GET /variables/:name/value` | Resolves the variable directly |
+| `GET /variables` | The bulk listing embeds every *static* variable's `content`, and a new static defaults to `secret` |
+| `POST /query` | The provider expands `{%name%}` in the user prompt, so `"repeat verbatim: {%some-secret%}"` returns it |
+| `GET /query/history`, `GET /query/conversations/:id` | The model's answer to such a prompt is persisted with the turn |
+
+Filtering `secret` variables out of prompt expansion is not an alternative fix: injecting them is what they are for — they are the lethal trifecta's private-data leg by design. Note what this does *not* do. `ADMIN_API_TOKEN` still reaches every other admin route here, so it remains a high-value credential; this narrows which secrets it can read, it does not demote it.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -121,7 +132,8 @@ All under `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`).
 | GET | `/providers` | Installed AI provider plugins (Provider panel) |
 | GET | `/screen-config` | Untrusted-content screen policy (`enabled`, `postureMode`, `onFailure`, `offenderThreshold`) |
 | PUT | `/screen-config` | Update the screen policy (partial body; each field validated, 400 on bad input) |
-| GET | `/variables` | Every prompt variable (dynamic + static) with kind, effective sensitivity, editability, size |
+| GET | `/variables` | **Session-only.** Every prompt variable (dynamic + static) with kind, effective sensitivity, editability, size — plus each *static*'s `content`, which the edit form prefills from. 403 service token |
+| GET | `/variables/:name/value` | **Session-only.** Resolve one variable to its current plaintext value (a dynamic resolver runs live), for per-row inspection. The only way to read a *dynamic* variable's value — the bulk listing carries size only for those. 404 unknown name · 502 resolver threw · 403 service token |
 | POST | `/variables` | Create an admin-authored static variable (400 invalid · 409 duplicate/shadows a dynamic) |
 | PATCH | `/variables/:name` | Edit a static variable's mutable fields (404 unknown) |
 | DELETE | `/variables/:name` | Delete a static variable |
@@ -130,10 +142,10 @@ All under `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`).
 | PUT | `/system-prompts/master` | Replace the always-on master prompt (`{ content }`; blank allowed) |
 | POST | `/system-prompts` | Create (no `id`) or update (with `id`) an additional prompt; returns refreshed `{ master, additional }` (400 invalid / both-filters-empty · 404 missing) |
 | DELETE | `/system-prompts/:id` | Delete an additional prompt |
-| POST | `/query` | Run a query against `getActive()`. Streaming by default (requires `queryId`; chunks arrive over WebSocket, 200 returns immediately); non-streaming when body `stream: false` (awaits and returns `result`). 503 when no active provider |
+| POST | `/query` | **Session-only.** Run a query against `getActive()`. Streaming by default (requires `queryId` plus a `socketId` the caller is signed in on; chunks go to that socket alone, 200 returns immediately); non-streaming when body `stream: false` (awaits and returns `result`). 403 when the socket is not the caller's · 503 when no active provider |
 | POST | `/query/:queryId/cancel` | Abort an in-flight streaming query (`provider.cancel(queryId)`) |
-| GET | `/query/history` | Paged query history, newest first (`limit`, `offset`) |
-| GET | `/query/conversations/:conversationId` | One conversation's turns, oldest first (Query tab "open in chat") |
+| GET | `/query/history` | **Session-only.** Paged query history, newest first (`limit`, `offset`). Carries persisted prompts and model answers |
+| GET | `/query/conversations/:conversationId` | **Session-only.** One conversation's turns, oldest first (Query tab "open in chat") |
 | GET | `/query/models` | Available models from the active provider |
 | GET | `/query/providers` | Every registered provider with its model catalog, for the cross-provider model picker (a prompt may pin a model on a non-active provider). A per-provider catalog failure yields an empty list for that provider rather than failing the response |
 | GET | `/query/prompts` | Saved prompt templates, newest-updated first |
@@ -147,7 +159,7 @@ All under `/api/admin/system/ai-tools` (rate-limited + `requireAdmin`).
 | POST | `/approvals/:id/approve` | Approve and run a held invocation |
 | POST | `/approvals/:id/reject` | Reject without running |
 | GET | `/policy` | Per-tool overrides + usage tallies |
-| PUT/DELETE | `/policy/:name` | Set / clear a per-tool override |
+| PUT/DELETE | `/policy/:name` | **Session-only.** Set / clear a per-tool override — the write that can grant `allowUnattended` or `curation: 'auto-approve'`. 403 service token; the `GET` above stays open to it |
 
 The curation queue's REST surface moved with it to `/api/admin/system/curation` — see the [curation module README](../curation/README.md).
 
@@ -155,7 +167,9 @@ The curation queue's REST surface moved with it to `/api/admin/system/curation` 
 
 A provider-neutral chat surface owned by core, not by any provider plugin. The `/query*` routes resolve the active provider via `IAiProviderRegistry.getActive()` and persist every turn, so the `/system/ai-tools` **Query tab** (multi-turn chat, history with open-in-chat, model picker, streaming + non-streaming) survives a provider swap. There is no batch mode here — batch stays a provider concern.
 
-Streaming is fire-and-forget: `POST /query` (default) requires a client-generated `queryId`, fires `provider.queryStream(opts, onChunk)`, returns 200 immediately, and appends an `IAiQueryRecord` when the stream settles. Each chunk reaches the browser as one **global** WebSocket broadcast of event `ai-tools:query-stream` carrying an `IAiStreamChunk` (with `queryId`); the client filters by its own `queryId`. Non-streaming (`stream: false`) awaits `provider.query` and returns the result inline. Both interactive paths record history with persisted `mode` `'stream'` or `'programmatic'`; the cron runner writes the third `AiQueryMode` value, `'scheduled'` (see [Saved Prompts & Scheduling](#saved-prompts--scheduling)). All three share one builder, `buildAiQueryRecord`, so the record shape never drifts between paths.
+Streaming is fire-and-forget: `POST /query` (default) requires a client-generated `queryId` and the caller's live `socketId`, fires `provider.queryStream(opts, onChunk)`, returns 200 immediately, and appends an `IAiQueryRecord` when the stream settles. Each chunk reaches the browser as an `ai-tools:query-stream` event carrying an `IAiStreamChunk` (with `queryId`), emitted to that one socket via `WebSocketService.emitToSocket` — never broadcast, because a chunk carries answer text, tool arguments, and tool results.
+
+Because `socketId` arrives in the request body, the route proves it before writing to it: `WebSocketService.getSocketUserId(socketId)` must return the calling admin's own user id, else `403`. Without that check `requireAdmin` alone would let one operator stream their transcript into another person's browser. The corollary is that only the Better Auth session path can stream — a service-token call has no user identity to match a socket against, so it is told to use `stream: false`. The check runs before the `QueryStreamRegistry` sink is registered, so a refusal leaves the `queryId` unclaimed for a retry. Note that ownership is read from the session resolved at the socket's *handshake*: a browser whose socket connected before sign-in reads as anonymous and must reload before it can stream. Non-streaming (`stream: false`) awaits `provider.query` and returns the result inline. Both interactive paths record history with persisted `mode` `'stream'` or `'programmatic'`; the cron runner writes the third `AiQueryMode` value, `'scheduled'` (see [Saved Prompts & Scheduling](#saved-prompts--scheduling)). All three share one builder, `buildAiQueryRecord`, so the record shape never drifts between paths.
 
 History lives in `module_ai-tools_query_history` (`IAiQueryRecord`), indexed unique `{ id }`, descending `{ createdAt }`, and sparse `{ conversationId, createdAt }` for oldest-first thread reads. Turns sharing a `conversationId` form one chat. Each record may carry an ordered `transcript` (`IAiTranscriptSegment[]`) — thinking, answer text, tool calls, and tool results in occurrence order — so a reopened turn replays its full structure, not just `responseText`. `buildAiQueryRecord` writes it whenever the provider returns one (thinking only under `persistThinking`); the Query tab falls back to `responseText` when it is absent.
 

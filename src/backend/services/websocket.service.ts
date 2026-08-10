@@ -1,11 +1,13 @@
 import type { IWebSocketService } from '@/types';
+import { ADMIN_GROUP_ID } from '@/types';
 import type { Server } from 'http';
 import { Server as SocketIOServer, type Socket } from 'socket.io';
 import type { TronRelicSocketEvent, SocketSubscriptions } from '@/shared';
 import { logger } from '../lib/logger.js';
 import { PluginWebSocketRegistry } from './plugin-websocket-registry.js';
 import { corsOriginCallback } from '../config/cors.js';
-import { getSessionFromHeaders } from '../modules/identity/services/auth-facade.js';
+import type { IncomingHttpHeaders } from 'node:http';
+import { getSessionFromHeaders, type IAugmentedSession } from '../modules/identity/services/auth-facade.js';
 
 export class WebSocketService implements IWebSocketService {
   private static instance: WebSocketService;
@@ -34,24 +36,70 @@ export class WebSocketService implements IWebSocketService {
     // Phase 2: resolve the Better Auth session during the handshake
     // and stash the augmented payload on `socket.data.authSession`
     // before the `connection` event fires. Plugin WS handlers and
-    // future room-gating logic can read it as `socket.data.authSession`
-    // without rehydrating. Failures degrade to `null` so anonymous
-    // connections (which are the common case) are never blocked by
-    // an auth-tier hiccup.
+    // room-gating logic read it as `socket.data.authSession` without
+    // rehydrating. Failures degrade to `null` so anonymous connections
+    // (which are the common case) are never blocked by an auth-tier hiccup.
+    //
+    // One retry before giving up. Since identity rooms are now load-bearing —
+    // admin-scoped events reach only `group:admin` — a resolution that throws
+    // costs a signed-in operator their live updates for the life of the socket,
+    // with nothing on screen to say so. The client re-handshakes when its own
+    // session changes, but a transient Better Auth / Mongo blip changes nothing
+    // client-side, so this is the only place the recovery can happen. A retry
+    // is cheap and covers the momentary faults that make up most of this class;
+    // a resolution still failing on the second attempt is logged loudly enough
+    // to correlate with a reported "the dashboard stopped updating".
     this.io.use(async (socket, next) => {
-      try {
-        const session = await getSessionFromHeaders(socket.handshake.headers);
-        socket.data.authSession = session;
-      } catch (error) {
-        socket.data.authSession = null;
-        logger.error({ error, socketId: socket.id }, 'WS handshake BA session resolution failed');
-      }
+      socket.data.authSession = await this.resolveHandshakeSession(socket.handshake.headers, socket.id);
       next();
     });
 
     this.io.on('connection', socket => this.handleConnection(socket));
 
     logger.info('WebSocket server initialized with transports: websocket, polling');
+  }
+
+  /**
+   * Resolve a connecting socket's Better Auth session, retrying once.
+   *
+   * Split out of the handshake middleware so the retry policy is stated in one
+   * place and can be reasoned about on its own. The distinction that matters:
+   * an *anonymous* visitor resolves to `null` without throwing, so a throw here
+   * always means the auth tier itself faltered — never "no cookie". That is
+   * worth a second attempt, because the cost of accepting it is a signed-in
+   * operator connected with no identity rooms, which reads on screen as a
+   * dashboard that quietly stopped refreshing.
+   *
+   * Still returns `null` rather than rejecting the connection when both
+   * attempts fail: refusing the handshake would take the socket down for
+   * anonymous and authenticated visitors alike over a fault that only degrades
+   * one of them. Degraded-but-connected is the better failure here, and the
+   * error log is what makes it diagnosable.
+   *
+   * @param headers - The handshake's raw headers, carrying the BA session cookie.
+   * @param socketId - Connecting socket id, for log correlation.
+   * @returns The augmented session, or null when anonymous or unresolvable.
+   */
+  private async resolveHandshakeSession(
+    headers: IncomingHttpHeaders,
+    socketId: string
+  ): Promise<IAugmentedSession | null> {
+    let session: IAugmentedSession | null = null;
+    try {
+      session = await getSessionFromHeaders(headers);
+    } catch (firstError) {
+      logger.warn({ error: firstError, socketId }, 'WS handshake BA session resolution failed; retrying once');
+      try {
+        session = await getSessionFromHeaders(headers);
+      } catch (retryError) {
+        logger.error(
+          { error: retryError, socketId },
+          'WS handshake BA session resolution failed twice; socket connects without identity rooms and will not receive user- or group-targeted events until it reconnects'
+        );
+        session = null;
+      }
+    }
+    return session;
   }
 
   /**
@@ -368,17 +416,47 @@ export class WebSocketService implements IWebSocketService {
       case 'ai-tools:activity':
       case 'ai-tools:approvals-changed':
       case 'curation:changed':
-      case 'content:published':
-      case 'account-history:stats':
       case 'price-history:stats':
-        // Admin-dashboard refetch nudges from the AI tool governor, the curation
-        // service, the internal publish sink, and the account-history /
-        // price-history ingestion ticks. The /system/ai-tools, /system/curation,
-        // publish, /system/account-history, and /system/price-history surfaces
-        // subscribe on the shared socket without joining a room, so these
-        // broadcast globally; payloads carry only a timestamp, count, or item
-        // summary, never governed data — each surface refetches the protected
-        // detail over its requireAdmin REST endpoint.
+        // Refetch nudges for admin-only surfaces: the AI tool governor, the
+        // curation service, and the price-history ingestion tick. Every
+        // subscriber lives under /system/*, so these go to the `admin` group
+        // room rather than to every connected socket.
+        //
+        // The payloads are already timestamp-or-count only, so this is not
+        // fixing a live leak — it removes one. A global emit told any anonymous
+        // visitor when a tool ran or an approval moved, which is a usable
+        // timing signal for someone probing prompt injection, and it woke every
+        // browser on the site to deliver a timestamp to one or two operators.
+        // It also kept the blast radius wrong: `emit` takes `payload: any`, so
+        // the day someone widens one of these payloads, the global form
+        // publishes governed data to the public internet where this form
+        // reaches only admins. The detail itself always stays behind each
+        // surface's requireAdmin REST endpoint.
+        //
+        // The room is populated at handshake time by joinIdentityRooms, and
+        // SocketBridge reconnects the socket when the session user changes, so
+        // an operator who signs in mid-session lands in the room without a
+        // page reload.
+        this.io.to(`group:${ADMIN_GROUP_ID}`).emit(event.event, event.payload);
+        break;
+      case 'account-history:stats':
+        // Deliberately NOT admin-scoped. Besides the /system/account-history
+        // dashboard, this nudge is consumed by WalletManager on a signed-in
+        // user's own profile, which refetches that person's wallet sync
+        // progress when an ingestion tick lands. Identity rooms cover one user
+        // or one group, so there is no room meaning "every authenticated
+        // socket" to narrow this to. The payload is a stats summary carrying no
+        // per-account data, and each client still reads its own authoritative
+        // progress over an authenticated REST call.
+        this.io.emit(event.event, event.payload);
+        break;
+      case 'content:published':
+        // Emitted by the internal publish sink, whose declared reach is
+        // `audience: 'admin'`, but which currently has no subscriber at all —
+        // core, frontend, or plugin. Left global pending a decision about its
+        // intended consumer rather than narrowed on the strength of the sink's
+        // own declaration; a signal nobody listens to is the one case where
+        // guessing the audience buys nothing.
         this.io.emit(event.event, event.payload);
         break;
       case 'toast':
@@ -430,6 +508,33 @@ export class WebSocketService implements IWebSocketService {
     }
 
     this.io.to(socketId).emit(event, payload);
+  }
+
+  /**
+   * Resolve the Better Auth user id that owns a connected socket.
+   *
+   * Exists so a caller about to push privileged data at one socket can first
+   * prove that socket belongs to the person asking for it. The streaming AI
+   * query endpoint takes its target socket id from the request body, and
+   * without an ownership check an authenticated operator could aim someone
+   * else's browser at their own query transcript — answer text, tool
+   * arguments, and tool results included.
+   *
+   * The answer comes from the session stashed on `socket.data.authSession`
+   * during the handshake, so it reflects who the browser was authenticated as
+   * when it connected: a socket opened before sign-in reads as anonymous until
+   * it reconnects. Lookup is scoped to the sockets this process holds, which
+   * matches {@link emitToSocket} — that method can only reach a locally-held
+   * socket either way, so both agree on which sockets exist.
+   *
+   * @param socketId - The socket id to look up, as the client reported it.
+   * @returns The owning user id, or null when the socket is unknown to this
+   *          process, anonymous, or the server is not initialized.
+   */
+  public getSocketUserId(socketId: string): string | null {
+    const socket = this.io?.sockets.sockets.get(socketId);
+    const session = (socket?.data as { authSession?: { user?: { id?: string } } | null } | undefined)?.authSession;
+    return session?.user?.id ?? null;
   }
 
 }

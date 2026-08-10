@@ -717,6 +717,24 @@ describe('AiToolsModule', () => {
             expect(result.status).toBe('pending-approval');
             expect(events).toContain('ai-tools:approvals-changed');
         });
+
+        it('carries nothing but a timestamp — no tool name, arguments, or result', async () => {
+            // The signal is a doorbell: a listener learns that something changed
+            // and re-reads the detail over the admin-gated REST feed. Widening
+            // this payload would put governed data on a socket, so pin the exact
+            // key set rather than trusting the comment on setBroadcast.
+            const payloads: unknown[] = [];
+            module.getGovernor().setBroadcast((_event, payload) => payloads.push(payload));
+            module.getRegistry().registerTool(readTool(), 'test');
+
+            await module.getGovernor().invoke('test-read', { secretish: 'do-not-broadcast' }, interactiveCtx);
+
+            expect(payloads.length).toBeGreaterThan(0);
+            for (const payload of payloads) {
+                expect(Object.keys(payload as object)).toEqual(['timestamp']);
+                expect(typeof (payload as { timestamp: unknown }).timestamp).toBe('string');
+            }
+        });
     });
 
     describe('server-tool audit', () => {
