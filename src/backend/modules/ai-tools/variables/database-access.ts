@@ -61,5 +61,5 @@ export function registerDatabaseAccessVariables(
 
             return lines.join('\n');
         }
-    });
+    }, 'core');
 }

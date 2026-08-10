@@ -70,7 +70,7 @@ export function registerSystemHealthVariables(
 
             return lines.join('\n');
         }
-    });
+    }, 'core');
 
     registry.registerVariable({
         name: 'log-summary',
@@ -109,7 +109,7 @@ export function registerSystemHealthVariables(
 
             return lines.join('\n');
         }
-    });
+    }, 'core');
 
     let cachedAppVersion = 'unknown';
     try {
@@ -203,5 +203,5 @@ export function registerSystemHealthVariables(
 
             return lines.join('\n');
         }
-    });
+    }, 'core');
 }

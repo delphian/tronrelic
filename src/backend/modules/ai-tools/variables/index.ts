@@ -19,6 +19,7 @@ import { registerBlockchainVariables } from './blockchain.js';
 import { registerSystemHealthVariables } from './system-health.js';
 import { registerSiteContentVariables } from './site-content.js';
 import { registerDatabaseAccessVariables } from './database-access.js';
+import { registerTimeSchedulingVariables } from './time-scheduling.js';
 
 export type { IBuiltinVariableDeps } from './types.js';
 
@@ -40,4 +41,6 @@ export function registerBuiltinVariables(
     registerSystemHealthVariables(registry, deps);
     registerSiteContentVariables(registry, deps);
     registerDatabaseAccessVariables(registry, deps);
+    // Takes no `deps` — its only input is the clock.
+    registerTimeSchedulingVariables(registry);
 }

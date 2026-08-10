@@ -58,7 +58,7 @@ export function registerBlockchainVariables(
 
             return lines.join('\n');
         }
-    });
+    }, 'core');
 
     registry.registerVariable({
         name: 'chain-params',
@@ -94,7 +94,7 @@ export function registerBlockchainVariables(
 
             return lines.join('\n');
         }
-    });
+    }, 'core');
 
     registry.registerVariable({
         name: 'tx-activity',
@@ -123,7 +123,7 @@ export function registerBlockchainVariables(
 
             return lines.join('\n');
         }
-    });
+    }, 'core');
 
     registry.registerVariable({
         name: 'tx-types',
@@ -155,7 +155,7 @@ export function registerBlockchainVariables(
 
             return lines.join('\n');
         }
-    });
+    }, 'core');
 
     registry.registerVariable({
         name: 'tx-week',
@@ -208,5 +208,5 @@ export function registerBlockchainVariables(
 
             return lines.join('\n');
         }
-    });
+    }, 'core');
 }

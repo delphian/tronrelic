@@ -39,7 +39,7 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 | `services/ai-provider-registry.ts` | `'ai-providers'` → `IAiProviderRegistry`: provider metadata + executable instance; `getActive()` |
 | `services/screen-config.service.ts` | `IUntrustedScreenConfig` persisted in core `_kv` (`ai-tools:screen-config`): the untrusted-content screen's master switch, posture, fail mode, offender threshold; read by the governor (every screen decision) and the policy engine (offender threshold) |
 | `services/prompt-variable-registry.ts` | `'prompt-variables'` → `IPromptVariableRegistry`: code-registered dynamic variables + DB-persisted static variables (`module_ai-tools_variables`), classification, `{%name%}` expansion, secret-name feed for the trifecta detector |
-| `variables/` | Core-owned built-in `dynamic` variables (Blockchain & Network, System Health, Site & Content, Database Access), registered into the registry at module init. Resolvers read injected core services; `types.ts` declares that dependency surface |
+| `variables/` | Core-owned built-in `dynamic` variables (Blockchain & Network, System Health, Site & Content, Database Access, Time & Scheduling), registered into the registry at module init. Resolvers read injected core services; `types.ts` declares that dependency surface — except `time-scheduling.ts`, whose only input is the clock, so it takes no `deps` |
 | `services/ai-query-history.service.ts` | `module_ai-tools_query_history` writes/queries for the Query tab (`IAiQueryRecord`) |
 | `services/saved-prompts.service.ts` | `module_ai-tools_prompts` CRUD + `triggers[]` validation (cron syntax, declared-hook binding) + per-trigger run bookkeeping via array-filtered writes (`ISavedPrompt`); failure-streak auto-pause per trigger |
 | `services/execute-saved-prompt.ts` | The shared autonomous execution path (provider/owner resolution, system-prompt compose, query, history, failure bookkeeping) used by both the cron runner and the hook-trigger queue worker; substitutes per-run `{%hook.*%}` variables |
@@ -106,6 +106,7 @@ The single registry of prompt variables — the `{%name%}` tokens an AI provider
 | System Health | `observer-stats`, `log-summary`, `server-info` |
 | Site & Content | `site-info` |
 | Database Access | `cache-keys` |
+| Time & Scheduling | `run-window-24` |
 
 ## Admin REST API
 

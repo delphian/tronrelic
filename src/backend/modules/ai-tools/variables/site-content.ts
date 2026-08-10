@@ -63,5 +63,5 @@ export function registerSiteContentVariables(
 
             return lines.join('\n');
         }
-    });
+    }, 'core');
 }
