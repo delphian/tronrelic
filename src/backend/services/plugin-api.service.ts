@@ -214,6 +214,10 @@ export class PluginApiService {
      * Configures the Express route with the appropriate HTTP method, path, middleware
      * chain, and handler. Adds auth/admin checks if required by the route config.
      *
+     * The gate runs ahead of the route's own middleware so an unauthorized caller
+     * is rejected before that middleware consumes the request body or any other
+     * resource on its behalf.
+     *
      * Admin routes are automatically prefixed with /system/ and require admin auth.
      *
      * The method adapts plugin handlers and middleware (using framework-agnostic types)
@@ -227,8 +231,15 @@ export class PluginApiService {
     private registerRoute(router: Router, pluginId: string, route: IApiRouteConfig, isAdmin: boolean): void {
         const { method, path, handler, middleware = [], requiresAuth, requiresAdmin } = route;
 
-        // Build middleware chain - adapt plugin middleware to Express RequestHandlers
-        const middlewareChain: RequestHandler[] = middleware.map(adaptMiddleware);
+        // Build the chain gate-first. The order is a security property, not a
+        // style choice: route middleware can do real work on the request before
+        // the handler is ever reached — the Files plugin mounts multer with a
+        // 100MB in-memory limit on its upload route — so a gate appended after
+        // it would let an anonymous caller drive that work to completion and
+        // only then be rejected. Running the gate first keeps an unauthorized
+        // request cheap. Routes with no gate are unaffected: their middleware
+        // still runs first because there is nothing ahead of it.
+        const middlewareChain: RequestHandler[] = [];
 
         // Admin routes always require admin auth
         if (isAdmin || requiresAdmin) {
@@ -238,6 +249,9 @@ export class PluginApiService {
             middlewareChain.push(requireLogin);
             logger.debug({ pluginId, path }, 'Login auth middleware applied to route');
         }
+
+        // Route middleware follows the gate, adapted to Express RequestHandlers
+        middlewareChain.push(...middleware.map(adaptMiddleware));
 
         // Adapt plugin handler to Express RequestHandler
         const expressHandler = adaptHandler(handler);

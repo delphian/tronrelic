@@ -191,13 +191,22 @@ const nextConfig = {
         externalDir: true,
         webpackBuildWorker: true,
     },
+    // The built-in image optimizer is switched off deliberately. It previously
+    // ran with `remotePatterns: [{ protocol: 'https', hostname: '**' }]`, which
+    // made `/_next/image` an unauthenticated, unrate-limited endpoint that would
+    // fetch any https URL a caller named and decode it with sharp — an open
+    // image proxy, and an anonymous route into whatever memory-safety bugs the
+    // bundled libvips carries (GHSA-f88m-g3jw-g9cj). No component in this
+    // codebase imports `next/image`, so the endpoint carried attack surface and
+    // no product value.
+    //
+    // `unoptimized` is the authoritative kill switch, not merely a narrower
+    // allowlist: Next checks it in `next-server` before validating parameters or
+    // contacting any upstream, so the route 404s and sharp is never entered.
+    // Restoring optimization means re-enabling this AND naming the specific
+    // hostnames images are served from — never the `**` wildcard.
     images: {
-        remotePatterns: [
-            {
-                protocol: 'https',
-                hostname: '**',
-            },
-        ],
+        unoptimized: true,
     },
     async rewrites() {
         return [
