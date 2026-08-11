@@ -643,6 +643,19 @@ export interface IChartComponents {
         height?: number;
         yAxisFormatter?: (value: number) => string;
         xAxisFormatter?: (value: Date) => string;
+        /**
+         * Renderer for a hovered bar's `metadata`, appended below the series rows
+         * in the tooltip (normal density only — `widget` mode paints no tooltip).
+         *
+         * Injected rather than hardcoded so the chart stays domain-agnostic: it
+         * knows a point may carry metadata, while the caller owns how that
+         * metadata reads. A plugin annotating each bucket with a transaction
+         * count supplies its own line here; charts that attach no metadata render
+         * an unchanged tooltip. Called once per hovered series-point that carries
+         * metadata, so the returned node should identify which series it belongs
+         * to whenever more than one series is charted.
+         */
+        tooltipMetadataFormatter?: (metadata: Record<string, unknown>) => React.ReactNode;
         /** Render the legend. Defaults to the mode's behavior (shown in 'normal', hidden in 'widget'); set explicitly to override — e.g. true to show a key in a compact widget. */
         showLegend?: boolean;
         emptyLabel?: string;
