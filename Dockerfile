@@ -16,11 +16,11 @@
 # ============================================
 # Stage 1: Install Dependencies
 # ============================================
-# node:20-slim (Debian/glibc) is used across all stages so native addons
+# node:24-slim (Debian/glibc) is used across all stages so native addons
 # compiled during install stay compatible with the backend/frontend runtimes.
 # Mixing Alpine (musl) builds with Debian runtimes silently breaks any plugin
 # that adds a native dependency.
-FROM node:20-slim AS deps
+FROM node:24-slim AS deps
 WORKDIR /app
 
 # Copy only manifests first so a change to plugin source doesn't invalidate
@@ -91,6 +91,10 @@ RUN npm run generate:plugins
 FROM registry AS test
 WORKDIR /app
 
+# tsc on the full monorepo needs more than Node's default old-space heap
+# (observed OOM at ~2GB); scoped to this stage so runtime images keep defaults.
+ENV NODE_OPTIONS=--max-old-space-size=4096
+
 RUN npm run typecheck
 RUN npm test
 RUN npm run typecheck:plugins
@@ -113,10 +117,10 @@ RUN npm run build:frontend
 # Stage 5: Backend Production Image
 # ============================================
 # glibc consistency with the deps stage (native addons compiled there).
-FROM node:20-slim AS backend
+FROM node:24-slim AS backend
 WORKDIR /app
 
-# ca-certificates for outbound TLS (TronGrid, etc.); node:20-slim omits them.
+# ca-certificates for outbound TLS (TronGrid, etc.); node:24-slim omits them.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -170,7 +174,7 @@ CMD ["npm", "run", "dev:frontend"]
 # ============================================
 # Stage 7: Frontend Production Image
 # ============================================
-FROM node:20-slim AS frontend-prod
+FROM node:24-slim AS frontend-prod
 WORKDIR /app
 
 COPY --from=builder /app/package*.json ./

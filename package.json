@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=24.0.0"
   },
   "workspaces": [
     "packages/*"
@@ -23,7 +23,7 @@
     "build:types": "npm --workspace @delphian/tronrelic-types run build",
     "build:backend": "node scripts/build-backend.mjs",
     "build:frontend": "next build src/frontend",
-    "build:plugins": "for dir in src/plugins/*/; do (cd \"$dir\" && npm run build --if-present) || exit $?; done",
+    "build:plugins": "for dir in src/plugins/*/; do [ -f \"$dir/package.json\" ] || continue; (cd \"$dir\" && npm run build --if-present) || exit $?; done",
     "stop": "docker compose -f docker-compose.npm.yml down",
     "stop:termux": "node scripts/stop-termux.mjs",
     "clean": "rimraf dist .next src/frontend/.next src/plugins/*/dist src/frontend/public/plugins coverage test-results playwright-report playwright/.cache && find . -name '*.tsbuildinfo' -delete && node scripts/reset-generated.mjs",
@@ -34,8 +34,8 @@
     "typecheck:frontend": "tsc --noEmit -p src/frontend/tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:plugins": "for dir in src/plugins/*/; do (cd \"$dir\" && npm test); done",
-    "typecheck:plugins": "for dir in src/plugins/*/; do (cd \"$dir\" && npm run typecheck --if-present); done",
+    "test:plugins": "for dir in src/plugins/*/; do [ -f \"$dir/package.json\" ] || continue; (cd \"$dir\" && npm test); done",
+    "typecheck:plugins": "for dir in src/plugins/*/; do [ -f \"$dir/package.json\" ] || continue; (cd \"$dir\" && npm run typecheck --if-present); done",
     "test:integration": "npx playwright test",
     "lint": "eslint src/",
     "generate:plugins": "node scripts/generate-backend-plugin-registry.mjs && node scripts/generate-frontend-plugin-registry.mjs",
@@ -79,7 +79,7 @@
     "elliptic": "^6.6.1",
     "express": "^4.19.2",
     "express-mongo-sanitize": "^2.2.0",
-    "geoip-lite": "^1.4.10",
+    "geoip-lite": "^2.0.3",
     "googleapis": "^171.4.0",
     "gray-matter": "^4.0.3",
     "helmet": "^7.1.0",
@@ -91,6 +91,7 @@
     "js-yaml": "^4.1.1",
     "lucide": "^0.555.0",
     "lucide-react": "^0.545.0",
+    "mongodb": "~6.20.0",
     "mongoose": "^8.5.1",
     "morgan": "^1.10.0",
     "multer": "^2.0.2",
@@ -130,7 +131,7 @@
     "@types/geoip-lite": "^1.4.4",
     "@types/js-yaml": "^4.0.9",
     "@types/morgan": "^1.9.9",
-    "@types/node": "^20.10.6",
+    "@types/node": "^24.0.0",
     "@types/node-cron": "^3.0.9",
     "@types/react": "^18.2.46",
     "@types/react-dom": "^18.2.18",
@@ -146,6 +147,7 @@
     "vitest": "^4.0.1"
   },
   "overrides": {
+    "@better-auth/core": "1.6.26",
     "express": {
       "path-to-regexp": "~0.1.13"
     },
