@@ -17,7 +17,7 @@ npm run dev
 
 **Stop:** Press Ctrl+C to stop dev servers. Run `npm run stop` to stop database containers.
 
-**Requirements:** Node.js 20+, Docker, TronGrid API keys
+**Requirements:** Node.js 24+, Docker, TronGrid API keys
 
 ## License
 
