@@ -14,7 +14,7 @@ Layout components carry typed props — `<layout.Stack gap="md">` fails compilat
 interface IFrontendPluginContext {
     pluginId: string;              // Used internally for namespacing events and API routes
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
-    ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Skeleton, ClientTime, Tooltip, IconPickerModal, Table family
+    ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Skeleton, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, Table family
     charts: IChartComponents;      // LineChart, BarChart
     system: ISystemComponents;     // SchedulerMonitor (admin)
     api: IApiClient;               // get/post/put/patch/delete
@@ -85,6 +85,8 @@ const [tab, setTab] = useState('query');
 | `Input` | `value?`, `onChange?`, `onKeyDown?`, `placeholder?`, `disabled?`, `required?`, `variant?: 'default'\|'ghost'`, `type?`, `min?`, `max?`, `step?`, `id?`, `name?`, `aria-label?`, `className?` |
 | `ClientTime` | `date: Date \| string \| null \| undefined`, `format?: 'time'\|'datetime'\|'date'\|'relative'\|'short'`, `fallback?` |
 | `Tooltip` | `content: string`, `children: ReactNode`, `placement?: 'top'\|'bottom'` |
+| `TronAddress` | `address: string` (required), `label?`, `copy?`, `tools?`, `explorer?`, `className?` |
+| `TronTransactionId` | `txId: string` (required), `copy?`, `explorer?`, `className?` |
 | `IconPickerModal` | `selectedIcon?`, `onSelect: (iconName) => void`, `onClose: () => void` |
 
 `CopyButton` wraps `Button` to copy `value` to the clipboard on click, briefly swapping to a confirmation state (`copiedLabel`) for `resetMs`. Use it instead of hand-rolling `navigator.clipboard` — it owns the async-clipboard call, the non-secure-context fallback, the confirmation timing, and `event.stopPropagation()` so it is safe inside a clickable row. Provide `label` for a text+icon button; omit it for icon-only and set `aria-label` so the action is still announced. Set `type="button"` when placing it inside a `<form>` to avoid submitting the form.
@@ -94,6 +96,8 @@ const [tab, setTab] = useState('query');
 `Switch` carries `role="switch"` + `aria-checked` so assistive tech reads it as a toggle. The optional `onClick` runs before `onChange` — calling `event.preventDefault()` vetoes the toggle; `event.stopPropagation()` keeps the click off an enclosing row.
 
 `SegmentedControl` is the chart-toolbar toggle row — time window, metric, chart view, data source. Use it instead of hand-rolling buttons over the `.segmented-control` class: it owns the active-state ARIA (`aria-pressed`, or `role="tab"` + `aria-selected` under `variant="tablist"`) and arrow-key traversal. It is fully controlled and holds no state, so it is SSR-safe. A click on the already-active segment is ignored unless `reselect` is set, so `onChange` can call a refetch directly. Per-option `onSelect` handles the mixed group — a metric segment that pins a rotation timer beside a window segment that refetches.
+
+`TronAddress` and `TronTransactionId` are the canonical renderers for the two identifiers every TRON surface shows. Both are compact monospace chips that truncate, put the full value in a tooltip, and carry copy plus a Tronscan out-link; the address chip adds a "forward to a public tool" menu and displays a pre-resolved `label` in place of the truncation, neither of which a transaction has an equivalent for. Use them instead of hand-truncating a value or hand-building an explorer anchor — that is how the codebase ended up with a dozen private copies of the Tronscan URL and out-arrow links that showed the reader no identifier at all. Both render synchronously from their prop, so they are SSR-safe; trim affordances off with the booleans in a dense read-only table.
 
 `ClientTime` is the canonical fix for SSR/client timezone hydration mismatches — never call `new Date().toLocaleString()` directly. Prefer `format="relative"` ("2m ago") for a column of closely-spaced events, where repeating the same absolute date down every row spends the widest column on its least useful value; `format="short"` is the compact absolute form.
 

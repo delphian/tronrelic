@@ -45,6 +45,7 @@ import type { Textarea as Impl_Textarea } from '../components/ui/Textarea';
 import type { ClientTime as Impl_ClientTime } from '../components/ui/ClientTime';
 import type { Tooltip as Impl_Tooltip } from '../components/ui/Tooltip';
 import type { TronAddress as Impl_TronAddress } from '../components/ui/TronAddress';
+import type { TronTransactionId as Impl_TronTransactionId } from '../components/ui/TronTransactionId';
 import type { LazyIconPickerModal as Impl_IconPickerModal } from '../components/ui/IconPickerModal';
 import type { ConfirmDialog as Impl_ConfirmDialog } from '../components/ui/ConfirmDialog';
 import type { AccountPicker as Impl_AccountPicker } from '../components/ui/AccountPicker';
@@ -103,6 +104,7 @@ type _Conformance_Textarea = AssertConformant<NoPhantomProps<ComponentProps<IUIC
 type _Conformance_ClientTime = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['ClientTime']>, ComponentProps<typeof Impl_ClientTime>>>;
 type _Conformance_Tooltip = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Tooltip']>, ComponentProps<typeof Impl_Tooltip>>>;
 type _Conformance_TronAddress = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['TronAddress']>, ComponentProps<typeof Impl_TronAddress>>>;
+type _Conformance_TronTransactionId = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['TronTransactionId']>, ComponentProps<typeof Impl_TronTransactionId>>>;
 type _Conformance_IconPickerModal = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['IconPickerModal']>, ComponentProps<typeof Impl_IconPickerModal>>>;
 type _Conformance_ConfirmDialog = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['ConfirmDialog']>, ComponentProps<typeof Impl_ConfirmDialog>>>;
 type _Conformance_AccountPicker = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['AccountPicker']>, ComponentProps<typeof Impl_AccountPicker>>>;
