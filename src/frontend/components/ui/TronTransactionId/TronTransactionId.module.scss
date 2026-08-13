@@ -1,0 +1,60 @@
+/*
+ * TronTransactionId chip styling.
+ *
+ * Deliberately the same rhythm as TronAddress: a single inline row of a
+ * monospace id followed by slim icon affordances, so a table showing a wallet
+ * in one column and a transaction in the next reads as one design rather than
+ * two. All values reference semantic (Layer 2) tokens so the chip themes with
+ * the rest of the app, and the affordance icon follows the muted -> primary
+ * hover convention used by the bare IconButton.
+ */
+
+/*
+ * No row gap: the copy control carries its own padding, so a gap on top of it
+ * pushed the affordances away from the id they belong to. The id instead pays
+ * for its own separation from the icons beside it.
+ */
+.root {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    max-width: 100%;
+}
+
+/* Truncated id: monospace so the two ends align down a column of rows. */
+.tx_id {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    white-space: nowrap;
+    cursor: default;
+    margin-right: var(--gap-2xs);
+}
+
+/* Trim the wrapped TrCopyIcon so the icon sits slim in the row. */
+.action {
+    flex: 0 0 auto;
+}
+
+/* Explorer out-link: styled to match the slim icon action (muted -> primary). */
+.action_link {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* Matches the bare IconButton's xs padding beside it, so the explorer link
+       and the copy button sit on the same rhythm. */
+    padding: var(--icon-button-bare-padding-xs);
+    color: var(--color-text-muted);
+    border-radius: var(--radius-xs);
+    transition: color var(--transition-fast);
+
+    &:hover {
+        color: var(--color-primary);
+    }
+
+    &:focus-visible {
+        outline: var(--border-width-medium) solid var(--color-primary);
+        outline-offset: 2px;
+    }
+}

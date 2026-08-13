@@ -416,6 +416,37 @@ export interface IUIComponents {
         className?: string;
     }>;
 
+    /**
+     * TronTransactionId — the canonical way to render a transaction id, as
+     * `TronAddress` is for an address.
+     *
+     * Shows the id as a compact monospace chip (`first 8 … last 8`, full value
+     * in a tooltip) with two slim affordances: copy-to-clipboard and an
+     * external Tronscan link. There is no tools dropdown — tool pages consume
+     * an address, none consumes a transaction id — and no tags, since a
+     * transaction is a one-off event with nothing to name.
+     *
+     * Use this instead of an icon-only Tronscan anchor. A link labelled by
+     * nothing but an out-arrow tells the reader neither which transaction it
+     * points at nor that there is an id to copy, and every plugin that built
+     * one hardcoded its own explorer URL. The window is wider than the address
+     * chip's because 64 hex characters with no prefix need more of each end to
+     * stay distinguishable in a list.
+     *
+     * Renders synchronously from `txId`, so it is SSR-safe: pass the id
+     * straight from your SSR data. Trim affordances off with `copy`/`explorer`
+     * for dense read-only contexts.
+     */
+    TronTransactionId: ComponentType<{
+        /** Full transaction id (64-character hex); the value copied and linked. */
+        txId: string;
+        /** Show the copy-to-clipboard affordance. @default true */
+        copy?: boolean;
+        /** Show the external Tronscan link. @default true */
+        explorer?: boolean;
+        className?: string;
+    }>;
+
     /** Icon picker modal component for visual icon selection */
     IconPickerModal: ComponentType<{
         selectedIcon?: string;
@@ -1420,7 +1451,7 @@ export interface IFrontendPluginContext {
     /** Plugin identifier used for namespacing events and API routes */
     pluginId: string;
 
-    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, SegmentedControl, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, AddressSelector, IconPickerModal, ConfirmDialog, Table family) */
+    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, SegmentedControl, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronTransactionId, AddressSelector, IconPickerModal, ConfirmDialog, Table family) */
     ui: IUIComponents;
 
     /** Layout component library (Page, PageHeader, Stack, Grid, Section, SubMenu) */
