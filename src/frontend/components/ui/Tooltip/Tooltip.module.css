@@ -40,6 +40,15 @@
     z-index: var(--z-index-tooltip);
     pointer-events: none;
     white-space: normal;
+    /* Break inside an unbroken run when the text offers nowhere to wrap.
+       Tooltip content is routinely one long token — a 64-character transaction
+       hash, an address, a URL — and `white-space: normal` alone cannot wrap
+       what has no break opportunity, so the run paints straight out of the
+       280px box and can leave the viewport entirely: the placement clamp in
+       Tooltip.tsx measures the box, not the glyphs that escaped it. `anywhere`
+       rather than `break-word` so the break also counts toward the overlay's
+       min-content size wherever it is space-constrained. */
+    overflow-wrap: anywhere;
     box-shadow: var(--shadow-md);
     border: var(--border-width-thin) solid rgba(255, 255, 255, 0.1);
     animation: fadeIn var(--transition-fast) ease-out;
