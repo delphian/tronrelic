@@ -15,13 +15,14 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { GitBranch, Plus, X, CornerRightUp, Loader2, Flag, AlertTriangle, Users, ExternalLink, Lock } from 'lucide-react';
+import { GitBranch, Plus, X, CornerRightUp, Loader2, Flag, AlertTriangle, Users, Lock } from 'lucide-react';
 // Direct import (not the modules/user barrel) keeps that component's CSS out of the bundle.
 import { useAuthSession } from '../../../user/components/SessionProvider';
 import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
 import { TronAddress } from '../../../../components/ui/TronAddress';
+import { TronTransactionId } from '../../../../components/ui/TronTransactionId';
 import { AddressSelector } from '../../../../components/ui/AddressSelector';
 import { isValidTronAddress } from '../../../../lib/tronAddress';
 import { createAddressOriginsStream } from '../../api/client';
@@ -30,8 +31,6 @@ import styles from './AddressOrigins.module.scss';
 
 /** Registered-user cap on wallets per query; mirrors the server-side limit. */
 const MAX_ADDRESSES = 10;
-
-const TRONSCAN_TX_URL = 'https://tronscan.org/#/transaction/';
 
 /**
  * Address Origins tool.
@@ -295,9 +294,14 @@ export function AddressOrigins() {
                                                     </span>
                                                 )}
                                                 <span className={styles.contract_type}>{hop.contractType}</span>
-                                                <a className={styles.tx_link} href={`${TRONSCAN_TX_URL}${hop.txId}`} target="_blank" rel="noopener noreferrer" aria-label="View activating transaction on TronScan">
-                                                    <ExternalLink size={14} />
-                                                </a>
+                                                {/*
+                                                  * The activating transaction is the evidence for this rung of
+                                                  * the ladder, so the shared chip names it rather than hiding it
+                                                  * behind a bare out-arrow: a reader tracing an operator wants to
+                                                  * identify that transaction, copy it, and compare it against an
+                                                  * explorer tab — none of which an unlabelled icon allowed.
+                                                  */}
+                                                <TronTransactionId txId={hop.txId} />
                                             </li>
                                         );
                                     })}
