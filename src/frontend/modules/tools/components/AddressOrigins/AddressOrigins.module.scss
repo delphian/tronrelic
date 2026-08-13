@@ -144,16 +144,6 @@
     color: var(--color-text-muted);
 }
 
-.tx_link {
-    display: inline-flex;
-    align-items: center;
-    color: var(--color-text-muted);
-
-    &:hover {
-        color: var(--color-primary);
-    }
-}
-
 .status {
     margin: 0;
     font-size: var(--font-size-body-sm);
