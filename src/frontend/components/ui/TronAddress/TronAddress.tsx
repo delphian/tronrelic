@@ -267,17 +267,29 @@ export function TronAddress({
     }, [address, modal, tags]);
 
     const display = label ?? truncateAddress(address);
+    const isTagged = tags.length > 0;
     // Tags ride in the tooltip rather than beside the chip: they are context for
     // "which wallet is this", and a chip that grew inline chips would reflow
-    // every dense table it sits in.
-    const tooltip = tags.length > 0 ? `${address} (${tags.join(', ')})` : address;
+    // every dense table it sits in. A tagged address instead advertises itself
+    // with a dotted underline (`styles.tagged`) so it is distinguishable at a
+    // glance rather than only on hover. A text decoration costs no layout, so it
+    // can appear when the tags resolve after hydration without shifting a single
+    // row of the table around it.
+    const tooltip = isTagged ? `${address} (${tags.join(', ')})` : address;
+    const displayClassName = [label ? styles.label : styles.address, isTagged ? styles.tagged : null]
+        .filter(Boolean)
+        .join(' ');
 
     return (
         <span className={[styles.root, className].filter(Boolean).join(' ')}>
             <Tooltip content={tooltip}>
                 <span
-                    className={label ? styles.label : styles.address}
+                    className={displayClassName}
                     data-testid="tron-address-display"
+                    // Undefined rather than `false` so the attribute is absent
+                    // entirely on an untagged address, letting tests and styles
+                    // select on its presence.
+                    data-tagged={isTagged || undefined}
                 >
                     {display}
                 </span>

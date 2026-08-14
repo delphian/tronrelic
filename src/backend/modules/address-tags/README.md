@@ -69,8 +69,12 @@ Validation failures return 400 with the service's message; other failures 500.
 Every address on the site renders through the canonical `TronAddress` chip
 (`src/frontend/components/ui/TronAddress/`), so that chip is the module's primary
 consumer: it appends an address's tags to its hover tooltip — `T…abcd (exchange,
-hot-wallet)` — and offers "Edit tags" in its wrench menu, which opens
-`AddressTagsEditor` in the core modal. Reads go through `useAddressTags`, one
+hot-wallet)` — marks a tagged address with a dotted underline so it is
+distinguishable before hover, and offers "Edit tags" in its wrench menu, which
+opens `AddressTagsEditor` in the core modal. The underline is a text decoration
+rather than a badge or chip because tags resolve client-side after hydration,
+and any signal that changed the chip's box would reflow every dense table on the
+page a beat after it painted. Reads go through `useAddressTags`, one
 process-wide cache that coalesces a page's chips into a single request; tags are
 treated as an absent enhancement when the visitor is anonymous (reads are
 `requireLogin`) or the lookup fails. The edit item is gated on `admin` group

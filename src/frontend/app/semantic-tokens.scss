@@ -421,6 +421,26 @@
     --badge-info-border: var(--color-primary-alpha-38);
 
     /* ========================================================================
+     * TRON ADDRESS COMPONENT TOKENS
+     *
+     * The canonical address chip marks an address that carries address-tags with
+     * a dotted underline — the same "there is an annotation here" convention as
+     * <abbr title> and a spell-check squiggle, so it reads as *hover me* without
+     * instruction. A decoration is used rather than a badge, chip, or padding
+     * change because tags resolve after hydration: anything that alters the
+     * chip's box would reflow every dense table on the page a beat after paint.
+     *
+     * Deliberately not --color-primary at full strength: primary means
+     * "interactive" site-wide, and a tagged address is not clickable. The alpha
+     * step keeps the mark subordinate to the text while still theming.
+     * ======================================================================== */
+
+    --tron-address-tagged-underline: var(--color-primary-alpha-38);
+    /* Clears the descenders of the monospace face so the dots stay legible
+       rather than colliding with g/y/p at --font-size-body-sm. */
+    --tron-address-tagged-underline-offset: 0.25em;
+
+    /* ========================================================================
      * INPUT COMPONENT TOKENS
      * ======================================================================== */
 
