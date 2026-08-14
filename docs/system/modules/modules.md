@@ -1,89 +1,93 @@
 # Backend Module System
 
-TronRelic's module system provides a structured pattern for permanent, core backend components that initialize during application bootstrap and remain active for the application's lifetime. Unlike plugins (which can be enabled/disabled at runtime), modules are essential infrastructure the application cannot function without.
+A module is a permanent, core backend component that starts up with the application and stays active for its whole lifetime. Modules are the infrastructure the application cannot run without, which is what separates them from plugins — plugins can be switched on and off at runtime.
 
 ## Why This Matters
 
-The module system replaces scattered core code, implicit init order, and concrete-class imports with a two-phase lifecycle (`init()` prepares, `run()` activates), dependency injection via typed interfaces, IoC routing (modules mount their own routes), and colocated file organization where everything for a module lives in `modules/<name>/`.
+Before the module system, core functionality was scattered, startup order was implicit and easy to break, and components imported each other's concrete classes directly. The module system replaces all three. Startup happens in two explicit phases, where `init()` prepares a module and `run()` activates it. Components receive their collaborators through typed interfaces rather than constructing them. Each module mounts its own routes instead of a central file knowing about every route in the application. And everything belonging to a module lives together in `modules/<name>/`.
 
 ## Core Architecture
 
-Every module implements the `IModule<TDependencies>` interface from `@/types`, which enforces metadata (`id`, `name`, `version`), an `init(dependencies)` method, and a `run()` method. Both lifecycle hooks are async and fail-fast — errors cause application shutdown with no degraded mode.
+Every module implements the `IModule<TDependencies>` interface from `@/types`. The interface requires metadata (`id`, `name`, `version`), an `init(dependencies)` method, and a `run()` method. Both methods are asynchronous, and both stop the application if they throw. The application does not start with a module missing.
 
-Modules initialize after core infrastructure (database, Redis, WebSocket, MenuService) and before plugins, jobs, and the HTTP server. During `init()`, modules store injected dependencies and create services. During `run()`, they mount routes, register menu items, and integrate with the application. This separation ensures all modules prepare themselves before any module interacts with shared services.
+Modules start after the core infrastructure they rely on — database, Redis, WebSocket server, and the menu service — and before plugins, scheduled jobs, and the HTTP server. In `init()`, a module stores the dependencies it was handed and creates its services. In `run()`, it mounts its routes, registers its menu entries, and connects itself to the rest of the application. Splitting the two guarantees that every module has finished preparing itself before any module starts using another module's services.
 
-Each module declares a typed dependencies interface specifying exactly what it needs (`IDatabaseService`, `ICacheService`, `IMenuService`, `Express`). Modules depend on abstractions, never concrete implementations — enabling mock injection for testing.
+Each module declares an interface listing exactly the dependencies it needs, such as `IDatabaseService`, `ICacheService`, `IMenuService`, or the `Express` application. Those dependencies are passed in rather than created internally, a pattern known as dependency injection. Because every declared dependency is an interface rather than a concrete class, tests can supply mock implementations.
 
-See [modules-architecture.md](./modules-architecture.md) for the IModule interface contract, bootstrap sequence, and dependency injection patterns.
+See [modules-architecture.md](./modules-architecture.md) for the full `IModule` contract, the startup sequence, and the dependency injection patterns.
 
 ## Creating a New Module
 
-New modules follow a standard directory structure with colocated API routes, database schemas, services, and tests. The pages module (`src/backend/modules/pages/`) serves as the canonical reference implementation — see its [README.md](../../../src/backend/modules/pages/README.md) for architecture and patterns.
+New modules follow a standard directory layout that keeps API routes, database schemas, services, and tests together. The pages module at `src/backend/modules/pages/` is the reference implementation; its [README.md](../../../src/backend/modules/pages/README.md) documents the architecture and patterns to copy.
 
-See [modules-creating.md](./modules-creating.md) for the step-by-step creation guide and best practices.
+See [modules-creating.md](./modules-creating.md) for the step-by-step guide.
 
 ## Frontend Module Structure
 
-When a module requires frontend code, place it in `src/frontend/modules/<module-name>/` with parallel structure (components, api, lib, types). Module-specific components belong here, not in `components/ui/` (reserved for generic primitives like Button and Badge).
+When a module needs frontend code, put it in `src/frontend/modules/<module-name>/`, mirroring the backend layout with directories for components, api, lib, and types. Components specific to a module belong there rather than in `components/ui/`, which is reserved for generic building blocks such as `Button` and `Badge`.
 
-See [frontend-architecture-modules.md](../../frontend/frontend-architecture-modules.md) for frontend module structure, directory layout, import patterns, and the decision guide for where frontend code goes.
+See [frontend-architecture-modules.md](../../frontend/frontend-architecture-modules.md) for the directory layout, import conventions, and guidance on deciding where a piece of frontend code belongs.
 
-## Module vs Plugin Decision Matrix
+## Choosing Between a Module and a Plugin
 
 | Criteria | Module | Plugin |
 |----------|--------|--------|
-| Essential infrastructure | Yes — app fails without it | No — app works without it |
-| Runtime toggle | Cannot disable | Enable/disable via admin UI |
-| Bootstrap timing | Initializes before plugins | Loads after modules |
-| Provides shared services | Yes (`IXxxService` singletons via constructor DI) | Yes (via `IServiceRegistry` — late-binding, runtime discovery) |
-| Deep integration | Express app, core database | Injected `IPluginContext` only |
-| Frontend UI | Optional | Typically included |
+| Essential infrastructure | Yes — the app fails without it | No — the app works without it |
+| Runtime toggle | Cannot be disabled | Enabled and disabled from the admin interface |
+| Startup timing | Starts before plugins | Loads after modules |
+| Provides shared services | Yes, as `IXxxService` singletons passed in at construction | Yes, through `IServiceRegistry`, discovered at runtime |
+| Depth of integration | Reaches the Express app and the core database | Only what the injected `IPluginContext` exposes |
+| Frontend UI | Optional | Usually included |
 
-**Module examples:** Pages, Menu, Identity, Traffic, Scheduler, Logs, Database.
+**Existing modules:** Pages, Menu, Identity, Traffic, Scheduler, Logs, Database.
 
-The deciding factor between module and plugin is no longer "does it provide shared services?" but "can the application function without it?" If the answer is no, it's a module. If yes — even if other components optionally consume its services — it's a plugin. The service registry (`context.services`) makes this possible by enabling plugins to expose shared capabilities at runtime without requiring promotion to a module.
+Decide by asking whether the application can function without the feature, rather than by asking whether it provides shared services. If the application cannot function without it, build a module. If it can, build a plugin, even when other components will consume its services. The service registry (`context.services`) is what makes that possible: a plugin can offer a shared capability at runtime without being promoted to a module.
 
-See [modules-architecture.md](./modules-architecture.md#service-registry--late-binding-di) for how the registry complements constructor injection, and [plugins-service-registry.md](../../plugins/plugins-service-registry.md) for registration and consumption patterns.
+See [modules-architecture.md](./modules-architecture.md#service-registry--late-binding-di) for how the registry complements dependencies passed in at construction, and [plugins-service-registry.md](../../plugins/plugins-service-registry.md) for how to register and consume services. For moving an existing component from one category to the other, see [modules-architecture.md](./modules-architecture.md#migration-considerations).
 
-When migrating between the two, see [modules-architecture.md](./modules-architecture.md#migration-considerations) for step-by-step guidance.
+## Contributing to Core-Pipeline Hooks
 
-## Core-Pipeline Hooks
+A hook seam is a named point in core's own execution where other code can contribute behaviour, such as adding markup to the HTML `<head>` during server-side rendering. Modules can register at these seams under the identity `'core'`, using the same registry plugins use.
 
-Modules can also participate in the typed hook registry as `'core'` — the same mechanism plugins use to contribute at declared seams. A module receives `IHookRegistry` through its `init(deps)` interface and registers handlers in `run()` after dependencies are wired, calling `hookRegistry.register('core', HOOKS.<phase>.<name>, handler, { priority })`. Module registrations live for the process lifetime (no disable/uninstall), so the disposer returned by `register` is typically stored only for symmetry with the plugin facade pattern. No core module ships a hook registration today — the canonical example is the `trp-themes` plugin contributing to `HOOKS.ssr.headFragments` and `HOOKS.ssr.htmlAttributes` via the plugin facade, which exercises the same registry through `context.hooks.register(...)`. See [system-hooks.md](../system-hooks.md) for the contract, the four archetypes (observer / series / waterfall / bail), and the `/system/hooks` admin timeline that introspects registrations.
+A module receives `IHookRegistry` through the dependencies passed to `init(deps)` and registers its handlers in `run()`, once everything is wired, by calling `hookRegistry.register('core', HOOKS.<phase>.<name>, handler, { priority })`. A module's registrations last for the life of the process, since a module can never be disabled or uninstalled, so the disposer function that `register` returns is usually kept only for consistency with how plugins do it.
 
-## Service Types and Singleton Usage
+No core module registers a hook today. The working example is the `trp-themes` plugin, which contributes to `HOOKS.ssr.headFragments` and `HOOKS.ssr.htmlAttributes` through the plugin-facing wrapper by calling `context.hooks.register(...)` against the same registry.
 
-Services implementing `IXxxService` interfaces (e.g., `IPageService`, `IMenuService`) **must be singletons**. They are public APIs with shared single state, configured once at bootstrap via dependency injection, and consumed as-is by all callers.
+See [system-hooks.md](../system-hooks.md) for the contract, the four styles of hook (observer, series, waterfall, and bail), and the `/system/hooks` timeline that shows what is currently registered.
 
-| Pattern | What Is It? | Singleton? | Customizable? |
-|---------|-------------|------------|---------------|
-| **Service** (`IXxxService`) | Public API with shared state | Yes | No — configured once at bootstrap |
-| **Utility** (no interface) | Tool for consumer's own use | No | Yes — each consumer configures their own |
+## Services Are Singletons, Utilities Are Not
 
-The key difference is when and by whom configuration happens. Services are configured once during bootstrap; utilities are configured by each consumer. `ISystemLogService` appears to break this rule with its `child()` method, but `child()` creates scoped views of the same logging system — not true per-consumer customization.
+Anything implementing an `IXxxService` interface, such as `IPageService` or `IMenuService`, **must be a singleton** — one shared instance for the whole application. These are public APIs over shared state. They are configured once during startup through dependency injection, and every caller uses them exactly as configured.
+
+| Pattern | What it is | Singleton? | Customizable? |
+|---------|------------|------------|---------------|
+| **Service** (`IXxxService`) | Public API over shared state | Yes | No — configured once at startup |
+| **Utility** (no interface) | A tool the consumer configures for its own use | No | Yes — each consumer configures its own |
+
+The difference is when configuration happens and who does it. The application configures a service once at startup. A utility is configured by whatever code uses it. `ISystemLogService` looks like an exception because of its `child()` method, but `child()` returns a scoped view of the same logging system rather than a separately configured copy.
 
 See [modules-architecture.md](./modules-architecture.md#service-types-and-singleton-usage) for implementation examples.
 
-## Pre-Implementation Checklist
+## Before You Start
 
-Before creating a new module, confirm the feature is essential infrastructure (otherwise build it as a plugin) and follow [modules-creating.md](./modules-creating.md) for the standard directory structure, lifecycle hook split (init creates services, run mounts routes), and tests covering both phases.
+Confirm the feature really is essential infrastructure; if the application would still work without it, build it as a plugin instead. Then follow [modules-creating.md](./modules-creating.md) for the standard directory structure, the split between the two lifecycle phases (`init()` creates services, `run()` mounts routes), and tests that cover both.
 
 ## Further Reading
 
 **Module system details:**
-- [modules-architecture.md](./modules-architecture.md) - IModule interface, bootstrap sequence, dependency injection, service types, module vs plugin migration
-- [modules-creating.md](./modules-creating.md) - Step-by-step creation guide with best practices
+- [modules-architecture.md](./modules-architecture.md) — the `IModule` interface, startup sequence, dependency injection, service types, and moving between module and plugin
+- [modules-creating.md](./modules-creating.md) — step-by-step creation guide
 
-**Example modules** (each has a README.md in its directory with complete documentation):
-- [Pages](../../../src/backend/modules/pages/) - Canonical reference implementation (storage providers, file uploads, markdown CMS)
-- [Menu](../../../src/backend/modules/menu/) - Navigation management, event-driven validation, WebSocket updates
-- [Identity](../../../src/backend/modules/identity/) - Better Auth, groups, signature-proven wallet store, account directory
-- [Traffic](../../../src/backend/modules/traffic/) - ClickHouse traffic_events analytics, tid/ref cookies, bot/geo classification
+**Example modules** (each directory holds a README.md with complete documentation):
+- [Pages](../../../src/backend/modules/pages/) — the reference implementation, covering storage providers, file uploads, and the markdown content management system
+- [Menu](../../../src/backend/modules/menu/) — navigation entries, event-driven validation, and WebSocket updates
+- [Identity](../../../src/backend/modules/identity/) — Better Auth, user groups, wallets proven by signature, and the account directory
+- [Traffic](../../../src/backend/modules/traffic/) — ClickHouse `traffic_events` analytics, the tid and ref cookies, and bot and geography classification
 
 **Related topics:**
-- [system-database.md](../system-database.md) - Database access architecture and IDatabaseService
-- [system-database-migrations.md](../system-database-migrations.md) - Migration system for schema evolution
-- [system-hooks.md](../system-hooks.md) - Core-pipeline hooks: declared seams, archetypes, admin introspection
-- [system-testing.md](../system-testing.md) - Testing framework with Vitest and Mongoose mocking
-- [plugins.md](../../plugins/plugins.md) - Plugin system overview (comparison to modules)
-- [frontend-architecture.md](../../frontend/frontend-architecture.md) - Frontend module structure and import patterns
+- [system-database.md](../system-database.md) — database access architecture and `IDatabaseService`
+- [system-database-migrations.md](../system-database-migrations.md) — how schema changes are applied
+- [system-hooks.md](../system-hooks.md) — hook seams, the four styles, and admin introspection
+- [system-testing.md](../system-testing.md) — testing with Vitest and Mongoose mocks
+- [plugins.md](../../plugins/plugins.md) — the plugin system, for comparison
+- [frontend-architecture.md](../../frontend/frontend-architecture.md) — frontend module structure and import patterns

@@ -1,65 +1,87 @@
 # Environment Variable Behaviors
 
-`src/backend/config/env.ts` is the authoritative inventory of every variable the backend reads, with types, defaults, and Zod validation. `tronrelic/.env.example` is the template. This document covers only the *non-obvious behaviors* — cases where presence, absence, or specific values change runtime semantics in ways the schema alone doesn't reveal.
+`src/backend/config/env.ts` is the authoritative inventory of every variable the backend reads, along with its type, default, and validation rule. `tronrelic/.env.example` is the template you copy when setting up a new environment. This document covers only the *non-obvious behaviors* — the cases where setting a variable, leaving it unset, or giving it a particular value changes how the application behaves at runtime in a way the schema alone does not reveal.
 
 ## Why This Matters
 
-Validation catches typos but not *missing-but-optional* vars whose absence silently downgrades behavior — disabled cookie signing, unprotected metrics, an admin surface that 503s instead of authenticating. The traps below are the ones that have actually bitten us; check them before changing `.env` in any non-local environment.
+Schema validation catches typos, but it cannot catch an optional variable that changes behavior when you leave it out. Leaving one out can disable cookie signing, expose metrics that should be protected, or make the admin interface return an error instead of asking for credentials. Every case described below has caused a problem here at least once, so check this document before changing `.env` in any environment other than your own machine.
 
 ## Production Gating
 
-`ENV` and `NODE_ENV` are independent and either set to `production` triggers production-grade safety checks. `NODE_ENV` is set by Node tooling — don't put it in `.env`. `ENV` describes the deployment.
+`ENV` and `NODE_ENV` are independent variables, and setting *either* one to `production` turns on the stricter production safety checks.
 
-## Site URLs and the Universal Image
+Node tooling sets `NODE_ENV` on its own, so do not put it in `.env`. Use `ENV` to describe the deployment.
 
-There are no `NEXT_PUBLIC_*` vars by design. Production builds inline build-time values, which would break the universal Docker image (one image, many domains). The Next.js server resolves `SITE_BACKEND` and `SITE_WS` during SSR; the client auto-detects from `window.location`. See [system-runtime-config.md](./system/system-runtime-config.md).
+## Site URLs and the Universal Docker Image
 
-`SITE_URL` is runtime config stored in MongoDB and editable from `/system`. The env var only seeds the initial value on first boot — changing it later does nothing. `SITE_BACKEND` is required for SSR; the frontend throws on its first server request if unset.
+There are deliberately no `NEXT_PUBLIC_*` variables in this project. Next.js substitutes the value of a `NEXT_PUBLIC_*` variable directly into the JavaScript bundle when the production build runs, which would freeze one specific domain into the image. That defeats the goal of a universal Docker image: one image built once and deployed to many domains.
 
-## Admin Surface Disable
+Instead, the Next.js server reads `SITE_BACKEND` and `SITE_WS` while rendering pages on the server, and the browser works out the equivalent values from `window.location` after the page loads. See [system-runtime-config.md](./system/system-runtime-config.md) for the full mechanism.
 
-`ADMIN_API_TOKEN` unset is the intended way to disable `/system`, `/admin/markets`, and `/admin/moderation` entirely — every admin endpoint returns 503. There is no separate disable flag, so an empty token in production is a deliberate operational choice, not a misconfiguration to fix.
+`SITE_URL` is different again. It is runtime configuration stored in MongoDB and edited from the `/system` admin interface. The environment variable only seeds the initial value the first time the application boots; changing it afterwards has no effect. `SITE_BACKEND` is required for server-side rendering, and the frontend throws an error on its first server request if the variable is unset.
+
+## Disabling the Admin Surface
+
+Leaving `ADMIN_API_TOKEN` unset is the supported way to switch off `/system`, `/admin/markets`, and `/admin/moderation` completely. With no token configured, every admin endpoint responds `503 Service Unavailable` rather than prompting for credentials.
+
+There is no separate flag for this, so an empty token in production is a deliberate choice rather than a misconfiguration to go and fix.
 
 ## SESSION_SECRET
 
-`SESSION_SECRET` is the secret `loaders/express.ts` hands to `cookie-parser`, so Express can verify `req.signedCookies`. It does not sign an identity cookie — identity rides the Better Auth session cookie, which Better Auth signs independently with `BETTER_AUTH_SECRET`. The analytics cookies (`tronrelic_tid`, `tronrelic_ref`) are unsigned by design. `SESSION_SECRET` is retained as a defensive keep so any future signed cookie is verifiable.
+`SESSION_SECRET` is the value that `loaders/express.ts` passes to the `cookie-parser` middleware, which lets Express verify cookies it has signed and expose them on `req.signedCookies`.
 
-If the variable is unset, production (`NODE_ENV=production` or `ENV=production`) refuses to start, while dev and test fall back to a placeholder and emit `console.warn`. Rotating it affects signed cookies parsed by `cookie-parser` and — when `TRAFFIC_IP_HASH_SALT` is unset — the analytics source hashes salted from it (see below); it does not touch Better Auth sessions (those rotate with `BETTER_AUTH_SECRET`).
+It does not sign an identity cookie. User identity travels in the Better Auth session cookie, which Better Auth signs independently using `BETTER_AUTH_SECRET`. The two analytics cookies, `tronrelic_tid` and `tronrelic_ref`, are unsigned by design. `SESSION_SECRET` is kept in place so that any signed cookie added later can be verified straight away.
+
+If the variable is unset, production — meaning `NODE_ENV=production` or `ENV=production` — refuses to start. Development and test environments fall back to a placeholder value and emit a `console.warn`.
+
+Rotating the secret invalidates any signed cookies that `cookie-parser` reads. It also changes the analytics source hashes described in the next section, but only when `TRAFFIC_IP_HASH_SALT` is unset. It has no effect on Better Auth sessions, which rotate with `BETTER_AUTH_SECRET` instead.
 
 ## TRAFFIC_IP_HASH_SALT
 
-Salt for the traffic module's keyed source hashes (`ip_hash` / `subnet_hash` in ClickHouse `traffic_events`). Unset, it falls back to `SESSION_SECRET`, so production needs no new wiring — but that couples the two: rotating `SESSION_SECRET` then also severs analytics source correlation across the boundary. Set a dedicated value when the analytics salt must rotate independently of cookie signing. Rotation is always safe (nothing breaks); it only splits "same source" continuity at the boundary.
+The traffic module never stores raw visitor IP addresses. It stores hashes of them, in the `ip_hash` and `subnet_hash` columns of the ClickHouse `traffic_events` table. A salt is an extra secret value mixed into the input before hashing, so that identical addresses cannot be recognized without knowing the secret. `TRAFFIC_IP_HASH_SALT` supplies that value.
+
+When it is unset, the module falls back to `SESSION_SECRET`, which is why production needs no additional wiring. The cost of that fallback is that the two become coupled: rotating `SESSION_SECRET` then also breaks the ability to correlate analytics activity from the same source across the rotation. Set a dedicated salt when the analytics value needs to rotate on its own schedule.
+
+Rotating the salt is safe in that nothing breaks. It only means events recorded before and after the change can no longer be matched to the same source.
 
 ## TronGrid Rate Limits
 
-With no key the backend uses TronGrid's shared 100 req/s IP pool, which the blockchain sync can saturate during catch-up. Each populated key (`TRONGRID_API_KEY`, `TRONGRID_API_KEY_2`, `TRONGRID_API_KEY_3`) lifts the ceiling to 1,000 req/s on its own account, and the rotator round-robins across whichever slots are filled. Add as many as you have.
+With no API key configured, the backend uses TronGrid's shared pool for anonymous callers, capped at 100 requests per second across every user of that pool by IP address. The blockchain sync can saturate that limit on its own while catching up on a backlog of blocks.
 
-Disable `ENABLE_SCHEDULER` during local dev to avoid this pressure entirely — the cron pulls blocks every minute and refreshes markets every ten, which is rude to a shared key.
+Each key you populate — `TRONGRID_API_KEY`, `TRONGRID_API_KEY_2`, and `TRONGRID_API_KEY_3` — raises the ceiling to 1,000 requests per second on that key's own account. The backend cycles through whichever slots are filled, one request at a time in turn, so add as many keys as you have.
+
+During local development, set `ENABLE_SCHEDULER=false` to avoid the problem entirely. The scheduler pulls new blocks every minute and refreshes market data every ten, which is a lot of traffic to aim at a shared key.
 
 ## Notification Throttle Asymmetry
 
-`NOTIFICATION_EMAIL_THROTTLE_MS` defaults to 300000 (5 minutes) where `NOTIFICATION_WEBSOCKET_THROTTLE_MS` defaults to 5000. Email costs more per send and inbox tolerance is much lower than UI tolerance — don't equalize them without thinking about user experience and provider cost.
+`NOTIFICATION_EMAIL_THROTTLE_MS` defaults to 300000, or five minutes, while `NOTIFICATION_WEBSOCKET_THROTTLE_MS` defaults to 5000, or five seconds.
+
+The gap is intentional. Each email costs money to send, and users tolerate fewer interruptions in an inbox than in a page they already have open. Do not make the two values match without considering both the user experience and the cost of sending.
 
 ## DOCKER_API_URL
 
-Powers the per-container CPU/memory/health table in the `/system` console's Server section. Unset is a fully supported state — the console reports container metrics as unavailable and every other probe is unaffected — which is why local development needs no wiring.
+This variable powers the per-container CPU, memory, and health table in the Server section of the `/system` console. Leaving it unset is fully supported: the console reports container metrics as unavailable and every other health probe carries on unaffected. That is why local development needs no configuration for it.
 
-In Docker deployments the value is hardcoded in `docker-compose.yml` to `http://docker-proxy:2375` rather than read from `.env`. That is deliberate: the droplet's `.env` is generated once at provisioning and `droplet-update.sh` never rewrites it, so an `.env`-sourced value would leave the feature silently disabled in production forever.
+In Docker deployments the value is written directly into `docker-compose.yml` as `http://docker-proxy:2375` rather than read from `.env`. That is deliberate. The droplet's `.env` file is generated once during provisioning and `droplet-update.sh` never rewrites it, so a value read from `.env` would leave the feature switched off in production permanently, with nothing to indicate why.
 
-Never point this at an unrestricted Docker daemon. Full Docker API access is equivalent to root on the host, and the backend terminates public traffic and runs plugin code. The deployed target is `tecnativa/docker-socket-proxy` with `CONTAINERS=1` and `POST` left at its disabled default, on an `internal` network joined only by the proxy and the backend. Note that mounting the socket `:ro` is not a mitigation — read-only governs the mount, not requests written into the socket.
+Never point this variable at an unrestricted Docker daemon. Full access to the Docker API is equivalent to root access on the host, and this backend terminates public traffic and runs plugin code. The deployed target is `tecnativa/docker-socket-proxy`, configured with `CONTAINERS=1` and with `POST` left at its disabled default, on an `internal` Docker network that only the proxy and the backend join.
 
-## Object Storage Reserved Vars
+Mounting the Docker socket read-only with `:ro` does not help. That flag applies to the mount itself, and it does not restrict the requests sent through the socket.
 
-Page module file uploads currently always use the local filesystem provider — `PagesModule` instantiates `LocalStorageProvider` unconditionally. The `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, and `STORAGE_FORCE_PATH_STYLE` env vars are reserved for a future S3-style provider that has not yet been wired up. Setting them today has no effect.
+## Reserved Object Storage Variables
 
-## Validation Is Fail-Fast
+File uploads in the pages module always use the local filesystem today, because `PagesModule` instantiates `LocalStorageProvider` unconditionally. The `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, and `STORAGE_FORCE_PATH_STYLE` variables are reserved for a future S3-compatible provider that has not been built yet. Setting them today does nothing.
 
-`env.ts` parses `process.env` with Zod at startup. On failure the backend logs per-field errors and exits — there is no degraded mode. Missing `MONGODB_URI` or `REDIS_URL` always blocks startup. Optional vars produce warnings only when their absence is dangerous (e.g. `SESSION_SECRET` in dev).
+## Validation Stops Startup on Failure
+
+At startup, `env.ts` validates `process.env` against a schema defined with Zod, a TypeScript schema validation library. If validation fails, the backend logs an error for each offending field and exits. It does not start with partial configuration.
+
+Missing `MONGODB_URI` or `REDIS_URL` always blocks startup. Optional variables produce a warning only when their absence is genuinely dangerous, such as a missing `SESSION_SECRET` in development.
 
 ## Further Reading
 
-- Schema (authoritative inventory): `src/backend/config/env.ts`
-- Template: `tronrelic/.env.example`
-- Runtime config: [system-runtime-config.md](./system/system-runtime-config.md)
-- Scheduler control: [system-scheduler-operations.md](./system/system-scheduler-operations.md)
-- Deployment: [tronrelic-ops/docs/operations/operations.md](../../docs/operations/operations.md)
+- Authoritative inventory of every variable: `src/backend/config/env.ts`
+- Template to copy: `tronrelic/.env.example`
+- Runtime configuration and the universal image: [system-runtime-config.md](./system/system-runtime-config.md)
+- Scheduler control and troubleshooting: [system-scheduler-operations.md](./system/system-scheduler-operations.md)
+- Deployment procedures: [tronrelic-ops/docs/operations/operations.md](../../docs/operations/operations.md)
