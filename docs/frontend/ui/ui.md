@@ -1,22 +1,24 @@
 # UI System Overview
 
-Gateway to TronRelic's UI styling system: design tokens, SCSS Modules, layout components. Detail docs linked below.
+This is the gateway to TronRelic's UI styling system: design tokens, SCSS Modules, and layout components. The detail documents are linked at the end.
+
+A **design token** is a named CSS custom property, such as `--color-primary`, that holds a design decision in one place so every component can reference it instead of repeating the underlying value. An **SCSS Module** is a stylesheet named `Component.module.scss` whose class names are automatically made unique at build time, so they cannot collide with styles anywhere else.
 
 ## Why These Standards Matter
 
-Hardcoded values prevent theming. Global classes collide. Viewport media queries break inside plugin cards, modals, and slideouts. The system answers with a three-layer token hierarchy, scoped SCSS Modules, container queries, and React layout primitives.
+Hardcoded values make theming impossible, because there is no single place to change. Global class names collide as the codebase grows. Viewport media queries break inside plugin cards, modals, and slideouts, because the width of the window does not tell you the width of the container the component was placed in. The system solves those three problems with a three-layer token hierarchy, SCSS Modules that scope their own class names, container queries, and React components for layout.
 
 ## Core Principles
 
-**Two-layer SCSS.** `globals.scss` defines tokens and a small set of global utilities; `.module.scss` files scope component styles. See [ui-scss-modules.md](./ui-scss-modules.md).
+**Two layers of SCSS.** `globals.scss` defines the tokens and a small set of global utility classes. Each `.module.scss` file scopes the styles for one component. See [ui-scss-modules.md](./ui-scss-modules.md).
 
-**Component-first layout.** Page structure uses `<Page>`, `<Stack>`, `<Grid>`, `<Section>`, `<PageHeader>` from `components/layout/` — typed props beat utility classes. See [ui-scss-modules.md](./ui-scss-modules.md#component-first-architecture).
+**Layout comes from components.** Build page structure with `<Page>`, `<Stack>`, `<Grid>`, `<Section>`, and `<PageHeader>` from `components/layout/`. Typed props are better than utility classes here, because the compiler and the editor can both check them. See [ui-scss-modules.md](./ui-scss-modules.md#component-first-architecture).
 
-**Three-layer tokens.** Primitives → semantic tokens → component code. See [ui-design-token-layers.md](./ui-design-token-layers.md).
+**Three layers of tokens.** Primitive values feed semantic tokens, and component code references the semantic layer. See [ui-design-token-layers.md](./ui-design-token-layers.md).
 
-**Container queries, not viewport media queries.** Components adapt to whatever container they live in. See [ui-responsive-design.md](./ui-responsive-design.md).
+**Container queries, not viewport media queries.** A component sizes itself against the container it was placed in, so it works anywhere. See [ui-responsive-design.md](./ui-responsive-design.md).
 
-**SSR-first rendering.** Server renders with real data; client hydrates and subscribes. See [react.md](../react/react.md#ssr--live-updates-pattern) and [ui-ssr-hydration.md](./ui-ssr-hydration.md).
+**Render on the server first.** The server produces the page with real data, then the browser attaches to that markup and subscribes for live updates. See [react.md](../react/react.md#ssr--live-updates-pattern) and [ui-ssr-hydration.md](./ui-ssr-hydration.md).
 
 ## Quick Reference
 
@@ -24,31 +26,33 @@ Hardcoded values prevent theming. Global classes collide. Viewport media queries
 
 | Component | Props | Purpose |
 |-----------|-------|---------|
-| `<Page>` | — | Page-level grid with responsive gap |
-| `<PageHeader>` | `title`, `subtitle` | Page title section |
-| `<Stack>` | `gap="sm\|md\|lg"`, `direction` | Flex container with gap |
+| `<Page>` | — | Page-level grid whose gap adapts to the viewport |
+| `<PageHeader>` | `title`, `subtitle` | The page title section |
+| `<Stack>` | `gap="sm\|md\|lg"`, `direction` | Flex container with a consistent gap |
 | `<Grid>` | `gap="sm\|md\|lg"`, `columns="2\|3\|responsive"` | Grid layout |
-| `<Section>` | `gap="sm\|md\|lg"` | Content section with spacing |
+| `<Section>` | `gap="sm\|md\|lg"` | A content section with standard spacing |
 
 ### Common Design Tokens
 
-Component code (`.module.scss`) references Layer 2 (`semantic-tokens.scss`) and never Layer 1 (`primitives.scss`). Layer 1 holds only composition inputs — `--spacing-N`, `--radius-N`, and the raw font-size scale. Within Layer 2, prefer the use-case name when one fits (`--card-padding-md`, `--button-gap`) over the value-named scales (`--gap-md`, `--radius-md`); that is guidance, not a rule. Full detail in [ui-design-token-layers.md](./ui-design-token-layers.md).
+Component code in a `.module.scss` file references Layer 2 (`semantic-tokens.scss`) and never Layer 1 (`primitives.scss`). Layer 1 exists purely as input to Layer 2 and holds only `--spacing-N`, `--radius-N`, and the raw font-size scale.
+
+Within Layer 2, prefer a token named for the use case when one fits, such as `--card-padding-md` or `--button-gap`, over a token named for its value, such as `--gap-md` or `--radius-md`. That is guidance rather than a rule. Full detail is in [ui-design-token-layers.md](./ui-design-token-layers.md).
 
 | Category | Tokens component code may reference |
 |----------|--------------------------------------|
-| Colors | `--color-text`, `--color-text-muted`, `--color-primary`, `--color-surface`, `--color-surface-muted`, `--color-border`, `--color-success`, `--color-warning`, `--color-danger` (plus `--color-*-alpha-*` and `--color-*-text` variants) |
-| Gaps | `--gap-2xs/xs/sm/md/lg/xl` (generic), plus component-scoped `--stack-gap-sm/md/lg`, `--section-gap-sm/md/lg`, `--grid-gap-sm/md/lg`, `--button-gap`, `--badge-gap`, `--chip-gap` |
-| Padding | `--padding-2xs/xs/sm/md/lg/xl` (generic), plus component-scoped `--card-padding-xs/sm/md/lg`, `--button-padding-xs/sm/md/lg`, `--input-padding-xs/sm/md/lg`, `--alert-padding` |
+| Colors | `--color-text`, `--color-text-muted`, `--color-primary`, `--color-surface`, `--color-surface-muted`, `--color-border`, `--color-success`, `--color-warning`, `--color-danger` (plus the `--color-*-alpha-*` and `--color-*-text` variants) |
+| Gaps | `--gap-2xs/xs/sm/md/lg/xl` for general use, plus the component-scoped `--stack-gap-sm/md/lg`, `--section-gap-sm/md/lg`, `--grid-gap-sm/md/lg`, `--button-gap`, `--badge-gap`, `--chip-gap` |
+| Padding | `--padding-2xs/xs/sm/md/lg/xl` for general use, plus the component-scoped `--card-padding-xs/sm/md/lg`, `--button-padding-xs/sm/md/lg`, `--input-padding-xs/sm/md/lg`, `--alert-padding` |
 | Typography | `--font-size-caption`, `--font-size-body-sm/body/body-lg`, `--font-size-heading-sm/md/lg/xl`; `--font-weight-normal/medium/semibold/bold`; `--line-height-tight/normal/relaxed` |
-| Borders | `--border-width-thin/medium/thick`; `--radius-xs` (4px), `--radius-sm` (10px), `--radius-md` (16px), `--radius-lg` (24px), `--radius-xl` (32px), `--radius-full` (999px, unscaled) |
+| Borders | `--border-width-thin/medium/thick`; `--radius-xs` (4px), `--radius-sm` (10px), `--radius-md` (16px), `--radius-lg` (24px), `--radius-xl` (32px), `--radius-full` (999px, not scaled) |
 | Shadows | `--shadow-sm/md/lg` |
 | Avatars | `--avatar-size-sm/md/lg` |
-| Max Widths | `--max-width-prose` (64ch), `--max-width-xs/sm/md/lg/xl` (320–1080px) |
-| Breakpoints | `$breakpoint-mobile-sm` (360px), `$breakpoint-mobile-md` (480px), `$breakpoint-mobile-lg` (768px), `$breakpoint-tablet` (1024px), `$breakpoint-desktop` (1200px), `$breakpoint-desktop-lg` (1440px), `$breakpoint-desktop-xl` (1920px); alias `$breakpoint-mobile` = `$breakpoint-mobile-lg` (768px) |
+| Max widths | `--max-width-prose` (64ch), `--max-width-xs/sm/md/lg/xl` (320–1080px) |
+| Breakpoints | `$breakpoint-mobile-sm` (360px), `$breakpoint-mobile-md` (480px), `$breakpoint-mobile-lg` (768px), `$breakpoint-tablet` (1024px), `$breakpoint-desktop` (1200px), `$breakpoint-desktop-lg` (1440px), `$breakpoint-desktop-xl` (1920px); `$breakpoint-mobile` is an alias for `$breakpoint-mobile-lg` (768px) |
 
 ### SCSS Module Naming
 
-Use underscores for multi-word identifiers to enable TypeScript dot notation:
+Use underscores in multi-word class names so TypeScript dot notation works. The last two rows use BEM, a naming convention where a double underscore marks a part of a component and a double hyphen marks a variation of it.
 
 | Pattern | CSS | TypeScript |
 |---------|-----|-----------|
@@ -59,45 +63,45 @@ Use underscores for multi-word identifiers to enable TypeScript dot notation:
 
 ### Common UI Primitives
 
-Buttons and badges are React components with scoped CSS Modules — apply them via `<Button>` and `<Badge>`, not raw class names. The only generally-usable global utility is `.text-muted`.
+Buttons and badges are React components backed by scoped SCSS Modules, so use `<Button>` and `<Badge>` rather than applying class names by hand. The only global utility class intended for general use is `.text-muted`.
 
 | Pattern | Use |
 |---------|-----|
-| Button | `<Button>` from `components/ui/Button` (variants: `primary/secondary/ghost/danger/warning`; sizes: `xs/sm/md/lg`) |
-| Badge | `<Badge>` from `components/ui/Badge` (tones: `neutral/info/success/warning/danger`) |
-| KPI / stat readout | `<StatGrid>` + `<StatTile>` from `components/ui/StatTile` (`size="md"` page band, `size="sm"` admin strip) — never hand-rolled label/value markup, and not the legacy `.stat-grid` / `.stat-card__*` globals |
-| Muted text | class `text-muted` |
+| Button | `<Button>` from `components/ui/Button` (variants `primary/secondary/ghost/danger/warning`; sizes `xs/sm/md/lg`) |
+| Badge | `<Badge>` from `components/ui/Badge` (tones `neutral/info/success/warning/danger`) |
+| Headline statistic | `<StatGrid>` with `<StatTile>` from `components/ui/StatTile`, using `size="md"` for a page band and `size="sm"` for an admin strip. Never hand-write label and value markup, and do not use the legacy `.stat-grid` or `.stat-card__*` global classes. |
+| Muted text | The `text-muted` class |
 
 ### Icons
 
-All icons from `lucide-react`. Sizes: 14px (inline), 16px (headings), 18px (buttons), 24px (hero). Always use CSS variables for color. See [ui-icons-and-feedback.md](./ui-icons-and-feedback.md).
+Take every icon from `lucide-react`. Use 14px inline, 16px in headings, 18px in buttons, and 24px for a hero element. Always set icon color from a CSS variable rather than a literal value. See [ui-icons-and-feedback.md](./ui-icons-and-feedback.md).
 
 ## Pre-Ship Checklist
 
-- [ ] Uses layout components for page structure
-- [ ] Uses CSS variables exclusively (no hardcoded colors, spacing, fonts, or sizes)
-- [ ] Component styles in colocated `.module.scss` file with underscore naming
-- [ ] Uses container queries for responsiveness (not viewport media queries)
-- [ ] Uses `lucide-react` for icons with design system colors
-- [ ] Provides visual feedback for state changes (loading, error, success)
-- [ ] Semantic HTML with ARIA labels for icon-only buttons
-- [ ] Uses `ClientTime` or two-phase rendering for timestamps
-- [ ] Tested in multiple contexts (full-page, slideout, modal, mobile)
+- [ ] Page structure uses the layout components
+- [ ] Every color, spacing value, font, and size comes from a CSS variable
+- [ ] Component styles live in a colocated `.module.scss` file using underscore naming
+- [ ] Responsive behaviour uses container queries rather than viewport media queries
+- [ ] Icons come from `lucide-react` and take their color from design tokens
+- [ ] State changes give visual feedback for loading, error, and success
+- [ ] Markup is semantic, and icon-only buttons carry an ARIA label so screen readers can announce them
+- [ ] Timestamps use `ClientTime` or another two-phase rendering approach
+- [ ] Tested as a full page, in a slideout, in a modal, and at mobile width
 
 ## Further Reading
 
 **Detail documents:**
-- [ui-components.md](./ui-components.md) - Complete catalog of layout primitives, UI primitives, and context providers with prop summaries and source links
-- [ui-scss-modules.md](./ui-scss-modules.md) - SCSS architecture, naming conventions, and component styling workflow
-- [ui-responsive-design.md](./ui-responsive-design.md) - Container queries, breakpoints, and SCSS interpolation
-- [ui-icons-and-feedback.md](./ui-icons-and-feedback.md) - Lucide icons, animations, and state feedback
-- [ui-accessibility.md](./ui-accessibility.md) - Semantic HTML, ARIA labels, focus management, and plugin styling
-- [ui-ssr-hydration.md](./ui-ssr-hydration.md) - Hydration error prevention, ClientTime, and two-phase rendering
-- [ui-design-token-layers.md](./ui-design-token-layers.md) - Token hierarchy, complete reference, and W3C alignment
-- [ui-theme.md](./ui-theme.md) - Theme system, admin interface, and SSR injection
+- [ui-components.md](./ui-components.md) — full catalog of layout primitives, UI primitives, and context providers, with prop summaries and links to source
+- [ui-scss-modules.md](./ui-scss-modules.md) — SCSS architecture, naming conventions, and the component styling workflow
+- [ui-responsive-design.md](./ui-responsive-design.md) — container queries, breakpoints, and SCSS interpolation
+- [ui-icons-and-feedback.md](./ui-icons-and-feedback.md) — Lucide icons, animations, and feedback for state changes
+- [ui-accessibility.md](./ui-accessibility.md) — semantic HTML, ARIA labels, focus management, and plugin styling
+- [ui-ssr-hydration.md](./ui-ssr-hydration.md) — preventing hydration errors, `ClientTime`, and two-phase rendering
+- [ui-design-token-layers.md](./ui-design-token-layers.md) — the token hierarchy, complete reference, and how it aligns with the W3C design token format
+- [ui-theme.md](./ui-theme.md) — the theme system, admin interface, and injection during server rendering
 
 **Related topics:**
-- [frontend.md](../frontend.md) - Frontend architecture overview
-- [frontend-architecture.md](../frontend-architecture.md) - File organization and module patterns
-- [react.md](../react/react.md) - React component patterns and SSR + Live Updates
-- [plugins-frontend-context.md](../../plugins/plugins-frontend-context.md) - Plugin frontend context and CSS Modules
+- [frontend.md](../frontend.md) — frontend architecture overview
+- [frontend-architecture.md](../frontend-architecture.md) — file organization and module patterns
+- [react.md](../react/react.md) — React component patterns and SSR + Live Updates
+- [plugins-frontend-context.md](../../plugins/plugins-frontend-context.md) — what plugins receive, and how they use SCSS Modules
