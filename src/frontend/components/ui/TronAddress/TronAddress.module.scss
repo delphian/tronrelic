@@ -41,6 +41,25 @@
     margin-right: var(--gap-2xs);
 }
 
+/*
+ * Applied alongside .address/.label when the address carries one or more
+ * address-tags, so a signed-in operator can tell a tagged wallet from an
+ * untagged one without hovering — until now the tags lived only in the tooltip
+ * and a tagged address looked pixel-identical to any other.
+ *
+ * A text decoration is the whole treatment on purpose. Tags resolve client-side
+ * after hydration, so any signal that changed the chip's box (an inline chip, a
+ * border, extra padding) would reflow every dense table on the page a beat after
+ * it painted; decorations do not participate in box sizing. The signal is also
+ * shape rather than hue, so it survives monochrome, colour-vision deficiency,
+ * and any theme's palette remap.
+ */
+.tagged {
+    text-decoration: underline dotted var(--tron-address-tagged-underline);
+    text-decoration-thickness: var(--border-width-thin);
+    text-underline-offset: var(--tron-address-tagged-underline-offset);
+}
+
 /* Trim the wrapped TrCopyIcon/IconButton so the icons sit slim in the row. */
 .action {
     flex: 0 0 auto;
