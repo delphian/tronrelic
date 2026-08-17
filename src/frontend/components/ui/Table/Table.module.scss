@@ -18,10 +18,33 @@
     container-name: table;
 }
 
-/* Base Table */
+/*
+ * Base Table
+ *
+ * Cell type size is declared here on the table and inherited by the cells,
+ * rather than being set on `.td` directly, and that placement is load-bearing.
+ * Around a dozen call sites put their own class on a `<Td>` to size a single
+ * column — the monospace address and transaction columns, mostly. A rule on
+ * `.td` and a class on the cell carry the same specificity, so declaring it on
+ * `.td` would leave the winner down to stylesheet order in the bundle and could
+ * silently resize those columns. Declared here, any class applied straight to a
+ * cell beats an inherited value outright, whatever order the sheets load in.
+ * `.th` sets its own size below, so headers are unaffected either way.
+ *
+ * Without a size here, cells inherited the document default of 16px — larger
+ * than ordinary page body text, and visibly out of step with the columns that
+ * do set a size of their own.
+ *
+ * `--table-font-size` is an override hook rather than a design token: a single
+ * table that needs a denser body sets the property on its own class and this
+ * declaration picks it up, again with no specificity contest. Left unset, which
+ * is the normal case, every table gets the default. This mirrors how
+ * `--table-sticky-max-height` is used further down.
+ */
 .table {
     width: 100%;
     border-collapse: collapse;
+    font-size: var(--table-font-size, var(--font-size-body));
 }
 
 .table_compact .th,
