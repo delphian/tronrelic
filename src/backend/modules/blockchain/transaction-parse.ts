@@ -38,6 +38,7 @@ export function normalizeContractType(rawType: string | undefined): TronTransact
         'VoteWitnessContract',
         'AssetIssueContract',
         'CreateSmartContract',
+        'AccountPermissionUpdateContract',
         'Unknown'
     ];
 
