@@ -17,6 +17,7 @@ export type TronTransactionType =
   | 'UnDelegateResourceContract'
   | 'AssetIssueContract'
   | 'CreateSmartContract'
+  | 'AccountPermissionUpdateContract'
   | 'Unknown';
 
 export interface ResourceCost {
