@@ -49,7 +49,7 @@ workspace.
 |---|---|---|
 | `SchedulerMonitor` | Job status, enable/disable, cron editing | `jobFilter` — names or a predicate |
 | `CollectionBrowser` | MongoDB collections, documents, edit, delete | `prefix`, e.g. `plugin_<id>_` |
-| `ClickHouseTableBrowser` | ClickHouse tables and rows (read-only) | `prefix` |
+| `ClickHouseTableBrowser` | ClickHouse tables and rows (read-only) | `pluginId` — your `manifest.id` |
 
 Both browsers filter **server-side**, so a scoped page never receives the rest
 of the deployment's inventory. `CollectionBrowser` takes `allowEdit` and
@@ -58,6 +58,15 @@ invariants across collections that a raw write would break, and point operators
 at your own admin actions instead. `ClickHouseTableBrowser` has no write
 counterpart by design, and accepts `hideWhenEmpty` so a plugin with no
 ClickHouse tables renders nothing rather than an empty panel.
+
+Both stores put a plugin's data in the same namespace, `plugin_<id>_`, with
+your identifier embedded exactly as the manifest declares it. Plugin
+`my-plugin` stores its documents under `plugin_my-plugin_` and its ClickHouse
+tables under `plugin_my-plugin_` as well. `ClickHouseTableBrowser` takes
+`pluginId` and derives that prefix itself, which is preferable to its
+deprecated `prefix` prop because a hand-written string drifts when an
+identifier changes, and the mistake shows up as a browser listing nothing
+rather than as an error.
 
 `CollectionBrowser` pages documents by cursor rather than by page number, which
 is why it offers First and Last on any collection regardless of size. An offset
@@ -77,7 +86,7 @@ const { system } = context;
 
 <system.SchedulerMonitor jobFilter={(job) => job.name.startsWith('my-plugin:')} hideStats />
 <system.CollectionBrowser prefix="plugin_my-plugin_" allowDelete={false} />
-<system.ClickHouseTableBrowser prefix="my_plugin_" hideWhenEmpty />
+<system.ClickHouseTableBrowser pluginId="my-plugin" hideWhenEmpty />
 ```
 
 ## File Picker (`context.useFilePicker`)

@@ -22,6 +22,12 @@ import { Button } from '../../../../components/ui/Button';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { CopyButton } from '../../../../components/ui/CopyButton';
 import type { IClickHouseTableBrowserProps } from '@/types';
+// Imported from its own module rather than the `@/types` barrel. This is a
+// 'use client' component, so a value import is bundled for the browser, and
+// the barrel value-re-exports backend helpers — the auth predicates, the URL
+// guards, definePlugin — that would be shipped to the client along with it.
+// A type-only import from the barrel is erased and does not have this cost.
+import { pluginPrefix } from '@/types/plugin/pluginPrefix';
 import { formatBytes } from '../../../../lib/format';
 import {
     AlertCircle,
@@ -121,18 +127,64 @@ interface IPaginatedRows {
 /**
  * Render the ClickHouse table browser.
  *
- * @param prefix - Namespace to scope to; omit for every table in the database.
+ * @param pluginId - Scope to one plugin's tables by its `manifest.id`. The
+ * prefix is derived here rather than accepted from the caller, because a
+ * prefix written out by hand drifts when an identifier changes and the
+ * mistake does not announce itself — the filter matches nothing and the
+ * browser renders empty instead of reporting an error.
+ * @param prefix - Deprecated literal prefix, honoured only when `pluginId` is
+ * absent so existing callers keep working while they migrate.
  * @param title - Heading above the list. Omitted by default because the
  * embedding page — the system console included — usually supplies its own, and
  * a built-in heading would read as a duplicate.
  * @param hideWhenEmpty - Render nothing when no table matches, rather than an
  * empty panel that reads as missing data.
  */
-export function ClickHouseTableBrowser({
-    prefix,
-    title,
-    hideWhenEmpty = false
-}: IClickHouseTableBrowserProps) {
+export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
+    const { pluginId, prefix, title, hideWhenEmpty = false } = props;
+
+    /**
+     * Whether the caller asked for plugin scoping at all, as opposed to what
+     * they asked to scope to.
+     *
+     * The prop is optional, so its value cannot tell these apart: omitting it
+     * and passing `pluginId={someId}` where `someId` is undefined — a renamed
+     * barrel export, a field spread from a half-populated object — both arrive
+     * as `undefined`. Testing for the key instead means an undefined value
+     * reaches `pluginPrefix()` and is reported, rather than falling
+     * through to the unscoped view that lists the whole deployment.
+     */
+    const scopesByPluginId = 'pluginId' in props;
+    /**
+     * The prefix used for filtering and for the empty-state message, plus the
+     * reason it could not be derived when the caller supplied an unusable id.
+     *
+     * A `pluginId` the caller supplied but that is blank or undefined must not
+     * fall back to `prefix`. Falling back sends no `?prefix=` at all, and the
+     * stats endpoint reads an absent prefix as "every table", so a plugin
+     * panel whose id arrived empty would list core's tables instead of its
+     * own. Only an omitted `pluginId` uses `prefix`, which is what the
+     * unscoped core system console relies on. `pluginId` still wins when both
+     * are supplied, so a caller mid-migration gets the derived value.
+     *
+     * The failure travels as a value rather than as a thrown error, because
+     * `pluginPrefix()` throws and throwing here would take down the whole
+     * admin page instead of this one panel.
+     */
+    const scope = useMemo<{ prefix?: string; error?: string }>(() => {
+        if (!scopesByPluginId) {
+            return { prefix };
+        }
+
+        try {
+            // Typed optional, but the key is present, so an undefined value is
+            // a caller mistake rather than a request for the unscoped view.
+            // pluginPrefix() rejects it, which is what should happen.
+            return { prefix: pluginPrefix(pluginId as string) };
+        } catch (err) {
+            return { error: err instanceof Error ? err.message : 'Invalid plugin id' };
+        }
+    }, [scopesByPluginId, pluginId, prefix]);
     const [stats, setStats] = useState<IClickHouseStats | null>(null);
     const [sort, setSort] = useState<ITableSort>(DEFAULT_SORT);
     const [loading, setLoading] = useState(true);
@@ -143,12 +195,22 @@ export function ClickHouseTableBrowser({
     const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
 
     const fetchStats = useCallback(async () => {
+        // An unusable plugin id stops the request outright. Querying without a
+        // prefix would return the whole deployment's inventory, which is the
+        // opposite of what a scoped caller asked for.
+        if (scope.error) {
+            setError(scope.error);
+            setStats(null);
+            setLoading(false);
+            return;
+        }
+
         try {
             setLoading(true);
             // The prefix travels as a query parameter so the server filters in
             // SQL — an embedded caller never receives the wider table list.
-            const query = typeof prefix === 'string' && prefix.length > 0
-                ? `?prefix=${encodeURIComponent(prefix)}`
+            const query = typeof scope.prefix === 'string' && scope.prefix.length > 0
+                ? `?prefix=${encodeURIComponent(scope.prefix)}`
                 : '';
             const response = await fetch(`/api/admin/clickhouse/stats${query}`, {
                 headers: { 'Content-Type': 'application/json' }
@@ -166,7 +228,7 @@ export function ClickHouseTableBrowser({
         } finally {
             setLoading(false);
         }
-    }, [prefix]);
+    }, [scope]);
 
     const fetchRows = useCallback(async (tableName: string, page: number = 1) => {
         try {
@@ -253,6 +315,12 @@ export function ClickHouseTableBrowser({
         return <p className={styles.empty}>Loading ClickHouse statistics…</p>;
     }
 
+    // Deliberately ahead of the hideWhenEmpty check below, and it overrides it.
+    // hideWhenEmpty means "this plugin stores nothing in ClickHouse, so say
+    // nothing" — it does not mean "stay quiet when the caller misconfigured the
+    // scope". A bad pluginId that rendered nothing would look identical to a
+    // plugin with no tables, which is the silent failure this component's
+    // pluginId prop exists to remove, so it is reported even here.
     if (error) {
         return (
             <div className="alert alert--danger" role="alert">
@@ -288,8 +356,8 @@ export function ClickHouseTableBrowser({
 
             {sortedTables.length === 0 ? (
                 <p className={styles.empty}>
-                    {typeof prefix === 'string' && prefix.length > 0
-                        ? `No tables found for ${prefix}`
+                    {typeof scope.prefix === 'string' && scope.prefix.length > 0
+                        ? `No tables found for ${scope.prefix}`
                         : 'No tables found'}
                 </p>
             ) : (

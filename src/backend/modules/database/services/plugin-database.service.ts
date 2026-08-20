@@ -1,6 +1,7 @@
 import { DatabaseService } from './database.service.js';
 import type { Connection } from 'mongoose';
 import type { ISystemLogService } from '@/types';
+import { pluginPrefix } from '@/types';
 
 /**
  * Plugin-scoped database access implementation.
@@ -42,6 +43,6 @@ export class PluginDatabaseService extends DatabaseService {
      * @param pluginId - The unique plugin identifier (from manifest)
      */
     constructor(logger: ISystemLogService, mongooseConnection: Connection, pluginId: string) {
-        super(logger, mongooseConnection, { prefix: `plugin_${pluginId}_` });
+        super(logger, mongooseConnection, { prefix: pluginPrefix(pluginId) });
     }
 }

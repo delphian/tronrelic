@@ -8,3 +8,4 @@
 export { ClickHouseModule } from './ClickHouseModule.js';
 export type { IClickHouseModuleDependencies } from './ClickHouseModule.js';
 export { ClickHouseService } from './services/clickhouse.service.js';
+export { PluginClickHouseService } from './services/plugin-clickhouse.service.js';

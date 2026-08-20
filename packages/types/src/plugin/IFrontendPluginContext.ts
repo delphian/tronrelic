@@ -948,7 +948,15 @@ export interface ISystemComponents {
     CollectionBrowser: ComponentType<ICollectionBrowserProps>;
 
     /**
-     * ClickHouse table browser, scoped to a table-name prefix.
+     * ClickHouse table browser, scoped to one plugin's tables.
+     *
+     * Pass `pluginId` — your `manifest.id` — rather than a prefix string. Both
+     * stores follow one rule, `plugin_<id>_` with the id kept exactly as the
+     * manifest declares it, so the component can derive the prefix from the id
+     * and there is no second form to get wrong. Deriving it is still worth
+     * doing, because a prefix written out by hand drifts when an identifier
+     * changes and the mistake does not announce itself: the browser matches
+     * nothing and renders empty rather than reporting an error.
      *
      * Read-only by design — ClickHouse deletes are asynchronous `ALTER TABLE`
      * operations, a poor fit for a point-and-click surface. Set
@@ -957,7 +965,7 @@ export interface ISystemComponents {
      *
      * @example
      * ```tsx
-     * <context.system.ClickHouseTableBrowser prefix="my_plugin_" hideWhenEmpty />
+     * <context.system.ClickHouseTableBrowser pluginId="my-plugin" hideWhenEmpty />
      * ```
      */
     ClickHouseTableBrowser: ComponentType<IClickHouseTableBrowserProps>;

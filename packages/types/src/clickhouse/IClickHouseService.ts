@@ -69,7 +69,11 @@ export interface IClickHouseService {
      * the source row) cannot tolerate a flush failure surfacing 30 seconds
      * later in a different log stream.
      *
-     * @param table - Target table name (will be prefixed for plugins)
+     * @param table - The physical table name, passed through to ClickHouse
+     *   exactly as given. Nothing prefixes it, so a plugin supplies its own
+     *   fully-qualified name. A plugin should not call this directly — its
+     *   context supplies `IPluginClickHouseService`, which names the table for
+     *   it and quotes the result.
      * @param rows - Array of row objects matching table schema
      * @param options - Optional per-call overrides. `waitForCommit: true`
      *   forces the call to wait for the async-insert flush to commit
@@ -78,11 +82,15 @@ export interface IClickHouseService {
      *
      * @example
      * ```typescript
-     * await clickhouse.insert('delegations', [
+     * // A plugin goes through its scoped service instead, which resolves the
+     * // logical name and quotes it:
+     * //   await context.clickhouse.insert('delegations', rows);
+     * await clickhouse.insert('`plugin_delegation-pools_delegations`', [
      *     { txId: 'abc', timestamp: new Date(), poolAddress: 'T...' },
      *     { txId: 'def', timestamp: new Date(), poolAddress: 'T...' }
      * ]);
      *
+     * // Core owns its tables outright, so they carry no plugin prefix.
      * // Durable insert before a downstream side-effect:
      * await clickhouse.insert('traffic_events', [event], { waitForCommit: true });
      * await mongoUsers.deleteOne({ _id });

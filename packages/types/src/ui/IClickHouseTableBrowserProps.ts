@@ -23,9 +23,25 @@
  */
 export interface IClickHouseTableBrowserProps {
     /**
+     * Scopes the browser to one plugin's tables, identified by its
+     * `manifest.id` — `'dust-tracker'`, not the `trp-dust-tracker` directory
+     * name. The component derives the table prefix with `pluginPrefix()`.
+     *
+     * Prefer this over `prefix`. A hand-written prefix drifts when a plugin's
+     * identifier changes, and the mistake is not reported — a prefix matching
+     * no table renders an empty browser rather than an error. Passing the id
+     * lets the component derive the name that is correct by construction.
+     */
+    pluginId?: string;
+
+    /**
      * Restricts the browser to tables whose name starts with this string.
      * Filtered in SQL, so an unscoped inventory never leaves the server. Omit
      * for the whole-database view.
+     *
+     * @deprecated Pass `pluginId` instead and let the component derive the
+     * prefix. Retained so existing callers keep working while they migrate;
+     * `pluginId` wins when both are supplied.
      */
     prefix?: string;
 
