@@ -6,6 +6,8 @@
  */
 export type { IPlugin } from './IPlugin.js';
 export type { IPluginManifest } from './IPluginManifest.js';
+export { PLUGIN_ID_PATTERN } from './IPluginManifest.js';
+export { pluginPrefix } from './pluginPrefix.js';
 export type { IAdminUIConfig } from './IAdminUIConfig.js';
 export type { IMenuItemConfig } from './IMenuItemConfig.js';
 export type { IPageConfig, IServerDataContext, IPluginPageMetadata } from './IPageConfig.js';

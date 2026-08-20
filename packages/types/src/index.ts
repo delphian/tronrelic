@@ -1,7 +1,7 @@
 export type { Block } from './Block.js';
 export type { IBaseObserver, IBaseBatchObserver, TransactionBatches, IBaseBlockObserver, IBlockData, IBlockchainObserverService, IWebSocketService, IPluginContext, IObserverStats, IPluginWebSocketManager, PluginSubscriptionHandler, PluginUnsubscribeHandler, IPluginWebSocketStats, IAggregatePluginWebSocketStats } from './observer/index.js';
 export type { IPlugin, IPluginManifest, IAdminUIConfig, IApiRouteConfig, HttpMethod, ApiRouteHandler, ApiMiddleware, IMenuItemConfig, IPageConfig, IServerDataContext, IPluginPageMetadata, IPluginMetadata, IPluginManagementRequest, IPluginManagementResponse, IPluginInfo, IFrontendPluginContext, IUIComponents, ILayoutComponents, ISubMenuItem, IChartComponents, ISystemComponents, IApiClient, IWebSocketClient, IPluginUserState, IFilePickerClient, IFilePickerProvider, IFileSelection, IFilePickOptions, IImageGenClient, IImageGenProvider, IImageGenOptions } from './plugin/index.js';
-export { definePlugin } from './plugin/index.js';
+export { definePlugin, PLUGIN_ID_PATTERN, pluginPrefix } from './plugin/index.js';
 export type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags } from './transaction/index.js';
 export { ProcessedTransaction } from './transaction/index.js';
 export type { IHttpRequest, IHttpResponse, IHttpNext } from './http/index.js';
@@ -43,7 +43,7 @@ export type { ICollectionBrowserProps } from './ui/ICollectionBrowserProps.js';
 export type { IClickHouseTableBrowserProps } from './ui/IClickHouseTableBrowserProps.js';
 export type { IDatabaseService } from './database/IDatabaseService.js';
 export type { IMigration, IMigrationContext, MigrationTarget } from './database/IMigration.js';
-export type { IClickHouseService } from './clickhouse/index.js';
+export type { IClickHouseService, IPluginClickHouseService } from './clickhouse/index.js';
 export type { IPage, IPageSettings, IPageService, IMarkdownService, IFrontmatterData, IParsedMarkdown } from './pages/index.js';
 export type { IStorageProvider, IStorageObjectStat, IFileService, IFileRecord, IFileSource, IFileUploadOptions, IFileListFilter, IVariantOptions, IVariantFit, IFileVariant, IFilesSettings, IFilesSettingsService } from './files/index.js';
 export { FILE_SOURCE_KINDS, FileValidationError, FileSizeExceededError } from './files/index.js';

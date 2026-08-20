@@ -1,6 +1,7 @@
 import axios from 'axios';
 import mongoose from 'mongoose';
 import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService, IServiceRegistry, IHookRegistry } from '@/types';
+import { PLUGIN_ID_PATTERN } from '@/types';
 import { PluginHooks } from '../hooks/index.js';
 import { PluginObserverRegistry } from '../observers/plugin-observer-registry.js';
 import { logger } from '../lib/logger.js';
@@ -8,6 +9,7 @@ import { BlockchainObserverService } from '../services/blockchain-observer/index
 import { BaseObserver, BaseBatchObserver, BaseBlockObserver } from '../modules/blockchain/observers/index.js';
 import { WebSocketService } from '../services/websocket.service.js';
 import { PluginDatabaseService } from '../modules/database/index.js';
+import { PluginClickHouseService } from '../modules/clickhouse/index.js';
 import { PluginApiService } from '../services/plugin-api.service.js';
 import { PluginMetadataService } from '../services/plugin-metadata.service.js';
 import { PluginManagerService } from '../services/plugin-manager.service.js';
@@ -118,12 +120,45 @@ export async function loadPlugins(
     for (const plugin of pluginList) {
         const pluginLogger = logger.child({ pluginId: plugin.manifest.id, pluginTitle: plugin.manifest.title });
 
+        // Check the id's format before the plugin is registered anywhere.
+        // pluginPrefix() embeds the id verbatim in every collection and table
+        // name the plugin owns, so the id has to be safe on two counts: it must
+        // not contain the '_' that delimits it from the name following it, and
+        // it must be safe to interpolate into SQL, because the ClickHouse
+        // client does not escape a table name. PLUGIN_ID_PATTERN is what makes
+        // both true. Skipping the plugin rather than throwing matches how the
+        // loader already handles an individual plugin's problems: one bad
+        // plugin must not stop the application from starting.
+        // The typeof test comes first because RegExp.test() coerces its
+        // argument: a manifest with a missing or null id would otherwise be
+        // tested as the strings 'undefined' or 'null', both of which satisfy
+        // the pattern. Two such plugins would then share plugin_undefined_,
+        // which is the collision this gate exists to stop.
+        if (typeof plugin.manifest.id !== 'string' || !PLUGIN_ID_PATTERN.test(plugin.manifest.id)) {
+            pluginLogger.error(
+                { pluginId: plugin.manifest.id },
+                '✗ Skipping plugin: manifest.id must be lowercase letters, digits, and ' +
+                'hyphens, starting with a letter, because any other character collides with a ' +
+                'hyphenated id under the ClickHouse prefix rule. Use hyphens instead.'
+            );
+            continue;
+        }
+
         try {
             // Register plugin in database (creates entry if new)
             await metadataService.registerPlugin(plugin.manifest);
 
             // Create plugin-scoped database service with injected mongoose connection
             const database = new PluginDatabaseService(pluginLogger, mongoose.connection, plugin.manifest.id);
+
+            // Scope ClickHouse the same way, so a plugin names its tables
+            // logically instead of repeating the physical prefix. Stays
+            // undefined when ClickHouse is not configured, which is a
+            // supported deployment — the context field is optional and
+            // plugins already check it before use.
+            const clickhouse = clickhouseService
+                ? new PluginClickHouseService(clickhouseService, plugin.manifest.id)
+                : undefined;
 
             // Create plugin-scoped WebSocket manager if Socket.IO is initialized
             let websocketManager: PluginWebSocketManager | undefined;
@@ -169,7 +204,7 @@ export async function loadPlugins(
                 BaseBatchObserver,
                 BaseBlockObserver,
                 database,
-                clickhouse: clickhouseService,
+                clickhouse,
                 cache: cacheService,
                 systemConfig: systemConfigService,
                 menuService,

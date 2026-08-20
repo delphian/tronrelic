@@ -26,6 +26,7 @@ import type {
     WidgetTitleSize,
     IPlacementListFilter
 } from '@/types';
+import { PLUGIN_ID_PATTERN } from '@/types';
 import { normaliseRoutePattern } from '../placements/route-matcher.js';
 import {
     InvalidParentPlacementError,
@@ -126,12 +127,6 @@ const ZONE_ID_PATTERN = /^[a-z][a-z0-9_:-]{0,63}$/;
  * `ObjectId.isValid` path and out of the Mongo query.
  */
 const OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/;
-
-/**
- * Format gate for plugin ids. Same shape as a zone id minus the
- * colon — plugin ids never carry namespaced segments.
- */
-const PLUGIN_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
 
 /**
  * Read a query-string value, coerce to string, validate against a

@@ -5,7 +5,7 @@ import type { IBaseObserver } from './IBaseObserver.js';
 import type { IBaseBatchObserver } from './IBaseBatchObserver.js';
 import type { IBaseBlockObserver } from './IBaseBlockObserver.js';
 import type { IDatabaseService } from '../database/IDatabaseService.js';
-import type { IClickHouseService } from '../clickhouse/IClickHouseService.js';
+import type { IPluginClickHouseService } from '../clickhouse/IPluginClickHouseService.js';
 import type { IPluginWebSocketManager } from './IPluginWebSocketManager.js';
 import type { ICacheService } from '../services/ICacheService.js';
 import type { ISystemConfigService } from '../system-config/ISystemConfigService.js';
@@ -68,20 +68,26 @@ export interface IPluginContext {
     database: IDatabaseService;
 
     /**
-     * ClickHouse analytical database service.
+     * ClickHouse analytical database access, scoped to this plugin's tables the
+     * same way `database` is scoped to its collections.
      *
-     * Optional - only available if CLICKHOUSE_HOST is configured. Use for
-     * time-series data, high-volume analytics, and aggregation workloads
-     * that benefit from columnar storage.
+     * Use it for time-series data, high-volume analytics, and aggregation
+     * workloads that suit columnar storage. Name your tables logically and let
+     * `table()` resolve them — writing the physical `plugin_<id>_` name out by
+     * hand is what drifts when an identifier changes, and ClickHouse needs the
+     * result quoted, which `table()` handles.
      *
-     * Check for undefined before using:
+     * Optional — present only when `CLICKHOUSE_HOST` is configured, so check
+     * for undefined before using:
      * ```typescript
      * if (context.clickhouse) {
-     *     const results = await context.clickhouse.query('SELECT ...');
+     *     const dust = context.clickhouse.table('dust');
+     *     const rows = await context.clickhouse.query(`SELECT * FROM ${dust}`);
+     *     await context.clickhouse.insert('dust', rows);
      * }
      * ```
      */
-    clickhouse?: IClickHouseService;
+    clickhouse?: IPluginClickHouseService;
 
     /** Cache service for Redis-backed key-value storage with TTL and tagging */
     cache: ICacheService;
