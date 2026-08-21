@@ -10,7 +10,7 @@ import { Select } from '../../../../../components/ui/Select';
 import { StatTile, StatGrid } from '../../../../../components/ui/StatTile';
 import { Plus, Edit, Trash2, Eye, EyeOff, Search } from 'lucide-react';
 import type { IPage } from '@/types';
-import styles from './PagesTab.module.css';
+import styles from './PagesTab.module.scss';
 import { PageEditor } from '../components/PageEditor';
 
 /**

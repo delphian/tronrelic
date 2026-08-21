@@ -4,7 +4,7 @@ import { Fragment, cloneElement, isValidElement, useEffect, useId } from 'react'
 import type { ReactElement, ReactNode } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { cn } from '../../../lib/cn';
-import styles from './Field.module.css';
+import styles from './Field.module.scss';
 
 /**
  * The props Field injects into the control it wraps, when it can reach one.

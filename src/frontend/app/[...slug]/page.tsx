@@ -9,7 +9,7 @@ import { getServerSideApiUrlWithPath } from '../../lib/api-url';
 import { buildMetadata, buildArticleStructuredData, absoluteUrl } from '../../lib/seo';
 import { getServerConfig } from '../../lib/serverConfig';
 import { getEnabledPluginPageConfig } from '../../lib/serverPluginRegistry';
-import styles from './page.module.css';
+import styles from './page.module.scss';
 
 /**
  * Page metadata response from backend.

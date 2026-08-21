@@ -6,7 +6,7 @@ import { Button } from '../../../../../components/ui/Button';
 import { Textarea } from '../../../../../components/ui/Textarea';
 import { Save } from 'lucide-react';
 import type { IPageSettings } from '@/types';
-import styles from './SettingsTab.module.css';
+import styles from './SettingsTab.module.scss';
 
 /**
  * Pages settings — pages-only concerns. Currently the only page-level

@@ -34,7 +34,7 @@ export function MarketCard({ market }: Props) {
 
 ## Two-Layer SCSS Architecture
 
-**Layer 1 — `globals.scss`** contains design tokens (CSS variables), a small set of global utility classes (`.text-muted`, `.chip`, `.alert`, `.live-indicator`, `.stat-grid`, etc.), base resets, global animations, and viewport-level responsive styles. Buttons and badges are *not* global utilities — they live in `Button.module.css` / `Badge.module.css` and ship through the `<Button>` / `<Badge>` components.
+**Layer 1 — `globals.scss`** contains design tokens (CSS variables), a small set of global utility classes (`.text-muted`, `.chip`, `.alert`, `.live-indicator`, `.stat-grid`, etc.), base resets, global animations, and viewport-level responsive styles. Buttons and badges are *not* global utilities — they live in `Button.module.scss` / `Badge.module.scss` and ship through the `<Button>` / `<Badge>` components.
 
 **Layer 2 — SCSS Modules** (`.module.scss` files) contain component-specific class names, internal layout rules, hover/focus/active states, container queries, and component-scoped animations.
 

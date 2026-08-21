@@ -4,7 +4,7 @@ import { Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { Loader2 } from 'lucide-react';
 import type { IconPickerModalProps } from './IconPickerModal';
-import styles from './LazyIconPickerModal.module.css';
+import styles from './LazyIconPickerModal.module.scss';
 
 /**
  * Loading placeholder displayed while the icon library downloads.

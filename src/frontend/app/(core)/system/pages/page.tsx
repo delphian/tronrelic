@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import styles from './page.module.css';
+import styles from './page.module.scss';
 import { PagesTab } from './tabs/PagesTab';
 import { SettingsTab } from './tabs/SettingsTab';
 

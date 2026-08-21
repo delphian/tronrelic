@@ -6,7 +6,7 @@ import { Button } from '../../../../../components/ui/Button';
 import { Textarea } from '../../../../../components/ui/Textarea';
 import { Save, X, Eye } from 'lucide-react';
 import type { IPage } from '@/types';
-import styles from './PageEditor.module.css';
+import styles from './PageEditor.module.scss';
 
 /**
  * Default frontmatter template for new pages.

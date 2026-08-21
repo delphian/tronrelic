@@ -1,7 +1,7 @@
 import type { HTMLAttributes } from 'react';
 import type { ISkeletonProps } from '@/types';
 import { cn } from '../../../lib/cn';
-import styles from './Skeleton.module.css';
+import styles from './Skeleton.module.scss';
 
 /**
  * Everything the component accepts: the four props published to plugins, plus

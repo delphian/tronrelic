@@ -5,7 +5,7 @@ import type { TronTransactionDocument } from '@/shared';
 import { Card } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
 import { cn } from '../../../../lib/cn';
-import styles from './TransactionDetails.module.css';
+import styles from './TransactionDetails.module.scss';
 
 /**
  * Properties for the TransactionDetails component.

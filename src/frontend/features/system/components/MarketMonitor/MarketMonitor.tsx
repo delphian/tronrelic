@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Badge, type BadgeTone } from '../../../../components/ui/Badge';
 import { Button } from '../../../../components/ui/Button';
 import { StatTile, StatGrid } from '../../../../components/ui/StatTile';
-import styles from './MarketMonitor.module.css';
+import styles from './MarketMonitor.module.scss';
 
 interface MarketPlatform {
     guid: string;

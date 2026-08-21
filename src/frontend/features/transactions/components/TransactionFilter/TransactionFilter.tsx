@@ -6,7 +6,7 @@ import { Input } from '../../../../components/ui/Input';
 import { Button } from '../../../../components/ui/Button';
 import { Card } from '../../../../components/ui/Card';
 import { cn } from '../../../../lib/cn';
-import styles from './TransactionFilter.module.css';
+import styles from './TransactionFilter.module.scss';
 
 /**
  * Filter criteria for transaction queries.

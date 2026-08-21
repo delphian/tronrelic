@@ -2,7 +2,7 @@
 
 import type { ButtonHTMLAttributes, PropsWithChildren, ReactNode } from 'react';
 import { cn } from '../../../lib/cn';
-import styles from './Button.module.css';
+import styles from './Button.module.scss';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'warning';
 type ButtonSize = 'xs' | 'sm' | 'md' | 'lg';
