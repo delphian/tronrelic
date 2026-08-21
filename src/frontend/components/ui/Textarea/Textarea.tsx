@@ -36,6 +36,18 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
      * @default 'md'
      */
     size?: InputSize;
+    /**
+     * Marks the current value as rejected: the border and focus ring turn
+     * danger and `aria-invalid` is set, matching the Input and Select
+     * primitives so one form reads consistently when several of its controls
+     * are refused at once.
+     *
+     * The rendered element is still a bare `<textarea>` with no wrapper. Use
+     * `<Field>` to say why the value was rejected.
+     *
+     * @default false
+     */
+    invalid?: boolean;
 }
 
 /**
@@ -73,12 +85,27 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
  * @returns A styled textarea element with consistent focus behavior.
  */
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-    function Textarea({ className, variant = 'default', size = 'md', ...props }, ref) {
+    function Textarea({ className, variant = 'default', size = 'md', invalid = false, ...props }, ref) {
         return (
             <textarea
                 ref={ref}
-                className={cn(styles.textarea, sizeClass[size], variant === 'ghost' && styles['textarea--ghost'], className)}
+                className={cn(
+                    styles.textarea,
+                    sizeClass[size],
+                    variant === 'ghost' && styles['textarea--ghost'],
+                    invalid && styles['textarea--invalid'],
+                    className
+                )}
                 {...props}
+                // Placed after the spread, and falling back rather than being
+                // overwritten by it. An explicit caller value still wins, but
+                // `{...props}` carries `aria-invalid` even when the caller
+                // passed it as `undefined` — forwarding an optional override
+                // does exactly that — and spreading it last would then delete
+                // the derived value. The control would keep its danger border
+                // while telling assistive technology nothing, which is the
+                // failure this prop exists to prevent.
+                aria-invalid={props['aria-invalid'] ?? (invalid || undefined)}
             />
         );
     }

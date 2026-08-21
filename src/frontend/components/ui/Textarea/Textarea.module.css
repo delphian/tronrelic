@@ -57,3 +57,19 @@
     background: var(--input-ghost-background);
     border-color: var(--input-ghost-border);
 }
+
+/*
+ * Invalid state — set by the `invalid` prop, matching Input and Select so a
+ * refused value looks the same whichever control holds it.
+ *
+ * The border is the shorthand rather than a `--input-border` swap, because the
+ * ghost variant above sets `border-color` as a longhand and would otherwise
+ * overwrite it, leaving a ghost field looking untouched while it is being
+ * refused. The focus tokens are swapped so the `:focus-visible` rule above
+ * picks up the danger ring without needing an invalid variant of its own.
+ */
+.textarea--invalid {
+    border: var(--input-border-invalid);
+    --input-border-focus: var(--input-border-focus-invalid);
+    --input-shadow-focus: var(--input-shadow-focus-invalid);
+}

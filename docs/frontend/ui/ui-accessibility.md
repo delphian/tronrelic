@@ -77,6 +77,22 @@ import { Search, X } from 'lucide-react';
 
 Every icon-only button needs an `aria-label` describing its action, not its appearance.
 
+## Validation Messages
+
+Use `<Field>` for a form control that carries a label or a validation message. Writing the message as loose markup beside the control is what produced the problem this primitive exists to fix: the text is on screen, nothing connects it to the control, and a screen reader announces a field as invalid without ever saying why.
+
+`Field` renders the message with an id and clones its child to add `aria-describedby` pointing at it, so the two are associated without the caller wiring anything. The error message is a polite live region, so a message appearing while the reader is already focused on the control gets announced instead of sitting there silently — polite rather than assertive, because these messages typically change on every keystroke.
+
+Set `invalid` on the control itself for the visual state and `aria-invalid`. The two are separate props on purpose: a field can carry a message about something other than that control's own value, such as two dates that are each fine and wrong together.
+
+```tsx
+<Field label="Subject name" htmlFor="subject-name" error={defects}>
+    <Input id="subject-name" value={name} onChange={onChange} invalid={defects.length > 0} />
+</Field>
+```
+
+Pass a single element as children where you can — that is the case `Field` can inject `aria-describedby` into. A fragment or several controls still renders correctly, but nothing is injected, so set `aria-describedby` yourself in that shape.
+
 ## Plugin Styling Rules
 
 Plugin frontends access design system components through `context.ui` and `context.layout` — they cannot import from `apps/frontend` directly. These rules ensure plugins integrate visually.

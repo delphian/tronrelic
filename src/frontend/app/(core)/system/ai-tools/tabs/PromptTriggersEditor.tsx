@@ -23,6 +23,7 @@ import { Clock, AlertCircle, CheckCircle, Plus, CalendarClock, Webhook, Trash2 }
 import type { ISavedPromptTrigger } from '@/types';
 import { Button } from '../../../../../components/ui/Button';
 import { Input } from '../../../../../components/ui/Input';
+import { Field } from '../../../../../components/ui/Field';
 import { Select } from '../../../../../components/ui/Select';
 import { Switch } from '../../../../../components/ui/Switch';
 import { IconButton } from '../../../../../components/ui/IconButton';
@@ -197,31 +198,41 @@ export function PromptTriggersEditor({
 
                         {draft.kind === 'cron' ? (
                             <>
-                                <label className={styles.field_label} htmlFor={`trigger-cron-${promptId}-${draft.key}`}>
-                                    Cron expression (UTC)
-                                </label>
-                                <Input
-                                    id={`trigger-cron-${promptId}-${draft.key}`}
-                                    type="text"
-                                    value={draft.cron}
-                                    onChange={(e) => updateDraft(draft.key, { cron: e.target.value })}
-                                    placeholder="0 * * * *"
-                                    className={styles.cron_input}
-                                    disabled={disabled}
-                                    aria-label="Cron expression (UTC)"
-                                    aria-invalid={cronInvalid}
-                                />
-                                <div className={styles.schedule_description}>
-                                    {cronInvalid ? (
-                                        <span className={styles.schedule_description_error}>
-                                            <AlertCircle size={12} /> {draft.cron.trim() ? 'Invalid cron expression' : 'A cron expression is required'}
-                                        </span>
-                                    ) : (
+                                {/*
+                                  * Field owns the label, the message, and the
+                                  * aria-describedby between them. The valid case
+                                  * rides through as `hint`, keeping its tick and
+                                  * the plain-English reading of the expression,
+                                  * which is guidance rather than a fault.
+                                  */}
+                                <Field
+                                    className={styles.cron_field}
+                                    label="Cron expression (UTC)"
+                                    htmlFor={`trigger-cron-${promptId}-${draft.key}`}
+                                    error={
+                                        cronInvalid
+                                            ? draft.cron.trim()
+                                                ? 'Invalid cron expression'
+                                                : 'A cron expression is required'
+                                            : undefined
+                                    }
+                                    hint={
                                         <span className={styles.schedule_description_ok}>
                                             <CheckCircle size={12} /> {cronDescription}
                                         </span>
-                                    )}
-                                </div>
+                                    }
+                                >
+                                    <Input
+                                        id={`trigger-cron-${promptId}-${draft.key}`}
+                                        type="text"
+                                        value={draft.cron}
+                                        onChange={(e) => updateDraft(draft.key, { cron: e.target.value })}
+                                        placeholder="0 * * * *"
+                                        className={styles.cron_input}
+                                        disabled={disabled}
+                                        invalid={cronInvalid}
+                                    />
+                                </Field>
                                 {msUntilNext !== null && (
                                     <div className={styles.next_run}>
                                         <Clock size={12} />

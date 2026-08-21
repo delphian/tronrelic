@@ -34,6 +34,22 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
      * @default 'md'
      */
     size?: InputSize;
+    /**
+     * Marks the current value as rejected: the border and focus ring turn
+     * danger and `aria-invalid` is set, so the state reaches assistive
+     * technology rather than only the eye.
+     *
+     * It changes nothing structural. The rendered element is still a bare
+     * `<input>` with no wrapper, because this control is frequently a flex or
+     * grid item and introducing a wrapper only when a prop is set would move
+     * the item its parent is laying out — the same component would produce two
+     * different layouts depending on a prop. To say *why* the value was
+     * rejected, wrap the control in `<Field>`, which owns the message and
+     * wires `aria-describedby` to it.
+     *
+     * @default false
+     */
+    invalid?: boolean;
 }
 
 /**
@@ -93,12 +109,27 @@ const sizeClass: Record<InputSize, string> = {
  * />
  * ```
  *
- * @param props - Input component properties including variant, size, and standard input attributes
+ * @param props - Input component properties including variant, size, invalid, and standard input attributes
  * @param ref - Forwarded ref to the underlying `<input>` for imperative focus/measure.
  * @returns A styled input element with consistent focus behavior
  */
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-    function Input({ className, variant = 'default', size = 'md', ...props }, ref) {
-        return <input ref={ref} className={cn(variantClass[variant], sizeClass[size], className)} {...props} />;
+    function Input({ className, variant = 'default', size = 'md', invalid = false, ...props }, ref) {
+        return (
+            <input
+                ref={ref}
+                className={cn(variantClass[variant], sizeClass[size], invalid && styles['input--invalid'], className)}
+                {...props}
+                // Placed after the spread, and falling back rather than being
+                // overwritten by it. An explicit caller value still wins, but
+                // `{...props}` carries `aria-invalid` even when the caller
+                // passed it as `undefined` — forwarding an optional override
+                // does exactly that — and spreading it last would then delete
+                // the derived value. The control would keep its danger border
+                // while telling assistive technology nothing, which is the
+                // failure this prop exists to prevent.
+                aria-invalid={props['aria-invalid'] ?? (invalid || undefined)}
+            />
+        );
     }
 );

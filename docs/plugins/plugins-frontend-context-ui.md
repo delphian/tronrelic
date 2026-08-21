@@ -14,7 +14,7 @@ Layout components carry typed props — `<layout.Stack gap="md">` fails compilat
 interface IFrontendPluginContext {
     pluginId: string;              // Used internally for namespacing events and API routes
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
-    ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Skeleton, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, Table family
+    ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Field, Skeleton, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, Table family
     charts: IChartComponents;      // LineChart, BarChart
     system: ISystemComponents;     // SchedulerMonitor (admin)
     api: IApiClient;               // get/post/put/patch/delete
@@ -82,7 +82,8 @@ const [tab, setTab] = useState('query');
 | `IconButton` | `variant?: 'ghost'\|'primary'\|'danger'\|'success'`, `size?: 'sm'\|'md'\|'lg'`, `onClick?: (event) => void`, `disabled?`, `title?`, `type?`, **`aria-label` (required)**, `className?`, `children?` |
 | `Switch` | `on: boolean`, `onChange: (next) => void`, `onClick?: (event) => void`, `size?: 'sm'\|'md'\|'lg'`, `disabled?`, `title?`, `type?`, **`aria-label` (required)**, `className?` |
 | `SegmentedControl` | `options: ReadonlyArray<{ id: string; label: ReactNode; disabled?; ariaLabel?; title?; controls?; onSelect?: (id) => void }>`, `value: string`, `onChange?: (id) => void`, **`label` (required group aria-label)**, `variant?: 'group'\|'tablist'`, `disabled?`, `reselect?`, `className?` |
-| `Input` | `value?`, `onChange?`, `onKeyDown?`, `placeholder?`, `disabled?`, `required?`, `variant?: 'default'\|'ghost'`, `type?`, `min?`, `max?`, `step?`, `id?`, `name?`, `aria-label?`, `className?` |
+| `Input` | `value?`, `onChange?`, `onKeyDown?`, `placeholder?`, `disabled?`, `required?`, `variant?: 'default'\|'ghost'`, `size?`, `invalid?`, `type?`, `min?`, `max?`, `step?`, `id?`, `name?`, `aria-label?`, `aria-describedby?`, `className?` |
+| `Field` | `children` (the control, required), `label?`, `hint?`, `error?: string \| string[]`, `required?`, `htmlFor?`, `className?` |
 | `ClientTime` | `date: Date \| string \| null \| undefined`, `format?: 'time'\|'datetime'\|'date'\|'relative'\|'short'`, `fallback?` |
 | `Tooltip` | `content: string`, `children: ReactNode`, `placement?: 'top'\|'bottom'` |
 | `TronAddress` | `address: string` (required), `label?`, `copy?`, `tools?`, `explorer?`, `className?` |
@@ -96,6 +97,8 @@ const [tab, setTab] = useState('query');
 `Switch` carries `role="switch"` + `aria-checked` so assistive tech reads it as a toggle. The optional `onClick` runs before `onChange` — calling `event.preventDefault()` vetoes the toggle; `event.stopPropagation()` keeps the click off an enclosing row.
 
 `SegmentedControl` is the chart-toolbar toggle row — time window, metric, chart view, data source. Use it instead of hand-rolling buttons over the `.segmented-control` class: it owns the active-state ARIA (`aria-pressed`, or `role="tab"` + `aria-selected` under `variant="tablist"`) and arrow-key traversal. It is fully controlled and holds no state, so it is SSR-safe. A click on the already-active segment is ignored unless `reselect` is set, so `onChange` can call a refetch directly. Per-option `onSelect` handles the mixed group — a metric segment that pins a rotation timer beside a window segment that refetches.
+
+`Field` is how a plugin attaches a label and a validation message to a control. Wrap the control in it and pass `error` — a string, or an array to list every fault so a value with two problems is fixed in one edit — and `Field` renders the message and clones the control to add `aria-describedby` pointing at it. That association is the part a hand-rolled message block reliably leaves out, which is how an explanation ends up visible on screen and never announced. `hint` carries standing guidance and is hidden while an error stands, so only one line ever applies. Set `invalid` on the control itself for the danger border and `aria-invalid`; the two are separate because a field can carry a message about something other than that control's own value.
 
 `TronAddress` and `TronTransactionId` are the canonical renderers for the two identifiers every TRON surface shows. Both are compact monospace chips that truncate, put the full value in a tooltip, and carry copy plus a Tronscan out-link; the address chip adds a "forward to a public tool" menu and displays a pre-resolved `label` in place of the truncation, neither of which a transaction has an equivalent for. Use them instead of hand-truncating a value or hand-building an explorer anchor — that is how the codebase ended up with a dozen private copies of the Tronscan URL and out-arrow links that showed the reader no identifier at all. Both render synchronously from their prop, so they are SSR-safe; trim affordances off with the booleans in a dense read-only table.
 

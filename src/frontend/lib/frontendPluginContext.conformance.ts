@@ -42,6 +42,7 @@ import type { SegmentedControl as Impl_SegmentedControl } from '../components/ui
 import type { Input as Impl_Input } from '../components/ui/Input';
 import type { Select as Impl_Select } from '../components/ui/Select';
 import type { Textarea as Impl_Textarea } from '../components/ui/Textarea';
+import type { Field as Impl_Field } from '../components/ui/Field';
 import type { ClientTime as Impl_ClientTime } from '../components/ui/ClientTime';
 import type { Tooltip as Impl_Tooltip } from '../components/ui/Tooltip';
 import type { TronAddress as Impl_TronAddress } from '../components/ui/TronAddress';
@@ -101,6 +102,7 @@ type _Conformance_SegmentedControl = AssertConformant<NoPhantomProps<ComponentPr
 type _Conformance_Input = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Input']>, ComponentProps<typeof Impl_Input>>>;
 type _Conformance_Select = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Select']>, ComponentProps<typeof Impl_Select>>>;
 type _Conformance_Textarea = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Textarea']>, ComponentProps<typeof Impl_Textarea>>>;
+type _Conformance_Field = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Field']>, ComponentProps<typeof Impl_Field>>>;
 type _Conformance_ClientTime = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['ClientTime']>, ComponentProps<typeof Impl_ClientTime>>>;
 type _Conformance_Tooltip = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['Tooltip']>, ComponentProps<typeof Impl_Tooltip>>>;
 type _Conformance_TronAddress = AssertConformant<NoPhantomProps<ComponentProps<IUIComponents['TronAddress']>, ComponentProps<typeof Impl_TronAddress>>>;
