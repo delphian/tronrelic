@@ -249,6 +249,13 @@ export interface IUIComponents {
         variant?: 'default' | 'ghost';
         /** Padding density; `xs` for dense inline filters, `md` for standard forms. */
         size?: 'xs' | 'sm' | 'md' | 'lg';
+        /**
+         * Marks the value as rejected: danger border and focus ring, plus
+         * `aria-invalid`. Structural output is unchanged — still a bare
+         * `<input>` — so a control that is a flex item stays one. Pair with
+         * `Field` to say *why* it was rejected.
+         */
+        invalid?: boolean;
         type?: string;
         className?: string;
         id?: string;
@@ -257,6 +264,60 @@ export interface IUIComponents {
         max?: number;
         step?: number;
         'aria-label'?: string;
+        'aria-describedby'?: string;
+    }>;
+
+    /**
+     * Field — a label, a control, and a message, wired together.
+     *
+     * Wrap any control (`Input`, `Select`, `Textarea`, or your own) to give it a
+     * label and a line of text underneath: standing guidance through `hint`, or
+     * the reason the value was refused through `error`. Field owns the ARIA
+     * wiring — it clones a single element child to add `aria-describedby`
+     * pointing at the message — which is the part hand-rolled validation
+     * messages consistently leave out, making the explanation visible on screen
+     * but never announced.
+     *
+     * `error` accepts an array so a value with several faults lists them all and
+     * can be fixed in one edit. It does not restyle the control; set `invalid`
+     * on the control itself, because a field may carry a message about something
+     * other than that control's own value.
+     */
+    Field: ComponentType<{
+        /**
+         * The control this field wraps. Required — a field with none is nothing.
+         *
+         * Pass a single element. Field clones it to set `id`,
+         * `aria-describedby`, and `aria-required`, so a custom component here
+         * must forward those through to the DOM element it renders; one that
+         * accepts only its own named props drops them, and the label then names
+         * nothing while the message is referenced by nothing. Nothing on screen
+         * reveals it. Give such a control an `aria-label` and pass `htmlFor`
+         * instead.
+         */
+        children: React.ReactNode;
+        label?: React.ReactNode;
+        /** Standing guidance. Hidden while `error` is set, so only one line ever applies. */
+        hint?: React.ReactNode;
+        /** Why the value was refused; an array renders one line per problem. */
+        error?: string | readonly string[];
+        required?: boolean;
+        className?: string;
+        /**
+         * The id of the element the label should point at. Optional.
+         *
+         * Field never writes this value onto the control — it names an element
+         * you have already decided about, which may be nested inside the child
+         * rather than being the child. So whatever id you pass here, put it on
+         * that element yourself. Field only ever assigns an id it generated
+         * itself, and only to a single-element child that has none.
+         *
+         * Leave it out for an ordinary single control and Field handles the
+         * association on its own. Pass it when children is a fragment, several
+         * controls, or a wrapper around them, because there Field cannot tell
+         * which element the label belongs to.
+         */
+        htmlFor?: string;
     }>;
 
     /**
@@ -275,12 +336,15 @@ export interface IUIComponents {
         variant?: 'default' | 'ghost';
         /** Padding density; shares the Input ladder so adjacent controls match. */
         size?: 'xs' | 'sm' | 'md' | 'lg';
+        /** Marks the selection as rejected: danger border and `aria-invalid`. Pair with `Field`. */
+        invalid?: boolean;
         disabled?: boolean;
         required?: boolean;
         className?: string;
         id?: string;
         name?: string;
         'aria-label'?: string;
+        'aria-describedby'?: string;
     }>;
 
     /**
@@ -301,11 +365,14 @@ export interface IUIComponents {
         variant?: 'default' | 'ghost';
         /** Padding density; shares the Input ladder so adjacent controls match. */
         size?: 'xs' | 'sm' | 'md' | 'lg';
+        /** Marks the value as rejected: danger border and `aria-invalid`. Pair with `Field`. */
+        invalid?: boolean;
         rows?: number;
         className?: string;
         id?: string;
         name?: string;
         'aria-label'?: string;
+        'aria-describedby'?: string;
     }>;
 
     /** Client-side time rendering component (prevents SSR hydration mismatches) */
@@ -1459,7 +1526,7 @@ export interface IFrontendPluginContext {
     /** Plugin identifier used for namespacing events and API routes */
     pluginId: string;
 
-    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, SegmentedControl, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronTransactionId, AddressSelector, IconPickerModal, ConfirmDialog, Table family) */
+    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, SegmentedControl, Input, Select, Textarea, Field, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronTransactionId, AddressSelector, IconPickerModal, ConfirmDialog, Table family) */
     ui: IUIComponents;
 
     /** Layout component library (Page, PageHeader, Stack, Grid, Section, SubMenu) */

@@ -158,21 +158,31 @@
     width: 100%;
 }
 
-/* The cron field keeps a monospace face for the expression and reddens its
-   border on an invalid value — neither is carried by the shared <Input>. */
+/* The cron field keeps a monospace face for the expression. The invalid border
+   that used to live here is now the Input primitive's `invalid` prop. */
 .cron_input {
     font-family: var(--font-mono);
-
-    &[aria-invalid='true'] {
-        border-color: var(--color-danger-alpha-50);
-    }
 }
 
-.schedule_description {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-2xs);
-    font-size: var(--font-size-caption);
+/* Scales the one field migrated to <Field> down to the trigger card's own type
+   sizes. Field's defaults are a body-sized medium-weight label and a body-sized
+   message, which is right for a standalone form but leaves this field's label
+   larger and darker than the hand-rolled .field_label used by the hook and
+   filter branches beside it, and its schedule description larger than the
+   .next_run and .last_run lines directly beneath it. Overriding the tokens here
+   keeps the card consistent without changing Field for everyone. Delete this
+   once the remaining branches move to <Field> as well. */
+.cron_field {
+    --field-label-font-size: var(--font-size-caption);
+    --field-label-font-weight: var(--font-weight-normal);
+    --field-label-color: var(--color-text-muted);
+    --field-message-font-size: var(--font-size-caption);
+    /* The error line keeps the card's existing danger colour rather than
+       Field's lighter --color-danger-text, matching the .last_run_error text it
+       sits above. Field's alert icon is a fixed 14px against the 12px icons
+       used elsewhere in the card; that is left alone, since sizing it from a
+       token would change the primitive for every caller to settle 2px here. */
+    --field-error-color: var(--color-danger);
 }
 
 .schedule_description_ok {
@@ -180,13 +190,6 @@
     align-items: center;
     gap: var(--gap-2xs);
     color: var(--color-success-text);
-}
-
-.schedule_description_error {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--gap-2xs);
-    color: var(--color-danger);
 }
 
 .next_run {

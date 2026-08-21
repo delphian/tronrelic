@@ -29,6 +29,19 @@ export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement
      * @default 'md'
      */
     size?: InputSize;
+    /**
+     * Marks the current selection as rejected: the border and focus ring turn
+     * danger and `aria-invalid` is set on the native `<select>`, matching the
+     * Input and Textarea primitives so one form reads consistently when
+     * several of its controls are refused at once.
+     *
+     * The wrapper is unaffected — the state is applied to the control, not to
+     * the element that owns the layout. Use `<Field>` to say why the selection
+     * was rejected.
+     *
+     * @default false
+     */
+    invalid?: boolean;
 }
 
 /**
@@ -69,12 +82,26 @@ const sizeClass: Record<InputSize, string> = {
  * @param props - Select properties including variant, size, and standard select attributes.
  * @returns A styled select element wrapped with a chevron affordance.
  */
-export function Select({ className, variant = 'default', size = 'md', children, ...props }: SelectProps) {
+export function Select({ className, variant = 'default', size = 'md', invalid = false, children, ...props }: SelectProps) {
     return (
         <span className={cn(styles.wrapper, className)}>
             <select
-                className={cn(styles.select, sizeClass[size], variant === 'ghost' && styles['select--ghost'])}
+                className={cn(
+                    styles.select,
+                    sizeClass[size],
+                    variant === 'ghost' && styles['select--ghost'],
+                    invalid && styles['select--invalid']
+                )}
                 {...props}
+                // Placed after the spread, and falling back rather than being
+                // overwritten by it. An explicit caller value still wins, but
+                // `{...props}` carries `aria-invalid` even when the caller
+                // passed it as `undefined` — forwarding an optional override
+                // does exactly that — and spreading it last would then delete
+                // the derived value. The control would keep its danger border
+                // while telling assistive technology nothing, which is the
+                // failure this prop exists to prevent.
+                aria-invalid={props['aria-invalid'] ?? (invalid || undefined)}
             >
                 {children}
             </select>

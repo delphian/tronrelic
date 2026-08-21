@@ -1,0 +1,82 @@
+/**
+ * Field Component CSS Module
+ *
+ * Scoped styles for the Field component: the label, the control, and the message
+ * stacked as one block. The gap is deliberately tighter than a Stack gap —
+ * the three parts read as one control, and spacing them like siblings makes a
+ * form scan as a list of unrelated items rather than a set of labelled fields.
+ */
+
+/*
+ * Spacing is carried by the parts rather than by a flex `gap` on this wrapper.
+ * The message element is always rendered, because a live region has to be in
+ * the accessibility tree before its contents change to be announced at all; a
+ * `gap` would then reserve space below every control whether or not there is
+ * anything to say. Margins let `.message:empty` give that space back.
+ */
+.field {
+    display: flex;
+    flex-direction: column;
+    /* The wrapper is the layout element, so it fills whatever it is placed in
+     * rather than shrinking to its control. A caller wanting an intrinsic width
+     * sets one through className, which lands here. */
+    min-width: 0;
+    /* Stated rather than left to the default, because it is a decision: the
+     * control is stretched to the field's width. That is what an <Input> or
+     * <Textarea> in a form wants, and it does override <Select>'s intrinsic
+     * width. The alternative, align-items: flex-start, would preserve that
+     * dropdown's width at the cost of collapsing every text input to its
+     * default character size, which is the worse trade. A caller who needs an
+     * intrinsic-width control inside a field sets the width on the field
+     * through className. */
+    align-items: stretch;
+}
+
+.label {
+    margin-bottom: var(--field-gap);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--field-message-gap);
+    font-size: var(--field-label-font-size);
+    font-weight: var(--field-label-font-weight);
+    color: var(--field-label-color);
+}
+
+.required {
+    color: var(--color-danger);
+}
+
+.message {
+    margin-top: var(--field-gap);
+    display: flex;
+    flex-direction: column;
+    gap: var(--field-message-gap);
+    font-size: var(--field-message-font-size);
+    line-height: var(--line-height-normal);
+    color: var(--field-hint-color);
+}
+
+/* No hint and no error: the element stays in the accessibility tree so it can
+   announce a later message, but takes up no room while it has nothing to say. */
+.message:empty {
+    margin-top: 0;
+}
+
+.message--error {
+    color: var(--field-error-color);
+}
+
+/*
+ * One line of the message. The icon aligns to the start rather than the centre,
+ * so a line long enough to wrap keeps its marker beside the first line instead
+ * of floating halfway down the block.
+ */
+.message_line {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--field-message-gap);
+}
+
+.message_line svg {
+    flex-shrink: 0;
+}

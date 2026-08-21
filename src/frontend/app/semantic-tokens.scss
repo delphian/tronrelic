@@ -462,9 +462,37 @@
     --input-border-focus: color-mix(in srgb, var(--color-primary) 48%, transparent);
     --input-shadow-focus: 0 0 0 3px var(--color-primary-alpha-30);
 
+    /* Input - Invalid State
+     * Shared by Input, Select, and Textarea through their `invalid` prop, so a
+     * refused value looks the same whichever control holds it. The border is
+     * solid danger rather than an alpha step, because the resting border sits
+     * at 18% primary and an equally faint red would read as a theme tint rather
+     * than as a problem. The focus ring keeps the resting ring's geometry and
+     * only swaps its hue, so a field does not change shape when it is focused. */
+    --input-border-invalid: var(--border-width-thin) solid var(--color-danger);
+    --input-border-focus-invalid: var(--color-danger);
+    --input-shadow-focus-invalid: 0 0 0 3px var(--color-danger-alpha-30);
+
     /* Input - Ghost Variant */
     --input-ghost-background: transparent;
     --input-ghost-border: rgba(255, 255, 255, 0.12);
+
+    /* ========================================================================
+     * FIELD COMPONENT TOKENS
+     * ======================================================================== */
+
+    /* The gap between a field's label, its control, and its message. Tighter
+     * than a Stack gap on purpose: the three parts are one control to the
+     * reader, and spacing them like siblings makes a form read as a list of
+     * unrelated items rather than as a set of labelled fields. */
+    --field-gap: var(--gap-2xs);
+    --field-label-font-size: var(--font-size-body-sm);
+    --field-label-font-weight: var(--font-weight-medium);
+    --field-label-color: var(--color-text);
+    --field-message-font-size: var(--font-size-body-sm);
+    --field-message-gap: var(--gap-2xs);
+    --field-hint-color: var(--color-text-muted);
+    --field-error-color: var(--color-danger-text);
 
     /* ========================================================================
      * MODAL COMPONENT TOKENS
@@ -745,6 +773,7 @@
      * them. New steps derive via color-mix; collapse the older two onto the
      * same form when their call sites are next touched. */
     --color-danger-alpha-18: rgba(255, 111, 125, 0.18);
+    --color-danger-alpha-30: color-mix(in srgb, var(--color-danger) 30%, transparent);
     --color-danger-alpha-50: rgba(255, 111, 125, 0.5);
     --color-danger-alpha-60: color-mix(in srgb, var(--color-danger) 60%, transparent);
     --color-danger-alpha-90: color-mix(in srgb, var(--color-danger) 90%, transparent);

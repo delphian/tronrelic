@@ -70,6 +70,7 @@ Buttons and badges are React components backed by scoped SCSS Modules, so use `<
 | Button | `<Button>` from `components/ui/Button` (variants `primary/secondary/ghost/danger/warning`; sizes `xs/sm/md/lg`) |
 | Badge | `<Badge>` from `components/ui/Badge` (tones `neutral/info/success/warning/danger`) |
 | Headline statistic | `<StatGrid>` with `<StatTile>` from `components/ui/StatTile`, using `size="md"` for a page band and `size="sm"` for an admin strip. Never hand-write label and value markup, and do not use the legacy `.stat-grid` or `.stat-card__*` global classes. |
+| Labelled or validated field | `<Field>` from `components/ui/Field`, wrapping the control. Owns the label, the `hint`/`error` message, and the `aria-describedby` between them. Set `invalid` on the control itself for the danger border and `aria-invalid` |
 | Muted text | The `text-muted` class |
 
 ### Icons
@@ -85,6 +86,7 @@ Take every icon from `lucide-react`. Use 14px inline, 16px in headings, 18px in 
 - [ ] Icons come from `lucide-react` and take their color from design tokens
 - [ ] State changes give visual feedback for loading, error, and success
 - [ ] Markup is semantic, and icon-only buttons carry an ARIA label so screen readers can announce them
+- [ ] Validation messages go through `<Field>` rather than loose markup, so the message is associated with the control
 - [ ] Timestamps use `ClientTime` or another two-phase rendering approach
 - [ ] Tested as a full page, in a slideout, in a modal, and at mobile width
 

@@ -23,6 +23,7 @@ import { SegmentedControl } from '../components/ui/SegmentedControl';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Textarea } from '../components/ui/Textarea';
+import { Field } from '../components/ui/Field';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { ClientTime } from '../components/ui/ClientTime';
 import { Tooltip } from '../components/ui/Tooltip';
@@ -361,6 +362,7 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             // runtime component accepts every prop the contract advertises, so
             // the cast is sound.
             Textarea: Textarea as IUIComponents['Textarea'],
+            Field,
             ClientTime,
             Tooltip,
             TronAddress,
@@ -479,6 +481,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         // forwardRef (like Input) trips the invariant check against the narrowed
         // contract; the runtime component is fully compatible, so the cast is sound.
         Textarea: Textarea as IUIComponents['Textarea'],
+        Field,
         ClientTime,
         Tooltip,
         TronAddress,
