@@ -143,7 +143,7 @@ main {
  * See frontend.md for component-first layout architecture documentation.
  */
 
-/* Card/Surface styles removed - migrated to Card.module.css */
+/* Card/Surface styles removed - migrated to Card.module.scss */
 /* Utility surface modifiers kept for backward compatibility until full migration */
 
 @keyframes rowFlash {
@@ -197,11 +197,11 @@ main {
   }
 }
 
-/* Button styles removed - migrated to Button.module.css */
+/* Button styles removed - migrated to Button.module.scss */
 
-/* Badge styles removed - migrated to Badge.module.css */
+/* Badge styles removed - migrated to Badge.module.scss */
 
-/* Input styles removed - migrated to Input.module.css */
+/* Input styles removed - migrated to Input.module.scss */
 
 .input-group {
   display: flex;

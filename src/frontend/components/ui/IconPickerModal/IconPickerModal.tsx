@@ -5,7 +5,7 @@ import * as LucideIcons from 'lucide-react';
 import { Input } from '../Input';
 import { Button } from '../Button';
 import { Search, X } from 'lucide-react';
-import styles from './IconPickerModal.module.css';
+import styles from './IconPickerModal.module.scss';
 
 type LucideIconComponent = ComponentType<{ size?: number; 'aria-hidden'?: boolean }>;
 

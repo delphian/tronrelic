@@ -2,7 +2,7 @@
 
 import type { ButtonHTMLAttributes, PropsWithChildren } from 'react';
 import { cn } from '../../../lib/cn';
-import styles from './IconButton.module.css';
+import styles from './IconButton.module.scss';
 
 type IconButtonVariant = 'ghost' | 'primary' | 'danger' | 'success';
 type IconButtonSize = 'xs' | 'sm' | 'md' | 'lg';

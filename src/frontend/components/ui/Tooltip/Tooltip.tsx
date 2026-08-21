@@ -30,7 +30,7 @@ import {
     type ReactNode
 } from 'react';
 import { createPortal } from 'react-dom';
-import styles from './Tooltip.module.css';
+import styles from './Tooltip.module.scss';
 
 /**
  * Minimum gap between the tooltip and the viewport edges. Picks up just enough

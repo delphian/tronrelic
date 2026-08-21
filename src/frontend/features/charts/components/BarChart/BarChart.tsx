@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { cn } from '../../../../lib/cn';
-import styles from './BarChart.module.css';
+import styles from './BarChart.module.scss';
 
 /**
  * Individual data point for a bar chart series.

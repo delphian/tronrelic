@@ -4,7 +4,7 @@ import type { SelectHTMLAttributes } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import type { InputSize } from '../Input';
-import styles from './Select.module.css';
+import styles from './Select.module.scss';
 
 /**
  * SelectProps defines the properties available for the Select component.

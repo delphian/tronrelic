@@ -10,7 +10,7 @@ import {
     allModalsClosed,
     type ModalSize
 } from '../../../features/ui-state/slice';
-import styles from './ModalProvider.module.css';
+import styles from './ModalProvider.module.scss';
 
 export type { ModalSize } from '../../../features/ui-state/slice';
 

@@ -3,7 +3,7 @@
 import type { ButtonHTMLAttributes } from 'react';
 import { ToggleLeft, ToggleRight } from 'lucide-react';
 import { cn } from '../../../lib/cn';
-import styles from './Switch.module.css';
+import styles from './Switch.module.scss';
 
 type SwitchSize = 'xs' | 'sm' | 'md' | 'lg';
 

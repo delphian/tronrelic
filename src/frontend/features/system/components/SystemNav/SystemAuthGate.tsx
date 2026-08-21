@@ -14,7 +14,7 @@
 
 import { type ReactNode } from 'react';
 import { useSystemAuth } from '../../contexts/SystemAuthContext';
-import styles from '../../../../app/(core)/system/layout.module.css';
+import styles from '../../../../app/(core)/system/layout.module.scss';
 
 /**
  * Explanatory screen for visitors who are not admins.

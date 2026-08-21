@@ -3,7 +3,7 @@
 import { forwardRef } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import { cn } from '../../../lib/cn';
-import styles from './Input.module.css';
+import styles from './Input.module.scss';
 
 /**
  * Density steps available to the Input, matching the shared `xs | sm | md | lg`

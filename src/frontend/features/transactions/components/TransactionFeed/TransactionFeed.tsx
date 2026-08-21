@@ -9,7 +9,7 @@ import { Badge } from '../../../../components/ui/Badge';
 import { cn } from '../../../../lib/cn';
 import { useRealtimeStatus } from '../../../realtime/hooks/useRealtimeStatus';
 import { useSocketSubscription } from '../../../realtime/hooks/useSocketSubscription';
-import styles from './TransactionFeed.module.css';
+import styles from './TransactionFeed.module.scss';
 
 interface ITransactionFeedProps {
     initialTransactions: TronTransactionDocument[];

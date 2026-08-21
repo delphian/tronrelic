@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { cn } from '../../../../lib/cn';
-import styles from './LineChart.module.css';
+import styles from './LineChart.module.scss';
 
 /**
  * Individual data point for chart series.

@@ -1,6 +1,6 @@
 import type { HTMLAttributes, PropsWithChildren } from 'react';
 import { cn } from '../../../lib/cn';
-import styles from './Badge.module.css';
+import styles from './Badge.module.scss';
 
 /**
  * Visual tone variants a Badge can render. Exported so callers that map their

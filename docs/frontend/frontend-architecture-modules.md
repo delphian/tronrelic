@@ -39,7 +39,7 @@ modules/<name>/
 └── index.ts                     # Public API barrel
 ```
 
-Each component sits in its own folder with colocated `.module.scss`, `.test.tsx`, and `index.ts` barrel. Folder layout is mandatory — flat `Component.tsx` next to `Component.module.css` is the old pattern; migrate it when you touch it.
+Each component sits in its own folder with colocated `.module.scss`, `.test.tsx`, and `index.ts` barrel. Folder layout is mandatory — flat `Component.tsx` next to `Component.module.scss` is the old pattern; migrate it when you touch it.
 
 ## Public API Through `index.ts`
 

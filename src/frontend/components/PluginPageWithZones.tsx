@@ -42,7 +42,7 @@
 import { WidgetZone, fetchWidgetsForRoute } from './widgets';
 import { PluginPageHandler } from './PluginPageHandler';
 import { getServerSideApiUrlWithPath } from '../lib/api-url';
-import styles from './PluginPageWithZones.module.css';
+import styles from './PluginPageWithZones.module.scss';
 
 /**
  * Tracked-market catalog facts consumed by the /resource-markets SEO prose.

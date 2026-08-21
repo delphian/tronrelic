@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { cn } from '../../../lib/cn';
-import styles from './Pagination.module.css';
+import styles from './Pagination.module.scss';
 
 /**
  * Pagination props interface defining configuration for page navigation controls.

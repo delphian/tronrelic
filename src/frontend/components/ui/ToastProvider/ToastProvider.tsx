@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../../lib/cn';
-import styles from './ToastProvider.module.css';
+import styles from './ToastProvider.module.scss';
 
 export type ToastTone = 'info' | 'success' | 'warning' | 'danger';
 

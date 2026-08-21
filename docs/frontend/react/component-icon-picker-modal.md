@@ -73,7 +73,7 @@ export function IconField() {
 
 ## Styling
 
-CSS Modules (`IconPickerModal.module.css`) scoped to the component, container queries on `container-name: icon-picker` to adapt grid columns to modal width (not viewport).
+CSS Modules (`IconPickerModal.module.scss`) scoped to the component, container queries on `container-name: icon-picker` to adapt grid columns to modal width (not viewport).
 
 The component's existing SCSS predates the Layer 1 / Layer 2 boundary and references foundation scales (`--spacing-N`, `--font-size-xs/sm/md`) directly. New component CSS must reference Layer 2 only — see [ui-design-token-layers.md](../ui/ui-design-token-layers.md) for the rule and [ui-scss-modules.md](../ui/ui-scss-modules.md) for the styling workflow.
 

@@ -151,7 +151,7 @@ Providers are provider-neutral by construction — never bind to one vendor's se
 
 - Import from `apps/frontend` or `src/frontend/` — cross-workspace builds fail.
 - Read `process.env.*` or `NEXT_PUBLIC_*` — breaks the universal Docker image.
-- Add plugin styles to `globals.scss` — colocate as `.module.css` with the component.
+- Add plugin styles to `globals.scss` — colocate as `.module.scss` with the component.
 - Use viewport `@media` queries inside plugins — use `@container`.
 - Manage your own Socket.IO connection or API client — use the injected ones.
 

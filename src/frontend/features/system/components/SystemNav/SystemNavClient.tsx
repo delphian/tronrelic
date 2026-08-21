@@ -27,7 +27,7 @@ import { usePathname } from 'next/navigation';
 import { PriorityNav, useMenuConfig } from '../../../../modules/menu';
 import { useAppSelector } from '../../../../store/hooks';
 import type { MenuNodeSerialized } from '@/shared';
-import styles from './SystemNav.module.css';
+import styles from './SystemNav.module.scss';
 
 /**
  * Menu item structure passed from server component.

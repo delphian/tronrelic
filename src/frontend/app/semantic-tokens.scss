@@ -568,7 +568,7 @@
        (newest in front, older cards peeking behind and scaled back) instead of
        a tall vertical column, conserving screen space. Hover or keyboard focus
        fans the deck out so older cards' titles and dismiss controls stay
-       reachable. These steps drive ToastProvider.module.css. */
+       reachable. These steps drive ToastProvider.module.scss. */
     --toast-stack-offset-collapsed: var(--spacing-6);  /* 13.6px peek per card */
     --toast-stack-offset-expanded: var(--spacing-15);  /* 48px fan gap on hover/focus */
     --toast-stack-scale-step: 0.05;                    /* each deeper card shrinks 5% */

@@ -4,7 +4,7 @@ import { forwardRef } from 'react';
 import type { TextareaHTMLAttributes } from 'react';
 import { cn } from '../../../lib/cn';
 import type { InputSize } from '../Input';
-import styles from './Textarea.module.css';
+import styles from './Textarea.module.scss';
 
 /**
  * Maps size prop values to their corresponding CSS Module class names.
