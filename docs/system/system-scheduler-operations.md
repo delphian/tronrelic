@@ -31,6 +31,14 @@ Six jobs registered in `src/backend/modules/scheduler/jobs/core-jobs.ts`:
 
 Plugins register additional jobs via `context.scheduler.register(name, cron, fn)`; the dashboard and admin API treat them identically to core jobs.
 
+### Plugin Jobs Follow the Plugin
+
+A plugin's jobs are unregistered automatically when the plugin is disabled, and their `scheduler_configs` documents are deleted when it is uninstalled. This is enforced by the platform rather than left to each plugin: `context.scheduler` is a per-plugin wrapper that records every job the plugin registers, and `PluginManagerService` tears those registrations down on the disable and uninstall paths.
+
+Two consequences matter operationally. Disabling a plugin removes its jobs from `/system` immediately and stops them firing — you no longer have to disable them by hand afterwards. Re-enabling the plugin re-registers them with the schedule you last set, because a disable deliberately keeps the stored configuration and only an uninstall removes it.
+
+One case still needs an operator. A plugin that was already disabled when the backend booted never ran its `init()` hook, so it registered nothing this process and the wrapper has no record of which jobs it owns. Uninstalling it leaves its `scheduler_configs` documents in place, and a plugin naming its own jobs in its `uninstall()` hook does not change that: the wrapper refuses to delete a document by name alone, because a disabled plugin's stored schedule looks exactly the same and would be lost. Those documents are inert — nothing schedules a job that is not registered in memory, and they do not appear in `/system` — so removing them is housekeeping rather than a fix.
+
 ## Controlling Jobs at Runtime
 
 ### Dashboard

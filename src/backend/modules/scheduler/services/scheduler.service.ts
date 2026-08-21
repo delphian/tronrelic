@@ -146,6 +146,22 @@ export class SchedulerService {
     }
 
     /**
+     * Report whether a job is currently registered.
+     *
+     * The per-plugin scheduler facade has to tell "no job exists under this name
+     * anywhere" apart from "this name belongs to something else" before it decides
+     * whether to delegate an unregister call. Asking is better than calling
+     * `unregister()` and reading the error it throws, which would tie the caller to
+     * the wording of a message.
+     *
+     * @param name - Job identifier to look for.
+     * @returns True when the scheduler currently holds a job under this name.
+     */
+    hasJob(name: string): boolean {
+        return this.jobs.has(name);
+    }
+
+    /**
      * Disable a scheduled job without removing it.
      *
      * Sets enabled=false and stops the cron task. Job can be re-enabled via
@@ -189,6 +205,41 @@ export class SchedulerService {
     }
 
     /**
+     * Delete stored configuration for jobs that are no longer registered.
+     *
+     * `unregister()` deletes a job's `scheduler_configs` document only while the
+     * job is still in memory, which leaves a gap on the plugin uninstall path: a
+     * plugin is disabled before it is uninstalled, so by the time the uninstall
+     * runs its jobs are already out of the scheduler and their configuration
+     * documents can no longer be reached by name. Those documents would then
+     * outlive the plugin with nothing left that reads them. This method closes
+     * that gap by deleting purely by name, with no registration check.
+     *
+     * Do not use it to stop a job. A registered job keeps running from memory
+     * after its configuration is deleted, and the next start would simply write
+     * the defaults back. Call `unregister()` for anything still registered.
+     *
+     * @param names - Job names to delete configuration for. An empty array is a
+     *                no-op, so callers do not have to guard the common case of a
+     *                plugin that registered nothing.
+     * @returns Count of documents deleted, which the caller can log to show how
+     *          much stale configuration the cleanup actually found.
+     */
+    async deleteJobConfigs(names: string[]): Promise<number> {
+        let deleted = 0;
+
+        if (names.length > 0) {
+            const configModel = this.database.getModel<SchedulerConfigDoc>(this.CONFIG_COLLECTION);
+            const result = await configModel.deleteMany({ jobName: { $in: names } });
+            deleted = result.deletedCount ?? 0;
+
+            logger.info({ jobNames: names, deleted }, 'Deleted scheduler job configuration');
+        }
+
+        return deleted;
+    }
+
+    /**
      * Start all registered jobs by loading configuration from MongoDB.
      *
      * For each registered job:
@@ -219,6 +270,16 @@ export class SchedulerService {
         const configModel = this.database.getModel<SchedulerConfigDoc>(this.CONFIG_COLLECTION);
         let config = await configModel.findOne({ jobName: name });
 
+        // Checked before the create() below as well as after it. An unregister that
+        // arrives during the lookup has already run its own deleteOne and found
+        // nothing, so writing the default document now would leave an orphan record
+        // for a job that no longer exists, and nothing would ever delete it.
+        if (this.wasUnregisteredMidStart(name, job)) {
+            return;
+        }
+
+        let createdConfigId: unknown = null;
+
         if (!config) {
             config = await configModel.create({
                 jobName: name,
@@ -226,10 +287,33 @@ export class SchedulerService {
                 schedule: job.defaultSchedule,
                 updatedAt: new Date()
             });
+            createdConfigId = config._id;
             logger.info(
                 { jobName: name, schedule: job.defaultSchedule },
                 'Created default scheduler config'
             );
+        }
+
+        if (this.wasUnregisteredMidStart(name, job)) {
+            // An unregister that landed while the insert above was in flight ran its
+            // own deleteOne first and found nothing, so the document just written has
+            // no job behind it and nothing else would ever remove it. Take it back out.
+            //
+            // By `_id`, never by name. The name can belong to a different document by
+            // now: the plugin may have been re-enabled and re-registered the same job,
+            // whose own start wrote a fresh config. Deleting by name would take that
+            // live job's document instead, losing an operator's schedule edit while the
+            // job kept running from memory.
+            // Also skipped when a job holds the name again. The plugin may have been
+            // re-enabled and re-registered while this call was suspended, and that
+            // job's own start will have read the very document written above. Removing
+            // it would leave a running job with no stored schedule, dropping an
+            // operator's tuning back to the default at the next restart.
+            if (createdConfigId && !this.jobs.has(name)) {
+                await configModel.deleteOne({ _id: createdConfigId });
+            }
+
+            return;
         }
 
         job.currentSchedule = config.schedule;
@@ -244,6 +328,34 @@ export class SchedulerService {
         } else {
             logger.info({ jobName: name }, 'Scheduler job disabled (skipped)');
         }
+    }
+
+    /**
+     * Report whether the job captured at the top of `scheduleJobFromDatabase` has
+     * been unregistered while a database round trip was in flight.
+     *
+     * `register()` starts `scheduleJobFromDatabase` without awaiting it, so a plugin
+     * that is installed and immediately disabled — or enabled and quickly disabled —
+     * unregisters the job microseconds after adding it. At that moment the job's
+     * `task` is still undefined, so `unregister()` stops nothing and simply drops the
+     * map entry. Carrying on with the captured job would create a live cron task on an
+     * object the scheduler no longer holds a reference to, which nothing could ever
+     * stop, or write a configuration document for a job that no longer exists.
+     *
+     * @param name - Job name the in-flight start was working on.
+     * @param job - The job object captured before the first await, compared by
+     *              identity so a same-named job registered since is treated as a
+     *              different job rather than this one.
+     * @returns True when the caller should abandon the start, having logged why.
+     */
+    private wasUnregisteredMidStart(name: string, job: RegisteredJob): boolean {
+        const gone = this.jobs.get(name) !== job;
+
+        if (gone) {
+            logger.info({ jobName: name }, 'Scheduler job unregistered before it could start');
+        }
+
+        return gone;
     }
 
     /**
