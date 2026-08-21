@@ -320,7 +320,7 @@ export class PluginSchedulerService implements ISchedulerService {
      * Close the registration window once the plugin's start-up hooks have finished.
      *
      * The plugin-facing documentation promises that registering a job outside
-     * `install()`, `enable()`, or `init()` throws. Teardown alone does not deliver
+     * `enable()` or `init()` throws. Teardown alone does not deliver
      * that: it closes the facade on disable, which leaves an enabled plugin free to
      * register a job from a request handler. Such a job is tracked and would be torn
      * down, but it is created outside the window the platform reasons about, so it
@@ -344,7 +344,7 @@ export class PluginSchedulerService implements ISchedulerService {
         if (!this.open) {
             throw new Error(
                 `Plugin '${this.pluginId}' attempted ${operation} after its lifecycle window closed. ` +
-                `Scheduler registration is permitted only during install/enable/init — register jobs at ` +
+                `Scheduler registration is permitted only during enable/init — register jobs at ` +
                 `startup, not from request handlers or other scheduled jobs.`
             );
         }
