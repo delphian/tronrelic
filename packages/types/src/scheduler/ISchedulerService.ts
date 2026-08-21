@@ -47,9 +47,12 @@ export type CronJobHandler = () => Promise<void> | void;
  * left behind is inert, because nothing runs a job that is not registered in memory,
  * so this is housekeeping rather than a job still firing.
  *
- * Register jobs only from `install()`, `enable()`, or `init()`. Registering later,
- * such as from a request handler, throws: a job created outside that window is not
- * tracked and would keep firing after the plugin is gone.
+ * Register jobs only from `enable()` or `init()`. Registering later, such as from a
+ * request handler, throws: a job created outside that window is not tracked and would
+ * keep firing after the plugin is gone. Do not register from `install()` either. Install
+ * leaves the plugin disabled, so the platform unregisters whatever the install hook
+ * registered, and the enable that follows runs `enable()` and `init()` only — it never
+ * re-runs `install()`, so the job would never come back.
  *
  * @example
  * ```typescript

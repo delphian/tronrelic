@@ -689,9 +689,12 @@ export class PluginManagerService {
 
             // Same reasoning for cron jobs: install leaves the plugin disabled, so
             // a job the install hook registered would start firing for a plugin
-            // that is not running. Stored configuration is kept, because the next
-            // enable re-registers the job and an operator's schedule edit should
-            // survive.
+            // that is not running. This is why plugins are told to register from
+            // enable() or init() and not from install(): enable does not re-run the
+            // install hook, so a job registered there is swept here and never comes
+            // back. Stored configuration is kept, because the next enable re-registers
+            // the jobs that were registered from enable() or init(), and an
+            // operator's schedule edit should survive.
             await this.disposeScheduler(loaded, false);
 
             // Mark as installed in database
