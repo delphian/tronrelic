@@ -16,6 +16,7 @@ import { WebSocketService } from './websocket.service.js';
 import { logger } from '../lib/logger.js';
 import { PluginHooks } from '../hooks/index.js';
 import { PluginObserverRegistry } from '../observers/plugin-observer-registry.js';
+import type { PluginSchedulerService } from '../modules/scheduler/index.js';
 
 /**
  * Lifecycle event payloads emitted by PluginManagerService.
@@ -51,6 +52,13 @@ interface ILoadedPlugin {
      * missing facade simply means there is no observer teardown to perform.
      */
     observers?: PluginObserverRegistry;
+    /**
+     * Per-plugin scheduler facade. Optional for the same reason as `observers`,
+     * and additionally because `ENABLE_SCHEDULER=false` leaves the process with
+     * no scheduler at all; a missing facade simply means there is no cron
+     * teardown to perform.
+     */
+    scheduler?: PluginSchedulerService;
 }
 
 /**
@@ -179,19 +187,26 @@ export class PluginManagerService {
      *   the facade (and tests constructing plugins directly) keep working; when
      *   absent, observer teardown is skipped and the plugin's observers survive
      *   disable exactly as they did before.
+     * @param scheduler - Per-plugin scheduler facade tied to this context, used by
+     *   disable/uninstall paths to unregister every cron job the plugin registered.
+     *   Optional because the process may be running with the scheduler switched off
+     *   entirely (`ENABLE_SCHEDULER=false`), and because tests constructing plugins
+     *   directly pass none; when absent, cron teardown is skipped.
      */
     public registerPlugin(
         plugin: IPlugin,
         context: IPluginContext,
         hooks: PluginHooks,
-        observers?: PluginObserverRegistry
+        observers?: PluginObserverRegistry,
+        scheduler?: PluginSchedulerService
     ): void {
         this.loadedPlugins.set(plugin.manifest.id, {
             plugin,
             context,
             manifest: plugin.manifest,
             hooks,
-            observers
+            observers,
+            scheduler
         });
     }
 
@@ -254,6 +269,93 @@ export class PluginManagerService {
     }
 
     /**
+     * Reopen the plugin's scheduler facade so its init hook may register jobs again.
+     *
+     * A previous disable closed the facade, and enable re-runs `init()` — which is where every
+     * shipped plugin registers its cron jobs. Without rearming, those calls would throw against a
+     * closed facade and the re-enabled plugin would silently run nothing on a schedule. Mirrors
+     * `rearmObservers` on the same lifecycle transitions.
+     *
+     * @param loaded - The loaded plugin whose scheduler facade should accept registrations again.
+     */
+    private rearmScheduler(loaded: ILoadedPlugin): void {
+        loaded.scheduler?.rearm();
+    }
+
+    /**
+     * Unregister every cron job the plugin owns.
+     *
+     * Scheduler jobs were the one registration that kept *executing* after a plugin was disabled:
+     * the cron task went on firing on its schedule, running a handler closure that still held the
+     * old plugin context, and an uninstalled plugin left its `scheduler_configs` documents behind
+     * with nothing left to read them. Most plugins never unregistered their own jobs, so this is
+     * the platform guarantee rather than a backstop.
+     *
+     * @param loaded - The loaded plugin whose cron jobs should be unregistered.
+     * @param deleteFromDatabase - True on uninstall, so stored job configuration goes too; false
+     *                             on disable, so an operator's schedule edits survive a toggle.
+     */
+    private async disposeScheduler(loaded: ILoadedPlugin, deleteFromDatabase: boolean): Promise<void> {
+        if (!loaded.scheduler) {
+            return;
+        }
+
+        try {
+            const unregistered = await loaded.scheduler.unregisterAll(deleteFromDatabase);
+            if (unregistered > 0) {
+                logger.info(
+                    { pluginId: loaded.manifest.id, jobsUnregistered: unregistered, deleteFromDatabase },
+                    'Unregistered plugin scheduler jobs'
+                );
+            }
+        } catch (err) {
+            logger.warn({ err, pluginId: loaded.manifest.id }, 'Scheduler facade dispose threw');
+        }
+    }
+
+    /**
+     * Tear down everything a half-finished start left registered.
+     *
+     * `enable()` and `init()` can throw partway through, after the plugin has already
+     * registered some of its hooks, observers, and cron jobs — several shipped plugins
+     * register three or four jobs one after another. The plugin is never marked enabled
+     * when that happens, so `disablePlugin` refuses it with "Plugin is not enabled" and no
+     * other route to clean up exists. The registrations that did land would then survive
+     * for the life of the process, and a cron job among them would keep firing on its
+     * schedule against a plugin that is not running. Releasing them here — hooks,
+     * observers, cron jobs, widgets, and API routes, the same set a clean disable
+     * releases — leaves the plugin in the state a disable would have left it in.
+     *
+     * Stored job configuration is kept, matching disable rather than uninstall, because the
+     * plugin is still installed and a later retry should find an operator's schedule edits
+     * where they left them.
+     *
+     * Public because the bootstrap loader activates plugins on its own path, outside this
+     * service's enable and load methods, and needs the same cleanup when a start fails
+     * there. It never throws, so a caller can use it from inside its own catch block
+     * without a second failure hiding the first.
+     *
+     * @param pluginId - Id of the plugin whose partial registrations should be released.
+     *                   Unknown ids are ignored, so a caller does not have to check first.
+     */
+    public async disposePartialStart(pluginId: string): Promise<void> {
+        const loaded = this.loadedPlugins.get(pluginId);
+
+        if (loaded) {
+            this.disposeHooks(loaded);
+            this.disposeObservers(loaded);
+            await this.disposeScheduler(loaded, false);
+            await this.disposeWidgetsForPlugin(pluginId);
+
+            try {
+                PluginApiService.getInstance().unregisterPluginRoutes(pluginId);
+            } catch (err) {
+                logger.warn({ err, pluginId }, 'Route unregister threw during failed-start cleanup');
+            }
+        }
+    }
+
+    /**
      * Revoke every blockchain observer subscription the plugin owns.
      *
      * Observer subscriptions were the one registration the disable path never tore down, so a
@@ -288,8 +390,15 @@ export class PluginManagerService {
         } catch (err) {
             logger.warn({ err, pluginId: loaded.manifest.id }, 'Hook facade dispose threw');
         }
-        if (this.hookRegistry) {
-            this.hookRegistry.disposeForPlugin(loaded.manifest.id);
+
+        // Guarded for the same reason as the facade call above. Teardown runs from
+        // inside the callers' own catch blocks, where a second failure would replace
+        // the original error — turning a reported plugin failure into a 500, or
+        // aborting the startup loop before the remaining plugins are activated.
+        try {
+            this.hookRegistry?.disposeForPlugin(loaded.manifest.id);
+        } catch (err) {
+            logger.warn({ err, pluginId: loaded.manifest.id }, 'Hook registry dispose threw');
         }
     }
 
@@ -309,9 +418,15 @@ export class PluginManagerService {
      */
     private async disposeWidgetsForPlugin(pluginId: string): Promise<void> {
         if (!this.serviceRegistry) return;
-        const widgets = this.serviceRegistry.get<IWidgetsService>('widgets');
-        if (!widgets) return;
+
+        // The registry lookup sits inside the try along with the call it feeds.
+        // disposePartialStart promises never to throw, and the bootstrap loader relies
+        // on that from inside its own catch — a rejection escaping here would abort the
+        // loop before the remaining plugins are activated.
         try {
+            const widgets = this.serviceRegistry.get<IWidgetsService>('widgets');
+            if (!widgets) return;
+
             await widgets.unregisterAllForOwner(pluginId);
         } catch (err) {
             logger.warn(
@@ -348,11 +463,30 @@ export class PluginManagerService {
         const { plugin, context } = loaded;
         const pluginLogger = context.logger;
 
+        /**
+         * Whether a failure below should release what the start already registered.
+         *
+         * False until the metadata read has succeeded and shown the plugin is not
+         * already running, and false again once the start has completed. A failure at
+         * any other moment belongs to a plugin this method never took charge of, and
+         * tearing that plugin down would strip a live one.
+         */
+        let disposeOnFailure = false;
+
         try {
             const metadata = await this.metadataService.getMetadata(pluginId);
             if (!metadata) {
                 return { success: false, message: 'Plugin metadata not found' };
             }
+
+            // A plugin already recorded as enabled is running now, so a failure below
+            // must not trigger the partial-start cleanup: re-running enable()/init()
+            // hits "Job X already registered" from the shared scheduler, and tearing
+            // down from there would strip a live plugin of its hooks, observers, cron
+            // jobs, widgets, and routes while the database still says it is enabled.
+            // enablePlugin refuses this case outright; this method stays callable and
+            // simply keeps its hands off whatever is already running.
+            disposeOnFailure = !metadata.enabled;
 
             // Rebind the plugin's hook facade so the install/enable/
             // init path sees an open lifecycle window for
@@ -361,6 +495,7 @@ export class PluginManagerService {
             // registry and are not gated by this facade.
             this.rearmHooks(loaded);
             this.rearmObservers(loaded);
+            this.rearmScheduler(loaded);
 
             // Run install hook if not already installed
             if (!metadata.installed && plugin.install) {
@@ -387,8 +522,13 @@ export class PluginManagerService {
             // install/enable/init stay live.
             loaded.hooks.seal();
 
+            // Same window for cron jobs, which ISchedulerService documents as
+            // register-during-startup-only. Jobs registered above stay scheduled.
+            loaded.scheduler?.seal();
+
             // Mark as enabled in database
             await this.metadataService.markEnabled(pluginId);
+            disposeOnFailure = false;
 
             // Register API routes
             const apiService = PluginApiService.getInstance();
@@ -401,6 +541,13 @@ export class PluginManagerService {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             pluginLogger.error({ error }, 'Failed to load plugin');
+            if (disposeOnFailure) {
+                // Only when this method had taken charge of a plugin that was not
+                // running and had not finished starting it. Past `markEnabled` the
+                // database records the plugin as running, and before the metadata read
+                // succeeded there is no basis for touching it at all.
+                await this.disposePartialStart(pluginId);
+            }
             await this.metadataService.recordError(pluginId, errorMessage);
             return { success: false, message: errorMessage };
         }
@@ -447,6 +594,7 @@ export class PluginManagerService {
             // call disposers itself.
             this.disposeHooks(loaded);
             this.disposeObservers(loaded);
+            await this.disposeScheduler(loaded, false);
             await this.disposeWidgetsForPlugin(loaded.manifest.id);
 
             // Mark as disabled in database
@@ -491,6 +639,9 @@ export class PluginManagerService {
         const { plugin, context } = loaded;
         const pluginLogger = context.logger;
 
+        /** Whether the install reached the point where the plugin could register anything. */
+        let installStarted = false;
+
         try {
             const metadata = await this.metadataService.getMetadata(pluginId);
             if (!metadata) {
@@ -513,6 +664,8 @@ export class PluginManagerService {
             // service registry.
             this.rearmHooks(loaded);
             this.rearmObservers(loaded);
+            this.rearmScheduler(loaded);
+            installStarted = true;
 
             // Run install hook if defined
             if (plugin.install) {
@@ -534,6 +687,13 @@ export class PluginManagerService {
             // before init() subscribes for real.
             this.disposeObservers(loaded);
 
+            // Same reasoning for cron jobs: install leaves the plugin disabled, so
+            // a job the install hook registered would start firing for a plugin
+            // that is not running. Stored configuration is kept, because the next
+            // enable re-registers the job and an operator's schedule edit should
+            // survive.
+            await this.disposeScheduler(loaded, false);
+
             // Mark as installed in database
             await this.metadataService.markInstalled(pluginId);
 
@@ -542,6 +702,13 @@ export class PluginManagerService {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             pluginLogger.error({ error }, 'Failed to install plugin');
+            if (installStarted) {
+                // Only once the facades were reopened and the install hook could have
+                // registered something. An earlier failure — a metadata read that threw
+                // on a spurious install call — belongs to a plugin that may be enabled
+                // and running, and must not have its live registrations swept away.
+                await this.disposePartialStart(pluginId);
+            }
             await this.metadataService.recordError(pluginId, errorMessage);
             return { success: false, message: errorMessage };
         }
@@ -581,6 +748,13 @@ export class PluginManagerService {
                 const disableResult = await this.unloadPlugin(pluginId);
                 if (!disableResult.success) {
                     pluginLogger.warn({ error: disableResult.message }, 'Failed to disable plugin during uninstall');
+
+                    // unloadPlugin can return unsuccessfully with hooks, observers,
+                    // widgets, or routes still registered. The uninstall carries on
+                    // regardless and markUninstalled below puts the plugin out of reach
+                    // of every lifecycle call, so release them here or they stay live
+                    // for the rest of the process.
+                    await this.disposePartialStart(pluginId);
                 }
             }
 
@@ -597,6 +771,13 @@ export class PluginManagerService {
                 }
             }
 
+            // Unregister any cron job the plugin still holds and delete the stored
+            // configuration of the ones it registered earlier in this process. Runs
+            // after the uninstall hook so a plugin that cleans up its own jobs is
+            // honoured first, and runs regardless of whether that hook threw — a
+            // half-finished uninstall must not leave a job firing on a schedule.
+            await this.disposeScheduler(loaded, true);
+
             // Always mark as uninstalled, even if hook failed
             await this.metadataService.markUninstalled(pluginId, uninstallError);
 
@@ -612,10 +793,36 @@ export class PluginManagerService {
             pluginLogger.error({ error }, 'Failed to uninstall plugin');
 
             // Still try to mark as uninstalled
+            let uninstallRecorded = false;
             try {
                 await this.metadataService.markUninstalled(pluginId, errorMessage);
+                uninstallRecorded = true;
             } catch (dbError) {
                 pluginLogger.error({ error: dbError }, 'Failed to update database during error handling');
+            }
+
+            // Release everything the plugin registered, and only once the uninstall is
+            // on record. The success path does this before writing the record; reaching
+            // here means it did not get that far.
+            //
+            // Recording the uninstall sets installed: false and enabled: false, after
+            // which disablePlugin refuses the plugin ("not enabled") and enablePlugin
+            // refuses it ("must be installed"). Anything still registered at that point
+            // would stay live for the rest of the process with nothing able to reach it,
+            // which is why this releases hooks, observers, widgets, and routes and not
+            // just cron jobs.
+            //
+            // When the record could not be written — typically a database outage, which
+            // is also what brought execution here — the plugin is left alone. Stripping
+            // it would leave metadata saying installed and enabled for a plugin that
+            // does nothing, and no lifecycle call could rebuild it short of a restart.
+            //
+            // Stored job configuration survives either way, because disposePartialStart
+            // tears down at disable strength. A plugin that may still be running has its
+            // jobs stopped, which reinstalling undoes; an operator's tuned schedule,
+            // once deleted, does not come back.
+            if (uninstallRecorded) {
+                await this.disposePartialStart(pluginId);
             }
 
             return { success: false, message: errorMessage };
@@ -640,6 +847,16 @@ export class PluginManagerService {
         const { plugin, context } = loaded;
         const pluginLogger = context.logger;
 
+        /**
+         * Whether a failure below should release what the start already registered.
+         *
+         * False until the metadata read has succeeded and shown the plugin is not
+         * already running, and false again once the start has completed. A failure at
+         * any other moment belongs to a plugin this method never took charge of, and
+         * tearing that plugin down would strip a live one.
+         */
+        let disposeOnFailure = false;
+
         try {
             const metadata = await this.metadataService.getMetadata(pluginId);
             if (!metadata) {
@@ -654,6 +871,10 @@ export class PluginManagerService {
                 return { success: false, message: 'Plugin is already enabled' };
             }
 
+            // Past the guards: the plugin is installed, not running, and this method is
+            // about to start it. Only now is a failure ours to clean up after.
+            disposeOnFailure = true;
+
             // Rebind the plugin's hook facade so the enable/init path
             // sees an open lifecycle window for
             // context.hooks.register(...). Widget types and zones are
@@ -661,6 +882,7 @@ export class PluginManagerService {
             // registry and are not gated by this facade.
             this.rearmHooks(loaded);
             this.rearmObservers(loaded);
+            this.rearmScheduler(loaded);
 
             // Run enable hook if defined
             if (plugin.enable) {
@@ -676,9 +898,11 @@ export class PluginManagerService {
 
             // Seal the lifecycle windows now that enable+init have run.
             loaded.hooks.seal();
+            loaded.scheduler?.seal();
 
             // Mark as enabled in database
             await this.metadataService.markEnabled(pluginId);
+            disposeOnFailure = false;
 
             // Register API routes
             const apiService = PluginApiService.getInstance();
@@ -691,6 +915,13 @@ export class PluginManagerService {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             pluginLogger.error({ error }, 'Failed to enable plugin');
+            if (disposeOnFailure) {
+                // Only when this method had taken charge of a plugin that was not
+                // running and had not finished starting it. Past `markEnabled` the
+                // database records the plugin as running, and before the metadata read
+                // succeeded there is no basis for touching it at all.
+                await this.disposePartialStart(pluginId);
+            }
             await this.metadataService.recordError(pluginId, errorMessage);
             return { success: false, message: errorMessage };
         }
@@ -746,6 +977,7 @@ export class PluginManagerService {
             // call disposers itself.
             this.disposeHooks(loaded);
             this.disposeObservers(loaded);
+            await this.disposeScheduler(loaded, false);
             await this.disposeWidgetsForPlugin(loaded.manifest.id);
 
             // Mark as disabled in database

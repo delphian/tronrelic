@@ -1,6 +1,6 @@
 import axios from 'axios';
 import mongoose from 'mongoose';
-import type { IPluginContext, IPlugin, IDatabaseService, ISchedulerService, IServiceRegistry, IHookRegistry } from '@/types';
+import type { IPluginContext, IPlugin, IDatabaseService, IServiceRegistry, IHookRegistry } from '@/types';
 import { PLUGIN_ID_PATTERN } from '@/types';
 import { PluginHooks } from '../hooks/index.js';
 import { PluginObserverRegistry } from '../observers/plugin-observer-registry.js';
@@ -10,6 +10,7 @@ import { BaseObserver, BaseBatchObserver, BaseBlockObserver } from '../modules/b
 import { WebSocketService } from '../services/websocket.service.js';
 import { PluginDatabaseService } from '../modules/database/index.js';
 import { PluginClickHouseService } from '../modules/clickhouse/index.js';
+import { PluginSchedulerService, type IPluginSchedulerHost } from '../modules/scheduler/index.js';
 import { PluginApiService } from '../services/plugin-api.service.js';
 import { PluginMetadataService } from '../services/plugin-metadata.service.js';
 import { PluginManagerService } from '../services/plugin-manager.service.js';
@@ -59,11 +60,16 @@ async function loadAllPlugins(): Promise<IPlugin[]> {
  * Load and initialize all discovered plugins.
  *
  * @param database - Shared database service instance from bootstrap
- * @param scheduler - Scheduler service instance for plugin cron job registration (null if disabled)
+ * @param scheduler - Shared scheduler that owns the cron tasks, wrapped per plugin before it
+ *                    reaches `context.scheduler` so the plugin manager can unregister a
+ *                    plugin's jobs on disable. Null when `ENABLE_SCHEDULER=false`, in which
+ *                    case plugins receive no scheduler at all, exactly as before.
+ * @param serviceRegistry - Shared registry plugins publish services on and read them from
+ * @param hookRegistry - Shared hook registry each plugin's hook facade registers against
  */
 export async function loadPlugins(
     database: IDatabaseService,
-    scheduler: ISchedulerService | null,
+    scheduler: IPluginSchedulerHost | null,
     serviceRegistry: IServiceRegistry,
     hookRegistry: IHookRegistry
 ): Promise<void> {
@@ -191,6 +197,19 @@ export async function loadPlugins(
                 pluginLogger
             );
 
+            // Per-plugin scheduler facade. Records every cron job the plugin
+            // registers so the plugin manager can unregister them when it is
+            // disabled and delete their stored configuration when it is
+            // uninstalled. Without this a disabled plugin's job keeps firing on
+            // its schedule for the life of the process, running a handler that
+            // still holds the old plugin context. Left undefined when the
+            // scheduler is switched off entirely (`ENABLE_SCHEDULER=false`), so
+            // `context.scheduler` stays exactly what it was before — there are no
+            // jobs to track when there is no scheduler.
+            const pluginScheduler = scheduler
+                ? new PluginSchedulerService(plugin.manifest.id, scheduler, pluginLogger)
+                : undefined;
+
             // Create plugin context with injected dependencies. Widget
             // operations go through `services.get('widgets')` — see
             // IWidgetsService — so no widget-specific facade rides on
@@ -208,7 +227,7 @@ export async function loadPlugins(
                 cache: cacheService,
                 systemConfig: systemConfigService,
                 menuService,
-                scheduler: scheduler as any, // May be null if scheduler disabled
+                scheduler: (pluginScheduler ?? null) as any, // May be null if scheduler disabled
                 chainParameters: chainParametersService,
                 usdtParameters: usdtParametersService,
                 tronGrid: tronGridClient,
@@ -220,7 +239,7 @@ export async function loadPlugins(
             };
 
             // Register plugin in the manager (does not initialize)
-            pluginManager.registerPlugin(plugin, context, pluginHooks, pluginObservers);
+            pluginManager.registerPlugin(plugin, context, pluginHooks, pluginObservers, pluginScheduler);
 
             pluginLogger.debug('Plugin discovered and registered');
         } catch (error) {
@@ -234,6 +253,9 @@ export async function loadPlugins(
 
     for (const metadata of activePlugins) {
         const pluginLogger = logger.child({ pluginId: metadata.id, pluginTitle: metadata.title });
+
+        /** Whether the plugin's own start-up hooks all completed. */
+        let started = false;
 
         try {
             const loaded = pluginManager.getPlugin(metadata.id);
@@ -271,10 +293,37 @@ export async function loadPlugins(
             // (e.g. inside request handlers) now throw.
             loaded.hooks.seal();
 
+            // Same window for cron jobs. Sealing here as well as in
+            // PluginManagerService keeps the guarantee ISchedulerService
+            // documents the same either way a plugin was activated —
+            // this loader at startup, or /system/plugins at runtime.
+            loaded.scheduler?.seal();
+            started = true;
+
             // Register API routes
             apiService.registerPluginRoutes(plugin);
         } catch (error) {
             pluginLogger.error({ error }, '✗ Failed to load plugin');
+
+            // Release whatever the half-finished start already registered. A plugin
+            // that registers several cron jobs in a row and then throws would
+            // otherwise leave the earlier ones firing on their schedule for the life
+            // of the process, running handlers whose init() never finished.
+            //
+            // Note what this costs, because it differs from the same cleanup in
+            // PluginManagerService. This loop only ever sees plugins the database
+            // already records as installed and enabled, so the plugin is left reading
+            // as enabled in /system/plugins while doing nothing. recordError below
+            // stamps lastError and lastErrorAt on its metadata, which is the signal an
+            // operator has to work from; recovery is Disable then Enable, or another
+            // restart, which runs this loop again. That is accepted because the
+            // alternative is cron jobs firing for a plugin that never started.
+            //
+            // Skipped once the plugin's own hooks have all run, because a later failure
+            // such as route registration belongs to a plugin that is otherwise working.
+            if (!started) {
+                await pluginManager.disposePartialStart(metadata.id);
+            }
             await metadataService.recordError(metadata.id, error as Error);
         }
     }

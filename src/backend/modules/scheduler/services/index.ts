@@ -4,3 +4,4 @@
  */
 
 export { SchedulerService, type CronJobHandler } from './scheduler.service.js';
+export { PluginSchedulerService, type IPluginSchedulerHost } from './plugin-scheduler.service.js';

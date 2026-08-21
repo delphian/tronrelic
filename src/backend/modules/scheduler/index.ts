@@ -12,6 +12,7 @@ export { SchedulerModule, type ISchedulerModuleDependencies } from './SchedulerM
 
 // Service
 export { SchedulerService, type CronJobHandler } from './services/index.js';
+export { PluginSchedulerService, type IPluginSchedulerHost } from './services/index.js';
 
 // API
 export {

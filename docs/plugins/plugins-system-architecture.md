@@ -186,7 +186,7 @@ Use SCSS Modules (`Component.module.scss`, colocated, scoped class names). Refer
 
 ## Admin Interface
 
-`/system/plugins` lists all discovered plugins with installed/enabled state and lifecycle controls (Install, Uninstall, Enable, Disable). Hook errors are captured and shown in the UI. Uninstall always sets `installed: false` even if the hook fails — the hook is best-effort cleanup. Plugins must be installed before they can be enabled; uninstalling auto-disables. Database state persists across restarts. Frontend only loads plugins that are installed AND enabled.
+`/system/plugins` lists all discovered plugins with installed/enabled state and lifecycle controls (Install, Uninstall, Enable, Disable). Hook errors are captured and shown in the UI. Uninstall always sets `installed: false` even if the hook fails — the hook is best-effort cleanup. Registrations the platform tracks are torn down regardless of what the hook does: hook handlers, blockchain observer subscriptions, widgets, REST routes, and scheduler jobs. Stored data is not — dropping a plugin's MongoDB collections and ClickHouse tables is still the plugin's own job, in its `uninstall` hook. Plugins must be installed before they can be enabled; uninstalling auto-disables. Database state persists across restarts. Frontend only loads plugins that are installed AND enabled.
 
 REST endpoints under `/api/plugin-management/`: `GET /all`, `POST /:pluginId/install`, `POST /:pluginId/uninstall`, `POST /:pluginId/enable`, `POST /:pluginId/disable`. All require admin authentication via the Better Auth session cookie — same-origin fetches carry it automatically.
 
