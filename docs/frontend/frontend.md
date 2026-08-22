@@ -36,7 +36,7 @@ Build page structure from the layout components in `components/layout/`. They gi
 
 ### Admin Page Tab Rows Use the Menu Submenu Pattern
 
-The row of tabs inside a core or module admin page, such as `/system/account-history`, must be built as a menu. A hand-rolled array of `<button>` elements, a `.segmented-control` strip, and a per-page `styles.tab` row are all **not authorized** for this surface. The menu Submenu Pattern is the only permitted approach.
+The row of tabs inside a core or module admin page, such as `/system/account-history`, must be built as a menu, using the approach the menu module calls the **Submenu Pattern**: each tab is a node in a menu namespace of its own, rendered by the shared menu component rather than by markup written for that one page. Do not use a hand-rolled array of `<button>` elements, a `.segmented-control` strip, or a per-page `styles.tab` row for this surface.
 
 Register each tab as a node in that page's own menu namespace, held in memory rather than the database, with `requiresAdmin` set per node. Fetch that namespace's tree on the server, then render it with `MenuNavClient` in submenu mode, where `onItemSelect` updates `activeTab` and `activeUrl` controls which tab appears selected. Doing it this way inherits per-user visibility rules, ordering, and live refresh through `menu:update` events, and it lets a plugin add a tab of its own. The reference implementation is `/system/account-history`. See [Submenu Pattern](../../src/backend/modules/menu/README.md#submenu-pattern-namespaced-tab-rows).
 
@@ -50,7 +50,7 @@ Breakpoint variables such as `$breakpoint-mobile-md` live in `app/breakpoints` a
 
 Component styles live in a `Component.module.scss` file beside the component, where class names are scoped automatically. Use underscores in multi-word class names so TypeScript dot notation works, as in `styles.market_card`.
 
-Reference design tokens — the shared CSS custom properties such as `var(--color-primary)`, `var(--gap-md)`, `var(--card-padding-md)`, and `var(--radius-md)` — rather than hardcoding a color, spacing value, font, or size. The rule is simple: **component code references Layer 2 (`semantic-tokens.scss`), and Layer 1 (`primitives.scss`) exists only as input to Layer 2.** Layer 1 holds nothing but `--spacing-N`, `--radius-N`, and the raw font-size scale. Full detail is in [ui-design-token-layers.md](./ui/ui-design-token-layers.md), and the SCSS workflow is in [ui-scss-modules.md](./ui/ui-scss-modules.md).
+Reference design tokens — the shared CSS custom properties such as `var(--color-primary)`, `var(--gap-md)`, `var(--card-padding-md)`, and `var(--radius-md)` — rather than hardcoding a color, spacing value, font, or size. **Component code references Layer 2 (`semantic-tokens.scss`), and Layer 1 (`primitives.scss`) exists only as input to Layer 2.** Layer 1 holds nothing but `--spacing-N`, `--radius-N`, and the raw font-size scale. Full detail is in [ui-design-token-layers.md](./ui/ui-design-token-layers.md), and the SCSS workflow is in [ui-scss-modules.md](./ui/ui-scss-modules.md).
 
 ### Modules Export Through `index.ts`
 

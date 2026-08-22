@@ -4,11 +4,11 @@ A module is a permanent, core backend component that starts up with the applicat
 
 ## Why This Matters
 
-Before the module system, core functionality was scattered, startup order was implicit and easy to break, and components imported each other's concrete classes directly. The module system replaces all three. Startup happens in two explicit phases, where `init()` prepares a module and `run()` activates it. Components receive their collaborators through typed interfaces rather than constructing them. Each module mounts its own routes instead of a central file knowing about every route in the application. And everything belonging to a module lives together in `modules/<name>/`.
+Before the module system, core functionality was scattered, startup order was implicit and easy to break, and components imported each other's concrete classes directly. The module system addresses each of those problems. Startup happens in two explicit phases, where `init()` prepares a module and `run()` activates it. Components receive their collaborators through typed interfaces rather than constructing them. Each module mounts its own routes instead of a central file knowing about every route in the application. And everything belonging to a module lives together in `modules/<name>/`.
 
 ## Core Architecture
 
-Every module implements the `IModule<TDependencies>` interface from `@/types`. The interface requires metadata (`id`, `name`, `version`), an `init(dependencies)` method, and a `run()` method. Both methods are asynchronous, and both stop the application if they throw. The application does not start with a module missing.
+Every module implements the `IModule<TDependencies>` interface from `@/types`. The interface requires metadata (`id`, `name`, `version`), an `init(dependencies)` method, and a `run()` method. Both methods are asynchronous, and if either one throws, the application stops rather than starting without that module.
 
 Modules start after the core infrastructure they rely on — database, Redis, WebSocket server, and the menu service — and before plugins, scheduled jobs, and the HTTP server. In `init()`, a module stores the dependencies it was handed and creates its services. In `run()`, it mounts its routes, registers its menu entries, and connects itself to the rest of the application. Splitting the two guarantees that every module has finished preparing itself before any module starts using another module's services.
 
@@ -55,9 +55,9 @@ No core module registers a hook today. The working example is the `trp-themes` p
 
 See [system-hooks.md](../system-hooks.md) for the contract, the four styles of hook (observer, series, waterfall, and bail), and the `/system/hooks` timeline that shows what is currently registered.
 
-## Services Are Singletons, Utilities Are Not
+## Which Components Must Be Singletons
 
-Anything implementing an `IXxxService` interface, such as `IPageService` or `IMenuService`, **must be a singleton** — one shared instance for the whole application. These are public APIs over shared state. They are configured once during startup through dependency injection, and every caller uses them exactly as configured.
+Anything implementing an `IXxxService` interface, such as `IPageService` or `IMenuService`, **must be a singleton** — one shared instance for the whole application. A service is a public API over state that the whole application shares. It is configured once during startup through dependency injection, and every caller uses it exactly as configured. A utility has no `IXxxService` interface and does not have to be a singleton.
 
 | Pattern | What it is | Singleton? | Customizable? |
 |---------|------------|------------|---------------|
