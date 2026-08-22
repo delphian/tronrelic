@@ -22,6 +22,30 @@ disable: async (context: IPluginContext) => {
 }
 ```
 
+### One Name Per Plugin
+
+**A plugin publishes exactly one registry name.** Everything a programmatic caller may do with that plugin is reachable from the object behind it, and nothing the plugin can do is reachable only over HTTP or only from its own admin screens.
+
+The registry offers no directory: there is no way to list what exists or to ask which name carries a capability. A consumer resolves a string it already imported, so every extra name a plugin publishes is another string a consumer has to learn from a README and another thing that can silently be absent. One name per plugin makes the plugin's own id the only thing a consumer has to know.
+
+It also stops a plugin's abilities from splitting across two access paths. When part of the surface is on the registry and the rest is only behind admin routes, an in-process consumer ends up making HTTP calls to its own server to reach the other half.
+
+**Where the plugin has several distinct responsibilities, the registered object is a root authority rather than one flat interface.** Its accessors return focused services, so a caller narrows once and holds only what it needs:
+
+```typescript
+export interface IMyPlugin {
+    read(): IMyPluginReadService;
+    admin(): IMyPluginAdminService | null;
+    diagnostics(): IMyPluginDiagnosticsService | null;
+}
+```
+
+Three things this buys that a single flat interface does not. A read-only consumer never holds a handle capable of mutation. Each sub-service keeps one responsibility, so a stability promise can attach to the read contract without extending to an admin surface that will keep changing. And an accessor returning `null` states a real condition — the plugin is enabled but that part of its pipeline is not assembled — instead of leaving a method to throw.
+
+**Publish a projection, not the implementation.** Register an explicit object listing exactly the members that are public, rather than an instance whose every public method becomes contract by accident. `trp-address-labels` is the reference: it registers `labelService.buildFacade()`, a five-method projection over a much larger class, and a test asserts the exact key set so the published surface cannot grow without someone noticing.
+
+The one existing exception is `trp-resource-markets`, which publishes both `db-markets` and `db-market-captures`. Treat it as debt to reconcile behind a root authority, not as precedent.
+
 ## Sharing the Contract — Types-Only Sibling Package
 
 Provider plugins publish their service interface as a small types-only sibling package at `packages/types/` inside the provider's repo, named like `@delphian/trp-<plugin>-types`, published to the registry (GitHub Packages). A consumer declares that published, versioned package in its own `dependencies` — exactly as it declares the core `@delphian/tronrelic-types` contract — and installs it like any third-party package, so the contract resolves from the consumer's own `node_modules`, identically in the monorepo and in a standalone build. Use `dependencies`, not `devDependencies`: the build installs plugins with `--omit=dev`, which prunes a build-time type declared as dev. The `import type`-only rule (below) keeps this off the runtime graph — the cost is just the tiny types package on disk. Per the [coupling invariant](./plugins.md#plugins-couple-only-through-published-contracts), the monorepo is not a dependency channel: a consumer never reaches the provider's in-tree source and never relies on workspace hoisting to resolve the contract. Import the real interface:
