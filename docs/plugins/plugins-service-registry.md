@@ -26,7 +26,7 @@ disable: async (context: IPluginContext) => {
 
 **A plugin publishes exactly one registry name.** Everything a programmatic caller may do with that plugin is reachable from the object behind it, and nothing the plugin can do is reachable only over HTTP or only from its own admin screens.
 
-The registry offers no directory: there is no way to list what exists or to ask which name carries a capability. A consumer resolves a string it already imported, so every extra name a plugin publishes is another string a consumer has to learn from a README and another thing that can silently be absent. One name per plugin makes the plugin's own id the only thing a consumer has to know.
+The registry lists names and nothing more. `getNames()` returns every registered name for diagnostics and admin tooling, but `register()` records no metadata alongside a name, so nothing in the registry says which capability a given name carries. A consumer resolves a string it already imported, so every extra name a plugin publishes is another string a consumer has to learn from a README and another thing that can silently be absent. One name per plugin makes the plugin's own id the only thing a consumer has to know.
 
 It also stops a plugin's abilities from splitting across two access paths. When part of the surface is on the registry and the rest is only behind admin routes, an in-process consumer ends up making HTTP calls to its own server to reach the other half.
 
