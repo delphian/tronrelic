@@ -4,7 +4,7 @@
 
 ## Why This Matters
 
-Schema validation catches typos, but it cannot catch an optional variable that changes behavior when you leave it out. Leaving one out can disable cookie signing, expose metrics that should be protected, or make the admin interface return an error instead of asking for credentials. Every case described below has caused a problem here at least once, so check this document before changing `.env` in any environment other than your own machine.
+Schema validation catches typos in variable names and values. It cannot catch an optional variable that changes how the application behaves when you leave it out. Leaving one out can disable cookie signing, expose metrics that should be protected, or make the admin interface return an error instead of asking for credentials. Every case described below has caused a problem here at least once, so check this document before changing `.env` in any environment other than your own machine.
 
 ## Production Gating
 
@@ -24,7 +24,7 @@ Instead, the Next.js server reads `SITE_BACKEND` and `SITE_WS` while rendering p
 
 Leaving `ADMIN_API_TOKEN` unset is the supported way to switch off `/system`, `/admin/markets`, and `/admin/moderation` completely. With no token configured, every admin endpoint responds `503 Service Unavailable` rather than prompting for credentials.
 
-There is no separate flag for this, so an empty token in production is a deliberate choice rather than a misconfiguration to go and fix.
+There is no separate flag for this. If you find an empty token in production, treat it as a deliberate choice to switch the admin interface off, and check with whoever owns the deployment before setting one.
 
 ## SESSION_SECRET
 
@@ -42,7 +42,7 @@ The traffic module never stores raw visitor IP addresses. It stores hashes of th
 
 When it is unset, the module falls back to `SESSION_SECRET`, which is why production needs no additional wiring. The cost of that fallback is that the two become coupled: rotating `SESSION_SECRET` then also breaks the ability to correlate analytics activity from the same source across the rotation. Set a dedicated salt when the analytics value needs to rotate on its own schedule.
 
-Rotating the salt is safe in that nothing breaks. It only means events recorded before and after the change can no longer be matched to the same source.
+Rotating the salt does not break anything. It only means events recorded before and after the change can no longer be matched to the same source.
 
 ## TronGrid Rate Limits
 
@@ -52,11 +52,11 @@ Each key you populate — `TRONGRID_API_KEY`, `TRONGRID_API_KEY_2`, and `TRONGRI
 
 During local development, set `ENABLE_SCHEDULER=false` to avoid the problem entirely. The scheduler pulls new blocks every minute and refreshes market data every ten, which is a lot of traffic to aim at a shared key.
 
-## Notification Throttle Asymmetry
+## Why the Two Notification Throttles Differ
 
 `NOTIFICATION_EMAIL_THROTTLE_MS` defaults to 300000, or five minutes, while `NOTIFICATION_WEBSOCKET_THROTTLE_MS` defaults to 5000, or five seconds.
 
-The gap is intentional. Each email costs money to send, and users tolerate fewer interruptions in an inbox than in a page they already have open. Do not make the two values match without considering both the user experience and the cost of sending.
+The difference between the two defaults is intentional. Each email costs money to send, and users tolerate fewer interruptions in an inbox than in a page they already have open. Do not make the two values match without considering both the user experience and the cost of sending.
 
 ## DOCKER_API_URL
 
@@ -74,7 +74,7 @@ File uploads in the pages module always use the local filesystem today, because 
 
 ## Validation Stops Startup on Failure
 
-At startup, `env.ts` validates `process.env` against a schema defined with Zod, a TypeScript schema validation library. If validation fails, the backend logs an error for each offending field and exits. It does not start with partial configuration.
+At startup, `env.ts` validates `process.env` against a schema defined with Zod, a TypeScript schema validation library. If validation fails, the backend logs an error for each offending field and exits rather than starting with partial configuration.
 
 Missing `MONGODB_URI` or `REDIS_URL` always blocks startup. Optional variables produce a warning only when their absence is genuinely dangerous, such as a missing `SESSION_SECRET` in development.
 

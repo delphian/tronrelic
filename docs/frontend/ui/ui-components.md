@@ -85,7 +85,7 @@ See [react.md](../react/react.md#context-provider-system) for composition order 
 
 For one-off visual treatments, use the utility classes in [globals.scss](../../../src/frontend/app/globals.scss): `.chip`, `.pill`, `.segmented-control` (prefer the `<SegmentedControl>` primitive above — the raw class is for call sites not yet migrated), `.stat-grid`, `.stat-card__label/value/delta`, `.alert`, `.text-muted`, `.text-subtle`, `.link`, `.live-indicator`, `.table-row--flash`. Prefer the React primitives above; these utilities exist for legacy call sites and rare compositional needs. `.btn` and `.badge` are *not* global utilities — they live in `Button.module.scss` and `Badge.module.scss` and are reachable only through `<Button>` / `<Badge>`.
 
-`.segmented-control` is **not** authorized for a core/module admin page's in-page tab row — those must use the menu Submenu Pattern (`MenuNavClient` backed by a menu namespace), the only authorized pattern for that surface. See [Submenu Pattern](../../../src/backend/modules/menu/README.md#submenu-pattern-namespaced-tab-rows). The utility remains fine for non-navigational toggles (e.g. a chart's range switch).
+Do not use `.segmented-control` for the in-page tab row on a core or module admin page. Build that row with the menu module's Submenu Pattern instead, meaning `MenuNavClient` backed by a menu namespace, where each tab is a menu node rather than markup written for that one page. See [Submenu Pattern](../../../src/backend/modules/menu/README.md#submenu-pattern-namespaced-tab-rows). The utility remains fine for toggles that do not navigate, such as a chart's range switch.
 
 ## When To Add A New Component
 

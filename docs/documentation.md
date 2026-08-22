@@ -6,7 +6,7 @@ This guide keeps TronRelic's documentation consistent, concise, and immediately 
 
 Load the project rules first. Read `README.md`, the project instruction files such as `CLAUDE.md`, and any reference material specific to your topic before you start drafting. Identify your audience — plugin authors, maintainers, or operators — and write for that group. Each document should solve a single reader problem. When a neighbouring topic comes up, link to the document that owns it rather than restating it.
 
-Never put sensitive data in documentation. That means API keys, credentials, database connection strings, and details of unpatched security vulnerabilities. Documentation gets copied into AI context windows and stays in version control history forever, so treat every word as publicly visible.
+Never put sensitive data in documentation. That means API keys, credentials, database connection strings, and details of unpatched security vulnerabilities. Documentation gets copied into AI context windows, and version control keeps a copy of the file even after you delete it. Assume anyone can read what you write.
 
 Model a new document on the closest existing one rather than on this guide alone. For a directory summary that acts as a gateway to detail documents, follow [system.md](./system/system.md) or [frontend.md](./frontend/frontend.md). For a plugin or module README that leads with its contract, follow [trp-ai-assistant/README.md](../src/plugins/trp-ai-assistant/README.md).
 
@@ -26,21 +26,21 @@ Keep sentences short and scannable, and prefer paragraphs to bullet points. Reac
 
 Write documentation as instructions. State what to do, not what someone might consider doing.
 
-### Be Concise, but Never at the Reader's Expense
+### How Much to Cut
 
 Cut filler such as "it should be noted that," "in order to," and "it is important to." Cut hedging such as "basically," "essentially," and "generally speaking." Cut phrasing that repeats a point already made.
 
-Do not cut past that point. Keep the sentence that explains why a pattern exists, the plain-English restatement of a dense concept, and the linking sentences that orient a reader new to the subsystem. Those sentences are part of the content.
+Stop there. Keep the sentence that explains why a pattern exists, keep the plain-English restatement of a dense concept, and keep the linking sentences that orient a reader who is new to the subsystem. Those sentences are doing real work for the reader, so removing them makes the document harder to use.
 
 The audience standard is a capable mid-level developer meeting the topic for the first time. Writing for that reader means spelling out an acronym on first use, choosing a plain phrase over a compressed technical one when both are accurate, and not letting terseness turn a paragraph into shorthand only the original author can follow. Use complete sentences rather than fragments. Prefer a slightly longer sentence that reads clearly the first time over a short one the reader has to read twice.
 
-Write at the level an average mid-level developer would write, not above it. Do not use polished turns of phrase, aphorisms, or rhetorical flourishes, even when they read well. Plain instructional prose is the target.
+Write at the level an average mid-level developer would write, not above it. Do not use polished turns of phrase, aphorisms, or rhetorical flourishes, even when they read well. Write plain instructional prose.
 
-### Do Not Coin Terms to Save Words
+### Avoid Inventing New Terms
 
-When you compress a document, it is tempting to invent a noun phrase for anything you explain more than once. The sentence that defines the term reads fine. Every later use of it confuses the reader who never saw that definition.
+When you compress a document, it is tempting to invent a noun phrase for anything you explain more than once. This creates a problem for readers who arrive partway through the document, or who search for one section and read only that. They meet the invented term without ever seeing the sentence that defined it, and they have no way to work out what it means.
 
-Prefer vocabulary that already exists in the codebase, in `@tronrelic/types`, or in general industry use. Coin a term only when nothing existing fits, define it in a single sentence the first time it appears, and never trade a plain phrase for a novel noun purely to save words.
+Prefer vocabulary that already exists in the codebase, in `@tronrelic/types`, or in general industry use. Invent a term only when nothing existing fits, define it in a single sentence the first time it appears in each document, and never replace a plain phrase with a new term just to save words.
 
 ## File Size Limits
 
@@ -58,11 +58,11 @@ If a topic needs more than 300 lines, split it into several focused documents. K
 
 A `README.md` that sits inside a module directory (`src/backend/modules/*/README.md`) or a plugin directory (`src/plugins/*/README.md`) is the *complete* documentation for that feature. Architecture, API reference, database schema, usage examples, and troubleshooting all belong in that one file. These files are deliberately exempt from the 300-line limit, because they are the single source of truth for their feature and splitting them would scatter context that developers need together.
 
-These READMEs are written as reference material for an AI coding agent rather than as narrative onboarding, since the main consumer is an agent that needs to use or modify the feature. That describes the structure only. Do not write prose that only a machine can follow. An engineer who has never seen the feature still has to be able to read the file without help.
+These READMEs are written as reference material for an AI coding agent rather than as narrative onboarding, since the main consumer is an agent that needs to use or modify the feature. That applies to the structure only. The writing itself still has to work for a person, so an engineer who has never seen the feature has to be able to read the file without help.
 
 In practice, lead with the surfaces a reader needs to locate quickly: the plugin id, the name it registers under in the service registry, the admin URL, the types package, the manifest path, and a map of the source files. Then publish the contract as scannable tables — service method signatures, REST endpoints, WebSocket events, storage schema, scheduler jobs, and lifecycle obligations. Keep prose only where the contract alone cannot carry the reasoning, such as why a tool's description drives selection accuracy, or why `services.watch()` is the right call instead of `services.get()`.
 
-Leave out narrative onboarding, marketing language, implementation trivia ("markdown rendered via remark processSync"), and rationale you have already given elsewhere; an agent reads the source for behaviour. The exemption covers length only, and everything above about concision still applies. See `src/plugins/trp-ai-assistant/README.md` for the reference implementation.
+Leave out narrative onboarding, marketing language, implementation trivia ("markdown rendered via remark processSync"), and rationale you have already given elsewhere. An agent that needs to know exactly how the feature behaves reads the source. The exemption covers length only, and everything above about concision still applies. See `src/plugins/trp-ai-assistant/README.md` for the reference implementation.
 
 ## Structure Template
 
@@ -96,7 +96,7 @@ Include code only when it makes something clearer. Keep samples short and focuse
 
 ## Maintaining Existing Docs
 
-Revise a document based on what measurably improves results, not on what feels comprehensive. The most common mistake is adding large amounts of content without ever checking whether it helped. Prune sections that repeat information available elsewhere and link to the canonical location instead. When behaviour changes, update the quick-reference tables first, since those are what readers check. When you remove content, confirm that documents linking to it still make sense.
+Only revise a document when you can say what the revision improves. The most common mistake is adding large amounts of content without ever checking whether it helped. Prune sections that repeat information available elsewhere and link to the canonical location instead. When behaviour changes, update the quick-reference tables first, since those are what readers check. When you remove content, confirm that documents linking to it still make sense.
 
 ## Documentation Organization
 
@@ -127,7 +127,7 @@ Each detail document covers a single concern, such as a discovery and implementa
 
 ### Cross-Referencing
 
-Link generously, and always say what the reader will find at the other end. A good link describes its destination: "For hydration error prevention and the `<ClientTime>` API, see [ui-ssr-hydration.md](./frontend/ui/ui-ssr-hydration.md)." A bad link leaves the reader guessing: "See ui-ssr-hydration.md for more information." Use relative paths and never hardcode repository URLs.
+Link generously, and always say what the reader will find at the other end. Describe the destination in the sentence that contains the link, as in "For hydration error prevention and the `<ClientTime>` API, see [ui-ssr-hydration.md](./frontend/ui/ui-ssr-hydration.md)." Avoid a link such as "See ui-ssr-hydration.md for more information," because the reader cannot tell whether following it is worth the interruption. Use relative paths and never hardcode repository URLs.
 
 ### Migrating a Topic to a Directory
 

@@ -30,7 +30,7 @@ The registry lists names and nothing more. `getNames()` returns every registered
 
 It also stops a plugin's abilities from splitting across two access paths. When part of the surface is on the registry and the rest is only behind admin routes, an in-process consumer ends up making HTTP calls to its own server to reach the other half.
 
-**Where the plugin has several distinct responsibilities, the registered object is a root authority rather than one flat interface.** Its accessors return focused services, so a caller narrows once and holds only what it needs:
+**Where the plugin covers several distinct topics, do not put every method on the registered object.** Give it accessor methods instead, and have each accessor return a smaller service covering one of them. A caller then asks for the topic it came for and works with an interface scoped to it:
 
 ```typescript
 export interface IMyPlugin {
@@ -40,11 +40,15 @@ export interface IMyPlugin {
 }
 ```
 
-Three things this buys that a single flat interface does not. A read-only consumer never holds a handle capable of mutation. Each sub-service keeps one responsibility, so a stability promise can attach to the read contract without extending to an admin surface that will keep changing. And an accessor returning `null` states a real condition — the plugin is enabled but that part of its pipeline is not assembled — instead of leaving a method to throw.
+Group the accessors by topic — the related data and abilities that belong together. Reading what a plugin has produced, administering it, and inspecting its runtime state are three different subjects, and each one is easier to learn, document, and change when it is not interleaved with the other two. That is the single responsibility principle applied to a published interface, and it is the reason for the split.
+
+It is not an access-control mechanism. The registry gates nothing, and any caller can ask for any accessor, so a caller holding a narrow service holds it because that is the topic it asked for, not because it was denied the rest. Neither does the split by itself say anything about how often each service changes. A plugin may find that its accessors happen to divide along either line, and it is free to make use of that, but neither is what the subdivision is for.
+
+One practical detail does come with the shape: an accessor that returns `null` reports a real condition, namely that the plugin is enabled but that part of its pipeline is not assembled, instead of leaving a method to throw.
 
 **Publish a projection, not the implementation.** Register an explicit object listing exactly the members that are public, rather than an instance whose every public method becomes contract by accident. `trp-address-labels` is the reference: it registers `labelService.buildFacade()`, a five-method projection over a much larger class, and a test asserts the exact key set so the published surface cannot grow without someone noticing.
 
-The one existing exception is `trp-resource-markets`, which publishes both `db-markets` and `db-market-captures`. Treat it as debt to reconcile behind a root authority, not as precedent.
+The one existing exception is `trp-resource-markets`, which publishes both `db-markets` and `db-market-captures`. Treat that as something to reconcile behind a single registered object later, and not as a precedent to copy.
 
 ## Sharing the Contract — Types-Only Sibling Package
 
