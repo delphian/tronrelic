@@ -36,11 +36,18 @@ export interface MockChainParametersConfig {
      * Network constant: 100 SUN
      */
     energyFee?: number;
+
+    /**
+     * Bandwidth obtained per 1 TRX staked
+     * Mainnet typical: ~1,000 bandwidth per TRX
+     */
+    bandwidthPerTrx?: number;
 }
 
 const DEFAULT_CONFIG: Required<MockChainParametersConfig> = {
     energyPerTrx: 210,
-    energyFee: 100
+    energyFee: 100,
+    bandwidthPerTrx: 1000
 };
 
 /**
@@ -66,7 +73,7 @@ const DEFAULT_CONFIG: Required<MockChainParametersConfig> = {
 export function createMockChainParameters(
     config: MockChainParametersConfig = {}
 ): IChainParametersService {
-    const { energyPerTrx, energyFee } = { ...DEFAULT_CONFIG, ...config };
+    const { energyPerTrx, energyFee, bandwidthPerTrx } = { ...DEFAULT_CONFIG, ...config };
 
     return {
         /**
@@ -89,7 +96,7 @@ export function createMockChainParameters(
                 energyFee,
                 totalBandwidthLimit: 43_200_000_000,
                 totalFrozenForBandwidth: 5_000_000_000 * 1_000_000, // 5B TRX in SUN
-                bandwidthPerTrx: 1000
+                bandwidthPerTrx
             },
             fetchedAt: new Date(),
             createdAt: new Date()
@@ -105,6 +112,20 @@ export function createMockChainParameters(
          */
         getEnergyFromTRX: vi.fn((trx: number): number => {
             return Math.floor(trx * energyPerTrx);
+        }),
+
+        /**
+         * Convert TRX to bandwidth using configured ratio.
+         *
+         * Production formula: Math.floor(trx * bandwidthPerTrx), with an
+         * unusable ratio reading as 0. Configure `bandwidthPerTrx: 0` to
+         * exercise a caller's handling of that case.
+         *
+         * @param trx - Amount in TRX
+         * @returns Bandwidth amount (floored to integer)
+         */
+        getBandwidthFromTRX: vi.fn((trx: number): number => {
+            return bandwidthPerTrx > 0 ? Math.floor(trx * bandwidthPerTrx) : 0;
         }),
 
         /**

@@ -26,6 +26,24 @@ export interface IChainParametersService {
     getEnergyFromTRX(trx: number): number;
 
     /**
+     * Convert TRX amount to bandwidth
+     *
+     * The bandwidth counterpart of getEnergyFromTRX, and synchronous for the
+     * same reason. A caller holding a staked amount usually needs the resource
+     * it yields without being able to await: a classifier on the block path is
+     * the motivating case, because bandwidthPerTrx drifts with network-wide
+     * staking, and a conversion performed later describes a different network
+     * than the one the transaction happened on.
+     *
+     * @param trx - Amount in TRX
+     * @returns Corresponding bandwidth amount, or 0 when the ratio is not
+     *   available — the same degradation getEnergyFromTRX offers, so a caller
+     *   that must distinguish "no bandwidth" from "not known" tests the result
+     *   rather than assuming one
+     */
+    getBandwidthFromTRX(trx: number): number;
+
+    /**
      * Convert energy amount to TRX
      * @param energy - Energy amount
      * @returns Corresponding TRX amount

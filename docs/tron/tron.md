@@ -62,7 +62,7 @@ TRON's energy-to-TRX conversion ratio changes based on network-wide staking acti
 **See [tron-chain-parameters.md](./tron-chain-parameters.md) for complete details on:**
 - Chain Parameters Service architecture and caching strategy
 - Scheduled fetch workflow and MongoDB storage
-- Conversion methods (`getEnergyFromTRX`, `getTRXFromEnergy`, `getAPY`)
+- Conversion methods (`getEnergyFromTRX`, `getBandwidthFromTRX`, `getTRXFromEnergy`, `getAPY`)
 - Integration with market fetchers and normalization pipeline
 - Fallback behavior when database is empty
 

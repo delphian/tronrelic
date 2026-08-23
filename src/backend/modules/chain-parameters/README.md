@@ -1,6 +1,6 @@
 # Chain Parameters
 
-`ChainParametersService` polls TronGrid every 10 minutes, persists TRON network parameters to MongoDB, and exposes energy/TRX conversion methods (`getEnergyFromTRX`, `getTRXFromEnergy`, `getAPY`) behind a 1-minute in-memory cache.
+`ChainParametersService` polls TronGrid every 10 minutes, persists TRON network parameters to MongoDB, and exposes resource/TRX conversion methods (`getEnergyFromTRX`, `getBandwidthFromTRX`, `getTRXFromEnergy`, `getAPY`) behind a 1-minute in-memory cache.
 
 ## Canonical documentation
 

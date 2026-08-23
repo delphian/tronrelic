@@ -139,6 +139,10 @@ class MockChainParametersService implements IChainParametersService {
         return Math.floor(trx * 280);
     }
 
+    getBandwidthFromTRX(trx: number): number {
+        return Math.floor(trx * 1000);
+    }
+
     getTRXFromEnergy(energy: number): number {
         return energy / 280;
     }
