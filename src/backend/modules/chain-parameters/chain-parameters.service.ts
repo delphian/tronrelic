@@ -147,6 +147,36 @@ export class ChainParametersService implements IChainParametersService {
     }
 
     /**
+     * Convert TRX to bandwidth using current network parameters
+     * Uses bandwidthPerTrx, which the fetcher derives from TotalNetLimit and
+     * TotalNetWeight
+     *
+     * It carries one guard getEnergyFromTRX does not need. The bandwidth
+     * fields joined the snapshot after the energy ones, so a document written
+     * by an earlier build can still be the newest one in the collection and
+     * carry no ratio. An unguarded multiplication would return NaN, and a
+     * caller that stores the result persists a number failing every comparison
+     * it is later used in. An unusable ratio reads as 0 instead, which is the
+     * answer the not-loaded path already gives.
+     *
+     * @param trx - Amount in TRX
+     * @returns Bandwidth amount (floored to integer), or 0 when no usable
+     *   ratio is cached
+     */
+    getBandwidthFromTRX(trx: number): number {
+        if (!this.cachedParams) {
+            logger.warn('Chain parameters not loaded, returning 0');
+            return 0;
+        }
+        const bandwidthPerTrx = this.cachedParams.parameters.bandwidthPerTrx;
+        if (!Number.isFinite(bandwidthPerTrx) || bandwidthPerTrx <= 0) {
+            logger.warn('Chain parameters carry no usable bandwidth ratio, returning 0');
+            return 0;
+        }
+        return Math.floor(trx * bandwidthPerTrx);
+    }
+
+    /**
      * Convert energy to TRX using current network parameters
      * Uses energyPerTrx ratio calculated from network state
      *

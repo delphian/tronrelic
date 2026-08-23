@@ -21,6 +21,9 @@ A scheduled fetcher polls TronGrid, derives `energyPerTrx`, and writes a snapsho
 | `totalFrozenForEnergy` | Conservative estimate (32M TRX in SUN) | Denominator for `energyPerTrx` | 10 min |
 | `energyPerTrx` | Derived: `totalEnergyLimit / (totalFrozenForEnergy / 1_000_000)` | Conversion ratio (~5,625 energy/TRX) | 10 min |
 | `energyFee` | `getEnergyFee` chain param | Burn cost when no staked energy (100 SUN/unit) | 10 min |
+| `totalBandwidthLimit` | `TotalNetLimit` from network state | Network bandwidth capacity | 10 min |
+| `totalFrozenForBandwidth` | `TotalNetWeight`, converted to SUN | Denominator for `bandwidthPerTrx` | 10 min |
+| `bandwidthPerTrx` | Derived: `TotalNetLimit / TotalNetWeight` | Conversion ratio | 10 min |
 
 `totalFrozenForEnergy` currently uses a 32M TRX estimate; precise calculation from validator account resources is a known follow-up. Until then `energyPerTrx` slightly overestimates TRX cost — safe for pricing.
 
@@ -58,6 +61,7 @@ Never hardcode any of these formulas — call the service. All inputs/outputs ar
 | Method | Formula | Returns |
 |---|---|---|
 | `getEnergyFromTRX(trx)` | `trx × energyPerTrx` | Energy units |
+| `getBandwidthFromTRX(trx)` | `trx × bandwidthPerTrx` | Bandwidth units, or 0 when no usable ratio is cached |
 | `getTRXFromEnergy(energy)` | `energy / energyPerTrx` | TRX |
 | `getEnergyFee()` | (cached) | SUN per energy unit |
 | `getAPY(energy, sun, days)` | see below | Percent (e.g. `15.5`) |
@@ -75,7 +79,9 @@ Never hardcode any of these formulas — call the service. All inputs/outputs ar
 
 ## Rules
 
-- Never hardcode `energyPerTrx`, `energyFee`, or `5625` / `100` / `65000` literals — call the service.
+- Never hardcode `energyPerTrx`, `bandwidthPerTrx`, `energyFee`, or `5625` / `100` / `65000` literals — call the service.
+- Both `getEnergyFromTRX` and `getBandwidthFromTRX` are synchronous so a caller on the block path can use them, and both return 0 rather than throwing when no usable ratio is cached. A caller that must tell "no resource" apart from "ratio not known" has to test the result — the two are the same number.
+- **A conversion belongs at the moment being described, not at the moment being computed.** Both ratios drift with network-wide staking, so converting a past transaction's staked amount later describes a different network than the one the transaction happened on. Where a caller stores the result, convert when the transaction is in hand and store the figure; do not recompute it on a later pass.
 - Never bypass the in-memory cache; one method call per conversion is fine, the cache absorbs it.
 - `IChainParametersService`, `IChainParameters`, `IChainParametersFetcher` live in `@/types` so frontend, backend, and plugins consume them without circular deps.
 
@@ -91,6 +97,9 @@ interface IChainParameters {
         totalFrozenForEnergy: number;
         energyPerTrx: number;
         energyFee: number;
+        totalBandwidthLimit: number;
+        totalFrozenForBandwidth: number;
+        bandwidthPerTrx: number;
     };
     fetchedAt: Date;
     createdAt: Date;
@@ -99,6 +108,7 @@ interface IChainParameters {
 interface IChainParametersService {
     getParameters(): Promise<IChainParameters>;
     getEnergyFromTRX(trx: number): number;
+    getBandwidthFromTRX(trx: number): number;
     getTRXFromEnergy(energy: number): number;
     getAPY?(energy: number, sun: number, days: number): number;
     getEnergyFee(): number;
