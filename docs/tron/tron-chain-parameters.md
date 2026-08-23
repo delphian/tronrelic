@@ -35,6 +35,8 @@ Chain parameters drift over hours, not seconds. 10 minutes balances freshness ag
 
 Snapshots persist to the `chainParameters` collection (indexed `{ network, fetchedAt: -1 }`) so parameters survive restarts and can be shared across instances. If the collection is empty (fresh install, dropped collection, DB error), the service returns a hardcoded fallback (`energyPerTrx: 5625`, `energyFee: 100`) and logs `WARN: No chain parameters found in database, using fallback`. Fallback prevents startup failure while the scheduler catches up.
 
+The scheduled `chain-parameters:fetch` job pushes the snapshot it just wrote into the service's in-memory cache by calling `primeCache(parameters)`. Without that push the cache is only ever rewritten inside `getParameters()`, and the synchronous converters read the cache directly rather than awaiting a reload — so on a process where nothing calls `getParameters()`, they would keep converting against the snapshot warmed at startup while the database already held a current one.
+
 The in-memory cache is a simple TTL guard inside the service:
 
 ```typescript
@@ -126,7 +128,7 @@ interface IChainParametersFetcher {
 | `src/backend/modules/chain-parameters/chain-parameters.service.ts` | Cached service + conversion methods + fallback |
 | `src/backend/modules/chain-parameters/chain-parameters-fetcher.ts` | Polls TronGrid, derives ratio, writes snapshot |
 | `src/backend/database/models/chain-parameters-model.ts` | Mongoose schema + indexes |
-| `src/backend/modules/scheduler/jobs/core-jobs.ts` | Registers `chain-parameters:fetch` cron `*/10 * * * *` |
+| `src/backend/modules/scheduler/jobs/core-jobs.ts` | Registers `chain-parameters:fetch` cron `*/10 * * * *` and primes the service cache with each fetched snapshot |
 | `packages/types/src/chain-parameters/` | `IChainParameters`, `IChainParametersService`, `IChainParametersFetcher` |
 
 ## Related

@@ -13,6 +13,7 @@ import axios from 'axios';
 import { logger } from '../../../lib/logger.js';
 import { BlockchainService } from '../../blockchain/blockchain.service.js';
 import { ChainParametersFetcher } from '../../chain-parameters/chain-parameters-fetcher.js';
+import { ChainParametersService } from '../../chain-parameters/chain-parameters.service.js';
 import { UsdtParametersFetcher } from '../../usdt-parameters/usdt-parameters-fetcher.js';
 import { SystemLogService } from '../../logs/index.js';
 import { SystemConfigService } from '../../../services/system-config/index.js';
@@ -58,9 +59,15 @@ export async function registerCoreJobs(
     const chainParametersFetcher = new ChainParametersFetcher(axios, logger, database);
     const usdtParametersFetcher = new UsdtParametersFetcher(axios, logger, database);
 
-    // Chain parameters: every 10 minutes
+    // Chain parameters: every 10 minutes. The fetched snapshot is pushed into
+    // the service's in-memory cache as well as the database, because the
+    // service's synchronous converters (getEnergyFromTRX, getBandwidthFromTRX,
+    // getTRXFromEnergy, getAPY, getEnergyFee) read that cache directly and
+    // cannot await a reload. Writing only the document would let a quiet
+    // process keep converting against the snapshot it warmed at startup.
     scheduler.register('chain-parameters:fetch', '*/10 * * * *', async () => {
-        await chainParametersFetcher.fetch();
+        const parameters = await chainParametersFetcher.fetch();
+        ChainParametersService.getInstance().primeCache(parameters);
     });
 
     // USDT parameters: every 10 minutes

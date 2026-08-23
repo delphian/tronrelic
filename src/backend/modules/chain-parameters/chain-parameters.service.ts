@@ -132,6 +132,33 @@ export class ChainParametersService implements IChainParametersService {
     }
 
     /**
+     * Replace the in-memory snapshot with parameters just fetched from TronGrid.
+     *
+     * Without this, the synchronous converters below can serve a startup
+     * snapshot indefinitely. They read `cachedParams` directly and cannot
+     * await a refresh, and `cachedParams` is only ever rewritten inside
+     * `getParameters()`. The scheduled `chain-parameters:fetch` job writes a
+     * new database document every ten minutes but never calls
+     * `getParameters()`, and on a quiet process nothing else calls it either —
+     * so a caller on the block path could convert against a ratio from days
+     * earlier while the database already held a current one. The fetch job
+     * calls this method with the snapshot it just wrote, which closes that gap
+     * for every synchronous converter at once.
+     *
+     * The cache expiry is pushed out by the normal time-to-live because the
+     * value being stored is the freshest one that exists; re-reading the
+     * collection a moment later would return the same document.
+     *
+     * @param parameters - The snapshot the fetcher just persisted. Pass the
+     *   value `ChainParametersFetcher.fetch()` returned rather than re-reading
+     *   the collection, so the cache and the stored document cannot disagree.
+     */
+    public primeCache(parameters: IChainParameters): void {
+        this.cachedParams = parameters;
+        this.cacheExpiry = Date.now() + this.CACHE_TTL_MS;
+    }
+
+    /**
      * Convert TRX to energy using current network parameters
      * Uses energyPerTrx ratio calculated from network state
      *
