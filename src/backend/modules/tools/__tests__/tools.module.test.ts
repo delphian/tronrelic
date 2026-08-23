@@ -140,7 +140,7 @@ class MockChainParametersService implements IChainParametersService {
     }
 
     getBandwidthFromTRX(trx: number): number {
-        return Math.floor(trx * 1000);
+        return Math.floor(trx * 1500);
     }
 
     getTRXFromEnergy(energy: number): number {
