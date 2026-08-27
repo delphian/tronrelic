@@ -218,11 +218,22 @@ export function SourcesTab() {
                                                 </div>
                                             )}
                                         </Td>
-                                        <Td data-label="Last result">{summarizeResult(source.state.lastResult)}</Td>
+                                        <Td data-label="Last result">
+                                            {summarizeResult(source.state.lastResult)}
+                                            {source.verifyState?.lastResult && (
+                                                <div className={styles.source_meta}>
+                                                    verify: {summarizeResult(source.verifyState.lastResult)}
+                                                </div>
+                                            )}
+                                        </Td>
                                         <Td data-label="Last error">
-                                            {source.state.lastError
-                                                ? <span className={styles.error_text}>{source.state.lastError}</span>
-                                                : '—'}
+                                            {source.state.lastError && (
+                                                <div className={styles.error_text}>{source.state.lastError}</div>
+                                            )}
+                                            {source.verifyState?.lastError && (
+                                                <div className={styles.error_text}>verify: {source.verifyState.lastError}</div>
+                                            )}
+                                            {!source.state.lastError && !source.verifyState?.lastError && '—'}
                                         </Td>
                                         <Td data-label="Actions">
                                             {source.mode !== 'lookup' && (

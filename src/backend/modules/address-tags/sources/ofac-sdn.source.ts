@@ -70,6 +70,12 @@ export class OfacXmlScanner {
     /** One assertion per address; the first citing entity wins. */
     private readonly found = new Map<string, IAddressTagAssertion>();
 
+    /** True once the export's root element opened, in either published shape. */
+    private sawRootOpen = false;
+
+    /** True once that root element closed — the end-of-document marker. */
+    private sawRootClose = false;
+
     /**
      * Scan one decoded chunk. Events found inside the retained tail are seen
      * again on the next call, which is safe: entity anchors just re-set the
@@ -79,6 +85,19 @@ export class OfacXmlScanner {
      */
     public push(chunk: string): void {
         this.buffer += chunk;
+
+        // Completeness markers, recorded before the tail is trimmed so the
+        // opening root is still seen even when the first chunk is large. Both
+        // published shapes are covered; an unrecognised root simply leaves
+        // these false, which downgrades the check rather than failing a good
+        // download.
+        if (!this.sawRootOpen && /<(?:sdnList|Sanctions)\b/.test(this.buffer)) {
+            this.sawRootOpen = true;
+        }
+        if (!this.sawRootClose && /<\/(?:sdnList|Sanctions)>/.test(this.buffer)) {
+            this.sawRootClose = true;
+        }
+
         const events: Array<{ index: number; apply: () => void }> = [];
 
         // Classic format: the entity uid is the first child of <sdnEntry>, so
@@ -149,6 +168,31 @@ export class OfacXmlScanner {
     }
 
     /**
+     * Whether the scanned text held a complete SDN export rather than an error
+     * page, an empty body, or a document that stopped part-way. Treasury's
+     * endpoint answers HTTP 200 for content this scanner cannot read — a
+     * maintenance page, a schema change, a half-generated export — and every
+     * one of those arrives here as zero or partial assertions. The reconcile
+     * cannot tell that apart from a genuine delisting, and on a first run,
+     * where there are no holdings to compare against, its snapshot floor does
+     * not apply at all. So the caller has to refuse the download itself.
+     *
+     * The test is structural rather than count-based: at least one entity
+     * record must have been seen, and when a recognised root element opened it
+     * must also have closed.
+     *
+     * @returns True when the text can be trusted as the list's complete
+     *          current state, so the caller knows whether handing it to
+     *          `syncSource` as a snapshot is safe.
+     */
+    public isCompleteExport(): boolean {
+        const sawEntity = this.currentEntityRef !== null;
+        const result = sawEntity && (!this.sawRootOpen || this.sawRootClose);
+
+        return result;
+    }
+
+    /**
      * Record one address against the entity currently open, first citation
      * winning so re-scans of the retained tail cannot flap the attribution.
      *
@@ -203,6 +247,12 @@ export class OfacSdnSource implements ITagSource {
             scanner.push(decoder.decode(chunk, { stream: true }));
         }
         scanner.push(decoder.decode());
+        if (!scanner.isCompleteExport()) {
+            throw new Error(
+                'OFAC export did not parse as a complete SDN document: no entity records were found, '
+                + 'or the document ended before its closing element. Refusing to reconcile it as a snapshot'
+            );
+        }
         return { assertions: scanner.assertions() };
     }
 }
