@@ -28,6 +28,12 @@ When a module needs frontend code, put it in `src/frontend/modules/<module-name>
 
 See [frontend-architecture-modules.md](../../frontend/frontend-architecture-modules.md) for the directory layout, import conventions, and guidance on deciding where a piece of frontend code belongs.
 
+## Surfacing a Module's Schedules and Storage
+
+A module that registers a scheduler job or owns a collection must surface each of those on its own admin page, as a Schedules tab, a Database tab, or both, so an operator diagnosing the module does not have to leave for `/system/scheduler` or `/system/database` and find its rows among every other component's. Build the tabs from the core `SchedulerMonitor`, `CollectionBrowser`, and `ClickHouseTableBrowser` components, scoped to the module by job-name prefix and by the `module_<id>_` collection prefix, rather than writing a panel for the page.
+
+`/system/address-tags` is the reference implementation. The full rule, including the props each component scopes on, is in [frontend.md](../../frontend/frontend.md#a-component-that-owns-schedules-or-storage-surfaces-them).
+
 ## Choosing Between a Module and a Plugin
 
 | Criteria | Module | Plugin |

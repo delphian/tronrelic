@@ -40,6 +40,24 @@ The row of tabs inside a core or module admin page, such as `/system/account-his
 
 Register each tab as a node in that page's own menu namespace, held in memory rather than the database, with `requiresAdmin` set per node. Fetch that namespace's tree on the server, then render it with `MenuNavClient` in submenu mode, where `onItemSelect` updates `activeTab` and `activeUrl` controls which tab appears selected. Doing it this way inherits per-user visibility rules, ordering, and live refresh through `menu:update` events, and it lets a plugin add a tab of its own. The reference implementation is `/system/account-history`. See [Submenu Pattern](../../src/backend/modules/menu/README.md#submenu-pattern-namespaced-tab-rows).
 
+### A Component That Owns Schedules or Storage Surfaces Them
+
+A module or plugin that registers a scheduler job, owns a MongoDB collection, or owns a ClickHouse table must surface each of those on its own admin page, as a **Schedules** tab, a **Database** tab, or both. This applies to every component that has an admin page at all. Without those tabs an operator diagnosing the component has to leave for `/system/scheduler` or `/system/database`, lose the page they were on, and pick the component's own rows back out of the whole deployment's inventory.
+
+Do not write a panel for this. Three core components already do the work, and each takes a scoping prop the backend applies server-side, so a scoped page never receives another component's rows.
+
+| Tab | Component | Scope it with |
+|-----|-----------|---------------|
+| Schedules | `SchedulerMonitor` | `jobFilter` — a predicate testing your job-name prefix rather than a fixed list of names, so a job registered later appears with no UI change |
+| Database, MongoDB | `CollectionBrowser` | `prefix` — `module_<id>_` for a module, `plugin_<id>_` for a plugin |
+| Database, ClickHouse | `ClickHouseTableBrowser` | `pluginId` — read-only by design; set `hideWhenEmpty` when the component may store nothing there |
+
+Core and module pages import these from `modules/scheduler` and `modules/database`. A plugin cannot import core components and takes the same three from `context.system` instead. Either way, reusing them means the authority behind the tab is the one `/system` uses, so a schedule edited on the component's page and a schedule edited on `/system/scheduler` cannot disagree. Register the tabs as nodes in the page's menu namespace like any other tab, following the rule above.
+
+One thing the scoping deliberately leaves out: a component's key-value configuration lives in the shared `_kv` collection, which every component writes to, so it falls outside any single component's prefix and stays reachable only from `/system/database`.
+
+Reference implementations: `/system/address-tags` for a module, and the `trp-onchain-typologies` workbench page for a plugin. For the props, see [component-scheduler-monitor.md](./react/component-scheduler-monitor.md) and, for the plugin-facing versions, [plugins-frontend-context.md](../plugins/plugins-frontend-context.md#admin-surfaces-contextsystem).
+
 ### Container Queries, Not Viewport Media Queries
 
 Size components against their container using `container-type: inline-size` and `@container` queries, so a component adapts to wherever it is placed — a sidebar, a modal, a full page, a plugin widget, or a slideout. A viewport `@media` query cannot do this, because it only knows the size of the window. Reserve `@media` queries for the global layout in `app/layout.tsx`.
@@ -91,6 +109,7 @@ Before committing a UI component or a plugin page:
 - [ ] Timestamps render through `<ClientTime>`, and no `window`, `document`, or `localStorage` access happens in the render body — only inside `useEffect`
 - [ ] Backend URLs come from `getServerConfig()` on the server or `getRuntimeConfig()` in the browser, never from `process.env.*` or a `NEXT_PUBLIC_*` variable
 - [ ] Admin tab rows use the menu Submenu Pattern with `MenuNavClient` and a menu namespace, not a hand-rolled strip
+- [ ] A component owning scheduler jobs or storage has Schedules and Database tabs on its admin page, built from the core browsers scoped to it
 - [ ] Tested as a full page, in a slideout, in a modal, and at mobile container width
 
 ## Further Reading

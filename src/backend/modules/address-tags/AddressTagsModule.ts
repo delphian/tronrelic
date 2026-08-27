@@ -44,13 +44,35 @@ const SUBMENU_NAMESPACE = 'address-tags';
 const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
     { label: 'Tags', tab: 'tags', icon: 'Tags', order: 0 },
     { label: 'Sources', tab: 'sources', icon: 'Rss', order: 1 },
-    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 2 }
+    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 2 },
+    // Schedules and Database are the obligation any component that owns a
+    // scheduler job or a collection carries: surface those jobs and that
+    // storage on the component's own admin page. This module owns three jobs
+    // and one collection, and an operator diagnosing stale sanctions data
+    // should not have to leave for /system/scheduler or /system/database, lose
+    // the page they were on, and then pick this module's rows back out of the
+    // whole deployment's inventory. Both panels are core components filtered to
+    // this module, so the module owns no admin furniture of its own and the
+    // authority behind each tab is the same one /system uses.
+    { label: 'Schedules', tab: 'schedules', icon: 'Clock', order: 3 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 4 }
 ];
 
+/**
+ * Prefix every scheduler job this module registers shares.
+ *
+ * The Schedules tab filters on this prefix rather than a fixed list of names,
+ * so a job added later appears without a matching UI change. The frontend keeps
+ * its own copy of the literal — it cannot import backend code — and the module
+ * lifecycle test asserts every registered job name starts with it, which is
+ * what keeps the two honest.
+ */
+const JOB_PREFIX = 'address-tags:';
+
 /** Scheduler job names, prefixed by module id per the scheduler convention. */
-const OFAC_JOB = 'address-tags:sync-ofac';
-const USDT_JOB = 'address-tags:sync-usdt-blacklist';
-const VERIFY_JOB = 'address-tags:verify-frozen';
+const OFAC_JOB = `${JOB_PREFIX}sync-ofac`;
+const USDT_JOB = `${JOB_PREFIX}sync-usdt-blacklist`;
+const VERIFY_JOB = `${JOB_PREFIX}verify-frozen`;
 
 /** Weekly re-verification of held freezes: Mondays 04:00 UTC. */
 const VERIFY_CRON = '0 0 4 * * 1';
