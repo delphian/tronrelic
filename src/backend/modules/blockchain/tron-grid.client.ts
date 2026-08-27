@@ -893,6 +893,36 @@ export class TronGridClient {
     }
 
     /**
+     * Fetch a contract's emitted events via the v1 REST API, filtered
+     * server-side by `event_name` so rare events on a high-volume contract
+     * cost one request per poll instead of a client-side sift through the
+     * firehose. The address-tags module polls the USDT contract's
+     * `AddedBlackList`/`RemovedBlackList` this way — the alternative, a
+     * `TriggerSmartContract` observer, would receive every USDT transfer on
+     * TRON and shed exactly the rare events that matter when its bounded
+     * queue overflows.
+     *
+     * Routed through the same `enqueueRequest` throttle and rotating-key
+     * headers as every other call, so scheduled polls share the global
+     * TronGrid budget with live block sync.
+     *
+     * @param contractAddress - Base58 contract address whose events to read.
+     * @param params - Query parameters (`event_name`, `min_block_timestamp`,
+     *                 `order_by`, `limit`, `fingerprint`).
+     * @returns Raw response data with events and pagination metadata
+     *          (`meta.fingerprint`).
+     */
+    async getContractEvents<T>(contractAddress: string, params: Record<string, string | number | boolean>): Promise<T> {
+        return enqueueRequest(async () => {
+            const response = await httpClient.get<T>(
+                `${BASE_URL}/v1/contracts/${contractAddress}/events`,
+                { params, headers: buildHeaders(), timeout: 15000 }
+            );
+            return response.data;
+        });
+    }
+
+    /**
      * Fetch paginated native/contract transactions for an account via the v1 REST API.
      *
      * Covers every non-TRC20 transaction type — native TRX transfers, TRC10,

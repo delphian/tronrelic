@@ -8,7 +8,17 @@
 
 export { AddressTagsModule } from './AddressTagsModule.js';
 export type { IAddressTagsModuleDependencies } from './AddressTagsModule.js';
-export { AddressTagService, ADDRESS_TAGS_COLLECTION } from './services/address-tag.service.js';
+export { AddressTagService, ADDRESS_TAGS_COLLECTION, RESERVED_TAG_PREFIXES } from './services/address-tag.service.js';
 export type { IAddressTagServiceDependencies } from './services/address-tag.service.js';
+export { TagIngestionService } from './services/tag-ingestion.service.js';
+export type {
+    IAddressTagsSettings,
+    IAddressTagsSettingsUpdate,
+    ITagIngestionDependencies,
+    ITagSourceRunState,
+    ITagSourceStatus
+} from './services/tag-ingestion.service.js';
+export type { ILookupTagSource, ITagSource, ITagSourceResult, IVerifiableTagSource } from './sources/ITagSource.js';
 export { AddressTagsUserController } from './api/address-tags-user.controller.js';
 export { AddressTagsAdminController } from './api/address-tags-admin.controller.js';
+export { AddressTagsSourcesController } from './api/address-tags-sources.controller.js';

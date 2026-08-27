@@ -57,27 +57,111 @@
     max-width: 100%;
 }
 
+/* Submenu tab row and the active panel below it, mirroring the
+   /system/account-history reference implementation. */
+.submenu {
+    margin-top: var(--gap-sm);
+}
+
+.content {
+    margin-top: var(--gap-md);
+}
+
+/* Explanatory lead paragraph inside a panel card. */
+.intro {
+    margin: 0;
+    max-width: var(--max-width-prose);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+}
+
+/* Source status table: primary name line plus a quiet metadata line. */
+.source_name {
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.source_meta {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.badge_row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-2xs);
+    align-items: center;
+}
+
+/* A feed's last error is the row's most important cell when present. The
+   -text step is calibrated for coloured text on a dark surface; the solid
+   status colour is not. */
+.error_text {
+    color: var(--color-danger-text);
+    font-size: var(--font-size-body-sm);
+    overflow-wrap: anywhere;
+}
+
+/* Screening control: address selector beside the action button, wrapping on
+   narrow containers exactly like the create form above the table. */
+.screen_form {
+    display: flex;
+    gap: var(--gap-sm);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.screen_input {
+    flex: 1 1 var(--max-width-xs);
+    min-width: 0;
+}
+
+/* One settings switch with its label and any status badge beside it. */
+.switch_row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+/* Chainalysis key entry: input beside save/clear, wrapping when narrow. */
+.key_form {
+    display: flex;
+    gap: var(--gap-sm);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.key_input {
+    flex: 1 1 var(--max-width-xs);
+    min-width: 0;
+}
+
 /* Mobile: collapse table rows into stacked cards, reacting to the shared
    Table's own container width so the switch stays correct inside slideouts
    and modals. Each cell surfaces its dropped column header via data-label. */
 @container table (max-width: #{$breakpoint-mobile-lg}) {
-    .tags_table thead {
+    .tags_table thead,
+    .sources_table thead {
         display: none;
     }
 
-    .tags_table tr {
+    .tags_table tr,
+    .sources_table tr {
         display: block;
         padding: var(--padding-sm);
         border-bottom: var(--border-width-thin) solid var(--color-border);
     }
 
-    .tags_table td {
+    .tags_table td,
+    .sources_table td {
         display: block;
         padding: var(--padding-2xs) 0;
         border-bottom: none;
     }
 
-    .tags_table td::before {
+    .tags_table td::before,
+    .sources_table td::before {
         content: attr(data-label);
         display: block;
         margin-bottom: var(--gap-2xs);

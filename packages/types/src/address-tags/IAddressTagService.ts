@@ -21,21 +21,67 @@ export interface IAddressTagPair {
      * Free-text tag attached to the address: 1–64 characters after trimming,
      * and may not contain a comma. The comma is reserved as the delimiter in
      * the HTTP read surface's `?tags=x,y` array encoding, so a comma-bearing
-     * tag would be stored but never retrievable. Writes that violate either
-     * rule throw rather than silently normalizing.
+     * tag would be stored but never retrievable. Tag text starting with a
+     * reserved machine-source prefix (`ofac:`, `usdt:`, `chainalysis:`) is
+     * rejected on the human write paths so an operator cannot impersonate an
+     * ingestion source; only `syncSource` may write those. Writes that violate
+     * any rule throw rather than silently normalizing.
      */
     tag: string;
 }
 
 /**
+ * One machine source's element inside a tag assignment's provenance array.
+ * Each element records that a named external source (a sanctions list, a
+ * freeze feed, a screening API) asserted this `(address, tag)` pair, when it
+ * last confirmed it, and — via `withdrawnAt` — whether it has since stopped
+ * asserting it. Withdrawal is soft: the element stays for audit rather than
+ * being removed, because a bare tag with no citation is exactly the state the
+ * provenance work exists to prevent.
+ */
+export interface IAddressTagSource {
+    /** Source identifier, e.g. 'ofac-sdn', 'usdt-blacklist', 'chainalysis'. */
+    id: string;
+    /**
+     * Source-native reference making the assertion citable — an OFAC entity
+     * uid, or the transaction hash that froze the address.
+     */
+    ref?: string;
+    /** Citable link a UI can surface next to the tag. */
+    url?: string;
+    /** Last time this source confirmed the assertion. */
+    observedAt: Date;
+    /**
+     * Set when this source stopped asserting the pair. An element with this
+     * field no longer contributes to the document's liveness.
+     */
+    withdrawnAt?: Date;
+}
+
+/**
  * A stored tag assignment as returned by every read and mutation method,
- * extending the pair with bookkeeping timestamps.
+ * extending the pair with bookkeeping timestamps and provenance. A human and
+ * a machine source can independently assert the same pair, so the human claim
+ * is an explicit `manual` flag rather than "sources absent" — deleting the
+ * document when a source withdraws would otherwise take the operator's tag
+ * with it.
  */
 export interface IAddressTag extends IAddressTagPair {
     /** When this assignment was first created. */
     createdAt: Date;
     /** When this assignment was last modified (rename). */
     updatedAt: Date;
+    /** True when a human asserted this tag (independent of any sources). */
+    manual: boolean;
+    /**
+     * Denormalized liveness, recomputed on every write: true when `manual` is
+     * true or any element of `sources` has no `withdrawnAt`. Kept as a stored
+     * boolean so read paths filter with a plain indexed equality instead of
+     * each repeating an `$elemMatch` over the sources array.
+     */
+    active: boolean;
+    /** Every machine source that has asserted this pair, withdrawn or live. */
+    sources: IAddressTagSource[];
 }
 
 /**
@@ -91,6 +137,40 @@ export interface IAddressTagGroup {
     tags: IAddressTag[];
     /** Most recent `updatedAt` across the address's tags. */
     updatedAt: Date;
+}
+
+/**
+ * One assertion a source is making about an address at fetch time. This is
+ * the ingestion-side input shape: the source's fetcher turns its raw feed
+ * into these, and `syncSource` reconciles them against stored provenance.
+ */
+export interface IAddressTagAssertion {
+    /** TRON wallet address (base58) the source is asserting about. */
+    address: string;
+    /** Exact tag text the source asserts, e.g. 'ofac:sdn'. */
+    tag: string;
+    /** Source-native citation reference (entity uid, freezing tx hash). */
+    ref?: string;
+    /** Citable link backing the assertion. */
+    url?: string;
+}
+
+/**
+ * What one reconcile pass actually changed, for logging and the admin source
+ * status surface. Without these counts a silently failing feed is
+ * indistinguishable from a clean one.
+ */
+export interface IAddressTagSyncResult {
+    /** The source id the pass ran for. */
+    source: string;
+    /** Assertions that created a document or joined an existing one. */
+    added: number;
+    /** Assertions already present whose element was re-confirmed. */
+    refreshed: number;
+    /** Stored assertions this pass stamped as withdrawn. */
+    withdrawn: number;
+    /** Assertions that failed validation; logged with the offending value. */
+    rejected: number;
 }
 
 /**
@@ -174,10 +254,52 @@ export interface IAddressTagService {
     updateTags(renames: IAddressTagRename[]): Promise<IAddressTag[]>;
 
     /**
-     * Delete tag assignments.
+     * Delete tag assignments. A document that also carries machine sources is
+     * not removed — the human claim (`manual`) is cleared and `active`
+     * recomputed instead, because an admin removing their own tag does not
+     * revoke an external source's assertion.
      *
      * @param tags - The exact `(address, tag)` pairs to remove; missing pairs are ignored.
-     * @returns The number of assignments actually removed.
+     * @returns The number of assignments the call took effect on (documents
+     *          deleted plus documents whose `manual` flag was cleared).
      */
     deleteTags(tags: IAddressTagPair[]): Promise<number>;
+
+    /**
+     * Reconcile one machine source's assertions against stored provenance.
+     * This is the only write path that touches `sources` elements, and it only
+     * ever touches elements whose `id` matches the source it was called for —
+     * it cannot see or remove a human tag, and the human-facing mutations
+     * cannot touch a source's elements.
+     *
+     * In `'snapshot'` mode the assertions are the source's complete current
+     * state: anything the source holds that is missing from the batch is
+     * soft-withdrawn (its element gains `withdrawnAt`; the document stays for
+     * audit). A snapshot far smaller than the source's current holdings is
+     * refused rather than applied, so a truncated or empty feed download can
+     * never be read as "everything was delisted". In `'delta'` mode only the
+     * given changes are applied: `assertions` are added or re-confirmed,
+     * `withdrawn` entries are soft-withdrawn, and unmentioned tags are left
+     * alone.
+     *
+     * Invalid assertions are counted as `rejected` and skipped rather than
+     * failing the batch, since one malformed feed row must not block the rest
+     * of a sanctions update.
+     *
+     * @param source - The source id whose elements this pass may touch.
+     * @param assertions - What the source currently asserts (snapshot) or the
+     *                     additions/re-confirmations to apply (delta).
+     * @param mode - `'snapshot'` diffs and withdraws the missing; `'delta'`
+     *               applies only what it was given.
+     * @param withdrawn - Delta mode only: assertions the source explicitly
+     *                    revoked (e.g. blacklist-removal events). Ignored in
+     *                    snapshot mode, where withdrawal is the set difference.
+     * @returns Counts of what the pass changed, for logging and status surfaces.
+     */
+    syncSource(
+        source: string,
+        assertions: IAddressTagAssertion[],
+        mode: 'snapshot' | 'delta',
+        withdrawn?: IAddressTagAssertion[]
+    ): Promise<IAddressTagSyncResult>;
 }

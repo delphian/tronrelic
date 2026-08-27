@@ -1,30 +1,68 @@
-'use client';
-
 /**
- * @fileoverview /system/address-tags — admin management surface for the
- * address-tags module.
+ * @fileoverview /system/address-tags server entry.
  *
- * Admin-gated by the /system layout; like the other system pages it is a
- * client component that fetches over the cookie-authenticated admin API (the
- * backend `requireAdmin` middleware is the trust boundary). All behaviour
- * lives in the AddressTagsManager component; this file is only the page
- * shell.
+ * Fetches the page's in-page tab row from the menu service SSR-first and hands
+ * it to the client shell. The tab row is a namespaced menu (menu module's
+ * Submenu Pattern), not a hand-rolled button array, so it inherits per-user
+ * gating, ordering, and live `menu:update` refresh — and lets a plugin
+ * contribute a tab later. This server component fetches that namespace tree
+ * once, forwarding the admin's session cookie so the nodes' `requiresAdmin`
+ * gating resolves, exactly as the /system/account-history reference does.
+ * Admin-gated by the /system layout.
  */
 
-import { Page, PageHeader } from '../../../../components/layout';
-import { AddressTagsManager } from './AddressTagsManager';
+import { cookies } from 'next/headers';
+import type { MenuNodeSerialized } from '@/shared';
+import { getServerSideApiUrl } from '../../../../lib/api-url';
+import { AddressTagsAdminClient } from './AddressTagsAdminClient';
+
+/** Namespace holding the page's tab nodes; registered by AddressTagsModule. */
+const SUBMENU_NAMESPACE = 'address-tags';
 
 /**
- * Page shell for the address-tag management table.
+ * Fetch the submenu namespace tree from the menu API, forwarding the visitor's
+ * cookies so the backend's per-user `requiresAdmin` gating resolves for the
+ * admin. On any failure it returns an empty tree — the page still renders,
+ * just without the tab row until a live `menu:update` refetch repopulates it.
+ *
+ * @returns The namespace root nodes and the tree snapshot timestamp.
  */
-export default function AddressTagsAdminPage() {
-    return (
-        <Page>
-            <PageHeader
-                title="Address Tags"
-                subtitle="Create, rename, and remove text tags attached to TRON wallet addresses."
-            />
-            <AddressTagsManager />
-        </Page>
-    );
+async function fetchSubmenu(): Promise<{ roots: MenuNodeSerialized[]; generatedAt: string }> {
+    const fallback = { roots: [] as MenuNodeSerialized[], generatedAt: new Date().toISOString() };
+    try {
+        const cookieHeader = (await cookies()).toString();
+        const response = await fetch(`${getServerSideApiUrl()}/api/menu?namespace=${SUBMENU_NAMESPACE}`, {
+            cache: 'no-store',
+            headers: cookieHeader ? { Cookie: cookieHeader } : undefined
+        });
+        if (!response.ok) {
+            return fallback;
+        }
+        const data = await response.json() as { tree?: { roots?: MenuNodeSerialized[]; generatedAt?: string } };
+        return {
+            roots: data.tree?.roots ?? [],
+            generatedAt: data.tree?.generatedAt ?? fallback.generatedAt
+        };
+    } catch {
+        return fallback;
+    }
+}
+
+/**
+ * Address-tags admin page (server entry).
+ *
+ * @param props - Next.js route props.
+ * @param props.searchParams - The `?tab=` deep link (a Promise in Next.js 15+),
+ *   read SSR-first to seed the initially active panel so a refreshed,
+ *   bookmarked, or shared link opens on the selected tab.
+ * @returns The client shell seeded with the SSR-fetched submenu tree.
+ */
+export default async function AddressTagsAdminPage({
+    searchParams
+}: {
+    searchParams: Promise<{ tab?: string }>;
+}) {
+    const { roots, generatedAt } = await fetchSubmenu();
+    const { tab } = await searchParams;
+    return <AddressTagsAdminClient submenuTree={roots} submenuGeneratedAt={generatedAt} initialTab={tab} />;
 }
