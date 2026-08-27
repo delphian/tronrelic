@@ -194,6 +194,12 @@ export function TagSummaryPanel({ activeTag, onSelectTag, reloadToken }: ITagSum
     // to make legible.
     const busiest = summary.tags[0]?.addresses ?? 1;
     const hasMore = summary.tags.length > COLLAPSED_ROWS;
+    // False only when the vocabulary exceeded the server's own row ceiling and
+    // it truncated the response. Expanding can then reveal every tag the panel
+    // holds but not every tag that exists, so the control must not say "all" —
+    // the footer already reports the shortfall, and a button promising more
+    // than the footer admits to is the one part of the panel that would lie.
+    const loadedEveryTag = summary.tags.length >= summary.totalTags;
 
     return (
         <Card className={styles.tag_summary}>
@@ -271,7 +277,7 @@ export function TagSummaryPanel({ activeTag, onSelectTag, reloadToken }: ITagSum
                             <Button variant="secondary" size="sm" onClick={() => setExpanded((current) => !current)}>
                                 {expanded
                                     ? <><ChevronUp size={14} /> Show fewer</>
-                                    : <><ChevronDown size={14} /> Show all</>}
+                                    : <><ChevronDown size={14} /> {loadedEveryTag ? 'Show all' : 'Show all loaded'}</>}
                             </Button>
                         )}
                     </div>
