@@ -178,6 +178,96 @@ export function createMockDatabaseService(): IDatabaseService & {
         }
     }
 
+    /**
+     * Build element matchers from an updateOne `arrayFilters` option so
+     * positional `$[ident]` path segments can select which array elements an
+     * update applies to. Each arrayFilters entry is keyed `ident.field` (or a
+     * bare `ident` for scalar-element comparisons); the identifier is the text
+     * before the first dot, and the conditions are re-keyed relative to the
+     * element and evaluated with the shared matchesFilter logic so operator
+     * behavior stays consistent with query filtering.
+     *
+     * @param arrayFilters - The raw option as MongoDB's updateOne accepts it.
+     * @returns Matcher per identifier; an identifier with no entry (`$[]`) matches all elements.
+     */
+    function buildArrayFilterMatchers(arrayFilters?: any[]): Map<string, (element: any) => boolean> {
+        const matchers = new Map<string, (element: any) => boolean>();
+        for (const entry of arrayFilters ?? []) {
+            const byIdent = new Map<string, Record<string, any>>();
+            let scalarByIdent: Map<string, any> | null = null;
+            for (const [key, condition] of Object.entries(entry)) {
+                const dotIndex = key.indexOf('.');
+                if (dotIndex === -1) {
+                    // Bare identifier: the condition applies to the element itself.
+                    scalarByIdent = scalarByIdent ?? new Map();
+                    scalarByIdent.set(key, condition);
+                    continue;
+                }
+                const ident = key.slice(0, dotIndex);
+                const field = key.slice(dotIndex + 1);
+                const conditions = byIdent.get(ident) ?? {};
+                conditions[field] = condition;
+                byIdent.set(ident, conditions);
+            }
+            for (const [ident, conditions] of byIdent) {
+                matchers.set(ident, (element: any) => matchesFilter(element, conditions));
+            }
+            for (const [ident, condition] of scalarByIdent ?? []) {
+                matchers.set(ident, (element: any) => element === condition);
+            }
+        }
+        return matchers;
+    }
+
+    /**
+     * Apply one operation at a dotted update path that may contain positional
+     * `$[ident]` / `$[]` segments, e.g. `sources.$[elem].withdrawnAt`. A
+     * positional segment fans the walk out across every array element its
+     * arrayFilters matcher accepts, which is what lets the mock exercise the
+     * "touch only this source's element" updates the real driver performs.
+     * Non-positional intermediate segments are created as objects when absent,
+     * mirroring MongoDB's implicit path creation; a positional segment over a
+     * non-array is a silent no-op, mirroring a filter that matches nothing.
+     *
+     * @param target - The document (or nested value) the walk starts from.
+     * @param segments - The update path split on dots.
+     * @param matchers - Element matchers derived from arrayFilters.
+     * @param operate - Applied at the final segment with its containing object.
+     */
+    function applyAtPositionalPath(
+        target: any,
+        segments: string[],
+        matchers: Map<string, (element: any) => boolean>,
+        operate: (container: any, key: string) => void
+    ): void {
+        if (target == null || segments.length === 0) {
+            return;
+        }
+        const [head, ...rest] = segments;
+        const positional = /^\$\[(.*)\]$/.exec(head);
+        if (positional) {
+            if (!Array.isArray(target)) {
+                return;
+            }
+            const matcher = positional[1] === '' ? null : matchers.get(positional[1]);
+            for (const element of target) {
+                if (matcher && !matcher(element)) {
+                    continue;
+                }
+                applyAtPositionalPath(element, rest, matchers, operate);
+            }
+            return;
+        }
+        if (rest.length === 0) {
+            operate(target, head);
+            return;
+        }
+        if (target[head] == null && !rest[0].startsWith('$[')) {
+            target[head] = {};
+        }
+        applyAtPositionalPath(target[head], rest, matchers, operate);
+    }
+
     return {
         // ============================================================
         // MongoDB Collection Access
@@ -268,19 +358,36 @@ export function createMockDatabaseService(): IDatabaseService & {
                     const docIndex = data.findIndex((d: any) => matchesFilter(d, filter));
 
                     if (docIndex !== -1) {
-                        const updateFields = (update as any).$set || {};
-                        const unsetFields = (update as any).$unset || {};
+                        const setEntries = Object.entries((update as any).$set || {});
+                        const unsetKeys = Object.keys((update as any).$unset || {});
                         const incFields = (update as any).$inc || {};
                         const pushFields = (update as any).$push || {};
 
+                        // Positional (`$[ident]`) paths route through the
+                        // arrayFilters-aware walker; everything else keeps the
+                        // original top-level merge/delete behavior so existing
+                        // callers see no change.
+                        const positionalMatchers = buildArrayFilterMatchers(options?.arrayFilters);
+                        const updateFields = Object.fromEntries(setEntries.filter(([key]) => !key.includes('$[')));
+
                         // Apply $set
                         data[docIndex] = { ...data[docIndex], ...updateFields };
+                        for (const [path, value] of setEntries.filter(([key]) => key.includes('$['))) {
+                            applyAtPositionalPath(data[docIndex], path.split('.'), positionalMatchers, (container, key) => {
+                                container[key] = deepClone(value);
+                            });
+                        }
 
                         // Apply $unset - remove fields. MongoDB ignores the
                         // value of $unset entries (typically empty string);
                         // mirror that by deleting each key regardless.
-                        for (const key of Object.keys(unsetFields)) {
+                        for (const key of unsetKeys.filter((key) => !key.includes('$['))) {
                             delete (data[docIndex] as any)[key];
+                        }
+                        for (const path of unsetKeys.filter((key) => key.includes('$['))) {
+                            applyAtPositionalPath(data[docIndex], path.split('.'), positionalMatchers, (container, key) => {
+                                delete container[key];
+                            });
                         }
 
                         // Apply $inc - increment numeric fields
@@ -316,11 +423,26 @@ export function createMockDatabaseService(): IDatabaseService & {
                         const id = new ObjectId();
                         const updateFields = (update as any).$set || {};
                         const setOnInsertFields = (update as any).$setOnInsert || {};
+                        const pushFields = (update as any).$push || {};
                         // Merge filter fields with $setOnInsert (insert-only) and $set fields.
                         // MongoDB behavior: $set applies on insert AND update; $setOnInsert only
                         // applies on insert. Spread order gives $set priority over $setOnInsert
                         // on overlap, though by contract the two should not share keys.
-                        const newDoc = { ...filter, ...setOnInsertFields, ...updateFields, _id: id };
+                        const newDoc: any = { ...filter, ...setOnInsertFields, ...updateFields, _id: id };
+                        // Apply $push on insert: MongoDB seeds each pushed path
+                        // with a one-element array, which is how an "add this
+                        // array element or create the document" upsert works.
+                        for (const [key, value] of Object.entries(pushFields)) {
+                            const parts = key.split('.');
+                            let obj = newDoc;
+                            for (let i = 0; i < parts.length - 1; i++) {
+                                if (obj[parts[i]] === undefined) obj[parts[i]] = {};
+                                obj = obj[parts[i]];
+                            }
+                            const lastKey = parts[parts.length - 1];
+                            if (!Array.isArray(obj[lastKey])) obj[lastKey] = [];
+                            obj[lastKey].push(deepClone(value));
+                        }
                         data.push(newDoc);
                         return { modifiedCount: 0, matchedCount: 0, acknowledged: true, upsertedCount: 1, upsertedId: id };
                     }
@@ -647,6 +769,12 @@ export function createMockDatabaseService(): IDatabaseService & {
                 createIndex: vi.fn(async (indexSpec: Record<string, 1 | -1>, options?: any) => {
                     // No-op for tests - index creation is a schema concern, not data concern
                     return 'mock_index_name';
+                }),
+                dropIndex: vi.fn(async (indexName: string) => {
+                    // No-op for tests — mirrors createIndex; migrations that
+                    // retire an index can run against the mock without special
+                    // casing.
+                    return { ok: 1 };
                 })
             } as any; // Minimal mock - extend as needed
 

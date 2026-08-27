@@ -6,9 +6,12 @@
 export type {
     IAddressTagPair,
     IAddressTag,
+    IAddressTagSource,
     IAddressTagGroup,
     IAddressTagRename,
     IAddressTagListQuery,
     IAddressTagSearchQuery,
+    IAddressTagAssertion,
+    IAddressTagSyncResult,
     IAddressTagService
 } from './IAddressTagService.js';

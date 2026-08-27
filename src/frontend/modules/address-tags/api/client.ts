@@ -187,3 +187,164 @@ export async function deleteTags(tags: IAddressTagPair[]): Promise<number> {
     }), 'delete address tags');
     return data.deleted;
 }
+
+/**
+ * Counts one ingestion reconcile reported: what a source run, screen, or
+ * verify pass actually changed.
+ */
+export interface ITagSyncResultView {
+    /** The source id the pass ran for. */
+    source: string;
+    /** Assertions that created a document or joined an existing one. */
+    added: number;
+    /** Assertions already present whose element was re-confirmed. */
+    refreshed: number;
+    /** Stored assertions the pass stamped as withdrawn. */
+    withdrawn: number;
+    /** Assertions that failed validation and were skipped. */
+    rejected: number;
+}
+
+/** One source's persisted run record, as the status endpoint reports it. */
+export interface ITagSourceRunStateView {
+    /** ISO timestamp of the last run attempt, successful or not. */
+    lastAttemptAt?: string;
+    /** ISO timestamp of the last successful reconcile. */
+    lastSuccessAt?: string;
+    /** Message from the most recent failure, or null after a clean run. */
+    lastError?: string | null;
+    /** Counts from the most recent successful reconcile. */
+    lastResult?: ITagSyncResultView | null;
+}
+
+/** One row of the Sources status panel. */
+export interface ITagSourceStatusView {
+    /** Source id (`ofac-sdn`, `usdt-blacklist`, `chainalysis`). */
+    id: string;
+    /** How the source reports: complete state, changes only, or per-address. */
+    mode: 'snapshot' | 'delta' | 'lookup';
+    /** Direct publication or curation-quarantined (future). */
+    publish: 'direct' | 'quarantined';
+    /** Default cron for scheduled sources. */
+    cron?: string;
+    /** Whether scheduled runs are switched on. */
+    enabled: boolean;
+    /** Whether the source has what it needs to run (a key, for Chainalysis). */
+    configured: boolean;
+    /** True while a run is in flight. */
+    running: boolean;
+    /** Stored resume position, for delta sources. */
+    cursor: string | null;
+    /** The persisted run record. */
+    state: ITagSourceRunStateView;
+    /** The persisted verify-pass record, where the source supports one. */
+    verifyState?: ITagSourceRunStateView;
+}
+
+/** The settings surface's read shape — the key itself is never returned. */
+export interface IAddressTagsSettingsView {
+    chainalysis: {
+        /** Whether an API key is stored. */
+        configured: boolean;
+        /** Last four characters of the stored key, for recognition only. */
+        keySuffix: string | null;
+        /** The operator switch, independent of key presence. */
+        enabled: boolean;
+    };
+    /** Scheduled sources' enable switches, keyed by source id. */
+    sources: Record<string, { enabled: boolean }>;
+}
+
+/** Partial settings update the PUT surface accepts. */
+export interface IAddressTagsSettingsUpdateView {
+    chainalysis?: {
+        /** A new key to store; null clears it; absence leaves it untouched. */
+        apiKey?: string | null;
+        /** New operator-switch value. */
+        enabled?: boolean;
+    };
+    /** Per-source switch updates, keyed by source id. */
+    sources?: Record<string, { enabled?: boolean }>;
+}
+
+/**
+ * Load the per-source ingestion status for the Sources panel: last run, last
+ * error, cursor, and the counts from the most recent reconcile. This is what
+ * keeps a silently failing feed from looking identical to a clean one.
+ *
+ * @returns One status row per registered source.
+ */
+export async function getTagSources(): Promise<ITagSourceStatusView[]> {
+    const data = await parse<{ sources: ITagSourceStatusView[] }>(
+        await fetch(`${BASE}/sources`),
+        'load tag source statuses'
+    );
+    return data.sources;
+}
+
+/**
+ * Run one source now, for testing and recovery. The request awaits the whole
+ * run — the OFAC download can take a minute — so the caller should show a
+ * busy state rather than expecting an instant reply.
+ *
+ * @param id - The source to run (`ofac-sdn` or `usdt-blacklist`).
+ * @returns The reconcile counts the run produced.
+ */
+export async function runTagSource(id: string): Promise<ITagSyncResultView> {
+    const data = await parse<{ result: ITagSyncResultView }>(
+        await fetch(`${BASE}/sources/${encodeURIComponent(id)}/run`, { method: 'POST' }),
+        'run tag source'
+    );
+    return data.result;
+}
+
+/**
+ * Screen one address through Chainalysis on demand. A hit tags the address
+ * `chainalysis:sanctioned`; a clean answer withdraws any prior flag.
+ *
+ * @param address - Base58 TRON address to screen.
+ * @returns The reconcile counts for this one address.
+ */
+export async function screenAddress(address: string): Promise<ITagSyncResultView> {
+    const data = await parse<{ result: ITagSyncResultView }>(
+        await fetch(`${BASE}/screen`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address })
+        }),
+        'screen address'
+    );
+    return data.result;
+}
+
+/**
+ * Load the ingestion settings. The Chainalysis key is reported only as
+ * configured/last-four — the form shows recognition state, never the value.
+ *
+ * @returns The current settings, key redacted.
+ */
+export async function getAddressTagsSettings(): Promise<IAddressTagsSettingsView> {
+    const data = await parse<{ settings: IAddressTagsSettingsView }>(
+        await fetch(`${BASE}/settings`),
+        'load address-tags settings'
+    );
+    return data.settings;
+}
+
+/**
+ * Write ingestion settings, including the write-only Chainalysis key.
+ *
+ * @param update - Partial update; omitted fields are left untouched.
+ * @returns The settings after the update, key redacted as always.
+ */
+export async function updateAddressTagsSettings(update: IAddressTagsSettingsUpdateView): Promise<IAddressTagsSettingsView> {
+    const data = await parse<{ settings: IAddressTagsSettingsView }>(
+        await fetch(`${BASE}/settings`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(update)
+        }),
+        'update address-tags settings'
+    );
+    return data.settings;
+}

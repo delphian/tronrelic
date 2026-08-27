@@ -433,8 +433,10 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await valuationModule.init({ serviceRegistry, app });
     // Address-tags: central CRUD authority for text tags on TRON wallet
     // addresses, published as 'address-tags'. Owns its own Mongo collection;
-    // no cross-module init ordering constraints.
-    await addressTagsModule.init({ database: coreDatabase, serviceRegistry, menuService, app });
+    // no cross-module init ordering constraints. The scheduler drives its
+    // sanctions/freeze ingestion jobs (nullable, so ENABLE_SCHEDULER=false
+    // switches all ingestion off).
+    await addressTagsModule.init({ database: coreDatabase, serviceRegistry, menuService, app, scheduler: schedulerService });
     await toolsModule.init(sharedDeps);
     // Notifications module: builds the category/channel registries, preference,
     // policy, and audit stores. Inits before ai-tools so its run() (which
