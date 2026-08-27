@@ -57,6 +57,127 @@
     max-width: 100%;
 }
 
+/* Tag summary card. Declared as a container so the bar list below reacts to the
+   card's own width, which is what keeps it correct when the page is rendered
+   inside a slideout or a modal rather than full width. */
+.tag_summary {
+    container-type: inline-size;
+    container-name: tag-summary;
+}
+
+/* One row per tag: name, a proportional bar, and the count. The whole row is a
+   button, because the point of showing a count above the table is being able to
+   reach the rows behind it in one click. */
+.tag_bars {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.tag_bar {
+    display: grid;
+    /* The bar gets twice the slack of the name so the comparison it exists to
+       support stays readable when tag text is long. */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+    gap: var(--gap-sm);
+    align-items: center;
+    width: 100%;
+    padding: var(--padding-2xs) var(--padding-xs);
+    border: var(--border-width-thin) solid transparent;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.tag_bar:hover {
+    background: var(--color-primary-alpha-10);
+}
+
+/* The selected row is the tag the table below is currently filtered by. It
+   carries a border as well as a tint, so the state does not rest on a colour
+   difference alone. */
+.tag_bar--selected {
+    background: var(--color-primary-alpha-15);
+    border-color: var(--color-primary-alpha-38);
+}
+
+.tag_bar__label {
+    overflow: hidden;
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The track is the unfilled remainder, drawn as a lighter step of the fill's
+   own hue so the bar reads as one object rather than a coloured shape sitting
+   on an unrelated grey one. */
+.tag_bar__track {
+    display: block;
+    height: var(--meter-height);
+    border-radius: var(--radius-xs);
+    background: var(--color-primary-alpha-10);
+}
+
+/* Square where it starts and rounded only at the data end, so the baseline every
+   bar is measured from is unambiguous. */
+.tag_bar__fill {
+    display: block;
+    width: var(--tag-bar-fill, 0%);
+    height: 100%;
+    border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
+    background: var(--color-primary);
+}
+
+/* Tabular figures because this is a column of numbers that has to align
+   vertically; the totals strip above keeps proportional figures, which read
+   better at its larger size. */
+.tag_bar__value {
+    font-size: var(--font-size-body-sm);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted);
+}
+
+.tag_bars__footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
+    align-items: center;
+    justify-content: space-between;
+}
+
+.tag_bars__note {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.tag_bars__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+    align-items: center;
+}
+
+/* Narrow containers drop the bar rather than squeezing it. A bar too short to
+   compare says nothing the count beside it does not already say, and removing
+   it leaves the tag name room to stay readable. The element leaves the grid
+   entirely when hidden, so the two remaining cells fill the two columns. */
+@container tag-summary (max-width: #{$breakpoint-mobile-md}) {
+    .tag_bar {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .tag_bar__track {
+        display: none;
+    }
+}
+
 /* Submenu tab row and the active panel below it, mirroring the
    /system/account-history reference implementation. */
 .submenu {

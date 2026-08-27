@@ -25,6 +25,11 @@
  * is always the right offset. Every mutation refreshes from the committed query
  * rather than patching rows in place, which keeps that identity true — see
  * `handleDelete` for why a local edit cannot safely stand in for a refetch.
+ *
+ * `TagSummaryPanel` sits above the table and is driven from here rather than
+ * holding its own filter, because the two views describe the same query: the
+ * panel's highlighted row and the table's rows must always agree on what is
+ * being looked at, and they only can if one component owns the search term.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -49,6 +54,7 @@ import {
     type IAddressTagGroupView,
     type IAddressTagView
 } from '../../../../modules/address-tags';
+import { TagSummaryPanel } from './TagSummaryPanel';
 import styles from './page.module.scss';
 
 const PAGE_SIZE = 50;
@@ -83,6 +89,11 @@ export function AddressTagsManager() {
     const [newAddress, setNewAddress] = useState<string | null>(null);
     const [newTags, setNewTags] = useState('');
     const [creating, setCreating] = useState(false);
+    // Bumped after every successful mutation so the summary panel refetches
+    // its counts. The panel derives them from the same documents this table
+    // edits, so a create or delete that did not signal it would leave the
+    // vocabulary list describing the collection as it was before the change.
+    const [summaryToken, setSummaryToken] = useState(0);
     const { push } = useToast();
     const { open, close } = useModal();
 
@@ -149,6 +160,32 @@ export function AddressTagsManager() {
     }, [load, search]);
 
     /**
+     * Tell the summary panel its counts are stale. Called after every mutation
+     * rather than only after create and delete, because a rename moves an
+     * address between two tags and so changes both of their counts.
+     */
+    const refreshSummary = useCallback(() => {
+        setSummaryToken((current) => current + 1);
+    }, []);
+
+    /**
+     * Apply a tag chosen in the summary panel as the table's filter, or clear
+     * the filter when passed null.
+     *
+     * The search input is updated as well as the query, so the box always shows
+     * what the visible rows were actually filtered by. Leaving the two out of
+     * step would make the next manual search read as a change to a term the
+     * operator never typed.
+     *
+     * @param tag - The tag to filter by, or null to show everything again.
+     */
+    const handleSelectTag = useCallback(async (tag: string | null) => {
+        const nextSearch = tag ?? '';
+        setSearch(nextSearch);
+        await load(nextSearch, 0, false);
+    }, [load]);
+
+    /**
      * Create assignments from the form: one address, comma-separated tags.
      * Refreshes from the committed query rather than the live input so adding a
      * tag cannot silently swap the table onto a filter the admin never
@@ -171,13 +208,14 @@ export function AddressTagsManager() {
             notify('success', `Added ${tags.length} tag${tags.length > 1 ? 's' : ''}`);
             setNewAddress(null);
             setNewTags('');
+            refreshSummary();
             await load(committedSearch, 0, false);
         } catch (error) {
             notify('danger', 'Failed to create tags', error);
         } finally {
             setCreating(false);
         }
-    }, [committedSearch, load, newAddress, newTags, notify]);
+    }, [committedSearch, load, newAddress, newTags, notify, refreshSummary]);
 
     /**
      * Commit an inline rename for the tag being edited. Refreshes from the
@@ -196,13 +234,14 @@ export function AddressTagsManager() {
             invalidateAddressTags(item.address);
             notify('success', `Renamed '${item.tag}' to '${newTag}'`);
             setEditKey(null);
+            refreshSummary();
             await load(committedSearch, 0, false);
         } catch (error) {
             notify('danger', 'Failed to rename tag', error);
         } finally {
             setBusyKey(null);
         }
-    }, [committedSearch, editValue, load, notify]);
+    }, [committedSearch, editValue, load, notify, refreshSummary]);
 
     /**
      * Delete one tag after modal confirmation, then refresh from the committed
@@ -235,6 +274,7 @@ export function AddressTagsManager() {
                             await deleteTags([{ address: item.address, tag: item.tag }]);
                             invalidateAddressTags(item.address);
                             notify('success', `Removed '${item.tag}'`);
+                            refreshSummary();
                             await load(committedSearch, 0, false);
                         } catch (error) {
                             notify('danger', 'Failed to delete tag', error);
@@ -245,7 +285,7 @@ export function AddressTagsManager() {
                 />
             )
         });
-    }, [close, committedSearch, load, notify, open]);
+    }, [close, committedSearch, load, notify, open, refreshSummary]);
 
     /**
      * Render one tag as a chip carrying its own rename and delete affordances,
@@ -344,6 +384,15 @@ export function AddressTagsManager() {
                     </Button>
                 </div>
             </Card>
+
+            {/* Above the table, not on a tab of its own: the panel's rows are
+              * how an operator picks the filter the table then applies, so the
+              * counts and the rows they lead to have to be visible together. */}
+            <TagSummaryPanel
+                activeTag={committedSearch || null}
+                onSelectTag={(tag) => void handleSelectTag(tag)}
+                reloadToken={summaryToken}
+            />
 
             <Card>
                 <Stack gap="md">

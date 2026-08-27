@@ -13,12 +13,20 @@
  * gates it on admin group membership rather than on login.
  */
 
-import type { IAddressTagPair, IAddressTagRename } from '@/types';
+import type { IAddressTagPair, IAddressTagRename, IAddressTagSummary } from '@/types';
 
 const BASE = '/api/admin/system/address-tags';
 const USER_BASE = '/api/address-tags';
 
 export type { IAddressTagPair, IAddressTagRename } from '@/types';
+
+/**
+ * The vocabulary summary as it arrives over the wire. Re-exported from the
+ * types package unchanged rather than restated with string dates like the
+ * views below, because the summary carries counts only — there is no timestamp
+ * in it for JSON to turn into a string.
+ */
+export type { IAddressTagCount, IAddressTagSummary } from '@/types';
 
 /**
  * Wire shape of one stored assignment — `IAddressTag` with its dates as the
@@ -141,6 +149,29 @@ export async function searchAddresses(query?: { search?: string; limit?: number;
         'search tagged addresses'
     );
     return data.addresses;
+}
+
+/**
+ * Load the tag vocabulary with its usage counts and the collection-wide
+ * totals, for the summary panel above the management table.
+ *
+ * Ask for more tags than you intend to show at once. The response reports
+ * `totalTags` for the whole vocabulary, so a caller holding the full list can
+ * expand from "top ten" to "all of them" without a second request, and can say
+ * honestly how many rows the server itself withheld when the limit does bite.
+ *
+ * @param limit - Maximum tag rows to return, taken from the most-used end.
+ * @returns The counted vocabulary and the collection-wide totals.
+ */
+export async function getTagSummary(limit?: number): Promise<IAddressTagSummary> {
+    const params = new URLSearchParams();
+    if (limit !== undefined) params.set('limit', String(limit));
+    const suffix = params.size > 0 ? `?${params.toString()}` : '';
+    const data = await parse<{ summary: IAddressTagSummary }>(
+        await fetch(`${BASE}/summary${suffix}`),
+        'load address tag summary'
+    );
+    return data.summary;
 }
 
 /**

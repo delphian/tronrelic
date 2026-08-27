@@ -41,6 +41,24 @@ export class AddressTagsAdminController {
     };
 
     /**
+     * GET /summary?limit= — the tag vocabulary with per-tag address counts and
+     * the collection-wide totals, backing the summary panel on the Tags tab.
+     *
+     * Admin-gated alongside the rest of this controller rather than sitting on
+     * the logged-in read surface, because a count per tag describes the whole
+     * collection: it would tell any registered user how many addresses the
+     * deployment holds under `ofac:sdn` without their needing to find one.
+     */
+    getSummary = async (req: Request, res: Response): Promise<void> => {
+        try {
+            const limit = req.query.limit ? Number(req.query.limit) : undefined;
+            res.json({ summary: await this.service.getTagSummary({ limit }) });
+        } catch (error) {
+            this.fail(res, error, 'Failed to summarize address tags');
+        }
+    };
+
+    /**
      * GET /addresses?search=&limit=&skip= — address-oriented search backing the
      * `/system/address-tags` table, where one row is one address carrying all
      * of its tags. `limit`/`skip` count addresses, so a page never splits an

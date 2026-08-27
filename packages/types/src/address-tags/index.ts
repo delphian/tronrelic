@@ -11,6 +11,9 @@ export type {
     IAddressTagRename,
     IAddressTagListQuery,
     IAddressTagSearchQuery,
+    IAddressTagCount,
+    IAddressTagSummaryQuery,
+    IAddressTagSummary,
     IAddressTagAssertion,
     IAddressTagSyncResult,
     IAddressTagService
