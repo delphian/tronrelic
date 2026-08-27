@@ -250,12 +250,26 @@ export function SchedulerMonitor({ jobFilter, title = 'Scheduled Jobs', hideStat
     }, []);
 
     /**
-     * Validates a cron expression format.
+     * Checks that an edited cron expression has a field count the backend can
+     * actually run, so the browser does not reject a schedule the scheduler
+     * would have accepted. node-cron supports both the standard five-field form
+     * and a six-field form whose leading field is seconds, and several jobs are
+     * registered with six fields — the address-tags ingestion jobs among them.
+     * Requiring exactly five left those schedules visible on an admin page but
+     * impossible to edit, and the failure surfaced only as a client-side
+     * validation message that never reached the API.
+     *
+     * @param schedule The expression as typed into the schedule input, which may
+     *                 carry stray whitespace from a paste.
+     * @returns True when the expression has five or six fields. This is only a
+     *          shape check; node-cron validates the field values themselves when
+     *          the job is rescheduled, and a bad value surfaces as an API error.
      */
     const isValidCronExpression = (schedule: string): boolean => {
-        const trimmed = schedule.trim();
-        const fields = trimmed.split(/\s+/);
-        return fields.length === 5;
+        const fields = schedule.trim().split(/\s+/);
+        const result = fields.length === 5 || fields.length === 6;
+
+        return result;
     };
 
     /**
@@ -329,7 +343,7 @@ export function SchedulerMonitor({ jobFilter, title = 'Scheduled Jobs', hideStat
             setFeedback({
                 jobName,
                 type: 'error',
-                message: 'Invalid cron expression. Must have 5 space-separated fields.'
+                message: 'Invalid cron expression. Must have 5 or 6 space-separated fields.'
             });
             setTimeout(() => {
                 setFeedback(prev => prev?.jobName === jobName ? null : prev);
