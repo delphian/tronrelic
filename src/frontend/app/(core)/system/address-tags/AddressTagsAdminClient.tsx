@@ -3,31 +3,67 @@
 /**
  * @fileoverview Client shell for /system/address-tags.
  *
- * Holds the in-page tab row and the three tab panels: the tag management
- * table, the ingestion source status panel, and the ingestion settings form.
- * The tab row is the menu module's Submenu Pattern — a namespaced menu
- * rendered with `MenuNavClient`, not a hand-rolled button array — so it
- * inherits per-user gating, ordering, and live `menu:update` refresh. The
- * server entry (`page.tsx`) fetches that namespace tree SSR-first and passes
- * it in. Clicking a tab drives local state via `onItemSelect` rather than
- * navigating; `activeUrl` highlights the active tab since the route is
- * identical across them.
+ * Holds the in-page tab row and its five tab panels: the tag management table,
+ * the ingestion source status panel, the ingestion settings form, this
+ * module's scheduler jobs, and this module's MongoDB storage. The tab row is
+ * the menu module's Submenu Pattern — a namespaced menu rendered with
+ * `MenuNavClient`, not a hand-rolled button array — so it inherits per-user
+ * gating, ordering, and live `menu:update` refresh. The server entry
+ * (`page.tsx`) fetches that namespace tree SSR-first and passes it in. Clicking
+ * a tab drives local state via `onItemSelect` rather than navigating;
+ * `activeUrl` highlights the active tab since the route is identical across
+ * them.
+ *
+ * The Schedules and Database panels are core components filtered to this
+ * module, not anything written for this page. Any component that owns a
+ * scheduler job or a collection surfaces both on its own admin page, and
+ * reusing the core browsers means the authority behind these two tabs is the
+ * same one `/system/scheduler` and `/system/database` use — so a schedule
+ * edited here and a schedule edited there can never disagree.
  */
 
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
 import { Page, PageHeader } from '../../../../components/layout';
 import { MenuNavClient } from '../../../../components/layout/MenuNav/MenuNavClient';
+import { CollectionBrowser } from '../../../../modules/database';
+import { SchedulerMonitor, type SchedulerJob } from '../../../../modules/scheduler';
 import { AddressTagsManager } from './AddressTagsManager';
 import { SourcesTab } from './SourcesTab';
 import { SettingsTab } from './SettingsTab';
 import styles from './page.module.scss';
 
-/** The page's three tab ids; the `?tab=` value carried by each submenu node. */
-type TabId = 'tags' | 'sources' | 'settings';
+/** The page's five tab ids; the `?tab=` value carried by each submenu node. */
+type TabId = 'tags' | 'sources' | 'settings' | 'schedules' | 'database';
 
 /** The menu namespace the module registers the tab nodes under. */
 const SUBMENU_NAMESPACE = 'address-tags';
+
+/**
+ * Name prefix shared by every scheduler job the module registers.
+ *
+ * The Schedules tab filters on the prefix rather than listing job names, so a
+ * job the module adds later appears here without a matching edit to this file.
+ * The literal is repeated from `AddressTagsModule.ts` because frontend code
+ * cannot import backend code; the module's lifecycle test asserts every
+ * registered job name starts with it, which is what keeps the two copies
+ * honest.
+ */
+const JOB_PREFIX = 'address-tags:';
+
+/**
+ * Physical MongoDB collection prefix covering everything this module owns.
+ *
+ * A module prefixes its collections by hand as `module_<id>_<name>`, so this
+ * string names exactly the storage the module is responsible for, and scoping
+ * the browser to it keeps the panel on this module's data instead of the whole
+ * deployment's inventory. The module's ingestion cursors, run state, and
+ * settings are key-value entries rather than collections, and those live in the
+ * shared `_kv` collection alongside every other module's. That collection falls
+ * outside this prefix on purpose and stays reachable from `/system/database`,
+ * which is the right home for storage no single module owns.
+ */
+const COLLECTION_PREFIX = 'module_address-tags_';
 
 /**
  * Type guard narrowing an arbitrary `?tab=` string to a known TabId, so the
@@ -37,7 +73,24 @@ const SUBMENU_NAMESPACE = 'address-tags';
  * @returns True when the value names a real tab.
  */
 function isTabId(tab: string | undefined): tab is TabId {
-    return tab === 'tags' || tab === 'sources' || tab === 'settings';
+    return tab === 'tags'
+        || tab === 'sources'
+        || tab === 'settings'
+        || tab === 'schedules'
+        || tab === 'database';
+}
+
+/**
+ * Select this module's scheduler jobs for the Schedules tab.
+ *
+ * A predicate rather than a fixed list of names, so the tab keeps its promise
+ * of showing "this module's schedules" when another ingestion job is added.
+ *
+ * @param job - A job row supplied by the scheduler monitor.
+ * @returns True when the job belongs to this module.
+ */
+function isAddressTagsJob(job: SchedulerJob): boolean {
+    return job.name.startsWith(JOB_PREFIX);
 }
 
 /**
@@ -118,6 +171,29 @@ export function AddressTagsAdminClient({ submenuTree, submenuGeneratedAt, initia
                 {activeTab === 'tags' && <AddressTagsManager />}
                 {activeTab === 'sources' && <SourcesTab />}
                 {activeTab === 'settings' && <SettingsTab />}
+                {activeTab === 'schedules' && (
+                    <SchedulerMonitor
+                        jobFilter={isAddressTagsJob}
+                        title="Address Tags Schedules"
+                        hideStats
+                    />
+                )}
+
+                {/* Editing and deletion stay enabled: a tag document is a
+                  * standalone `(address, tag)` row that nothing else derives
+                  * from, so a correction here strands no other data. Prefer the
+                  * Tags tab for ordinary work, because it goes through the
+                  * service and keeps the `active` liveness flag consistent with
+                  * the `manual` claim and the `sources` array; treat this
+                  * browser as the escape hatch for a document that surface
+                  * cannot reach, such as one still missing its provenance
+                  * fields before the 001 migration runs. */}
+                {activeTab === 'database' && (
+                    <CollectionBrowser
+                        prefix={COLLECTION_PREFIX}
+                        title="Address Tags Collections"
+                    />
+                )}
             </div>
         </Page>
     );

@@ -45,6 +45,14 @@ page can offer Schedules and Database tabs without sending the operator back to
 `/system`. Import them from the context — never by relative path across the
 workspace.
 
+**A plugin that registers a scheduler job or owns storage must offer those
+tabs.** That is a platform rule rather than a suggestion, and it applies to
+every plugin with an admin page: without them an operator diagnosing the plugin
+loses the page they were on and has to pick the plugin's rows back out of the
+whole deployment's inventory. The rule and its module-side equivalent are in
+[frontend.md](../frontend/frontend.md#a-component-that-owns-schedules-or-storage-surfaces-them);
+the `trp-onchain-typologies` workbench page is the reference implementation.
+
 | Component | Purpose | Scoping |
 |---|---|---|
 | `SchedulerMonitor` | Job status, enable/disable, cron editing | `jobFilter` — names or a predicate |

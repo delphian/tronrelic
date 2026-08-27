@@ -103,10 +103,16 @@ describe('AddressTagsModule', () => {
         const tabCalls = deps.menuService.create.mock.calls
             .map((call: unknown[]) => call[0] as { namespace: string; url: string; requiresAdmin?: boolean })
             .filter((node: { namespace: string }) => node.namespace === 'address-tags');
+        // Schedules and Database are part of the row, not optional extras: a
+        // module owning scheduler jobs or a collection has to surface both on
+        // its own admin page, and dropping either node would silently send an
+        // operator back to /system to find this module's rows by hand.
         expect(tabCalls.map((node: { url: string }) => node.url)).toEqual([
             '/system/address-tags?tab=tags',
             '/system/address-tags?tab=sources',
-            '/system/address-tags?tab=settings'
+            '/system/address-tags?tab=settings',
+            '/system/address-tags?tab=schedules',
+            '/system/address-tags?tab=database'
         ]);
         // Outside the System container the non-bypassable admin force does not
         // reach these nodes, so each must carry its own gate.
@@ -125,6 +131,12 @@ describe('AddressTagsModule', () => {
             'address-tags:sync-usdt-blacklist',
             'address-tags:verify-frozen'
         ]);
+        // The Schedules tab picks this module's jobs out of the deployment-wide
+        // list by name prefix, and the frontend keeps its own copy of that
+        // literal because it cannot import backend code. A job registered
+        // without the prefix would simply not appear on the tab, with no error
+        // anywhere, so assert the shared assumption here.
+        expect(names.every((name: string) => name.startsWith('address-tags:'))).toBe(true);
 
         AddressTagService.resetForTests();
         const without = createDeps();

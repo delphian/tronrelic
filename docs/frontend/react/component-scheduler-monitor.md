@@ -66,7 +66,9 @@ Filtered embedding (e.g. on a market-jobs panel):
 
 **No virtualization.** Every filtered job renders a `<JobRow>` to the DOM. The system has fewer than ~30 jobs in practice — fine — but don't drop this into a hypothetical thousand-job context expecting Lazy Lists.
 
-**Plugins consume this through `context.system`, never a deep import.** The component is republished to plugins as `context.system.SchedulerMonitor` with the same props — that is the supported path, and a plugin admin page wanting a Schedules tab should use it:
+**Any component owning a scheduler job owes its admin page a Schedules tab.** A module or plugin that registers a job must embed this component filtered to its own jobs, rather than leaving an operator to find them on `/system/scheduler` among every other component's. See the rule in [frontend.md](../frontend.md#a-component-that-owns-schedules-or-storage-surfaces-them).
+
+**Plugins consume this through `context.system`, never a deep import.** The component is republished to plugins as `context.system.SchedulerMonitor` with the same props — that is the supported path, and a plugin admin page building its Schedules tab must use it:
 
 ```tsx
 const { system } = context;

@@ -16,7 +16,7 @@ interface IFrontendPluginContext {
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
     ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Field, Skeleton, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, Table family
     charts: IChartComponents;      // LineChart, BarChart
-    system: ISystemComponents;     // SchedulerMonitor (admin)
+    system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser (admin)
     api: IApiClient;               // get/post/put/patch/delete
     websocket: IWebSocketClient;   // socket + auto-prefixed helpers
     useUser: () => IPluginUserState;
@@ -132,11 +132,21 @@ Six related components matching the `/system/*` admin tables. Compose them to in
 
 ## System (`context.system`) — Admin Only
 
+Three core admin components, for the Schedules and Database tabs a plugin owes its admin page. Props are declared once in the types package — `ISchedulerMonitorProps`, `ICollectionBrowserProps`, `IClickHouseTableBrowserProps` — and `ISystemComponents` imports those declarations, so the table below describes them rather than restating them.
+
 | Component | Props |
 |-----------|-------|
-| `SchedulerMonitor` | `token: string`, `jobFilter?: string[] \| (job) => boolean`, `sectionTitle?`, `hideHealth?` |
+| `SchedulerMonitor` | `jobFilter?: string[] \| (job) => boolean`, `title?`, `hideStats?` |
+| `CollectionBrowser` | `prefix?`, `title?`, `allowEdit?` (default true), `allowDelete?` (default true) |
+| `ClickHouseTableBrowser` | `pluginId?`, `title?`, `hideWhenEmpty?`, `prefix?` (deprecated) |
 
-`SchedulerMonitor` renders job status, enable/disable controls, and schedule edits. `jobFilter` lets a plugin admin page show only its own jobs (e.g., `['markets:refresh']`).
+There is **no `token` prop** on any of them. Admin authority is the visitor's Better Auth session cookie, so a passed token is silently ignored and gates nothing.
+
+`SchedulerMonitor` renders job status, enable/disable controls, and schedule edits. Scope it with a predicate testing your job-name prefix (`(job) => job.name.startsWith('my-plugin:')`) rather than a fixed list such as `['my-plugin:refresh']`, so a job you register later appears without a matching edit here. Pass `hideStats` when embedding it as one tab among several, because the stats bar reports platform-wide totals that misrepresent the handful of jobs on screen.
+
+`CollectionBrowser` lists MongoDB collections and pages their documents; `ClickHouseTableBrowser` does the same for ClickHouse tables and is read-only, because a ClickHouse delete is an asynchronous `ALTER TABLE` whose effect is not immediately visible. Both filter server-side, so a scoped page never receives another plugin's inventory. Scope the collection browser with `prefix="plugin_<id>_"`, and the table browser with `pluginId` — it derives the same prefix itself, which survives a rename that a hand-written string would not. Set `hideWhenEmpty` on the table browser when your plugin may store nothing in ClickHouse, so it renders nothing instead of an empty panel implying missing data.
+
+A plugin that registers a scheduler job or owns storage must surface it here; see the rule in [frontend.md](../frontend/frontend.md#a-component-that-owns-schedules-or-storage-surfaces-them) and the wider treatment of these three components in [plugins-frontend-context.md](./plugins-frontend-context.md#admin-surfaces-contextsystem).
 
 ## User State (`context.useUser`)
 
