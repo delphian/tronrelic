@@ -65,7 +65,9 @@ curl -X PATCH \
 
 ## Cron Expressions
 
-Standard 5-field cron (`minute hour day-of-month month day-of-week`). The backend rejects expressions that don't have exactly 5 space-separated fields with a 400 error — there is no degraded mode for malformed schedules.
+Standard 5-field cron (`minute hour day-of-month month day-of-week`), or a 6-field form whose leading field is seconds (`second minute hour day-of-month month day-of-week`). Both are accepted, because the scheduler runs on node-cron, which supports either. Several jobs use the 6-field form — the three `address-tags:*` ingestion jobs, for example.
+
+The backend does not check the field count itself. It passes the string to node-cron, so a malformed expression surfaces as an error from the reschedule rather than as a validation failure on the request. The `/system` schedule editor checks the field count in the browser before sending, and accepts either form.
 
 ## Troubleshooting
 
