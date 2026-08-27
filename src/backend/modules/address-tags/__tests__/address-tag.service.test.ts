@@ -143,6 +143,49 @@ describe('AddressTagService', () => {
             expect(result[0].address).toBe(ADDRESS_A);
             expect(result[0].tags.map((tag) => tag.tag)).toEqual(['exchange', 'whale']);
         });
+
+        it('getTagSummary counts addresses per tag, most used first', async () => {
+            const summary = await service.getTagSummary();
+            expect(summary.tags).toEqual([
+                { tag: 'whale', addresses: 2 },
+                { tag: 'exchange', addresses: 1 }
+            ]);
+        });
+
+        it('getTagSummary reports totals that cannot be derived from the rows', async () => {
+            // Two addresses hold three assignments across two tags. Summing the
+            // per-tag counts would say three addresses, because ADDRESS_A is
+            // counted under both of its tags — which is exactly why the totals
+            // are read off the response instead of recomputed by the caller.
+            const summary = await service.getTagSummary();
+            expect(summary.totalTags).toBe(2);
+            expect(summary.totalAddresses).toBe(2);
+            expect(summary.totalAssignments).toBe(3);
+        });
+
+        it('getTagSummary truncates the rows but still reports the whole vocabulary', async () => {
+            const summary = await service.getTagSummary({ limit: 1 });
+            expect(summary.tags).toHaveLength(1);
+            expect(summary.tags[0].tag).toBe('whale');
+            expect(summary.totalTags).toBe(2);
+        });
+
+        it('getTagSummary omits a tag no source or human still asserts', async () => {
+            // A withdrawn machine tag stays stored for audit but is invisible on
+            // every read surface, so counting it here would report a vocabulary
+            // entry the operator cannot find anywhere else in the UI.
+            await service.syncSource(
+                'ofac-sdn',
+                [{ address: ADDRESS_B, tag: 'ofac:sdn', ref: 'uid-1' }],
+                'snapshot'
+            );
+            expect((await service.getTagSummary()).tags.map((row) => row.tag)).toContain('ofac:sdn');
+
+            await service.syncSource('ofac-sdn', [], 'delta', [{ address: ADDRESS_B, tag: 'ofac:sdn' }]);
+            const summary = await service.getTagSummary();
+            expect(summary.tags.map((row) => row.tag)).not.toContain('ofac:sdn');
+            expect(summary.totalTags).toBe(2);
+        });
     });
 
     describe('updateTags', () => {

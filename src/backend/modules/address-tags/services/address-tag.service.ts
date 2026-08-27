@@ -19,6 +19,7 @@
 import type {
     IAddressTag,
     IAddressTagAssertion,
+    IAddressTagCount,
     IAddressTagGroup,
     IAddressTagListQuery,
     IAddressTagPair,
@@ -26,6 +27,8 @@ import type {
     IAddressTagSearchQuery,
     IAddressTagService,
     IAddressTagSource,
+    IAddressTagSummary,
+    IAddressTagSummaryQuery,
     IAddressTagSyncResult,
     IDatabaseService,
     ISystemLogService
@@ -259,6 +262,51 @@ export class AddressTagService implements IAddressTagService {
             { $limit: limit }
         ]).toArray();
         return rows.map((row) => row._id);
+    }
+
+    /** @inheritdoc */
+    public async getTagSummary(query?: IAddressTagSummaryQuery): Promise<IAddressTagSummary> {
+        const limit = this.clampLimit(query?.limit);
+        const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
+        // Every read here carries the liveness filter, so the summary counts
+        // what the rest of the surface actually shows. Counting withdrawn
+        // machine assertions would report a vocabulary an operator cannot find
+        // anywhere else in the UI.
+        const liveOnly = { active: true };
+
+        // The tag grouping runs without a `$limit` stage even though the
+        // caller asked for one. Truncating in the pipeline would make the
+        // group count unavailable, and `totalTags` is the figure that lets the
+        // UI say "showing the top 20 of 63" instead of implying it listed
+        // everything. One row per distinct tag is a small result even on a
+        // large collection, because the vocabulary is bounded by how many
+        // labels people actually invent — unlike the address set below.
+        const grouped = await collection.aggregate<{ _id: string; addresses: number }>([
+            { $match: liveOnly },
+            { $group: { _id: '$tag', addresses: { $sum: 1 } } },
+            { $sort: { addresses: -1, _id: 1 } }
+        ]).toArray();
+        const tags: IAddressTagCount[] = grouped
+            .slice(0, limit)
+            .map((row) => ({ tag: row._id, addresses: row.addresses }));
+
+        // Distinct addresses cannot be derived from the rows above: an address
+        // carrying three tags contributes to three of them, so summing the
+        // counts would report assignments and call them addresses. A second
+        // grouping is the price of a correct figure. It groups the whole live
+        // collection, which is why the contract documents this as a management
+        // read rather than something to put on a request path.
+        const addressGroups = await collection.aggregate<{ _id: string }>([
+            { $match: liveOnly },
+            { $group: { _id: '$address' } }
+        ]).toArray();
+
+        return {
+            tags,
+            totalTags: grouped.length,
+            totalAddresses: addressGroups.length,
+            totalAssignments: await collection.countDocuments(liveOnly)
+        };
     }
 
     /** @inheritdoc */

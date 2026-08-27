@@ -8,11 +8,11 @@ Central CRUD authority for free-text tags on TRON wallet addresses. Every surfac
 |---|---|
 | Module id | `address-tags` |
 | Service registry name | `'address-tags'` (`IAddressTagService`) |
-| Types | `@delphian/tronrelic-types` ≥ 6.15.0 (`IAddressTag`, `IAddressTagPair`, `IAddressTagGroup`, `IAddressTagRename`, `IAddressTagSource`, `IAddressTagAssertion`, `IAddressTagSyncResult`, `IAddressTagService`) |
+| Types | `@delphian/tronrelic-types` ≥ 6.15.0 (`IAddressTag`, `IAddressTagPair`, `IAddressTagGroup`, `IAddressTagRename`, `IAddressTagSource`, `IAddressTagAssertion`, `IAddressTagSyncResult`, `IAddressTagCount`, `IAddressTagSummary`, `IAddressTagService`) |
 | Collection | `module_address-tags_tags` (MongoDB) |
 | User API | `/api/address-tags/*` — `requireLogin` |
 | Admin API | `/api/admin/system/address-tags/*` — `requireAdmin` |
-| Admin UI | `/system/address-tags` — Submenu Pattern tab row (namespace `address-tags`): **Tags** (one row per address, server-grouped by `searchAddresses` so a page never splits an address), **Sources** (per-source ingestion status, run-now, screen-one-address), **Settings** (source switches, write-only Chainalysis key), **Schedules** (core `SchedulerMonitor` filtered to `address-tags:`), **Database** (core `CollectionBrowser` scoped to `module_address-tags_`) |
+| Admin UI | `/system/address-tags` — Submenu Pattern tab row (namespace `address-tags`): **Tags** (vocabulary summary panel over one row per address, server-grouped by `searchAddresses` so a page never splits an address), **Sources** (per-source ingestion status, run-now, screen-one-address), **Settings** (source switches, write-only Chainalysis key), **Schedules** (core `SchedulerMonitor` filtered to `address-tags:`), **Database** (core `CollectionBrowser` scoped to `module_address-tags_`) |
 | Scheduler jobs | `address-tags:sync-ofac` (daily), `address-tags:sync-usdt-blacklist` (5 min), `address-tags:verify-frozen` (weekly) — all off when `ENABLE_SCHEDULER=false` |
 | Frontend client | `src/frontend/modules/address-tags/api/client.ts` (both surfaces) |
 | Frontend read cache | `useAddressTags(address)` — batches every chip's lookup into one `by-address` call, invalidate with `invalidateAddressTags(address)` |
@@ -37,6 +37,7 @@ All methods take and return arrays; single-item calls are one-element arrays. Th
 | `getTagsByAddresses(addresses)` | All assignments on the given addresses |
 | `getAddressesByTags(tags)` | Reverse lookup by tag values |
 | `listTags({prefix?, limit?})` | Distinct tag vocabulary (pickers/autocomplete) |
+| `getTagSummary({limit?})` | Counted vocabulary for management surfaces: `tags[]` of `{tag, addresses}` ordered by count then tag text, plus `totalTags`/`totalAddresses`/`totalAssignments`. The totals are not derivable from the rows — an address carrying three tags is counted under all three, and `limit` truncates the rows but never the totals. Two groupings over the live collection, so it is a management read rather than a request-path one |
 | `searchTags({search?, limit?, skip?})` | Paged assignment search (one row per `(address, tag)` pair) |
 | `searchAddresses({search?, limit?, skip?})` | Paged **address** search: one entry per address with its full tag list; `limit`/`skip` count addresses |
 | `updateTags(renames)` | Per-pair `oldTag → newTag`; missing pair skipped; collision with existing `(address, newTag)` collapses the human claim into it. A document carrying source elements is never renamed or deleted — the `manual` claim moves to the destination and the old document keeps its provenance with `manual` cleared |
@@ -63,6 +64,7 @@ Admin surface (`createAdminRateLimiter` + `requireAdmin`; admin-group session or
 | Route | Body | Purpose |
 |---|---|---|
 | `GET /tags?search=&limit=&skip=` | — | Paged assignment search |
+| `GET /summary?limit=` | — | Counted vocabulary and collection totals; response is `{ summary: IAddressTagSummary }`. Admin rather than user-facing on purpose: a count per tag describes the whole collection, and would tell any logged-in visitor how many addresses the deployment holds under `ofac:sdn` without their having to find one |
 | `GET /addresses?search=&limit=&skip=` | — | Paged address search; response is `{ addresses: IAddressTagGroup[] }` |
 | `POST /tags` | `{ tags: IAddressTagPair[] }` | Create |
 | `PATCH /tags` | `{ renames: IAddressTagRename[] }` | Rename |
@@ -89,6 +91,16 @@ Three ingestion sources assert reserved-prefix tags with a citation (`ref`/`url`
 **Kill switches.** `ENABLE_SCHEDULER=false` (or a null scheduler dependency) disables all scheduled ingestion. Each source also has a runtime switch, edited from the Settings tab and consulted per tick, so flipping one needs no restart. Chainalysis defaults off and additionally requires an API key; because a lookup source has no scheduled runs, its switch gates the screening capability itself — `POST /screen` refuses with 400 while the switch is off.
 
 **Configuration is module key-value config, not `.env`** — stored via `IDatabaseService` `get()`/`set()` under an `address-tags.` key prefix (the KV analog of the `module_{id}_*` collection convention), so an operator can paste a key or flip a switch and the next run picks it up without a redeploy. Keys: `address-tags.chainalysis.apiKey` (write-only over HTTP; readable to an admin through the `/system/database` collection browser, an accepted consequence of storing it in MongoDB — note that the module's own Database tab is scoped to `module_address-tags_` and so does not show the shared `_kv` collection these keys live in), `address-tags.chainalysis.enabled`, `address-tags.sources.<id>.enabled`, `address-tags.sources.<id>.cursor`, `address-tags.sources.<id>.state`, `address-tags.sources.<id>.verify`.
+
+## Tag Summary Panel
+
+The Tags tab leads with a summary of the vocabulary: distinct tags, tagged addresses, and total assignments, then every tag with the number of addresses carrying it as a sorted bar list. The table underneath answers "what is this address labelled as"; nothing answered the reverse — which labels the deployment actually uses and how heavily — so a tag that was a misspelling of an existing one, or a category nobody had used since it was created, stayed invisible until someone scrolled past it.
+
+The form is a sorted bar list rather than a tag cloud because a cloud encodes the count as type size, which reads as emphasis and cannot be compared across two tags that are not adjacent. The bars share one hue: there is a single measure here, and a colour per tag would imply an identity the data does not carry.
+
+Every row is also a filter. Clicking one commits its tag as the table's search term, and clicking the selected row clears it. That is why the panel sits above the table rather than on a tab of its own — the counts are how an operator picks what to look at next, and a count is only useful if the rows behind it are one click away. `AddressTagsManager` owns the search term for both, so the highlighted row and the visible rows cannot disagree, and it bumps a token after every mutation so the counts refetch rather than describing the collection as it was before the edit.
+
+What a click hands over is a search term, not an exact-tag query, because the substring search is the table's only filter. Clicking `whale` can therefore also list an address tagged `whale-watch`, and the table can show more rows than the count on the row that was clicked. A row's number is the addresses carrying that exact tag, which is what `getTagSummary` returns; it is not a prediction of how many rows the table will render.
 
 ## Schedules and Database Tabs
 
@@ -145,7 +157,7 @@ follows.
 | `sources/chainalysis.source.ts` | Per-address sanctions screen |
 | `migrations/001_add_provenance_fields.ts` | Backfills `manual`/`active`/`sources` onto pre-provenance documents |
 | `api/address-tags-user.controller.ts` | Read handlers + `parseList` (comma-separated query arrays) |
-| `api/address-tags-admin.controller.ts` | Mutation/search handlers + envelope validation |
+| `api/address-tags-admin.controller.ts` | Mutation/search/summary handlers + envelope validation |
 | `api/address-tags-sources.controller.ts` | Source status/run/screen/settings handlers |
 | `api/address-tags.routes.ts` | Router factories (guards applied at mount) |
 | `__tests__/` | Module lifecycle, CRUD semantics, provenance/reconcile semantics, source fixtures |

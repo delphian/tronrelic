@@ -140,6 +140,59 @@ export interface IAddressTagGroup {
 }
 
 /**
+ * How many addresses carry one tag value. This is the unit the vocabulary
+ * summary is built from — `listTags` answers "which tags exist" and this
+ * answers "how much of the collection each one accounts for", which is what an
+ * operator needs before deciding a tag is a typo, a duplicate, or dead weight.
+ *
+ * Because storage holds exactly one document per `(address, tag)` pair, the
+ * count of live assignments for a tag *is* the number of distinct addresses
+ * carrying it. There is no separate assignment-versus-address figure per tag.
+ */
+export interface IAddressTagCount {
+    /** The tag text being counted. */
+    tag: string;
+    /** How many distinct addresses currently carry this tag, live only. */
+    addresses: number;
+}
+
+/**
+ * Options for the vocabulary summary.
+ */
+export interface IAddressTagSummaryQuery {
+    /**
+     * How many tag rows to return, taken from the most-used end. The summary
+     * still reports `totalTags` for the whole vocabulary, so a caller that
+     * truncates can say how much it left out instead of implying it showed
+     * everything.
+     */
+    limit?: number;
+}
+
+/**
+ * The tag vocabulary with its usage counts, plus the collection-wide totals a
+ * management surface leads with.
+ *
+ * The totals are deliberately not derivable from `tags`: summing `addresses`
+ * over the rows counts an address once per tag it carries, and the rows may be
+ * truncated by `limit`. Reading them off this object instead of recomputing
+ * them client-side is what keeps a truncated list from reporting wrong totals.
+ */
+export interface IAddressTagSummary {
+    /**
+     * Tag counts ordered by `addresses` descending, then by tag text ascending
+     * so equal counts have a stable order rather than shuffling between calls.
+     */
+    tags: IAddressTagCount[];
+    /** Distinct live tag values in the whole collection, before any truncation. */
+    totalTags: number;
+    /** Distinct addresses carrying at least one live tag. */
+    totalAddresses: number;
+    /** Live `(address, tag)` assignments in total. */
+    totalAssignments: number;
+}
+
+/**
  * One assertion a source is making about an address at fetch time. This is
  * the ingestion-side input shape: the source's fetcher turns its raw feed
  * into these, and `syncSource` reconciles them against stored provenance.
@@ -218,6 +271,25 @@ export interface IAddressTagService {
      * @returns Distinct tag values in ascending order.
      */
     listTags(query?: IAddressTagListQuery): Promise<string[]>;
+
+    /**
+     * Summarize the whole live vocabulary: every tag with the number of
+     * addresses carrying it, plus the collection-wide totals.
+     *
+     * Distinct from `listTags`, which returns tag text alone for pickers. A
+     * management surface needs the counts as well, because a tag's usage is
+     * what tells an operator whether it is a real category, a one-off typo, or
+     * a duplicate of a tag spelled slightly differently.
+     *
+     * Unlike the search methods this one is not paged. It scans the live
+     * collection to group it, so treat it as a management read rather than
+     * something to call per request on a hot path.
+     *
+     * @param query - Optional cap on how many tag rows come back; the totals
+     *                always describe the whole collection regardless.
+     * @returns The counted vocabulary and the collection-wide totals.
+     */
+    getTagSummary(query?: IAddressTagSummaryQuery): Promise<IAddressTagSummary>;
 
     /**
      * Paged search over all stored assignments for management surfaces.

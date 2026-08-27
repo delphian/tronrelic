@@ -42,6 +42,7 @@ export function createAddressTagsAdminRouter(
 ): Router {
     const router = Router();
     router.get('/tags', controller.searchTags);
+    router.get('/summary', controller.getSummary);
     router.get('/addresses', controller.searchAddresses);
     router.post('/tags', controller.createTags);
     router.patch('/tags', controller.updateTags);
