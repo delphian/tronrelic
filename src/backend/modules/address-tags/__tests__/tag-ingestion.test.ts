@@ -295,6 +295,31 @@ describe('OfacSdnSource', () => {
         const fetchImpl = vi.fn(async () => ({ ok: false, status: 503, body: null })) as unknown as typeof fetch;
         await expect(new OfacSdnSource(fetchImpl).fetch()).rejects.toThrow(/HTTP 503/);
     });
+
+    it('throws on an HTTP 200 body with no entity records so a maintenance page never reconciles as an empty snapshot', async () => {
+        const bytes = new TextEncoder().encode('<html><body>Scheduled maintenance</body></html>');
+        const fetchImpl = vi.fn(async () => ({
+            ok: true,
+            status: 200,
+            body: (async function* () {
+                yield bytes;
+            })()
+        })) as unknown as typeof fetch;
+        await expect(new OfacSdnSource(fetchImpl).fetch()).rejects.toThrow(/complete SDN document/);
+    });
+
+    it('throws when a recognised root element opens but never closes, so a truncated export is refused', async () => {
+        const xml = `<sdnList><sdnEntry><uid>7</uid><idList><id><idType>Digital Currency Address - USDT</idType><idNumber>${ADDRESS_B}</idNumber></id></idList></sdnEntry>`;
+        const bytes = new TextEncoder().encode(xml);
+        const fetchImpl = vi.fn(async () => ({
+            ok: true,
+            status: 200,
+            body: (async function* () {
+                yield bytes;
+            })()
+        })) as unknown as typeof fetch;
+        await expect(new OfacSdnSource(fetchImpl).fetch()).rejects.toThrow(/complete SDN document/);
+    });
 });
 
 describe('UsdtBlacklistSource', () => {

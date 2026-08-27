@@ -77,28 +77,40 @@ export function SettingsTab() {
 
     /**
      * Apply one partial update and swap in the settings the server returns, so
-     * the panel always reflects committed state rather than an optimistic
-     * guess that could drift from a rejected write.
+     * the panel always reflects committed state rather than an optimistic guess
+     * that could drift from a rejected write. A failure is reported as a toast
+     * instead of being thrown, so the switch handlers can call this without
+     * error handling of their own.
      *
      * @param update - The partial update to send.
      * @param successTitle - Toast title on success.
+     * @returns Whether the server accepted the write. A caller holding text the
+     *          operator typed, such as the write-only API key field, must check
+     *          this before discarding that input.
      */
-    const apply = useCallback(async (update: IAddressTagsSettingsUpdateView, successTitle: string) => {
+    const apply = useCallback(async (update: IAddressTagsSettingsUpdateView, successTitle: string): Promise<boolean> => {
         setSaving(true);
+        let succeeded = false;
         try {
             setSettings(await updateAddressTagsSettings(update));
             notify('success', successTitle);
+            succeeded = true;
         } catch (error) {
             notify('danger', 'Failed to update settings', error);
         } finally {
             setSaving(false);
         }
+
+        return succeeded;
     }, [notify]);
 
     /**
-     * Store the drafted key and clear the draft field — the value is write-only,
-     * so keeping it on screen after a successful save would be the one place it
-     * still lingered.
+     * Store the drafted key, clearing the field only once the server confirms
+     * the write. The value is write-only, so clearing it after a failed save
+     * would make the operator go and find the credential again; keeping the
+     * draft lets them retry after a transient backend or auth failure. On
+     * success the field is cleared, because it is the one place the key would
+     * otherwise still be visible.
      */
     const handleSaveKey = useCallback(async () => {
         const draft = keyDraft.trim();
@@ -106,8 +118,9 @@ export function SettingsTab() {
             notify('danger', 'Enter an API key to save');
             return;
         }
-        await apply({ chainalysis: { apiKey: draft } }, 'Chainalysis API key saved');
-        setKeyDraft('');
+        if (await apply({ chainalysis: { apiKey: draft } }, 'Chainalysis API key saved')) {
+            setKeyDraft('');
+        }
     }, [apply, keyDraft, notify]);
 
     if (!settings) {
