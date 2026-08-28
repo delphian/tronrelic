@@ -2,9 +2,9 @@
  * @fileoverview OFAC SDN snapshot source — asserts `ofac:sdn` on every TRON
  * address the U.S. Treasury's Specially Designated Nationals list names.
  *
- * The export runs to roughly 80MB of XML, so the parse streams: chunks are
+ * The export runs to roughly 120MB of XML, so the parse streams: chunks are
  * scanned as they arrive with a bounded carry-over tail, and the document is
- * never held in memory whole (80MB of XML expands considerably as a DOM). The
+ * never held in memory whole (that much XML expands considerably as a DOM). The
  * scanner recognises both shapes Treasury publishes — the classic
  * `<sdnEntry>`/`<idType>` form and the advanced `<Feature>`/`<VersionDetail>`
  * form with its FeatureType reference table — because the plan's endpoint
@@ -28,8 +28,16 @@ export const OFAC_SOURCE_ID = 'ofac-sdn';
 /** The reserved tag this source asserts. */
 export const OFAC_TAG = 'ofac:sdn';
 
-/** Treasury's advanced SDN export, per the ingestion plan. */
-const OFAC_EXPORT_URL = 'https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/ADVANCED_XML';
+/**
+ * Treasury's advanced SDN export. The export name in this path must stay
+ * `SDN_ADVANCED.XML`: that endpoint answers `302` and redirects to a short-lived
+ * presigned S3 object holding the real document, which `fetch` follows on its
+ * own. The similar-looking `.../exports/ADVANCED_XML` is the export's *XML
+ * namespace* URI rather than a download endpoint, and requesting it returns
+ * `HTTP 200` with an empty body — which reaches the scanner as a document
+ * containing nothing at all, and so fails the completeness check below.
+ */
+const OFAC_EXPORT_URL = 'https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN_ADVANCED.XML';
 
 /** Human-viewable entity page an assertion's `url` cites. */
 const OFAC_ENTITY_URL = 'https://sanctionssearch.ofac.treas.gov/Details.aspx?id=';
@@ -49,13 +57,19 @@ const TRON_ADDRESS = 'T[1-9A-HJ-NP-Za-km-z]{33}';
  * Streaming scanner over the SDN XML. Feed decoded text with {@link push};
  * collect the result with {@link assertions}.
  *
- * The scanner is event-ordered rather than tree-parsed: each round finds
- * entity anchors (`<sdnEntry><uid>` or `<DistinctParty FixedRef=…>`),
- * digital-currency FeatureType declarations, and TRON address matches in both
- * formats, sorts them by position, and replays them in order so every address
- * is attributed to the entity most recently opened before it. That is exactly
- * the flat scan the plan calls for — one entity can carry many addresses
- * across many chains, so walking the entity tree buys nothing here.
+ * The scanner is event-ordered rather than tree-parsed: each round finds entity
+ * anchors (`<sdnEntry><uid>` or `<DistinctParty FixedRef=…>`), digital-currency
+ * FeatureType declarations, advanced-format Feature open and close tags, and
+ * TRON address matches in both formats, sorts them by position, and replays
+ * them in order. Every address is therefore attributed to the entity and the
+ * Feature type most recently opened before it. That is exactly the flat scan
+ * the plan calls for — one entity can carry many addresses across many chains,
+ * so walking the entity tree buys nothing here.
+ *
+ * Attribution through replayed state, rather than through one regex spanning
+ * from a Feature to its address, is what keeps the count right: the blocks are
+ * adjacent, and a spanning match starting at one block can run past its own
+ * close tag and consume the next block's address, dropping it silently.
  */
 export class OfacXmlScanner {
     /** Rolling text buffer: unprocessed tail plus the newest chunk. */
@@ -66,6 +80,13 @@ export class OfacXmlScanner {
 
     /** Advanced-format FeatureType ids declared for the two TRON currencies. */
     private readonly tronFeatureTypeIds = new Set<string>();
+
+    /**
+     * FeatureType id of the advanced-format Feature block currently open, so an
+     * address found inside it can be tested against the TRON type table. Null
+     * between blocks.
+     */
+    private currentFeatureTypeId: string | null = null;
 
     /** One assertion per address; the first citing entity wins. */
     private readonly found = new Map<string, IAddressTagAssertion>();
@@ -114,8 +135,13 @@ export class OfacXmlScanner {
         }
 
         // Advanced format reference table: learn which FeatureType ids mean a
-        // TRON digital-currency address, so Feature blocks can be filtered.
-        for (const match of this.buffer.matchAll(/<FeatureType\b[^>]*ID="(\d+)"[^>]*>\s*Digital Currency Address - (?:TRX|USDT)\s*<\/FeatureType>/g)) {
+        // TRON digital-currency address, so Feature blocks can be filtered. The
+        // `\bID="` is load-bearing: the real tag is
+        // `<FeatureType ID="992" FeatureTypeGroupID="1">`, and without the word
+        // boundary the attribute scan runs on to the trailing
+        // `FeatureTypeGroupID` and captures the group id instead of the type id,
+        // which leaves no Feature block ever matching a known TRON type.
+        for (const match of this.buffer.matchAll(/<FeatureType\b[^>]*?\bID="(\d+)"[^>]*>\s*Digital Currency Address - (?:TRX|USDT)\s*<\/FeatureType>/g)) {
             const id = match[1];
             events.push({ index: match.index ?? 0, apply: () => { this.tronFeatureTypeIds.add(id); } });
         }
@@ -131,17 +157,38 @@ export class OfacXmlScanner {
         }
 
         // Advanced format address: a Feature of a TRON FeatureType whose
-        // VersionDetail holds the address text.
+        // VersionDetail holds the address text. The open tag, the close tag and
+        // the address are three separate events replayed in document order,
+        // rather than one regex spanning from Feature to VersionDetail.
+        //
+        // A single spanning regex loses addresses. The Feature blocks sit back
+        // to back, so a non-TRON block's opening tag can reach forward across
+        // its own close and match the *next* block's VersionDetail. The engine
+        // then resumes after that consumed text, the TRON block never gets
+        // offered on its own, and the address is dropped while the run still
+        // looks successful. Splitting the events removes the span entirely.
+        for (const match of this.buffer.matchAll(/<Feature\b[^>]*?\bFeatureTypeID="(\d+)"/g)) {
+            const typeId = match[1];
+            events.push({ index: match.index ?? 0, apply: () => { this.currentFeatureTypeId = typeId; } });
+        }
+
+        // Closing a Feature clears the type, so a VersionDetail that somehow sat
+        // outside any Feature cannot inherit the previous block's type. The `>`
+        // is literal, so this cannot match `</FeatureVersion>`.
+        for (const match of this.buffer.matchAll(/<\/Feature>/g)) {
+            events.push({ index: match.index ?? 0, apply: () => { this.currentFeatureTypeId = null; } });
+        }
+
         const advancedAddress = new RegExp(
-            `<Feature\\b[^>]*FeatureTypeID="(\\d+)"[\\s\\S]{0,800}?<VersionDetail[^>]*>\\s*(${TRON_ADDRESS})\\s*</VersionDetail>`,
+            `<VersionDetail[^>]*>\\s*(${TRON_ADDRESS})\\s*</VersionDetail>`,
             'g'
         );
         for (const match of this.buffer.matchAll(advancedAddress)) {
-            const [, typeId, address] = match;
+            const address = match[1];
             events.push({
                 index: match.index ?? 0,
                 apply: () => {
-                    if (this.tronFeatureTypeIds.has(typeId)) {
+                    if (this.currentFeatureTypeId && this.tronFeatureTypeIds.has(this.currentFeatureTypeId)) {
                         this.recordAddress(address);
                     }
                 }
@@ -253,6 +300,21 @@ export class OfacSdnSource implements ITagSource {
                 + 'or the document ended before its closing element. Refusing to reconcile it as a snapshot'
             );
         }
-        return { assertions: scanner.assertions() };
+        const assertions = scanner.assertions();
+        // A structurally complete export that yields no addresses means the
+        // address markup moved, not that Treasury delisted every TRON wallet at
+        // once — the list has carried hundreds for years. On an established
+        // deployment `syncSource`'s floor would already refuse this, but on a
+        // first run there are no holdings to compare against and the empty
+        // result would be recorded as a clean sync, which is how a silent parse
+        // break stays invisible. Refuse it here so the failure names itself.
+        if (assertions.length === 0) {
+            throw new Error(
+                'OFAC export parsed as a complete SDN document but held no TRON addresses. '
+                + 'Treat this as a change to the export format rather than a delisting, and check the '
+                + 'FeatureType reference table and Feature markup before reconciling it as a snapshot'
+            );
+        }
+        return { assertions };
     }
 }

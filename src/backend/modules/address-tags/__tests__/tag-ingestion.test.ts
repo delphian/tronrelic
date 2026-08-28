@@ -255,6 +255,64 @@ describe('OfacXmlScanner', () => {
         expect(assertions[0]).toMatchObject({ address: ADDRESS_A, tag: 'ofac:sdn', ref: '777' });
     });
 
+    it('reads the FeatureType id from the real tag, which also carries FeatureTypeGroupID', () => {
+        // Treasury writes `<FeatureType ID="992" FeatureTypeGroupID="1">`. An
+        // attribute scan that runs past the type id and settles on the trailing
+        // group id learns the wrong number, no Feature ever matches a known TRON
+        // type, and the run finishes with zero assertions while still looking
+        // structurally sound. The earlier fixture omitted the second attribute,
+        // so it could not see that.
+        const xml = `
+            <Sanctions><ReferenceValueSets><FeatureTypeValues>
+                <FeatureType ID="992" FeatureTypeGroupID="1">Digital Currency Address - TRX</FeatureType>
+                <FeatureType ID="887" FeatureTypeGroupID="1">Digital Currency Address - USDT</FeatureType>
+            </FeatureTypeValues></ReferenceValueSets>
+            <DistinctParty FixedRef="4632"><Profile>
+                <Feature ID="1" FeatureTypeID="992"><FeatureVersion><VersionDetail DetailTypeID="1432">${ADDRESS_A}</VersionDetail></FeatureVersion></Feature>
+                <Feature ID="2" FeatureTypeID="887"><FeatureVersion><VersionDetail DetailTypeID="1432">${ADDRESS_B}</VersionDetail></FeatureVersion></Feature>
+            </Profile></DistinctParty></Sanctions>`;
+        const scanner = new OfacXmlScanner();
+        scanner.push(xml);
+        expect(scanner.assertions().map((assertion) => assertion.address)).toEqual([ADDRESS_A, ADDRESS_B]);
+    });
+
+    it('still finds a TRON address in the Feature block that follows a non-TRON one', () => {
+        // The blocks sit back to back in the export. Attributing an address by
+        // one regex spanning from a Feature open tag to a VersionDetail lets the
+        // XBT block reach across its own close tag, consume the TRX block's
+        // address, and be discarded on the type check — so the TRX address is
+        // never offered again and disappears without any error.
+        const xml = `
+            <Sanctions><ReferenceValueSets><FeatureTypeValues>
+                <FeatureType ID="992" FeatureTypeGroupID="1">Digital Currency Address - TRX</FeatureType>
+            </FeatureTypeValues></ReferenceValueSets>
+            <DistinctParty FixedRef="4632"><Profile>
+                <Feature ID="1" FeatureTypeID="344"><FeatureVersion><VersionDetail>1BitcoinAddressIgnored</VersionDetail></FeatureVersion></Feature>
+                <Feature ID="2" FeatureTypeID="992"><FeatureVersion><VersionDetail>${ADDRESS_A}</VersionDetail></FeatureVersion></Feature>
+            </Profile></DistinctParty></Sanctions>`;
+        const scanner = new OfacXmlScanner();
+        scanner.push(xml);
+        expect(scanner.assertions()).toHaveLength(1);
+        expect(scanner.assertions()[0]).toMatchObject({ address: ADDRESS_A, ref: '4632' });
+    });
+
+    it('ignores a TRON-shaped VersionDetail that belongs to no Feature type it recognises', () => {
+        // Closing a Feature clears the open type, so text sitting between blocks
+        // cannot inherit the previous block's classification and be asserted as
+        // a sanctioned address on a citation that does not describe it.
+        const xml = `
+            <Sanctions><ReferenceValueSets><FeatureTypeValues>
+                <FeatureType ID="992" FeatureTypeGroupID="1">Digital Currency Address - TRX</FeatureType>
+            </FeatureTypeValues></ReferenceValueSets>
+            <DistinctParty FixedRef="4632"><Profile>
+                <Feature ID="1" FeatureTypeID="992"><FeatureVersion><VersionDetail>${ADDRESS_A}</VersionDetail></FeatureVersion></Feature>
+                <Comment><VersionDetail>${ADDRESS_B}</VersionDetail></Comment>
+            </Profile></DistinctParty></Sanctions>`;
+        const scanner = new OfacXmlScanner();
+        scanner.push(xml);
+        expect(scanner.assertions().map((assertion) => assertion.address)).toEqual([ADDRESS_A]);
+    });
+
     it('completes a match split across chunk boundaries without duplicating tail re-scans', () => {
         const xml = `<sdnEntry><uid>42</uid><idList><id><idType>Digital Currency Address - TRX</idType><idNumber>${ADDRESS_A}</idNumber></id></idList></sdnEntry>`;
         const scanner = new OfacXmlScanner();
@@ -319,6 +377,24 @@ describe('OfacSdnSource', () => {
             })()
         })) as unknown as typeof fetch;
         await expect(new OfacSdnSource(fetchImpl).fetch()).rejects.toThrow(/complete SDN document/);
+    });
+
+    it('throws when a well-formed export holds no TRON addresses, so a parse break cannot pass as a clean run', async () => {
+        // The list has carried hundreds of TRON addresses for years, so an empty
+        // TRON slice means the address markup moved rather than that everything
+        // was delisted. `syncSource`'s floor would catch this against existing
+        // holdings, but on a first run there is nothing to compare against and
+        // the empty result would be stored as a successful sync.
+        const xml = '<Sanctions><DistinctParty FixedRef="4632"><Profile /></DistinctParty></Sanctions>';
+        const bytes = new TextEncoder().encode(xml);
+        const fetchImpl = vi.fn(async () => ({
+            ok: true,
+            status: 200,
+            body: (async function* () {
+                yield bytes;
+            })()
+        })) as unknown as typeof fetch;
+        await expect(new OfacSdnSource(fetchImpl).fetch()).rejects.toThrow(/held no TRON addresses/);
     });
 });
 
