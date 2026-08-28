@@ -162,4 +162,45 @@ describe('ProvidersController — input guards', () => {
                 .toBe('http://tron-node.internal:8090');
         });
     });
+
+    describe('block receipt switch', () => {
+        it.each([
+            ['the string "true"', 'true'],
+            ['the number 1', 1],
+            ['null', null]
+        ])('refuses %s rather than reading it as on', async (_label, value) => {
+            // Anything but a real boolean is refused, because a truthy body value
+            // accepted behind a 200 would double the deployment's upstream call
+            // rate with nothing in the form to show it had happened.
+            const { res, captured } = createResponseSpy();
+
+            await controller.updateTronGridConfig(requestWith({ fetchBlockReceipts: value }), res);
+
+            expect(captured.status).toBe(400);
+            expect((captured.body as { error: string }).error).toContain('fetchBlockReceipts');
+            expect((await ProviderConfigService.getInstance().getTronGridConfig()).fetchBlockReceipts).toBe(false);
+        });
+
+        it('persists a real boolean in both directions', async () => {
+            const on = createResponseSpy();
+            await controller.updateTronGridConfig(requestWith({ fetchBlockReceipts: true }), on.res);
+            expect(on.captured.status).toBe(200);
+            expect((await ProviderConfigService.getInstance().getTronGridConfig()).fetchBlockReceipts).toBe(true);
+
+            const off = createResponseSpy();
+            await controller.updateTronGridConfig(requestWith({ fetchBlockReceipts: false }), off.res);
+            expect(off.captured.status).toBe(200);
+            expect((await ProviderConfigService.getInstance().getTronGridConfig()).fetchBlockReceipts).toBe(false);
+        });
+
+        it('leaves the switch alone when the request does not mention it', async () => {
+            await controller.updateTronGridConfig(requestWith({ fetchBlockReceipts: true }), createResponseSpy().res);
+
+            const { res, captured } = createResponseSpy();
+            await controller.updateTronGridConfig(requestWith({ requestThrottleMs: 250 }), res);
+
+            expect(captured.status).toBe(200);
+            expect((await ProviderConfigService.getInstance().getTronGridConfig()).fetchBlockReceipts).toBe(true);
+        });
+    });
 });

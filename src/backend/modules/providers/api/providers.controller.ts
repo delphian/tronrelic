@@ -231,7 +231,7 @@ export class ProvidersController {
      * here; they are added and removed through the dedicated key endpoints so a
      * masked value can never be written back over a real one.
      *
-     * @param req - Body with optional `enabled`, `baseUrl`, `requestThrottleMs`, `maxQueueSize`, `requestTimeoutMs`.
+     * @param req - Body with optional `enabled`, `fetchBlockReceipts`, `baseUrl`, `requestThrottleMs`, `maxQueueSize`, `requestTimeoutMs`.
      * @param res - JSON `{ success, config }` with the new masked config, or 400 listing every field that was refused.
      */
     updateTronGridConfig = async (req: Request, res: Response): Promise<void> => {
@@ -245,6 +245,15 @@ export class ProvidersController {
 
             if (typeof body.enabled === 'boolean') {
                 updates.enabled = body.enabled;
+            }
+            // Only a real boolean is accepted. This flag drives live sync
+            // behaviour, so a truthy string such as "false" must not switch it on
+            // behind a 200 response — the operator would have no way to tell from
+            // the form that they had just doubled the upstream call rate.
+            if (typeof body.fetchBlockReceipts === 'boolean') {
+                updates.fetchBlockReceipts = body.fetchBlockReceipts;
+            } else if (body.fetchBlockReceipts !== undefined) {
+                rejected.push('fetchBlockReceipts must be true or false');
             }
             if (typeof body.baseUrl === 'string' && body.baseUrl.trim()) {
                 const normalizedBaseUrl = normalizeBaseUrl(body.baseUrl);

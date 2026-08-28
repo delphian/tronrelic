@@ -22,6 +22,7 @@ import { AlertService } from '../../services/alert.service.js';
 import { PriceService } from '../../services/price.service.js';
 import { AddressInsightService } from '../../services/address-insight.service.js';
 import { BlockchainObserverService } from '../../services/blockchain-observer/index.js';
+import { ProviderConfigService } from '../providers/services/provider-config.service.js';
 
 /**
  * Job data for queuing individual block processing tasks.
@@ -1329,11 +1330,33 @@ export class BlockchainService implements IBlockchainService {
                 blockTime
             };
 
+            // Stage 3: Transaction receipts, only when an operator has switched
+            // them on at /system/system?tab=config.
+            //
+            // The block response already carries everything sync needs to index a
+            // transaction — amounts, addresses, types, memos — so receipts are
+            // pure enrichment: energy, bandwidth, and internal transactions, and
+            // the block-level totals that sum them. They cost one extra TronGrid
+            // call for the whole block, not one per transaction, but that is still
+            // a real change to a live deployment's upstream traffic and to the
+            // shape of the documents it writes. Off by default, so a deployment
+            // that never touches the switch behaves exactly as it always has.
+            stageStart = Date.now();
+            const receiptsEnabled = await this.shouldFetchBlockReceipts();
+            const receipts = receiptsEnabled
+                ? await this.fetchBlockReceipts(blockNumber, transactions.length)
+                : new Map<string, TronGridTransactionInfo>();
+            timings.fetchReceipts = Date.now() - stageStart;
+
+            // Recorded on the block so a consumer can tell a measured zero from
+            // an unmeasured one. The comparison rather than the switch state is
+            // the point: a fetch that failed or came back short leaves totals
+            // that undercount, and an undercount is not a measurement. A block
+            // with no transactions satisfies it at 0 === 0, which is correct —
+            // there was nothing to retrieve and zero is the true answer.
+            const receiptsFetched = receiptsEnabled && receipts.size === transactions.length;
+
             // Stage 4: Process transactions loop
-            // Note: We don't fetch transaction info for every transaction like the old system
-            // All necessary data (amounts, addresses, types, memos) is already in the block response
-            // Transaction info (energy/bandwidth metrics, internal txs) would require 1 API call per tx
-            // For a block with 200 transactions, that's 200 extra API calls vs 0 with current approach
             stageStart = Date.now();
             let observerNotifyTime = 0;
             const processed: ProcessedTransaction[] = [];
@@ -1344,8 +1367,13 @@ export class BlockchainService implements IBlockchainService {
 
             for (const transaction of transactions) {
                 try {
-                    // Pass null for info - energy/bandwidth metrics will be undefined, but all core data is available
-                    const result = this.buildTransactionRecord(block, transaction, null, buildContext);
+                    // Null when receipts are switched off, or when this particular
+                    // transaction had none in the batch response. Either way the
+                    // record still builds; only the energy, bandwidth, and
+                    // internal-transaction fields go unpopulated, which is what
+                    // every deployment has had until the switch existed.
+                    const info = receipts.get(transaction.txID) ?? null;
+                    const result = this.buildTransactionRecord(block, transaction, info, buildContext);
                     if (!result) {
                         continue;
                     }
@@ -1393,6 +1421,7 @@ export class BlockchainService implements IBlockchainService {
                 timestamp: blockTime,
                 transactionCount: processed.length,
                 size: block.size,
+                receiptsFetched,
                 transactions: processed
             };
             await this.observerService.notifyBlock(blockData);
@@ -1427,6 +1456,7 @@ export class BlockchainService implements IBlockchainService {
                         transactionCount: transactions.length,
                         size: block.size,
                         stats,
+                        receiptsFetched,
                         processedAt: new Date()
                     }
                 },
@@ -1459,7 +1489,7 @@ export class BlockchainService implements IBlockchainService {
 
             // Stage 9: Emit socket events
             stageStart = Date.now();
-            await this.emitSocketEvents(blockNumber, block, stats, processed);
+            await this.emitSocketEvents(blockNumber, block, stats, processed, receiptsFetched);
             timings.socketEvents = Date.now() - stageStart;
 
             // Stage 10: Alert ingestion
@@ -1615,7 +1645,14 @@ export class BlockchainService implements IBlockchainService {
 
         // Store raw hex memo data - consumers decode on frontend for display
         const memo = transaction.raw_data.data?.trim() || null;
-        const internalTransactions = info?.internal_transactions ?? [];
+        // Left undefined rather than defaulted to `[]`, because Mongoose strips an
+        // undefined value from the cast `$set` while an empty array is a real
+        // value it writes. The field is absent on the overwhelming majority of
+        // transactions — 376 of 381 in a sampled mainnet block — so writing the
+        // empty array cost roughly 12 KB per block, every block, to record that
+        // there was nothing to record. Its one reader already counts a missing
+        // value as zero.
+        const internalTransactions = info?.internal_transactions?.length ? info.internal_transactions : undefined;
 
         const energyMetrics = this.buildEnergyMetrics(info);
         const bandwidthMetrics = this.buildBandwidthMetrics(info);
@@ -1706,6 +1743,87 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
+     * Ask the providers module whether sync should fetch per-block receipts.
+     *
+     * The flag lives in the `provider:trongrid` config blob so an operator can
+     * turn receipt enrichment on and off from `/system/system?tab=config` without
+     * a redeploy. It is read here per block rather than cached because a toggle an
+     * operator flips should take effect on the next block, and one key-value read
+     * against Mongo is negligible beside the TronGrid HTTP call this same block
+     * already makes.
+     *
+     * Resolution is lazy and failure-tolerant on purpose. `BlockchainService` is
+     * constructed during bootstrap before `ProvidersModule.init()` has wired the
+     * config singleton, so reading the flag in a field initializer would throw;
+     * and a config store that is unreachable must leave sync doing exactly what it
+     * does today rather than stopping it.
+     *
+     * @returns True only when an operator has explicitly enabled receipt
+     *          fetching. Any failure to resolve the setting answers false, which
+     *          is the behaviour every deployment has had until now.
+     */
+    private async shouldFetchBlockReceipts(): Promise<boolean> {
+        let enabled = false;
+
+        try {
+            const config = await ProviderConfigService.getInstance().getTronGridConfig();
+            enabled = config.fetchBlockReceipts;
+        } catch (error) {
+            logger.debug({ error }, 'TronGrid provider config unavailable; leaving block receipts disabled');
+        }
+
+        return enabled;
+    }
+
+    /**
+     * Fetch the block's transaction receipts and index them by transaction id.
+     *
+     * Receipts are the only source of the energy, bandwidth, and internal
+     * transaction data the block payload omits, and one call covers the whole
+     * block. Indexing by `id` rather than zipping the two arrays by position is
+     * what keeps the join correct: the endpoint returns a flat list, and if the
+     * node ever omitted an entry a positional join would silently attach every
+     * later receipt to the wrong transaction.
+     *
+     * @param blockNumber - The block being processed.
+     * @param transactionCount - How many transactions the block holds. A block
+     *                           with none is skipped entirely so an empty block
+     *                           never spends a request.
+     * @returns Receipts keyed by transaction id, or an empty map when the block is
+     *          empty or the fetch failed.
+     */
+    private async fetchBlockReceipts(
+        blockNumber: number,
+        transactionCount: number
+    ): Promise<Map<string, TronGridTransactionInfo>> {
+        const receipts = new Map<string, TronGridTransactionInfo>();
+
+        if (transactionCount === 0) {
+            return receipts;
+        }
+
+        const infos = await this.tronClient.getTransactionInfoByBlockNum(blockNumber);
+        for (const info of infos) {
+            if (info?.id) {
+                receipts.set(info.id, info);
+            }
+        }
+
+        if (infos.length > 0 && receipts.size < transactionCount) {
+            // Worth a line because it is the shape of a silent gap: the block is
+            // still written correctly, but some transactions carry no energy or
+            // bandwidth while their neighbours do, which reads as bad data rather
+            // than as a partial upstream answer.
+            logger.warn(
+                { blockNumber, transactionCount, receiptCount: receipts.size },
+                'Fewer transaction receipts than transactions in block'
+            );
+        }
+
+        return receipts;
+    }
+
+    /**
      * Extract energy consumption and cost metrics from transaction receipt data.
      *
      * Energy is consumed when executing smart contracts on TRON. This method calculates the total energy used, the TRX cost paid for that energy,
@@ -1765,7 +1883,8 @@ export class BlockchainService implements IBlockchainService {
         blockNumber: number,
         block: TronGridBlock,
         stats: BlockStats,
-        processed: ProcessedTransaction[]
+        processed: ProcessedTransaction[],
+        receiptsFetched: boolean
     ) {
         const blockTimestamp = new Date(block.block_header.raw_data.timestamp);
 
@@ -1774,6 +1893,11 @@ export class BlockchainService implements IBlockchainService {
             payload: {
                 blockNumber,
                 timestamp: blockTimestamp.toISOString(),
+                // Carried alongside the stats it qualifies rather than left for
+                // the consumer to fetch separately: a live consumer reading the
+                // energy totals off this event has no other way to tell a real
+                // zero from an unmeasured one.
+                receiptsFetched,
                 stats: {
                     ...stats,
                     transactions: processed.length

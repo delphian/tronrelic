@@ -57,6 +57,7 @@ Each block runs through 11 stages, instrumented for timing:
 |---|---|
 | 1 | Fetch block from TronGrid (`getblockbynum`) |
 | 2 | Get cached TRX/USD price |
+| 3 | Fetch the block's transaction receipts (`gettransactioninfobyblocknum`) — **skipped unless an operator has switched it on**; see below |
 | 4 | Process transactions loop — parse contract data, build records, call observers, queue Mongo upserts |
 | 4b | Flush batch observers, notify block observers with assembled `IBlockData` |
 | 5 | Bulk-write transactions to Mongo (`bulkWrite` unordered) |
@@ -67,7 +68,7 @@ Each block runs through 11 stages, instrumented for timing:
 | 10 | Alert ingestion (matches transactions against alert rules) |
 | 11 | Adaptive throttle (only if caught up) |
 
-Stage 3 is intentionally absent — `null` is passed in place of a transaction-info fetch (see Energy Cost Limitation below).
+Stage 3 runs only when receipt fetching is enabled. With it off the stage is skipped, `null` is passed in place of every transaction's receipt, and the block costs exactly one TronGrid call as it always has.
 
 ## Observer Dispatch
 
@@ -95,13 +96,41 @@ Every transaction in every block is written to the `transactions` collection reg
 
 On first boot with no sync state, the cursor initializes to the **current network height**, not block 0. Indexing starts forward from the live chain tip. There is no automatic historical backfill — at TRON's ~5 blocks/sec produced over years, that would mean weeks of catch-up. Historical data, if needed, requires a separate one-time process or manual cursor seed.
 
-## Energy Cost Limitation
+## Energy and Bandwidth Are Off by Default
 
-Per-transaction `energyUsed` and `energyCostTrx` fields are always `undefined`. The `buildTransactionRecord` call passes `info=null` deliberately:
+Per-transaction `energy`, `bandwidth`, and `internalTransactions`, and the block totals that sum them (`totalEnergyUsed`, `totalEnergyCost`, `totalBandwidthUsed`), are all populated only when an operator switches receipt fetching on. With it off — the default — `buildTransactionRecord` receives `info=null`, those fields are absent on every transaction, and the block totals are therefore always exactly zero.
+
+The reason it is a switch rather than always-on is cost. The original comment weighed the wrong call, though, and the correction matters:
 
 > Fetching transaction info would require one extra TronGrid call per transaction. A 200-tx block becomes 200 extra requests — at the 200ms client throttle, that's 40 seconds of additional latency per block, easily exceeding the 3-second target.
 
-Chain parameters (`energyPerTrx`, `energyFee`) *are* fetched periodically by `chain-parameters:fetch` (every 10 min) and exposed to the frontend via runtime config — but they describe the network, not what a specific transaction consumed. If per-tx energy ever becomes essential, the answer is a separate rate-limited pool, not lifting the 200ms throttle.
+That is true of `/wallet/gettransactioninfobyid`, which answers for one transaction. `/wallet/gettransactioninfobyblocknum` answers for the whole block in a single call, so the real cost is **one** extra request and one extra 200ms throttle slot per block, whatever the transaction count. It is still off by default because it changes a live deployment's upstream traffic and the shape of the documents it writes, not because the volume is prohibitive.
+
+### Turning It On
+
+The switch is `fetchBlockReceipts` in the `provider:trongrid` config blob, edited from the **Block receipts** control on the TronGrid card at `/system/system?tab=config`. `processBlock` reads it per block, so a change takes effect on the next block with no restart. If the config store cannot be reached the answer is `false`, which is the behaviour every deployment had before the switch existed.
+
+Nothing is backfilled. Blocks indexed while the switch was off keep their zeros, and only blocks synced after it is turned on carry real figures. A receipt list shorter than the block's transaction count is logged as a warning and the missing transactions simply go unenriched, because a partial upstream answer is not a reason to fail an otherwise complete block.
+
+### Consumers Must Check `receiptsFetched`
+
+Because the switch can be toggled and nothing is backfilled, a stored `totalEnergyCost` of `0` is ambiguous on its own: it means either a block that genuinely burned nothing, or a block indexed while receipts were off. Every block therefore carries a `receiptsFetched` boolean saying which.
+
+**Reading any receipt-derived figure without checking that flag is a bug**, because structural zeros will be read as measurements. The four figures it qualifies are `stats.totalEnergyUsed`, `stats.totalEnergyCost`, `stats.totalBandwidthUsed`, and `stats.internalTransactions`, along with each transaction's own `energy`, `bandwidth`, and `internalTransactions`.
+
+It is true only when the data is complete. A block holding no transactions is `true`, since there was nothing to retrieve and zero is the correct answer. A failed or partial fetch is `false`, because an undercount is not a measurement. A missing value means the block was indexed before the field existed and should be read as `false`.
+
+| Surface | Where the flag appears |
+|---|---|
+| `blocks` collection | `receiptsFetched` on the block document, and so on `GET /api/blockchain/latest` |
+| `block:new` WebSocket event | `receiptsFetched` beside `stats` in the payload |
+| Block observers | `receiptsFetched` on `IBlockData` |
+
+One field is absent rather than empty for a separate reason. A transaction's `internalTransactions` is omitted when it triggered none, instead of being stored as `[]`, because writing an empty array on every transaction cost about 12 KB per block to record that there was nothing to record. Count a missing value as zero rather than dereferencing it, and use `receiptsFetched` to tell "triggered none" from "never looked".
+
+Chain parameters (`energyPerTrx`, `energyFee`) are fetched separately by `chain-parameters:fetch` (every 10 min) and exposed to the frontend via runtime config. They describe the network, not what a specific transaction consumed, so they are not an alternative to receipts either way.
+
+Full field reference and the guards on the switch: [Providers Module README](../../src/backend/modules/providers/README.md).
 
 ## Monitoring
 

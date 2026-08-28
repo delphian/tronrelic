@@ -179,6 +179,11 @@ export class ProviderConfigService {
         merged.apiKeys = Array.isArray(merged.apiKeys)
             ? merged.apiKeys.filter((key): key is string => typeof key === 'string' && key.length > 0)
             : [];
+        // `fetchBlockReceipts` is the one field here that changes live behaviour,
+        // so it is pinned to a real boolean rather than trusted from the blob. A
+        // hand-edited or legacy document carrying a truthy string would otherwise
+        // add an upstream call per block that no operator chose in the UI.
+        merged.fetchBlockReceipts = merged.fetchBlockReceipts === true;
         return merged;
     }
 
@@ -193,6 +198,7 @@ export class ProviderConfigService {
         const config = await this.getTronGridConfig();
         return {
             enabled: config.enabled,
+            fetchBlockReceipts: config.fetchBlockReceipts,
             baseUrl: config.baseUrl,
             apiKeys: config.apiKeys.map((key) => ProviderConfigService.maskKey(key)),
             apiKeyCount: config.apiKeys.length,
@@ -223,6 +229,7 @@ export class ProviderConfigService {
         this.logger.info(
             {
                 enabled: merged.enabled,
+                fetchBlockReceipts: merged.fetchBlockReceipts,
                 baseUrl: merged.baseUrl,
                 apiKeyCount: merged.apiKeys.length
             },
