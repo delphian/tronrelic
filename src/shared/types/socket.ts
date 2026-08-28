@@ -28,11 +28,31 @@ export interface TransactionAlertPayload {
   payload: TronTransactionDocument;
 }
 
+/**
+ * Live block completion event. `stats` stays an open record so the backend can
+ * add aggregations without a type release, and `receiptsFetched` says whether
+ * the receipt-derived figures inside it were actually measured.
+ */
 export interface BlockNotificationPayload {
   event: 'block:new';
   payload: {
     blockNumber: number;
     timestamp: string;
+    /**
+     * Whether every transaction in the block had its receipt retrieved.
+     *
+     * Check this before reading `stats.totalEnergyUsed`,
+     * `stats.totalEnergyCost`, `stats.totalBandwidthUsed`, or
+     * `stats.internalTransactions`. Sync fetches receipts only when an operator
+     * has switched them on, so with the switch off those totals are exactly
+     * zero, and a partial fetch leaves them undercounted. Either way the number
+     * is not a measurement, and a consumer that renders it as one shows a
+     * figure the backend never took.
+     *
+     * Optional because an older backend does not send it. Treat a missing value
+     * the same as `false`.
+     */
+    receiptsFetched?: boolean;
     stats: Record<string, unknown>;
   };
 }

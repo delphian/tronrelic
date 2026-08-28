@@ -1349,12 +1349,14 @@ export class BlockchainService implements IBlockchainService {
             timings.fetchReceipts = Date.now() - stageStart;
 
             // Recorded on the block so a consumer can tell a measured zero from
-            // an unmeasured one. The comparison rather than the switch state is
-            // the point: a fetch that failed or came back short leaves totals
-            // that undercount, and an undercount is not a measurement. A block
-            // with no transactions satisfies it at 0 === 0, which is correct —
-            // there was nothing to retrieve and zero is the true answer.
-            const receiptsFetched = receiptsEnabled && receipts.size === transactions.length;
+            // an unmeasured one. A block holding no transactions is complete
+            // however the switch is set: there was nothing to retrieve, and every
+            // receipt-derived total is zero because the block is empty rather
+            // than because nobody looked. Any other block needs the switch on and
+            // a receipt for every transaction, because a fetch that failed or came
+            // back short leaves totals that undercount, and an undercount is not a
+            // measurement.
+            const receiptsFetched = transactions.length === 0 || (receiptsEnabled && receipts.size === transactions.length);
 
             // Stage 4: Process transactions loop
             stageStart = Date.now();
