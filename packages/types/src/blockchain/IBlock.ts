@@ -21,6 +21,21 @@ export interface IBlock {
     size?: number;
     /** Aggregated transaction statistics */
     stats: IBlockStats;
+    /**
+     * Whether every transaction in this block had its receipt retrieved when
+     * the block was indexed.
+     *
+     * Check this before reading `stats.totalEnergyUsed`,
+     * `stats.totalEnergyCost`, `stats.totalBandwidthUsed`, or
+     * `stats.internalTransactions`. Sync fetches receipts only when an operator
+     * has enabled it, so with it off all four are exactly zero — the same value
+     * a block that genuinely burned nothing would carry. A failed or partial
+     * fetch is `false` as well, because an undercount is not a measurement.
+     *
+     * Optional because blocks indexed before the field existed do not carry it,
+     * and their receipts were never fetched, so a missing value means `false`.
+     */
+    receiptsFetched?: boolean;
     /** Timestamp when TronRelic processed this block */
     processedAt: Date;
 }

@@ -68,7 +68,7 @@ interface ITickerMetric {
  * - **Delegations** - Resource delegation operations — `Handshake`
  * - **Stakes** - Staking operations (freezeBalance, unfreezeBalance) — `Lock`
  * - **Tokens** - New token creation operations — `Coins`
- * - **Energy usage** - Total energy consumed, only when > 0 — `Zap`
+ * - **Energy usage** - Total energy consumed, shown only when the block's receipts were fetched and the total is above zero — `Zap`
  *
  * The component subscribes to Redux blockchain state and updates in real-time
  * as blocks are processed by the backend sync service. It serves as a mini
@@ -139,8 +139,12 @@ export function BlockTicker({ initialBlock }: IBlockTickerProps) {
         },
     ];
 
-    // Energy is optional noise on quiet blocks — only surface it when present.
-    if (latestBlock.stats.totalEnergyUsed > 0) {
+    // Energy is shown only when the backend actually measured it. With receipt
+    // fetching switched off the total is a structural zero, and a partial fetch
+    // leaves it undercounted, so rendering either would present a number the
+    // backend never took as a real reading. The `> 0` test stays so a quiet
+    // block does not add a zero to the row.
+    if (latestBlock.receiptsFetched && latestBlock.stats.totalEnergyUsed > 0) {
         metrics.push({
             key: 'energy',
             label: 'Energy',

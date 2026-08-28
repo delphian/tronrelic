@@ -522,6 +522,12 @@ export interface IBlockTickerWidgetData {
         blockNumber: number;
         timestamp: string;
         transactionCount: number;
+        /**
+         * Whether the block's receipt-derived stats were measured. Mirrors
+         * `receiptsFetched` on the block document so the server-rendered ticker
+         * applies the same completeness check the live `block:new` path does.
+         */
+        receiptsFetched: boolean;
         stats: IBlockTickerStats;
     } | null;
 }
@@ -573,6 +579,9 @@ function buildBlockTickerFetcher(deps: ICoreWidgetTypeDeps): WidgetDataFetcher {
                     blockNumber: block.blockNumber,
                     timestamp,
                     transactionCount: block.transactionCount,
+                    // Blocks indexed before the flag existed carry no value, and
+                    // their receipts were never fetched, so absent reads false.
+                    receiptsFetched: block.receiptsFetched === true,
                     stats: {
                         transactions: block.transactionCount,
                         transfers: block.stats.transfers,

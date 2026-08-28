@@ -22,6 +22,14 @@ export interface BlockSummary {
   timestamp: string;
   transactionCount: number;
   stats: BlockStatSnapshot;
+  /**
+   * Whether the block's receipt-derived stats were actually measured. False
+   * when the backend had receipt fetching switched off, or when the fetch came
+   * back short. In both cases `stats.totalEnergyUsed`, `totalEnergyCost`,
+   * `totalBandwidthUsed`, and `internalTransactions` are zero or undercounted,
+   * so a component must not display them as measured figures.
+   */
+  receiptsFetched: boolean;
 }
 
 export interface BlockchainMetrics {
@@ -142,12 +150,16 @@ const blockchainSlice = createSlice({
       state.status = action.payload ? 'error' : state.status;
     },
     blockReceived(state, action: PayloadAction<BlockNotificationPayload['payload']>) {
-      const { blockNumber, timestamp, stats: rawStats } = action.payload;
+      const { blockNumber, timestamp, receiptsFetched, stats: rawStats } = action.payload;
       const stats = normalizeStats(rawStats ?? {});
       const summary: BlockSummary = {
         blockNumber,
         timestamp,
         transactionCount: stats.transactions,
+        // An older backend omits the flag, and so did every block indexed
+        // before it existed. Both mean the receipt figures were never taken,
+        // which is what `false` says.
+        receiptsFetched: receiptsFetched === true,
         stats
       };
 
