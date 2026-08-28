@@ -202,6 +202,17 @@
     line-height: var(--line-height-relaxed);
 }
 
+/* External link out of an intro paragraph, matching the `docs_link` treatment
+   the provider sections on /system/system already use for the same job. The
+   inline-flex keeps the trailing external-link icon on the label's own line, so
+   the icon cannot wrap by itself and read as unrelated to the text before it. */
+.docs_link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    color: var(--color-primary);
+}
+
 /* Source status table: primary name line plus a quiet metadata line. */
 .source_name {
     font-weight: var(--font-weight-medium);

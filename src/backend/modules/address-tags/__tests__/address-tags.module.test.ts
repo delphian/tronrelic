@@ -107,12 +107,17 @@ describe('AddressTagsModule', () => {
         // module owning scheduler jobs or a collection has to surface both on
         // its own admin page, and dropping either node would silently send an
         // operator back to /system to find this module's rows by hand.
+        //
+        // The order is asserted, not just the membership. Settings must stay
+        // last, after the four tabs that report what the module is doing, so
+        // moving it back between them is a visible failure rather than a silent
+        // reshuffle of the row.
         expect(tabCalls.map((node: { url: string }) => node.url)).toEqual([
             '/system/address-tags?tab=tags',
             '/system/address-tags?tab=sources',
-            '/system/address-tags?tab=settings',
             '/system/address-tags?tab=schedules',
-            '/system/address-tags?tab=database'
+            '/system/address-tags?tab=database',
+            '/system/address-tags?tab=settings'
         ]);
         // Outside the System container the non-bypassable admin force does not
         // reach these nodes, so each must carry its own gate.

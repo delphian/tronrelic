@@ -44,7 +44,6 @@ const SUBMENU_NAMESPACE = 'address-tags';
 const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
     { label: 'Tags', tab: 'tags', icon: 'Tags', order: 0 },
     { label: 'Sources', tab: 'sources', icon: 'Rss', order: 1 },
-    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 2 },
     // Schedules and Database are the obligation any component that owns a
     // scheduler job or a collection carries: surface those jobs and that
     // storage on the component's own admin page. This module owns three jobs
@@ -54,8 +53,14 @@ const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; or
     // whole deployment's inventory. Both panels are core components filtered to
     // this module, so the module owns no admin furniture of its own and the
     // authority behind each tab is the same one /system uses.
-    { label: 'Schedules', tab: 'schedules', icon: 'Clock', order: 3 },
-    { label: 'Database', tab: 'database', icon: 'Database', order: 4 }
+    { label: 'Schedules', tab: 'schedules', icon: 'Clock', order: 2 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 3 },
+    // Settings sits last, after every tab that reports what the module is
+    // doing. The four before it answer "what state is this module in", which is
+    // what an operator opens the page for; Settings changes that state and is
+    // visited far less often, so putting it at the end keeps the reporting tabs
+    // adjacent instead of splitting them around it.
+    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 4 }
 ];
 
 /**

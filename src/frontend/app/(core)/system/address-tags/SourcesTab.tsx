@@ -17,7 +17,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Play, ShieldQuestion } from 'lucide-react';
+import { ExternalLink, Play, ShieldQuestion } from 'lucide-react';
 import { Stack } from '../../../../components/layout';
 import { Card } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
@@ -35,6 +35,18 @@ import {
     type ITagSyncResultView
 } from '../../../../modules/address-tags';
 import styles from './page.module.scss';
+
+/**
+ * Where an operator goes to get the key the screening control needs.
+ *
+ * This is the link Chainalysis publishes for its free sanctions screening API,
+ * the one `chainalysis.source.ts` calls. Chainalysis no longer hosts a
+ * standalone key-request form: the URL redirects to their Address Screening
+ * product page, and the request form there is how a key is issued now. The
+ * label below says "request" rather than "get" for that reason — a key arrives
+ * after Chainalysis approves the request, not on submitting it.
+ */
+const CHAINALYSIS_KEY_URL = 'https://go.chainalysis.com/crypto-sanctions-screening.html';
 
 /**
  * Human labels for the registered source ids, so the table reads as the feeds
@@ -263,6 +275,13 @@ export function SourcesTab() {
                         <code>chainalysis:sanctioned</code> with the identification as its citation; a clean answer withdraws any prior
                         flag. This is direct-match screening only — it does not detect proximity to sanctioned addresses. Requires the
                         Chainalysis switch to be on and an API key saved, both on the Settings tab.
+                    </p>
+                    <p className={styles.intro}>
+                        No key yet? Chainalysis issues one for its free sanctions screening API on request, at no charge.{' '}
+                        <a className={styles.docs_link} href={CHAINALYSIS_KEY_URL} target="_blank" rel="noopener noreferrer">
+                            Request a Chainalysis API key <ExternalLink size={14} aria-hidden />
+                        </a>
+                        . Paste the key you are sent into the Settings tab.
                     </p>
                     <div className={styles.screen_form}>
                         <div className={styles.screen_input}>
