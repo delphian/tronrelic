@@ -79,6 +79,7 @@ export function TronGridProviderSection() {
     const [loading, setLoading] = useState(true);
     const [config, setConfig] = useState<ITronGridConfigView | null>(null);
     const [enabled, setEnabled] = useState(false);
+    const [fetchBlockReceipts, setFetchBlockReceipts] = useState(false);
     const [baseUrl, setBaseUrl] = useState('');
     const [throttleMs, setThrottleMs] = useState('');
     const [maxQueueSize, setMaxQueueSize] = useState('');
@@ -102,6 +103,7 @@ export function TronGridProviderSection() {
     const applyConfig = useCallback((next: ITronGridConfigView) => {
         setConfig(next);
         setEnabled(next.enabled);
+        setFetchBlockReceipts(next.fetchBlockReceipts);
         setBaseUrl(next.baseUrl);
         setThrottleMs(String(next.requestThrottleMs));
         setMaxQueueSize(String(next.maxQueueSize));
@@ -167,6 +169,21 @@ export function TronGridProviderSection() {
             setFeedback({ type: 'error', message: invalid.join('; ') });
             return;
         }
+        // Everything else on this card is inert until the client switchover, so a
+        // save that only touched those fields changes nothing an operator can
+        // observe. Receipt fetching does change sync behaviour immediately, and it
+        // costs upstream requests, so it is confirmed before it is turned on.
+        if (fetchBlockReceipts && !config?.fetchBlockReceipts) {
+            const confirmed = window.confirm(
+                'Turn on block receipt fetching?\n\n'
+                    + 'Blockchain sync will make one extra TronGrid request per block from the next block onward, '
+                    + 'and newly indexed transactions will start carrying energy, bandwidth, and internal transaction data. '
+                    + 'Blocks already indexed are not backfilled.'
+            );
+            if (!confirmed) {
+                return;
+            }
+        }
 
         setSaving(true);
         setFeedback(null);
@@ -174,6 +191,7 @@ export function TronGridProviderSection() {
         try {
             const next = await updateTronGridConfig({
                 enabled,
+                fetchBlockReceipts,
                 baseUrl: baseUrl.trim(),
                 requestThrottleMs: throttle,
                 maxQueueSize: queue,
@@ -186,7 +204,7 @@ export function TronGridProviderSection() {
         } finally {
             setSaving(false);
         }
-    }, [enabled, baseUrl, throttleMs, maxQueueSize, timeoutMs, applyConfig]);
+    }, [enabled, fetchBlockReceipts, baseUrl, throttleMs, maxQueueSize, timeoutMs, config, applyConfig]);
 
     /**
      * Append the typed key to the rotation pool and clear the input, so the raw
@@ -271,15 +289,38 @@ export function TronGridProviderSection() {
                     ) : (
                         <Badge tone="neutral">Keyless</Badge>
                     )}
-                    <Badge tone="warning">Not in use yet</Badge>
+                    {config?.fetchBlockReceipts ? (
+                        <Badge tone="info">Receipts on</Badge>
+                    ) : (
+                        <Badge tone="warning">Connection staged</Badge>
+                    )}
                 </div>
 
                 <p className="text-muted">
                     Blockchain sync, chain parameters, and account history all reach TRON through TronGrid. That access is
                     still configured by the <strong>TRONGRID_API_KEY</strong> environment variables and a host fixed in
-                    source — <strong>this card changes none of it</strong>. It stores the same settings in the database so
-                    they are in place, and verified, before the switchover moves the client onto them.
+                    source — <strong>the connection settings below change none of it</strong>. They store the same values in
+                    the database so they are in place, and verified, before the switchover moves the client onto them.
+                    <strong> Block receipts is the exception</strong>: that switch takes effect immediately.
                 </p>
+
+                <div className={styles.field}>
+                    <label className={styles.label} htmlFor="trongrid-receipts">Block receipts</label>
+                    <Switch
+                        id="trongrid-receipts"
+                        on={fetchBlockReceipts}
+                        onChange={setFetchBlockReceipts}
+                        disabled={busy}
+                        aria-label="Fetch transaction receipts for every synced block"
+                    />
+                    <span className={styles.hint}>
+                        Off by default. Sync reads a block&apos;s transactions but not their receipts, so energy, bandwidth,
+                        and internal transactions are absent on every transaction and the block totals that add them up are
+                        always zero. Turning this on adds <strong>one</strong> request per block — one for the whole block,
+                        not one per transaction — and fills those fields in from the next block onward. Blocks already
+                        indexed keep the zeros; nothing is backfilled.
+                    </span>
+                </div>
 
                 <div className={styles.field}>
                     <label className={styles.label} htmlFor="trongrid-enabled">Enabled</label>

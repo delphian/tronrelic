@@ -111,6 +111,25 @@ export interface ITronGridProviderConfig {
      * switchover, not before.
      */
     enabled: boolean;
+    /**
+     * Whether blockchain sync fetches transaction receipts for each block.
+     *
+     * Unlike every other field in this blob, this one is read at runtime today.
+     * Sync passes `null` where a receipt would go, so `energy`, `bandwidth`, and
+     * `internalTransactions` are absent on every transaction, and the block-level
+     * `totalEnergyCost`, `totalEnergyUsed`, and `totalBandwidthUsed` totals that
+     * sum them are therefore always zero. Turning this on adds one
+     * `/wallet/gettransactioninfobyblocknum` call per block — one call for the
+     * whole block, not one per transaction — and fills all of those in.
+     *
+     * Defaults to `false` so an untouched deployment keeps exactly the call
+     * volume and the stored document shape it has today. It is deliberately
+     * independent of {@link ITronGridProviderConfig.enabled}: that flag gates the
+     * unrelated switchover to a DB-backed client and is still read by nothing, so
+     * requiring it here would mean asking an operator to turn on a switch
+     * documented as inert.
+     */
+    fetchBlockReceipts: boolean;
     /** API host used for both REST calls and the TronWeb full node, no trailing slash. */
     baseUrl: string;
     /**
@@ -133,6 +152,8 @@ export interface ITronGridProviderConfig {
  */
 export interface ITronGridProviderConfigMasked {
     enabled: boolean;
+    /** Whether sync fetches per-block receipts. Live today; see the raw shape. */
+    fetchBlockReceipts: boolean;
     baseUrl: string;
     /** Masked keys in rotation order; index doubles as the removal handle. */
     apiKeys: string[];
@@ -152,6 +173,10 @@ export interface ITronGridProviderConfigMasked {
  */
 export const DEFAULT_TRONGRID_CONFIG: ITronGridProviderConfig = {
     enabled: false,
+    // Off by default because turning it on changes live sync behaviour: an extra
+    // upstream call per block, and transaction documents that suddenly carry
+    // energy and bandwidth where they previously carried nothing.
+    fetchBlockReceipts: false,
     baseUrl: 'https://api.trongrid.io',
     apiKeys: [],
     requestThrottleMs: 200,

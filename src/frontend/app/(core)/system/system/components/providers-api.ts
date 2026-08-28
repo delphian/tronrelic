@@ -62,6 +62,12 @@ export const TRONGRID_FIELD_LIMITS = {
  */
 export interface ITronGridConfigView {
     enabled: boolean;
+    /**
+     * Whether block sync fetches per-block transaction receipts. The one field on
+     * this card that changes runtime behaviour today; the rest are staged for the
+     * client switchover.
+     */
+    fetchBlockReceipts: boolean;
     baseUrl: string;
     /** Masked keys (`****abcd`) in rotation order. */
     apiKeys: string[];
@@ -79,6 +85,7 @@ export interface ITronGridConfigView {
  */
 export interface ITronGridConfigUpdate {
     enabled?: boolean;
+    fetchBlockReceipts?: boolean;
     baseUrl?: string;
     requestThrottleMs?: number;
     maxQueueSize?: number;

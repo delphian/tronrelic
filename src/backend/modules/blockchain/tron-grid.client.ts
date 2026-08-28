@@ -583,6 +583,54 @@ export class TronGridClient {
         }
     }
 
+    /**
+     * Fetch every transaction receipt in one block via
+     * `/wallet/gettransactioninfobyblocknum`.
+     *
+     * Block sync needs receipts to populate the energy, bandwidth, and internal
+     * transaction fields, which the block payload itself does not carry. Asking
+     * for them one transaction at a time through {@link getTransactionInfo} would
+     * mean several hundred requests for a busy block, and at the client's 200ms
+     * request gap that is tens of seconds per block. This endpoint answers for
+     * the whole block at once, so the cost stays at one extra call — one extra
+     * throttle slot — however many transactions the block holds.
+     *
+     * A failure returns an empty array rather than throwing, because the caller
+     * treats receipts as enrichment: a block that loses them is still a complete,
+     * correctly indexed block, and failing the whole block over an optional
+     * enrichment call would push it into the backfill queue over a problem it can
+     * survive.
+     *
+     * @param blockNumber - Height whose receipts are wanted. The caller already
+     *                      holds the block itself and needs only the execution
+     *                      results the block payload omits.
+     * @returns One entry per transaction, each carrying the `id` a caller joins
+     *          back to the block's transactions on. Empty when the block has no
+     *          transactions or the request failed.
+     */
+    async getTransactionInfoByBlockNum(blockNumber: number): Promise<TronGridTransactionInfo[]> {
+        let infos: TronGridTransactionInfo[] = [];
+
+        try {
+            const response = await retry(
+                () => this.post<TronGridTransactionInfo[]>('/wallet/gettransactioninfobyblocknum', { num: blockNumber }),
+                {
+                    ...blockchainConfig.retry,
+                    onRetry: (attempt, error) =>
+                        logger.warn({ attempt, error, blockNumber }, 'Retrying TronGrid getTransactionInfoByBlockNum')
+                }
+            );
+            // A block holding no transactions answers with an empty object rather
+            // than an empty array, so the shape check is what stops a non-array
+            // reaching a caller that is about to map over it.
+            infos = Array.isArray(response) ? response : [];
+        } catch (error) {
+            logger.error({ error, blockNumber }, 'Failed to fetch block transaction receipts');
+        }
+
+        return infos;
+    }
+
     async getTransactionInfo(txId: string): Promise<TronGridTransactionInfo | null> {
         try {
             return await retry(

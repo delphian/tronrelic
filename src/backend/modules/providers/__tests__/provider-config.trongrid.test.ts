@@ -110,4 +110,36 @@ describe('ProviderConfigService — TronGrid', () => {
         const config = await service.getTronGridConfig();
         expect(config.apiKeys).toEqual([]);
     });
+
+    it('leaves block receipt fetching off until an operator turns it on', async () => {
+        // This is the one field here that changes live sync behaviour, so the
+        // default is pinned: a deployment that never opens this card must keep
+        // making exactly one TronGrid call per block.
+        expect((await service.getTronGridConfig()).fetchBlockReceipts).toBe(false);
+        expect((await service.getMaskedTronGridConfig()).fetchBlockReceipts).toBe(false);
+
+        const masked = await service.saveTronGridConfig({ fetchBlockReceipts: true });
+
+        expect(masked.fetchBlockReceipts).toBe(true);
+        expect((await service.getTronGridConfig()).fetchBlockReceipts).toBe(true);
+    });
+
+    it('treats a non-boolean fetchBlockReceipts in a stored blob as off', async () => {
+        // A truthy string reaching the flag would add an upstream call per block
+        // that no operator chose, so the read coerces rather than trusting it.
+        await mockDb.set(TRONGRID_CONFIG_KEY, { apiKeys: [], fetchBlockReceipts: 'false' });
+
+        expect((await service.getTronGridConfig()).fetchBlockReceipts).toBe(false);
+    });
+
+    it('keeps block receipt fetching independent of the staged enabled flag', async () => {
+        // `enabled` gates the unrelated switchover to a DB-backed client and is
+        // still read by nothing. Coupling the two would mean asking an operator to
+        // turn on a switch documented as inert in order to get receipts.
+        await service.saveTronGridConfig({ fetchBlockReceipts: true });
+
+        const config = await service.getTronGridConfig();
+        expect(config.fetchBlockReceipts).toBe(true);
+        expect(config.enabled).toBe(false);
+    });
 });

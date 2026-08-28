@@ -25,6 +25,28 @@ export interface BlockFields {
   transactionCount: number;
   size?: number;
   stats: BlockStats;
+  /**
+   * Whether every transaction in this block had its receipt retrieved when the
+   * block was indexed.
+   *
+   * Read this before trusting `stats.totalEnergyUsed`, `stats.totalEnergyCost`,
+   * `stats.totalBandwidthUsed`, or `stats.internalTransactions`. All four are
+   * sums over per-transaction receipt data, and sync fetches receipts only when
+   * an operator has enabled it. When it has not, all four are exactly zero — a
+   * value indistinguishable from a block that genuinely burned nothing. This
+   * flag is what separates "measured as zero" from "never measured", and a
+   * consumer that ignores it will read structural zeros as real ones.
+   *
+   * True only when those totals are complete. A block holding no transactions is
+   * true, because there was nothing to retrieve and zero is the right answer. A
+   * failed or partial receipt fetch is false, because an undercount is not a
+   * measurement a consumer should treat as one.
+   *
+   * Optional because blocks indexed before this field existed do not carry it,
+   * and their receipts were never fetched — so a missing value and `false` mean
+   * the same thing and consumers may treat them alike.
+   */
+  receiptsFetched?: boolean;
   processedAt: Date;
 }
 
@@ -53,6 +75,13 @@ const BlockSchema = new Schema<BlockDoc>({
     totalEnergyCost: { type: Number, default: 0 },
     totalBandwidthUsed: { type: Number, default: 0 }
   },
+  // No default. Sync writes this explicitly on every block, so an absent value
+  // means only one thing: the block was indexed before the field existed, and
+  // its receipts were therefore never fetched. Defaulting it to `false` would
+  // stamp that same answer onto historical documents on any future write and
+  // lose the distinction between "this version of the code said no" and "no
+  // version of the code was asked".
+  receiptsFetched: Boolean,
   // Indexed: SystemMonitorService samples the most recent blocks sorted by
   // processedAt; without this index that query collection-scans every block.
   processedAt: { type: Date, default: Date.now, index: true }

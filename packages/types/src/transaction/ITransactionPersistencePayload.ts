@@ -65,7 +65,16 @@ export interface ITransactionPersistencePayload {
     };
     /** Optional transaction memo or note */
     memo?: string | null;
-    /** Internal transactions triggered by smart contract execution */
+    /**
+     * Internal transactions triggered by smart contract execution.
+     *
+     * Absent rather than empty when there are none, so the field is not written
+     * on the majority of transactions that trigger nothing. Absent also when
+     * receipts were not fetched for the block at all, which is the default — so
+     * a missing value does not mean the transaction triggered nothing, only that
+     * nothing is known. Read `IBlockData.receiptsFetched` to tell the two apart,
+     * and count a missing value as zero rather than dereferencing it.
+     */
     internalTransactions?: unknown[];
     /** Notification channels that should be triggered for this transaction */
     notifications?: string[];
