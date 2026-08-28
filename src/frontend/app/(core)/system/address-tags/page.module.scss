@@ -188,10 +188,15 @@
     margin-top: var(--gap-md);
 }
 
-/* Explanatory lead paragraph inside a panel card. */
+/* Explanatory lead paragraph inside a panel card.
+ *
+ * No measure cap here. A 64ch limit is the right default for a column of
+ * running prose, but these paragraphs sit above a wide status table inside the
+ * same card, and stopping them well short of the card's edge reads as a layout
+ * fault rather than as a reading aid. The card's own padding already sets the
+ * line length, so the paragraph tracks the panel it introduces. */
 .intro {
     margin: 0;
-    max-width: var(--max-width-prose);
     color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);
     line-height: var(--line-height-relaxed);
