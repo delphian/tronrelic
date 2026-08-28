@@ -37,14 +37,17 @@ import {
 import styles from './page.module.scss';
 
 /**
- * Where an operator goes to get the key the screening control needs.
+ * Where an operator can ask Chainalysis about access to the screening API.
  *
- * This is the link Chainalysis publishes for its free sanctions screening API,
- * the one `chainalysis.source.ts` calls. Chainalysis no longer hosts a
- * standalone key-request form: the URL redirects to their Address Screening
- * product page, and the request form there is how a key is issued now. The
- * label below says "request" rather than "get" for that reason — a key arrives
- * after Chainalysis approves the request, not on submitting it.
+ * The backend calls `https://public.chainalysis.com/api/v1/address/`, which
+ * only works with a key Chainalysis issues. This URL is the one Chainalysis
+ * still publishes for that request, in their own announcement of the sanctions
+ * screening API, and there is no self-service signup anywhere else. It no
+ * longer reaches a key-request form: it redirects to the commercial Address
+ * Screening product page, whose only form is a sales enquiry. Do not describe
+ * it to operators as a way to obtain a free key, because the destination page
+ * offers no such thing, and re-check where it lands before changing the copy
+ * below.
  */
 const CHAINALYSIS_KEY_URL = 'https://go.chainalysis.com/crypto-sanctions-screening.html';
 
@@ -277,11 +280,13 @@ export function SourcesTab() {
                         Chainalysis switch to be on and an API key saved, both on the Settings tab.
                     </p>
                     <p className={styles.intro}>
-                        No key yet? Chainalysis issues one for its free sanctions screening API on request, at no charge.{' '}
+                        No key yet? The key has to come from Chainalysis, and they publish no self-service signup for this API. The
+                        page below is the only route they document, and it now leads to their commercial Address Screening enquiry
+                        form, so whether you are given access and on what terms is between you and Chainalysis.{' '}
                         <a className={styles.docs_link} href={CHAINALYSIS_KEY_URL} target="_blank" rel="noopener noreferrer">
-                            Request a Chainalysis API key <ExternalLink size={14} aria-hidden />
+                            Contact Chainalysis about API access <ExternalLink size={14} aria-hidden />
                         </a>
-                        . Paste the key you are sent into the Settings tab.
+                        . Once you have a key, paste it into the Settings tab.
                     </p>
                     <div className={styles.screen_form}>
                         <div className={styles.screen_input}>
