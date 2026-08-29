@@ -17,6 +17,7 @@ Central CRUD authority for free-text tags on TRON wallet addresses. Every surfac
 | Frontend client | `src/frontend/modules/address-tags/api/client.ts` (both surfaces) |
 | Frontend read cache | `useAddressTags(address)` — batches every chip's lookup into one `by-address` call, invalidate with `invalidateAddressTags(address)` |
 | Frontend editor | `AddressTagsEditor` — freeform comma-separated field, opened from the `TronAddress` chip's wrench menu ("Edit tags", admin only) |
+| Frontend severity | `lib/tagSeverity.ts` — the list deciding which tags render as a warning on the chip; kept in step with the sources by `__tests__/tag-severity-coverage.test.ts` |
 | Frontend selector | `AddressSelector` (`components/ui/AddressSelector`, also `context.ui.AddressSelector`) — the canonical control for *choosing* an address; typeahead over `/suggest`, emits checksum-verified base58 only (`lib/tronAddress.isValidTronAddress`) |
 
 ## Why MongoDB
@@ -131,6 +132,32 @@ treated as an absent enhancement when the visitor is anonymous (reads are
 membership because every mutation route is `requireAdmin` — widening it would
 only surface a 403 after the operator typed.
 
+### Warning Tags
+
+A tag that means "do not transact" gets a stronger treatment than the underline.
+When an address carries `ofac:sdn`, `chainalysis:sanctioned`, or `usdt:frozen`,
+the chip renders a danger-coloured triangle ahead of the address, with the
+reason in its tooltip and in its screen-reader label. The underline says only
+that an address is annotated; it cannot distinguish a sanctions listing from
+`exchange`, and that distinction has to be readable before the operator acts.
+
+That marker is the one signal on the chip that occupies layout, so a flagged row
+does shift slightly when its tags resolve. The alternative, reserving the icon's
+width on every chip, taxes every address on the site to spare the rare one, and
+only three tags classify.
+
+Which tags earn the marker is decided in
+`src/frontend/modules/address-tags/lib/tagSeverity.ts`. It is an explicit list,
+not a rule over the reserved `ofac:` / `usdt:` / `chainalysis:` prefixes: those
+prefixes mean "written by a machine source", which coincides with "dangerous"
+only because every source here today is a risk feed, and a benign source added
+later would inherit a warning it never earned. The cost of listing them is the
+opposite failure — a new source tag nobody classifies renders with no warning at
+all — so `__tests__/tag-severity-coverage.test.ts` imports the sources' own
+`OFAC_TAG`, `USDT_TAG`, and `CHAINALYSIS_TAG` constants and fails when the two
+sets disagree in either direction. **Adding an ingestion source means adding its
+tag constant to that test and an entry to that list.**
+
 Where `TronAddress` renders an address, `AddressSelector` *chooses* one. It is
 the module's second frontend consumer and the reason `/suggest` exists: typed
 text matches address text and tag text alike, and each suggestion shows its
@@ -160,7 +187,7 @@ follows.
 | `api/address-tags-admin.controller.ts` | Mutation/search/summary handlers + envelope validation |
 | `api/address-tags-sources.controller.ts` | Source status/run/screen/settings handlers |
 | `api/address-tags.routes.ts` | Router factories (guards applied at mount) |
-| `__tests__/` | Module lifecycle, CRUD semantics, provenance/reconcile semantics, source fixtures |
+| `__tests__/` | Module lifecycle, CRUD semantics, provenance/reconcile semantics, source fixtures, frontend severity coverage |
 
 Consumers resolve the service via `context.services.get<IAddressTagService>('address-tags')` (or `watch()` for lifetime-sensitive callers) — never by importing this module.
 

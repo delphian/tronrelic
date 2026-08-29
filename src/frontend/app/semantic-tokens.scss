@@ -433,12 +433,27 @@
      * Deliberately not --color-primary at full strength: primary means
      * "interactive" site-wide, and a tagged address is not clickable. The alpha
      * step keeps the mark subordinate to the text while still theming.
+     *
+     * The warning marker below is the deliberate exception to all of that. A
+     * sanctions listing or a Tether freeze has to be readable before the
+     * operator hovers, which a decoration cannot manage, so that one signal does
+     * take up space. It applies only to the handful of tags the address-tags
+     * module classifies as warnings, so the reflow lands on flagged rows rather
+     * than on every address the site renders.
      * ======================================================================== */
 
     --tron-address-tagged-underline: var(--color-primary-alpha-38);
     /* Clears the descenders of the monospace face so the dots stay legible
        rather than colliding with g/y/p at --font-size-body-sm. */
     --tron-address-tagged-underline-offset: 0.25em;
+
+    /* Colour of the triangle the chip shows ahead of an address whose tags
+       include a sanctions listing or a Tether freeze. Danger rather than
+       warning: the assertion behind it is a legal restriction on dealing with
+       the address or a frozen balance, which is a stronger claim than caution.
+       Named for the use case so a theme can retune the mark on its own —
+       remapping --color-danger would move every destructive button with it. */
+    --tron-address-warning-color: var(--color-danger);
 
     /* ========================================================================
      * INPUT COMPONENT TOKENS

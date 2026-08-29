@@ -22,6 +22,29 @@
     max-width: 100%;
 }
 
+/*
+ * Warning marker shown ahead of the address when one of its tags is a sanctions
+ * listing or a Tether freeze. This is the one signal on the chip that
+ * deliberately occupies layout: a tag meaning "do not transact" has to be
+ * legible before the operator hovers, and the dotted underline below cannot say
+ * which tag it stands for. Only tags the address-tags module classifies reach
+ * here, so the cost falls on flagged rows rather than on every address the site
+ * renders.
+ *
+ * The triangle's shape repeats the meaning for a monochrome display or an
+ * operator who cannot distinguish the hue, and the wrapper carries the text
+ * label for screen readers, so the colour is never the only carrier.
+ */
+.warning {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: var(--gap-2xs);
+    color: var(--tron-address-warning-color);
+    cursor: default;
+}
+
 /* Truncated address: monospace so leading/trailing chars align across rows. */
 .address {
     font-family: var(--font-mono);

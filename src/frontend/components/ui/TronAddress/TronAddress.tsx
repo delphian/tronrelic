@@ -26,9 +26,9 @@
  */
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ExternalLink, Wrench } from 'lucide-react';
+import { AlertTriangle, ExternalLink, Wrench } from 'lucide-react';
 import { TrCopyIcon } from '../TrCopyIcon';
 import { IconButton } from '../IconButton';
 import { Tooltip } from '../Tooltip';
@@ -38,6 +38,7 @@ import { useModal } from '../ModalProvider';
 // would close an import cycle through this file. The user barrel is skipped for
 // the established reason that it drags component CSS into every bundle.
 import { useAddressTags } from '../../../modules/address-tags/hooks/useAddressTags';
+import { getAddressTagWarnings } from '../../../modules/address-tags/lib/tagSeverity';
 import { AddressTagsEditor } from '../../../modules/address-tags/components/AddressTagsEditor/AddressTagsEditor';
 import { useAuthSession } from '../../../modules/user/components/SessionProvider';
 import { FORWARDABLE_TOOLS, buildToolForwardUrl } from './forwardableTools';
@@ -268,6 +269,10 @@ export function TronAddress({
 
     const display = label ?? truncateAddress(address);
     const isTagged = tags.length > 0;
+    // Which of this address's tags are sanctions or freeze assertions. Memoized
+    // on the resolved tag array rather than recomputed each render: the chip
+    // re-renders on menu opens and tooltip hovers, none of which change the tags.
+    const warnings = useMemo(() => getAddressTagWarnings(tags), [tags]);
     // Tags ride in the tooltip rather than beside the chip: they are context for
     // "which wallet is this", and a chip that grew inline chips would reflow
     // every dense table it sits in. A tagged address instead advertises itself
@@ -276,12 +281,46 @@ export function TronAddress({
     // can appear when the tags resolve after hydration without shifting a single
     // row of the table around it.
     const tooltip = isTagged ? `${address} (${tags.join(', ')})` : address;
+    // The warning icon's own tooltip and its screen-reader label are the same
+    // string. Each entry's label is a plain phrase rather than the raw tag text,
+    // because `usdt:frozen` tells a reader who already knows the vocabulary
+    // nothing they could not guess and everyone else nothing at all. Joined with
+    // a semicolon so an address carrying both a sanctions listing and a freeze
+    // reads as two separate statements.
+    const warningText = warnings.map(warning => warning.label).join('; ');
     const displayClassName = [label ? styles.label : styles.address, isTagged ? styles.tagged : null]
         .filter(Boolean)
         .join(' ');
 
     return (
         <span className={[styles.root, className].filter(Boolean).join(' ')}>
+            {warnings.length > 0 && (
+                // A sanctioned or frozen address is the one case where a tag has
+                // to be readable before the operator hovers, and before they
+                // decide to act on the address. The dotted underline below says
+                // only "this address carries tags"; it cannot say which, and a
+                // tag that means "do not transact" has to be distinguishable
+                // from a tag that means "exchange hot wallet".
+                //
+                // This accepts a layout shift that the underline was chosen to
+                // avoid. Tags resolve client-side after hydration, so an icon
+                // appearing widens the chip a beat after the row painted. The
+                // alternative — reserving the icon's width on every chip — taxes
+                // every address on the site to spare the rare one, and warnings
+                // are rare by construction: only three tags classify, and all
+                // three come from sanctions or freeze feeds. A shift confined to
+                // rows holding a flagged address is the cheaper of the two.
+                //
+                // The icon is not the only signal. Its shape, its danger colour,
+                // and its label all carry the same meaning, so the warning
+                // survives a monochrome display and a screen reader alike.
+                <Tooltip content={warningText}>
+                    <span className={styles.warning} role="img" aria-label={warningText}>
+                        <AlertTriangle size={14} aria-hidden="true" />
+                    </span>
+                </Tooltip>
+            )}
+
             <Tooltip content={tooltip}>
                 <span
                     className={displayClassName}
