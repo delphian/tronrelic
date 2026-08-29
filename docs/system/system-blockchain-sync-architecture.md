@@ -22,15 +22,17 @@ Sync acquires a Redis lock at `${REDIS_NAMESPACE}:locks:blockchain-sync` with a 
 
 ### Live Tip Reserve
 
-The forward cursor stops short of the chain head by `liveTipReserveBlocks = 5` (`BLOCKCHAIN_LIVE_TIP_RESERVE_BLOCKS`) rather than claiming everything up to the tip. Throughout this document, the **live tip** means the head minus that reserve.
+The forward walk stops at the **live tip**, which is the chain head minus `liveTipReserveBlocks` (`BLOCKCHAIN_LIVE_TIP_RESERVE_BLOCKS`). That reserve is **0 by default**, so the live tip is normally the head itself.
 
-Taking every available block empties the work queue the moment sync catches up, so the next slow TronGrid response or late scheduler tick becomes dead air in the live feed with nothing buffered behind it. Leaving five blocks unclaimed keeps roughly fifteen seconds of work permanently in reserve for a hiccup to drain from instead. The cost is latency: every block reaches the frontend five block times after the chain produced it.
+It defaults to zero because holding the cursor back does not buffer any work, which is worth stating plainly since it is an intuitive thing to expect. Each tick enqueues every block from the cursor up to the target, so the batch is always exactly the chain's production over one tick — around 20 blocks — whatever the reserve is set to. Raising it only settles the cursor that many blocks lower. Queue depth still falls to zero at the tick boundary, and the held-back blocks have no queued job, so they cannot cover a late tick. The one guaranteed effect is latency.
 
-Keep the reserve well below `liveChainThrottleBlocks`, because it counts toward the block age that decides whether a block is paced at all.
+A self-restoring reserve is not available on this side at all. Seeding the cursor behind the head while enqueuing up to it would inject depth once, but nothing rebuilds that depth after a hiccup drains it: rebuilding requires broadcasting slower than one block per interval, which means deliberately falling further behind. Uneven arrival is therefore smoothed on the client instead, by the playout buffer described below, which holds real blocks and releases them on its own clock.
 
-Two consequences are worth knowing. The scheduler measures `blocksBehind` against the tip rather than the head, so a healthy syncer reads zero blocks behind and the dead band below is not shrunk by the reserve. The `lag` figure in the status payload still counts from the raw head, so a healthy deployment reports a lag equal to the reserve rather than zero — which is why the payload also echoes `liveTipReserveBlocks` and the `/system` console offsets its amber step by it.
+Set the reserve above zero only when a deployment wants deliberate distance from a tip its provider serves inconsistently, and keep it well below `liveChainThrottleBlocks`, because the lag it adds counts toward the block age that decides whether a block is paced at all.
 
-Backfill and parity targets are unaffected. Both still run up to the raw head, because a block already known to be missing is old work with nothing to reserve.
+Two consequences apply when it is nonzero. The scheduler measures `blocksBehind` against the tip rather than the head, so the dead band below is not shrunk by the reserve. The `lag` figure in the status payload still counts from the raw head, so the deployment reports a lag equal to the reserve rather than zero — which is why the payload echoes `liveTipReserveBlocks` and the `/system` console offsets its amber step by it.
+
+Backfill and parity targets always run up to the raw head, because a block already known to be missing is old work and holding it back would serve no purpose.
 
 ### Backfill Window
 
@@ -74,7 +76,11 @@ The remembered mode is per-process. After a restart, or when the scheduler lock 
 
 Backend pacing alone cannot make the feed perfectly even, because TRON does not produce blocks on an exact metronome. A super representative that misses its slot leaves a real six-second hole, and no amount of pacing can fill a block that does not exist.
 
-`SocketBridge` therefore holds arriving `block:new` events in a small playout buffer and releases them to Redux on its own clock: one every 3 seconds normally, every 2 seconds once three or more are waiting so a backlog drains rather than adding permanent delay, and with no wait at all beyond twelve. The buffer is dropped on unmount, since a remount fetches fresh state from the server. This costs one block time of extra latency and is what makes the displayed cadence steady rather than merely average-correct.
+`SocketBridge` therefore holds arriving `block:new` events in a small playout buffer and releases them to Redux on its own clock: one every 3 seconds normally, every 2 seconds once three or more are waiting so a backlog drains rather than adding permanent delay, and with no wait at all beyond twelve. The buffer is dropped on unmount, since a remount fetches fresh state from the server.
+
+The first block after a mount is held for a full interval, which is the part that makes the buffer work at all. Without that hold the buffer retains nothing: every arrival finds the previous release already an interval old, waits zero, and goes straight out, so a skipped slot still reaches the screen as a six-second hole. Paying one block time of latency once per mount is what buys the lead that covers it.
+
+That lead covers exactly one missed slot. It is spent absorbing the first hole and only rebuilds if arrivals run ahead of the release clock, so a second hole in quick succession still shows. Covering a run of them would need a target-depth policy — prime several blocks and release slightly slower while depth is below target, mirroring the faster interval already used above the catch-up depth — which is a larger change than this one and has not been made.
 
 ## Per-Block Pipeline Stages
 
