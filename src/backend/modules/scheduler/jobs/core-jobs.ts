@@ -75,8 +75,27 @@ export async function registerCoreJobs(
         await usdtParametersFetcher.fetch();
     });
 
-    // Blockchain sync: every minute
-    scheduler.register('blockchain:sync', '*/1 * * * *', async () => {
+    // Blockchain sync: every 15 seconds, using node-cron's optional leading
+    // seconds field (the same 6-field form the address-tags jobs use).
+    //
+    // It ran every minute for as long as the worker paced itself to three
+    // seconds per block, which stretched a tick's twenty blocks across the
+    // whole minute and made the two match by accident. Pacing now lives in
+    // `BlockEmitter` and ingestion runs flat out, so a one-minute tick would
+    // deliver its blocks in a ten-second burst and then idle — swinging the
+    // emitter's buffer by a full tick's production and emptying it right at the
+    // tick boundary, which is exactly when a late tick would leave the feed
+    // exposed. Four ticks a minute keeps that buffer close to level.
+    //
+    // `blockchainConfig.lock.ttlSeconds` is sized against this period and has
+    // to move with it. Changing the schedule from `/system/scheduler` without
+    // changing that TTL lets two runs overlap and race the cursor.
+    //
+    // The schedule a deployment actually runs is the one stored in
+    // `scheduler_configs`, written when the job was first registered and read
+    // back on every boot. Deployments created before this change keep the
+    // one-minute schedule until an operator edits it at `/system/scheduler`.
+    scheduler.register('blockchain:sync', '*/15 * * * * *', async () => {
         await blockchainService.syncLatestBlocks();
     });
 

@@ -7,8 +7,9 @@
  * green, and an operator cannot tell which one to believe. Both resolve their
  * thresholds here so the two cannot drift apart.
  *
- * The amber step is the lag at which the syncer itself gives up the live
- * 3-second throttle and starts running flat out, so the console turns amber
+ * The amber step is the lag at which the syncer itself stops treating a block
+ * as live work — where it stops buffering blocks for the feed's cadence and
+ * broadcasts each one the moment it is ready — so the console turns amber
  * exactly when sync stops behaving as caught up. That edge is configurable
  * (`backfillEntryBlocks`, set by `BLOCKCHAIN_BACKFILL_ENTRY_BLOCKS`), so it is
  * read from the blockchain status payload rather than copied here — a constant
@@ -41,23 +42,24 @@ export const LAG_DANGER_BLOCKS = 100;
  * first poll resolves and could be missing or nonsensical from a mismatched
  * backend.
  *
- * The reserve is added on because the two figures are counted from different
- * places. Reported lag counts down from the raw chain head, while the syncer
- * decides its mode from the live tip, which sits a reserve's worth of blocks
- * below that head so there is always buffered work for a hiccup to drain from.
- * Without the offset the console would turn amber while sync was still pacing
- * normally, early by exactly the size of the reserve.
+ * The held-back figure is added on because the two numbers are counted from
+ * different places. Feed lag counts down from the raw chain head and so
+ * includes whatever the deployment is deliberately holding, while the mode
+ * boundary is about how far behind the chain *ingestion* has fallen. Without
+ * the offset the console would turn amber on a deployment behaving exactly as
+ * configured, early by exactly the size of the lead it was told to keep.
  *
  * @param backfillEntryBlocks - Entry threshold echoed by the blockchain status payload.
- * @param liveTipReserveBlocks - Reserve echoed by the same payload, so the console counts
- *                               from the same place the syncer does. Leave it out and the
- *                               amber step lands a reserve early, reading as a fault that
- *                               is not there.
+ * @param heldBackBlocks - Blocks the deployment holds on purpose, echoed by the same
+ *                         payload: the emitter's buffer target when colouring feed lag,
+ *                         or the live tip reserve when colouring ingest lag. Leave it out
+ *                         and the amber step lands that many blocks early, reading as a
+ *                         fault that is not there.
  * @returns Blocks-behind figure at or above which lag should read as degraded.
  */
 export function resolveLagWarningBlocks(
     backfillEntryBlocks: number | null | undefined,
-    liveTipReserveBlocks?: number | null
+    heldBackBlocks?: number | null
 ): number {
     let warningBlocks = LAG_WARNING_BLOCKS_FALLBACK;
 
@@ -65,8 +67,8 @@ export function resolveLagWarningBlocks(
         warningBlocks = backfillEntryBlocks;
     }
 
-    if (typeof liveTipReserveBlocks === 'number' && Number.isFinite(liveTipReserveBlocks) && liveTipReserveBlocks > 0) {
-        warningBlocks += liveTipReserveBlocks;
+    if (typeof heldBackBlocks === 'number' && Number.isFinite(heldBackBlocks) && heldBackBlocks > 0) {
+        warningBlocks += heldBackBlocks;
     }
 
     return warningBlocks;

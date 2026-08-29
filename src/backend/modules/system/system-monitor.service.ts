@@ -8,6 +8,7 @@ import { SyncStateModel, type SyncStateFields } from '../../database/models/sync
 import { BlockModel, type BlockFields, type BlockDoc } from '../../database/models/block-model.js';
 import { TransactionModel, type TransactionDoc } from '../../database/models/transaction-model.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
+import { BlockEmitter } from '../blockchain/block-emitter.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { blockchainConfig } from '../../config/blockchain.js';
@@ -90,12 +91,45 @@ export interface BlockchainSyncStatus {
    */
   liveTipReserveBlocks: number;
   /**
-   * Seconds between blocks the syncer paces itself to
+   * Seconds between blocks the emitter releases at
    * (`BLOCKCHAIN_BLOCK_INTERVAL_SECONDS`). Echoed so the console can judge a
    * cycle's end-to-end duration against the deployment's own block period
    * rather than assuming TRON's default three seconds.
    */
   blockIntervalSeconds: number;
+  /**
+   * Height of the last block actually broadcast, or null before the first one.
+   *
+   * This differs from `currentBlock` by the emitter's buffer depth, and it is
+   * the figure a viewer's feed is showing. `currentBlock` is what has been
+   * indexed, which since ingestion stopped pacing itself sits at the chain head
+   * nearly all the time and so says nothing about the feed.
+   */
+  lastEmittedBlockNumber: number | null;
+  /**
+   * Blocks between the chain head and the last broadcast block — the delay a
+   * viewer actually experiences.
+   *
+   * In a healthy deployment this sits near the emitter's target depth by
+   * design, because that lead is what covers an upstream hiccup. Falls back to
+   * `lag` before the emitter has released anything.
+   */
+  feedLag: number;
+  /** Blocks the emitter is holding now; the lead available to cover a hiccup. */
+  emitBufferDepth: number;
+  /** The lead the emitter aims to hold, so a console can judge depth against it. */
+  emitBufferTargetDepth: number;
+  /** False while the emitter is still building its initial lead after a restart. */
+  emitBufferSeeded: boolean;
+  /**
+   * How many times the buffer has drained to empty since the process started.
+   *
+   * The single number that says whether the lead is sized right: a deployment
+   * holding a real lead never reaches zero, so any increase means the feed was
+   * exposed to an upstream gap and the target depth is too small for what this
+   * deployment's provider actually does.
+   */
+  emitBufferUnderruns: number;
 }
 
 export interface TransactionStats {
@@ -668,10 +702,26 @@ export class SystemMonitorService {
       ? meta.lastProcessedBlockNumber
       : null;
 
+    // Read straight from the emitter rather than from the sync state document.
+    // The worker writes that document once per block, so between scheduler
+    // ticks it stops updating while the emitter keeps releasing — a feed lag
+    // taken from Mongo would sit a whole tick stale exactly when an operator is
+    // checking whether the feed is healthy.
+    const emitBuffer = BlockEmitter.getInstance().getMetrics();
+    const feedLag = emitBuffer.lastReleasedBlockNumber === null
+      ? lag
+      : Math.max(0, networkBlockValue - emitBuffer.lastReleasedBlockNumber);
+
     return {
       currentBlock,
       networkBlock: networkBlockValue,
       lag,
+      lastEmittedBlockNumber: emitBuffer.lastReleasedBlockNumber,
+      feedLag,
+      emitBufferDepth: emitBuffer.depth,
+      emitBufferTargetDepth: emitBuffer.targetDepth,
+      emitBufferSeeded: emitBuffer.seeded,
+      emitBufferUnderruns: emitBuffer.underruns,
       backfillQueueSize: snapshot.backfillQueueSize,
       lastProcessedAt: snapshot.lastProcessedAt,
       lastProcessedBlockId: snapshot.lastProcessedBlockId,

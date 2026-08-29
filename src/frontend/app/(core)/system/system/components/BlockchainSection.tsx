@@ -46,6 +46,22 @@ interface BlockchainStatus {
      */
     liveTipReserveBlocks: number;
     blockIntervalSeconds: number;
+    /** Height of the last block actually broadcast, null before the first one. */
+    lastEmittedBlockNumber: number | null;
+    /**
+     * Blocks between the chain head and the last broadcast block — the delay a
+     * viewer actually experiences, as opposed to `lag`, which is how far
+     * indexing is behind. The two differ by the emitter's buffer depth.
+     */
+    feedLag: number;
+    /** Blocks the emitter is holding; the lead available to cover a hiccup. */
+    emitBufferDepth: number;
+    /** The lead the emitter aims to hold, used to judge depth and offset tone. */
+    emitBufferTargetDepth: number;
+    /** False while the emitter is still building its initial lead after a restart. */
+    emitBufferSeeded: boolean;
+    /** Times the buffer has drained to empty; any increase means the feed was exposed. */
+    emitBufferUnderruns: number;
 }
 
 interface BlockProcessingMetrics {
@@ -83,8 +99,8 @@ interface ObserverStats {
 const BLOCK_INTERVAL_SECONDS_FALLBACK = 3;
 
 /**
- * Overshoot above one block period that still counts as normal pacing jitter.
- * Beyond it the Total figure turns amber.
+ * Overshoot above one block period that still counts as normal per-block
+ * variance. Beyond it the Total figure turns amber.
  */
 const PIPELINE_TOTAL_WARNING_OVERSHOOT_MS = 20;
 
@@ -227,10 +243,17 @@ interface SyncStatusBlockProps {
 
 function SyncStatusBlock({ status, metrics, schedulerEnabled, syncing, onTriggerSync }: SyncStatusBlockProps) {
     const netCatchUpRate = status?.netCatchUpRate ?? null;
-    // A negative catch-up rate is only a problem when nothing is holding blocks
-    // back on purpose. A paced syncer sits at its configured cadence by design,
-    // so `pacing` being zero is what distinguishes falling behind from waiting.
-    const fallingBehind = netCatchUpRate !== null && netCatchUpRate < 0 && !status?.lastTimings?.pacing;
+    // A negative catch-up rate on its own is not a fault. Ingestion no longer
+    // paces itself, so it drains each tick's blocks in a burst and then idles,
+    // which makes the measured rate cross zero constantly while the syncer sits
+    // exactly at the chain head. Lag is what separates the two: a rate below
+    // zero only matters once ingestion has actually fallen behind far enough
+    // that the syncer would stop treating blocks as live work.
+    const fallingBehind =
+        netCatchUpRate !== null &&
+        netCatchUpRate < 0 &&
+        status !== null &&
+        status.lag > status.liveChainThrottleBlocks;
 
     return (
         <div className={styles.block}>
@@ -244,7 +267,7 @@ function SyncStatusBlock({ status, metrics, schedulerEnabled, syncing, onTrigger
                     disabled={syncing || schedulerEnabled}
                     loading={syncing}
                     title={schedulerEnabled
-                        ? 'Scheduler is running automatically every minute'
+                        ? 'Scheduler is running blockchain:sync automatically'
                         : 'Manually trigger blockchain sync'}
                 >
                     Trigger Sync
@@ -282,12 +305,34 @@ function SyncStatusBlock({ status, metrics, schedulerEnabled, syncing, onTrigger
                             detail: 'Last indexed locally'
                         },
                         {
-                            label: 'Lag',
+                            label: 'Index Lag',
                             value: status.lag.toLocaleString(),
                             detail: status.averageProcessingDelaySeconds !== null
                                 ? `${formatDuration(status.averageProcessingDelaySeconds)} behind`
                                 : `${status.lag.toLocaleString()} blocks behind`,
                             tone: getLagMetricTone(status.lag, status.backfillEntryBlocks, status.liveTipReserveBlocks)
+                        },
+                        {
+                            // Reported separately from Index Lag because the two
+                            // now say different things. Ingestion runs at the
+                            // chain head, so Index Lag is near zero whether or
+                            // not the feed is healthy; this is the delay a
+                            // viewer sees, and it sits near the buffer target by
+                            // design rather than by accident.
+                            label: 'Feed Lag',
+                            value: status.feedLag.toLocaleString(),
+                            detail: `${status.emitBufferTargetDepth} block buffer by design`,
+                            tone: getLagMetricTone(
+                                status.feedLag,
+                                status.backfillEntryBlocks,
+                                status.emitBufferTargetDepth
+                            )
+                        },
+                        {
+                            label: 'Buffer',
+                            value: `${status.emitBufferDepth} / ${status.emitBufferTargetDepth}`,
+                            detail: resolveBufferDetail(status),
+                            tone: getBufferTone(status)
                         },
                         ...(status.processingBlocksPerMinute !== null
                             ? [{
@@ -375,13 +420,6 @@ function PipelineMetricsBlock({ status }: PipelineMetricsBlockProps) {
                         value: `${(status.lastTimings.bulkWriteTransactions ?? 0).toFixed(0)} ms`,
                         detail: 'Persist to MongoDB'
                     },
-                    ...(status.lastTimings.pacing !== undefined
-                        ? [{
-                            label: 'Pacing',
-                            value: `${status.lastTimings.pacing.toFixed(0)} ms`,
-                            detail: 'Held before broadcast'
-                        }]
-                        : []),
                     {
                         label: 'Total',
                         value: `${totalMs.toFixed(0)} ms`,
@@ -480,52 +518,105 @@ function ObserverPerformanceBlock({ observers }: ObserverPerformanceBlockProps) 
 }
 
 /**
- * Colour the Lag figure by how far behind the chain the indexer is.
+ * Colour a lag figure by how far behind the chain it is.
  *
- * The amber step comes from the payload's own entry threshold, so the figure
- * turns amber exactly where the syncer gives up the live throttle even in a
- * deployment that tuned it. Only the danger step is a console judgement. Both
- * resolve through `lag-thresholds.ts`, so the same lag reads identically here
- * and on the Overview strip's Chain tile.
+ * Used for both lag cells. The amber step comes from the payload's own entry
+ * threshold, so a figure turns amber exactly where the syncer stops treating
+ * blocks as live work, even in a deployment that tuned that edge. Only the
+ * danger step is a console judgement. Both resolve through
+ * `lag-thresholds.ts`, so the same lag reads identically wherever it appears.
  *
- * @param lag - Blocks the local index is behind the network head.
+ * @param lag - Blocks behind the network head, either the index cursor's or the feed's.
  * @param backfillEntryBlocks - Entry threshold from the status payload; the syncer's own mode boundary.
- * @param liveTipReserveBlocks - Blocks the syncer holds back on purpose, also from the payload. Passed
- *                               through because lag counts from the head while the syncer's boundary
- *                               counts from the tip, so without it the cell would warn a reserve early
- *                               on a deployment behaving exactly as configured.
- * @returns The tone the Lag stat cell should carry.
+ * @param heldBackBlocks - Blocks this deployment holds on purpose, also from the payload: the buffer
+ *                         target for feed lag, the live tip reserve for index lag. Passed through
+ *                         because the lag counts from the head and includes the deliberate hold, so
+ *                         without it the cell warns that many blocks early on a healthy deployment.
+ * @returns The tone the stat cell should carry.
  */
 function getLagMetricTone(
     lag: number,
     backfillEntryBlocks: number,
-    liveTipReserveBlocks: number
+    heldBackBlocks: number
 ): 'success' | 'warning' | 'danger' {
     if (lag >= LAG_DANGER_BLOCKS) return 'danger';
-    if (lag >= resolveLagWarningBlocks(backfillEntryBlocks, liveTipReserveBlocks)) return 'warning';
+    if (lag >= resolveLagWarningBlocks(backfillEntryBlocks, heldBackBlocks)) return 'warning';
     return 'success';
+}
+
+/**
+ * Colour the Buffer figure by whether the feed still has a lead to spend.
+ *
+ * Depth alone does not say whether the buffer is doing its job, because a
+ * healthy buffer dips below target routinely and refills. What matters is
+ * whether it has ever hit zero: at zero there is no lead left and the next
+ * upstream gap reaches the screen, which is the failure the buffer exists to
+ * prevent. An underrun therefore outranks a shallow-but-nonzero depth.
+ *
+ * @param status - The blockchain status payload, read for buffer depth, target,
+ *                 the seeded flag, and the underrun count.
+ * @returns The tone the Buffer stat cell should carry, or undefined while the
+ *          buffer is still seeding, when it is expected to be short and
+ *          colouring it would report a fault during normal startup.
+ */
+function getBufferTone(status: BlockchainStatus): 'success' | 'warning' | 'danger' | undefined {
+    if (!status.emitBufferSeeded) return undefined;
+    if (status.emitBufferUnderruns > 0) return 'warning';
+    if (status.emitBufferDepth === 0) return 'danger';
+    return 'success';
+}
+
+/**
+ * Describe what the Buffer figure means right now, in the cell's detail line.
+ *
+ * The count alone leaves an operator guessing whether a short buffer is a
+ * startup artefact, a fault, or normal refill, so the detail names which of
+ * those is happening. The underrun count is surfaced first when it is nonzero,
+ * because it is the number that says the target depth is too small for what
+ * this deployment's provider actually does.
+ *
+ * @param status - The blockchain status payload.
+ * @returns A short phrase for the detail line under the Buffer value.
+ */
+function resolveBufferDetail(status: BlockchainStatus): string {
+    let detail: string;
+
+    if (!status.emitBufferSeeded) {
+        detail = 'Building initial lead';
+    } else if (status.emitBufferUnderruns > 0) {
+        detail = `${status.emitBufferUnderruns.toLocaleString()} underruns since boot`;
+    } else if (status.emitBufferDepth < status.emitBufferTargetDepth) {
+        detail = 'Refilling toward target';
+    } else {
+        detail = 'Blocks held for the feed';
+    }
+
+    return detail;
 }
 
 /**
  * Colour the pipeline Total figure by how far it overshoots one block period.
  *
- * The syncer's throttle paces each cycle to one block period, so a healthy
- * Total sits at roughly that figure — a strict `> 3000 ms` rule painted the cell
- * red during normal operation and trained operators to ignore it. The amber step
- * allows a small pacing overshoot before flagging anything, and only a cycle
- * slow enough to actually lose ground against the chain turns the figure red.
+ * Total is now pure work — no cycle waits on a clock, because the broadcast
+ * wait moved to the emitter — so a healthy Total sits well *below* one block
+ * period rather than at it. The threshold is still one block period, but it
+ * means something different than it used to: a cycle costing more than the
+ * chain takes to produce a block cannot keep up with production, so ingestion
+ * will fall behind and the emitter's buffer will drain. The steps are kept
+ * rather than tightened because a single slow block is normal and a strict rule
+ * trains operators to ignore the cell.
  *
  * The period itself is read from the status payload rather than assumed,
- * because the syncer paces to `blockIntervalSeconds`
- * (`BLOCKCHAIN_BLOCK_INTERVAL_SECONDS`) and a deployment that sets that to six
- * would otherwise show every healthy cycle in red — recreating the exact alert
- * fatigue these steps exist to remove. The value is guarded because it arrives
- * over the network: it is absent before the first poll resolves and could be
- * missing or nonsensical from a mismatched backend.
+ * because a deployment can set `blockIntervalSeconds`
+ * (`BLOCKCHAIN_BLOCK_INTERVAL_SECONDS`) to something other than TRON's three
+ * and would otherwise show every healthy cycle in red — recreating the exact
+ * alert fatigue these steps exist to remove. The value is guarded because it
+ * arrives over the network: it is absent before the first poll resolves and
+ * could be missing or nonsensical from a mismatched backend.
  *
  * @param totalMs - End-to-end duration of the last block cycle, in milliseconds.
- * @param blockIntervalSeconds - Block period echoed by the status payload; the pace the syncer's throttle targets.
- * @returns The tone the Total stat cell should carry, or `undefined` to leave it neutral when the cycle is on pace.
+ * @param blockIntervalSeconds - Block period echoed by the status payload; the rate the chain produces at.
+ * @returns The tone the Total stat cell should carry, or `undefined` to leave it neutral when the cycle keeps up.
  */
 function getPipelineTotalTone(
     totalMs: number,
