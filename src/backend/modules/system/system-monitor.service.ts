@@ -82,11 +82,11 @@ export interface BlockchainSyncStatus {
   backfillEntryBlocks: number;
   /**
    * How many blocks behind the head the syncer deliberately stops
-   * (`BLOCKCHAIN_LIVE_TIP_RESERVE_BLOCKS`), keeping that much work buffered so
-   * a hiccup does not stall the live feed. Echoed because `lag` is measured
-   * against the raw chain head, so a perfectly healthy syncer reports this
-   * figure rather than zero, and a console that did not know about the reserve
-   * would start warning that many blocks early.
+   * (`BLOCKCHAIN_LIVE_TIP_RESERVE_BLOCKS`), zero unless a deployment configured
+   * distance from the tip. Echoed because `lag` is measured against the raw
+   * chain head while the syncer's own mode boundary is measured against the
+   * tip, so a console that did not know about the reserve would start warning
+   * that many blocks early on a deployment that set one.
    */
   liveTipReserveBlocks: number;
   /**

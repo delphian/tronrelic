@@ -39,10 +39,10 @@ interface BlockchainStatus {
     liveChainThrottleBlocks: number;
     backfillEntryBlocks: number;
     /**
-     * Blocks the syncer deliberately holds back from the chain head so there is
-     * always buffered work behind the live feed. A healthy deployment therefore
-     * reports this figure as its lag rather than zero, which is why the tone
-     * thresholds offset by it.
+     * Blocks the syncer deliberately holds back from the chain head, zero
+     * unless a deployment configured distance from the tip. A deployment that
+     * sets one reports that figure as its lag rather than zero, which is why
+     * the tone thresholds offset by it.
      */
     liveTipReserveBlocks: number;
     blockIntervalSeconds: number;

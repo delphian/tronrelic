@@ -31,16 +31,19 @@ export const blockchainConfig = {
     liveChainThrottleBlocks: toNumber(process.env.BLOCKCHAIN_LIVE_CHAIN_THROTTLE_BLOCKS, 20),
     backfillEntryBlocks: toNumber(process.env.BLOCKCHAIN_BACKFILL_ENTRY_BLOCKS, 30),
     // How many blocks behind the chain head the forward cursor deliberately
-    // stops. Chasing the tip as tightly as possible leaves the work queue empty
-    // the instant sync catches up, so any hiccup — a slow TronGrid response, a
-    // scheduler tick that ran late — becomes visible dead air in the live feed
-    // with nothing buffered to cover it. Holding a few blocks back keeps that
-    // many blocks of work permanently in reserve, which a short hiccup drains
-    // from instead of stalling. The cost is latency: every block reaches the
-    // frontend this many block times late, so five blocks is fifteen seconds.
-    // Keep it well below `liveChainThrottleBlocks`, because the reserve counts
-    // toward the block age that decides whether a block is paced at all.
-    liveTipReserveBlocks: toNumber(process.env.BLOCKCHAIN_LIVE_TIP_RESERVE_BLOCKS, 5),
+    // stops. Off by default, because holding the cursor back does not buffer any
+    // work. The scheduler enqueues every block from the cursor up to this target
+    // on each tick, so raising it only makes the cursor settle that many blocks
+    // lower: the batch size stays exactly the chain's production over one tick,
+    // and queue depth still falls to zero at the tick boundary. The one
+    // guaranteed effect is latency, since every block then reaches the frontend
+    // this many block times late. Uneven arrival is smoothed on the client
+    // instead, by the playout buffer in `SocketBridge`, which holds real blocks
+    // and releases them on its own clock. Set this above zero only when a
+    // deployment wants deliberate distance from the tip, and keep it well below
+    // `liveChainThrottleBlocks`, because the lag it adds counts toward the block
+    // age that decides whether a block is paced at all.
+    liveTipReserveBlocks: toNumber(process.env.BLOCKCHAIN_LIVE_TIP_RESERVE_BLOCKS, 0),
     // The most pacing debt one stall may repay, measured in blocks. The pacer
     // spaces broadcasts against a running deadline, so a block that overruns
     // shortens the next wait instead of drifting permanently late. Left

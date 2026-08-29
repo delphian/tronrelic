@@ -88,6 +88,10 @@ export function SocketBridge() {
   const blockBufferRef = useRef<BlockNotificationPayload['payload'][]>([]);
   const blockReleaseTimerRef = useRef<number | null>(null);
   const lastBlockReleaseAtRef = useRef(0);
+  // False until the first block has been released. It is what makes the buffer
+  // hold one interval of lead before playback starts; without that lead there
+  // is never anything in hand to spend on a skipped slot.
+  const blockBufferPrimedRef = useRef(false);
 
   const desired = useAppSelector(state => state.realtime.desired);
   const pending = useAppSelector(state => state.realtime.pending);
@@ -319,6 +323,7 @@ export function SocketBridge() {
       const next = blockBufferRef.current.shift();
       if (next) {
         lastBlockReleaseAtRef.current = Date.now();
+        blockBufferPrimedRef.current = true;
         dispatch(blockReceived(next));
       }
 
@@ -349,7 +354,18 @@ export function SocketBridge() {
       }
 
       const sinceLast = Date.now() - lastBlockReleaseAtRef.current;
-      const wait = Math.max(0, interval - sinceLast);
+      let wait = Math.max(0, interval - sinceLast);
+
+      // Hold the very first block for a full interval so playback starts one
+      // interval behind the feed. Without this the buffer keeps nothing: every
+      // arrival finds the previous release already an interval old, waits zero
+      // and goes straight out, so a skipped TRON slot still shows as a six
+      // second hole. Reusing `interval` here means a burst that has already
+      // reached the catch-up or maximum depth is not held, since a backlog
+      // supplies the depth this hold exists to create.
+      if (!blockBufferPrimedRef.current) {
+        wait = Math.max(wait, interval);
+      }
 
       blockReleaseTimerRef.current = window.setTimeout(releaseBufferedBlock, wait);
     };
@@ -461,6 +477,7 @@ export function SocketBridge() {
       // unmounted page was showing; a remount fetches fresh state on the
       // server, so replaying stale ones would only fight that.
       blockBufferRef.current = [];
+      blockBufferPrimedRef.current = false;
 
       socket.off('memo:new', handleMemoUpdate);
       socket.off('block:new', handleBlockUpdate);

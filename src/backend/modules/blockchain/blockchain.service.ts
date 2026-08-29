@@ -1057,12 +1057,14 @@ export class BlockchainService implements IBlockchainService {
             const parityTarget = this.getParityTarget(state);
             const existingBackfill = this.getBackfillQueue(state);
 
-            // Stop the forward cursor short of the chain head on purpose. Taking
-            // every block up to the tip empties the work queue the moment sync
-            // catches up, so the next slow TronGrid call or late scheduler tick
-            // becomes dead air in the live feed with nothing buffered behind
-            // it. Leaving a few blocks unclaimed keeps that many blocks of work
-            // permanently in reserve for a hiccup to drain from instead.
+            // How far forward the cursor may advance this tick. The reserve is
+            // zero by default, which makes this the chain head. It does not
+            // buffer work: this tick enqueues everything from the cursor up to
+            // the target, so a nonzero reserve only settles the cursor that many
+            // blocks lower while the batch stays exactly one tick's production.
+            // The knob is kept for a deployment that wants deliberate distance
+            // from a tip its provider serves inconsistently. Uneven arrival is
+            // smoothed on the client, by the playout buffer in `SocketBridge`.
             const liveTip = latestNetworkBlock - Math.max(0, blockchainConfig.network.liveTipReserveBlocks);
 
             const { targets, remainingBackfill } = await this.computeBlockTargets({
@@ -1309,9 +1311,10 @@ export class BlockchainService implements IBlockchainService {
             }
         }
 
-        // The forward walk stops at the live tip, which holds the reserve back.
-        // Backfill and parity above use the raw head, because a block already
-        // known to be missing is old work with nothing to reserve.
+        // The forward walk stops at the live tip, which equals the chain head
+        // unless a deployment configured distance from it. Backfill and parity
+        // above always use the raw head, because a block already known to be
+        // missing is old work and holding it back would serve no purpose.
         let nextBlock = lastProcessed + 1;
         while (selected.size < maxBatch && nextBlock <= liveTip) {
             if (!selected.has(nextBlock)) {
