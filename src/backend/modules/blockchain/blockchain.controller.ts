@@ -37,12 +37,23 @@ export class BlockchainController {
      * Retrieves the most recent transactions from the database, sorted by timestamp
      * descending. Useful for displaying recent blockchain activity in UI feeds.
      *
-     * @param req - Express request with optional `limit` query parameter (max 200)
+     * The ceiling exists so a single caller cannot ask for an unbounded page and
+     * make the database read grow without limit. It sits at 600 because a display
+     * that samples recent activity across whole blocks needs more than one busy
+     * TRON block's worth of rows — a single block can carry several hundred
+     * transactions on its own, so anything at or below that returns a fragment of
+     * the newest block rather than a span of recent ones. The read is a sorted
+     * index scan with a `limit`, so the extra rows cost proportionally and nothing
+     * more.
+     *
+     * @param req - Express request with optional `limit` query parameter. A value
+     *   above the ceiling is clamped to it rather than rejected, so an existing
+     *   caller asking for too much still gets a usable page (max 600).
      * @param res - Express response containing transaction array
      */
     latestTransactions = async (req: Request, res: Response) => {
         const limit = Number(req.query.limit ?? 50);
-        const transactions = await this.service.getLatestTransactions(Math.min(limit, 200));
+        const transactions = await this.service.getLatestTransactions(Math.min(limit, 600));
         res.json({ success: true, transactions });
     };
 
