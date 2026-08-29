@@ -18,9 +18,12 @@
  *
  * The cost of an explicit list is the opposite failure: a tag a source starts
  * asserting but nobody adds here renders with no warning, which looks identical
- * to a safe address. `__tests__/tagSeverity.test.ts` imports the backend
- * sources' own tag constants and fails when one is missing from this list, so
- * the omission surfaces in continuous integration rather than in production.
+ * to a safe address. `src/backend/modules/address-tags/__tests__/tag-severity-coverage.test.ts`
+ * guards against that from the backend side, where the tag constants live. It
+ * imports the sources' own constants and fails when one is missing from this
+ * list, and it cross-checks both against `RESERVED_TAG_PREFIXES` so that a
+ * source added under a new prefix fails the build rather than shipping an
+ * unmarked warning.
  *
  * This file deliberately imports nothing. It is consumed both by React
  * components and by a plain Node test, and staying dependency-free keeps both
