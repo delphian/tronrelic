@@ -60,6 +60,7 @@ import { BlockchainService } from './modules/blockchain/blockchain.service.js';
 import { TransactionDetailService } from './modules/blockchain/transaction-detail.service.js';
 import { registerTransactionAiTools } from './modules/blockchain/transaction-ai-tools.js';
 import { TronGridClient } from './modules/blockchain/tron-grid.client.js';
+import { BlockEmitter } from './modules/blockchain/block-emitter.js';
 import { UsdtParametersFetcher } from './modules/usdt-parameters/usdt-parameters-fetcher.js';
 import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters.service.js';
 import { createApiRouter } from './api/routes/index.js';
@@ -201,6 +202,11 @@ async function bootstrap(): Promise<void> {
         const shutdown = async (signal: string) => {
             logger.info({ signal }, 'Received shutdown signal');
             ctx.modules.scheduler.stop();
+            // Release whatever the broadcast buffer is still holding before the
+            // socket server goes away. Those blocks are already fetched and
+            // written, so dropping them would deny connected clients data the
+            // backend already has, for no gain.
+            BlockEmitter.getInstance().stop();
             ctx.server.close();
             await disconnectRedis();
             process.exit(0);

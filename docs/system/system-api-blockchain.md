@@ -24,7 +24,7 @@ Sync lag is the single most important production signal — every observer and d
 |---|---|---|
 | `currentBlock` | number | Last processed |
 | `networkBlock` | number | Network tip (or last known if TronGrid unreachable) |
-| `lag` | number | Blocks behind (`max(0, network - current)`) |
+| `lag` | number | Blocks the *index* is behind (`max(0, network - current)`). Near zero almost always, since ingestion no longer paces itself — use `feedLag` to judge the live feed |
 | `backfillQueueSize` | number | Failed blocks awaiting retry |
 | `lastProcessedAt` | string \| null | ISO timestamp of most recent block |
 | `lastProcessedBlockId` | string \| null | Block hash |
@@ -39,9 +39,15 @@ Sync lag is the single most important production signal — every observer and d
 | `averageProcessingDelaySeconds` | number | Block-creation → processed latency |
 | `lastTimings` | object \| null | Per-stage timings from the most recent block (stages 1–11; see [sync architecture](./system-blockchain-sync-architecture.md#per-block-pipeline-stages)) |
 | `lastTransactionCount` | number \| null | Transactions processed in the last block |
-| `liveChainThrottleBlocks` | number | Config echo: lag at or below which sync *resumes* the adaptive 3s throttle (default 20). It gives the throttle up at a higher lag — see the [dead band](./system-blockchain-sync-architecture.md#which-mode-sync-is-in) — so this value alone does not tell you the current mode |
-| `backfillEntryBlocks` | number | Config echo: lag at or above which sync *drops* the 3s throttle and catches up flat out (default 30). The `/system` console's amber lag step is read from this field |
-| `blockIntervalSeconds` | number | Config echo: the block period sync paces each throttled cycle to (`BLOCKCHAIN_BLOCK_INTERVAL_SECONDS`, default 3). The `/system` console's Pipeline Total warning and danger steps are measured from this field, so a deployment on a different period is judged against its own pacing |
+| `liveChainThrottleBlocks` | number | Config echo: lag at or below which sync *resumes* buffering blocks for the feed (default 20). It stops buffering at a higher lag — see the [dead band](./system-blockchain-sync-architecture.md#which-blocks-get-buffered) — so this value alone does not tell you the current mode |
+| `backfillEntryBlocks` | number | Config echo: lag at or above which sync *stops* buffering and broadcasts each block as soon as it is ready (default 30). The `/system` console's amber lag step is read from this field |
+| `blockIntervalSeconds` | number | Config echo: the block period the emitter releases at (`BLOCKCHAIN_BLOCK_INTERVAL_SECONDS`, default 3). The `/system` console's Pipeline Total warning and danger steps are measured from this field, so a deployment on a different period is judged against its own chain |
+| `lastEmittedBlockNumber` | number \| null | Height of the last block actually broadcast. `null` before the first release |
+| `feedLag` | number | Blocks between the chain head and the last broadcast block — the delay a viewer experiences. Sits near `emitBufferTargetDepth` by design. Falls back to `lag` before the first release |
+| `emitBufferDepth` | number | Blocks the emitter is holding; the lead available to cover an upstream hiccup |
+| `emitBufferTargetDepth` | number | Config echo: the lead the emitter aims to hold (`BLOCKCHAIN_EMIT_BUFFER_TARGET_DEPTH`, default 8) |
+| `emitBufferSeeded` | boolean | `false` while the emitter is still building its initial lead after a restart |
+| `emitBufferUnderruns` | number | Times the buffer has drained to empty since boot. **The number to alert on** — a deployment holding a real lead never reaches zero, so any increase means the feed was exposed to a gap and the target depth is too small |
 
 ```bash
 LAG=$(curl -s -H "X-Admin-Token: $TOKEN" \

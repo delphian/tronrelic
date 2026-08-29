@@ -22,7 +22,7 @@ Six jobs registered in `src/backend/modules/scheduler/jobs/core-jobs.ts`:
 
 | Job | Default Schedule | Purpose | Impact if Down |
 |---|---|---|---|
-| `blockchain:sync` | `*/1 * * * *` | Retrieve TRON blocks, enrich, dispatch to observers | Transaction feed and observers go silent |
+| `blockchain:sync` | `*/15 * * * * *` | Retrieve TRON blocks, enrich, dispatch to observers | Transaction feed and observers go silent |
 | `blockchain:prune` | `0 * * * *` | Drop transactions (4d) and blocks (32d) past retention | `transactions` and `blocks` collections grow unbounded |
 | `chain-parameters:fetch` | `*/10 * * * *` | Pull `energyPerTrx`, `energyFee` from TRON | Energy/TRX conversions drift from network truth |
 | `usdt-parameters:fetch` | `*/10 * * * *` | Pull current USDT transfer energy cost | USDT pricing drifts |
@@ -30,6 +30,8 @@ Six jobs registered in `src/backend/modules/scheduler/jobs/core-jobs.ts`:
 | `system-logs:cleanup` | `0 * * * *` | Delete logs past retention | Log storage grows |
 
 Plugins register additional jobs via `context.scheduler.register(name, cron, fn)`; the dashboard and admin API treat them identically to core jobs.
+
+**`blockchain:sync` has a coupled setting.** `blockchainConfig.lock.ttlSeconds` (`BLOCK_SYNC_LOCK_TTL`, 14s) is sized just under this job's period so the sync lock always self-releases before the next tick. Change one and change the other: a TTL longer than the period silently skips ticks, and one much shorter lets two runs overlap and race the block cursor. Note also that the table above lists the *code* default, while a deployment runs whatever is stored in `scheduler_configs` from when the job was first registered — deployments predating the 15-second schedule keep the old one-minute cron until an operator edits it here.
 
 ### Plugin Jobs Follow the Plugin
 

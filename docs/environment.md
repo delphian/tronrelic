@@ -50,7 +50,15 @@ With no API key configured, the backend uses TronGrid's shared pool for anonymou
 
 Each key you populate — `TRONGRID_API_KEY`, `TRONGRID_API_KEY_2`, and `TRONGRID_API_KEY_3` — raises the ceiling to 1,000 requests per second on that key's own account. The backend cycles through whichever slots are filled, one request at a time in turn, so add as many keys as you have.
 
-During local development, set `ENABLE_SCHEDULER=false` to avoid the problem entirely. The scheduler pulls new blocks every minute and refreshes market data every ten, which is a lot of traffic to aim at a shared key.
+During local development, set `ENABLE_SCHEDULER=false` to avoid the problem entirely. The scheduler pulls new blocks every fifteen seconds and refreshes market data every ten minutes, which is a lot of traffic to aim at a shared key.
+
+## Block Sync Timing Variables
+
+`BLOCK_SYNC_LOCK_TTL` (14 seconds) is not an independent knob. It is sized just under the `blockchain:sync` cron period so the Redis lock self-releases before the next tick even when a run dies. A TTL longer than the period makes ticks find the lock held and skip silently; a much shorter one lets two runs race the block cursor. The schedule itself is not an environment variable — it lives in `scheduler_configs` and is edited at `/system/scheduler`.
+
+`BLOCKCHAIN_EMIT_BUFFER_TARGET_DEPTH` (8) is how many finished blocks the backend holds before broadcasting, which is the lead that covers an upstream hiccup. Setting it to **0 switches buffering off** and is the supported setting for a staged rollout, not a broken configuration.
+
+`BLOCKCHAIN_EMIT_BUFFER_REFILL_MS` (3300) **must stay above one block time**. It is the spacing used below target, and releasing slower than blocks arrive is the only way a lead spent on a gap grows back. Set it equal to the block time and the buffer covers one gap for the life of the process and then runs flat, with nothing in the logs to say so — watch `emitBufferUnderruns` on `/system` instead. The remaining `BLOCKCHAIN_EMIT_BUFFER_*` variables govern how a burst drains; see [system-blockchain-sync-architecture.md](./system/system-blockchain-sync-architecture.md#buffer-settings).
 
 ## Why the Two Notification Throttles Differ
 

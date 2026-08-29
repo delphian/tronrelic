@@ -14,11 +14,11 @@ import { blockchainConfig } from '../../config/blockchain.js';
 import { TronGridClient, type TronGridBlock, type TronGridTransaction, type TronGridTransactionInfo } from './tron-grid.client.js';
 import { normalizeContractType, resolveOwnerAddress, resolveRecipient, resolveAmounts, describeContract } from './transaction-parse.js';
 import { resolveCaughtUpMode } from './sync-mode.js';
-import { resolveEmitPacing, resolveBlockAgeInBlocks } from './block-pacer.js';
+import { resolveBlockAgeInBlocks } from './block-pacer.js';
+import { BlockEmitter, type IBlockNewPayload, type IPendingBlockEmit } from './block-emitter.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { getRedisClient } from '../../loaders/redis.js';
-import { WebSocketService } from '../../services/websocket.service.js';
 import { AlertService } from '../../services/alert.service.js';
 import { PriceService } from '../../services/price.service.js';
 import { AddressInsightService } from '../../services/address-insight.service.js';
@@ -102,7 +102,6 @@ export class BlockchainService implements IBlockchainService {
     private readonly redis: RedisClient;
     private readonly queue: QueueService<BlockSyncJob>;
     private readonly tronClient = TronGridClient.getInstance();
-    private readonly websocket = WebSocketService.getInstance();
     private readonly lockToken = randomUUID();
     private readonly alerts: AlertService;
     private readonly priceService = PriceService.getInstance();
@@ -111,13 +110,17 @@ export class BlockchainService implements IBlockchainService {
     private wasCaughtUp: boolean | null = null;
 
     /**
-     * When the next `block:new` broadcast is due, in milliseconds. Carried from
-     * one block to the next so a block that overruns shortens the following
-     * wait instead of drifting permanently late; see `block-pacer.ts` for why
-     * timing each block on its own produces a sawtooth instead of a cadence.
-     * Zero means no block has been paced yet in this process.
+     * The backend playout buffer that spaces `block:new` broadcasts.
+     *
+     * The worker used to hold each block for its own three-second slot before
+     * broadcasting it. Because the worker processes one job at a time, that
+     * wait blocked the next fetch, so the pipeline never held a fetched block
+     * in reserve and any upstream hiccup showed up as a gap in the feed.
+     * Ingestion now runs flat out and hands finished events here, where a lead
+     * of real blocks is kept and released on a separate clock. See
+     * `block-emitter.ts`.
      */
-    private nextEmitAt = 0;
+    private readonly emitter = BlockEmitter.getInstance();
 
     /**
      * The pacing mode of the most recently processed block, kept separate from
@@ -961,28 +964,33 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
-     * Decide whether the block currently being processed should be paced to
-     * live cadence, judging from the block itself rather than from the flag the
-     * scheduler stamped on the job.
+     * Decide whether the block currently being processed counts as live work,
+     * judging from the block itself rather than from the flag the scheduler
+     * stamped on the job.
+     *
+     * Live work goes into the emitter's buffer and is released on the feed's
+     * cadence. Anything else is broadcast immediately, because holding a block
+     * from hours ago for a live slot spends that slot on data nobody is waiting
+     * for and puts the syncer further behind.
      *
      * The scheduler decides once per tick and that answer then rides along on
-     * every job in the batch — up to sixty of them, covering three minutes of
-     * work. A batch queued while the syncer was behind therefore stayed
-     * unpaced long after it had caught up, overshooting well past the point
-     * where pacing should have resumed, and a batch queued while caught up kept
-     * pacing even as the chain ran away from it. Re-deciding here, from the
-     * block's own header timestamp, costs nothing and cannot go stale.
+     * every job in the batch. A batch queued while the syncer was behind
+     * therefore stayed classified as behind long after it had caught up, and a
+     * batch queued while caught up kept the live classification even as the
+     * chain ran away from it. Re-deciding here, from the block's own header
+     * timestamp, costs nothing and cannot go stale.
      *
      * The same dead band the scheduler uses applies, so a lag hovering on a
-     * threshold does not flip the mode block by block.
+     * threshold does not flip the classification block by block.
      *
      * @param blockTime - The block header timestamp, already normalized.
      * @param schedulerCaughtUp - The scheduler's answer from enqueue time. Used
      *                            only to seed the very first block after a
      *                            restart, when there is no previous block's
-     *                            mode to fall back on inside the dead band.
-     * @returns True to hold this block to live cadence, false to process it as
-     *          fast as it can go.
+     *                            classification to fall back on inside the dead
+     *                            band.
+     * @returns True to buffer this block for the feed's cadence, false to
+     *          broadcast it as soon as it is ready.
      */
     private resolveBlockPacing(blockTime: Date, schedulerCaughtUp: boolean): boolean {
         const intervalMs = blockchainConfig.network.blockIntervalSeconds * 1000;
@@ -1003,36 +1011,17 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
-     * Hold a block back until its broadcast is due, so the live feed reads at a
-     * steady cadence rather than reflecting whatever each block cost to
-     * process.
+     * Report how the broadcast buffer is doing, for the `/system` console.
      *
-     * This runs immediately before the WebSocket broadcast, not at the end of
-     * the block, because the broadcast is the event a viewer actually sees.
-     * Pacing after it regulated the wrong span: the gap between two broadcasts
-     * was the leftover wait from one block plus the entire fetch, parse and
-     * write cost of the next, so every bit of per-block variance landed
-     * straight in the visible gap.
+     * Exposed on the service because the emitter is the half of the pipeline an
+     * operator cannot infer from the sync cursor. The cursor now runs at the
+     * chain head almost all the time, so it says nothing about whether the feed
+     * is healthy; the buffer's depth and underrun count are what do.
      *
-     * @returns How long the block was held, in milliseconds, so the caller can
-     *          record it alongside the other per-stage timings and an operator
-     *          can tell a paced block from a slow one.
+     * @returns The emitter's current depth, target, and counters.
      */
-    private async paceEmit(): Promise<number> {
-        const pacing = resolveEmitPacing({
-            now: Date.now(),
-            nextEmitAt: this.nextEmitAt,
-            intervalMs: blockchainConfig.network.blockIntervalSeconds * 1000,
-            maxDebtBlocks: blockchainConfig.network.maxPacingDebtBlocks
-        });
-
-        this.nextEmitAt = pacing.nextEmitAt;
-
-        if (pacing.delayMs > 0) {
-            await new Promise(resolve => setTimeout(resolve, pacing.delayMs));
-        }
-
-        return pacing.delayMs;
+    public getEmitBufferMetrics() {
+        return this.emitter.getMetrics();
     }
 
     /**
@@ -1390,15 +1379,15 @@ export class BlockchainService implements IBlockchainService {
      * calculates block-level statistics, and broadcasts socket events for real-time UI updates. Transaction failures are isolated so one
      * corrupt record doesn't block the entire block, and blocks that fail completely enter cooldown before retry to avoid API waste.
      *
-     * When the block is live work rather than backfill, it is held just before the WebSocket broadcast until that broadcast is due, so the
-     * feed reads at TRON's own three-second cadence instead of reflecting whatever each block happened to cost. The wait is measured against
-     * a deadline carried from the previous block rather than a per-block stopwatch, which is what stops a slow block turning into permanent
-     * lag; `block-pacer.ts` explains why the stopwatch version drifts. Whether to pace at all is decided here from the block's own timestamp,
-     * not from the scheduler's flag, because that flag is stamped once per batch and goes stale within it.
+     * Nothing in this method waits on a clock. When the block is live work rather than backfill, its finished event goes to `BlockEmitter`,
+     * which holds a lead of already-fetched blocks and releases them at TRON's own three-second cadence. The wait used to sit here, right
+     * before the broadcast, but this runs inside a worker that processes one job at a time: waiting here blocked the next fetch, so the
+     * pipeline never accumulated a reserve and any upstream hiccup showed as a gap in the feed. Whether a block is live work at all is decided
+     * here from the block's own timestamp, not from the scheduler's flag, because that flag is stamped once per batch and goes stale within it.
      *
      * @param blockNumber - The block number to process
-     * @param isCaughtUp - The scheduler's pacing answer from enqueue time. Only seeds the decision for the first block after a restart; every
-     *                     block after that is judged on its own age, since a batch can span three minutes of work.
+     * @param isCaughtUp - The scheduler's answer from enqueue time. Only seeds the decision for the first block after a restart; every
+     *                     block after that is judged on its own age, since a batch can span several ticks of work.
      */
     private async processBlock(blockNumber: number, isCaughtUp: boolean) {
         const timings: Record<string, number> = {};
@@ -1614,28 +1603,29 @@ export class BlockchainService implements IBlockchainService {
             );
             timings.updateSyncState = Date.now() - stageStart;
 
-            // Stage 9: Pace the broadcast. Held here rather than at the end of
-            // the block because the broadcast is what a viewer sees, so it is
-            // the interval worth regulating. A block too old to be live work —
-            // anything from the backfill queue — is broadcast as soon as it is
-            // ready, since spending a live block's three-second slot on a block
-            // from hours ago is what puts the syncer further behind.
-            const paceThisBlock = this.resolveBlockPacing(blockTime, isCaughtUp);
-
-            if (paceThisBlock) {
-                timings.pacing = await this.paceEmit();
-            } else {
-                // Drop the carried deadline so the first paced block after a
-                // catch-up run starts a fresh cadence from itself, instead of
-                // working off a debt it did not cause as a burst.
-                this.nextEmitAt = 0;
-                timings.pacing = 0;
-                logger.debug({ blockNumber }, 'Broadcasting block without pacing - catching up to chain head');
-            }
-
-            // Stage 10: Emit socket events
+            // Stage 9: Hand the finished event to the emitter. The worker does
+            // not wait here. It used to, and because the worker processes one
+            // job at a time that wait blocked the next fetch, which is why the
+            // pipeline could never hold a fetched block in reserve — every
+            // upstream hiccup went straight to the screen. The emitter keeps
+            // that reserve and releases on its own clock instead.
+            //
+            // A block too old to be live work — anything from the backfill
+            // queue, or a catch-up run — goes out immediately rather than into
+            // the buffer, since spending a live block's slot on a block from
+            // hours ago is what puts the syncer further behind.
             stageStart = Date.now();
-            await this.emitSocketEvents(blockNumber, block, stats, processed, receiptsFetched);
+            const pending: IPendingBlockEmit = {
+                blockNumber,
+                payload: this.buildBlockEvent(blockNumber, block, stats, processed, receiptsFetched)
+            };
+
+            if (this.resolveBlockPacing(blockTime, isCaughtUp)) {
+                this.emitter.enqueue(pending);
+            } else {
+                this.emitter.emitNow(pending);
+                logger.debug({ blockNumber }, 'Broadcasting block without buffering - catching up to chain head');
+            }
             timings.socketEvents = Date.now() - stageStart;
 
             // Stage 11: Alert ingestion
@@ -1643,9 +1633,13 @@ export class BlockchainService implements IBlockchainService {
             await this.alerts.ingestTransactions(processed.map(transaction => transaction.payload));
             timings.alertIngestion = Date.now() - stageStart;
 
-            // Total covers the pacing wait as well as the work, so a cycle
-            // duration read from these timings still describes how long the
-            // block occupied the worker.
+            // Total is now pure work: nothing in the block waits on a clock,
+            // because the broadcast wait moved to the emitter. It used to
+            // include that wait, so a healthy block read as roughly one block
+            // period. A healthy block now reads as however long the fetch,
+            // parse, and write actually took, and a total approaching one block
+            // period means ingestion is barely keeping up with production
+            // rather than that it is pacing itself.
             timings.total = Date.now() - startTotal;
 
             // Stage 12: Update timing metrics in SyncState (after all timings are calculated)
@@ -2003,36 +1997,51 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
-     * Broadcast real-time block completion events to connected WebSocket clients.
+     * Build the `block:new` event a completed block should broadcast.
      *
-     * Emits block:new events with aggregate statistics so the frontend can display live sync progress and transaction volume metrics.
-     * Individual transaction events are handled by plugins via the observer pattern rather than centralized here.
+     * Separated from the broadcast itself because the two no longer happen at
+     * the same moment: the worker builds the event as soon as the block is
+     * written, and `BlockEmitter` sends it when its slot comes up, which may be
+     * several seconds later. Building it here rather than storing the block and
+     * its transactions for the emitter to assemble later is what keeps the
+     * buffer cheap — only this small object is held per block, not the whole
+     * transaction array.
+     *
+     * Individual transaction events are handled by plugins through the observer
+     * pattern rather than centralized here.
+     *
+     * @param blockNumber - Height of the block being announced.
+     * @param block - Raw block from TronGrid, read only for its header timestamp.
+     * @param stats - Aggregates calculated for the block.
+     * @param processed - Transactions that survived parsing, used for the count
+     *                    the frontend displays.
+     * @param receiptsFetched - Whether the receipt-derived figures in `stats`
+     *                          are measurements. Carried on the event because a
+     *                          live consumer reading the energy totals has no
+     *                          other way to tell a real zero from an unmeasured
+     *                          one.
+     * @returns The payload to broadcast, ready for the wire.
      */
-    private async emitSocketEvents(
+    private buildBlockEvent(
         blockNumber: number,
         block: TronGridBlock,
         stats: BlockStats,
         processed: ProcessedTransaction[],
         receiptsFetched: boolean
-    ) {
+    ): IBlockNewPayload {
         const blockTimestamp = new Date(block.block_header.raw_data.timestamp);
 
-        this.websocket.emit({
-            event: 'block:new',
-            payload: {
-                blockNumber,
-                timestamp: blockTimestamp.toISOString(),
-                // Carried alongside the stats it qualifies rather than left for
-                // the consumer to fetch separately: a live consumer reading the
-                // energy totals off this event has no other way to tell a real
-                // zero from an unmeasured one.
-                receiptsFetched,
-                stats: {
-                    ...stats,
-                    transactions: processed.length
-                }
+        const payload: IBlockNewPayload = {
+            blockNumber,
+            timestamp: blockTimestamp.toISOString(),
+            receiptsFetched,
+            stats: {
+                ...stats,
+                transactions: processed.length
             }
-        });
+        };
+
+        return payload;
     }
 
     /**

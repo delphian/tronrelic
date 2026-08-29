@@ -20,13 +20,22 @@ A sibling transport, `TronScanClient`, lives in the [providers module](../provid
 
 ## Feed cadence
 
-Two pure modules decide how evenly blocks reach the frontend, kept out of `blockchain.service.ts` so their behaviour can be pinned by tests rather than buried in the sync loop's I/O.
+Ingestion and broadcast are two separate loops. `BlockchainService` fetches, enriches, and writes each block without ever waiting on a clock, then hands the finished `block:new` event to `BlockEmitter`, which holds a lead of them and broadcasts on its own clock.
 
-`sync-mode.ts` answers whether sync should treat itself as caught up, using a hysteresis pair — two lag thresholds with a dead band between them — so a lag hovering on one boundary cannot flip the mode on every block.
+The split is the point. The wait used to sit inside the BullMQ worker, immediately before the broadcast, and that worker runs one job at a time — so waiting there blocked the next fetch and the pipeline never held a fetched block in reserve. Any upstream hiccup went straight to the feed as a gap, and no configuration could change that.
 
-`block-pacer.ts` answers how long to hold a block before broadcasting it. `resolveEmitPacing()` spaces broadcasts against a deadline carried forward from the previous block, which is the part that matters: a per-block stopwatch can only ever add delay, so the average interval drifts above the block time and that drift accumulates as lag until sync abandons pacing and dumps a burst. Carrying the deadline lets a fast block absorb a slow one, holding the long-run average at exactly one block interval. Debt is capped so an outage cannot bank unlimited catch-up. `resolveBlockAgeInBlocks()` converts a block header's timestamp into a number of blocks behind the head, which is what lets each block be classified on its own rather than on a flag the scheduler stamped on the batch up to three minutes earlier.
+| File | Answers |
+|---|---|
+| `block-emitter.ts` | The stateful loop: holds pending blocks in block order, builds the initial lead, releases on a timer, flushes for catch-up blocks and on shutdown, and reports depth and underruns to `/system` |
+| `block-emit-buffer.ts` | `resolveReleaseInterval()` — how long to wait before the next release, given depth; `resolveSeedComplete()` — whether the initial lead is built; `insertPendingBlock()` — ordered insert so a late retry cannot make the feed run backwards |
+| `block-pacer.ts` | `resolveEmitPacing()` — the carried-forward deadline the emitter releases against; `resolveBlockAgeInBlocks()` — a block's age in blocks, from its own header |
+| `sync-mode.ts` | Whether sync treats itself as caught up, using a hysteresis pair so a lag hovering on one boundary cannot flip the mode every block |
 
-The full rationale, including why the wait sits before the broadcast and why the frontend buffers as well, is in [system-blockchain-sync-architecture.md](../../../../docs/system/system-blockchain-sync-architecture.md#broadcast-pacing).
+Two properties are easy to lose in a rewrite. **Releasing below target must be slower than the chain produces** (`refillIntervalMs` > one block time), or a lead spent on one gap never comes back — that is the known limitation of the frontend playout buffer. And **the deadline carries forward** rather than resetting per release; a per-release stopwatch can only add delay, so the average drifts above the block time and accumulates until the syncer abandons the cadence and dumps a burst.
+
+`resolveBlockAgeInBlocks()` is what lets each block be classified on its own rather than on a flag the scheduler stamped on the whole batch. A block too old to be live work bypasses the buffer entirely.
+
+Full rationale, settings table, and how to read the two lag figures on `/system`: [system-blockchain-sync-architecture.md](../../../../docs/system/system-blockchain-sync-architecture.md#broadcast-buffering).
 
 ## Canonical documentation
 
