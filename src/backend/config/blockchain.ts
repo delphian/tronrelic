@@ -21,15 +21,34 @@ export const blockchainConfig = {
     blockIntervalSeconds: toNumber(process.env.BLOCKCHAIN_BLOCK_INTERVAL_SECONDS, 3),
     // The two blocks-behind figures below are a hysteresis pair, not one
     // threshold written twice. A single boundary makes the syncer flap: with lag
-    // hovering on it, ticks alternate between the live 3-second throttle and
-    // flat-out catch-up, which stutters the frontend feed and fills the log with
-    // mode transitions. Sync drops the throttle only once lag reaches
+    // hovering on it, consecutive blocks alternate between the live 3-second
+    // pacing and flat-out catch-up, which stutters the frontend feed and fills
+    // the log with mode transitions. Sync drops the pacing only once lag reaches
     // `backfillEntryBlocks`, and resumes it only once lag falls back to
     // `liveChainThrottleBlocks`; between the two it holds whichever mode it is
     // already in. Keep entry strictly above the throttle value — equal values
     // collapse the band and bring the flapping back.
     liveChainThrottleBlocks: toNumber(process.env.BLOCKCHAIN_LIVE_CHAIN_THROTTLE_BLOCKS, 20),
-    backfillEntryBlocks: toNumber(process.env.BLOCKCHAIN_BACKFILL_ENTRY_BLOCKS, 30)
+    backfillEntryBlocks: toNumber(process.env.BLOCKCHAIN_BACKFILL_ENTRY_BLOCKS, 30),
+    // How many blocks behind the chain head the forward cursor deliberately
+    // stops. Chasing the tip as tightly as possible leaves the work queue empty
+    // the instant sync catches up, so any hiccup — a slow TronGrid response, a
+    // scheduler tick that ran late — becomes visible dead air in the live feed
+    // with nothing buffered to cover it. Holding a few blocks back keeps that
+    // many blocks of work permanently in reserve, which a short hiccup drains
+    // from instead of stalling. The cost is latency: every block reaches the
+    // frontend this many block times late, so five blocks is fifteen seconds.
+    // Keep it well below `liveChainThrottleBlocks`, because the reserve counts
+    // toward the block age that decides whether a block is paced at all.
+    liveTipReserveBlocks: toNumber(process.env.BLOCKCHAIN_LIVE_TIP_RESERVE_BLOCKS, 5),
+    // The most pacing debt one stall may repay, measured in blocks. The pacer
+    // spaces broadcasts against a running deadline, so a block that overruns
+    // shortens the next wait instead of drifting permanently late. Left
+    // unbounded, an outage would leave that deadline minutes in the past and
+    // every held-back block would fire back to back the moment sync recovered —
+    // the burst the pacer exists to prevent. This caps the recovery to a short
+    // fast stretch before the normal cadence resumes.
+    maxPacingDebtBlocks: toNumber(process.env.BLOCKCHAIN_MAX_PACING_DEBT_BLOCKS, 3)
   },
   lock: {
     key: `${env.REDIS_NAMESPACE}:locks:blockchain-sync`,

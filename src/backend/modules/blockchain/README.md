@@ -18,6 +18,16 @@ Every ending is reported as `stopReason`: `'unresolved'`, `'depth-cap'`, `'cycle
 
 A sibling transport, `TronScanClient`, lives in the [providers module](../providers/README.md) — a distinct provider with its own base URL, key, and rate budget, currently backing the local TRX price series. Reach for TronGrid for chain and account data; use TronScan only where no TronGrid path exists.
 
+## Feed cadence
+
+Two pure modules decide how evenly blocks reach the frontend, kept out of `blockchain.service.ts` so their behaviour can be pinned by tests rather than buried in the sync loop's I/O.
+
+`sync-mode.ts` answers whether sync should treat itself as caught up, using a hysteresis pair — two lag thresholds with a dead band between them — so a lag hovering on one boundary cannot flip the mode on every block.
+
+`block-pacer.ts` answers how long to hold a block before broadcasting it. `resolveEmitPacing()` spaces broadcasts against a deadline carried forward from the previous block, which is the part that matters: a per-block stopwatch can only ever add delay, so the average interval drifts above the block time and that drift accumulates as lag until sync abandons pacing and dumps a burst. Carrying the deadline lets a fast block absorb a slow one, holding the long-run average at exactly one block interval. Debt is capped so an outage cannot bank unlimited catch-up. `resolveBlockAgeInBlocks()` converts a block header's timestamp into a number of blocks behind the head, which is what lets each block be classified on its own rather than on a flag the scheduler stamped on the batch up to three minutes earlier.
+
+The full rationale, including why the wait sits before the broadcast and why the frontend buffers as well, is in [system-blockchain-sync-architecture.md](../../../../docs/system/system-blockchain-sync-architecture.md#broadcast-pacing).
+
 ## Canonical documentation
 
 - [system-blockchain-sync-architecture.md](../../../../docs/system/system-blockchain-sync-architecture.md) — block retrieval, enrichment pipeline, observer dispatch

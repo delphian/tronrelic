@@ -36,18 +36,37 @@ export const LAG_DANGER_BLOCKS = 100;
  * Resolve the amber step from the syncer's configured backfill entry lag.
  *
  * The console must warn exactly where sync changes pacing mode, so it takes the
- * number from the running backend instead of assuming the default. The value is
- * guarded because it arrives over the network: it is absent before the first
- * poll resolves and could be missing or nonsensical from a mismatched backend.
+ * number from the running backend instead of assuming the default. Both values
+ * are guarded because they arrive over the network: they are absent before the
+ * first poll resolves and could be missing or nonsensical from a mismatched
+ * backend.
+ *
+ * The reserve is added on because the two figures are counted from different
+ * places. Reported lag counts down from the raw chain head, while the syncer
+ * decides its mode from the live tip, which sits a reserve's worth of blocks
+ * below that head so there is always buffered work for a hiccup to drain from.
+ * Without the offset the console would turn amber while sync was still pacing
+ * normally, early by exactly the size of the reserve.
  *
  * @param backfillEntryBlocks - Entry threshold echoed by the blockchain status payload.
+ * @param liveTipReserveBlocks - Reserve echoed by the same payload, so the console counts
+ *                               from the same place the syncer does. Leave it out and the
+ *                               amber step lands a reserve early, reading as a fault that
+ *                               is not there.
  * @returns Blocks-behind figure at or above which lag should read as degraded.
  */
-export function resolveLagWarningBlocks(backfillEntryBlocks: number | null | undefined): number {
+export function resolveLagWarningBlocks(
+    backfillEntryBlocks: number | null | undefined,
+    liveTipReserveBlocks?: number | null
+): number {
     let warningBlocks = LAG_WARNING_BLOCKS_FALLBACK;
 
     if (typeof backfillEntryBlocks === 'number' && Number.isFinite(backfillEntryBlocks) && backfillEntryBlocks > 0) {
         warningBlocks = backfillEntryBlocks;
+    }
+
+    if (typeof liveTipReserveBlocks === 'number' && Number.isFinite(liveTipReserveBlocks) && liveTipReserveBlocks > 0) {
+        warningBlocks += liveTipReserveBlocks;
     }
 
     return warningBlocks;

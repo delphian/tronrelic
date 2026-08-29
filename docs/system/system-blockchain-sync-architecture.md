@@ -4,11 +4,11 @@ How TronRelic retrieves blocks from TRON, enriches transactions, dispatches them
 
 ## Why This Matters
 
-The sync pipeline controls how blocks reach the database and how observers receive transactions. Misunderstanding the distributed lock, the adaptive throttle, the three observer types, or the notify-then-persist ordering leads to misdiagnosed stalls, double-processed blocks across instances, dropped transactions, or feature additions that block sync.
+The sync pipeline controls how blocks reach the database and how observers receive transactions. Misunderstanding the distributed lock, broadcast pacing, the three observer types, or the notify-then-persist ordering leads to misdiagnosed stalls, double-processed blocks across instances, dropped transactions, or feature additions that block sync.
 
 ## Pipeline Overview
 
-A scheduled `blockchain:sync` job (1-minute cron) acquires a Redis lock, fetches up to 60 blocks per invocation from TronGrid, processes each block through 11 numbered stages — fetch → enrich → notify observers → bulk-write to Mongo → emit WebSocket events — and adaptively throttles to a 3-second target interval when caught up to the chain head. Backfill of missed blocks runs alongside, scanning a 240-block window behind the cursor. Source: `src/backend/modules/blockchain/blockchain.service.ts`.
+A scheduled `blockchain:sync` job (1-minute cron) acquires a Redis lock, fetches up to 60 blocks per invocation from TronGrid, and processes each block through 12 numbered stages — fetch → enrich → notify observers → bulk-write to Mongo → pace → emit WebSocket events. Live blocks are held just before the broadcast so the feed advances at TRON's 3-second cadence. Backfill of missed blocks runs alongside, scanning a 240-block window behind the cursor. Source: `src/backend/modules/blockchain/blockchain.service.ts`.
 
 ## Block Retrieval
 
@@ -19,6 +19,18 @@ Sync acquires a Redis lock at `${REDIS_NAMESPACE}:locks:blockchain-sync` with a 
 ### Per-Tick Batch
 
 `blockchainConfig.batchSize = 60` caps how many blocks process in one scheduler invocation. The scheduler runs every minute, so steady-state throughput tops out at ~60 blocks/min — comfortably above TRON's ~20 blocks/min production rate, leaving headroom to catch up after a stall.
+
+### Live Tip Reserve
+
+The forward cursor stops short of the chain head by `liveTipReserveBlocks = 5` (`BLOCKCHAIN_LIVE_TIP_RESERVE_BLOCKS`) rather than claiming everything up to the tip. Throughout this document, the **live tip** means the head minus that reserve.
+
+Taking every available block empties the work queue the moment sync catches up, so the next slow TronGrid response or late scheduler tick becomes dead air in the live feed with nothing buffered behind it. Leaving five blocks unclaimed keeps roughly fifteen seconds of work permanently in reserve for a hiccup to drain from instead. The cost is latency: every block reaches the frontend five block times after the chain produced it.
+
+Keep the reserve well below `liveChainThrottleBlocks`, because it counts toward the block age that decides whether a block is paced at all.
+
+Two consequences are worth knowing. The scheduler measures `blocksBehind` against the tip rather than the head, so a healthy syncer reads zero blocks behind and the dead band below is not shrunk by the reserve. The `lag` figure in the status payload still counts from the raw head, so a healthy deployment reports a lag equal to the reserve rather than zero — which is why the payload also echoes `liveTipReserveBlocks` and the `/system` console offsets its amber step by it.
+
+Backfill and parity targets are unaffected. Both still run up to the raw head, because a block already known to be missing is old work with nothing to reserve.
 
 ### Backfill Window
 
@@ -32,26 +44,41 @@ The TronGrid HTTP client (`tron-grid.client.ts`) enforces a **200ms minimum gap 
 
 Block fetches use exponential backoff: `retries: 3, delayMs: 750, factor: 2`. Transient TronGrid 5xx or network errors retry at 750ms → 1500ms → 3000ms before failing the block (which lands it in the backfill queue for the next tick).
 
-## Adaptive Block Throttle
+## Broadcast Pacing
 
-After a block finishes processing, sync applies an *adaptive* throttle — not a fixed delay:
+Live blocks are held immediately **before** the WebSocket broadcast until that broadcast is due. Source: `src/backend/modules/blockchain/block-pacer.ts`.
 
-- **Caught up**: targets a 3-second total per block (TRON's native block time). If processing already took ≥3 seconds, no extra wait. If it took 1s, sleeps 2s. This keeps the live feed cadence smooth and predictable on the frontend.
-- **Behind**: no throttle. Sync runs flat-out, bounded only by the `batchSize=60` ceiling and the 200ms TronGrid request gap.
+Two details of that sentence carry the whole design.
 
-This replaces an earlier fixed 3-second post-block delay that compounded with processing time and produced 4–5 second intervals.
+**The wait sits before the broadcast, not at the end of the block.** The broadcast is what a viewer sees, so it is the interval worth regulating. Pacing after it regulated the wrong span: the gap between two broadcasts was the leftover wait from one block plus the entire fetch, parse and write cost of the next, so every bit of per-block variance landed straight in the visible gap.
 
-### Which Mode Sync Is In
+**The wait is measured against a deadline that carries forward, not a per-block stopwatch.** A stopwatch that resets each block can only ever add delay. A block taking 3.4 seconds emits 400ms late and the next still gets a fresh three-second budget, so the average interval is never below three seconds and is above it whenever anything runs slow. Against a chain producing at exactly three seconds, that surplus is lag the syncer never gives back — it accumulates until sync decides it is behind, drops pacing, dumps the backlog in seconds, and starts over. That sawtooth is what users saw as a feed alternating between stalling and spurting. With a carried deadline, a block that overruns shortens the following wait instead, holding the long-run average at exactly one block interval.
+
+How much debt may carry forward is capped at `maxPacingDebtBlocks = 3` (`BLOCKCHAIN_MAX_PACING_DEBT_BLOCKS`). An uncapped deadline left minutes in the past after an outage would release every held-back block at once, which is the burst the pacer exists to prevent. A block processed without pacing clears the carried deadline outright, so the first paced block after a catch-up run starts a fresh cadence from itself rather than working off a debt it did not cause.
+
+A block that is not live work is broadcast as soon as it is ready. Spending a live block's three-second slot on a block from the backfill queue is what puts the syncer further behind.
+
+### Which Blocks Get Paced
+
+The decision is made per block, inside `processBlock`, from the block header's own timestamp — `resolveBlockAgeInBlocks` converts the age into a number of blocks behind the head, and the same dead band below classifies it.
+
+It is deliberately *not* taken from the scheduler's `isCaughtUp` flag. That flag is decided once per tick and then rides along on every job in the batch, up to sixty of them covering three minutes of work, so a batch queued while behind stayed unpaced long after it had caught up. The flag is still passed, but only to seed the very first block after a restart, when there is no previous block's mode to fall back on inside the dead band. A header timestamp costs no extra request, never goes stale, and classifies backfill work correctly with no special case.
 
 The two modes are separated by a dead band rather than a single boundary, because one threshold made the syncer flap: a lag hovering on it flipped mode nearly every tick, stuttering the feed and burying real transitions in log noise.
 
-Sync gives up the throttle only once lag reaches `backfillEntryBlocks = 30` (`BLOCKCHAIN_BACKFILL_ENTRY_BLOCKS`), and takes it back only once lag falls to `liveChainThrottleBlocks = 20` (`BLOCKCHAIN_LIVE_CHAIN_THROTTLE_BLOCKS`). Between 21 and 29 blocks behind it holds whichever mode it is already in, so lag oscillating inside the band changes nothing. Entry must stay strictly above the throttle value — equal values collapse the band and restore the flapping.
+Sync gives up pacing only once lag reaches `backfillEntryBlocks = 30` (`BLOCKCHAIN_BACKFILL_ENTRY_BLOCKS`), and takes it back only once lag falls to `liveChainThrottleBlocks = 20` (`BLOCKCHAIN_LIVE_CHAIN_THROTTLE_BLOCKS`). Between 21 and 29 blocks behind it holds whichever mode it is already in, so lag oscillating inside the band changes nothing. Entry must stay strictly above the resume value — equal values collapse the band and restore the flapping.
 
-The remembered mode is per-process. After a restart, or when the scheduler lock moves to another instance, a lag inside the band resolves to **behind**: an unthrottled tick costs only speed and drives lag straight down to where the throttle resumes, whereas assuming "caught up" would pace a genuinely lagging syncer at 3s per block and let it fall further behind. The `/system` console draws the same line — the Lag figure and the Overview strip's Chain tile turn amber at that same entry threshold, whatever it is configured to, reading it from the `backfillEntryBlocks` field of the blockchain status payload rather than assuming the default.
+The remembered mode is per-process. After a restart, or when the scheduler lock moves to another instance, a lag inside the band resolves to **behind**: an unpaced block costs only speed and drives lag straight down to where pacing resumes, whereas assuming "caught up" would pace a genuinely lagging syncer at 3s per block and let it fall further behind. The `/system` console draws the same line — the Lag figure and the Overview strip's Chain tile turn amber at that same entry threshold, whatever it is configured to, reading it from the `backfillEntryBlocks` field of the blockchain status payload rather than assuming the default, and offsetting by `liveTipReserveBlocks` because the reported lag counts from the head while the mode boundary counts from the tip.
+
+### The Frontend Buffers as Well
+
+Backend pacing alone cannot make the feed perfectly even, because TRON does not produce blocks on an exact metronome. A super representative that misses its slot leaves a real six-second hole, and no amount of pacing can fill a block that does not exist.
+
+`SocketBridge` therefore holds arriving `block:new` events in a small playout buffer and releases them to Redux on its own clock: one every 3 seconds normally, every 2 seconds once three or more are waiting so a backlog drains rather than adding permanent delay, and with no wait at all beyond twelve. The buffer is dropped on unmount, since a remount fetches fresh state from the server. This costs one block time of extra latency and is what makes the displayed cadence steady rather than merely average-correct.
 
 ## Per-Block Pipeline Stages
 
-Each block runs through 11 stages, instrumented for timing:
+Each block runs through 12 stages, instrumented for timing:
 
 | Stage | Action |
 |---|---|
@@ -64,11 +91,14 @@ Each block runs through 11 stages, instrumented for timing:
 | 6 | Calculate block statistics (totals by contract type) |
 | 7 | Upsert block document |
 | 8 | Update sync state cursor (`$max` to advance, `$pull` to clear backfill entry) |
-| 9 | Emit WebSocket events |
-| 10 | Alert ingestion (matches transactions against alert rules) |
-| 11 | Adaptive throttle (only if caught up) |
+| 9 | Pace the broadcast (live blocks only; recorded as the `pacing` timing) |
+| 10 | Emit WebSocket events |
+| 11 | Alert ingestion (matches transactions against alert rules) |
+| 12 | Write the timing breakdown back to sync state |
 
 Stage 3 runs only when receipt fetching is enabled. With it off the stage is skipped, `null` is passed in place of every transaction's receipt, and the block costs exactly one TronGrid call as it always has.
+
+The cursor advances at stage 8, before the pacing wait, so a crash while a block is held does not cause it to be reprocessed. The `total` timing covers the wait as well as the work, so a cycle duration read from these figures still describes how long the block occupied the worker.
 
 ## Observer Dispatch
 

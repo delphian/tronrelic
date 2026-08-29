@@ -163,13 +163,33 @@ const blockchainSlice = createSlice({
         stats
       };
 
-      state.history = [summary, ...state.history.filter(block => block.blockNumber !== blockNumber)].slice(0, MAX_HISTORY);
-      state.latestBlock = summary;
+      // Insert by block number rather than prepending. Sync emits a block from
+      // the backfill queue on the same channel as a live one, and a backfilled
+      // block is older than everything already here. Prepending it would put
+      // the list out of order, and `computeMetrics` reads the first and last
+      // entries as the ends of a time window, so one out-of-order entry
+      // corrupts the average block time and the transactions-per-second figure.
+      const withoutDuplicate = state.history.filter(block => block.blockNumber !== blockNumber);
+      const insertAt = withoutDuplicate.findIndex(block => block.blockNumber < blockNumber);
+      const position = insertAt === -1 ? withoutDuplicate.length : insertAt;
+      withoutDuplicate.splice(position, 0, summary);
+      state.history = withoutDuplicate.slice(0, MAX_HISTORY);
+
+      // Only advance the headline block. A backfilled block arriving live would
+      // otherwise make the ticker jump backwards to a block from hours ago and
+      // present it as the chain head.
+      const isNewer = !state.latestBlock || blockNumber >= state.latestBlock.blockNumber;
+      if (isNewer) {
+        state.latestBlock = summary;
+      }
 
       const metrics = computeMetrics(state.history);
       state.metrics = {
         ...metrics,
-        networkLagSeconds: computeNetworkLagSeconds(timestamp)
+        // Lag describes how far the head is behind now, so it has to come from
+        // the block being shown as the head — not from whichever block this
+        // event happened to carry.
+        networkLagSeconds: computeNetworkLagSeconds(state.latestBlock?.timestamp ?? timestamp)
       };
 
       state.lastUpdated = new Date().toISOString();

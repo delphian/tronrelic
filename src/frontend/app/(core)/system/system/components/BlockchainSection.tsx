@@ -38,6 +38,13 @@ interface BlockchainStatus {
     lastTransactionCount: number | null;
     liveChainThrottleBlocks: number;
     backfillEntryBlocks: number;
+    /**
+     * Blocks the syncer deliberately holds back from the chain head so there is
+     * always buffered work behind the live feed. A healthy deployment therefore
+     * reports this figure as its lag rather than zero, which is why the tone
+     * thresholds offset by it.
+     */
+    liveTipReserveBlocks: number;
     blockIntervalSeconds: number;
 }
 
@@ -220,7 +227,10 @@ interface SyncStatusBlockProps {
 
 function SyncStatusBlock({ status, metrics, schedulerEnabled, syncing, onTriggerSync }: SyncStatusBlockProps) {
     const netCatchUpRate = status?.netCatchUpRate ?? null;
-    const fallingBehind = netCatchUpRate !== null && netCatchUpRate < 0 && !status?.lastTimings?.throttle;
+    // A negative catch-up rate is only a problem when nothing is holding blocks
+    // back on purpose. A paced syncer sits at its configured cadence by design,
+    // so `pacing` being zero is what distinguishes falling behind from waiting.
+    const fallingBehind = netCatchUpRate !== null && netCatchUpRate < 0 && !status?.lastTimings?.pacing;
 
     return (
         <div className={styles.block}>
@@ -277,7 +287,7 @@ function SyncStatusBlock({ status, metrics, schedulerEnabled, syncing, onTrigger
                             detail: status.averageProcessingDelaySeconds !== null
                                 ? `${formatDuration(status.averageProcessingDelaySeconds)} behind`
                                 : `${status.lag.toLocaleString()} blocks behind`,
-                            tone: getLagMetricTone(status.lag, status.backfillEntryBlocks)
+                            tone: getLagMetricTone(status.lag, status.backfillEntryBlocks, status.liveTipReserveBlocks)
                         },
                         ...(status.processingBlocksPerMinute !== null
                             ? [{
@@ -365,11 +375,11 @@ function PipelineMetricsBlock({ status }: PipelineMetricsBlockProps) {
                         value: `${(status.lastTimings.bulkWriteTransactions ?? 0).toFixed(0)} ms`,
                         detail: 'Persist to MongoDB'
                     },
-                    ...(status.lastTimings.throttle !== undefined
+                    ...(status.lastTimings.pacing !== undefined
                         ? [{
-                            label: 'Throttle',
-                            value: `${status.lastTimings.throttle.toFixed(0)} ms`,
-                            detail: 'Pacing delay'
+                            label: 'Pacing',
+                            value: `${status.lastTimings.pacing.toFixed(0)} ms`,
+                            detail: 'Held before broadcast'
                         }]
                         : []),
                     {
@@ -480,11 +490,19 @@ function ObserverPerformanceBlock({ observers }: ObserverPerformanceBlockProps) 
  *
  * @param lag - Blocks the local index is behind the network head.
  * @param backfillEntryBlocks - Entry threshold from the status payload; the syncer's own mode boundary.
+ * @param liveTipReserveBlocks - Blocks the syncer holds back on purpose, also from the payload. Passed
+ *                               through because lag counts from the head while the syncer's boundary
+ *                               counts from the tip, so without it the cell would warn a reserve early
+ *                               on a deployment behaving exactly as configured.
  * @returns The tone the Lag stat cell should carry.
  */
-function getLagMetricTone(lag: number, backfillEntryBlocks: number): 'success' | 'warning' | 'danger' {
+function getLagMetricTone(
+    lag: number,
+    backfillEntryBlocks: number,
+    liveTipReserveBlocks: number
+): 'success' | 'warning' | 'danger' {
     if (lag >= LAG_DANGER_BLOCKS) return 'danger';
-    if (lag >= resolveLagWarningBlocks(backfillEntryBlocks)) return 'warning';
+    if (lag >= resolveLagWarningBlocks(backfillEntryBlocks, liveTipReserveBlocks)) return 'warning';
     return 'success';
 }
 

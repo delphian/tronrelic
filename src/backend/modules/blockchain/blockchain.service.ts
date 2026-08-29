@@ -14,6 +14,7 @@ import { blockchainConfig } from '../../config/blockchain.js';
 import { TronGridClient, type TronGridBlock, type TronGridTransaction, type TronGridTransactionInfo } from './tron-grid.client.js';
 import { normalizeContractType, resolveOwnerAddress, resolveRecipient, resolveAmounts, describeContract } from './transaction-parse.js';
 import { resolveCaughtUpMode } from './sync-mode.js';
+import { resolveEmitPacing, resolveBlockAgeInBlocks } from './block-pacer.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { getRedisClient } from '../../loaders/redis.js';
@@ -108,6 +109,24 @@ export class BlockchainService implements IBlockchainService {
     private readonly addressInsights = new AddressInsightService();
     private readonly observerService = BlockchainObserverService.getInstance();
     private wasCaughtUp: boolean | null = null;
+
+    /**
+     * When the next `block:new` broadcast is due, in milliseconds. Carried from
+     * one block to the next so a block that overruns shortens the following
+     * wait instead of drifting permanently late; see `block-pacer.ts` for why
+     * timing each block on its own produces a sawtooth instead of a cadence.
+     * Zero means no block has been paced yet in this process.
+     */
+    private nextEmitAt = 0;
+
+    /**
+     * The pacing mode of the most recently processed block, kept separate from
+     * `wasCaughtUp` because the two answer different questions. `wasCaughtUp`
+     * is the scheduler's view once per tick; this is the worker's view per
+     * block, which is what actually decides whether a block is paced. Null
+     * before the first block, when the scheduler's view is used as the seed.
+     */
+    private blockPacingCaughtUp: boolean | null = null;
 
     /**
      * Initialize the blockchain service with required dependencies and configure the block processing queue.
@@ -942,6 +961,81 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
+     * Decide whether the block currently being processed should be paced to
+     * live cadence, judging from the block itself rather than from the flag the
+     * scheduler stamped on the job.
+     *
+     * The scheduler decides once per tick and that answer then rides along on
+     * every job in the batch — up to sixty of them, covering three minutes of
+     * work. A batch queued while the syncer was behind therefore stayed
+     * unpaced long after it had caught up, overshooting well past the point
+     * where pacing should have resumed, and a batch queued while caught up kept
+     * pacing even as the chain ran away from it. Re-deciding here, from the
+     * block's own header timestamp, costs nothing and cannot go stale.
+     *
+     * The same dead band the scheduler uses applies, so a lag hovering on a
+     * threshold does not flip the mode block by block.
+     *
+     * @param blockTime - The block header timestamp, already normalized.
+     * @param schedulerCaughtUp - The scheduler's answer from enqueue time. Used
+     *                            only to seed the very first block after a
+     *                            restart, when there is no previous block's
+     *                            mode to fall back on inside the dead band.
+     * @returns True to hold this block to live cadence, false to process it as
+     *          fast as it can go.
+     */
+    private resolveBlockPacing(blockTime: Date, schedulerCaughtUp: boolean): boolean {
+        const intervalMs = blockchainConfig.network.blockIntervalSeconds * 1000;
+        const blocksBehind = resolveBlockAgeInBlocks(blockTime, Date.now(), intervalMs);
+
+        const caughtUp = resolveCaughtUpMode(
+            blocksBehind,
+            this.blockPacingCaughtUp ?? schedulerCaughtUp,
+            {
+                resumeBlocks: blockchainConfig.network.liveChainThrottleBlocks,
+                entryBlocks: blockchainConfig.network.backfillEntryBlocks
+            }
+        );
+
+        this.blockPacingCaughtUp = caughtUp;
+
+        return caughtUp;
+    }
+
+    /**
+     * Hold a block back until its broadcast is due, so the live feed reads at a
+     * steady cadence rather than reflecting whatever each block cost to
+     * process.
+     *
+     * This runs immediately before the WebSocket broadcast, not at the end of
+     * the block, because the broadcast is the event a viewer actually sees.
+     * Pacing after it regulated the wrong span: the gap between two broadcasts
+     * was the leftover wait from one block plus the entire fetch, parse and
+     * write cost of the next, so every bit of per-block variance landed
+     * straight in the visible gap.
+     *
+     * @returns How long the block was held, in milliseconds, so the caller can
+     *          record it alongside the other per-stage timings and an operator
+     *          can tell a paced block from a slow one.
+     */
+    private async paceEmit(): Promise<number> {
+        const pacing = resolveEmitPacing({
+            now: Date.now(),
+            nextEmitAt: this.nextEmitAt,
+            intervalMs: blockchainConfig.network.blockIntervalSeconds * 1000,
+            maxDebtBlocks: blockchainConfig.network.maxPacingDebtBlocks
+        });
+
+        this.nextEmitAt = pacing.nextEmitAt;
+
+        if (pacing.delayMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, pacing.delayMs));
+        }
+
+        return pacing.delayMs;
+    }
+
+    /**
      * Schedule new blocks for processing by comparing local state against the latest network height.
      *
      * This method runs periodically (via scheduler) to queue blocks that need ingestion. It prioritizes missing blocks from
@@ -963,9 +1057,18 @@ export class BlockchainService implements IBlockchainService {
             const parityTarget = this.getParityTarget(state);
             const existingBackfill = this.getBackfillQueue(state);
 
+            // Stop the forward cursor short of the chain head on purpose. Taking
+            // every block up to the tip empties the work queue the moment sync
+            // catches up, so the next slow TronGrid call or late scheduler tick
+            // becomes dead air in the live feed with nothing buffered behind
+            // it. Leaving a few blocks unclaimed keeps that many blocks of work
+            // permanently in reserve for a hiccup to drain from instead.
+            const liveTip = latestNetworkBlock - Math.max(0, blockchainConfig.network.liveTipReserveBlocks);
+
             const { targets, remainingBackfill } = await this.computeBlockTargets({
                 lastProcessed,
                 latestNetworkBlock,
+                liveTip,
                 parityTarget,
                 existingBackfill
             });
@@ -999,8 +1102,12 @@ export class BlockchainService implements IBlockchainService {
                 eligibleTargets.push(blockNumber);
             }
 
-            // Calculate if we're caught up to determine throttle behavior for all queued blocks
-            const blocksBehind = latestNetworkBlock - lastProcessed;
+            // Measured against the live tip rather than the raw chain head, so
+            // a syncer sitting exactly where the reserve intends reads as zero
+            // blocks behind. Measuring against the head would charge the
+            // deliberate reserve against the mode thresholds and shrink the
+            // dead band by that much.
+            const blocksBehind = Math.max(0, liveTip - lastProcessed);
             const isCaughtUp = this.resolveCaughtUp(blocksBehind);
 
             // Log transitions between caught-up and backfill modes
@@ -1160,14 +1267,24 @@ export class BlockchainService implements IBlockchainService {
      * Prioritizes backfill queue entries (missed/failed blocks) before advancing the main cursor to ensure gap-free historical data.
      * Respects the configured batch size limit to prevent queue flooding, and includes parity target blocks when configured to align
      * with external system requirements. Returns both the blocks to process immediately and the remaining backfill queue for future runs.
+     *
+     * @param params.lastProcessed - The cursor position, so the forward walk knows where to resume.
+     * @param params.latestNetworkBlock - The raw chain head, used to discard backfill and parity entries that do not exist yet.
+     * @param params.liveTip - How far forward the cursor may advance this run, which is the head minus the deliberate reserve. Passed in
+     *                         rather than recomputed here so the caller's mode decision and this selection cannot disagree about where
+     *                         the tip is.
+     * @param params.parityTarget - An operator-set height to align with an external system, or null when none is configured.
+     * @param params.existingBackfill - Block numbers already queued for backfill from previous runs.
+     * @returns The blocks to enqueue now, and the backfill entries left over for the next run so none are silently dropped.
      */
     private async computeBlockTargets(params: {
         lastProcessed: number;
         latestNetworkBlock: number;
+        liveTip: number;
         parityTarget: number | null;
         existingBackfill: number[];
     }): Promise<{ targets: number[]; remainingBackfill: number[] }> {
-        const { lastProcessed, latestNetworkBlock, parityTarget, existingBackfill } = params;
+        const { lastProcessed, latestNetworkBlock, liveTip, parityTarget, existingBackfill } = params;
         const backfillSet = new Set<number>(existingBackfill);
 
         const newlyMissing = await this.identifyMissingBlocks(lastProcessed);
@@ -1192,8 +1309,11 @@ export class BlockchainService implements IBlockchainService {
             }
         }
 
+        // The forward walk stops at the live tip, which holds the reserve back.
+        // Backfill and parity above use the raw head, because a block already
+        // known to be missing is old work with nothing to reserve.
         let nextBlock = lastProcessed + 1;
-        while (selected.size < maxBatch && nextBlock <= latestNetworkBlock) {
+        while (selected.size < maxBatch && nextBlock <= liveTip) {
             if (!selected.has(nextBlock)) {
                 selected.add(nextBlock);
                 targets.push(nextBlock);
@@ -1267,13 +1387,15 @@ export class BlockchainService implements IBlockchainService {
      * calculates block-level statistics, and broadcasts socket events for real-time UI updates. Transaction failures are isolated so one
      * corrupt record doesn't block the entire block, and blocks that fail completely enter cooldown before retry to avoid API waste.
      *
-     * When caught up to the live chain (within 100 blocks of current network height), intelligent throttling maintains consistent 3-second
-     * block intervals. The throttle calculates remaining time needed to reach 3 seconds total (processing + delay), ensuring blocks emit
-     * at predictable intervals without adding unnecessary delay when processing is already slow. This creates a stable real-time experience
-     * on the frontend while avoiding the previous issue where a fixed 3-second delay added on top of processing time caused 4-5 second intervals.
+     * When the block is live work rather than backfill, it is held just before the WebSocket broadcast until that broadcast is due, so the
+     * feed reads at TRON's own three-second cadence instead of reflecting whatever each block happened to cost. The wait is measured against
+     * a deadline carried from the previous block rather than a per-block stopwatch, which is what stops a slow block turning into permanent
+     * lag; `block-pacer.ts` explains why the stopwatch version drifts. Whether to pace at all is decided here from the block's own timestamp,
+     * not from the scheduler's flag, because that flag is stamped once per batch and goes stale within it.
      *
      * @param blockNumber - The block number to process
-     * @param isCaughtUp - Whether we're caught up to the chain head (passed from scheduler to avoid recalculation)
+     * @param isCaughtUp - The scheduler's pacing answer from enqueue time. Only seeds the decision for the first block after a restart; every
+     *                     block after that is judged on its own age, since a batch can span three minutes of work.
      */
     private async processBlock(blockNumber: number, isCaughtUp: boolean) {
         const timings: Record<string, number> = {};
@@ -1489,36 +1611,38 @@ export class BlockchainService implements IBlockchainService {
             );
             timings.updateSyncState = Date.now() - stageStart;
 
-            // Stage 9: Emit socket events
+            // Stage 9: Pace the broadcast. Held here rather than at the end of
+            // the block because the broadcast is what a viewer sees, so it is
+            // the interval worth regulating. A block too old to be live work —
+            // anything from the backfill queue — is broadcast as soon as it is
+            // ready, since spending a live block's three-second slot on a block
+            // from hours ago is what puts the syncer further behind.
+            const paceThisBlock = this.resolveBlockPacing(blockTime, isCaughtUp);
+
+            if (paceThisBlock) {
+                timings.pacing = await this.paceEmit();
+            } else {
+                // Drop the carried deadline so the first paced block after a
+                // catch-up run starts a fresh cadence from itself, instead of
+                // working off a debt it did not cause as a burst.
+                this.nextEmitAt = 0;
+                timings.pacing = 0;
+                logger.debug({ blockNumber }, 'Broadcasting block without pacing - catching up to chain head');
+            }
+
+            // Stage 10: Emit socket events
             stageStart = Date.now();
             await this.emitSocketEvents(blockNumber, block, stats, processed, receiptsFetched);
             timings.socketEvents = Date.now() - stageStart;
 
-            // Stage 10: Alert ingestion
+            // Stage 11: Alert ingestion
             stageStart = Date.now();
             await this.alerts.ingestTransactions(processed.map(transaction => transaction.payload));
             timings.alertIngestion = Date.now() - stageStart;
 
-            // Stage 11: Apply intelligent throttle if caught up to simulate live blockchain timing
-            // This ensures blocks are emitted at consistent 3-second intervals for real-time feel
-            if (isCaughtUp) {
-                const elapsedMs = Date.now() - startTotal;
-                const targetIntervalMs = blockchainConfig.network.blockIntervalSeconds * 1000;
-                const remainingMs = Math.max(0, targetIntervalMs - elapsedMs);
-
-                if (remainingMs > 0) {
-                    stageStart = Date.now();
-                    logger.debug({ blockNumber, elapsedMs, targetIntervalMs, remainingMs }, 'Throttling to maintain consistent block interval');
-                    await new Promise(resolve => setTimeout(resolve, remainingMs));
-                    timings.throttle = Date.now() - stageStart;
-                } else {
-                    logger.debug({ blockNumber, elapsedMs, targetIntervalMs }, 'Processing time exceeded target interval, skipping throttle');
-                }
-            } else {
-                logger.debug({ blockNumber }, 'Processing block without throttle - catching up to chain head');
-            }
-
-            // Calculate total time (after throttle to include it in the total)
+            // Total covers the pacing wait as well as the work, so a cycle
+            // duration read from these timings still describes how long the
+            // block occupied the worker.
             timings.total = Date.now() - startTotal;
 
             // Stage 12: Update timing metrics in SyncState (after all timings are calculated)
