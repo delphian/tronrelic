@@ -155,8 +155,18 @@ later would inherit a warning it never earned. The cost of listing them is the
 opposite failure — a new source tag nobody classifies renders with no warning at
 all — so `__tests__/tag-severity-coverage.test.ts` imports the sources' own
 `OFAC_TAG`, `USDT_TAG`, and `CHAINALYSIS_TAG` constants and fails when the two
-sets disagree in either direction. **Adding an ingestion source means adding its
-tag constant to that test and an entry to that list.**
+sets disagree in either direction. It also cross-checks that list against
+`RESERVED_TAG_PREFIXES`, which is the closest thing production has to an
+inventory of ingestion sources: a source has to extend that constant or an
+operator could forge its assertions, so a source added under a new prefix fails
+this test even if nobody remembers it exists. **Adding an ingestion source means
+adding its tag constant to that test and an entry to that list.**
+
+The cross-check narrows the gap without closing it. A future source reusing an
+already-reserved prefix — `ofac:blocked`, say — still passes unnoticed. Closing
+that means giving `ITagSource` an asserted-tags field and registering sources
+from a descriptor the test can import without constructing them, which is a
+production change rather than a test one.
 
 Where `TronAddress` renders an address, `AddressSelector` *chooses* one. It is
 the module's second frontend consumer and the reason `/suggest` exists: typed
