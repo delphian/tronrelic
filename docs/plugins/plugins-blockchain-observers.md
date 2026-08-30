@@ -38,7 +38,7 @@ The prepared block goes into a playout buffer called `BlockEmitter`, which holds
 
 Three consequences matter when writing an observer.
 
-Your observer receives a block roughly the buffer depth behind the chain head, about twenty-four seconds at the default setting, rather than as soon as the block is fetched. The whole deployment sits at that distance, so nothing your observer can read is ahead of it.
+Your observer receives a block roughly the buffer depth behind the chain head, about thirty-six seconds at the default setting, rather than as soon as the block is fetched. The whole deployment sits at that distance, so nothing your observer can read is ahead of it.
 
 The block **already exists in the database** when your observer runs. Anything your observer writes lands at the same height every other surface reports, so a page that reads a core transaction and your plugin's data for it cannot find one without the other.
 
