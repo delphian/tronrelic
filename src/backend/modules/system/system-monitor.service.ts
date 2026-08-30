@@ -101,10 +101,15 @@ export interface BlockchainSyncStatus {
   /**
    * Height of the last block actually broadcast, or null before the first one.
    *
-   * This differs from `currentBlock` by the emitter's buffer depth, and it is
-   * the figure a viewer's feed is showing. `currentBlock` is what has been
-   * indexed, which since ingestion stopped pacing itself sits at the chain head
-   * nearly all the time and so says nothing about the feed.
+   * Taken from the committer rather than the emitter, because a viewer sees a
+   * block only once `block:new` goes out, and that happens inside the commit
+   * after the write. The emitter records a height the moment it hands a block
+   * over, which during a commit backlog is a block nobody has received.
+   *
+   * This normally matches `currentBlock`, since the same commit that broadcasts
+   * the block also advances the cursor. The two diverge only by how stale the
+   * cursor read is: `currentBlock` comes from MongoDB and can lag a scheduler
+   * tick, while this is read live from the running committer.
    */
   lastEmittedBlockNumber: number | null;
   /**
@@ -112,8 +117,10 @@ export interface BlockchainSyncStatus {
    * viewer actually experiences.
    *
    * In a healthy deployment this sits near the emitter's target depth by
-   * design, because that lead is what covers an upstream hiccup. Falls back to
-   * `lag` before the emitter has released anything.
+   * design, because that lead is what covers an upstream hiccup. It rises above
+   * that when commits back up behind the release clock, which is the case the
+   * emitter's own figures cannot show. Falls back to `lag` before the first
+   * commit completes, since nothing has been broadcast at all by then.
    */
   feedLag: number;
   /** Blocks the emitter is holding now; the lead available to cover a hiccup. */
@@ -723,13 +730,10 @@ export class SystemMonitorService {
 
     // Read straight from the emitter rather than from the sync state document.
     // The worker writes that document once per block, so between scheduler
-    // ticks it stops updating while the emitter keeps releasing — a feed lag
-    // taken from Mongo would sit a whole tick stale exactly when an operator is
-    // checking whether the feed is healthy.
+    // ticks it stops updating while the emitter keeps releasing — a buffer
+    // depth taken from Mongo would sit a whole tick stale exactly when an
+    // operator is checking whether the feed is healthy.
     const emitBuffer = BlockEmitter.getInstance().getMetrics();
-    const feedLag = emitBuffer.lastReleasedBlockNumber === null
-      ? lag
-      : Math.max(0, networkBlockValue - emitBuffer.lastReleasedBlockNumber);
 
     // Read for the same reason as the buffer above: the commit backlog changes
     // between scheduler ticks, and a figure taken from the sync state document
@@ -737,11 +741,26 @@ export class SystemMonitorService {
     // looking for the cause.
     const commit = BlockchainService.getInstance().getCommitMetrics();
 
+    // The broadcast height comes from the committer, not the emitter. A viewer
+    // sees a block only once `block:new` goes out, and that happens inside the
+    // commit after the write; the emitter records a height the moment it hands
+    // the block over. In a healthy run the two are the same block, because the
+    // commit chain drains well inside a release slot. When commits back up, or
+    // when every commit is failing, the emitter's number keeps climbing for
+    // blocks no client has received, and a feed lag derived from it would read
+    // as healthy while the feed was stalled. Before the first commit finishes
+    // nothing has been broadcast at all, so the lag falls back to the cursor
+    // figure, which the commit itself advances.
+    const lastEmittedBlockNumber = commit.lastCommittedBlockNumber;
+    const feedLag = lastEmittedBlockNumber === null
+      ? lag
+      : Math.max(0, networkBlockValue - lastEmittedBlockNumber);
+
     return {
       currentBlock,
       networkBlock: networkBlockValue,
       lag,
-      lastEmittedBlockNumber: emitBuffer.lastReleasedBlockNumber,
+      lastEmittedBlockNumber,
       feedLag,
       emitBufferDepth: emitBuffer.depth,
       emitBufferTargetDepth: emitBuffer.targetDepth,

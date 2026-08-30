@@ -244,6 +244,24 @@ describe('BlockEmitter', () => {
         expect(emitter.getMetrics().flushes).toBe(1);
     });
 
+    it('keeps its lead when a backfill block bypasses the buffer', () => {
+        // A backfill block is older than everything held, so flushing for it
+        // buys no ordering — the old height arrives after the newer ones either
+        // way, because that is what filling a hole means. What a flush would
+        // cost is the entire lead, committed early in one burst and leaving the
+        // buffer empty until the refill interval rebuilds it, so the next
+        // upstream hiccup would be visible.
+        const { emitter, released } = createEmitter();
+
+        emitter.enqueue(pending(100));
+        emitter.enqueue(pending(101));
+        emitter.emitNow(pending(90));
+
+        expect(released).toEqual([90]);
+        expect(emitter.getMetrics().depth).toBe(2);
+        expect(emitter.getMetrics().flushes).toBe(0);
+    });
+
     it('does not re-seed after a catch-up run', () => {
         // Re-seeding would stall the feed for a full lead every time the syncer
         // recovered — exactly when a viewer is already waiting. The lead is

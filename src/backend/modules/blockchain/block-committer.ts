@@ -162,10 +162,20 @@ export class BlockCommitter implements IBlockCommitSink {
      * chain.
      *
      * A failed write is logged and the block is dropped rather than retried
-     * here. The block was never persisted, so the sync cursor never advanced
-     * past it, and the next scheduler tick's forward walk picks it up again —
-     * the same recovery a restart uses. Retrying inside the commit chain would
-     * stall every block behind it for a fault the normal path already repairs.
+     * here, because retrying inside the commit chain would stall every block
+     * behind it for a fault the normal path already repairs.
+     *
+     * Recovery is worth stating precisely, because the obvious answer is wrong.
+     * The next tick's forward walk does **not** pick the block up: that walk
+     * resumes from `meta.lastFetchedBlock`, which advanced when the block was
+     * buffered, not from the cursor. What actually finds it is
+     * `identifyMissingBlocks`, once a later block advances the cursor past the
+     * hole and the gap scan sees no block document at that height, or
+     * `resetFetchHeightToCursor()` at the next startup. Both depend on the
+     * block genuinely not having been written, which is why the telemetry write
+     * at the end of `persistPreparedBlock` is wrapped there rather than allowed
+     * to reject — a durable block with a failed commit would be invisible to
+     * both.
      *
      * @param prepared - The block to write and announce.
      */
@@ -181,7 +191,7 @@ export class BlockCommitter implements IBlockCommitSink {
             this.failures += 1;
             logger.error(
                 { error, blockNumber: prepared.blockNumber },
-                'Failed to commit a released block; the cursor did not advance, so the next tick will fetch it again'
+                'Failed to commit a released block; nothing durable was written, so the gap scan or the next startup will pick it up'
             );
         } finally {
             this.queued -= 1;

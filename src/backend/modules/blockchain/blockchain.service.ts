@@ -1045,10 +1045,16 @@ export class BlockchainService implements IBlockchainService {
      * rules, and the `block:new` broadcast all run immediately after it rather
      * than anywhere earlier.
      *
-     * The writes are ordered transactions, then the block document, then the
-     * cursor. The cursor goes last on purpose: it is the marker that says
+     * The durable writes are ordered transactions, then the block document, then
+     * the cursor. The cursor goes last on purpose: it is the marker that says
      * everything below it is complete, so advancing it before the other two
      * would let a crash leave a gap that nothing looks for again.
+     *
+     * One more write follows the cursor, and it is telemetry rather than data.
+     * It is deliberately wrapped so it cannot fail the commit: by that point the
+     * block is durable and the cursor has moved, and a rejection propagating out
+     * of here would make `BlockCommitter` skip the fan-out for a block nothing
+     * will ever revisit.
      *
      * @param prepared - The block to write, carrying its parsed transactions,
      *                   aggregates, and the timings accumulated while preparing.
@@ -1129,18 +1135,35 @@ export class BlockchainService implements IBlockchainService {
         timings.commit = Date.now() - commitStart;
         timings.total = (timings.prepare ?? 0) + timings.commit;
 
-        await syncModel.updateOne(
-            { key: 'blockchain:last-block' },
-            {
-                $set: {
-                    'meta.lastProcessedAt': new Date(),
-                    'meta.lastProcessedBlockId': blockData.blockId,
-                    'meta.lastProcessedBlockNumber': blockNumber,
-                    'meta.lastTimings': timings,
-                    'meta.lastTransactionCount': rawTransactionCount
+        // Swallowed on purpose, and only here. Everything durable is already
+        // written and the cursor has already advanced, so letting this reject
+        // would make a committed block look like a failed commit to
+        // `BlockCommitter`, which would then skip the observers, the alert
+        // ingest, and the `block:new` broadcast for a block that gap detection
+        // will never flag again — its block document exists, so nothing looks
+        // for it a second time. These five fields feed the `/system` blockchain
+        // console and nothing else reads them, so losing one block's telemetry
+        // costs an operator a stale reading until the next commit and costs the
+        // pipeline nothing.
+        try {
+            await syncModel.updateOne(
+                { key: 'blockchain:last-block' },
+                {
+                    $set: {
+                        'meta.lastProcessedAt': new Date(),
+                        'meta.lastProcessedBlockId': blockData.blockId,
+                        'meta.lastProcessedBlockNumber': blockNumber,
+                        'meta.lastTimings': timings,
+                        'meta.lastTransactionCount': rawTransactionCount
+                    }
                 }
-            }
-        );
+            );
+        } catch (error) {
+            logger.error(
+                { error, blockNumber },
+                'Failed to record commit telemetry for a block that was written successfully'
+            );
+        }
     }
 
     /**
