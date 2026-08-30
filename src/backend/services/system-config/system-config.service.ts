@@ -112,6 +112,11 @@ export class SystemConfigService implements ISystemConfigService {
                     throw new Error('SITE_WS environment variable is required');
                 }
 
+                // The emit-buffer fields are deliberately absent here. They are
+                // operator tuning rather than deployment wiring like the URLs
+                // below, so they take their schema defaults on insert instead of
+                // being restated in a second place that could drift away from
+                // `EMIT_BUFFER_DEFAULTS`.
                 const defaultConfig = {
                     key: 'system',
                     siteUrl: process.env.SITE_URL,
@@ -212,7 +217,19 @@ export class SystemConfigService implements ISystemConfigService {
      * @returns Updated configuration object
      */
     async updateConfig(
-        updates: Partial<Pick<ISystemConfig, 'siteUrl' | 'siteWs' | 'systemLogsMaxCount' | 'systemLogsRetentionDays' | 'logLevel'>>,
+        updates: Partial<Pick<
+            ISystemConfig,
+            | 'siteUrl'
+            | 'siteWs'
+            | 'systemLogsMaxCount'
+            | 'systemLogsRetentionDays'
+            | 'logLevel'
+            | 'emitBufferTargetDepth'
+            | 'emitBufferCatchupDepth'
+            | 'emitBufferMaxDepth'
+            | 'emitBufferRefillIntervalMs'
+            | 'emitBufferCatchupIntervalMs'
+        >>,
         updatedBy?: string
     ): Promise<ISystemConfig> {
         try {

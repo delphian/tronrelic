@@ -18,6 +18,7 @@ import type { LogLevelName } from '../system-log/LogLevels.js';
  * - `siteUrl` - Public-facing URL of the site (e.g., "https://tronrelic.com")
  * - `systemLogsMaxCount` - Maximum number of log entries to retain (default: 10000)
  * - `systemLogsRetentionDays` - Number of days to keep logs before deletion (default: 30)
+ * - `emitBuffer*` - The five settings shaping the block feed's playout buffer
  *
  * **Future Settings (examples):**
  * - `maintenanceMode` - Boolean flag to enable read-only mode
@@ -161,6 +162,80 @@ export interface ISystemConfig {
      * once the issue is resolved.
      */
     logLevel: LogLevelName;
+
+    /**
+     * How many finished blocks the backend holds before broadcasting them.
+     *
+     * This is the "lead" the block feed draws on when something upstream
+     * hiccups. Blockchain sync fetches blocks as fast as it can and hands each
+     * finished one to the emitter, which releases them on a steady clock. A
+     * slow TronGrid response, a retry, or a late scheduler tick is then covered
+     * by the blocks already in hand instead of appearing as a gap on screen.
+     *
+     * Default: 8 blocks, which covers a fully missed sync tick plus a skipped
+     * chain slot. Each block of lead costs one block time (about three seconds)
+     * of feed latency, so raising it buys cover for a longer stall at a
+     * proportional delay.
+     *
+     * Setting it to 0 switches buffering off entirely. That is a supported
+     * choice for a staged rollout, not a broken configuration.
+     *
+     * Why configurable at runtime:
+     * The right lead depends on how reliable a particular deployment's TronGrid
+     * access is, which is only observable once it is running — the underrun
+     * count on the `/system` blockchain console is the signal. An operator who
+     * has to rebuild a container to act on that reading will not act on it.
+     */
+    emitBufferTargetDepth: number;
+
+    /**
+     * Depth at which the buffer starts draining faster than the chain produces.
+     *
+     * A scheduler tick delivers several blocks at once. Without a faster drain
+     * above the target, that burst would simply sit in the buffer and become
+     * permanent extra latency for every viewer. Must be greater than
+     * `emitBufferTargetDepth`, or the faster drain would claim the steady state
+     * and the buffer would never settle at the lead it was asked to hold.
+     *
+     * Default: 13 blocks.
+     */
+    emitBufferCatchupDepth: number;
+
+    /**
+     * Depth beyond which blocks are broadcast with no wait at all.
+     *
+     * A buffer this deep means something upstream is wrong rather than merely
+     * uneven, and at that point the accumulated delay hurts a viewer more than
+     * the uneven spacing would. Must be greater than `emitBufferCatchupDepth`.
+     *
+     * Default: 40 blocks.
+     */
+    emitBufferMaxDepth: number;
+
+    /**
+     * Milliseconds to wait between broadcasts while the buffer is below target.
+     *
+     * This must stay above one block time, currently three seconds. Releasing
+     * more slowly than blocks arrive is the only mechanism by which a lead
+     * spent covering a gap ever grows back. Set it equal to the block time and
+     * the buffer covers exactly one gap for the life of the process and then
+     * runs flat forever, with nothing in the logs to say so — the underrun
+     * counter on `/system` is the only place that becomes visible.
+     *
+     * Default: 3300ms, which regains one block of lead per ten released, so a
+     * gap costs about thirty seconds of very slightly slower feed.
+     */
+    emitBufferRefillIntervalMs: number;
+
+    /**
+     * Milliseconds to wait between broadcasts above `emitBufferCatchupDepth`.
+     *
+     * Mirrors the catch-up interval the browser's own playout buffer uses, so a
+     * backlog drains at the same rate on both sides of the connection.
+     *
+     * Default: 2000ms.
+     */
+    emitBufferCatchupIntervalMs: number;
 
     /**
      * Timestamp of last configuration update.

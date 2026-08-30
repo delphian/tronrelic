@@ -290,4 +290,85 @@ describe('BlockEmitter', () => {
 
         expect(released).toEqual([100, 101]);
     });
+
+    describe('applyThresholds', () => {
+        it('takes effect during the wait it interrupts, not after it', () => {
+            // The reason the pending timer is cancelled. An operator who saves a
+            // change and watches nothing happen for the remainder of a 3.3
+            // second wait reasonably concludes the save failed, and the whole
+            // point of moving these settings out of the environment was to make
+            // the effect observable straight away.
+            const { emitter, released } = createEmitter();
+
+            emitter.enqueue(pending(100));
+            emitter.enqueue(pending(101));
+            emitter.enqueue(pending(102));
+            vi.advanceTimersByTime(0);
+            expect(released).toEqual([100]);
+
+            // Part-way through the next wait, switch to releasing with no delay.
+            vi.advanceTimersByTime(500);
+            emitter.applyThresholds({ ...THRESHOLDS, targetDepth: 0, catchupDepth: 1, maxDepth: 2 });
+            vi.advanceTimersByTime(5);
+
+            expect(released).toEqual([100, 101, 102]);
+        });
+
+        it('drains the surplus when the lead is lowered', () => {
+            // Blocks held under the old target are now above the new catch-up
+            // depth, so the existing release logic spends them at the faster
+            // interval. Nothing needs to flush them by hand.
+            const { emitter, released } = createEmitter();
+
+            for (let index = 0; index < 6; index += 1) {
+                emitter.enqueue(pending(100 + index));
+            }
+            vi.advanceTimersByTime(0);
+            released.length = 0;
+
+            emitter.applyThresholds({ ...THRESHOLDS, targetDepth: 1, catchupDepth: 2, maxDepth: 3 });
+            vi.advanceTimersByTime(THRESHOLDS.catchupIntervalMs * 4);
+
+            expect(emitter.getMetrics().depth).toBeLessThanOrEqual(1);
+            expect(released.length).toBeGreaterThan(1);
+        });
+
+        it('rebuilds toward a raised lead instead of stalling to re-seed', () => {
+            // Raising the target must not stop the feed while a bigger lead is
+            // collected. Seeding is a once-per-process cost, and paying it again
+            // on every save would freeze the feed for the new lead's worth of
+            // time in front of whoever is watching.
+            const { emitter, released } = createEmitter();
+
+            emitter.enqueue(pending(100));
+            emitter.enqueue(pending(101));
+            emitter.enqueue(pending(102));
+            vi.advanceTimersByTime(0);
+            expect(emitter.getMetrics().seeded).toBe(true);
+            released.length = 0;
+
+            emitter.applyThresholds({ ...THRESHOLDS, targetDepth: 8, catchupDepth: 13, maxDepth: 40 });
+
+            for (let index = 3; index < 12; index += 1) {
+                emitter.enqueue(pending(100 + index));
+                vi.advanceTimersByTime(THRESHOLDS.intervalMs);
+            }
+
+            expect(emitter.getMetrics().seeded).toBe(true);
+            expect(released.length).toBeGreaterThan(0);
+            expect(emitter.getMetrics().depth).toBeGreaterThan(THRESHOLDS.targetDepth);
+        });
+
+        it('reports the new target to the console it is judged from', () => {
+            // The Blockchain tab reads the target off these metrics rather than
+            // from configuration, so a stale value here would have an operator
+            // comparing live depth against a lead the emitter is no longer
+            // holding.
+            const { emitter } = createEmitter();
+
+            emitter.applyThresholds({ ...THRESHOLDS, targetDepth: 12, catchupDepth: 20, maxDepth: 50 });
+
+            expect(emitter.getMetrics().targetDepth).toBe(12);
+        });
+    });
 });

@@ -56,9 +56,11 @@ During local development, set `ENABLE_SCHEDULER=false` to avoid the problem enti
 
 `BLOCK_SYNC_LOCK_TTL` (14 seconds) is not an independent knob. It is sized just under the `blockchain:sync` cron period so the Redis lock self-releases before the next tick even when a run dies. A TTL longer than the period makes ticks find the lock held and skip silently; a much shorter one lets two runs race the block cursor. The schedule itself is not an environment variable — it lives in `scheduler_configs` and is edited at `/system/scheduler`.
 
-`BLOCKCHAIN_EMIT_BUFFER_TARGET_DEPTH` (8) is how many finished blocks the backend holds before broadcasting, which is the lead that covers an upstream hiccup. Setting it to **0 switches buffering off** and is the supported setting for a staged rollout, not a broken configuration.
+**The emit buffer is not configured here.** The five settings that shape the block feed's playout buffer were once `BLOCKCHAIN_EMIT_BUFFER_*` variables and are now stored on the `system_config` document, edited from the Configuration tab of `/system/system`, and applied to the running feed the moment they are saved. Setting a variable by that name today does nothing at all.
 
-`BLOCKCHAIN_EMIT_BUFFER_REFILL_MS` (3300) **must stay above one block time**. It is the spacing used below target, and releasing slower than blocks arrive is the only way a lead spent on a gap grows back. Set it equal to the block time and the buffer covers one gap for the life of the process and then runs flat, with nothing in the logs to say so — watch `emitBufferUnderruns` on `/system` instead. The remaining `BLOCKCHAIN_EMIT_BUFFER_*` variables govern how a burst drains; see [system-blockchain-sync-architecture.md](./system/system-blockchain-sync-architecture.md#buffer-settings).
+They moved because the loop for tuning them did not close. The only reliable evidence that a lead is too small is the underrun count on the `/system` blockchain console, which is a reading taken from a running deployment, and acting on it used to mean editing this file, adding the variable to the backend service in `docker-compose.yml`, and recreating the container. See [system-blockchain-sync-architecture.md](./system/system-blockchain-sync-architecture.md#buffer-settings) for what each setting does, and `src/backend/config/emit-buffer.ts` for the defaults a fresh deployment starts with.
+
+`BLOCKCHAIN_BLOCK_INTERVAL_SECONDS` (3) stays an environment variable and is deliberately not on that form. It states how fast TRON produces blocks, which is a property of the chain rather than an operator preference, and the buffer's own rules are checked against it.
 
 ## Why the Two Notification Throttles Differ
 

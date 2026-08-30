@@ -30,10 +30,21 @@ The split is the point. The wait used to sit inside the BullMQ worker, immediate
 | `block-emit-buffer.ts` | `resolveReleaseInterval()` — how long to wait before the next release, given depth; `resolveSeedComplete()` — whether the initial lead is built; `insertPendingBlock()` — ordered insert so a late retry cannot make the feed run backwards |
 | `block-pacer.ts` | `resolveEmitPacing()` — the carried-forward deadline the emitter releases against; `resolveBlockAgeInBlocks()` — a block's age in blocks, from its own header |
 | `sync-mode.ts` | Whether sync treats itself as caught up, using a hysteresis pair so a lag hovering on one boundary cannot flip the mode every block |
+| `chain-head.ts` | `resolveCursorBlock()` — read a stored cursor, including the string form older drivers wrote; `resolveCachedHead()` — whether a height recorded by an earlier tick may stand in for a failed head lookup |
 
 Two properties are easy to lose in a rewrite. **Releasing below target must be slower than the chain produces** (`refillIntervalMs` > one block time), or a lead spent on one gap never comes back — that is the known limitation of the frontend playout buffer. And **the deadline carries forward** rather than resetting per release; a per-release stopwatch can only add delay, so the average drifts above the block time and accumulates until the syncer abandons the cadence and dumps a burst.
 
+The five settings shaping that clock are stored configuration, not environment variables. `BlockEmitter.configure(settings)` is the only way in: bootstrap calls it once with the stored values, and the `/system` Configuration tab calls it again on every save, which applies the change to the live feed without a restart. The emitter never reads the database itself — the caller passes the values in, so a test drives it with plain numbers and the class stays free of the config service. `config/emit-buffer.ts` holds the defaults and the accepted range for each field.
+
 `resolveBlockAgeInBlocks()` is what lets each block be classified on its own rather than on a flag the scheduler stamped on the whole batch. A block too old to be live work bypasses the buffer entirely.
+
+## A failed head lookup no longer costs the whole tick
+
+`syncLatestBlocks()` opens by asking TronGrid for the chain head, and that one call used to decide the fate of everything after it. A failure aborted the tick, including the backfill queue — old work that never needed the head. `resolveChainHead()` now falls back to `meta.lastNetworkHeight`, the height the previous tick recorded, so repair work keeps running while the head is unreachable.
+
+The fallback cannot replay a block. The height is only ever the ceiling of the forward walk in `computeBlockTargets()`, which starts at the stored cursor, so a stale ceiling shrinks the batch and can never walk back over covered ground. Two rules hold that line and both are enforced in `chain-head.ts` rather than at the call site. **The height is used exactly as recorded, never extrapolated** — a height above the real head schedules blocks TRON has not produced, and each costs six client retries before landing in cooldown and the backfill queue as a phantom entry. And **the fallback is refused when there is no usable cursor**, because `getLastProcessedBlock()` then seeds the cursor *from* the height instead of bounding a walk with it, which would start the deployment at the wrong block permanently.
+
+A tick that ran on a cached height records `meta.lastError` instead of clearing it, and skips the lag warning, since lag measured against a frozen ceiling improves the longer the head stays unreachable.
 
 Full rationale, settings table, and how to read the two lag figures on `/system`: [system-blockchain-sync-architecture.md](../../../../docs/system/system-blockchain-sync-architecture.md#broadcast-buffering).
 

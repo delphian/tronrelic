@@ -27,6 +27,7 @@ import { Input } from '../../../../../components/ui/Input';
 import { Switch } from '../../../../../components/ui/Switch';
 import { Badge } from '../../../../../components/ui/Badge';
 import { Stack } from '../../../../../components/layout';
+import { readFieldInteger } from './field-integer';
 import {
     getTronGridConfig,
     updateTronGridConfig,
@@ -44,31 +45,6 @@ const TRONGRID_KEYS_URL = 'https://www.trongrid.io/';
 
 /** How long a success message stays on screen before clearing itself. */
 const FEEDBACK_TIMEOUT_MS = 4000;
-
-/**
- * Read one of the numeric fields out of its text state.
- *
- * The fields are held as strings so a half-typed value survives editing, which
- * means a bare `Number(raw)` would turn an emptied box into `0` — and `0` is a
- * legal value for the throttle, so clearing that field and pressing Save would
- * silently persist "no pacing at all" and report success. An operator who
- * blanked a field meant "leave it alone", not "disable it", so a blank is an
- * error here rather than a number.
- *
- * @param raw - Current text contents of the input.
- * @param bounds - Inclusive range the field accepts, mirroring the backend's own bound.
- * @returns The value, or null when the box is blank or holds something out of range.
- */
-function readFieldInteger(raw: string, bounds: { min: number; max: number }): number | null {
-    if (!raw.trim()) {
-        return null;
-    }
-    const value = Number(raw);
-    if (!Number.isInteger(value) || value < bounds.min || value > bounds.max) {
-        return null;
-    }
-    return value;
-}
 
 /**
  * Render and manage the staged TronGrid provider config form.

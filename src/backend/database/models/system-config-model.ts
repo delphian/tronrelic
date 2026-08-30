@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import type { ISystemConfig } from '@/types';
+import { EMIT_BUFFER_DEFAULTS } from '../../config/emit-buffer.js';
 
 /**
  * SystemConfigDoc
@@ -21,6 +22,8 @@ import type { ISystemConfig } from '@/types';
  * - `systemLogsMaxCount` - Maximum number of log entries to retain (default: 1000000)
  * - `systemLogsRetentionDays` - Number of days to keep logs before deletion (default: 30)
  * - `logLevel` - Minimum log level for file/console output (default: 'info')
+ * - `emitBuffer*` - The five settings shaping the block feed's playout buffer,
+ *   applied to the running `BlockEmitter` the moment they are saved
  * - `updatedAt` - Timestamp of last configuration change
  * - `updatedBy` - Admin identifier who made the change (for audit trail)
  *
@@ -77,6 +80,37 @@ const systemConfigSchema = new Schema<SystemConfigDoc>(
             required: true,
             default: 'info',
             enum: ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']
+        },
+        // The five emit-buffer settings below shape the block feed's playout
+        // buffer and were environment variables until they moved here. Every
+        // one carries a schema default, which is what lets an existing
+        // deployment pick them up with no migration: Mongoose fills a missing
+        // path in when it hydrates the stored document, so a config document
+        // written before these fields existed still reads back complete.
+        emitBufferTargetDepth: {
+            type: Number,
+            required: true,
+            default: EMIT_BUFFER_DEFAULTS.emitBufferTargetDepth
+        },
+        emitBufferCatchupDepth: {
+            type: Number,
+            required: true,
+            default: EMIT_BUFFER_DEFAULTS.emitBufferCatchupDepth
+        },
+        emitBufferMaxDepth: {
+            type: Number,
+            required: true,
+            default: EMIT_BUFFER_DEFAULTS.emitBufferMaxDepth
+        },
+        emitBufferRefillIntervalMs: {
+            type: Number,
+            required: true,
+            default: EMIT_BUFFER_DEFAULTS.emitBufferRefillIntervalMs
+        },
+        emitBufferCatchupIntervalMs: {
+            type: Number,
+            required: true,
+            default: EMIT_BUFFER_DEFAULTS.emitBufferCatchupIntervalMs
         },
         updatedAt: {
             type: Date,

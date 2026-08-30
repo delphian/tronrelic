@@ -17,7 +17,7 @@ There is no aggregating "overview" endpoint. The `/system` dashboard fans out to
 | GET | `/admin/system/health/infrastructure` | Droplet CPU/load/memory/disk plus per-container metrics |
 | GET | `/admin/system/config` | Effective env: features, integration presence |
 | GET | `/admin/system/config/system` | Runtime-editable system config (Mongo-backed) |
-| PATCH | `/admin/system/config/system` | Update `siteUrl`, `logLevel`, log retention settings |
+| PATCH | `/admin/system/config/system` | Update `siteUrl`, `logLevel`, log retention, and the emit buffer settings |
 
 ## Response Reference
 
@@ -129,8 +129,15 @@ Runtime-editable settings stored in MongoDB `system_config` (single document, `k
 | `systemLogsMaxCount` | number | Default 1,000,000 |
 | `systemLogsRetentionDays` | number | Default 30 |
 | `logLevel` | string | One of `trace\|debug\|info\|warn\|error\|fatal\|silent` |
+| `emitBufferTargetDepth` | number | Blocks of lead the feed holds; default 8, and 0 switches buffering off |
+| `emitBufferCatchupDepth` | number | Depth above which the buffer drains faster; default 13 |
+| `emitBufferMaxDepth` | number | Depth above which blocks go out with no wait; default 40 |
+| `emitBufferRefillIntervalMs` | number | Spacing below target; default 3300 |
+| `emitBufferCatchupIntervalMs` | number | Spacing above the catch-up depth; default 2000 |
 | `updatedAt` | Date | Last change timestamp |
 | `updatedBy` | string \| null | Admin identifier (audit) |
+
+The five `emitBuffer*` fields shape the block feed's playout buffer; see [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md#buffer-settings) for what each one does.
 
 ### `PATCH /config/system`
 
@@ -141,11 +148,14 @@ Partial body, all fields optional:
     "siteUrl": "https://tronrelic.com",
     "logLevel": "info",
     "systemLogsMaxCount": 1000000,
-    "systemLogsRetentionDays": 30
+    "systemLogsRetentionDays": 30,
+    "emitBufferTargetDepth": 8
 }
 ```
 
 `siteUrl` is parsed through `new URL(...)`; invalid input returns 400 with `error: "Invalid URL format. Must include protocol (http:// or https://)"`. The PATCH does **not** accept `siteWs` directly — it is derived from `siteUrl` server-side. Updates invalidate the in-memory cache and persist immediately; the SSR cache on the frontend container only refreshes after a frontend restart (see [system-runtime-config.md](./system-runtime-config.md#runtime-reconfiguration)).
+
+Each `emitBuffer*` field must be a whole number inside the range declared in `src/backend/config/emit-buffer.ts`, and the request is checked against the *merged* result rather than the body alone, so a one-field update cannot break a rule it never mentioned. Three of those rules span fields: the depths must increase, `emitBufferRefillIntervalMs` must exceed one block time, and `emitBufferCatchupIntervalMs` must fall below it. A rejected value returns 400 naming the field and the rule. An accepted one is pushed straight into the running `BlockEmitter`, the same way a `logLevel` change is pushed into the live logger, so the feed picks it up without waiting for the config cache to expire.
 
 ```bash
 curl -X PATCH \

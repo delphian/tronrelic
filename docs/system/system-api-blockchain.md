@@ -45,7 +45,7 @@ Sync lag is the single most important production signal — every observer and d
 | `lastEmittedBlockNumber` | number \| null | Height of the last block actually broadcast. `null` before the first release |
 | `feedLag` | number | Blocks between the chain head and the last broadcast block — the delay a viewer experiences. Sits near `emitBufferTargetDepth` by design. Falls back to `lag` before the first release |
 | `emitBufferDepth` | number | Blocks the emitter is holding; the lead available to cover an upstream hiccup |
-| `emitBufferTargetDepth` | number | Config echo: the lead the emitter aims to hold (`BLOCKCHAIN_EMIT_BUFFER_TARGET_DEPTH`, default 8) |
+| `emitBufferTargetDepth` | number | Config echo: the lead the emitter aims to hold (default 8). Read from the live emitter rather than from stored configuration, so it reflects a change saved on the Configuration tab immediately |
 | `emitBufferSeeded` | boolean | `false` while the emitter is still building its initial lead after a restart |
 | `emitBufferUnderruns` | number | Times the buffer has drained to empty since boot. **The number to alert on** — a deployment holding a real lead never reaches zero, so any increase means the feed was exposed to a gap and the target depth is too small |
 

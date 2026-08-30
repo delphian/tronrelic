@@ -6,6 +6,7 @@ import type { ITransaction, ITransactionPersistencePayload, ITransactionCategory
 import { ProcessedTransaction } from '@/types';
 import { TransactionModel, type TransactionDoc, type TransactionFields } from '../../database/models/transaction-model.js';
 import { SyncStateModel, type SyncStateDoc, type SyncStateFields } from '../../database/models/sync-state-model.js';
+import { resolveCursorBlock, resolveCachedHead } from './chain-head.js';
 import { BlockModel, type BlockDoc, type BlockStats, type BlockFields } from '../../database/models/block-model.js';
 import { CORE_NETWORK_ACTIVITY_ROLLUPS_COLLECTION, type CoreNetworkActivityRollupFields } from '../../database/models/core-network-activity-rollup-model.js';
 import { DelegationFlowModel, ContractActivityModel, TokenModel } from '../../database/models/index.js';
@@ -32,6 +33,21 @@ import { ProviderConfigService } from '../providers/services/provider-config.ser
 interface BlockSyncJob {
     blockNumber: number;
     isCaughtUp: boolean;
+}
+
+/**
+ * The chain height a sync tick schedules against, and where it came from.
+ *
+ * The two are reported together because a height read from a previous tick is
+ * usable for scheduling but must not be treated as current: the lag figures
+ * derived from it understate reality, and the tick should not clear the error
+ * state that says the head lookup is failing.
+ */
+interface IChainHead {
+    /** Height to use as this tick's ceiling for the forward walk. */
+    blockNumber: number;
+    /** True when the live lookup failed and a previously recorded height was used. */
+    fromCache: boolean;
 }
 
 // Re-export types from @/types for backward compatibility
@@ -1040,8 +1056,8 @@ export class BlockchainService implements IBlockchainService {
 
         try {
             const state = await this.getSyncState();
-            const latestBlock = await this.tronClient.getNowBlock();
-            const latestNetworkBlock = latestBlock.block_header.raw_data.number;
+            const chainHead = await this.resolveChainHead(state);
+            const latestNetworkBlock = chainHead.blockNumber;
             const lastProcessed = this.getLastProcessedBlock(state, latestNetworkBlock);
             const parityTarget = this.getParityTarget(state);
             const existingBackfill = this.getBackfillQueue(state);
@@ -1068,15 +1084,25 @@ export class BlockchainService implements IBlockchainService {
 
             if (!targets.length) {
                 logger.debug({ lastProcessed, latestNetworkBlock }, 'No new blocks to schedule');
+
+                // An unreachable head reaches this branch routinely: with the
+                // ceiling frozen, the forward walk runs out of blocks as soon as
+                // the cursor catches up to it. Recording the failure here too is
+                // what stops that from reading as an idle, healthy sync.
+                const idleUpdate: Record<string, unknown> = {
+                    'meta.lastNetworkHeight': latestNetworkBlock,
+                    'meta.lastScheduledAt': new Date(),
+                    'meta.backfillQueue': remainingBackfill
+                };
+
+                if (chainHead.fromCache) {
+                    idleUpdate['meta.lastError'] = `Chain head unreachable; nothing to schedule below the last known height (${latestNetworkBlock}).`;
+                    idleUpdate['meta.lastErrorAt'] = new Date();
+                }
+
                 await syncModel.updateOne(
                     { key: 'blockchain:last-block' },
-                    {
-                        $set: {
-                            'meta.lastNetworkHeight': latestNetworkBlock,
-                            'meta.lastScheduledAt': new Date(),
-                            'meta.backfillQueue': remainingBackfill
-                        }
-                    },
+                    { $set: idleUpdate },
                     { upsert: true }
                 );
                 return;
@@ -1122,26 +1148,43 @@ export class BlockchainService implements IBlockchainService {
                 );
             }
 
-            await syncModel.updateOne(
-                { key: 'blockchain:last-block' },
-                {
-                    $setOnInsert: { cursor: { blockNumber: lastProcessed } },
-                    $set: {
-                        'meta.backfillQueue': remainingBackfill,
-                        'meta.lastNetworkHeight': latestNetworkBlock,
-                        'meta.lastScheduledAt': new Date(),
-                        'meta.lastBatchSize': targets.length
-                    },
-                    $unset: {
-                        'meta.lastError': '',
-                        'meta.lastErrorAt': ''
-                    }
-                },
-                { upsert: true }
-            );
+            // A tick that ran on a cached height did schedule work, but it did
+            // not prove the head is reachable. Clearing the error here would
+            // report a healthy sync to `/system` for as long as the fallback
+            // keeps succeeding, which is the whole window an operator needs to
+            // see. So the error is recorded rather than cleared, and only a
+            // tick that actually read the head clears it.
+            const scheduleUpdate: Record<string, unknown> = {
+                $setOnInsert: { cursor: { blockNumber: lastProcessed } },
+                $set: {
+                    'meta.backfillQueue': remainingBackfill,
+                    'meta.lastNetworkHeight': latestNetworkBlock,
+                    'meta.lastScheduledAt': new Date(),
+                    'meta.lastBatchSize': targets.length
+                }
+            };
 
+            if (chainHead.fromCache) {
+                Object.assign(scheduleUpdate.$set as Record<string, unknown>, {
+                    'meta.lastError': `Chain head unreachable; scheduled against the last known height (${latestNetworkBlock}). `
+                        + 'Backfill is still running, and blocks above that height wait for the head to answer.',
+                    'meta.lastErrorAt': new Date()
+                });
+            } else {
+                scheduleUpdate.$unset = {
+                    'meta.lastError': '',
+                    'meta.lastErrorAt': ''
+                };
+            }
+
+            await syncModel.updateOne({ key: 'blockchain:last-block' }, scheduleUpdate, { upsert: true });
+
+            // Skipped on a cached height, because the figure would be measured
+            // against a ceiling that stopped moving. Lag looks better the longer
+            // the head stays unreachable, which is the opposite of the truth and
+            // exactly the wrong thing to put in the log.
             const lag = latestNetworkBlock - lastProcessed;
-            if (lag > blockchainConfig.maxNetworkLagBeforeBackoff) {
+            if (!chainHead.fromCache && lag > blockchainConfig.maxNetworkLagBeforeBackoff) {
                 logger.warn({ lag, lastProcessed, latestNetworkBlock }, 'Blockchain sync is behind latest network block');
             }
         } catch (error) {
@@ -1229,27 +1272,94 @@ export class BlockchainService implements IBlockchainService {
      * for database compatibility across different MongoDB driver versions.
      */
     private getLastProcessedBlock(state: SyncStateFields | null, latestNetworkBlock: number): number {
-        if (!state?.cursor) {
-            // On fresh install, start from current block instead of 0
-            logger.info({ latestNetworkBlock }, 'Fresh install detected, starting sync from current block');
-            return latestNetworkBlock;
+        const cursor = resolveCursorBlock(this.readCursorField(state));
+
+        if (cursor === null) {
+            logger.info({ latestNetworkBlock }, 'No usable sync cursor; starting sync from the current block');
         }
 
-        const cursor = state.cursor as Record<string, unknown>;
-        const value = cursor.blockNumber;
+        return cursor ?? latestNetworkBlock;
+    }
 
-        if (typeof value === 'number' && Number.isFinite(value)) {
-            return value;
-        }
+    /**
+     * Pull the raw cursor field out of a sync state document.
+     *
+     * The reading rules for that field live in `chain-head.ts` so its two
+     * consumers cannot disagree about what counts as a usable cursor. This
+     * method only knows where the field sits, which is the part specific to
+     * this document's shape.
+     *
+     * @param state - Sync state as loaded from MongoDB, or null before the
+     *                document exists.
+     * @returns The `cursor.blockNumber` value untouched, for the pure reader to
+     *          interpret.
+     */
+    private readCursorField(state: SyncStateFields | null): unknown {
+        return state?.cursor ? (state.cursor as Record<string, unknown>).blockNumber : undefined;
+    }
 
-        if (typeof value === 'string') {
-            const parsed = Number(value);
-            if (Number.isFinite(parsed)) {
-                return parsed;
+    /**
+     * Work out which chain height this tick should schedule against.
+     *
+     * A single failed call to `getnowblock` used to abort the whole tick. That
+     * cost far more than the one lookup: the tick also schedules the backfill
+     * queue, and backfill blocks are old work that never needed the head at
+     * all, so one flaky request stopped repair work that would have succeeded.
+     * Falling back to the height recorded by the previous tick keeps that work
+     * moving while the head is unreachable.
+     *
+     * The fallback cannot cause a block to be processed twice. The height is
+     * only ever the *ceiling* of the forward walk in `computeBlockTargets`,
+     * which starts at the stored cursor, so a stale height can only make the
+     * batch smaller. It can never walk back over ground the cursor has covered.
+     *
+     * Two rules keep it that way, and both matter:
+     *
+     * The height is used exactly as it was recorded, never extrapolated from
+     * elapsed time. A height above the real chain head would schedule blocks
+     * TRON has not produced, and each one costs six retries in the TronGrid
+     * client before landing in cooldown and the backfill queue as a phantom
+     * entry.
+     *
+     * The fallback is refused when there is no usable cursor. In that case
+     * `getLastProcessedBlock` seeds the cursor *from* the height rather than
+     * bounding a walk with it, so a stale value would permanently start the
+     * deployment at the wrong place. A cold start genuinely needs a live head,
+     * and waiting for the next tick costs nothing.
+     *
+     * @param state - Sync state for this tick, supplying both the cursor that
+     *                decides whether the fallback is allowed and the height it
+     *                would use.
+     * @returns The height to schedule against, flagged when it came from cache.
+     * @throws The original lookup error when there is no usable cached height,
+     *         leaving the caller's existing error handling to record it.
+     */
+    private async resolveChainHead(state: SyncStateFields | null): Promise<IChainHead> {
+        let head: IChainHead;
+
+        try {
+            const latestBlock = await this.tronClient.getNowBlock();
+
+            head = { blockNumber: latestBlock.block_header.raw_data.number, fromCache: false };
+        } catch (error) {
+            const cached = resolveCachedHead(
+                this.readCursorField(state),
+                (state?.meta as Record<string, unknown> | undefined)?.lastNetworkHeight
+            );
+
+            if (cached === null) {
+                throw error;
             }
+
+            logger.warn(
+                { error, cachedNetworkHeight: cached },
+                'Chain head lookup failed; scheduling against the height recorded by the previous tick'
+            );
+
+            head = { blockNumber: cached, fromCache: true };
         }
 
-        return latestNetworkBlock;
+        return head;
     }
 
     /**

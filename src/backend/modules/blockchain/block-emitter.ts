@@ -22,11 +22,21 @@
  * never buffered at all: spending a live block's slot on a block from hours ago
  * is what puts the syncer further behind.
  *
+ * The five numbers shaping the clock are stored configuration, edited from the
+ * Configuration tab of `/system/system` and applied to the running instance
+ * through {@link BlockEmitter.configure}. They were environment variables until
+ * the loop that decides them proved unusable: the only reliable signal that a
+ * lead is too small is the underrun count on `/system`, which is a reading you
+ * take from a running deployment, and acting on it used to require editing a
+ * `.env` file and recreating the container.
+ *
  * @module backend/modules/blockchain/block-emitter
  */
 
 import type { BlockStats } from '../../database/models/block-model.js';
+import type { ISystemConfig } from '@/types';
 import { blockchainConfig } from '../../config/blockchain.js';
+import { EMIT_BUFFER_DEFAULTS } from '../../config/emit-buffer.js';
 import { logger } from '../../lib/logger.js';
 import { WebSocketService } from '../../services/websocket.service.js';
 import { resolveEmitPacing } from './block-pacer.js';
@@ -52,6 +62,22 @@ export interface IBlockNewPayload {
     /** Block aggregates plus the transaction count the frontend displays. */
     stats: BlockStats & { transactions: number };
 }
+
+/**
+ * The five operator-tunable settings that shape the release clock.
+ *
+ * Taken as a slice of the stored system configuration rather than as a separate
+ * shape, so a field renamed on the admin form cannot silently stop reaching the
+ * emitter — the compiler catches it here instead.
+ */
+export type IEmitBufferSettings = Pick<
+    ISystemConfig,
+    | 'emitBufferTargetDepth'
+    | 'emitBufferCatchupDepth'
+    | 'emitBufferMaxDepth'
+    | 'emitBufferRefillIntervalMs'
+    | 'emitBufferCatchupIntervalMs'
+>;
 
 /** One block waiting for its broadcast slot. */
 export interface IPendingBlockEmit {
@@ -96,6 +122,19 @@ export interface IBlockEmitBufferMetrics {
 export class BlockEmitter {
     private static instance: BlockEmitter | null = null;
 
+    /**
+     * The most recent thresholds resolved from stored configuration, held here
+     * so bootstrap can settle them before the emitter itself exists.
+     *
+     * The emitter is built lazily, on the first block, because constructing it
+     * reaches for the WebSocket server. Configuration is read much earlier, and
+     * it must not force that construction just to hand over five numbers.
+     * Stashing them means an early read is not lost: `getInstance()` picks them
+     * up when it finally builds the emitter, and a later change goes straight
+     * to the live instance.
+     */
+    private static configuredThresholds: IReleaseIntervalThresholds | null = null;
+
     /** Blocks awaiting release, kept in ascending block-number order. */
     private readonly pending: IPendingBlockEmit[] = [];
 
@@ -139,13 +178,16 @@ export class BlockEmitter {
      *                  thrown here are caught and logged rather than allowed to
      *                  escape into the timer, where they would kill the clock
      *                  and stall the feed permanently.
-     * @param thresholds - Depths and intervals shaping the release clock.
+     * @param thresholds - Depths and intervals shaping the release clock. Not
+     *                     readonly, because an operator can change them from the
+     *                     admin console while the feed is running; see
+     *                     {@link applyThresholds}.
      * @param maxDebtBlocks - How much missed deadline one stall may work off at
      *                        full speed, bounding the burst after a stall.
      */
     constructor(
         private readonly release: (payload: IBlockNewPayload) => void,
-        private readonly thresholds: IReleaseIntervalThresholds,
+        private thresholds: IReleaseIntervalThresholds,
         private readonly maxDebtBlocks: number
     ) {}
 
@@ -164,7 +206,7 @@ export class BlockEmitter {
 
             BlockEmitter.instance = new BlockEmitter(
                 payload => websocket.emit({ event: 'block:new', payload }),
-                BlockEmitter.resolveThresholds(),
+                BlockEmitter.configuredThresholds ?? BlockEmitter.resolveThresholds(EMIT_BUFFER_DEFAULTS),
                 blockchainConfig.network.maxPacingDebtBlocks
             );
         }
@@ -173,11 +215,35 @@ export class BlockEmitter {
     }
 
     /**
-     * Read the configured thresholds, correcting an ordering that would stop
-     * the buffer working at all.
+     * Adopt the emit-buffer settings an operator has saved.
+     *
+     * This is the single entry point for stored configuration, called once at
+     * startup and again on every save from the Configuration tab. Callers pass
+     * the settings in rather than the emitter reading the database itself,
+     * which keeps this class free of the config service and lets a test drive
+     * it with plain numbers.
+     *
+     * Safe to call before the emitter exists. The settings are held and applied
+     * when it is built, which is what lets bootstrap configure the buffer
+     * without forcing a WebSocket service into existence at the same moment.
+     *
+     * @param settings - The five stored values, straight off the system config
+     *                   document.
+     */
+    public static configure(settings: IEmitBufferSettings): void {
+        BlockEmitter.configuredThresholds = BlockEmitter.resolveThresholds(settings);
+
+        if (BlockEmitter.instance) {
+            BlockEmitter.instance.applyThresholds(BlockEmitter.configuredThresholds);
+        }
+    }
+
+    /**
+     * Turn stored settings into thresholds, correcting an ordering that would
+     * stop the buffer working at all.
      *
      * The depths have to increase — target, then catch-up, then the cap — and
-     * nothing stops an operator raising `targetDepth` past `catchupDepth`
+     * nothing stops an operator raising the target past the catch-up depth
      * without touching the other two. That combination fails quietly and in the
      * worst possible way: every depth above the catch-up figure drains at the
      * faster interval, so the buffer speeds up before it ever reaches its
@@ -187,20 +253,27 @@ export class BlockEmitter {
      * deployment running with the lead it asked for, and the warning says what
      * was changed so the configuration can be fixed properly.
      *
+     * The update endpoint rejects this ordering outright, so a save from the
+     * admin console cannot reach here broken. The correction stays because a
+     * config document can also be edited directly in MongoDB, and because the
+     * emitter must never be the thing that fails on a bad number.
+     *
+     * @param settings - The five stored values to convert.
      * @returns Thresholds safe to release against, with the block interval
-     *          converted from the seconds the configuration is written in.
+     *          taken from the chain's own production rate rather than from
+     *          anything an operator can set.
      */
-    private static resolveThresholds(): IReleaseIntervalThresholds {
-        const { emitBuffer, network } = blockchainConfig;
-        const catchupDepth = Math.max(emitBuffer.catchupDepth, emitBuffer.targetDepth + 1);
-        const maxDepth = Math.max(emitBuffer.maxDepth, catchupDepth + 1);
+    private static resolveThresholds(settings: IEmitBufferSettings): IReleaseIntervalThresholds {
+        const targetDepth = settings.emitBufferTargetDepth;
+        const catchupDepth = Math.max(settings.emitBufferCatchupDepth, targetDepth + 1);
+        const maxDepth = Math.max(settings.emitBufferMaxDepth, catchupDepth + 1);
 
-        if (catchupDepth !== emitBuffer.catchupDepth || maxDepth !== emitBuffer.maxDepth) {
+        if (catchupDepth !== settings.emitBufferCatchupDepth || maxDepth !== settings.emitBufferMaxDepth) {
             logger.warn(
                 {
-                    targetDepth: emitBuffer.targetDepth,
-                    configuredCatchupDepth: emitBuffer.catchupDepth,
-                    configuredMaxDepth: emitBuffer.maxDepth,
+                    targetDepth,
+                    configuredCatchupDepth: settings.emitBufferCatchupDepth,
+                    configuredMaxDepth: settings.emitBufferMaxDepth,
                     catchupDepth,
                     maxDepth
                 },
@@ -209,15 +282,54 @@ export class BlockEmitter {
         }
 
         const thresholds: IReleaseIntervalThresholds = {
-            intervalMs: network.blockIntervalSeconds * 1000,
-            refillIntervalMs: emitBuffer.refillIntervalMs,
-            catchupIntervalMs: emitBuffer.catchupIntervalMs,
-            targetDepth: emitBuffer.targetDepth,
+            intervalMs: blockchainConfig.network.blockIntervalSeconds * 1000,
+            refillIntervalMs: settings.emitBufferRefillIntervalMs,
+            catchupIntervalMs: settings.emitBufferCatchupIntervalMs,
+            targetDepth,
             catchupDepth,
             maxDepth
         };
 
         return thresholds;
+    }
+
+    /**
+     * Switch the running buffer over to a new set of thresholds.
+     *
+     * The pending timer is cancelled and the next release rescheduled, because
+     * a wait already counting down was sized by the old interval. Without that,
+     * a change saved during a 3.3-second wait would appear to do nothing until
+     * that wait happened to expire, and an operator watching the console would
+     * reasonably conclude the save had failed.
+     *
+     * Nothing else needs handling explicitly, because the release clock reads
+     * these values fresh on every decision. A lowered target leaves the buffer
+     * above its new catch-up depth, so the excess drains at the faster interval
+     * and settles; a raised target leaves it below, so it refills at the slower
+     * one and grows the lead back over the following minute. A buffer still
+     * building its initial lead re-tests that against the new target the moment
+     * it is rescheduled.
+     *
+     * @param next - Thresholds already ordered and clamped by
+     *               {@link resolveThresholds}.
+     */
+    public applyThresholds(next: IReleaseIntervalThresholds): void {
+        this.thresholds = next;
+
+        this.clearTimer();
+        this.scheduleNext();
+
+        logger.info(
+            {
+                targetDepth: next.targetDepth,
+                catchupDepth: next.catchupDepth,
+                maxDepth: next.maxDepth,
+                refillIntervalMs: next.refillIntervalMs,
+                catchupIntervalMs: next.catchupIntervalMs,
+                depth: this.pending.length
+            },
+            'Emit buffer thresholds applied to the running feed'
+        );
     }
 
     /**

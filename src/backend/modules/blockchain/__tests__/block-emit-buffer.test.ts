@@ -12,7 +12,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolveReleaseInterval, resolveSeedComplete, insertPendingBlock } from '../block-emit-buffer.js';
 
-/** Production defaults from `blockchainConfig.emitBuffer`. */
+/** The shipped defaults, from `EMIT_BUFFER_DEFAULTS` plus one TRON block time. */
 const THRESHOLDS = {
     intervalMs: 3_000,
     refillIntervalMs: 3_300,

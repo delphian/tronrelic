@@ -1,12 +1,17 @@
 /**
- * Shared styles for the Configuration tab's provider cards (TronScan, TronGrid).
+ * Shared styles for the Configuration tab's cards — TronScan, TronGrid, and the
+ * block feed buffer.
  *
  * Colocated with the sections rather than living in the page-level module, so
- * the provider forms' styles travel with the components that own them — the
- * same arrangement every other section on this page already uses. One file
- * serves both cards because they are the same form: a header with badges,
- * labelled fields, an action row, inline feedback. A per-provider copy would
- * drift, and two cards drifting apart on one tab reads as a bug.
+ * the forms' styles travel with the components that own them — the same
+ * arrangement every other section on this page already uses. One file serves
+ * every card because they are the same form: a header with badges, labelled
+ * fields, an action row, inline feedback. A per-card copy would drift, and
+ * cards drifting apart on one tab reads as a bug.
+ *
+ * The file and its `provider_*` class names keep their original wording now
+ * that a non-provider card shares them. Renaming both would touch every card on
+ * the tab to change nothing a reader sees.
  *
  * Only the forms' own layout and inline feedback live here. The controls
  * themselves are primitives (`Input`, `Select`, `IconButton`, `Button`,
