@@ -28,6 +28,7 @@ Every section still fetches its own admin endpoint and renders independently —
 | Overview | Server | `ServerSection` | `/health/redis`, `/health/server`, `/health/infrastructure` | Droplet CPU/load/memory/disk; per-container CPU, memory, health, restarts; Redis ping, key count, evictions; process uptime and heap |
 | Overview | Blockchain | `BlockchainSection` | `/blockchain/status`, `/metrics`, `/observers`, `/scheduler/health` | Sync lag, throughput, observer queues, **Trigger Sync Now** button |
 | Configuration | System Config | `SystemConfigSection` | GET/PATCH `/config/system` | Edit `siteUrl` from the UI |
+| Configuration | Block feed buffer | `EmitBufferSection` | GET/PATCH `/config/system` | Tune the feed's playout buffer; saving applies to the running feed with no restart |
 | Configuration | TronScan | `TronScanProviderSection` | GET/PATCH provider config | Runtime configuration for external data providers |
 | WebSockets | WebSockets | `WebSocketsSection` | `/websockets/stats`, `/websockets/aggregate` | Per-plugin and aggregate WS metrics |
 | MongoDB | MongoDB | `MongoSection` | `/health/database`, `/migrations/status`, `/migrations/history` | Connection state, db size, migration runs |
@@ -72,6 +73,7 @@ The System page is the triage map. Identify *which* subsystem is degraded, then 
 | Disk filling | Overview → Server → Droplet — `Disk /` and `Disk clickhouse:*` cells turn amber at 75%, red at 90% | ClickHouse `traffic_events` is the usual cause; see the storage notes in [operations-server-info.md](../../../docs/operations/operations-server-info.md) |
 | Redis evictions > 0 | Overview → Server (Redis Cache block) | Memory pressure; investigate caching keys or raise Redis maxmemory |
 | WebSocket spikes | WebSockets tab — find offending plugin via `mostActiveEmitter` | Inspect that plugin's logs at `/system/logs` filtered by `service` |
+| Feed stutters; emit buffer underruns climbing | Overview → Blockchain — the Buffer readout and its underrun count | Raise the target depth on Configuration → Block feed buffer. It applies to the running feed immediately, so watch the same counter to judge the new value (see [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md#buffer-settings)) |
 | Site URL needs updating | Configuration tab | Edit inline; **restart the frontend container** for SSR cache to refresh (see [system-runtime-config.md](./system-runtime-config.md#runtime-reconfiguration)) |
 | Log level or retention needs updating | Logs page (`/system/logs`) | Moved off this page — edit there (see [system-logging.md](./system-logging.md)) |
 | Need to inspect a specific error | Logs page (`/system/logs`) | Filter by level/service; resolve to clear from unresolved counts |

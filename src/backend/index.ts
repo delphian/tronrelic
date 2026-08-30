@@ -628,6 +628,7 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
 async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<void> {
     BlockchainObserverService.initialize(logger.child({ module: 'blockchain-observer' }));
     SystemConfigService.initialize(logger.child({ module: 'system-config' }), coreDatabase);
+    await applyStoredEmitBufferSettings();
 
     // Inject the database before any BlockchainService.getInstance(). The ai-tools
     // module resolves the singleton during bootstrapInit() to back its built-in
@@ -652,6 +653,34 @@ async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<v
     await usdtParamsFetcher.fetch();
     if (!await UsdtParametersService.getInstance().init()) {
         throw new Error('USDT parameters service failed to initialize');
+    }
+}
+
+/**
+ * Hand the stored emit-buffer settings to the block emitter at startup.
+ *
+ * The five settings that shape the block feed's playout buffer live on the
+ * system config document, so the emitter has to be told about them once per
+ * process before its first block arrives. This runs immediately after the
+ * config service is available and deliberately does not touch
+ * `BlockEmitter.getInstance()`: building the emitter reaches for the WebSocket
+ * server, which is not ready this early, so the settings are stashed and picked
+ * up when the first block builds it for real.
+ *
+ * A failure here is logged rather than thrown. If the config document cannot be
+ * read, the emitter falls back to the same defaults the database would have
+ * given it, and a feed running on default pacing is a far better outcome than a
+ * backend that refuses to boot.
+ */
+async function applyStoredEmitBufferSettings(): Promise<void> {
+    try {
+        const config = await SystemConfigService.getInstance().getConfig();
+        BlockEmitter.configure(config);
+    } catch (error) {
+        logger.warn(
+            { error },
+            'Could not read stored emit buffer settings; the block feed will use built-in defaults'
+        );
     }
 }
 

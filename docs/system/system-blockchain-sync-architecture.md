@@ -50,6 +50,14 @@ The TronGrid HTTP client (`tron-grid.client.ts`) enforces a **200ms minimum gap 
 
 Block fetches use exponential backoff: `retries: 3, delayMs: 750, factor: 2`. Transient TronGrid 5xx or network errors retry at 750ms → 1500ms → 3000ms before failing the block (which lands it in the backfill queue for the next tick).
 
+### An Unreachable Chain Head Does Not Abort the Tick
+
+A tick opens by asking TronGrid for the chain head, and that one call used to decide everything after it: on failure the tick scheduled nothing, including the backfill queue, which is old work that never needed the head. `resolveChainHead()` now falls back to `meta.lastNetworkHeight` — the height recorded by the previous tick — so repair work continues while the head is unreachable.
+
+This cannot replay a block. The height is only ever the ceiling of the forward walk, which starts at the stored cursor, so a stale ceiling shrinks the batch rather than rewinding it. Two rules in `chain-head.ts` keep that true. The height is used **exactly as recorded and never extrapolated forward**, because a height above the real head would schedule blocks TRON has not produced, each costing six client retries before landing in cooldown as a phantom backfill entry. And the fallback is **refused when there is no usable cursor**, because `getLastProcessedBlock()` seeds a fresh install *from* the height rather than bounding a walk with it — a cold start needs a live head, and waiting one tick costs nothing.
+
+A tick running on a cached height records `meta.lastError` rather than clearing it, and skips the lag warning, since lag measured against a frozen ceiling improves the longer the outage lasts.
+
 ## Broadcast Buffering
 
 Finished blocks go to `BlockEmitter`, which holds a lead of them and broadcasts one at a time on its own clock. Sources: `src/backend/modules/blockchain/block-emitter.ts` for the loop, `block-emit-buffer.ts` for the arithmetic, `block-pacer.ts` for the carried deadline.
@@ -62,13 +70,21 @@ Finished blocks go to `BlockEmitter`, which holds a lead of them and broadcasts 
 
 ### Buffer Settings
 
+These five are **runtime configuration, not environment variables**. They are stored on the `system_config` document and edited on the Configuration tab of `/system/system`, where saving applies them to the running feed immediately — no restart, and no container recreate. The defaults below live in `src/backend/config/emit-buffer.ts`, which is also where the accepted range for each field is declared.
+
+They are configured this way because the only reliable evidence that a lead is too small is the underrun count on the console, which is a reading you take from a running deployment. When acting on that reading required editing a `.env` file and recreating the container, the settings were in practice never tuned at all.
+
 | Setting | Default | Meaning |
 |---|---|---|
-| `targetDepth` (`BLOCKCHAIN_EMIT_BUFFER_TARGET_DEPTH`) | 8 | Lead to hold. Covers a fully missed sync tick plus a skipped chain slot. Zero switches buffering off, which is the behaviour-preserving setting for a staged rollout. |
-| `catchupDepth` (`BLOCKCHAIN_EMIT_BUFFER_CATCHUP_DEPTH`) | 13 | Depth above which the buffer drains at `catchupIntervalMs` so a tick's burst does not settle in as permanent latency. |
-| `maxDepth` (`BLOCKCHAIN_EMIT_BUFFER_MAX_DEPTH`) | 40 | Depth above which blocks go out with no wait. At this point latency hurts more than jitter and something upstream is wrong. |
-| `refillIntervalMs` (`BLOCKCHAIN_EMIT_BUFFER_REFILL_MS`) | 3300 | Spacing below target. Regains one block of lead per ten released. |
-| `catchupIntervalMs` (`BLOCKCHAIN_EMIT_BUFFER_CATCHUP_MS`) | 2000 | Spacing above `catchupDepth`. Mirrors the frontend buffer's own catch-up interval. |
+| `emitBufferTargetDepth` | 8 | Lead to hold. Covers a fully missed sync tick plus a skipped chain slot. Zero switches buffering off, which is the behaviour-preserving setting for a staged rollout. |
+| `emitBufferCatchupDepth` | 13 | Depth above which the buffer drains at the catch-up interval so a tick's burst does not settle in as permanent latency. |
+| `emitBufferMaxDepth` | 40 | Depth above which blocks go out with no wait. At this point latency hurts more than jitter and something upstream is wrong. |
+| `emitBufferRefillIntervalMs` | 3300 | Spacing below target. Regains one block of lead per ten released. |
+| `emitBufferCatchupIntervalMs` | 2000 | Spacing above the catch-up depth. Mirrors the frontend buffer's own catch-up interval. |
+
+The update endpoint enforces three rules a per-field range cannot express, and rejects the save rather than correcting it: the depths must increase, the refill interval must be longer than one block time, and the catch-up interval must be shorter than one. All three mistakes are otherwise silent — the first leaves the buffer permanently short of its lead, the second lets it cover one gap and then run flat for the life of the process, and the third drains a burst no faster than the chain produces, so the backlog stays. `BlockEmitter` still clamps a non-increasing set of depths on top of that, because a config document can also be edited directly in MongoDB, and the emitter must never be the thing that fails on a bad number.
+
+Applying a change mid-flight needs no special handling beyond cancelling the pending timer, since the release clock reads these values fresh on every decision. A lowered target leaves the buffer above its new catch-up depth, so the surplus drains at the faster interval; a raised target leaves it below, so it refills at the slower one over the following minute. Seeding is not repeated, because stalling the feed to rebuild a lead is exactly what an operator watching the console would read as a broken save.
 
 The lead costs latency, but less than the arrangement it replaced. Paced ingestion stretched each one-minute batch across the whole minute, leaving the feed about twenty blocks behind the chain with nothing held in reserve. Eight blocks of buffer on a 15-second tick puts it roughly eight to twelve blocks behind, with a real reserve.
 

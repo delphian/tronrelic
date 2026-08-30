@@ -60,35 +60,17 @@ export const blockchainConfig = {
   // because the three-second wait sat inside the single serial worker and so
   // blocked the next fetch instead of buffering anything.
   //
-  // The lead costs latency, but less than the arrangement it replaces: paced
-  // ingestion stretched each one-minute batch across the whole minute, leaving
-  // the feed about twenty blocks behind the chain with nothing held in reserve.
-  emitBuffer: {
-    // Blocks to hold. Eight covers a fully missed sync tick plus a skipped
-    // chain slot. Raising it buys cover for longer stalls at three seconds of
-    // feed latency per block, and zero disables buffering entirely, which is
-    // the behaviour-preserving setting for a staged rollout.
-    targetDepth: toNumber(process.env.BLOCKCHAIN_EMIT_BUFFER_TARGET_DEPTH, 8),
-    // Depth at which the buffer starts draining faster than the chain
-    // produces, so the burst a tick delivers does not settle in as permanent
-    // latency. Must stay above `targetDepth` or it would claim the steady
-    // state and the buffer would never hold its lead.
-    catchupDepth: toNumber(process.env.BLOCKCHAIN_EMIT_BUFFER_CATCHUP_DEPTH, 13),
-    // Depth beyond which blocks go out with no wait at all. At this point the
-    // emitter is so far behind that latency hurts more than jitter, and a
-    // buffer this deep means something upstream is wrong rather than uneven.
-    maxDepth: toNumber(process.env.BLOCKCHAIN_EMIT_BUFFER_MAX_DEPTH, 40),
-    // Spacing used while the buffer is below target. Deliberately longer than
-    // one block time: releasing slower than blocks arrive is the only way a
-    // lead spent on a hole can grow back, and it is the piece the frontend
-    // playout buffer lacks, which is why that one covers a single gap and then
-    // runs flat. At 3300ms the buffer regains one block of lead per ten
-    // released, so a hole costs about thirty seconds of slightly slower feed.
-    refillIntervalMs: toNumber(process.env.BLOCKCHAIN_EMIT_BUFFER_REFILL_MS, 3300),
-    // Spacing used above `catchupDepth`. Mirrors the frontend playout buffer's
-    // own catch-up interval so a backlog drains at the same rate on both sides.
-    catchupIntervalMs: toNumber(process.env.BLOCKCHAIN_EMIT_BUFFER_CATCHUP_MS, 2000)
-  },
+  // The buffer's own five settings are deliberately absent from this file. They
+  // are operator tuning rather than deployment wiring: the right lead depends on
+  // how a deployment's TronGrid access actually behaves, which is only visible
+  // once it is running and is read off the underrun counter on `/system`.
+  // Requiring a container recreate to act on that reading made the feedback loop
+  // useless, so they live on the `system_config` document and are edited from
+  // the Configuration tab. See `config/emit-buffer.ts` for their defaults.
+  //
+  // `blockIntervalSeconds` above stays here because it is not tuning at all. It
+  // states how fast TRON produces blocks, and an operator who "tunes" it is
+  // lying to the pacer about the chain.
   lock: {
     key: `${env.REDIS_NAMESPACE}:locks:blockchain-sync`,
     // Sized just under the sync cron period so the lock always self-releases
