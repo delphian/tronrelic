@@ -1,6 +1,6 @@
 # Blockchain
 
-Owns TRON block retrieval and persistence: `TronGridClient` pulls blocks, `transaction-parse.ts` decodes embedded contracts, and `BlockchainService` enriches transactions and notifies observers before writing to MongoDB.
+Owns TRON block retrieval and persistence: `TronGridClient` pulls blocks, `transaction-parse.ts` decodes embedded contracts, and `BlockchainService` enriches transactions. Nothing is written during that pass — the block is buffered, and `BlockCommitter` writes it and notifies observers when `BlockEmitter` releases it on the chain's own clock.
 
 ## External provider clients
 
@@ -20,13 +20,20 @@ A sibling transport, `TronScanClient`, lives in the [providers module](../provid
 
 ## Feed cadence
 
-Ingestion and broadcast are two separate loops. `BlockchainService` fetches, enriches, and writes each block without ever waiting on a clock, then hands the finished `block:new` event to `BlockEmitter`, which holds a lead of them and broadcasts on its own clock.
+Preparing a block and committing it are two separate loops. `BlockchainService` fetches, enriches, and parses each block without ever waiting on a clock and without writing anything, then hands the result to `BlockEmitter`, which holds a lead of prepared blocks and releases one per slot. A release lands in `BlockCommitter`: write the transactions, write the block, advance the cursor, notify observers, broadcast `block:new`, ingest alerts.
 
-The split is the point. The wait used to sit inside the BullMQ worker, immediately before the broadcast, and that worker runs one job at a time — so waiting there blocked the next fetch and the pipeline never held a fetched block in reserve. Any upstream hiccup went straight to the feed as a gap, and no configuration could change that.
+The split is the point, in two ways.
+
+The wait used to sit inside the BullMQ worker, immediately before the broadcast, and that worker runs one job at a time — so waiting there blocked the next fetch and the pipeline never held a fetched block in reserve. Any upstream hiccup went straight to the feed as a gap, and no configuration could change that.
+
+And the buffer holds **unwritten** blocks. A block does not exist at any height until its slot arrives, so the REST endpoints, a server-rendered page, a plugin's own collections, and the live feed all report the same height by construction. Buffering only the broadcast left the API reporting a height the feed had not reached. The cost is that the whole deployment sits about a buffer's depth behind the chain head, uniformly.
+
+**Two heights, and using the wrong one is the easy mistake.** `meta.lastFetchedBlock` is how far fetching has got, including blocks still buffered; `cursor.blockNumber` is how far committing has got. The forward walk and `resolveCaughtUp` use the fetch height — walking from the written cursor would re-enqueue every buffered block each tick, and lag measured from it would report a healthy syncer as permanently a buffer's depth behind. Backfill uses the written cursor, because a buffered block is work in flight, not a hole.
 
 | File | Answers |
 |---|---|
-| `block-emitter.ts` | The stateful loop: holds pending blocks in block order, builds the initial lead, releases on a timer, flushes for catch-up blocks and on shutdown, and reports depth and underruns to `/system` |
+| `block-emitter.ts` | The stateful loop: holds prepared blocks in block order, builds the initial lead, releases on a timer, flushes for catch-up blocks, discards on shutdown, and reports depth and underruns to `/system`. Decides *when*, never *what* |
+| `block-committer.ts` | What a release does: write transactions, write the block, advance the cursor, then notify observers, broadcast `block:new`, and ingest alerts. Serializes commits through one promise chain. Installed via `BlockEmitter.setCommitSink()` |
 | `block-emit-buffer.ts` | `resolveReleaseInterval()` — how long to wait before the next release, given depth; `resolveSeedComplete()` — whether the initial lead is built; `insertPendingBlock()` — ordered insert so a late retry cannot make the feed run backwards |
 | `block-pacer.ts` | `resolveEmitPacing()` — the carried-forward deadline the emitter releases against; `resolveBlockAgeInBlocks()` — a block's age in blocks, from its own header |
 | `sync-mode.ts` | Whether sync treats itself as caught up, using a hysteresis pair so a lag hovering on one boundary cannot flip the mode every block |
@@ -36,7 +43,13 @@ Two properties are easy to lose in a rewrite. **Releasing below target must be s
 
 The five settings shaping that clock are stored configuration, not environment variables. `BlockEmitter.configure(settings)` is the only way in: bootstrap calls it once with the stored values, and the `/system` Configuration tab calls it again on every save, which applies the change to the live feed without a restart. The emitter never reads the database itself — the caller passes the values in, so a test drives it with plain numbers and the class stays free of the config service. `config/emit-buffer.ts` holds the defaults and the accepted range for each field.
 
-`resolveBlockAgeInBlocks()` is what lets each block be classified on its own rather than on a flag the scheduler stamped on the whole batch. A block too old to be live work bypasses the buffer entirely.
+`resolveBlockAgeInBlocks()` is what lets each block be classified on its own rather than on a flag the scheduler stamped on the whole batch. It is evaluated at fetch time, before the block enters the buffer, so the buffer's own wait cannot inflate it. A block too old to be live work bypasses the buffer entirely.
+
+## A restart loses work, not data
+
+The buffer holds unwritten blocks in memory, so a process that stops loses them — and that costs only the refetch. The write is what advances the cursor, so a block that never committed left no trace and the next forward walk fetches it again.
+
+One correction is needed on the way back up: `meta.lastFetchedBlock` was advanced when each block entered the buffer, so it sits above blocks that never landed. `resetFetchHeightToCursor()` runs once at startup and drops it back to the written cursor. A deployment with no recorded fetch height reads it as the cursor, so the first boot after this change needs no special case. Shutdown discards the buffer rather than flushing it, since rushing writes into the moments before `process.exit` would only risk tearing one.
 
 ## A failed head lookup no longer costs the whole tick
 
@@ -46,7 +59,7 @@ The fallback cannot replay a block. The height is only ever the ceiling of the f
 
 A tick that ran on a cached height records `meta.lastError` instead of clearing it, and skips the lag warning, since lag measured against a frozen ceiling improves the longer the head stays unreachable.
 
-Full rationale, settings table, and how to read the two lag figures on `/system`: [system-blockchain-sync-architecture.md](../../../../docs/system/system-blockchain-sync-architecture.md#broadcast-buffering).
+Full rationale, settings table, and how to read the two lag figures on `/system`: [system-blockchain-sync-architecture.md](../../../../docs/system/system-blockchain-sync-architecture.md#commit-buffering).
 
 ## Canonical documentation
 

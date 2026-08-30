@@ -16,7 +16,9 @@ import { TronGridClient, type TronGridBlock, type TronGridTransaction, type Tron
 import { normalizeContractType, resolveOwnerAddress, resolveRecipient, resolveAmounts, describeContract } from './transaction-parse.js';
 import { resolveCaughtUpMode } from './sync-mode.js';
 import { resolveBlockAgeInBlocks } from './block-pacer.js';
-import { BlockEmitter, type IBlockNewPayload, type IPendingBlockEmit } from './block-emitter.js';
+import { BlockEmitter, type IBlockNewPayload, type IPreparedBlock } from './block-emitter.js';
+import { BlockCommitter, type IBlockCommitMetrics } from './block-committer.js';
+import { WebSocketService } from '../../services/websocket.service.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { getRedisClient } from '../../loaders/redis.js';
@@ -126,17 +128,28 @@ export class BlockchainService implements IBlockchainService {
     private wasCaughtUp: boolean | null = null;
 
     /**
-     * The backend playout buffer that spaces `block:new` broadcasts.
+     * The backend playout buffer that spaces block announcements.
      *
      * The worker used to hold each block for its own three-second slot before
      * broadcasting it. Because the worker processes one job at a time, that
      * wait blocked the next fetch, so the pipeline never held a fetched block
      * in reserve and any upstream hiccup showed up as a gap in the feed.
-     * Ingestion now runs flat out and hands finished events here, where a lead
-     * of real blocks is kept and released on a separate clock. See
-     * `block-emitter.ts`.
+     * Ingestion now runs flat out and hands finished blocks here, where a lead
+     * of real blocks is kept and released on a separate clock. Releasing one
+     * means announcing it to observers, alerts, and connected clients together.
+     * See `block-emitter.ts` and `block-announcer.ts`.
      */
     private readonly emitter = BlockEmitter.getInstance();
+
+    /**
+     * Writes each released block and tells everything about it.
+     *
+     * Held as a field so `/system` can report its backlog. That backlog is the
+     * one failure this arrangement can produce which the emitter's own metrics
+     * cannot show: the emitter reports how many blocks are waiting for a slot,
+     * and this reports how many were given a slot and are still being written.
+     */
+    private readonly committer: BlockCommitter;
 
     /**
      * The pacing mode of the most recently processed block, kept separate from
@@ -153,11 +166,25 @@ export class BlockchainService implements IBlockchainService {
      * This private constructor ensures singleton usage through getInstance(). It sets up a BullMQ worker that processes one block at a time
      * with a 2-minute lock duration to handle transaction-heavy blocks, delegates retry logic entirely to the TronGrid client to avoid
      * double-retry overhead, and configures job cleanup to prevent unbounded Redis memory growth from completed jobs.
+     *
+     * It also builds the committer and installs it on the emitter. That has to
+     * happen here rather than through the emitter's own constructor:
+     * `this.emitter` is a field initializer, so it resolves before this body
+     * runs, and the committer needs the alert service created two lines below.
      */
     private constructor() {
         const database = BlockchainService.getDatabase();
         this.redis = getRedisClient();
         this.alerts = new AlertService(database, this.tronClient);
+
+        this.committer = new BlockCommitter({
+            persist: prepared => this.persistPreparedBlock(prepared),
+            observers: this.observerService,
+            alerts: this.alerts,
+            broadcast: payload => WebSocketService.getInstance().emit({ event: 'block:new', payload })
+        });
+        BlockEmitter.setCommitSink(this.committer);
+
         this.queue = new QueueService<BlockSyncJob>(
             'block-sync',
             async job => {
@@ -980,6 +1007,209 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
+     * Record the height that has been fetched into the buffer.
+     *
+     * This exists because the buffer sits between fetching and writing, so the
+     * two heights genuinely differ. The persisted cursor says what has been
+     * written; this says what has been fetched. The scheduler's forward walk and
+     * its caught-up decision both have to use this one, because a walk driven by
+     * the written cursor would re-enqueue every block still sitting in the
+     * buffer, and lag measured from the written cursor would report the buffer's
+     * own depth as if the syncer were falling behind.
+     *
+     * Stored rather than kept in memory because the Redis sync lock can move to
+     * another instance between ticks, and an instance that read a stale height
+     * would refetch work already in flight.
+     *
+     * Advanced with `$max` so a backfill block, which is below the live cursor,
+     * cannot drag the height backwards.
+     *
+     * @param blockNumber - Height that has now been fetched and buffered.
+     */
+    private async recordFetchedBlock(blockNumber: number): Promise<void> {
+        const syncModel = BlockchainService.getDatabase().getModel<SyncStateDoc>(BlockchainService.SYNC_STATE_COLLECTION);
+
+        await syncModel.updateOne(
+            { key: 'blockchain:last-block' },
+            { $max: { 'meta.lastFetchedBlock': blockNumber } },
+            { upsert: true }
+        );
+    }
+
+    /**
+     * Write a released block and advance the sync cursor.
+     *
+     * This is the commit half of the pipeline, called by `BlockCommitter` when a
+     * block's slot arrives. It is the moment the block becomes visible to
+     * everything that reads the database, which is why the observers, the alert
+     * rules, and the `block:new` broadcast all run immediately after it rather
+     * than anywhere earlier.
+     *
+     * The writes are ordered transactions, then the block document, then the
+     * cursor. The cursor goes last on purpose: it is the marker that says
+     * everything below it is complete, so advancing it before the other two
+     * would let a crash leave a gap that nothing looks for again.
+     *
+     * @param prepared - The block to write, carrying its parsed transactions,
+     *                   aggregates, and the timings accumulated while preparing.
+     */
+    private async persistPreparedBlock(prepared: IPreparedBlock): Promise<void> {
+        const { blockNumber, blockData, stats, rawTransactionCount, timings } = prepared;
+        const commitStart = Date.now();
+        const txModel = BlockchainService.getDatabase().getModel<TransactionDoc>(BlockchainService.TRANSACTIONS_COLLECTION);
+        const blockModel = BlockchainService.getDatabase().getModel<BlockDoc>(BlockchainService.BLOCKS_COLLECTION);
+        const syncModel = BlockchainService.getDatabase().getModel<SyncStateDoc>(BlockchainService.SYNC_STATE_COLLECTION);
+
+        // Built here rather than carried through the buffer because each entry
+        // spreads a copy of its transaction's payload, so holding them would
+        // roughly double what a buffered block costs in memory for no gain.
+        let stageStart = Date.now();
+        const operations: AnyBulkWriteOperation<TransactionDoc>[] = blockData.transactions.map(transaction => ({
+            updateOne: {
+                filter: { txId: transaction.payload.txId },
+                // ITransactionPersistencePayload deliberately widens `type` to string;
+                // the driver's $set typing requires TransactionDoc's TronTransactionType
+                // union, so narrow only that field and keep the rest compiler-checked.
+                update: {
+                    $set: {
+                        ...transaction.payload,
+                        type: transaction.payload.type as TransactionDoc['type']
+                    }
+                },
+                upsert: true
+            }
+        }));
+
+        if (operations.length) {
+            await txModel.bulkWrite(operations, { ordered: false });
+        }
+        timings.bulkWriteTransactions = Date.now() - stageStart;
+
+        stageStart = Date.now();
+        await blockModel.updateOne(
+            { blockNumber },
+            {
+                $set: {
+                    blockId: blockData.blockId,
+                    parentHash: blockData.parentHash,
+                    witnessAddress: blockData.witnessAddress,
+                    timestamp: blockData.timestamp,
+                    transactionCount: rawTransactionCount,
+                    size: blockData.size,
+                    stats,
+                    receiptsFetched: blockData.receiptsFetched,
+                    processedAt: new Date()
+                }
+            },
+            { upsert: true }
+        );
+        timings.updateBlockModel = Date.now() - stageStart;
+
+        stageStart = Date.now();
+        await syncModel.updateOne(
+            { key: 'blockchain:last-block' },
+            { $setOnInsert: { cursor: { blockNumber } } },
+            { upsert: true }
+        );
+
+        await syncModel.updateOne(
+            { key: 'blockchain:last-block' },
+            {
+                $max: { 'cursor.blockNumber': blockNumber },
+                $pull: { 'meta.backfillQueue': blockNumber }
+            }
+        );
+        timings.updateSyncState = Date.now() - stageStart;
+
+        // Work time, not wall-clock time. The gap between preparing a block and
+        // committing it is the buffer's lead, which is a deliberate wait rather
+        // than effort spent, and including it would make every healthy block
+        // read as roughly one block period — the exact confusion this figure was
+        // changed to remove.
+        timings.commit = Date.now() - commitStart;
+        timings.total = (timings.prepare ?? 0) + timings.commit;
+
+        await syncModel.updateOne(
+            { key: 'blockchain:last-block' },
+            {
+                $set: {
+                    'meta.lastProcessedAt': new Date(),
+                    'meta.lastProcessedBlockId': blockData.blockId,
+                    'meta.lastProcessedBlockNumber': blockNumber,
+                    'meta.lastTimings': timings,
+                    'meta.lastTransactionCount': rawTransactionCount
+                }
+            }
+        );
+    }
+
+    /**
+     * Drop the fetch height back to what was actually written.
+     *
+     * The buffer holds blocks that have been fetched and parsed but not yet
+     * committed, and it lives only in memory. A process that stops for any
+     * reason — a deploy, a crash, a container restart — loses them. Because the
+     * fetch height was advanced when each was buffered, a new process would
+     * otherwise start its forward walk above blocks that never reached MongoDB
+     * and leave a permanent hole in the history.
+     *
+     * Resetting it to the persisted cursor makes the next tick's forward walk
+     * fetch exactly those blocks again. Nothing else is needed, and that is the
+     * main practical benefit of buffering ahead of the write rather than behind
+     * it: a lost buffer is lost work rather than lost data, so recovery is one
+     * assignment instead of a repair queue.
+     *
+     * Call this once at startup, before the scheduler ticks.
+     *
+     * @returns How many blocks the height was rewound by, so a caller or a test
+     *          can tell a real recovery from a clean boot without reading the
+     *          log.
+     */
+    public async resetFetchHeightToCursor(): Promise<number> {
+        const state = await this.getSyncState();
+        const cursor = resolveCursorBlock(state?.cursor);
+        const fetched = this.resolveFetchedBlock(state);
+
+        // A fresh install has neither, and there is nothing to rewind to.
+        if (cursor === null || fetched === null || fetched <= cursor) {
+            return 0;
+        }
+
+        const syncModel = BlockchainService.getDatabase().getModel<SyncStateDoc>(BlockchainService.SYNC_STATE_COLLECTION);
+        await syncModel.updateOne(
+            { key: 'blockchain:last-block' },
+            { $set: { 'meta.lastFetchedBlock': cursor } }
+        );
+
+        return fetched - cursor;
+    }
+
+    /**
+     * Read the fetch height from the stored sync state, falling back to the
+     * written cursor.
+     *
+     * The fallback is what makes the first boot after this change behave
+     * correctly: a deployment that has never recorded a fetch height has, by
+     * definition, written everything it fetched, so the cursor is the honest
+     * answer. Reading a missing value as zero would restart the forward walk
+     * from the beginning of the chain.
+     *
+     * @param state - The sync state document, or undefined when none is stored.
+     * @returns The height fetched into the buffer, or null when the deployment
+     *          has no cursor either and there is nothing to resume from.
+     */
+    private resolveFetchedBlock(state: SyncStateFields | null | undefined): number | null {
+        const raw = (state?.meta as Record<string, unknown> | undefined)?.lastFetchedBlock;
+        const parsed = typeof raw === 'number' ? raw : Number(raw);
+
+        if (Number.isFinite(parsed) && parsed > 0) {
+            return parsed;
+        }
+
+        return resolveCursorBlock(state?.cursor);
+    }
+
+    /**
      * Decide whether the block currently being processed counts as live work,
      * judging from the block itself rather than from the flag the scheduler
      * stamped on the job.
@@ -1027,17 +1257,33 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
-     * Report how the broadcast buffer is doing, for the `/system` console.
+     * Report how the commit buffer is doing, for the `/system` console.
      *
-     * Exposed on the service because the emitter is the half of the pipeline an
-     * operator cannot infer from the sync cursor. The cursor now runs at the
-     * chain head almost all the time, so it says nothing about whether the feed
-     * is healthy; the buffer's depth and underrun count are what do.
+     * Exposed on the service because the buffer is the half of the pipeline an
+     * operator cannot infer from the sync cursor. The cursor tracks what has
+     * been written, which is deliberately a buffer's depth behind the chain, so
+     * on its own it cannot distinguish a healthy lead from a syncer falling
+     * behind. The buffer's depth and underrun count are what do.
      *
      * @returns The emitter's current depth, target, and counters.
      */
     public getEmitBufferMetrics() {
         return this.emitter.getMetrics();
+    }
+
+    /**
+     * Report the commit backlog for the `/system` console.
+     *
+     * Separate from the emit-buffer metrics because the two answer different
+     * questions. The emitter reports blocks waiting for a slot; this reports
+     * blocks that were given one and have not been written yet. A backlog here
+     * is the only symptom of writing having fallen behind the release clock, and
+     * nothing else on the console would show it.
+     *
+     * @returns The committer's queue depth, last committed height, and failures.
+     */
+    public getCommitMetrics(): IBlockCommitMetrics {
+        return this.committer.getMetrics();
     }
 
     /**
@@ -1062,6 +1308,16 @@ export class BlockchainService implements IBlockchainService {
             const parityTarget = this.getParityTarget(state);
             const existingBackfill = this.getBackfillQueue(state);
 
+            // The forward walk resumes from what has been *fetched*, not from
+            // what has been written. Those two now differ by whatever the buffer
+            // holds, and walking forward from the written cursor would re-enqueue
+            // every block still waiting for its commit slot on every tick.
+            //
+            // Backfill and gap detection still use the written cursor, because
+            // what they are looking for is a hole in stored history, and a block
+            // sitting in the buffer is not a hole — it is work in flight.
+            const lastFetched = Math.max(lastProcessed, this.resolveFetchedBlock(state) ?? lastProcessed);
+
             // How far forward the cursor may advance this tick. The reserve is
             // zero by default, which makes this the chain head. It does not
             // buffer work: this tick enqueues everything from the cursor up to
@@ -1074,6 +1330,7 @@ export class BlockchainService implements IBlockchainService {
 
             const { targets, remainingBackfill } = await this.computeBlockTargets({
                 lastProcessed,
+                lastFetched,
                 latestNetworkBlock,
                 liveTip,
                 parityTarget,
@@ -1119,12 +1376,18 @@ export class BlockchainService implements IBlockchainService {
                 eligibleTargets.push(blockNumber);
             }
 
-            // Measured against the live tip rather than the raw chain head, so
-            // a syncer sitting exactly where the reserve intends reads as zero
+            // Measured from the fetch height, not the written cursor. The
+            // question this answers is whether *ingestion* is keeping up, and
+            // ingestion is fetching — the written cursor deliberately trails by
+            // the buffer's depth, so measuring from it would report a healthy
+            // syncer as permanently that many blocks behind and eat most of the
+            // headroom below the dead band that decides when to stop buffering.
+            //
+            // Measured against the live tip rather than the raw chain head, so a
+            // syncer sitting exactly where the reserve intends reads as zero
             // blocks behind. Measuring against the head would charge the
-            // deliberate reserve against the mode thresholds and shrink the
-            // dead band by that much.
-            const blocksBehind = Math.max(0, liveTip - lastProcessed);
+            // deliberate reserve against the mode thresholds as well.
+            const blocksBehind = Math.max(0, liveTip - lastFetched);
             const isCaughtUp = this.resolveCaughtUp(blocksBehind);
 
             // Log transitions between caught-up and backfill modes
@@ -1369,7 +1632,10 @@ export class BlockchainService implements IBlockchainService {
      * Respects the configured batch size limit to prevent queue flooding, and includes parity target blocks when configured to align
      * with external system requirements. Returns both the blocks to process immediately and the remaining backfill queue for future runs.
      *
-     * @param params.lastProcessed - The cursor position, so the forward walk knows where to resume.
+     * @param params.lastProcessed - The written cursor, used for gap detection, because a hole in stored history is what backfill looks for.
+     * @param params.lastFetched - How far fetching has got, which is where the forward walk resumes. Higher than the written cursor by
+     *                             whatever the commit buffer holds, and walking from the written cursor instead would re-enqueue every
+     *                             block still waiting for its slot.
      * @param params.latestNetworkBlock - The raw chain head, used to discard backfill and parity entries that do not exist yet.
      * @param params.liveTip - How far forward the cursor may advance this run, which is the head minus the deliberate reserve. Passed in
      *                         rather than recomputed here so the caller's mode decision and this selection cannot disagree about where
@@ -1380,12 +1646,13 @@ export class BlockchainService implements IBlockchainService {
      */
     private async computeBlockTargets(params: {
         lastProcessed: number;
+        lastFetched: number;
         latestNetworkBlock: number;
         liveTip: number;
         parityTarget: number | null;
         existingBackfill: number[];
     }): Promise<{ targets: number[]; remainingBackfill: number[] }> {
-        const { lastProcessed, latestNetworkBlock, liveTip, parityTarget, existingBackfill } = params;
+        const { lastProcessed, lastFetched, latestNetworkBlock, liveTip, parityTarget, existingBackfill } = params;
         const backfillSet = new Set<number>(existingBackfill);
 
         const newlyMissing = await this.identifyMissingBlocks(lastProcessed);
@@ -1414,7 +1681,7 @@ export class BlockchainService implements IBlockchainService {
         // unless a deployment configured distance from it. Backfill and parity
         // above always use the raw head, because a block already known to be
         // missing is old work and holding it back would serve no purpose.
-        let nextBlock = lastProcessed + 1;
+        let nextBlock = lastFetched + 1;
         while (selected.size < maxBatch && nextBlock <= liveTip) {
             if (!selected.has(nextBlock)) {
                 selected.add(nextBlock);
@@ -1423,8 +1690,8 @@ export class BlockchainService implements IBlockchainService {
             nextBlock += 1;
         }
 
-        if (parityTarget && parityTarget > lastProcessed) {
-            let parityBlock = lastProcessed + 1;
+        if (parityTarget && parityTarget > lastFetched) {
+            let parityBlock = lastFetched + 1;
             while (parityBlock <= parityTarget) {
                 if (!selected.has(parityBlock) && parityBlock <= latestNetworkBlock) {
                     if (selected.size < maxBatch) {
@@ -1582,14 +1849,18 @@ export class BlockchainService implements IBlockchainService {
             // measurement.
             const receiptsFetched = transactions.length === 0 || (receiptsEnabled && receipts.size === transactions.length);
 
-            // Stage 4: Process transactions loop
+            // Stage 4: Process transactions loop.
+            //
+            // Observers are no longer notified here. They are notified when the
+            // block is announced, on the emitter's clock, because notifying them
+            // at ingestion speed pushed a whole tick's worth of blocks through
+            // them in a burst and put any plugin broadcasting from inside an
+            // observer ahead of the block feed by the buffer's lead. Parsing and
+            // persistence stay here at full speed, so the sync cursor and every
+            // lag figure derived from it keep their current meaning.
             stageStart = Date.now();
-            let observerNotifyTime = 0;
             const processed: ProcessedTransaction[] = [];
             const operations: AnyBulkWriteOperation<TransactionDoc>[] = [];
-
-            // Clear batch accumulator at start of each block for batch observers
-            this.observerService.clearBatchAccumulator();
 
             for (const transaction of transactions) {
                 try {
@@ -1620,25 +1891,16 @@ export class BlockchainService implements IBlockchainService {
                             upsert: true
                         }
                     });
-
-                    // Notify observers of the processed transaction
-                    const notifyStart = Date.now();
-                    await this.observerService.notifyTransaction(result);
-                    // Accumulate for batch observers (sync, fast - just stores reference)
-                    this.observerService.accumulateForBatch(result);
-                    observerNotifyTime += (Date.now() - notifyStart);
                 } catch (transactionError) {
                     logger.warn({ blockNumber, txId: transaction?.txID, transactionError }, 'Failed to process transaction - skipping');
                 }
             }
             timings.processTransactions = Date.now() - stageStart;
-            timings.observerNotifications = observerNotifyTime;
 
-            // Stage 4b: Notify batch and block observers
-            // Flush accumulated batches to batch observers
-            await this.observerService.flushBatches();
-
-            // Build block data and notify block observers
+            // Stage 4b: Assemble the block observers will receive. Building it
+            // here and notifying later is the whole shape of the change — the
+            // worker knows the block, the emitter knows when it is due, and
+            // neither has to know the other's job.
             const blockData: IBlockData = {
                 blockNumber,
                 blockId: block.blockID,
@@ -1650,122 +1912,52 @@ export class BlockchainService implements IBlockchainService {
                 receiptsFetched,
                 transactions: processed
             };
-            await this.observerService.notifyBlock(blockData);
-
-            // Get model references for database operations
-            const txModel = BlockchainService.getDatabase().getModel<TransactionDoc>(BlockchainService.TRANSACTIONS_COLLECTION);
-            const blockModel = BlockchainService.getDatabase().getModel<BlockDoc>(BlockchainService.BLOCKS_COLLECTION);
-            const syncModel = BlockchainService.getDatabase().getModel<SyncStateDoc>(BlockchainService.SYNC_STATE_COLLECTION);
-
-            // Stage 5: Bulk write transactions to MongoDB
-            stageStart = Date.now();
-            if (operations.length) {
-                await txModel.bulkWrite(operations, { ordered: false });
-            }
-            timings.bulkWriteTransactions = Date.now() - stageStart;
 
             // Stage 6: Calculate block statistics
             stageStart = Date.now();
             const stats = this.calculateBlockStats(processed);
             timings.calculateStats = Date.now() - stageStart;
+            timings.prepare = Date.now() - startTotal;
 
-            // Stage 7: Update BlockModel
-            stageStart = Date.now();
-            await blockModel.updateOne(
-                { blockNumber },
-                {
-                    $set: {
-                        blockId: block.blockID,
-                        parentHash: block.block_header.raw_data.parentHash,
-                        witnessAddress: TronGridClient.toBase58Address(block.block_header.raw_data.witness_address) ?? 'unknown',
-                        timestamp: new Date(block.block_header.raw_data.timestamp),
-                        transactionCount: transactions.length,
-                        size: block.size,
-                        stats,
-                        receiptsFetched,
-                        processedAt: new Date()
-                    }
-                },
-                { upsert: true }
-            );
-            timings.updateBlockModel = Date.now() - stageStart;
-
-            // Stage 8: Update SyncStateModel (initial update for cursor)
-            stageStart = Date.now();
-            await syncModel.updateOne(
-                { key: 'blockchain:last-block' },
-                {
-                    $setOnInsert: {
-                        cursor: { blockNumber }
-                    }
-                },
-                { upsert: true }
-            );
-
-            await syncModel.updateOne(
-                { key: 'blockchain:last-block' },
-                {
-                    $max: {
-                        'cursor.blockNumber': blockNumber
-                    },
-                    $pull: { 'meta.backfillQueue': blockNumber }
-                }
-            );
-            timings.updateSyncState = Date.now() - stageStart;
-
-            // Stage 9: Hand the finished event to the emitter. The worker does
-            // not wait here. It used to, and because the worker processes one
-            // job at a time that wait blocked the next fetch, which is why the
-            // pipeline could never hold a fetched block in reserve — every
-            // upstream hiccup went straight to the screen. The emitter keeps
-            // that reserve and releases on its own clock instead.
+            // Stage 7: Hand the prepared block to the emitter and return. Nothing
+            // has been written yet, and that is the point: the emitter holds a
+            // lead of *unwritten* blocks and releases one per slot, and the
+            // commit happens there. Because a block does not exist at any height
+            // until its slot arrives, the REST endpoints, a server-rendered
+            // page, plugin-derived collections, and the live feed all report the
+            // same height instead of three different ones.
+            //
+            // The worker does not wait here. It used to wait before the
+            // broadcast, and because the worker processes one job at a time that
+            // wait blocked the next fetch, so the pipeline never held a fetched
+            // block in reserve and every upstream hiccup went straight to the
+            // screen.
             //
             // A block too old to be live work — anything from the backfill
-            // queue, or a catch-up run — goes out immediately rather than into
-            // the buffer, since spending a live block's slot on a block from
-            // hours ago is what puts the syncer further behind.
-            stageStart = Date.now();
-            const pending: IPendingBlockEmit = {
+            // queue, or a catch-up run — is committed immediately rather than
+            // buffered, since spending a live block's slot on a block from hours
+            // ago is what puts the syncer further behind.
+            const prepared: IPreparedBlock = {
                 blockNumber,
-                payload: this.buildBlockEvent(blockNumber, block, stats, processed, receiptsFetched)
+                payload: this.buildBlockEvent(blockNumber, block, stats, processed, receiptsFetched),
+                blockData,
+                stats,
+                rawTransactionCount: transactions.length,
+                timings
             };
 
             if (this.resolveBlockPacing(blockTime, isCaughtUp)) {
-                this.emitter.enqueue(pending);
+                this.emitter.enqueue(prepared);
             } else {
-                this.emitter.emitNow(pending);
-                logger.debug({ blockNumber }, 'Broadcasting block without buffering - catching up to chain head');
+                this.emitter.emitNow(prepared);
+                logger.debug({ blockNumber }, 'Committing block without buffering - catching up to chain head');
             }
-            timings.socketEvents = Date.now() - stageStart;
 
-            // Stage 11: Alert ingestion
-            stageStart = Date.now();
-            await this.alerts.ingestTransactions(processed.map(transaction => transaction.payload));
-            timings.alertIngestion = Date.now() - stageStart;
-
-            // Total is now pure work: nothing in the block waits on a clock,
-            // because the broadcast wait moved to the emitter. It used to
-            // include that wait, so a healthy block read as roughly one block
-            // period. A healthy block now reads as however long the fetch,
-            // parse, and write actually took, and a total approaching one block
-            // period means ingestion is barely keeping up with production
-            // rather than that it is pacing itself.
-            timings.total = Date.now() - startTotal;
-
-            // Stage 12: Update timing metrics in SyncState (after all timings are calculated)
-            await syncModel.updateOne(
-                { key: 'blockchain:last-block' },
-                {
-                    $set: {
-                        'meta.lastProcessedAt': new Date(),
-                        'meta.lastProcessedBlockId': block.blockID,
-                        'meta.lastProcessedBlockNumber': blockNumber,
-                        'meta.lastTimings': timings,
-                        'meta.lastTransactionCount': transactions.length
-                    }
-                }
-            );
-            // Block processing complete (timing breakdown logging removed for performance)
+            // Advanced here rather than in the commit, because this is the height
+            // the scheduler must walk forward from. The persisted cursor now
+            // trails by whatever the buffer holds, so a forward walk driven by it
+            // would re-enqueue every buffered block on the next tick.
+            await this.recordFetchedBlock(blockNumber);
         } catch (error) {
             // Extract error message and details
             const errorMessage = error instanceof Error ? error.message : String(error);

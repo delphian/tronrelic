@@ -9,6 +9,7 @@ import { BlockModel, type BlockFields, type BlockDoc } from '../../database/mode
 import { TransactionModel, type TransactionDoc } from '../../database/models/transaction-model.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { BlockEmitter } from '../blockchain/block-emitter.js';
+import { BlockchainService } from '../blockchain/blockchain.service.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { blockchainConfig } from '../../config/blockchain.js';
@@ -130,6 +131,24 @@ export interface BlockchainSyncStatus {
    * deployment's provider actually does.
    */
   emitBufferUnderruns: number;
+  /**
+   * Blocks that were given a slot and are still being written.
+   *
+   * The emitter's depth says how many blocks are waiting for a slot; this says
+   * how many have had one and have not landed yet. Anything above zero for more
+   * than a moment means committing is slower than the release clock, which is
+   * the one failure this pipeline can produce that no other figure here shows.
+   */
+  commitQueueDepth: number;
+  /**
+   * Commits that threw since the process started.
+   *
+   * A rising count means blocks are reaching no surface at all — not the
+   * database, not observers, not the feed. The sync cursor does not advance past
+   * a failed commit, so the next tick refetches those blocks; a count that keeps
+   * climbing means that retry is failing too.
+   */
+  commitFailures: number;
 }
 
 export interface TransactionStats {
@@ -712,6 +731,12 @@ export class SystemMonitorService {
       ? lag
       : Math.max(0, networkBlockValue - emitBuffer.lastReleasedBlockNumber);
 
+    // Read for the same reason as the buffer above: the commit backlog changes
+    // between scheduler ticks, and a figure taken from the sync state document
+    // would be stale exactly when writing has fallen behind and an operator is
+    // looking for the cause.
+    const commit = BlockchainService.getInstance().getCommitMetrics();
+
     return {
       currentBlock,
       networkBlock: networkBlockValue,
@@ -722,6 +747,8 @@ export class SystemMonitorService {
       emitBufferTargetDepth: emitBuffer.targetDepth,
       emitBufferSeeded: emitBuffer.seeded,
       emitBufferUnderruns: emitBuffer.underruns,
+      commitQueueDepth: commit.queued,
+      commitFailures: commit.failures,
       backfillQueueSize: snapshot.backfillQueueSize,
       lastProcessedAt: snapshot.lastProcessedAt,
       lastProcessedBlockId: snapshot.lastProcessedBlockId,

@@ -9,7 +9,7 @@
  * other way and only shows up as a feed that stutters on the second hiccup.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { BlockEmitter, type IBlockNewPayload, type IPendingBlockEmit } from '../block-emitter.js';
+import { BlockEmitter, type IBlockNewPayload, type IPreparedBlock } from '../block-emitter.js';
 
 /** Small thresholds so a test sequence stays readable. */
 const THRESHOLDS = {
@@ -55,11 +55,30 @@ function buildPayload(blockNumber: number): IBlockNewPayload {
 /**
  * Build the buffer entry for a height.
  *
+ * The block data, stats, and timings are stubbed because the emitter never reads
+ * them — it only carries them through to the commit sink, which these tests
+ * replace with a recording function.
+ *
  * @param blockNumber - Height to enqueue.
  * @returns The pending entry the emitter accepts.
  */
-function pending(blockNumber: number): IPendingBlockEmit {
-    return { blockNumber, payload: buildPayload(blockNumber) };
+function pending(blockNumber: number): IPreparedBlock {
+    return {
+        blockNumber,
+        payload: buildPayload(blockNumber),
+        blockData: {
+            blockNumber,
+            blockId: `block-${blockNumber}`,
+            parentHash: `parent-${blockNumber}`,
+            witnessAddress: 'unknown',
+            timestamp: new Date(blockNumber * 3_000),
+            transactionCount: 0,
+            transactions: []
+        },
+        stats: {} as IPreparedBlock['stats'],
+        rawTransactionCount: 0,
+        timings: {}
+    };
 }
 
 /**
@@ -76,7 +95,7 @@ function pending(blockNumber: number): IPendingBlockEmit {
 function createEmitter(targetDepth = THRESHOLDS.targetDepth) {
     const released: number[] = [];
     const emitter = new BlockEmitter(
-        payload => released.push(payload.blockNumber),
+        item => released.push(item.blockNumber),
         { ...THRESHOLDS, targetDepth },
         MAX_DEBT_BLOCKS
     );
@@ -261,11 +280,11 @@ describe('BlockEmitter', () => {
         // recoverable; losing the clock is not.
         const released: number[] = [];
         const emitter = new BlockEmitter(
-            payload => {
-                if (payload.blockNumber === 101) {
+            item => {
+                if (item.blockNumber === 101) {
                     throw new Error('socket gone');
                 }
-                released.push(payload.blockNumber);
+                released.push(item.blockNumber);
             },
             { ...THRESHOLDS, targetDepth: 1 },
             MAX_DEBT_BLOCKS
@@ -279,16 +298,22 @@ describe('BlockEmitter', () => {
         expect(released).toEqual([100, 102]);
     });
 
-    it('releases everything it holds on shutdown', () => {
-        // Those blocks are already fetched and written, so dropping them would
-        // silently deny connected clients data the backend already has.
+    it('discards what it holds on shutdown rather than rushing the writes', () => {
+        // This deliberately reverses what shutdown used to do. When the buffer
+        // held blocks that were already written and only awaiting a broadcast,
+        // flushing was right — dropping them denied clients data the backend
+        // had. The buffer now holds unwritten blocks, so nobody is denied
+        // anything: the cursor never advanced past them and the next process
+        // fetches them again. Pushing a batch of writes into the moments before
+        // process exit would only risk tearing one partway through.
         const { emitter, released } = createEmitter();
 
         emitter.enqueue(pending(100));
         emitter.enqueue(pending(101));
         emitter.stop();
 
-        expect(released).toEqual([100, 101]);
+        expect(released).toEqual([]);
+        expect(emitter.getMetrics().depth).toBe(0);
     });
 
     describe('applyThresholds', () => {
