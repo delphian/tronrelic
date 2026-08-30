@@ -32,7 +32,19 @@ Subscribe during `init()` and nothing else is required: `context.observerRegistr
 
 ## Transaction Flow and Timing
 
-Blockchain Service fetches a block, parses raw contract data, enriches it (USD pricing, address metadata, energy/bandwidth, whale categorization), and builds a `ProcessedTransaction` (implements `ITransaction`). Then it calls `observerRegistry.notifyTransaction(transaction)` — **after enrichment but before the database write**, so observers see fully-parsed data and run concurrently with persistence. Observer failures cannot affect database writes or block sync.
+Blockchain Service fetches a block, parses raw contract data, enriches it (USD pricing, address metadata, energy/bandwidth, whale categorization), and builds a `ProcessedTransaction` (implements `ITransaction`). All of that runs flat out, as fast as the TronGrid rate limit allows, and **writes nothing**.
+
+The prepared block goes into a playout buffer called `BlockEmitter`, which holds a lead — eight blocks by default — and releases one at TRON's own three-second cadence. That release is where the block is written to the database, and observers are notified immediately after the write, alongside alert ingestion and the core `block:new` broadcast.
+
+Three consequences matter when writing an observer.
+
+Your observer receives a block roughly the buffer depth behind the chain head, about twenty-four seconds at the default setting, rather than as soon as the block is fetched. The whole deployment sits at that distance, so nothing your observer can read is ahead of it.
+
+The block **already exists in the database** when your observer runs. Anything your observer writes lands at the same height every other surface reports, so a page that reads a core transaction and your plugin's data for it cannot find one without the other.
+
+An observer may be notified about the same block twice. The backfill queue re-processes blocks routinely, so an observer keeping a running total should be idempotent per block. A restart is *not* one of those cases: the buffer holds unwritten blocks, so a lost buffer means those blocks were never committed and never announced, and the next tick fetches them fresh.
+
+Observer failures still cannot affect database writes or block sync. See [system-blockchain-sync-architecture.md](../system/system-blockchain-sync-architecture.md#commit-buffering).
 
 ## Data Model
 

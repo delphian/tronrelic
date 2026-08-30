@@ -4,15 +4,32 @@ How TronRelic retrieves blocks from TRON, enriches transactions, dispatches them
 
 ## Why This Matters
 
-The sync pipeline controls how blocks reach the database and how observers receive transactions. Misunderstanding the distributed lock, the split between the ingestion and broadcast loops, the three observer types, or the notify-then-persist ordering leads to misdiagnosed stalls, double-processed blocks across instances, dropped transactions, or feature additions that block sync.
+The sync pipeline controls how blocks reach the database and how observers receive transactions. Misunderstanding the distributed lock, the split between the prepare and commit loops, the two heights that split produces, or the three observer types leads to misdiagnosed stalls, double-processed blocks across instances, dropped transactions, or feature additions that block sync.
 
 ## Pipeline Overview
 
-Ingestion and broadcast are two independent loops.
+Preparing a block and committing it are two independent loops.
 
-A scheduled `blockchain:sync` job (15-second cron) acquires a Redis lock, fetches up to 60 blocks per invocation from TronGrid, and processes each block through 12 numbered stages — fetch → enrich → notify observers → bulk-write to Mongo → hand to the emitter. That loop never waits on a clock; it runs as fast as the 200ms TronGrid throttle allows and then idles until the next tick. Backfill of missed blocks runs alongside, scanning a 240-block window behind the cursor.
+A scheduled `blockchain:sync` job (15-second cron) acquires a Redis lock, fetches up to 60 blocks per invocation from TronGrid, and **prepares** each one: fetch, enrich, parse, calculate aggregates. Nothing is written. That loop never waits on a clock; it runs as fast as the 200ms TronGrid throttle allows and then idles until the next tick. Backfill of missed blocks runs alongside, scanning a 240-block window behind the written cursor.
 
-The second loop is `BlockEmitter`, which holds a lead of finished blocks and broadcasts them on its own clock at TRON's 3-second cadence. That lead is the buffer, and it is what covers a slow TronGrid response, a retry, or a late tick. Sources: `src/backend/modules/blockchain/blockchain.service.ts` and `src/backend/modules/blockchain/block-emitter.ts`.
+The second loop is `BlockEmitter`, which holds a lead of prepared blocks and **commits** them on its own clock at TRON's 3-second cadence. Committing a block means writing its transactions, writing the block document, advancing the sync cursor, notifying observers, ingesting alerts, and broadcasting `block:new` — in that order. That lead is the buffer, and it is what covers a slow TronGrid response, a retry, or a late tick. Sources: `src/backend/modules/blockchain/blockchain.service.ts`, `src/backend/modules/blockchain/block-emitter.ts` for the clock, and `src/backend/modules/blockchain/block-committer.ts` for the commit.
+
+**The buffer holds unwritten blocks, and that is the point.** A block does not exist at any height until its slot arrives, so the REST endpoints, a server-rendered page, a plugin's own collections, and the live feed all report the same height by construction rather than by discipline at each read site. An earlier arrangement buffered only the `block:new` broadcast, which left the API reporting a height the feed had not reached and observer-derived data written at a third height again.
+
+Two costs come with that property, and both are deliberate. The whole deployment sits about a buffer's depth — eight blocks, roughly 24 seconds — behind the chain head, uniformly rather than on one surface. And the buffer holds each block's full parsed transaction list, bounded by `emitBufferMaxDepth`.
+
+### The Two Heights
+
+Because the buffer sits between fetching and writing, the pipeline tracks two heights, and using the wrong one is the easiest mistake to make here.
+
+| Height | Stored as | What it means | Used for |
+|---|---|---|---|
+| Fetch height | `meta.lastFetchedBlock` | How far fetching has got, including blocks still in the buffer | The forward walk's resume point, and `resolveCaughtUp` |
+| Written cursor | `cursor.blockNumber` | How far committing has got — what actually exists | Backfill gap detection, and everything that reads data |
+
+The forward walk resumes from the **fetch height**, because walking from the written cursor would re-enqueue every block still waiting for its slot on every tick. `resolveCaughtUp` measures from the fetch height too, because the question it answers is whether *ingestion* is keeping up, and ingestion is fetching; measuring from the written cursor would report a healthy syncer as permanently a buffer's depth behind and eat most of the headroom below the 20-to-30-block dead band that decides when to stop buffering. `resolveBlockPacing` is unaffected: it is evaluated at fetch time, on the block's own header timestamp, before the block enters the buffer.
+
+Backfill still uses the written cursor, because what it looks for is a hole in stored history, and a block sitting in the buffer is not a hole — it is work in flight.
 
 ## Block Retrieval
 
@@ -32,7 +49,7 @@ The forward walk stops at the **live tip**, which is the chain head minus `liveT
 
 It defaults to zero because holding the cursor back does not buffer any work, which is worth stating plainly since it is an intuitive thing to expect. Each tick enqueues every block from the cursor up to the target, so the batch is always exactly the chain's production over one tick, whatever the reserve is set to. Raising it only settles the cursor that many blocks lower. Queue depth still falls to zero at the tick boundary, and the held-back blocks have no queued job, so they cannot cover a late tick. The one guaranteed effect is latency.
 
-The buffer that does hold already-fetched blocks is the emitter's, described under [Broadcast Buffering](#broadcast-buffering) below. Leave this reserve at zero unless a deployment wants deliberate distance from a tip its provider serves inconsistently, and keep it well below `liveChainThrottleBlocks`, because the lag it adds counts toward the block age that decides how a block is classified.
+The buffer that does hold already-fetched blocks is the emitter's, described under [Commit Buffering](#commit-buffering) below. Leave this reserve at zero unless a deployment wants deliberate distance from a tip its provider serves inconsistently, and keep it well below `liveChainThrottleBlocks`, because the lag it adds counts toward the block age that decides how a block is classified.
 
 Two consequences apply when it is nonzero. The scheduler measures `blocksBehind` against the tip rather than the head, so the dead band below is not shrunk by the reserve. The `lag` figure in the status payload still counts from the raw head, so the deployment reports a lag equal to the reserve rather than zero — which is why the payload echoes `liveTipReserveBlocks` and the `/system` console offsets its amber step by it.
 
@@ -58,11 +75,21 @@ This cannot replay a block. The height is only ever the ceiling of the forward w
 
 A tick running on a cached height records `meta.lastError` rather than clearing it, and skips the lag warning, since lag measured against a frozen ceiling improves the longer the outage lasts.
 
-## Broadcast Buffering
+## Commit Buffering
 
-Finished blocks go to `BlockEmitter`, which holds a lead of them and broadcasts one at a time on its own clock. Sources: `src/backend/modules/blockchain/block-emitter.ts` for the loop, `block-emit-buffer.ts` for the arithmetic, `block-pacer.ts` for the carried deadline.
+Prepared blocks go to `BlockEmitter`, which holds a lead of them and commits one at a time on its own clock. Sources: `src/backend/modules/blockchain/block-emitter.ts` for the loop, `block-committer.ts` for what a commit does, `block-emit-buffer.ts` for the arithmetic, `block-pacer.ts` for the carried deadline.
+
+**The clock is split from the commit.** `BlockEmitter` decides *when* a block is released; `BlockCommitter` decides *what* a release does. The emitter therefore knows nothing about MongoDB, observers, alerts, or the WebSocket server, and a test can drive either half on its own. `BlockchainService` installs the committer through `BlockEmitter.setCommitSink()` in its constructor, which has to be a setter rather than a constructor argument: the service obtains the emitter in a field initializer, before the constructor body creates the alert service the committer needs.
+
+**A commit writes first, then announces.** The order is transactions, block document, cursor, then observers, broadcast, alerts. Writing first is what makes the height real before anything is told about it, so a client that receives `block:new` and immediately queries for that height finds it. The cursor is written last of the three because it is the marker saying everything below it is complete.
+
+**Commits are serialized.** `BlockCommitter.submit` returns immediately and appends to a single promise chain, so the release clock measures slots rather than how long a write takes, while commits still happen one at a time in order. Two in flight at once would race the cursor and interleave the shared batch accumulator. A slow write therefore shows as a rising `commitQueueDepth` on `/system` instead of as a feed that drifts.
+
+**A failed commit is dropped, not retried.** The block was never written, so the cursor never advanced past it and the next tick's forward walk picks it up again. Retrying inside the commit chain would stall every block behind it for a fault the normal path already repairs.
 
 **The wait is not inside the worker.** It used to be, sitting immediately before the broadcast. The BullMQ worker processes one job at a time, so waiting there blocked the next fetch: the pipeline held no fetched block in reserve, and a slow TronGrid response, a retry, or a late tick went straight to the screen as a gap. Nothing on the backend could cover it. Separating the two loops is what makes a reserve possible at all.
+
+**Observers must not be notified with an await between the batch clear and the flush.** The observer service keeps one batch accumulator, cleared at the start of a block and flushed at the end, shared across every block. Since a catch-up run commits several held blocks in a row, an await placed inside that window would let one block's transactions land in another block's batch. `BlockCommitter.dispatchToObservers` is written without a single await for that reason, which costs nothing because every call it makes is either synchronous or fire-and-forget by contract.
 
 **The lead is built once and rebuilt continuously.** At startup the emitter holds its first `targetDepth` blocks without releasing — that hold is what buys the lead, and without it every arrival finds the previous release already due, goes straight out, and the buffer retains nothing. After a drain it rebuilds by releasing at `refillIntervalMs` (3300ms), slightly slower than the chain produces, so the surplus accumulates back into depth. Releasing at exactly the arrival rate would hold whatever depth it had forever, which is why a buffer without a refill step covers one gap and then runs flat for good.
 
@@ -102,6 +129,16 @@ Sync stops buffering only once lag reaches `backfillEntryBlocks = 30` (`BLOCKCHA
 
 The remembered mode is per-process. After a restart, or when the scheduler lock moves to another instance, a lag inside the band resolves to **behind**: broadcasting immediately costs only smoothness and drives lag straight down to where buffering resumes, whereas assuming "caught up" would buffer a genuinely lagging syncer and let it fall further behind.
 
+### A Restart Loses Work, Not Data
+
+The buffer holds blocks that have been fetched and parsed but not written, and it lives only in memory. A process that stops for any reason loses them.
+
+That costs nothing but the refetch. Because the write is what advances the sync cursor, a block that never committed left no trace, and the next tick's forward walk fetches it again. This is the main practical benefit of buffering ahead of the write rather than behind it: a lost buffer is lost work rather than lost data.
+
+One thing has to be corrected on the way back up. `meta.lastFetchedBlock` was advanced when each block entered the buffer, so it sits above blocks that never reached MongoDB, and a forward walk starting there would leave a permanent hole. `BlockchainService.resetFetchHeightToCursor()` runs once at startup and drops the fetch height back to the written cursor. On a deployment that has never recorded a fetch height the value reads as the cursor, so the first boot after this change needs no special case.
+
+Shutdown deliberately **discards** the buffer rather than flushing it, which reverses what it used to do. When the buffer held blocks that were already written and only awaiting a broadcast, flushing was right — dropping them denied clients data the backend had. Now nobody is denied anything, and pushing a batch of writes into the moments before `process.exit` would only risk tearing one partway through.
+
 ### Reading It on `/system`
 
 The Blockchain console reports the two loops separately, because since ingestion stopped pacing itself they say different things.
@@ -111,10 +148,13 @@ The Blockchain console reports the two loops separately, because since ingestion
 | **Index Lag** | Cursor versus chain head. Near zero almost always, and says nothing about whether the feed is healthy. |
 | **Feed Lag** | Last broadcast block versus chain head. The delay a viewer actually experiences. Sits near `targetDepth` by design. |
 | **Buffer** | Current depth against target, with the underrun count. |
+| **Commit queue** | Blocks given a slot and still being written. Above zero for more than a moment means writing is slower than the release clock. |
 
 Both lag figures turn amber at `backfillEntryBlocks`, read from the status payload rather than assumed, offset by whatever that deployment holds back on purpose — the buffer target for feed lag, the live tip reserve for index lag.
 
 **Underruns are the number that matters.** A deployment holding a real lead never drains to zero, so any increase means the feed was exposed to an upstream gap and `targetDepth` is too small for what this deployment's provider actually does. Depth dipping below target on its own is normal; it refills.
+
+**Index Lag now sits near the buffer target by design.** It measures the written cursor against the chain head, and the cursor is deliberately a buffer's depth behind. It is no longer the figure that says whether ingestion is keeping up — a rising `commitQueueDepth`, or the fetch height falling behind the head, is.
 
 ### The Frontend Buffers as Well
 
@@ -124,31 +164,40 @@ It holds the first block after a mount for a full interval, which is what gives 
 
 ## Per-Block Pipeline Stages
 
-Each block runs through 12 stages, instrumented for timing:
+The eleven numbered stages are gone, and so is the single `processBlock`. Work is split by which loop it belongs to.
 
-| Stage | Action |
+**Prepare** — in the BullMQ worker, flat out, nothing written:
+
+| Step | Action |
 |---|---|
 | 1 | Fetch block from TronGrid (`getblockbynum`) |
 | 2 | Get cached TRX/USD price |
 | 3 | Fetch the block's transaction receipts (`gettransactioninfobyblocknum`) — **skipped unless an operator has switched it on**; see below |
-| 4 | Process transactions loop — parse contract data, build records, call observers, queue Mongo upserts |
-| 4b | Flush batch observers, notify block observers with assembled `IBlockData` |
-| 5 | Bulk-write transactions to Mongo (`bulkWrite` unordered) |
-| 6 | Calculate block statistics (totals by contract type) |
-| 7 | Upsert block document |
-| 8 | Update sync state cursor (`$max` to advance, `$pull` to clear backfill entry) |
-| 9 | Build the `block:new` event and hand it to `BlockEmitter` — buffered when live, broadcast at once otherwise |
-| 10 | (folded into stage 9; the broadcast itself now happens on the emitter's clock) |
-| 11 | Alert ingestion (matches transactions against alert rules) |
-| 12 | Write the timing breakdown back to sync state |
+| 4 | Parse transactions into records and assemble the `IBlockData` observers will receive |
+| 5 | Calculate block statistics and build the `block:new` payload |
+| 6 | Hand the prepared block to `BlockEmitter`, then advance `meta.lastFetchedBlock` |
 
-Stage 3 runs only when receipt fetching is enabled. With it off the stage is skipped, `null` is passed in place of every transaction's receipt, and the block costs exactly one TronGrid call as it always has.
+**Commit** — in `BlockCommitter`, one at a time on the release clock:
 
-Nothing in the twelve stages waits on a clock. The `total` timing is therefore pure work, where it used to include the broadcast wait and so read as roughly one block period on a healthy block. A total now approaching one block period means ingestion is barely keeping up with production, not that it is pacing itself — which is why the console's amber step on that figure means something different than it did.
+| Step | Action |
+|---|---|
+| 1 | Bulk-write transactions to Mongo (`bulkWrite` unordered) |
+| 2 | Upsert the block document |
+| 3 | Advance the sync cursor (`$max`) and clear the backfill entry (`$pull`) |
+| 4 | Notify per-transaction, batch, and block observers |
+| 5 | Broadcast `block:new` |
+| 6 | Ingest alerts |
+| 7 | Write the timing breakdown back to sync state |
+
+`meta.lastTimings` reports `prepare`, `commit`, and a `total` that is their sum. **That total is work time, not wall-clock time.** The gap between preparing a block and committing it is the buffer's lead, which is a deliberate wait rather than effort spent, and including it would make every healthy block read as roughly one block period.
 
 ## Observer Dispatch
 
-Observers receive transactions **before** the bulk-write at stage 5. This ordering lets observers transform or reject data before persistence, and isolates a slow observer from blocking the write — the dispatch is fire-and-forget per observer.
+Observers receive a block when it is committed, **after** it has been written, not while it is being fetched. The dispatch is fire-and-forget per observer, so a slow observer cannot delay the next slot.
+
+Observers used to be notified during ingestion, before the bulk-write, and this document used to claim that ordering let them transform or reject data before persistence. **It never did.** `notifyTransaction` awaits only `observer.enqueue()`, which pushes onto the observer's own queue and returns, and the array of Mongo write operations was fully built before the call. No observer could influence what was written, which is why moving dispatch after the write cost nothing real — and it gained something: an observer, and anything it writes, now sees a block that already exists at that height.
+
+Within one commit the order after the write is observers, then the `block:new` broadcast, then alert ingestion. Observers go first because a client that receives `block:new` and immediately queries an API for a plugin's derived data races that plugin's observer. It costs nothing measurable, because notifying an observer only pushes onto an in-memory queue.
 
 ### Three Observer Types
 

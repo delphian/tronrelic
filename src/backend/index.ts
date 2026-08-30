@@ -638,6 +638,7 @@ async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<v
     // the app never boots. setDependencies is idempotent (registerModel is a
     // Map.set), so the later calls remain harmless.
     BlockchainService.setDependencies(coreDatabase);
+    await realignFetchHeight();
 
     // Chain parameters: inject database, fetch from TronGrid first (populates DB), then warm cache
     ChainParametersService.setDependencies(coreDatabase);
@@ -653,6 +654,34 @@ async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<v
     await usdtParamsFetcher.fetch();
     if (!await UsdtParametersService.getInstance().init()) {
         throw new Error('USDT parameters service failed to initialize');
+    }
+}
+
+/**
+ * Rewind the fetch height to whatever the previous process actually wrote.
+ *
+ * Blocks are fetched and parsed ahead of the clock and held in an in-memory
+ * buffer until their slot arrives, and only then written. A process that stops
+ * loses that buffer, so the recorded fetch height can sit above blocks that
+ * never reached MongoDB. Left alone, the next forward walk would start above
+ * them and leave a permanent hole.
+ *
+ * A failure here is logged rather than thrown. The consequence of skipping it is
+ * a gap the backfill scan will find anyway on a later tick, which is a far
+ * better outcome than a backend that refuses to boot.
+ */
+async function realignFetchHeight(): Promise<void> {
+    try {
+        const rewound = await BlockchainService.getInstance().resetFetchHeightToCursor();
+
+        if (rewound > 0) {
+            logger.info({ rewound }, 'Rewound the fetch height to the last written block; those blocks will be fetched again');
+        }
+    } catch (error) {
+        logger.warn(
+            { error },
+            'Could not realign the fetch height; the backfill scan will find any gap the lost buffer left'
+        );
     }
 }
 

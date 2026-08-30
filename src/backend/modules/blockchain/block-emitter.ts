@@ -1,5 +1,18 @@
 /**
- * @fileoverview The backend playout buffer for `block:new` broadcasts.
+ * @fileoverview The backend playout buffer for fetched blocks.
+ *
+ * This class holds blocks and decides *when* each one is released. What a
+ * release then does — write the block, notify observers, ingest alerts,
+ * broadcast `block:new` — belongs to `block-committer.ts` and is injected
+ * through {@link BlockEmitter.setCommitSink}. Keeping the two apart is what lets
+ * one clock drive everything downstream of the fetch.
+ *
+ * The buffer sits between fetching and writing on purpose. When it paced only
+ * the WebSocket broadcast, the REST endpoints read a height the live feed had
+ * not reached, and observer-derived data was written at a third height again.
+ * Holding *unwritten* blocks means nothing exists at a height until its slot
+ * arrives, so every read surface agrees by construction. The cost is that the
+ * whole deployment sits about a buffer's depth behind the chain head.
  *
  * Ingestion and broadcast used to be the same loop. The BullMQ worker fetched a
  * block, wrote it, then slept until its three-second slot was due and only then
@@ -8,8 +21,8 @@
  * reserve, so a slow TronGrid response, a retry, or a late scheduler tick went
  * straight to the screen as a gap in the feed.
  *
- * This class is the other half of the split. The worker now runs flat out and
- * hands each finished event here; the emitter holds a small lead of real blocks
+ * This class is the other half of the split. The worker now fetches and parses
+ * flat out and hands each prepared block here; the emitter holds a small lead
  * and releases them on its own clock. A hiccup upstream is then covered by the
  * lead instead of being visible, and the feed keeps its cadence.
  *
@@ -34,11 +47,10 @@
  */
 
 import type { BlockStats } from '../../database/models/block-model.js';
-import type { ISystemConfig } from '@/types';
+import type { IBlockData, ISystemConfig } from '@/types';
 import { blockchainConfig } from '../../config/blockchain.js';
 import { EMIT_BUFFER_DEFAULTS } from '../../config/emit-buffer.js';
 import { logger } from '../../lib/logger.js';
-import { WebSocketService } from '../../services/websocket.service.js';
 import { resolveEmitPacing } from './block-pacer.js';
 import {
     resolveReleaseInterval,
@@ -79,12 +91,59 @@ export type IEmitBufferSettings = Pick<
     | 'emitBufferCatchupIntervalMs'
 >;
 
-/** One block waiting for its broadcast slot. */
-export interface IPendingBlockEmit {
+/**
+ * A block that has been fetched and parsed but not yet written.
+ *
+ * This is what the buffer holds, and the fact that it is *unwritten* is the
+ * point. Nothing about the block is in MongoDB until its slot arrives, so the
+ * REST endpoints, a server-rendered page, plugin-derived collections, and the
+ * live feed all report the same height rather than three different ones. It
+ * also means a process that dies loses only work that was never recorded: the
+ * sync cursor never advanced past these blocks, so the next tick fetches them
+ * again with no repair machinery needed.
+ *
+ * The buffer therefore holds a block's whole parsed transaction list rather than
+ * a small aggregate. `emitBufferMaxDepth` is what bounds that.
+ */
+export interface IPreparedBlock {
     /** Block height, used to keep the buffer in ascending order. */
     blockNumber: number;
-    /** The event to hand to the WebSocket server when the slot arrives. */
+    /** The event to hand to the WebSocket server when the block is committed. */
     payload: IBlockNewPayload;
+    /** The assembled block, including every parsed transaction, for observers and the write. */
+    blockData: IBlockData;
+    /** Block aggregates, stored on the block document and sent on the wire. */
+    stats: BlockStats;
+    /**
+     * How many transactions the block held before parsing dropped any.
+     * Recorded separately from `blockData.transactionCount`, which counts only
+     * those that survived, because the block document has always stored the raw
+     * figure and changing it would silently rewrite history.
+     */
+    rawTransactionCount: number;
+    /** Per-stage timings accumulated while preparing, extended during the commit. */
+    timings: Record<string, number>;
+}
+
+/**
+ * What the emitter does with a block when its slot arrives.
+ *
+ * Declared here rather than in `block-committer.ts` so the dependency runs one
+ * way: the emitter owns the contract for a release and knows nothing about
+ * MongoDB, observers, alerts, or the WebSocket server, and the committer
+ * implements it.
+ */
+export interface IBlockCommitSink {
+    /**
+     * Take one released block and make it real — write it, then announce it.
+     *
+     * Must return promptly rather than awaiting the write, because this is
+     * called from the release timer and the clock measures slots rather than
+     * how long a write takes.
+     *
+     * @param prepared - The block whose slot has arrived.
+     */
+    submit(prepared: IPreparedBlock): void;
 }
 
 /** What the emitter reports to `/system` about its own health. */
@@ -135,8 +194,14 @@ export class BlockEmitter {
      */
     private static configuredThresholds: IReleaseIntervalThresholds | null = null;
 
+    /**
+     * The fan-out installed by {@link BlockEmitter.setCommitSink}, or null when
+     * nothing has installed one and a release should only broadcast.
+     */
+    private static commitSink: IBlockCommitSink | null = null;
+
     /** Blocks awaiting release, kept in ascending block-number order. */
-    private readonly pending: IPendingBlockEmit[] = [];
+    private readonly pending: IPreparedBlock[] = [];
 
     /** The timer for the next release, or null when nothing is scheduled. */
     private timer: NodeJS.Timeout | null = null;
@@ -174,7 +239,10 @@ export class BlockEmitter {
      * exactly which blocks were released, in what order, and at what spacing,
      * without a WebSocket server or the deployment's configuration.
      *
-     * @param release - Called with each payload when its slot arrives. Errors
+     * @param release - Called with each block when its slot arrives. Takes the
+     *                  whole pending item rather than just the wire payload,
+     *                  because releasing a block now means announcing it to
+     *                  observers and alerts as well as broadcasting it. Errors
      *                  thrown here are caught and logged rather than allowed to
      *                  escape into the timer, where they would kill the clock
      *                  and stall the feed permanently.
@@ -186,26 +254,64 @@ export class BlockEmitter {
      *                        full speed, bounding the burst after a stall.
      */
     constructor(
-        private readonly release: (payload: IBlockNewPayload) => void,
+        private readonly release: (item: IPreparedBlock) => void,
         private thresholds: IReleaseIntervalThresholds,
         private readonly maxDebtBlocks: number
     ) {}
 
     /**
+     * Install what a release does with a block.
+     *
+     * This is a setter rather than a constructor argument because of an ordering
+     * problem constructor injection cannot solve. `BlockchainService` obtains
+     * the emitter in a field initializer, which runs before its constructor
+     * body, and the committer needs the alert service that same constructor body
+     * creates. Calling this once the committer exists is the smallest
+     * arrangement that keeps the emitter free of MongoDB, the observer registry,
+     * the alert service, and the WebSocket service.
+     *
+     * **A buffer with no sink installed drops its blocks.** That is deliberate
+     * and it is not a silent failure, because a released block is unwritten:
+     * broadcasting it without committing it would announce a height nothing else
+     * can see, which is exactly the split this design exists to remove. A
+     * process that only reads emit-buffer metrics never enqueues a block, so it
+     * never reaches this path.
+     *
+     * @param sink - What to do with each released block. Read fresh on every
+     *               release, so installing it after the emitter has already been
+     *               built takes effect on the next slot.
+     */
+    public static setCommitSink(sink: IBlockCommitSink): void {
+        BlockEmitter.commitSink = sink;
+    }
+
+    /**
      * Get the process-wide emitter, creating it on first use.
      *
      * Built lazily rather than at module load so importing this file — which
-     * `system-monitor.service.ts` does purely to read metrics — never forces a
-     * WebSocket service instance into existence before the server is ready.
+     * `system-monitor.service.ts` does purely to read metrics — never forces
+     * construction before the rest of the pipeline is wired.
      *
-     * @returns The single emitter wired to the real WebSocket server.
+     * @returns The single emitter for this process.
      */
     public static getInstance(): BlockEmitter {
         if (!BlockEmitter.instance) {
-            const websocket = WebSocketService.getInstance();
-
             BlockEmitter.instance = new BlockEmitter(
-                payload => websocket.emit({ event: 'block:new', payload }),
+                item => {
+                    // Read the sink per release rather than capturing it,
+                    // because the emitter is built on the first block and the
+                    // committer may be installed either side of that moment.
+                    const sink = BlockEmitter.commitSink;
+
+                    if (sink) {
+                        sink.submit(item);
+                    } else {
+                        logger.error(
+                            { blockNumber: item.blockNumber },
+                            'Released a block with no commit sink installed; the block was not written'
+                        );
+                    }
+                },
                 BlockEmitter.configuredThresholds ?? BlockEmitter.resolveThresholds(EMIT_BUFFER_DEFAULTS),
                 blockchainConfig.network.maxPacingDebtBlocks
             );
@@ -341,7 +447,7 @@ export class BlockEmitter {
      *
      * @param item - The block number and the event to broadcast for it.
      */
-    public enqueue(item: IPendingBlockEmit): void {
+    public enqueue(item: IPreparedBlock): void {
         insertPendingBlock(this.pending, item);
 
         if (this.firstArrivalAt === null) {
@@ -375,7 +481,7 @@ export class BlockEmitter {
      *
      * @param item - The block number and the event to broadcast for it.
      */
-    public emitNow(item: IPendingBlockEmit): void {
+    public emitNow(item: IPreparedBlock): void {
         this.clearTimer();
         this.flushPending();
         this.emit(item);
@@ -403,15 +509,27 @@ export class BlockEmitter {
     }
 
     /**
-     * Release everything immediately and stop the clock.
+     * Stop the clock and discard whatever is held.
      *
-     * Called on shutdown so blocks already fetched and written still reach
-     * connected clients instead of being dropped, and so a pending timer cannot
-     * keep the process alive.
+     * Discarding is correct here, and it is a deliberate reversal of what this
+     * method used to do. When the buffer held blocks that were already written
+     * and only awaiting a broadcast, flushing them on shutdown was right —
+     * dropping them denied clients data the backend already had. The buffer now
+     * holds blocks that have *not* been written, so there is nothing to deny
+     * anyone: the sync cursor never advanced past them and the next process
+     * fetches them again. Rushing a batch of writes into the seconds before
+     * `process.exit` would only risk tearing one of them partway through.
      */
     public stop(): void {
         this.clearTimer();
-        this.flushPending();
+
+        if (this.pending.length > 0) {
+            logger.info(
+                { discarded: this.pending.length, from: this.pending[0]?.blockNumber },
+                'Discarding unwritten buffered blocks on shutdown; the next process will fetch them again'
+            );
+            this.pending.length = 0;
+        }
     }
 
     /**
@@ -517,8 +635,9 @@ export class BlockEmitter {
     /**
      * Release everything held, in order, with no waiting.
      *
-     * Used by a catch-up run and by shutdown. Both are cases where the held
-     * blocks are already late, so spacing them out would only add to the delay.
+     * Used by a catch-up run, where the held blocks are already late and
+     * spacing them out would only add to the delay. Shutdown deliberately does
+     * not come here; see {@link stop}.
      */
     private flushPending(): void {
         if (this.pending.length === 0) {
@@ -528,27 +647,28 @@ export class BlockEmitter {
         this.flushes += 1;
 
         while (this.pending.length > 0) {
-            this.emit(this.pending.shift() as IPendingBlockEmit);
+            this.emit(this.pending.shift() as IPreparedBlock);
         }
     }
 
     /**
      * Hand one block to the release function and record that it went out.
      *
-     * The release function is wrapped because it reaches the WebSocket server,
-     * and an error escaping from inside a timer callback would take down the
-     * release clock with it — leaving the buffer filling and the feed frozen
-     * with no obvious cause. Losing one broadcast is recoverable; losing the
-     * clock is not.
+     * The release function is wrapped because it reaches the committer, and an
+     * error escaping from inside a timer callback would take down the release
+     * clock with it — leaving the buffer filling and the pipeline frozen with no
+     * obvious cause. Losing one block is recoverable, because an uncommitted
+     * block leaves the cursor where it was and the next tick fetches it again.
+     * Losing the clock is not.
      *
      * @param item - The block being released.
      */
-    private emit(item: IPendingBlockEmit): void {
+    private emit(item: IPreparedBlock): void {
         try {
-            this.release(item.payload);
+            this.release(item);
             this.lastReleasedBlockNumber = item.blockNumber;
         } catch (error) {
-            logger.error({ error, blockNumber: item.blockNumber }, 'Failed to broadcast block event');
+            logger.error({ error, blockNumber: item.blockNumber }, 'Failed to hand a released block to the committer');
         }
     }
 
