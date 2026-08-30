@@ -60,8 +60,10 @@ interface BlockchainStatus {
     emitBufferTargetDepth: number;
     /** False while the emitter is still building its initial lead after a restart. */
     emitBufferSeeded: boolean;
-    /** Times the buffer has drained to empty; any increase means the feed was exposed. */
+    /** Separate episodes of the buffer running out of lead; any increase means the feed was exposed. */
     emitBufferUnderruns: number;
+    /** Blocks released during those episodes, which is how long they lasted. */
+    emitBufferUnderrunBlocks: number;
 }
 
 interface BlockProcessingMetrics {
@@ -584,7 +586,14 @@ function resolveBufferDetail(status: BlockchainStatus): string {
     if (!status.emitBufferSeeded) {
         detail = 'Building initial lead';
     } else if (status.emitBufferUnderruns > 0) {
-        detail = `${status.emitBufferUnderruns.toLocaleString()} underruns since boot`;
+        // Both figures, because either one alone misleads. The episode count
+        // cannot separate a provider that hiccups from one that cannot keep up,
+        // and the block count cannot say whether it was one long stretch or many
+        // short ones.
+        const episodes = `${status.emitBufferUnderruns.toLocaleString()} underrun${status.emitBufferUnderruns === 1 ? '' : 's'}`;
+        const blocks = `${status.emitBufferUnderrunBlocks.toLocaleString()} block${status.emitBufferUnderrunBlocks === 1 ? '' : 's'} exposed`;
+
+        detail = `${episodes} since boot, ${blocks}`;
     } else if (status.emitBufferDepth < status.emitBufferTargetDepth) {
         detail = 'Refilling toward target';
     } else {

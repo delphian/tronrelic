@@ -23,18 +23,35 @@
 /**
  * The values a deployment starts with before an operator changes anything.
  *
- * These are the numbers the removed environment variables defaulted to, so a
- * deployment that never set them behaves identically after the migration.
- * Eight blocks of lead covers a fully missed sync tick plus a skipped chain
- * slot, and 3300ms is deliberately longer than one block time, because
- * releasing slower than blocks arrive is the only way a lead spent covering a
- * gap grows back rather than staying spent.
+ * The lead is sized against the thing that actually interrupts the feed, which
+ * is the sync schedule rather than the chain. `blockchain:sync` runs every 15
+ * seconds, so one missed tick costs five blocks at TRON's three-second block
+ * time, and a super representative skipping its slot costs one more. Twelve
+ * covers two missed ticks plus a skipped slot with one block to spare, and the
+ * spare matters: a tick hands over its whole batch at once, so depth swings
+ * roughly a block and a half either side of target even when everything is
+ * healthy, and the working floor is below the number set here.
+ *
+ * It was 8 until the underrun counters were made trustworthy. Eight covers a
+ * single missed tick and nothing beyond it, and rebuilding a spent lead takes
+ * close to four minutes at the refill interval below — so a deployment that
+ * hiccupped twice inside that window met the second one with a partial lead.
+ * The change costs four blocks, or twelve seconds, of additional delay on every
+ * read surface, because the feed, the REST endpoints, server-rendered pages,
+ * and plugin collections all sit behind the buffer together.
+ *
+ * The two intervals are deliberately not symmetric with each other. 3300ms is
+ * longer than one block time, because releasing slower than blocks arrive is
+ * the only way a lead spent covering a gap grows back rather than staying
+ * spent. 2000ms is short enough to work off the burst a scheduler tick
+ * delivers. The spacing used just above target is derived from the refill
+ * interval rather than stored here; see `BlockEmitter.resolveThresholds`.
  */
 export const EMIT_BUFFER_DEFAULTS = {
     /** Blocks of lead to hold. Zero switches buffering off entirely. */
-    emitBufferTargetDepth: 8,
+    emitBufferTargetDepth: 12,
     /** Depth at which draining speeds up so a tick's burst is not held as latency. */
-    emitBufferCatchupDepth: 13,
+    emitBufferCatchupDepth: 20,
     /** Depth beyond which blocks go out with no wait at all. */
     emitBufferMaxDepth: 40,
     /** Spacing used below target, which is what rebuilds a spent lead. */

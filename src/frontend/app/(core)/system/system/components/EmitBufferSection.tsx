@@ -350,8 +350,8 @@ export function EmitBufferSection() {
                         aria-label="Milliseconds between broadcasts above the catch-up depth"
                     />
                     <span className={styles.hint}>
-                        Spacing used above the catch-up depth. Mirrors the catch-up interval the browser&apos;s own
-                        playout buffer uses, so a backlog drains at the same rate on both sides of the connection.
+                        Spacing used above the catch-up depth, so a backlog that has built up drains faster than
+                        blocks arrive instead of being held as permanent latency.
                     </span>
                 </div>
 

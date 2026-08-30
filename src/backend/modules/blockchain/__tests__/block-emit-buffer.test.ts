@@ -1,21 +1,33 @@
 /**
- * Unit tests for the emitter's release arithmetic. Two properties carry the
- * whole design and neither is visible from a single call.
+ * Unit tests for the emitter's release arithmetic. Three properties carry the
+ * whole design and none of them is visible from a single call.
  *
- * The first is that a buffer below target releases *slower* than the chain
- * produces. Without that, a lead spent on one gap never comes back, which is
- * the known limitation of the frontend playout buffer and the reason a backend
- * buffer was worth building at all. The second is that the seed completes on
- * time or on depth, whichever comes first, so a quiet chain cannot leave the
- * feed holding its first block forever.
+ * The first two are the pull toward target from each side. A buffer below
+ * target releases *slower* than the chain produces, or a lead spent on one gap
+ * never comes back — the flaw in the frontend playout buffer that this one
+ * replaced, and the reason a backend buffer was worth building at all. A buffer
+ * above target releases *faster*, or a burst that pushed it deep leaves it
+ * deep, holding feed latency nobody asked for. Only the exact target releases
+ * at the chain's own rate, which is what makes it the one depth the buffer
+ * settles at rather than a floor it can sit above.
+ *
+ * The third is that the seed completes on time or on depth, whichever comes
+ * first, so a quiet chain cannot leave the feed holding its first block forever.
  */
 import { describe, it, expect } from 'vitest';
 import { resolveReleaseInterval, resolveSeedComplete, insertPendingBlock } from '../block-emit-buffer.js';
 
-/** The shipped defaults, from `EMIT_BUFFER_DEFAULTS` plus one TRON block time. */
+/**
+ * The shipped defaults, from `EMIT_BUFFER_DEFAULTS` plus one TRON block time.
+ *
+ * `drainIntervalMs` is not stored configuration — `BlockEmitter.resolveThresholds`
+ * derives it by mirroring the refill interval about the block time, so the 300ms
+ * the default refill sits above 3000ms becomes 300ms below it here.
+ */
 const THRESHOLDS = {
     intervalMs: 3_000,
     refillIntervalMs: 3_300,
+    drainIntervalMs: 2_700,
     catchupIntervalMs: 2_000,
     targetDepth: 8,
     catchupDepth: 13,
@@ -23,9 +35,13 @@ const THRESHOLDS = {
 };
 
 describe('resolveReleaseInterval', () => {
-    it('releases at the chain cadence once the buffer holds its target lead', () => {
+    it('releases at the chain cadence at exactly the target lead, and only there', () => {
+        // The neutral point has to be a single depth. Applying it to a range
+        // would make every depth in that range an equilibrium, so a buffer that
+        // arrived at the top of the range would stay there.
         expect(resolveReleaseInterval(8, THRESHOLDS)).toBe(3_000);
-        expect(resolveReleaseInterval(12, THRESHOLDS)).toBe(3_000);
+        expect(resolveReleaseInterval(9, THRESHOLDS)).not.toBe(3_000);
+        expect(resolveReleaseInterval(7, THRESHOLDS)).not.toBe(3_000);
     });
 
     it('releases slower than the chain produces while below target', () => {
@@ -35,6 +51,16 @@ describe('resolveReleaseInterval', () => {
         expect(resolveReleaseInterval(1, THRESHOLDS)).toBe(3_300);
         expect(resolveReleaseInterval(7, THRESHOLDS)).toBe(3_300);
         expect(resolveReleaseInterval(7, THRESHOLDS)).toBeGreaterThan(THRESHOLDS.intervalMs);
+    });
+
+    it('releases faster than the chain produces while above target', () => {
+        // The mirror of the rule above, and the reason a burst does not leave
+        // the buffer permanently deep. Every block held past the target is three
+        // more seconds between a block existing on TRON and a viewer seeing it,
+        // bought for no extra protection.
+        expect(resolveReleaseInterval(9, THRESHOLDS)).toBe(2_700);
+        expect(resolveReleaseInterval(12, THRESHOLDS)).toBe(2_700);
+        expect(resolveReleaseInterval(12, THRESHOLDS)).toBeLessThan(THRESHOLDS.intervalMs);
     });
 
     it('drains faster once a tick has delivered more than the lead needs', () => {
@@ -47,34 +73,66 @@ describe('resolveReleaseInterval', () => {
         expect(resolveReleaseInterval(500, THRESHOLDS)).toBe(0);
     });
 
-    it('settles at target rather than drifting below it', () => {
-        // Depth is read before the release, so at target the buffer runs at
-        // cadence and one block short it slows down. Simulating arrivals at the
-        // chain rate has to converge on the target, not sag under it.
-        let depth = 0;
-        let elapsed = 0;
-        const arrivalIntervalMs = 3_000;
-        let nextArrivalAt = 0;
+    it.each([
+        ['from empty after a restart', 0],
+        ['from a burst that stopped short of the catch-up depth', 12],
+        ['from a burst that went past the catch-up depth', 20]
+    ])('settles at target %s', (_case, startDepth) => {
+        // Both correction rules in one check, driven from three starting depths
+        // because a buffer can arrive at a given depth from either side and has
+        // to end up in the same place. The middle case is the one that used to
+        // fail: every depth from target up to the catch-up depth released at the
+        // chain's own rate, so a buffer that arrived at 12 stayed at 12 for the
+        // life of the process and held four blocks of latency nobody asked for.
+        //
+        // One block either side, because depth is read before each release and
+        // therefore alternates across the target rather than resting exactly on
+        // it.
+        const settled = simulateSteadyState(startDepth as number);
 
-        for (let release = 0; release < 200; release += 1) {
-            while (nextArrivalAt <= elapsed) {
-                depth += 1;
-                nextArrivalAt += arrivalIntervalMs;
-            }
-
-            if (depth === 0) {
-                elapsed += arrivalIntervalMs;
-                continue;
-            }
-
-            elapsed += resolveReleaseInterval(depth, THRESHOLDS);
-            depth -= 1;
-        }
-
-        expect(depth).toBeGreaterThanOrEqual(THRESHOLDS.targetDepth - 1);
-        expect(depth).toBeLessThanOrEqual(THRESHOLDS.targetDepth + 1);
+        expect(settled).toBeGreaterThanOrEqual(THRESHOLDS.targetDepth - 1);
+        expect(settled).toBeLessThanOrEqual(THRESHOLDS.targetDepth + 1);
     });
 });
+
+/**
+ * Run the release clock against arrivals at the chain's own rate and report
+ * where depth ends up.
+ *
+ * Written as a loop over releases rather than as arithmetic on the intervals
+ * because the question is about a feedback loop: each release changes the depth
+ * that chooses the next interval. Only stepping it can show whether that loop
+ * converges, and on what.
+ *
+ * @param startDepth - Depth to begin from, which is what lets one helper cover
+ *                     both approaching target from below and falling back to it
+ *                     from above.
+ * @returns The depth the buffer holds after enough releases to settle, so a
+ *          caller can assert on the equilibrium rather than on any single step.
+ */
+function simulateSteadyState(startDepth: number): number {
+    const arrivalIntervalMs = THRESHOLDS.intervalMs;
+    let depth = startDepth;
+    let elapsed = 0;
+    let nextArrivalAt = 0;
+
+    for (let release = 0; release < 400; release += 1) {
+        while (nextArrivalAt <= elapsed) {
+            depth += 1;
+            nextArrivalAt += arrivalIntervalMs;
+        }
+
+        if (depth === 0) {
+            elapsed += arrivalIntervalMs;
+            continue;
+        }
+
+        elapsed += resolveReleaseInterval(depth, THRESHOLDS);
+        depth -= 1;
+    }
+
+    return depth;
+}
 
 describe('resolveSeedComplete', () => {
     it('completes as soon as the buffer holds the target lead', () => {

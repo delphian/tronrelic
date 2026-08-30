@@ -1348,7 +1348,9 @@ export class BlockchainService implements IBlockchainService {
             // blocks lower while the batch stays exactly one tick's production.
             // The knob is kept for a deployment that wants deliberate distance
             // from a tip its provider serves inconsistently. Uneven arrival is
-            // smoothed on the client, by the playout buffer in `SocketBridge`.
+            // smoothed by the emitter's buffer, which is now the only playout
+            // clock in the system — the frontend used to hold one of its own and
+            // no longer does.
             const liveTip = latestNetworkBlock - Math.max(0, blockchainConfig.network.liveTipReserveBlocks);
 
             const { targets, remainingBackfill } = await this.computeBlockTargets({

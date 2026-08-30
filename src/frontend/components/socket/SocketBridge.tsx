@@ -32,41 +32,6 @@ import type {
 /** User interaction events that trigger immediate WebSocket connection */
 const INTERACTION_EVENTS = ['click', 'scroll', 'touchstart', 'keydown', 'mousemove'] as const;
 
-/**
- * Target spacing between block releases, matching TRON's own block time.
- *
- * The backend paces its broadcasts to this same cadence, but it cannot make the
- * feed perfectly even on its own, because TRON does not produce blocks on an
- * exact metronome — a super representative that misses its slot leaves a real
- * six-second hole no amount of backend pacing can fill. Holding arrivals here
- * and releasing them on a fixed clock is the only thing that can smooth that
- * out, in the same way a video player buffers a few frames rather than drawing
- * each one the instant it arrives.
- */
-const BLOCK_RELEASE_INTERVAL_MS = 3_000;
-
-/**
- * Faster spacing used while blocks are stacking up.
- *
- * Without it the buffer can only ever fall further behind: a burst arriving
- * during a reconnect would be released one every three seconds forever, adding
- * permanent delay for no benefit. Draining slightly faster than blocks arrive
- * works the backlog off and returns to the normal cadence.
- */
-const BLOCK_RELEASE_CATCHUP_INTERVAL_MS = 2_000;
-
-/** Queue depth at which the buffer switches to the catch-up interval. */
-const BLOCK_BUFFER_CATCHUP_DEPTH = 3;
-
-/**
- * Depth beyond which blocks are released with no wait at all.
- *
- * A hard ceiling matters because the buffer is memory the page holds: a tab
- * left open through a long backend catch-up run could otherwise accumulate
- * hundreds of blocks and show the user minutes-old data as if it were live.
- */
-const BLOCK_BUFFER_MAX_DEPTH = 12;
-
 export function SocketBridge() {
   const dispatch = useAppDispatch();
   const reconnectTimerRef = useRef<number | null>(null);
@@ -79,19 +44,6 @@ export function SocketBridge() {
   const commentThreadSetRef = useRef<Set<string>>(new Set());
   const connectionInitiatedRef = useRef(false);
   const countdownIntervalRef = useRef<number | null>(null);
-
-  // Playout buffer for incoming blocks. Blocks land in `blockBufferRef` and are
-  // released to Redux on a clock rather than on arrival, so the ticker advances
-  // evenly even when the blocks themselves arrive unevenly. The timer handle
-  // and the last release time are refs rather than state because changing them
-  // must not re-render — this component renders nothing.
-  const blockBufferRef = useRef<BlockNotificationPayload['payload'][]>([]);
-  const blockReleaseTimerRef = useRef<number | null>(null);
-  const lastBlockReleaseAtRef = useRef(0);
-  // False until the first block has been released. It is what makes the buffer
-  // hold one interval of lead before playback starts; without that lead there
-  // is never anything in hand to spend on a skipped slot.
-  const blockBufferPrimedRef = useRef(false);
 
   const desired = useAppSelector(state => state.realtime.desired);
   const pending = useAppSelector(state => state.realtime.pending);
@@ -194,13 +146,6 @@ export function SocketBridge() {
       if (countdownIntervalRef.current !== null) {
         window.clearInterval(countdownIntervalRef.current);
         countdownIntervalRef.current = null;
-      }
-    };
-
-    const clearBlockReleaseTimer = () => {
-      if (blockReleaseTimerRef.current !== null) {
-        window.clearTimeout(blockReleaseTimerRef.current);
-        blockReleaseTimerRef.current = null;
       }
     };
 
@@ -309,70 +254,40 @@ export function SocketBridge() {
     };
 
     /**
-     * Release one buffered block and line up the next release.
+     * Hand a newly announced block straight to Redux.
      *
-     * Self-scheduling rather than a fixed `setInterval` for two reasons. An
-     * interval that fires while the buffer is empty wastes its slot, so the
-     * next block would wait a further full interval and the buffer would add
-     * permanent latency it never gives back. And an interval cannot vary its
-     * spacing, which is what lets a backlog drain faster than it arrives.
-     */
-    const releaseBufferedBlock = () => {
-      blockReleaseTimerRef.current = null;
-
-      const next = blockBufferRef.current.shift();
-      if (next) {
-        lastBlockReleaseAtRef.current = Date.now();
-        blockBufferPrimedRef.current = true;
-        dispatch(blockReceived(next));
-      }
-
-      scheduleBlockRelease();
-    };
-
-    /**
-     * Schedule the next release, spacing it by how much work is waiting.
+     * Dispatching on arrival is deliberate, and putting a playout buffer back
+     * here would reintroduce a bug rather than smooth the feed. This component
+     * used to queue blocks and release them on a three-second clock, because
+     * TRON does not produce blocks on an exact metronome and an uneven feed
+     * reads badly. The backend now owns that job and does it in the right place:
+     * `BlockEmitter` holds a lead of prepared but still unwritten blocks and
+     * releases one per slot, so the database write, the sync cursor advance, the
+     * observer notifications, and this broadcast all happen together and every
+     * read surface reports the same height.
      *
-     * Timing is measured from the previous release rather than from now, so a
-     * block that arrives after a quiet stretch goes out immediately instead of
-     * sitting through a wait the feed has already served.
+     * The version that lived here could not rebuild its lead once it had spent
+     * it. It drained one block every two seconds against arrivals every three,
+     * so any burst — a reconnect, a backend catch-up run, or a backgrounded tab
+     * whose timers the browser throttled — parked it around eleven blocks behind
+     * the height the backend had actually committed, and it stayed there for as
+     * long as the tab was open. That gap was invisible on this display alone,
+     * but anything reading a height by another route, such as a plugin driven by
+     * a block observer, disagreed with the ticker by exactly that much. The
+     * backend buffer has the missing half: while it sits below its target depth
+     * it releases slightly slower than blocks arrive, which is what grows a
+     * spent lead back.
+     *
+     * Its depth is tuned from the Configuration tab of `/system/system` and its
+     * underrun count is on the `/system` blockchain console, so a feed that
+     * needs more smoothing is an operator adjustment rather than a frontend
+     * deploy.
+     *
+     * @param payload - The block summary as the backend broadcast it, already
+     *                  released on the backend's own clock.
      */
-    const scheduleBlockRelease = () => {
-      const depth = blockBufferRef.current.length;
-
-      // Nothing waiting: stand down and let the next arrival restart the clock,
-      // rather than burning slots against an empty buffer.
-      if (depth === 0 || blockReleaseTimerRef.current !== null) {
-        return;
-      }
-
-      let interval = BLOCK_RELEASE_INTERVAL_MS;
-      if (depth >= BLOCK_BUFFER_MAX_DEPTH) {
-        interval = 0;
-      } else if (depth >= BLOCK_BUFFER_CATCHUP_DEPTH) {
-        interval = BLOCK_RELEASE_CATCHUP_INTERVAL_MS;
-      }
-
-      const sinceLast = Date.now() - lastBlockReleaseAtRef.current;
-      let wait = Math.max(0, interval - sinceLast);
-
-      // Hold the very first block for a full interval so playback starts one
-      // interval behind the feed. Without this the buffer keeps nothing: every
-      // arrival finds the previous release already an interval old, waits zero
-      // and goes straight out, so a skipped TRON slot still shows as a six
-      // second hole. Reusing `interval` here means a burst that has already
-      // reached the catch-up or maximum depth is not held, since a backlog
-      // supplies the depth this hold exists to create.
-      if (!blockBufferPrimedRef.current) {
-        wait = Math.max(wait, interval);
-      }
-
-      blockReleaseTimerRef.current = window.setTimeout(releaseBufferedBlock, wait);
-    };
-
     const handleBlockUpdate = (payload: BlockNotificationPayload['payload']) => {
-      blockBufferRef.current.push(payload);
-      scheduleBlockRelease();
+      dispatch(blockReceived(payload));
     };
 
     const handleMenuUpdate = (payload: MenuUpdatePayload['payload']) => {
@@ -470,14 +385,7 @@ export function SocketBridge() {
       manualDisconnectRef.current = true;
       clearReconnectTimer();
       clearCountdownInterval();
-      clearBlockReleaseTimer();
       clearInteractionListeners();
-
-      // Drop whatever has not been released. These blocks describe a feed the
-      // unmounted page was showing; a remount fetches fresh state on the
-      // server, so replaying stale ones would only fight that.
-      blockBufferRef.current = [];
-      blockBufferPrimedRef.current = false;
 
       socket.off('memo:new', handleMemoUpdate);
       socket.off('block:new', handleBlockUpdate);
