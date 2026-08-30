@@ -154,7 +154,12 @@ export interface IBlockEmitBufferMetrics {
     targetDepth: number;
     /** False while the initial lead is still being built after a restart. */
     seeded: boolean;
-    /** Height of the last block actually broadcast, or null before the first. */
+    /**
+     * Height of the last block handed to the commit sink, or null before the
+     * first. This is a release metric, not a broadcast one — the block reaches
+     * clients later, inside the commit. Read `lastCommittedBlockNumber` from
+     * the committer for the height a viewer has actually seen.
+     */
     lastReleasedBlockNumber: number | null;
     /** Spacing chosen for the most recent release, which reveals the active mode. */
     lastIntervalMs: number | null;
@@ -465,27 +470,43 @@ export class BlockEmitter {
     }
 
     /**
-     * Broadcast a block immediately, ahead of anything the buffer is holding.
+     * Commit a block immediately instead of waiting for a slot.
      *
-     * Backfill and catch-up blocks take this path. The buffer is flushed first
-     * so the feed cannot run backwards: a catch-up block is newer than what is
-     * held, and releasing it before the held blocks would show a height that
-     * then jumps back down.
+     * Two different kinds of block take this path, and they need opposite
+     * treatment. A catch-up block is newer than everything the buffer holds, so
+     * the buffer is flushed first: releasing the newer block on its own would
+     * show a height that then jumps back down. The carried deadline is cleared
+     * with it, so the first paced block after a catch-up run starts a fresh
+     * cadence from itself rather than working off a debt it did not cause.
      *
-     * The carried deadline is cleared as well, so the first paced block after a
-     * catch-up run starts a fresh cadence from itself rather than working off a
-     * debt it did not cause. The seeded flag is deliberately left alone —
-     * re-seeding here would stall the feed for a full lead's worth of time
-     * every time the syncer recovered, which is exactly when a viewer is
-     * already waiting.
+     * A backfill block is older than everything held, and flushing for it buys
+     * nothing. The old block is going to arrive after heights above it either
+     * way, because that is what backfilling a hole means, so no flush can make
+     * the sequence monotonic. What the flush does cost is the whole lead: it
+     * commits the held live blocks early, in one burst, and leaves the buffer
+     * empty until the refill interval rebuilds it — so the next upstream hiccup
+     * is visible. An old block is therefore committed on its own and the buffer
+     * is left alone, still holding its lead and still counting down to its next
+     * slot.
      *
-     * @param item - The block number and the event to broadcast for it.
+     * The seeded flag is deliberately left alone in both cases. Re-seeding here
+     * would stall the feed for a full lead's worth of time every time the syncer
+     * recovered, which is exactly when a viewer is already waiting.
+     *
+     * @param item - The prepared block to commit now, whether it is a catch-up
+     *               block ahead of the buffer or a backfill block behind it.
      */
     public emitNow(item: IPreparedBlock): void {
-        this.clearTimer();
-        this.flushPending();
-        this.emit(item);
-        this.nextEmitAt = 0;
+        const highestHeld = this.pending.at(-1)?.blockNumber ?? null;
+
+        if (highestHeld === null || item.blockNumber > highestHeld) {
+            this.clearTimer();
+            this.flushPending();
+            this.emit(item);
+            this.nextEmitAt = 0;
+        } else {
+            this.emit(item);
+        }
     }
 
     /**
