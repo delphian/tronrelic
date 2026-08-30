@@ -34,7 +34,7 @@ Subscribe during `init()` and nothing else is required: `context.observerRegistr
 
 Blockchain Service fetches a block, parses raw contract data, enriches it (USD pricing, address metadata, energy/bandwidth, whale categorization), and builds a `ProcessedTransaction` (implements `ITransaction`). All of that runs flat out, as fast as the TronGrid rate limit allows, and **writes nothing**.
 
-The prepared block goes into a playout buffer called `BlockEmitter`, which holds a lead — eight blocks by default — and releases one at TRON's own three-second cadence. That release is where the block is written to the database, and observers are notified immediately after the write, alongside alert ingestion and the core `block:new` broadcast.
+The prepared block goes into a playout buffer called `BlockEmitter`, which holds a lead — twelve blocks by default — and releases one at TRON's own three-second cadence. That release is where the block is written to the database, and observers are notified immediately after the write, alongside alert ingestion and the core `block:new` broadcast.
 
 Three consequences matter when writing an observer.
 

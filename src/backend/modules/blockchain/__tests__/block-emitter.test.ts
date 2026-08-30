@@ -15,6 +15,7 @@ import { BlockEmitter, type IBlockNewPayload, type IPreparedBlock } from '../blo
 const THRESHOLDS = {
     intervalMs: 3_000,
     refillIntervalMs: 3_300,
+    drainIntervalMs: 2_700,
     catchupIntervalMs: 2_000,
     targetDepth: 3,
     catchupDepth: 6,
@@ -180,9 +181,10 @@ describe('BlockEmitter', () => {
     });
 
     it('rebuilds the lead after a drain by releasing slower than blocks arrive', () => {
-        // The property the frontend playout buffer lacks. After the buffer has
-        // been emptied, arrivals at the chain rate must push depth back up
-        // rather than passing straight through at zero depth forever.
+        // The property the removed frontend playout buffer lacked, which is why
+        // it ended up permanently behind. After the buffer has been emptied,
+        // arrivals at the chain rate must push depth back up rather than passing
+        // straight through at zero depth forever.
         const { emitter, released } = createEmitter();
 
         emitter.enqueue(pending(100));
@@ -202,14 +204,103 @@ describe('BlockEmitter', () => {
         expect(released.length).toBeLessThan(41);
     });
 
-    it('counts every drain to empty, since that is when the feed is exposed', () => {
+    it('counts running out of lead, since that is when the feed is exposed', () => {
         const { emitter } = createEmitter();
 
         emitter.enqueue(pending(100));
         vi.advanceTimersByTime(SEED_WINDOW_MS);
 
         expect(emitter.getMetrics().underruns).toBe(1);
+        expect(emitter.getMetrics().underrunBlocks).toBe(1);
         expect(emitter.getMetrics().depth).toBe(0);
+    });
+
+    it('counts a slow provider as one episode lasting many blocks', () => {
+        // The distinction the two figures exist to draw. A provider handing over
+        // one block per two block times keeps the buffer empty for as long as it
+        // lasts, and that is one incident an operator should investigate — not
+        // one per block, which is what a single counter reported and which made
+        // a long stretch indistinguishable from a run of unrelated hiccups.
+        const { emitter } = createEmitter();
+
+        emitter.enqueue(pending(100));
+        vi.advanceTimersByTime(SEED_WINDOW_MS);
+
+        for (let index = 1; index <= 6; index += 1) {
+            emitter.enqueue(pending(100 + index));
+            vi.advanceTimersByTime(THRESHOLDS.intervalMs * 2);
+        }
+
+        expect(emitter.getMetrics().underruns).toBe(1);
+        expect(emitter.getMetrics().underrunBlocks).toBe(7);
+    });
+
+    it('starts a fresh episode once the lead has been rebuilt and lost again', () => {
+        // The counter re-arms on depth reaching target rather than on any
+        // arrival, so a genuinely separate incident is still reported.
+        const { emitter } = createEmitter();
+
+        emitter.enqueue(pending(100));
+        vi.advanceTimersByTime(SEED_WINDOW_MS);
+        expect(emitter.getMetrics().underruns).toBe(1);
+
+        // Arrivals at the chain rate rebuild the lead past target, which closes
+        // the episode.
+        for (let index = 1; index <= 40; index += 1) {
+            emitter.enqueue(pending(100 + index));
+            vi.advanceTimersByTime(THRESHOLDS.intervalMs);
+        }
+        expect(emitter.getMetrics().depth).toBeGreaterThanOrEqual(THRESHOLDS.targetDepth);
+
+        // Nothing arrives for long enough to drain what is held.
+        vi.advanceTimersByTime(THRESHOLDS.intervalMs * 60);
+
+        expect(emitter.getMetrics().depth).toBe(0);
+        expect(emitter.getMetrics().underruns).toBe(2);
+    });
+
+    it('does not treat an empty buffer as an underrun when buffering is switched off', () => {
+        // A buffer configured to hold no lead cannot lose one, so every release
+        // draining it to empty is its resting state rather than an incident.
+        const { emitter } = createEmitter(0);
+
+        for (let index = 0; index < 5; index += 1) {
+            emitter.enqueue(pending(100 + index));
+            vi.advanceTimersByTime(THRESHOLDS.intervalMs);
+        }
+
+        expect(emitter.getMetrics().underruns).toBe(0);
+    });
+
+    it('does not repay slots that passed while the buffer sat empty', () => {
+        // Those slots were missed because nothing arrived, not because this
+        // clock ran late. Repaying them releases block after block with no wait
+        // at all, and the buffer stays empty through the whole repayment instead
+        // of using those arrivals to rebuild its lead.
+        const { emitter, released } = createEmitter();
+
+        emitter.enqueue(pending(100));
+        vi.advanceTimersByTime(SEED_WINDOW_MS);
+        expect(released).toEqual([100]);
+        expect(emitter.getMetrics().depth).toBe(0);
+
+        // A long stall, far more than `maxDebtBlocks` worth of missed slots.
+        vi.advanceTimersByTime(THRESHOLDS.intervalMs * 20);
+
+        // Recovery: blocks arrive at the chain's own rate again. Forty of them,
+        // because the refill interval grows the lead by a tenth of a block per
+        // release and the difference this test is about only shows over that
+        // distance.
+        for (let index = 1; index <= 40; index += 1) {
+            emitter.enqueue(pending(100 + index));
+            vi.advanceTimersByTime(THRESHOLDS.intervalMs);
+        }
+
+        // The lead is back. Repaying the stall instead would have spent the
+        // first thirty of these arrivals working the deadline back up to real
+        // time, leaving the buffer still near empty at the end of the window.
+        expect(emitter.getMetrics().depth).toBeGreaterThanOrEqual(THRESHOLDS.targetDepth);
+        expect(released.length).toBeLessThan(41);
     });
 
     it('drains without waiting once depth passes the point where latency hurts more', () => {

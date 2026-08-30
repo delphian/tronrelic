@@ -24,15 +24,22 @@
 /**
  * The depths and intervals that shape the emitter's release clock.
  *
- * `refillIntervalMs` must be strictly greater than `intervalMs` or the lead can
- * never rebuild after a hole: releasing at exactly the rate blocks arrive holds
- * whatever depth it already has forever. That is how the frontend playout
- * buffer ends up spending its lead on the first gap and never getting it back.
+ * Two of these intervals exist to pull depth back toward `targetDepth`, and the
+ * buffer only settles there because both are present. `refillIntervalMs` must be
+ * strictly greater than `intervalMs`, or a lead spent on one gap can never grow
+ * back: releasing at exactly the rate blocks arrive holds whatever depth it
+ * already has forever. `drainIntervalMs` must be strictly less than
+ * `intervalMs` for the same reason in the other direction — without it every
+ * depth from `targetDepth` up to `catchupDepth` released at the chain's own
+ * rate, so a burst that pushed the buffer into that band left it there for the
+ * life of the process, holding latency the operator never asked for. That is
+ * how the removed frontend playout buffer ended up permanently behind.
+ *
  * `catchupDepth` must sit above `targetDepth`, and `maxDepth` above both, or
  * the faster intervals take over the steady-state cadence.
  */
 export interface IReleaseIntervalThresholds {
-    /** Target spacing once the buffer holds its full lead — one TRON block time. */
+    /** Target spacing once the buffer holds exactly its lead — one TRON block time. */
     intervalMs: number;
     /**
      * Spacing used while the buffer is below target. Deliberately longer than
@@ -40,6 +47,12 @@ export interface IReleaseIntervalThresholds {
      * a lead can grow back after it has been spent.
      */
     refillIntervalMs: number;
+    /**
+     * Spacing used while the buffer is above target but below `catchupDepth`.
+     * Deliberately shorter than `intervalMs`, so a surplus left by a burst is
+     * given back instead of being held as permanent feed latency.
+     */
+    drainIntervalMs: number;
     /** Spacing used to drain the burst a scheduler tick delivers. */
     catchupIntervalMs: number;
     /** Depth the buffer aims to hold, which is the lead a hiccup draws from. */
@@ -71,10 +84,16 @@ export interface ISeedCompleteInput {
  * Work out the gap to leave before releasing the next block.
  *
  * Depth is measured before the release rather than after, so a buffer sitting
- * exactly at target releases at the chain's cadence while one block short of
- * target slows down to rebuild. That makes the buffer settle at target instead
- * of drifting below it, which matters because the whole point of the lead is
- * that it is still there when a hiccup arrives.
+ * exactly at target releases at the chain's cadence, one block short slows down
+ * to rebuild, and one block over speeds up to give the surplus back. Only the
+ * exact target releases at the chain's own rate, which is what makes target the
+ * one depth the buffer settles at rather than a floor it can sit above.
+ *
+ * Getting that wrong is subtle, because a buffer that is too deep still looks
+ * healthy on the console — depth is above target and no underruns are counted.
+ * What it costs is feed latency: every extra block held is three more seconds
+ * between a block existing on TRON and a viewer seeing it, and holding a
+ * surplus buys no more protection than the configured lead already provides.
  *
  * @param depth - Blocks currently held, counted before this release. Zero means
  *                there is nothing to release and the caller should wait for an
@@ -93,7 +112,9 @@ export function resolveReleaseInterval(depth: number, thresholds: IReleaseInterv
         intervalMs = 0;
     } else if (depth >= thresholds.catchupDepth) {
         intervalMs = thresholds.catchupIntervalMs;
-    } else if (depth >= thresholds.targetDepth) {
+    } else if (depth > thresholds.targetDepth) {
+        intervalMs = thresholds.drainIntervalMs;
+    } else if (depth === thresholds.targetDepth) {
         intervalMs = thresholds.intervalMs;
     } else {
         intervalMs = thresholds.refillIntervalMs;

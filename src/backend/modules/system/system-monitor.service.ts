@@ -130,14 +130,25 @@ export interface BlockchainSyncStatus {
   /** False while the emitter is still building its initial lead after a restart. */
   emitBufferSeeded: boolean;
   /**
-   * How many times the buffer has drained to empty since the process started.
+   * How many separate times the buffer has run out of lead since the process
+   * started.
    *
-   * The single number that says whether the lead is sized right: a deployment
-   * holding a real lead never reaches zero, so any increase means the feed was
-   * exposed to an upstream gap and the target depth is too small for what this
-   * deployment's provider actually does.
+   * The number that says whether the lead is sized right: a deployment holding
+   * a real lead never reaches zero, so any increase means the feed was exposed
+   * to an upstream gap and the target depth is too small for what this
+   * deployment's provider actually does. An episode closes only once depth is
+   * back at target, so a provider that stays slow reads as one incident rather
+   * than one per block.
    */
   emitBufferUnderruns: number;
+  /**
+   * Blocks released while the buffer had no lead left.
+   *
+   * The duration figure the episode count above deliberately leaves out. Read
+   * the two together: three underruns covering four blocks is a provider that
+   * hiccups, and three covering nine hundred is one that cannot keep up.
+   */
+  emitBufferUnderrunBlocks: number;
   /**
    * Blocks that were given a slot and are still being written.
    *
@@ -766,6 +777,7 @@ export class SystemMonitorService {
       emitBufferTargetDepth: emitBuffer.targetDepth,
       emitBufferSeeded: emitBuffer.seeded,
       emitBufferUnderruns: emitBuffer.underruns,
+      emitBufferUnderrunBlocks: emitBuffer.underrunBlocks,
       commitQueueDepth: commit.queued,
       commitFailures: commit.failures,
       backfillQueueSize: snapshot.backfillQueueSize,

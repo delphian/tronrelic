@@ -172,10 +172,12 @@ export interface ISystemConfig {
      * slow TronGrid response, a retry, or a late scheduler tick is then covered
      * by the blocks already in hand instead of appearing as a gap on screen.
      *
-     * Default: 8 blocks, which covers a fully missed sync tick plus a skipped
-     * chain slot. Each block of lead costs one block time (about three seconds)
-     * of feed latency, so raising it buys cover for a longer stall at a
-     * proportional delay.
+     * Default: 12 blocks, which covers two fully missed sync ticks plus a
+     * skipped chain slot. Each block of lead costs one block time (about three
+     * seconds) of feed latency, so raising it buys cover for a longer stall at
+     * a proportional delay. Two ticks rather than one because a spent lead
+     * takes close to four minutes to rebuild, so a deployment that hiccups
+     * twice inside that window meets the second one already short.
      *
      * Setting it to 0 switches buffering off entirely. That is a supported
      * choice for a staged rollout, not a broken configuration.
@@ -197,7 +199,9 @@ export interface ISystemConfig {
      * `emitBufferTargetDepth`, or the faster drain would claim the steady state
      * and the buffer would never settle at the lead it was asked to hold.
      *
-     * Default: 13 blocks.
+     * Default: 20 blocks, which leaves room above the target for the buffer to
+     * give a surplus back gradually rather than jumping straight to the
+     * catch-up interval.
      */
     emitBufferCatchupDepth: number;
 

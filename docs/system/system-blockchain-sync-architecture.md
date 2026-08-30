@@ -16,7 +16,7 @@ The second loop is `BlockEmitter`, which holds a lead of prepared blocks and **c
 
 **The buffer holds unwritten blocks, and that is the point.** A block does not exist at any height until its slot arrives, so the REST endpoints, a server-rendered page, a plugin's own collections, and the live feed all report the same height by construction rather than by discipline at each read site. An earlier arrangement buffered only the `block:new` broadcast, which left the API reporting a height the feed had not reached and observer-derived data written at a third height again.
 
-Two costs come with that property, and both are deliberate. The whole deployment sits about a buffer's depth — eight blocks, roughly 24 seconds — behind the chain head, uniformly rather than on one surface. And the buffer holds each block's full parsed transaction list, bounded by `emitBufferMaxDepth`.
+Two costs come with that property, and both are deliberate. The whole deployment sits about a buffer's depth — twelve blocks, roughly 36 seconds — behind the chain head, uniformly rather than on one surface. And the buffer holds each block's full parsed transaction list, bounded by `emitBufferMaxDepth`.
 
 ### The Two Heights
 
@@ -93,6 +93,10 @@ Prepared blocks go to `BlockEmitter`, which holds a lead of them and commits one
 
 **The lead is built once and rebuilt continuously.** At startup the emitter holds its first `targetDepth` blocks without releasing — that hold is what buys the lead, and without it every arrival finds the previous release already due, goes straight out, and the buffer retains nothing. After a drain it rebuilds by releasing at `refillIntervalMs` (3300ms), slightly slower than the chain produces, so the surplus accumulates back into depth. Releasing at exactly the arrival rate would hold whatever depth it had forever, which is why a buffer without a refill step covers one gap and then runs flat for good.
 
+**Target is corrected toward from both sides.** Above target and below the catch-up depth, the buffer releases at 2700ms — as far below the block time as the refill interval sits above it — so a surplus is given back instead of being kept. Only the exact target releases at the chain's own rate. That band used to release at the block time as well, which made every depth from target to the catch-up depth an equilibrium: the ordinary arrival pattern is bursty, since a scheduler tick hands over a whole batch at once, so the buffer would routinely be pushed to the top of the band and stay there, holding several blocks of latency no operator had asked for and getting nothing in return. A surplus buys no more protection than the configured lead already provides.
+
+**A stall is not a debt.** When a block arrives at an empty buffer, any part of the carried deadline that has fallen into the past is discarded. The slots that went by while the buffer sat empty were missed because nothing arrived, not because the clock ran late, and repaying them releases arrival after arrival with no wait — which keeps the buffer empty through the whole repayment instead of using those arrivals to rebuild the lead. A deadline still in the future is left alone, since that is the ordinary refill case and the wait the next arrival inherits is exactly what grows the lead back.
+
 **The clock is a deadline that carries forward, not a per-release stopwatch.** A stopwatch that resets each time can only add delay: a release running 400ms late still gets a fresh full interval, so the average is never below the block time and is above it whenever anything runs slow. Against a chain producing at exactly three seconds that surplus accumulates until the syncer decides it is behind, dumps its backlog, and starts over — the sawtooth users saw as a feed alternating between stalling and spurting. Debt is capped at `maxPacingDebtBlocks = 3` (`BLOCKCHAIN_MAX_PACING_DEBT_BLOCKS`) so an outage cannot bank unlimited catch-up and release it as a burst.
 
 ### Buffer Settings
@@ -103,17 +107,21 @@ They are configured this way because the only reliable evidence that a lead is t
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `emitBufferTargetDepth` | 8 | Lead to hold. Covers a fully missed sync tick plus a skipped chain slot. Zero switches buffering off, which is the behaviour-preserving setting for a staged rollout. |
-| `emitBufferCatchupDepth` | 13 | Depth above which the buffer drains at the catch-up interval so a tick's burst does not settle in as permanent latency. |
+| `emitBufferTargetDepth` | 12 | Lead to hold. Covers two fully missed sync ticks plus a skipped chain slot. Zero switches buffering off, which is the behaviour-preserving setting for a staged rollout. |
+| `emitBufferCatchupDepth` | 20 | Depth above which the buffer drains at the catch-up interval so a tick's burst does not settle in as permanent latency. |
 | `emitBufferMaxDepth` | 40 | Depth above which blocks go out with no wait. At this point latency hurts more than jitter and something upstream is wrong. |
-| `emitBufferRefillIntervalMs` | 3300 | Spacing below target. Regains one block of lead per ten released. |
-| `emitBufferCatchupIntervalMs` | 2000 | Spacing above the catch-up depth. Mirrors the frontend buffer's own catch-up interval. |
+| `emitBufferRefillIntervalMs` | 3300 | Spacing below target. Regains one block of lead per ten released, and its distance above the block time also sets the drain spacing below it. |
+| `emitBufferCatchupIntervalMs` | 2000 | Spacing above the catch-up depth, so a tick's burst drains rather than being held as latency. |
+
+The spacing used just above target is not a sixth setting. It is derived by mirroring `emitBufferRefillIntervalMs` about the block time — 300ms above becomes 300ms below, so 2700ms at the defaults — which means one number expresses how hard the buffer corrects itself in either direction. It is floored at half a block time so a very long refill interval gives a surplus back briskly rather than all at once.
 
 The update endpoint enforces three rules a per-field range cannot express, and rejects the save rather than correcting it: the depths must increase, the refill interval must be longer than one block time, and the catch-up interval must be shorter than one. All three mistakes are otherwise silent — the first leaves the buffer permanently short of its lead, the second lets it cover one gap and then run flat for the life of the process, and the third drains a burst no faster than the chain produces, so the backlog stays. `BlockEmitter` still clamps a non-increasing set of depths on top of that, because a config document can also be edited directly in MongoDB, and the emitter must never be the thing that fails on a bad number.
 
 Applying a change mid-flight needs no special handling beyond cancelling the pending timer, since the release clock reads these values fresh on every decision. A lowered target leaves the buffer above its new catch-up depth, so the surplus drains at the faster interval; a raised target leaves it below, so it refills at the slower one over the following minute. Seeding is not repeated, because stalling the feed to rebuild a lead is exactly what an operator watching the console would read as a broken save.
 
-The lead costs latency, but less than the arrangement it replaced. Paced ingestion stretched each one-minute batch across the whole minute, leaving the feed about twenty blocks behind the chain with nothing held in reserve. Eight blocks of buffer on a 15-second tick puts it roughly eight to twelve blocks behind, with a real reserve.
+The lead costs latency, but less than the arrangement it replaced. Paced ingestion stretched each one-minute batch across the whole minute, leaving the feed about twenty blocks behind the chain with nothing held in reserve. Twelve blocks of buffer on a 15-second tick puts it roughly eleven to thirteen blocks behind, with a real reserve.
+
+The lead is sized against the sync schedule rather than against the chain, because the schedule is what actually interrupts the feed: a missed 15-second tick costs five blocks, against one for a skipped chain slot. That is also the lever worth reaching for before growing the buffer further. A shorter `blockchain:sync` period — moved together with `BLOCK_SYNC_LOCK_TTL`, which is sized just under it — reduces what a missed tick costs, so the same protection needs a smaller lead and less latency. The TronGrid request budget is unchanged either way, since it is the same blocks in smaller batches.
 
 A block that is not live work is broadcast immediately and never enters the buffer. The buffer is flushed first so the feed cannot run backwards, since a catch-up block is newer than everything held. Spending a live block's three-second slot on a block from the backfill queue is what puts the syncer further behind.
 
@@ -147,20 +155,24 @@ The Blockchain console reports the two loops separately, because since ingestion
 |---|---|
 | **Index Lag** | Cursor versus chain head. Near zero almost always, and says nothing about whether the feed is healthy. |
 | **Feed Lag** | Last broadcast block versus chain head. The delay a viewer actually experiences. Sits near `targetDepth` by design. |
-| **Buffer** | Current depth against target, with the underrun count. |
+| **Buffer** | Current depth against target, with the underrun count and how many blocks those underruns covered. |
 | **Commit queue** | Blocks given a slot and still being written. Above zero for more than a moment means writing is slower than the release clock. |
 
 Both lag figures turn amber at `backfillEntryBlocks`, read from the status payload rather than assumed, offset by whatever that deployment holds back on purpose — the buffer target for feed lag, the live tip reserve for index lag.
 
 **Underruns are the number that matters.** A deployment holding a real lead never drains to zero, so any increase means the feed was exposed to an upstream gap and `targetDepth` is too small for what this deployment's provider actually does. Depth dipping below target on its own is normal; it refills.
 
+Read the two underrun figures together, because either alone misleads. The first counts *episodes*: an episode opens when a release empties the buffer and closes only once depth is back at target, so a provider that stays slow for ten minutes reads as one incident rather than one per block. The second counts the *blocks released while exposed*, which is how long those episodes lasted. Three underruns covering four blocks is a provider that hiccups and a slightly larger `targetDepth` would absorb it; three covering nine hundred is a provider that cannot keep up, and no lead is large enough to fix that.
+
 **Index Lag now sits near the buffer target by design.** It measures the written cursor against the chain head, and the cursor is deliberately a buffer's depth behind. It is no longer the figure that says whether ingestion is keeping up — a rising `commitQueueDepth`, or the fetch height falling behind the head, is.
 
-### The Frontend Buffers as Well
+### The Frontend Does Not Buffer
 
-The backend buffer cannot make the feed perfectly even on its own, because the last mile has its own jitter and a client can reconnect at any time. `SocketBridge` therefore holds arriving `block:new` events in a small playout buffer and releases them to Redux on its own clock: one every 3 seconds normally, every 2 seconds once three or more are waiting, and with no wait at all beyond twelve. The buffer is dropped on unmount, since a remount fetches fresh state from the server.
+`SocketBridge`, the component that owns the browser's single Socket.IO connection, dispatches each `block:new` event to Redux the moment it arrives. Do not add a playout buffer back to it.
 
-It holds the first block after a mount for a full interval, which is what gives it any lead at all. That lead covers one missed slot and only rebuilds if arrivals run ahead of the release clock, so it is deliberately kept small — with the backend covering chain holes and tick jitter, growing the client buffer would only add latency on top of the backend's.
+It used to hold one. That buffer released blocks on its own clock — one every 3 seconds normally, every 2 seconds once three were waiting — but it had no equivalent of the refill rule above, so it could never rebuild a lead it had spent. Any burst pushed it deeper: a reconnect, a backend catch-up run, or a backgrounded tab whose timers the browser throttled left it sitting around eleven blocks behind the height the backend had committed, and it stayed there for as long as the tab was open. That put the block ticker out of step with every other surface, including a plugin page driven by a block observer, which is the disagreement `BlockEmitter` exists to prevent.
+
+A deployment that wants a smoother feed raises `emitBufferTargetDepth` on the Configuration tab of `/system/system`, where the change reaches the running feed and every surface at once. The remaining unsmoothed case is last-mile network jitter, which the backend cannot control and a client buffer can only mask at the cost of that permanent offset.
 
 ## Per-Block Pipeline Stages
 

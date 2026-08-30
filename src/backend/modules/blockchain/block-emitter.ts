@@ -30,10 +30,13 @@
  * The lead is built once at startup by holding the first `targetDepth` blocks,
  * and it is *rebuilt* after a drain by releasing slightly slower than blocks
  * arrive — without that second part the buffer spends its lead on the first
- * hole and never gets it back, which is the known limitation of the frontend
- * playout buffer in `SocketBridge.tsx`. And a block that is not live work is
- * never buffered at all: spending a live block's slot on a block from hours ago
- * is what puts the syncer further behind.
+ * hole and never gets it back. `SocketBridge.tsx` once held a second playout
+ * buffer of its own that was missing exactly that half, and it ended up parked
+ * about eleven blocks behind this one, which put the block ticker out of step
+ * with every other surface. It has been removed, and this is the only playout
+ * clock left. And a block that is not live work is never buffered at all:
+ * spending a live block's slot on a block from hours ago is what puts the
+ * syncer further behind.
  *
  * The five numbers shaping the clock are stored configuration, edited from the
  * Configuration tab of `/system/system` and applied to the running instance
@@ -164,12 +167,27 @@ export interface IBlockEmitBufferMetrics {
     /** Spacing chosen for the most recent release, which reveals the active mode. */
     lastIntervalMs: number | null;
     /**
-     * How many times the buffer has drained to empty. This is the single number
+     * How many separate times the buffer has run out of lead. This is the number
      * that says whether the lead is sized right: a healthy deployment holding a
      * real lead never reaches zero, so any increase means the feed was exposed
      * to an upstream gap.
+     *
+     * Counted per episode, not per block. An episode opens when a release
+     * empties the buffer and closes only once depth is back at target, so a
+     * provider that stays slow for ten minutes registers as one incident rather
+     * than one per block. Read {@link underrunBlocks} alongside it for how long
+     * the episodes lasted.
      */
     underruns: number;
+    /**
+     * How many blocks were released while the buffer had no lead left.
+     *
+     * This is the duration figure the episode count deliberately leaves out.
+     * Three underruns covering four blocks is a provider that hiccups; three
+     * covering nine hundred is one that cannot keep up, and the two need
+     * different responses from an operator.
+     */
+    underrunBlocks: number;
     /** How many times a catch-up run flushed the buffer, bypassing the clock. */
     flushes: number;
 }
@@ -235,7 +253,19 @@ export class BlockEmitter {
     private lastReleasedBlockNumber: number | null = null;
     private lastIntervalMs: number | null = null;
     private underruns = 0;
+    private underrunBlocks = 0;
     private flushes = 0;
+
+    /**
+     * True while the buffer is inside an underrun episode — the lead is gone and
+     * has not been rebuilt yet.
+     *
+     * Held as state rather than derived from depth because the two underrun
+     * figures measure different things and only this flag can tell them apart.
+     * Depth alone says the buffer is empty right now; it cannot say whether this
+     * is a new incident or the twentieth block of one that started a minute ago.
+     */
+    private exposed = false;
 
     /**
      * Build an emitter around a release function and a set of thresholds.
@@ -369,6 +399,16 @@ export class BlockEmitter {
      * config document can also be edited directly in MongoDB, and because the
      * emitter must never be the thing that fails on a bad number.
      *
+     * The drain interval is derived rather than stored, so it is not a sixth
+     * thing for an operator to get wrong. It mirrors the refill interval about
+     * the block time: an operator who refills 300ms slower than the chain
+     * produces also drains 300ms faster, which keeps the pull toward target
+     * equally strong from both directions and means one setting expresses how
+     * hard the buffer should correct itself. It is floored at half a block time
+     * so a deployment that has set a very long refill interval gives its
+     * surplus back briskly rather than instantly, since dumping the whole
+     * surplus in one go would defeat the smoothing for those blocks.
+     *
      * @param settings - The five stored values to convert.
      * @returns Thresholds safe to release against, with the block interval
      *          taken from the chain's own production rate rather than from
@@ -378,6 +418,16 @@ export class BlockEmitter {
         const targetDepth = settings.emitBufferTargetDepth;
         const catchupDepth = Math.max(settings.emitBufferCatchupDepth, targetDepth + 1);
         const maxDepth = Math.max(settings.emitBufferMaxDepth, catchupDepth + 1);
+        const intervalMs = blockchainConfig.network.blockIntervalSeconds * 1000;
+
+        // How far the refill interval sits above one block time is the operator's
+        // statement of how hard the buffer should correct itself, so the drain
+        // interval is the same distance on the other side. The floor of a tenth
+        // of a block time keeps a pull toward target in both directions even if
+        // a config document is hand-edited to a refill interval that is not
+        // above one block time, which the update endpoint would have rejected.
+        const correctionMs = Math.max(intervalMs * 0.1, settings.emitBufferRefillIntervalMs - intervalMs);
+        const drainIntervalMs = Math.max(intervalMs / 2, intervalMs - correctionMs);
 
         if (catchupDepth !== settings.emitBufferCatchupDepth || maxDepth !== settings.emitBufferMaxDepth) {
             logger.warn(
@@ -393,8 +443,9 @@ export class BlockEmitter {
         }
 
         const thresholds: IReleaseIntervalThresholds = {
-            intervalMs: blockchainConfig.network.blockIntervalSeconds * 1000,
+            intervalMs,
             refillIntervalMs: settings.emitBufferRefillIntervalMs,
+            drainIntervalMs,
             catchupIntervalMs: settings.emitBufferCatchupIntervalMs,
             targetDepth,
             catchupDepth,
@@ -453,10 +504,33 @@ export class BlockEmitter {
      * @param item - The block number and the event to broadcast for it.
      */
     public enqueue(item: IPreparedBlock): void {
+        const wasEmpty = this.pending.length === 0;
+        const now = Date.now();
+
         insertPendingBlock(this.pending, item);
 
         if (this.firstArrivalAt === null) {
-            this.firstArrivalAt = Date.now();
+            this.firstArrivalAt = now;
+        }
+
+        // A block arriving at an empty buffer ends an idle stretch, and the
+        // deadline the pacer carries may now sit well in the past — one missed
+        // slot for every block that did not arrive. Those slots were missed
+        // because nothing came, not because this clock ran late, so repaying
+        // them is wrong twice over: `maxPacingDebtBlocks` of debt turns into ten
+        // times that many blocks released with no wait, and the buffer stays
+        // empty through all of them instead of using them to rebuild its lead.
+        //
+        // Clamping forward to now cancels only the part of the deadline that is
+        // already in the past. A deadline still in the future is left alone,
+        // which is what keeps the ordinary refill working — there the buffer
+        // empties and refills within a single slot, and the wait the next
+        // arrival inherits is exactly the mechanism that grows the lead back.
+        //
+        // Skipped until the buffer is seeded, because the initial lead is built
+        // by holding blocks against a deadline that has not started yet.
+        if (this.seeded && wasEmpty) {
+            this.nextEmitAt = Math.max(this.nextEmitAt, now);
         }
 
         // An arrival that completes the seed has to cancel the seed wait, or
@@ -523,6 +597,7 @@ export class BlockEmitter {
             lastReleasedBlockNumber: this.lastReleasedBlockNumber,
             lastIntervalMs: this.lastIntervalMs,
             underruns: this.underruns,
+            underrunBlocks: this.underrunBlocks,
             flushes: this.flushes
         };
 
@@ -633,9 +708,24 @@ export class BlockEmitter {
     /**
      * Broadcast the oldest held block and line up the next release.
      *
-     * Draining to empty is counted as an underrun, because a buffer at zero has
-     * no lead left and the next upstream gap will be visible. That count is the
-     * signal an operator uses to decide the target depth is too small.
+     * Draining to empty means the lead is gone and the next upstream gap will
+     * be visible, which is what the two underrun figures record. They are
+     * separate because one incident and one exposed block are different
+     * quantities, and a single counter conflated them: a provider serving one
+     * block every five seconds for ten minutes drained the buffer on every
+     * release and read as two hundred underruns, indistinguishable from two
+     * hundred separate hiccups. {@link IBlockEmitBufferMetrics.underruns} now
+     * counts episodes and only re-arms once the lead is genuinely back, while
+     * {@link IBlockEmitBufferMetrics.underrunBlocks} counts how many blocks
+     * went out while exposed, which is how long the episode lasted.
+     *
+     * The pacing deadline is deliberately *not* touched here. Carrying it
+     * across an empty stretch is what rebuilds the lead — the next arrival finds
+     * a deadline one refill interval after the last release and waits out the
+     * difference — so clearing it would release every arrival on sight and the
+     * buffer could never recover. {@link enqueue} handles the case this does
+     * need protecting from, which is a deadline left far in the past by a long
+     * idle stretch.
      */
     private releaseOne(): void {
         const next = this.pending.shift();
@@ -647,7 +737,24 @@ export class BlockEmitter {
         this.emit(next);
 
         if (this.pending.length === 0) {
-            this.underruns += 1;
+            // A buffer configured to hold no lead cannot lose one, so an empty
+            // buffer is its resting state rather than an incident to report.
+            if (this.thresholds.targetDepth > 0 && !this.exposed) {
+                this.underruns += 1;
+                this.exposed = true;
+            }
+        }
+
+        if (this.exposed) {
+            this.underrunBlocks += 1;
+
+            // The episode ends when the lead is back, not when one block lands.
+            // Re-arming on any non-empty buffer would count the next release as
+            // a fresh episode throughout a slow stretch, which is the conflation
+            // these two figures exist to separate.
+            if (this.pending.length >= this.thresholds.targetDepth) {
+                this.exposed = false;
+            }
         }
 
         this.scheduleNext();
