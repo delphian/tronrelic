@@ -82,11 +82,19 @@ const systemConfigSchema = new Schema<SystemConfigDoc>(
             enum: ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']
         },
         // The five emit-buffer settings below shape the block feed's playout
-        // buffer and were environment variables until they moved here. Every
-        // one carries a schema default, which is what lets an existing
-        // deployment pick them up with no migration: Mongoose fills a missing
-        // path in when it hydrates the stored document, so a config document
-        // written before these fields existed still reads back complete.
+        // buffer and were environment variables until they moved here. Each
+        // carries a schema default, which covers the two paths that hydrate a
+        // document: an insert through `setDefaultsOnInsert`, and the object
+        // `findOneAndUpdate` returns.
+        //
+        // It does not cover reading an existing document, which is the path
+        // that matters on an upgraded deployment. `IDatabaseService.findOne`
+        // reads registered models through `.lean()`, and a lean read returns
+        // the stored document as-is with no hydration and therefore no
+        // defaults. A config document written before these fields existed
+        // reads back without them, so `SystemConfigService.getConfig()`
+        // merges `EMIT_BUFFER_DEFAULTS` in itself. Do not remove that merge on
+        // the strength of the defaults below.
         emitBufferTargetDepth: {
             type: Number,
             required: true,

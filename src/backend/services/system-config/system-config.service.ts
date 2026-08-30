@@ -1,6 +1,7 @@
 import { SystemConfigModel } from '../../database/models/system-config-model.js';
 import type { ISystemConfig, ISystemConfigService, ISystemLogService, IDatabaseService } from '@/types';
 import type { SystemConfigDoc } from '../../database/models/system-config-model.js';
+import { EMIT_BUFFER_DEFAULTS } from '../../config/emit-buffer.js';
 
 /**
  * SystemConfigService
@@ -133,8 +134,16 @@ export class SystemConfigService implements ISystemConfigService {
                 config = created.toObject();
             }
 
-            // Update cache
-            this.cache = config as ISystemConfig;
+            // Backfill the emit-buffer defaults before caching. Mongoose
+            // applies a schema default only when it hydrates a document, and
+            // `IDatabaseService.findOne` reads registered models through
+            // `.lean()`, which returns the stored document exactly as it sits
+            // in MongoDB. A config document written before these five fields
+            // existed therefore reads back without them, and handing those
+            // undefined values to `BlockEmitter.configure()` produces NaN
+            // thresholds that leave the block feed permanently unseeded.
+            // Spreading the stored values last keeps whatever an operator saved.
+            this.cache = { ...EMIT_BUFFER_DEFAULTS, ...config } as ISystemConfig;
             this.cacheTime = now;
 
             return this.cache;
