@@ -16,7 +16,7 @@ The second loop is `BlockEmitter`, which holds a lead of prepared blocks and **c
 
 **The buffer holds unwritten blocks, and that is the point.** A block does not exist at any height until its slot arrives, so the REST endpoints, a server-rendered page, a plugin's own collections, and the live feed all report the same height by construction rather than by discipline at each read site. An earlier arrangement buffered only the `block:new` broadcast, which left the API reporting a height the feed had not reached and observer-derived data written at a third height again.
 
-Two costs come with that property, and both are deliberate. The whole deployment sits about a buffer's depth — twelve blocks, roughly 36 seconds — behind the chain head, uniformly rather than on one surface. And the buffer holds each block's full parsed transaction list, bounded by `emitBufferMaxDepth`.
+Two costs come with that property, and both are deliberate. The whole deployment sits about a buffer's depth — twenty blocks, roughly 60 seconds — behind the chain head, uniformly rather than on one surface. And the buffer holds each block's full parsed transaction list, bounded by `emitBufferMaxDepth`.
 
 ### The Two Heights
 
@@ -27,7 +27,7 @@ Because the buffer sits between fetching and writing, the pipeline tracks two he
 | Fetch height | `meta.lastFetchedBlock` | How far fetching has got, including blocks still in the buffer | The forward walk's resume point, and `resolveCaughtUp` |
 | Written cursor | `cursor.blockNumber` | How far committing has got — what actually exists | Backfill gap detection, and everything that reads data |
 
-The forward walk resumes from the **fetch height**, because walking from the written cursor would re-enqueue every block still waiting for its slot on every tick. `resolveCaughtUp` measures from the fetch height too, because the question it answers is whether *ingestion* is keeping up, and ingestion is fetching; measuring from the written cursor would report a healthy syncer as permanently a buffer's depth behind and eat most of the headroom below the 20-to-30-block dead band that decides when to stop buffering. `resolveBlockPacing` is unaffected: it is evaluated at fetch time, on the block's own header timestamp, before the block enters the buffer.
+The forward walk resumes from the **fetch height**, because walking from the written cursor would re-enqueue every block still waiting for its slot on every tick. `resolveCaughtUp` measures from the fetch height too, because the question it answers is whether *ingestion* is keeping up, and ingestion is fetching; measuring from the written cursor would report a healthy syncer as permanently a buffer's depth behind and eat most of the headroom below the 45-to-65-block dead band that decides when to stop buffering. `resolveBlockPacing` is unaffected: it is evaluated at fetch time, on the block's own header timestamp, before the block enters the buffer.
 
 Backfill still uses the written cursor, because what it looks for is a hole in stored history, and a block sitting in the buffer is not a hole — it is work in flight.
 
@@ -107,9 +107,9 @@ They are configured this way because the only reliable evidence that a lead is t
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `emitBufferTargetDepth` | 12 | Lead to hold. Covers two fully missed sync ticks plus a skipped chain slot. Zero switches buffering off, which is the behaviour-preserving setting for a staged rollout. |
-| `emitBufferCatchupDepth` | 20 | Depth above which the buffer drains at the catch-up interval so a tick's burst does not settle in as permanent latency. |
-| `emitBufferMaxDepth` | 40 | Depth above which blocks go out with no wait. At this point latency hurts more than jitter and something upstream is wrong. |
+| `emitBufferTargetDepth` | 20 | Lead to hold. Covers three fully missed sync ticks plus a skipped chain slot. Zero switches buffering off, which is the behaviour-preserving setting for a staged rollout. |
+| `emitBufferCatchupDepth` | 33 | Depth above which the buffer drains at the catch-up interval so a tick's burst does not settle in as permanent latency. |
+| `emitBufferMaxDepth` | 66 | Depth above which blocks go out with no wait. At this point latency hurts more than jitter and something upstream is wrong. |
 | `emitBufferRefillIntervalMs` | 3300 | Spacing below target. Regains one block of lead per ten released, and its distance above the block time also sets the drain spacing below it. |
 | `emitBufferCatchupIntervalMs` | 2000 | Spacing above the catch-up depth, so a tick's burst drains rather than being held as latency. |
 
@@ -119,7 +119,7 @@ The update endpoint enforces three rules a per-field range cannot express, and r
 
 Applying a change mid-flight needs no special handling beyond cancelling the pending timer, since the release clock reads these values fresh on every decision. A lowered target leaves the buffer above its new catch-up depth, so the surplus drains at the faster interval; a raised target leaves it below, so it refills at the slower one over the following minute. Seeding is not repeated, because stalling the feed to rebuild a lead is exactly what an operator watching the console would read as a broken save.
 
-The lead costs latency, but less than the arrangement it replaced. Paced ingestion stretched each one-minute batch across the whole minute, leaving the feed about twenty blocks behind the chain with nothing held in reserve. Twelve blocks of buffer on a 15-second tick puts it roughly eleven to thirteen blocks behind, with a real reserve.
+The lead costs latency, but it buys something the arrangement it replaced did not. Paced ingestion stretched each one-minute batch across the whole minute, leaving the feed about twenty blocks behind the chain with nothing held in reserve. Twenty blocks of buffer on a 15-second tick puts it roughly nineteen to twenty-one blocks behind — about the same distance, except that the distance is now a reserve the feed can spend on an upstream gap rather than dead latency.
 
 The lead is sized against the sync schedule rather than against the chain, because the schedule is what actually interrupts the feed: a missed 15-second tick costs five blocks, against one for a skipped chain slot. That is also the lever worth reaching for before growing the buffer further. A shorter `blockchain:sync` period — moved together with `BLOCK_SYNC_LOCK_TTL`, which is sized just under it — reduces what a missed tick costs, so the same protection needs a smaller lead and less latency. The TronGrid request budget is unchanged either way, since it is the same blocks in smaller batches.
 
@@ -133,7 +133,7 @@ It is deliberately *not* taken from the scheduler's `isCaughtUp` flag. That flag
 
 The two modes are separated by a dead band rather than a single boundary, because one threshold made the syncer flap: a lag hovering on it flipped mode nearly every tick, stuttering the feed and burying real transitions in log noise.
 
-Sync stops buffering only once lag reaches `backfillEntryBlocks = 30` (`BLOCKCHAIN_BACKFILL_ENTRY_BLOCKS`), and starts again only once lag falls to `liveChainThrottleBlocks = 20` (`BLOCKCHAIN_LIVE_CHAIN_THROTTLE_BLOCKS`). Between 21 and 29 blocks behind it holds whichever mode it is already in, so lag oscillating inside the band changes nothing. Entry must stay strictly above the resume value — equal values collapse the band and restore the flapping.
+Sync stops buffering only once lag reaches `backfillEntryBlocks = 65` (`BLOCKCHAIN_BACKFILL_ENTRY_BLOCKS`), and starts again only once lag falls to `liveChainThrottleBlocks = 45` (`BLOCKCHAIN_LIVE_CHAIN_THROTTLE_BLOCKS`). Between 46 and 64 blocks behind it holds whichever mode it is already in, so lag oscillating inside the band changes nothing. Both figures are derived from `emitBufferTargetDepth`: the buffer's depth adds to every block's age, which puts steady-state age near 35 blocks at a 20-block target, and the resume threshold has to sit above that or sync never falls back far enough to resume pacing. Entry must stay strictly above the resume value — equal values collapse the band and restore the flapping.
 
 The remembered mode is per-process. After a restart, or when the scheduler lock moves to another instance, a lag inside the band resolves to **behind**: broadcasting immediately costs only smoothness and drives lag straight down to where buffering resumes, whereas assuming "caught up" would buffer a genuinely lagging syncer and let it fall further behind.
 

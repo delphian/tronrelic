@@ -26,19 +26,19 @@
  * The lead is sized against the thing that actually interrupts the feed, which
  * is the sync schedule rather than the chain. `blockchain:sync` runs every 15
  * seconds, so one missed tick costs five blocks at TRON's three-second block
- * time, and a super representative skipping its slot costs one more. Twelve
- * covers two missed ticks plus a skipped slot with one block to spare, and the
- * spare matters: a tick hands over its whole batch at once, so depth swings
+ * time, and a super representative skipping its slot costs one more. Twenty
+ * covers three missed ticks plus a skipped slot with four blocks to spare, and
+ * the spare matters: a tick hands over its whole batch at once, so depth swings
  * roughly a block and a half either side of target even when everything is
  * healthy, and the working floor is below the number set here.
  *
- * It was 8 until the underrun counters were made trustworthy. Eight covers a
- * single missed tick and nothing beyond it, and rebuilding a spent lead takes
- * close to four minutes at the refill interval below — so a deployment that
- * hiccupped twice inside that window met the second one with a partial lead.
- * The change costs four blocks, or twelve seconds, of additional delay on every
- * read surface, because the feed, the REST endpoints, server-rendered pages,
- * and plugin collections all sit behind the buffer together.
+ * The spare also covers how slowly a spent lead returns. The refill interval
+ * below is 300ms longer than one block time, so it regains a single block of
+ * lead for every ten released; a deployment that hiccups twice in quick
+ * succession would otherwise meet the second gap still short. The lead costs
+ * 60 seconds of delay on every read surface, because the feed, the REST
+ * endpoints, server-rendered pages, and plugin collections all sit behind the
+ * buffer together.
  *
  * The two intervals are deliberately not symmetric with each other. 3300ms is
  * longer than one block time, because releasing slower than blocks arrive is
