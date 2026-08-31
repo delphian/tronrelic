@@ -129,9 +129,9 @@ Runtime-editable settings stored in MongoDB `system_config` (single document, `k
 | `systemLogsMaxCount` | number | Default 1,000,000 |
 | `systemLogsRetentionDays` | number | Default 30 |
 | `logLevel` | string | One of `trace\|debug\|info\|warn\|error\|fatal\|silent` |
-| `emitBufferTargetDepth` | number | Blocks of lead the feed holds; default 8, and 0 switches buffering off |
-| `emitBufferCatchupDepth` | number | Depth above which the buffer drains faster; default 13 |
-| `emitBufferMaxDepth` | number | Depth above which blocks go out with no wait; default 40 |
+| `emitBufferTargetDepth` | number | Blocks of lead the feed holds; default 20, and 0 switches buffering off |
+| `emitBufferCatchupDepth` | number | Depth above which the buffer drains faster; default 33 |
+| `emitBufferMaxDepth` | number | Depth above which blocks go out with no wait; default 66 |
 | `emitBufferRefillIntervalMs` | number | Spacing below target; default 3300 |
 | `emitBufferCatchupIntervalMs` | number | Spacing above the catch-up depth; default 2000 |
 | `updatedAt` | Date | Last change timestamp |
