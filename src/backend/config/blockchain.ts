@@ -28,8 +28,21 @@ export const blockchainConfig = {
     // `liveChainThrottleBlocks`; between the two it holds whichever mode it is
     // already in. Keep entry strictly above the throttle value — equal values
     // collapse the band and bring the flapping back.
-    liveChainThrottleBlocks: toNumber(process.env.BLOCKCHAIN_LIVE_CHAIN_THROTTLE_BLOCKS, 20),
-    backfillEntryBlocks: toNumber(process.env.BLOCKCHAIN_BACKFILL_ENTRY_BLOCKS, 30),
+    // Both defaults are derived from `emitBufferTargetDepth` and must be
+    // revisited whenever it changes. The buffer holds finished blocks back on
+    // purpose, so its depth adds to every block's age, and block age is what
+    // `resolveBlockPacing` tests. A target depth of 20 contributes 60 seconds
+    // on its own, and fetch, prepare and the wait for the next scheduler tick
+    // add roughly 45 seconds more, putting steady-state block age near 105
+    // seconds — about 35 blocks.
+    //
+    // The resume threshold has to sit above that steady-state figure. Set it
+    // below and sync can never fall far enough back to resume pacing: it stays
+    // inside the dead band, where ordinary jitter carries it past the entry
+    // threshold, switches pacing off, drains the buffer and records an
+    // underrun, then repeats once the lead rebuilds.
+    liveChainThrottleBlocks: toNumber(process.env.BLOCKCHAIN_LIVE_CHAIN_THROTTLE_BLOCKS, 45),
+    backfillEntryBlocks: toNumber(process.env.BLOCKCHAIN_BACKFILL_ENTRY_BLOCKS, 65),
     // How many blocks behind the chain head the forward cursor deliberately
     // stops. Off by default, and superseded by `emitBuffer` below. Holding the
     // cursor back never buffered any work: the scheduler enqueues every block

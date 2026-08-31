@@ -52,15 +52,17 @@ Every backend service and plugin logs through `SystemLogService.getInstance()`. 
 
 Single collection `system_logs` with Mongoose schema:
 
-- `timestamp` (Date, indexed) — when log was created
+- `timestamp` (Date) — when log was created
 - `level` (string, indexed) — trace/debug/info/warn/error/fatal
 - `message` (string) — human-readable description
-- `service` (string, indexed) — source identifier, plugin prefix format `plugin:whale-alerts`
+- `service` (string) — source identifier, plugin prefix format `plugin:whale-alerts`
 - `context` (mixed) — sanitized metadata object
 - `resolved` (boolean, indexed) — admin acknowledgment flag
 - `resolvedAt`, `resolvedBy` — resolution metadata
 
 Compound indexes: `{timestamp: -1, level: 1, resolved: 1}` for paginated filtering, `{service: 1, timestamp: -1}` for service-specific queries.
+
+`timestamp` and `service` carry no single-field index because each is the leading field of one of the compound indexes above, which therefore already serves a query filtering on that field alone. `level` and `resolved` keep theirs because they sit in non-leading positions, where a compound index cannot be used for a filter on that field by itself. Do not re-add `index: true` to `timestamp` or `service`. A duplicate index costs more than the keys it holds: retention churns this collection constantly, and WiredTiger leaves an index file at its high-water mark, so the redundant copy keeps its space long after the documents it indexed are deleted.
 
 ## Admin API Endpoints
 
