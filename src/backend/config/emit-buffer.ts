@@ -48,12 +48,35 @@
  * interval rather than stored here; see `BlockEmitter.resolveThresholds`.
  */
 export const EMIT_BUFFER_DEFAULTS = {
-    /** Blocks of lead to hold. Zero switches buffering off entirely. */
-    emitBufferTargetDepth: 12,
-    /** Depth at which draining speeds up so a tick's burst is not held as latency. */
-    emitBufferCatchupDepth: 20,
-    /** Depth beyond which blocks go out with no wait at all. */
-    emitBufferMaxDepth: 40,
+    /**
+     * Blocks of lead to hold. Zero switches buffering off entirely.
+     *
+     * Every block of lead is also three seconds of block age, and block age is
+     * the figure `resolveBlockPacing` tests to decide whether a block is paced
+     * at all. Changing this depth therefore means re-checking
+     * `liveChainThrottleBlocks` and `backfillEntryBlocks` in `blockchain.ts`.
+     * Both must stay above the steady-state age this depth produces, or sync
+     * sits above its own resume threshold and oscillates in and out of
+     * catch-up rather than settling.
+     */
+    emitBufferTargetDepth: 20,
+    /**
+     * Depth at which draining speeds up so a tick's burst is not held as latency.
+     *
+     * Must stay strictly above the target depth, because the update endpoint
+     * refuses any save where the three depths do not increase. Scale it with
+     * the target so a scheduler tick's burst keeps the same room to drain as
+     * the target moves.
+     */
+    emitBufferCatchupDepth: 33,
+    /**
+     * Depth beyond which blocks go out with no wait at all.
+     *
+     * Must stay strictly above the catch-up depth, and scales with it so the
+     * buffer keeps the same room to absorb a burst before it gives up on
+     * spacing releases altogether.
+     */
+    emitBufferMaxDepth: 66,
     /** Spacing used below target, which is what rebuilds a spent lead. */
     emitBufferRefillIntervalMs: 3300,
     /** Spacing used above the catch-up depth. */

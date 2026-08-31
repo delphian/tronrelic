@@ -99,8 +99,7 @@ const systemLogSchema = new Schema<ISystemLogDocument>(
     {
         timestamp: {
             type: Date,
-            required: true,
-            index: true
+            required: true
         },
         level: {
             type: String,
@@ -114,8 +113,7 @@ const systemLogSchema = new Schema<ISystemLogDocument>(
         },
         service: {
             type: String,
-            required: true,
-            index: true
+            required: true
         },
         context: {
             type: Schema.Types.Mixed,
@@ -148,6 +146,17 @@ const systemLogSchema = new Schema<ISystemLogDocument>(
  * - Newest logs first (timestamp descending)
  * - Filter by severity level
  * - Filter by resolved status
+ *
+ * Do not add a single-field index on `timestamp`. This index begins with
+ * `timestamp`, and MongoDB can walk an index in either direction, so it
+ * already answers every query that filters or sorts on `timestamp` alone. A
+ * separate index would store the same keys twice and add another tree that
+ * every log write has to update.
+ *
+ * The single-field indexes on `level` and `resolved` are deliberately kept.
+ * Those fields sit in the second and third positions here, and MongoDB can
+ * only use a compound index for a query that matches its leading fields, so
+ * a filter on `level` or `resolved` on its own cannot use this index.
  */
 systemLogSchema.index({ timestamp: -1, level: 1, resolved: 1 });
 
@@ -155,6 +164,14 @@ systemLogSchema.index({ timestamp: -1, level: 1, resolved: 1 });
  * Compound index for service-specific log queries.
  *
  * Supports filtering logs by specific service/plugin with time-range queries.
+ *
+ * Do not add a single-field index on `service`, for the same reason as
+ * `timestamp` above: `service` is this index's leading field, so a query
+ * filtering on `service` alone uses this index and simply ignores the
+ * `timestamp` portion. A duplicate would cost far more than the keys it holds,
+ * because retention churns this collection constantly and WiredTiger leaves an
+ * index file at its high-water mark, so the copy keeps its space long after
+ * the documents it indexed are deleted.
  */
 systemLogSchema.index({ service: 1, timestamp: -1 });
 
