@@ -432,7 +432,10 @@
      *
      * Deliberately not --color-primary at full strength: primary means
      * "interactive" site-wide, and a tagged address is not clickable. The alpha
-     * step keeps the mark subordinate to the text while still theming.
+     * step keeps the mark subordinate to the text while still theming. It sits
+     * high on the ladder rather than low because the first version, at 38%,
+     * was reported as too faint to notice against the address it marks — a
+     * signal nobody sees does not do the job the underline exists for.
      *
      * The warning marker below is the deliberate exception to all of that. A
      * sanctions listing or a Tether freeze has to be readable before the
@@ -442,10 +445,17 @@
      * than on every address the site renders.
      * ======================================================================== */
 
-    --tron-address-tagged-underline: var(--color-primary-alpha-38);
+    --tron-address-tagged-underline: var(--color-primary-alpha-70);
+    /* Thickness of the dotted rule. A dotted decoration draws round dots whose
+       diameter is the thickness, so this sets how big each dot is as well as
+       how heavy the line reads. Medium rather than thin because 1px dots on a
+       dark surface disappear at the chip's --font-size-body-sm. */
+    --tron-address-tagged-underline-thickness: var(--border-width-medium);
     /* Clears the descenders of the monospace face so the dots stay legible
-       rather than colliding with g/y/p at --font-size-body-sm. */
-    --tron-address-tagged-underline-offset: 0.25em;
+       rather than colliding with g/y/p at --font-size-body-sm. Set against the
+       thickness above: a fatter dot reaches further down, so the offset grew
+       with it rather than staying at the 0.25em the 1px rule needed. */
+    --tron-address-tagged-underline-offset: 0.3em;
 
     /* Colour of the triangle the chip shows ahead of an address whose tags
        include a sanctions listing or a Tether freeze. Danger rather than
@@ -754,6 +764,7 @@
     --color-primary-alpha-18: color-mix(in srgb, var(--color-primary) 18%, transparent);
     --color-primary-alpha-30: color-mix(in srgb, var(--color-primary) 30%, transparent);
     --color-primary-alpha-38: color-mix(in srgb, var(--color-primary) 38%, transparent);
+    --color-primary-alpha-70: color-mix(in srgb, var(--color-primary) 70%, transparent);
 
     /* Text Contrast Companions
      * Foreground color paired with each brand color for use as text/icon on top

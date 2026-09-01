@@ -52,6 +52,7 @@ Brand-tinted overlays — focus rings, hover washes, badge backgrounds, gradient
 --color-primary-alpha-18: color-mix(in srgb, var(--color-primary) 18%, transparent);
 --color-primary-alpha-30: color-mix(in srgb, var(--color-primary) 30%, transparent);
 --color-primary-alpha-38: color-mix(in srgb, var(--color-primary) 38%, transparent);
+--color-primary-alpha-70: color-mix(in srgb, var(--color-primary) 70%, transparent);
 ```
 
 Identical ladders exist for `--color-success-alpha-*`, `--color-danger-alpha-*`, `--color-warning-alpha-*`. Adding a new alpha step is a Layer 2 edit, not a per-call decision.
