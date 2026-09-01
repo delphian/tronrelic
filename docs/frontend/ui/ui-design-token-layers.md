@@ -55,7 +55,7 @@ Brand-tinted overlays — focus rings, hover washes, badge backgrounds, gradient
 --color-primary-alpha-70: color-mix(in srgb, var(--color-primary) 70%, transparent);
 ```
 
-Identical ladders exist for `--color-success-alpha-*`, `--color-danger-alpha-*`, `--color-warning-alpha-*`. Adding a new alpha step is a Layer 2 edit, not a per-call decision.
+The same pattern applies to `--color-success-alpha-*`, `--color-danger-alpha-*`, and `--color-warning-alpha-*`, but those ladders do not hold the same steps as primary. Each colour carries only the opacities its own surfaces asked for — success at 18 and 45, warning at 15 and 40, danger at 18, 30, 50, 60, and 90 — so read `semantic-tokens.scss` before assuming a step exists rather than reasoning across from the primary list above. Adding a new alpha step is a Layer 2 edit, not a per-call decision.
 
 ### color-mix() for Theme-Aware Variants
 
