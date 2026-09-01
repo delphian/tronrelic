@@ -177,7 +177,34 @@ async function drainExpiredExecutions(collection: Collection<Document>, cutoff: 
  *          collection is new or the repair has already run.
  */
 async function findPlainStartedAtIndex(collection: Collection<Document>): Promise<string | null> {
-    const indexes = await collection.listIndexes().toArray();
+    let indexes: Document[] = [];
+
+    try {
+        indexes = await collection.listIndexes().toArray();
+    } catch (error) {
+        // Tolerate only "the collection is not there": MongoDB answers
+        // listIndexes on a missing namespace with NamespaceNotFound (code 26)
+        // rather than an empty list, and a collection that does not exist has
+        // no index to drop. Boot normally creates it, because Mongoose builds
+        // the model's indexes on connect and that build makes the namespace,
+        // but a database where that has not happened — one where the
+        // collection was dropped by hand, say — must not fail the migration.
+        // The createIndex call in `up` then creates both the collection and
+        // the TTL index, which is the state this migration exists to reach.
+        // Test the stable numeric code first because the server's message
+        // wording drifts across versions; the message match is only a
+        // fallback. Any other failure propagates for the executor to record.
+        const details = error as { code?: number; codeName?: string } | null;
+        const message = error instanceof Error ? error.message : String(error);
+        const isMissingNamespace = details?.code === 26
+            || details?.codeName === 'NamespaceNotFound'
+            || /ns does not exist/i.test(message)
+            || /ns not found/i.test(message);
+
+        if (!isMissingNamespace) {
+            throw error;
+        }
+    }
 
     const plain = indexes.find(index => {
         const keys = Object.keys(index.key ?? {});
