@@ -60,6 +60,50 @@
 }
 
 /*
+ * Heading of the collapsible form. It carries no type of its own, because the
+ * button inside it does. Keeping the heading element around the button is what
+ * leaves the label in the document outline while the whole label stays one
+ * click target.
+ */
+.disclosure_heading {
+    margin: 0;
+}
+
+/*
+ * The control that opens and closes the browser.
+ *
+ * Typed to match .section_title rather than dressed as a button: this is the
+ * section's heading first, and giving it button chrome would put a second
+ * button-shaped thing directly above the controls inside the table. The chevron
+ * and the pointer cursor are what mark it as operable. Full width so the click
+ * target covers the row rather than only the words.
+ */
+.disclosure_button {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    width: 100%;
+    padding: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    font-size: var(--font-size-heading-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.disclosure_button svg {
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+}
+
+.disclosure_button:hover svg {
+    color: var(--color-text);
+}
+
+/*
  * Sort affordance inside a column header.
  *
  * A real <button> so the column is operable by keyboard and announced as

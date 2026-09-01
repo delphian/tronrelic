@@ -367,12 +367,40 @@ export class SchedulerService {
      * fire-and-forget (`void`) because executeJob owns all error handling, so an
      * unhandled rejection can never escape the node-cron callback.
      *
+     * `recoverMissedExecutions` must stay on, and the reason is not obvious from
+     * its name. node-cron does not sleep until the next matching time; it polls
+     * on a `setTimeout(…, 1000)` chain measured from the end of the previous
+     * poll, so each poll lands a few milliseconds later within its second than
+     * the one before. Once that drift accumulates past a second, two
+     * consecutive polls land in second N and second N+2, and no poll ever
+     * observes the second in between. The library does look back at that second
+     * on the following poll, but it only fires it when this option is set —
+     * which it is not by default.
+     *
+     * A five-field cron expression is padded to a seconds field of exactly `0`,
+     * so a job written `0 * * * *` has one firing second per hour. Losing that
+     * one second loses the whole run, with no execution record and no warning.
+     * Measured on production, roughly one second in every three hundred is
+     * skipped, which costs an hourly job a run about once a fortnight. There is
+     * no way to buy those back by editing a schedule, because the narrow window
+     * is the point of an hourly or daily job.
+     *
+     * Turning recovery on cannot stampede. After a long stall node-cron replays
+     * every missed match inside a single poll callback, and {@link executeJob}
+     * adds the job to `runningJobs` synchronously before its first `await`, so
+     * the first replayed match runs and the rest return early and log that the
+     * previous execution is still running.
+     *
      * @param job - Job to schedule
      */
     private scheduleJob(job: RegisteredJob): void {
-        const task = cron.schedule(job.currentSchedule, () => {
-            void this.executeJob(job);
-        });
+        const task = cron.schedule(
+            job.currentSchedule,
+            () => {
+                void this.executeJob(job);
+            },
+            { recoverMissedExecutions: true }
+        );
 
         job.task = task;
     }
