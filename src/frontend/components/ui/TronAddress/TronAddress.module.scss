@@ -79,7 +79,12 @@
  */
 .tagged {
     text-decoration: underline dotted var(--tron-address-tagged-underline);
-    text-decoration-thickness: var(--border-width-thin);
+    text-decoration-thickness: var(--tron-address-tagged-underline-thickness);
+    /* Stops the browser from breaking the rule around descenders. Skipping is
+       the default for an underline, and at this thickness it eats whole dots
+       out of an address full of g/y/p, leaving gaps that read as a rendering
+       fault rather than as one continuous mark. */
+    text-decoration-skip-ink: none;
     text-underline-offset: var(--tron-address-tagged-underline-offset);
 }
 
