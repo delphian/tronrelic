@@ -517,16 +517,19 @@ function Migrations() {
 /**
  * Collection browser card body.
  *
- * The browser supplies no heading of its own here — this card owns the label,
- * and a second one inside would read as a duplicate.
+ * The browser is collapsed here and supplies its own heading, which doubles as
+ * the control that opens it. This view is unscoped, so the table lists every
+ * collection in the deployment — expanded, it buries the migration log beneath
+ * it and forces a scroll past a hundred rows to reach anything else on the tab.
+ * Closed, it also holds back the statistics request, which costs one `collStats`
+ * command per collection.
  *
  * @returns The collection browser card body.
  */
 function Browser() {
     return (
         <div className={styles.block}>
-            <h3 className={styles.section_title}>Collection Browser</h3>
-            <CollectionBrowser />
+            <CollectionBrowser collapsible title="Collection Browser" />
         </div>
     );
 }

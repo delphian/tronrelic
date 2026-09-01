@@ -48,6 +48,24 @@ export interface ICollectionBrowserProps {
      * embedding page usually supplies its own and a built-in heading would read
      * as a duplicate. Set it when the surrounding page would otherwise leave
      * the scope ambiguous.
+     *
+     * In the collapsible form this heading is also the control that opens the
+     * browser, so set it there even when the surrounding page has a label of its
+     * own; otherwise the disclosure falls back to the generic word
+     * "Collections".
      */
     title?: string;
+
+    /**
+     * Whether to render the browser behind a disclosure heading that starts
+     * closed. Defaults to false, which is the always-expanded form.
+     *
+     * Set it on a page where the inventory is one surface among several and its
+     * full height would push everything below it off screen — the unscoped
+     * system console view lists every collection in the deployment. It also
+     * saves work: the statistics request runs one `collStats` command per
+     * collection in scope, and a collapsed browser does not send it until the
+     * operator opens the browser.
+     */
+    collapsible?: boolean;
 }

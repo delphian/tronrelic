@@ -24,9 +24,23 @@
  * index — and a column of right-aligned figures answers that by scanning, where
  * badges scattered along each row do not. The component renders bare, without a
  * card of its own, so the embedding surface owns the heading and the boundary.
+ *
+ * `collapsible` puts the whole inventory behind a closed disclosure. That is
+ * for a page where the browser is one surface among several and the unscoped
+ * inventory — every collection in the deployment — would push everything below
+ * it off screen. Closed, it also skips the statistics request, which costs one
+ * `collStats` command per collection in scope.
  */
 
-import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
+import {
+    useState,
+    useEffect,
+    useCallback,
+    useMemo,
+    Fragment,
+    type ReactElement,
+    type ReactNode
+} from 'react';
 import type { ICollectionBrowserProps } from '@/types';
 import { Button } from '../../../../components/ui/Button';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
@@ -193,14 +207,24 @@ function displayedTotalPages(totalPages: number, page: number): number {
  * @param allowDelete - Whether the delete affordance is offered.
  * @param title - Heading for the collection list. Omit when the embedding
  * surface already labels the browser, which is the common case — a second
- * heading immediately under the first reads as a duplicate.
+ * heading immediately under the first reads as a duplicate. In the collapsible
+ * form the heading doubles as the control that opens the browser, so supply one
+ * there rather than leaving the disclosure labelled "Collections".
+ * @param collapsible - Whether to start closed behind a disclosure heading.
  */
 export function CollectionBrowser({
     prefix,
     allowEdit = true,
     allowDelete = true,
-    title
+    title,
+    collapsible = false
 }: ICollectionBrowserProps) {
+    // Disclosure state for the collapsible form. Declared unconditionally, and
+    // read through `isCollapsed` below, so the always-expanded form runs the
+    // same hooks in the same order.
+    const [collapsed, setCollapsed] = useState(true);
+    const isCollapsed = collapsible && collapsed;
+
     const [stats, setStats] = useState<IDatabaseStats | null>(null);
     const [sort, setSort] = useState<ICollectionSort>(DEFAULT_SORT);
     const [loading, setLoading] = useState(true);
@@ -352,9 +376,15 @@ export function CollectionBrowser({
         return fetchDocuments(collectionName, pageRequest, page);
     }, [fetchDocuments, pageRequest, page]);
 
+    // A collapsed browser does not fetch. The statistics request runs one
+    // `collStats` command per collection in scope, and the unscoped system
+    // console view covers every collection in the deployment, so sending it for
+    // a panel nobody opened is real work spent on nothing. The trade is that
+    // opening the browser costs a round trip; the loading line covers it.
     useEffect(() => {
+        if (isCollapsed) return;
         void fetchStats();
-    }, [fetchStats]);
+    }, [isCollapsed, fetchStats]);
 
     const toggleCollection = (collectionName: string) => {
         setExpandedDocumentId(null);
@@ -527,12 +557,58 @@ export function CollectionBrowser({
         [stats?.collections, sort]
     );
 
+    // The browser's heading, and in the collapsible form the control that opens
+    // it. A button inside a heading is the disclosure markup a screen reader
+    // announces correctly: the label stays part of the document outline, and
+    // `aria-expanded` says whether the section beneath it is showing.
+    const header = collapsible ? (
+        <h3 className={styles.disclosure_heading}>
+            <button
+                type="button"
+                className={styles.disclosure_button}
+                aria-expanded={!collapsed}
+                onClick={() => setCollapsed(previous => !previous)}
+            >
+                {collapsed
+                    ? <ChevronRight size={16} aria-hidden="true" />
+                    : <ChevronDown size={16} aria-hidden="true" />}
+                {title ?? 'Collections'}
+            </button>
+        </h3>
+    ) : (
+        title !== undefined ? <h3 className={styles.section_title}>{title}</h3> : null
+    );
+
+    /**
+     * Put one of the browser's short states — closed, loading, failed, empty —
+     * on the same outer element and under the same heading as the loaded view.
+     *
+     * The heading has to outlive every one of those states in the collapsible
+     * form. Returning a bare message instead would take the disclosure control
+     * with it, so a failed statistics request would leave an error on screen
+     * that the operator could no longer close.
+     *
+     * @param body - What to show in place of the collection table, or null when
+     * the browser is closed and there is nothing to show.
+     * @returns The browser with that body under its heading.
+     */
+    const shell = (body: ReactNode): ReactElement => (
+        <div className={styles.browser}>
+            {header}
+            {body}
+        </div>
+    );
+
+    if (isCollapsed) {
+        return shell(null);
+    }
+
     if (loading) {
-        return <p className={styles.loading}>Loading database statistics…</p>;
+        return shell(<p className={styles.loading}>Loading database statistics…</p>);
     }
 
     if (error) {
-        return (
+        return shell(
             <div className="alert alert--danger" role="alert">
                 <span className={styles.error_inline}>
                     <AlertCircle size={14} aria-hidden="true" />
@@ -543,12 +619,12 @@ export function CollectionBrowser({
     }
 
     if (!stats) {
-        return <p className={styles.loading}>No database statistics available</p>;
+        return shell(<p className={styles.loading}>No database statistics available</p>);
     }
 
     return (
         <div className={styles.browser}>
-            {title !== undefined && <h3 className={styles.section_title}>{title}</h3>}
+            {header}
 
             <p className={styles.overview}>
                 <Database size={14} aria-hidden="true" />
