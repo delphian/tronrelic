@@ -97,8 +97,29 @@ function resolveInternalApiOrigin() {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     output: 'standalone',
+    // `charset: false` is load-bearing rather than cosmetic. When a compiled
+    // stylesheet contains any non-ASCII character — a `content: '·'` separator,
+    // a `\2212` written literally — Dart Sass marks the encoding for the reader:
+    // `@charset "UTF-8";` in expanded output, and a UTF-8 byte-order mark in
+    // compressed output, which is what production builds use.
+    //
+    // That mark is correct for a file served on its own and wrong here, because
+    // Next concatenates every CSS module into one chunk. The BOM then lands in
+    // the middle of the chunk, where nothing strips it, and CSS treats U+FEFF as
+    // an ordinary identifier character: the module's first rule parses as a type
+    // selector named U+FEFF combined with that rule's class, matches no element,
+    // and is dropped in silence. Three modules were losing their first
+    // rule this way in production — the universe plugin's `.stage_card`, which
+    // left the full-screen stage with a card's padding around the canvas,
+    // `.seo_section` in PluginPageWithZones, and `.section_heading` in
+    // MarketOnchainSection.
+    //
+    // Turning the option off suppresses both the BOM and the `@charset` line.
+    // Neither is needed: Next serves CSS as UTF-8 over HTTP, which is what
+    // decides the encoding.
     sassOptions: {
         includePaths: [join(__dirname, 'app')],
+        charset: false,
     },
     compiler: {
         removeConsole: process.env.NODE_ENV === 'production'
