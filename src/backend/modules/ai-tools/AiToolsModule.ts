@@ -678,7 +678,8 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             'core',
             HOOKS.ai.toolResult,
             createToolResultCompactor({
-                getProvider: () => this.providerRegistry.getActive(),
+                getProvider: (aiProviderId?: string) =>
+                    (aiProviderId ? this.providerRegistry.getProvider(aiProviderId) : null) ?? this.providerRegistry.getActive(),
                 log: (context, message) => this.logger.info(context, message)
             }),
             { priority: 100 }

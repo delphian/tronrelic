@@ -910,8 +910,10 @@ export function QueryTab() {
      * by conversationId and loaded lazily the first time a row is expanded. Kept
      * separate from {@link conversationRecords} (which backs the open chat) so an
      * expanded history row and the active conversation never overwrite each other.
-     * Cached across collapse/re-expand and across a history Refresh because a past
-     * conversation's tool calls are immutable — no point refetching them.
+     * Cached across collapse/re-expand and across a history Refresh, since a past
+     * conversation's tool calls do not change on their own. Continuing that
+     * conversation in chat does add to them, so `handleSend` drops the entry for
+     * the conversation it just extended.
      */
     const [historyToolRecords, setHistoryToolRecords] = useState<Map<string, IToolInvocationRecord[]>>(() => new Map());
     /**
@@ -919,9 +921,12 @@ export function QueryTab() {
      * and loaded by the same lazy fetch as the tool records above. Holding them
      * here is what lets a row show the answer, the failure reason, and the usage
      * line in place, instead of making the operator leave the list and reopen the
-     * conversation in the chat view to see any of it. Cached on the same terms:
-     * a past conversation is immutable, so a collapse and re-expand refetches
-     * nothing.
+     * conversation in the chat view to see any of it. Cached across a collapse and
+     * re-expand, which is safe only while the conversation stands still. It does
+     * not stand still once it is reopened in chat and continued — the send appends
+     * turns under the same id — so `handleSend` drops this entry and collapses the
+     * row rather than letting a refreshed turn count sit beside an older
+     * transcript. Growth from another browser tab is still not detected.
      */
     const [historyTurns, setHistoryTurns] = useState<Map<string, ChatTurn[]>>(() => new Map());
     /** Conversation ids whose history-row detail is currently loading. */
@@ -1612,6 +1617,41 @@ export function QueryTab() {
             conversationIdRef.current = generateUUID();
         }
         const conversationId = conversationIdRef.current;
+
+        // This send appends turns to `conversationId`, so any History row detail
+        // cached for it is now short by at least one turn. The cache assumes a past
+        // conversation is immutable, which stops being true the moment a reopened
+        // conversation is continued: History refreshes the row's turn count on the
+        // next view switch while the cached transcript stays behind, and the row
+        // would report the new count while replaying the old turns. Drop the cached
+        // detail and collapse the row together, so re-expanding refetches the
+        // conversation as it now stands — dropping the cache alone would leave the
+        // still-expanded row rendering "Nothing recorded for this conversation",
+        // because the fetch only fires on the expand edge.
+        setHistoryTurns(prev => {
+            if (!prev.has(conversationId)) {
+                return prev;
+            }
+            const next = new Map(prev);
+            next.delete(conversationId);
+            return next;
+        });
+        setHistoryToolRecords(prev => {
+            if (!prev.has(conversationId)) {
+                return prev;
+            }
+            const next = new Map(prev);
+            next.delete(conversationId);
+            return next;
+        });
+        setExpandedIds(prev => {
+            if (!prev.has(conversationId)) {
+                return prev;
+            }
+            const next = new Set(prev);
+            next.delete(conversationId);
+            return next;
+        });
 
         // Snapshot the grant onto the turn: `toolSelection` is cleared once the
         // send is accepted, so the turn must carry its own copy to keep showing

@@ -203,9 +203,11 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
                                 fetched from outside that the platform does not vouch for &mdash; are compacted
                                 first: a long JSON list keeps its first items with long text fields cut, and every
                                 value still shown is exact; a large page with no such structure is replaced by an
-                                extraction of it, written by a separate cheap model that runs with no tools of its
-                                own. No other class is touched, so a secret payload is never sent to a second model
-                                and a figure the platform computed itself is never reworded.
+                                extraction of it, written by a separate model call that carries no tools. That call is
+                                skipped when the provider hosts its own tools, such as a vendor web search, because
+                                those stay available to the model and the call would not be isolated; the result is
+                                then truncated instead. No other class is touched, so a secret payload is never sent
+                                to a second model and a figure the platform computed itself is never reworded.
                             </p>
                             <div className={styles.filters}>
                                 <Select

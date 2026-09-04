@@ -59,15 +59,20 @@ function buildCompactor(provider: IAiProvider | null) {
  * @param value - The raw tool result.
  * @param provider - Provider available to the extraction tier.
  * @param input - Tool arguments, carrying `extract` where a test needs it.
+ * @param aiProviderId - Id of the provider driving the invocation, when a test cares which one is resolved.
  * @returns Whatever the handler decided to forward.
  */
 async function compact(
     capability: IAiToolCapability | undefined,
     value: unknown,
     provider: IAiProvider | null = null,
-    input: Record<string, unknown> = {}
+    input: Record<string, unknown> = {},
+    aiProviderId?: string
 ): Promise<unknown> {
-    return buildCompactor(provider)({ toolName: 'tronrelic-fetch-url', capability, input }, value);
+    return buildCompactor(provider)(
+        { toolName: 'tronrelic-fetch-url', capability, input, context: { aiProviderId } },
+        value
+    );
 }
 
 describe('capToolResult', () => {
@@ -82,6 +87,18 @@ describe('capToolResult', () => {
         expect(typeof result.value).toBe('string');
         expect(result.value as string).toContain('[truncated:');
         expect(result.value as string).toContain('Narrow the request');
+    });
+
+    it('keeps the finished payload inside the ceiling, note and JSON escaping included', () => {
+        // The defect this pins: slicing to the limit and *then* adding the note
+        // and the JSON envelope measured neither, so an all-quotes payload came
+        // back at twice the ceiling once every `"` was re-escaped on the way out.
+        const quoted = '"'.repeat(MAX_TOOL_RESULT_CHARS + 1_000);
+        for (const oversized of [quoted, { body: quoted }]) {
+            const result = capToolResult(oversized, 'tronrelic-fetch-url');
+            expect(result.capped).toBe(true);
+            expect(JSON.stringify(result.value)?.length).toBeLessThanOrEqual(MAX_TOOL_RESULT_CHARS);
+        }
     });
 
     it('replaces an oversized object with a marker rather than slicing its JSON mid-structure', () => {
@@ -150,12 +167,54 @@ describe('createToolResultCompactor', () => {
     it('extracts with the model only when the payload has no structure to shrink, and passes no tools', async () => {
         const { provider, query } = stubProvider('The release is v4.8.0 and the upgrade is mandatory.');
         const html = `<html><body>${'<p>filler</p>'.repeat(3000)}</body></html>`;
-        const result = await compact(PUBLIC_UNTRUSTED, { content: html }, provider, { extract: 'the release tag' });
+        const value = { content: html, finalUrl: 'https://example.com/final', status: 200 };
+        const result = await compact(PUBLIC_UNTRUSTED, value, provider, { extract: 'the release tag' });
 
         expect(query).toHaveBeenCalledTimes(1);
         expect(query.mock.calls[0][0]).toMatchObject({ toolAllowlist: [] });
         expect(query.mock.calls[0][0].prompt).toContain('the release tag');
-        expect(result).toMatchObject({ compacted: true, extracted: 'The release is v4.8.0 and the upgrade is mandatory.' });
+        expect(result).toMatchObject({
+            compacted: true,
+            extracted: true,
+            content: 'The release is v4.8.0 and the upgrade is mandatory.'
+        });
+        // The envelope has to survive: the fetch tool tells the model to cite
+        // finalUrl, and after a redirect that address exists nowhere else.
+        expect(result).toMatchObject({ finalUrl: 'https://example.com/final', status: 200 });
+    });
+
+    it('skips model extraction when the provider hosts its own tools, since the call would not be tool-free', async () => {
+        // `toolAllowlist: []` disables governed registry tools only — a vendor's
+        // own web_search/web_fetch stay advertised and bypass the governor. Running
+        // attacker-controlled text through a call that still carries them would
+        // hand an injection the outbound reach this seam exists to deny.
+        const query = vi.fn().mockResolvedValue({ responseText: 'should never be produced', model: 'stub', usage: { inputTokens: 0, outputTokens: 0 } });
+        const provider = {
+            query,
+            listActiveServerTools: vi.fn().mockResolvedValue([{ name: 'web_search' }])
+        } as unknown as IAiProvider;
+        const value = { content: `<html>${'<p>filler</p>'.repeat(3000)}</html>` };
+
+        expect(await compact(PUBLIC_UNTRUSTED, value, provider)).toBe(value);
+        expect(query).not.toHaveBeenCalled();
+    });
+
+    it('resolves the provider that owns the invocation, not whichever one is globally active', async () => {
+        // A saved prompt can pin a provider that is not the active one, and its
+        // tool calls execute under that pinned provider. Extracting through the
+        // active provider instead would send the fetched page and the cost to a
+        // vendor this run never chose.
+        const { provider } = stubProvider('extracted text');
+        const getProvider = vi.fn().mockReturnValue(provider);
+        const handler = createToolResultCompactor({ getProvider, log: () => undefined });
+        const value = { content: `<html>${'<p>filler</p>'.repeat(3000)}</html>` };
+
+        await handler(
+            { toolName: 'tronrelic-fetch-url', capability: PUBLIC_UNTRUSTED, input: {}, context: { aiProviderId: 'pinned-provider' } },
+            value
+        );
+
+        expect(getProvider).toHaveBeenCalledWith('pinned-provider');
     });
 
     it('returns the original when no provider is installed, leaving the hard cap to bound it', async () => {
