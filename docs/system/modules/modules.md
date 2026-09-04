@@ -57,7 +57,7 @@ A hook seam is a named point in core's own execution where other code can contri
 
 A module receives `IHookRegistry` through the dependencies passed to `init(deps)` and registers its handlers in `run()`, once everything is wired, by calling `hookRegistry.register('core', HOOKS.<phase>.<name>, handler, { priority })`. A module's registrations last for the life of the process, since a module can never be disabled or uninstalled, so the disposer function that `register` returns is usually kept only for consistency with how plugins do it.
 
-The `ai-tools` module is the one core module registering a hook today: it registers a result compactor on `HOOKS.ai.toolResult` under the `'core'` id, to shrink an oversized tool result before it reaches the model. On the plugin side the working example is `trp-themes`, which contributes to `HOOKS.ssr.headFragments` and `HOOKS.ssr.htmlAttributes` through the plugin-facing wrapper by calling `context.hooks.register(...)` against the same registry.
+No core module registers a hook today. The working example is the `trp-themes` plugin, which contributes to `HOOKS.ssr.headFragments` and `HOOKS.ssr.htmlAttributes` through the plugin-facing wrapper by calling `context.hooks.register(...)` against the same registry.
 
 See [system-hooks.md](../system-hooks.md) for the contract, the four styles of hook (observer, series, waterfall, and bail), and the `/system/hooks` timeline that shows what is currently registered.
 

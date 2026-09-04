@@ -28,6 +28,8 @@ export type { IToolInvocationRecord } from './IToolInvocationRecord.js';
 export type { IServerToolInvocation } from './IServerToolInvocation.js';
 export type { IAiToolGovernor } from './IAiToolGovernor.js';
 export type { IAiToolRegistry, IAiToolDeclaration, IAiToolInfo } from './IAiToolRegistry.js';
+export type { IToolAllowlistSplit } from './tool-allowlist.js';
+export { HOSTED_TOOL_PREFIX, isHostedToolEntry, hostedToolEntry, splitToolAllowlist } from './tool-allowlist.js';
 export type { ITrifectaStatus, TrifectaSeverity } from './ITrifectaStatus.js';
 export type {
     IPromptVariableDefinition,

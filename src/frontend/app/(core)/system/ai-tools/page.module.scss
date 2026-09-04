@@ -94,17 +94,6 @@
     animation: spin 1s linear infinite;
 }
 
-/* Explanatory prose introducing a section, set apart from the controls and rows
- * beneath it by a muted tone and a reading-width cap — an operator scanning the
- * table should be able to skip it, and read it comfortably when they do not. */
-.section_note {
-    margin: 0;
-    max-width: var(--max-width-prose);
-    color: var(--color-text-muted);
-    font-size: var(--font-size-body-sm);
-    line-height: var(--line-height-relaxed);
-}
-
 /* Empty / loading placeholder text. */
 .placeholder {
     padding: var(--padding-lg);

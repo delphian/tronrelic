@@ -19,6 +19,11 @@
  * selection is sent verbatim on every send (`[]` = no tools; a name list = that
  * subset), and a scoped lethal-trifecta preview updates while the dropdown is open.
  *
+ * The dropdown grants two kinds of tool from one list. Registry tools are named
+ * plainly; provider-hosted tools (the AI vendor's own web search and fetch) are
+ * named behind a `hosted:` prefix. The hosted set depends on which provider and
+ * model the composer names, so it is refetched whenever that pin changes.
+ *
  * This card is also the **saved-prompt editor**. The library is a dropdown beside
  * the header label; picking a prompt starts a fresh chat and loads that prompt's
  * text into the composer, its model pin into the picker, its allowlist into the
@@ -33,9 +38,9 @@
  *   that prompt's allowlist rather than a one-shot grant. The one-shot
  *   clear-after-send applies only to plain chat.
  * - **The allowlist keeps its three-state contract.** `undefined` means "every
- *   enabled tool, kept current" and is only pre-filled for display; `toolsTouched`
- *   records whether the operator really engaged the picker, so an untouched save
- *   writes `null` instead of freezing today's enabled set.
+ *   tool that is switched on, kept current" and is only pre-filled for display;
+ *   `toolsTouched` records whether the operator really engaged the picker, so an
+ *   untouched save writes `null` instead of freezing today's set.
  *
  * The model picker spans every registered provider so a prompt can pin a model on
  * a non-active one. An interactive send always runs on the *active* provider, so a
@@ -52,6 +57,7 @@ import remarkRehype from 'remark-rehype';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
 import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IAiToolInfo, IAiToolResultSegment, IAiTranscriptSegment, ISavedPrompt, IToolInvocationRecord, ITrifectaStatus } from '@/types';
+import { hostedToolEntry } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
@@ -70,6 +76,7 @@ import {
     getQueryProviders,
     listActivity,
     listTools,
+    listHostedTools,
     getTrifectaPreview,
     runSavedPromptNow,
     listSavedPrompts,
@@ -844,6 +851,13 @@ export function QueryTab() {
     /** The full tool registry (enabled + disabled), backing the per-run allowlist picker. */
     const [tools, setTools] = useState<IAiToolInfo[]>([]);
     /**
+     * Provider-hosted tools (web search / fetch) available to the composer's
+     * current provider and model. Refetched whenever that choice changes,
+     * because the provider stores these switches per model and a prompt pinned
+     * to one model must be offered what that model can actually run.
+     */
+    const [hostedTools, setHostedTools] = useState<IAiToolInfo[]>([]);
+    /**
      * Whether the tool-registry request is still in flight. Distinguishes "no
      * tools granted" from "not known yet": an unrestricted prompt's selection is
      * `[]` until the pre-fill runs, and `[]` is an explicit deny on the wire, so
@@ -952,20 +966,21 @@ export function QueryTab() {
     const toolRecordsById = useMemo(() => indexByToolUseId(conversationRecords), [conversationRecords]);
 
     /**
-     * Registry tool names actually invoked in answer to each user turn, keyed by
-     * that turn's id. Read from the assistant turns that follow a prompt (up to
-     * the next prompt), because the transcript is the only per-turn record of
-     * what the model chose to call — the audit feed is conversation-scoped and
-     * cannot say which prompt triggered a given call. Drives the "called" state
-     * of the per-turn tool chips, and works identically for a live turn and one
-     * reopened from history since both carry the same segments.
+     * Allowlist entries for the tools actually invoked in answer to each user
+     * turn, keyed by that turn's id. Read from the assistant turns that follow a
+     * prompt (up to the next prompt), because the transcript is the only
+     * per-turn record of what the model chose to call — the audit feed is
+     * conversation-scoped and cannot say which prompt triggered a given call.
+     * Drives the "called" state of the per-turn tool chips, and works identically
+     * for a live turn and one reopened from history since both carry the same
+     * segments.
      *
-     * Provider-hosted calls (`segment.server`) are excluded on purpose. They run
-     * on the provider's own infrastructure and are exempt from the allowlist
-     * entirely, so they are not grantable: showing one as a chip would imply an
-     * allowlist entry that cannot exist, and — since this set is also what the
-     * bookmark persists — naming one in a saved prompt's `toolAllowlist` would
-     * resolve to no registered tool and fail the whole run.
+     * A provider-hosted call (`segment.server`) is recorded with the `hosted:`
+     * prefix rather than skipped. Those tools are grantable per run now, so the
+     * bookmark this set feeds has to carry them: a turn that answered using web
+     * search, saved as a prompt, must produce a prompt that may still search.
+     * Dropping them would hand the operator a narrower prompt than the turn they
+     * bookmarked, with nothing on screen saying so.
      */
     const calledToolsByTurnId = useMemo(() => {
         const map = new Map<string, Set<string>>();
@@ -976,8 +991,8 @@ export function QueryTab() {
             const called = new Set<string>();
             for (let next = index + 1; next < messages.length && messages[next].role === 'assistant'; next += 1) {
                 for (const segment of messages[next].segments ?? []) {
-                    if (segment.type === 'tool_use' && segment.name && !segment.server) {
-                        called.add(segment.name);
+                    if (segment.type === 'tool_use' && segment.name) {
+                        called.add(segment.server ? hostedToolEntry(segment.name) : segment.name);
                     }
                 }
             }
@@ -988,10 +1003,10 @@ export function QueryTab() {
 
     /**
      * The tools each user turn is credited with, keyed by turn id: the grant
-     * captured at send time unioned with the registry tools the answer actually
-     * called. One source for both the chips a turn renders and the allowlist its
-     * bookmark saves, so what an operator sees beside the bookmark is exactly
-     * what the bookmark persists.
+     * captured at send time unioned with the tools the answer actually called,
+     * governed and provider-hosted alike. One source for both the chips a turn
+     * renders and the allowlist its bookmark saves, so what an operator sees
+     * beside the bookmark is exactly what the bookmark persists.
      *
      * The union is what makes a turn reopened from history saveable at all. The
      * grant is not part of the stored query record, so `turn.tools` is undefined
@@ -1174,6 +1189,30 @@ export function QueryTab() {
         return () => { cancelled = true; };
     }, []);
 
+    // Load the provider-hosted tools for whichever provider and model the
+    // composer currently names, so the picker offers exactly what this run could
+    // call. Refetched on every change to that pin, because a hosted tool
+    // switched on for one model may be off for another. Secondary data on the
+    // same terms as the registry above: a quiet failure empties the hosted group,
+    // which grants nothing — the safe direction — and never breaks the chat.
+    useEffect(() => {
+        const { providerId, model } = decodeModelPin(modelOverride);
+        let cancelled = false;
+        void (async () => {
+            try {
+                const list = await listHostedTools(providerId ?? undefined, model ?? undefined);
+                if (!cancelled) {
+                    setHostedTools(list);
+                }
+            } catch {
+                if (!cancelled) {
+                    setHostedTools([]);
+                }
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [modelOverride]);
+
     /** The stored document behind the editor, or null while creating a new one. */
     const loadedPrompt = useMemo(
         () => savedPrompts.find(prompt => prompt.id === loadedPromptId) ?? null,
@@ -1247,10 +1286,21 @@ export function QueryTab() {
         return () => clearInterval(id);
     }, [hasActiveSchedule]);
 
-    /** Names of every enabled tool — the display-only pre-fill set. */
+    /**
+     * Every allowlist entry that is currently switched on — the display-only
+     * pre-fill set for a prompt that restricts nothing.
+     *
+     * The hosted entries belong here as much as the registry ones. A prompt with
+     * no allowlist really does run with the provider's hosted tools, so showing
+     * the picker with those boxes clear would tell the operator the prompt is
+     * narrower than it is, and unticking one would then look like a no-op.
+     */
     const enabledToolNames = useMemo(
-        () => tools.filter(tool => tool.enabled).map(tool => tool.name),
-        [tools]
+        () => [
+            ...tools.filter(tool => tool.enabled).map(tool => tool.name),
+            ...hostedTools.map(tool => hostedToolEntry(tool.name))
+        ],
+        [tools, hostedTools]
     );
 
     /**
@@ -2637,6 +2687,7 @@ export function QueryTab() {
                             )}
                             <ToolAllowlistDropdown
                                 tools={tools}
+                                hostedTools={hostedTools}
                                 selected={toolSelection}
                                 onChange={handleToolSelectionChange}
                                 trifecta={trifecta}
@@ -2644,7 +2695,7 @@ export function QueryTab() {
                                 onOpenChange={setToolsOpen}
                                 disabled={streaming}
                                 hint={editingPrompt
-                                    ? 'Tools this saved prompt may call, on this message and on every autonomous run. An empty selection runs it with no tools. Provider-hosted tools (web search / fetch), when enabled for the model, still run regardless. Naming a tool that is later disabled or removed fails the run.'
+                                    ? 'Tools this saved prompt may call, on this message and on every autonomous run. An empty selection runs it with no tools. Provider-hosted tools are granted here too — unchecked means the request never offers them, so they cannot run. Naming a tool that is later disabled or removed fails the run.'
                                     : undefined}
                             />
                             <div className={styles.composer_send}>

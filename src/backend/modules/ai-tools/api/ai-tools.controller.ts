@@ -22,6 +22,7 @@ import type {
     ToolInvocationStatus,
     ToolTriggerPath
 } from '@/types';
+import { HOSTED_TOOL_PREFIX, splitToolAllowlist } from '@/types';
 import type { AiToolRegistry } from '../services/ai-tool-registry.js';
 import type { ToolPolicyEngine } from '../services/tool-policy-engine.js';
 import type { ToolAuditStore, IToolInvocationQuery } from '../services/tool-audit-store.js';
@@ -108,8 +109,10 @@ function validateMessages(messages: unknown[]): string | null {
  * tools". Legal shapes on the query path are `undefined` (omit → all enabled
  * tools) or an array of non-empty strings (`[]` for none, a name list for a
  * subset); `null`, non-arrays, blank entries, and entries with leading/trailing
- * whitespace are rejected. Returns a descriptive error string on the
- * first problem, or null when valid.
+ * whitespace are rejected. An entry may name a provider-hosted tool behind the
+ * reserved `hosted:` prefix, but the bare prefix names nothing and is rejected
+ * for the same reason a blank registry name is. Returns a descriptive error
+ * string on the first problem, or null when valid.
  *
  * @param value - The raw `toolAllowlist` value from the request body.
  * @returns An error message, or null when valid.
@@ -127,6 +130,9 @@ function validateToolAllowlist(value: unknown): string | null {
         }
         if (value[i] !== value[i].trim()) {
             return `toolAllowlist[${i}] must not have leading or trailing whitespace.`;
+        }
+        if (value[i] === HOSTED_TOOL_PREFIX) {
+            return `toolAllowlist[${i}] must name a provider-hosted tool after the "${HOSTED_TOOL_PREFIX}" prefix.`;
         }
     }
     return null;
@@ -213,11 +219,11 @@ export class AiToolsController {
      * POST /trifecta/preview — lethal-trifecta status scoped to a hypothetical
      * tool allowlist, backing the saved-prompt editor's per-run badge.
      *
-     * The body's `toolAllowlist` narrows only the governed registry tools — the
-     * set an allowlist actually controls. Provider server-tools and secret prompt
-     * variables are folded in unchanged, because a per-prompt allowlist cannot
-     * disable them (they run/inject regardless of which governed tools a run
-     * selects), so an honest per-run verdict must still count their legs. The
+     * The body's `toolAllowlist` narrows both halves of the tool set it names:
+     * the governed registry tools, and the provider-hosted tools it grants
+     * behind the `hosted:` prefix. Secret prompt variables are still folded in
+     * unchanged, because they inject into the prompt whatever tools a run
+     * selects, so an honest per-run verdict must count their leg either way. The
      * selector is re-validated with the same guard the query and save paths use.
      */
     previewTrifecta = async (req: Request, res: Response): Promise<void> => {
@@ -240,18 +246,20 @@ export class AiToolsController {
      * untrusted-content ingress and an open egress leg, which turns an otherwise
      * `safe` posture `lethal` when a secret reader is also present.
      *
-     * @param allowlist - When provided, restricts the governed registry tools to
-     *        these names (`undefined` = every registered tool, the global posture;
-     *        `[]` = no governed tools; a list = that subset). Server-tools and
-     *        secret variables are always included — the allowlist does not gate
-     *        them, and a saved prompt runs with them regardless of its selection.
+     * @param allowlist - When provided, restricts the tool set to the names it
+     *        carries — registry tools by their plain name, provider-hosted tools
+     *        behind the `hosted:` prefix (`undefined` = everything switched on,
+     *        the global posture; `[]` = nothing; a list = that subset). Secret
+     *        variables are always included, because they inject into the prompt
+     *        whichever tools a run selects.
      * @returns The trifecta status for the resulting tool set.
      */
     private async computeTrifecta(allowlist?: string[]): Promise<ITrifectaStatus> {
+        const split = allowlist === undefined ? undefined : splitToolAllowlist(allowlist);
         const registryTools = this.registry.listToolInfo();
-        const scoped = allowlist === undefined
+        const scoped = split === undefined
             ? registryTools
-            : registryTools.filter(tool => allowlist.includes(tool.name));
+            : registryTools.filter(tool => split.registry.includes(tool.name));
         // The provider half ships in a separate repo and deploys independently,
         // so a version-skewed active provider may predate listActiveServerTools
         // (the provider registry does not validate the instance shape), and the
@@ -267,12 +275,54 @@ export class AiToolsController {
         } catch {
             serverTools = [];
         }
+        // A hosted tool the run did not grant will not be advertised to the
+        // model, so it can contribute no leg and counting it would make a
+        // narrowed selection look more dangerous than the request it produces.
+        // This is why the badge moves when an operator unticks web search.
+        const scopedServerTools = split === undefined
+            ? serverTools
+            : serverTools.filter(tool => split.hosted.includes(tool.name));
         return detectTrifecta(
-            [...scoped, ...serverTools],
+            [...scoped, ...scopedServerTools],
             (name, cap) => this.policy.isEgressGated(name, cap),
             this.promptVariables.getSecretVariableNames()
         );
     }
+
+    /**
+     * GET /query/hosted-tools — the provider-hosted tools available to a run.
+     *
+     * The tool picker needs this because a hosted tool is invisible to the core
+     * registry: it lives in the provider's own configuration, switched on per
+     * model, and core has no other way to name one. Without the list an operator
+     * could grant registry tools per prompt but nothing at all about web search.
+     *
+     * Both query parameters are optional and both matter when a prompt pins a
+     * model. `providerId` selects which installed provider to ask, since a prompt
+     * may pin a model belonging to one that is not currently active; omitting it
+     * asks the active provider. `model` selects which model to answer for, since
+     * the switches are stored per model and answering for the configured one
+     * would offer a tool the pinned model cannot use.
+     *
+     * Returns an empty list rather than an error whenever the answer is
+     * unavailable — no provider installed, a provider too old to report, or a
+     * provider whose own state read failed. An empty list is the honest answer
+     * for the picker in all three cases: there is nothing here to grant.
+     */
+    listHostedTools = async (req: Request, res: Response): Promise<void> => {
+        const providerId = typeof req.query.providerId === 'string' ? req.query.providerId : undefined;
+        const model = typeof req.query.model === 'string' ? req.query.model : undefined;
+        let tools: IAiToolInfo[] = [];
+        try {
+            const provider = providerId ? this.providers.getProvider(providerId) : this.providers.getActive();
+            if (provider && typeof provider.listActiveServerTools === 'function') {
+                tools = (await provider.listActiveServerTools(model)) ?? [];
+            }
+        } catch {
+            tools = [];
+        }
+        res.json({ tools });
+    };
 
     /** GET /providers — installed AI provider plugins for the Provider panel. */
     listProviders = async (_req: Request, res: Response): Promise<void> => {

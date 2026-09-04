@@ -103,19 +103,28 @@ export interface IAiProvider {
     listModels(): Promise<IModelInfo[]>;
 
     /**
-     * Report the provider-hosted (server-side) tools currently enabled for the
-     * active configuration — tools the model can invoke that execute on the
-     * vendor's infrastructure and so never pass through the tool governor
-     * (Anthropic's `web_search` / `web_fetch`). Core has no other way to see
-     * them, so the lethal-trifecta detector folds these entries in alongside the
-     * governed registry tools to keep the `safe` / `supervised` / `lethal`
-     * verdict honest: a `web_fetch` reports as both an untrusted-content ingress
-     * and an open egress leg. Return an empty array when none are enabled or the
-     * provider hosts no such tools.
+     * Report the provider-hosted (server-side) tools currently enabled — tools
+     * the model can invoke that execute on the vendor's infrastructure and so
+     * never pass through the tool governor (Anthropic's `web_search` /
+     * `web_fetch`). Core has no other way to see them, so the lethal-trifecta
+     * detector folds these entries in alongside the governed registry tools to
+     * keep the `safe` / `supervised` / `lethal` verdict honest: a `web_fetch`
+     * reports as both an untrusted-content ingress and an open egress leg.
+     * Return an empty array when none are enabled or the provider hosts no such
+     * tools.
      *
+     * The report is also what core's admin surfaces list when an operator picks
+     * which hosted tools one prompt may call, so it must answer for whichever
+     * model that prompt will actually run on rather than only the configured
+     * one — a provider may offer a hosted tool on one model and not another.
+     *
+     * @param model - The model the caller is asking about. Omit it to report for
+     *        the provider's own configured model, which is what a whole-system
+     *        posture check wants; pass one when a specific prompt pins a model,
+     *        so the answer matches the request that prompt will really send.
      * @returns Capability-classified info for each enabled server-side tool.
      */
-    listActiveServerTools(): Promise<IAiToolInfo[]>;
+    listActiveServerTools(model?: string): Promise<IAiToolInfo[]>;
 
     /**
      * Screen one untrusted tool result with the provider's cheapest, fastest

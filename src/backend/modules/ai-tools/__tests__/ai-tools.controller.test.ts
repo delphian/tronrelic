@@ -390,5 +390,108 @@ describe('AiToolsController — toolAllowlist wiring', () => {
 
             expect(res._json.severity).toBe('safe');
         });
+
+        /**
+         * A provider-hosted `web_fetch`, classified the way a real provider
+         * reports one: an untrusted-content ingress and an open external egress
+         * at the same time. Two of the three legs in a single tool.
+         */
+        const HOSTED_FETCH = tool('web_fetch', {
+            sideEffect: 'external',
+            reversible: true,
+            sensitivity: 'internal',
+            surfacesUntrustedContent: true
+        });
+
+        /**
+         * A controller whose active provider reports one hosted tool, so the
+         * preview can be asked whether the allowlist gates it.
+         *
+         * @returns The controller and its doubles.
+         */
+        function hostedController() {
+            return makeController({
+                registry: { listToolInfo: vi.fn(() => [SECRET]) },
+                policy: { isEgressGated: vi.fn(() => false) },
+                promptVariables: { getSecretVariableNames: vi.fn(() => []) },
+                providers: {
+                    getActive: vi.fn(() => ({ listActiveServerTools: vi.fn(async () => [HOSTED_FETCH]) }))
+                }
+            });
+        }
+
+        it('counts a hosted tool the allowlist grants, completing the trifecta', async () => {
+            const { controller } = hostedController();
+            const res = createMockResponse();
+
+            // The secret reader plus a granted web_fetch spans all three legs:
+            // the hosted tool supplies both the untrusted ingress and the egress.
+            await controller.previewTrifecta({ body: { toolAllowlist: ['sec', 'hosted:web_fetch'] } } as any, res);
+
+            expect(res._json.severity).toBe('lethal');
+            expect(res._json.exfiltrationOpen).toEqual(['web_fetch']);
+        });
+
+        it('drops a hosted tool the allowlist omits, breaking the chain', async () => {
+            const { controller } = hostedController();
+            const res = createMockResponse();
+
+            // This is the behaviour change: before hosted tools could be named,
+            // the same selection still counted web_fetch and reported lethal.
+            await controller.previewTrifecta({ body: { toolAllowlist: ['sec'] } } as any, res);
+
+            expect(res._json.severity).toBe('safe');
+            expect(res._json.exfiltration).toEqual([]);
+        });
+
+        it('still counts hosted tools when no allowlist is given (the global posture)', async () => {
+            const { controller } = hostedController();
+            const res = createMockResponse();
+
+            // An absent allowlist restricts nothing, so the whole-deployment
+            // banner must keep reporting the hosted tool's legs.
+            await controller.previewTrifecta({ body: {} } as any, res);
+
+            expect(res._json.severity).toBe('lethal');
+        });
+    });
+
+    describe('listHostedTools', () => {
+        it('asks the named provider about the named model and returns what it reports', async () => {
+            const hosted = { name: 'web_search', description: '', inputSchema: { type: 'object' }, enabled: true, provider: 'ai-assistant' };
+            const listActiveServerTools = vi.fn(async () => [hosted]);
+            const getProvider = vi.fn(() => ({ listActiveServerTools }));
+            const { controller } = makeController({ providers: { getProvider, getActive: vi.fn(() => null) } });
+            const res = createMockResponse();
+
+            await controller.listHostedTools({ query: { providerId: 'ai-assistant', model: 'claude-opus-4-8' } } as any, res);
+
+            expect(getProvider).toHaveBeenCalledWith('ai-assistant');
+            expect(listActiveServerTools).toHaveBeenCalledWith('claude-opus-4-8');
+            expect(res._json.tools).toEqual([hosted]);
+        });
+
+        it('returns an empty list when no provider can answer', async () => {
+            // The picker must degrade to "nothing to grant" rather than erroring:
+            // an empty hosted group grants nothing, which is the safe direction.
+            const { controller } = makeController({ providers: { getActive: vi.fn(() => null) } });
+            const res = createMockResponse();
+
+            await controller.listHostedTools({ query: {} } as any, res);
+
+            expect(res._json.tools).toEqual([]);
+        });
+
+        it('returns an empty list when the provider throws', async () => {
+            const getActive = vi.fn(() => ({
+                listActiveServerTools: vi.fn(async () => { throw new Error('config read failed'); })
+            }));
+            const { controller } = makeController({ providers: { getActive } });
+            const res = createMockResponse();
+
+            await controller.listHostedTools({ query: {} } as any, res);
+
+            expect(res._json.tools).toEqual([]);
+        });
     });
 });

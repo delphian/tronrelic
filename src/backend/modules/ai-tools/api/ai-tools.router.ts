@@ -83,6 +83,11 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
     router.get('/query/history', requireAdminUser, controller.listQueryHistory);
     router.get('/query/models', controller.listQueryModels);
     router.get('/query/providers', controller.listQueryProviders);
+    // Which provider-hosted tools a run could call, for the tool picker. Stays
+    // on the shared admin gate: it reports tool names and their capability
+    // classes, never a variable value or a model answer, so it is not one of the
+    // secret-read paths the comment above narrows.
+    router.get('/query/hosted-tools', controller.listHostedTools);
     router.get('/query/conversations/:conversationId', requireAdminUser, controller.getConversationHistory);
 
     router.get('/query/prompts/hooks', controller.listPromptHooks);

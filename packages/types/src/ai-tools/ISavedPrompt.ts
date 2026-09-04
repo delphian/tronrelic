@@ -141,6 +141,13 @@ export interface ISavedPrompt {
      * naming a tool from a disabled plugin auto-pauses rather than running
      * degraded. The new-prompt editor pre-fills the full enabled set; narrowing
      * is the operator's choice.
+     *
+     * Entries carrying the reserved `hosted:` prefix name provider-hosted tools
+     * (`hosted:web_search`) instead of registry ones; `splitToolAllowlist` in
+     * `tool-allowlist.ts` separates the two. A prompt saved before that prefix
+     * existed therefore grants no hosted tools, so upgrading tightens a prompt
+     * that had been getting web search for free — deliberately, since a grant
+     * nobody made is not a grant.
      */
     toolAllowlist?: string[];
     /**
