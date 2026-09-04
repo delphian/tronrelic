@@ -173,13 +173,24 @@ export async function getTrifecta(): Promise<ITrifectaStatus> {
  *
  * @param toolAllowlist - The tool names the run would be allowed to call
  *        (`[]` = no tools; a list = that subset).
+ * @param providerId - Which provider the run will execute on, when the prompt
+ *        pins one. Omit for the active provider. Without it the badge resolves
+ *        hosted tools from a provider the run will not use, so a granted tool
+ *        can drop out of the verdict.
+ * @param model - Which model the run will use, when the prompt pins one. Omit
+ *        for the provider's configured model. The hosted-tool switches are
+ *        stored per model, so the wrong model can report a lethal run as safe.
  * @returns The trifecta status for the scoped set.
  */
-export async function getTrifectaPreview(toolAllowlist: string[]): Promise<ITrifectaStatus> {
+export async function getTrifectaPreview(
+    toolAllowlist: string[],
+    providerId?: string,
+    model?: string
+): Promise<ITrifectaStatus> {
     return parse<ITrifectaStatus>(await fetch(`${BASE}/trifecta/preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ toolAllowlist })
+        body: JSON.stringify({ toolAllowlist, providerId, model })
     }), 'load trifecta preview');
 }
 

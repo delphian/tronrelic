@@ -225,15 +225,28 @@ export class AiToolsController {
      * unchanged, because they inject into the prompt whatever tools a run
      * selects, so an honest per-run verdict must count their leg either way. The
      * selector is re-validated with the same guard the query and save paths use.
+     *
+     * The body's optional `providerId` and `model` name the pair the prompt is
+     * pinned to, so the verdict answers for the provider and model that will
+     * actually run it. Without them the badge would resolve hosted tools from the
+     * active provider's configured model, and a prompt pinned elsewhere could
+     * show `safe` while its scheduled run is lethal. Both are ignored unless they
+     * are strings, so a malformed value falls back to the active pair rather than
+     * failing a request whose allowlist is perfectly valid.
      */
     previewTrifecta = async (req: Request, res: Response): Promise<void> => {
-        const raw = (req.body as { toolAllowlist?: unknown })?.toolAllowlist;
+        const body = (req.body ?? {}) as { toolAllowlist?: unknown; providerId?: unknown; model?: unknown };
+        const raw = body.toolAllowlist;
         const allowlistError = validateToolAllowlist(raw);
         if (allowlistError) {
             res.status(400).json({ error: allowlistError });
             return;
         }
-        res.json(await this.computeTrifecta(raw as string[] | undefined));
+        res.json(await this.computeTrifecta(
+            raw as string[] | undefined,
+            typeof body.providerId === 'string' ? body.providerId : undefined,
+            typeof body.model === 'string' ? body.model : undefined
+        ));
     };
 
     /**
@@ -252,9 +265,18 @@ export class AiToolsController {
      *        the global posture; `[]` = nothing; a list = that subset). Secret
      *        variables are always included, because they inject into the prompt
      *        whichever tools a run selects.
+     * @param providerId - The provider the run will execute on, when the prompt
+     *        pins one. A pinned prompt routes to its own provider even while a
+     *        different one is active, so asking the active provider would report
+     *        hosted tools that run will never see. Omit it for the active provider.
+     * @param model - The model the run will use, when the prompt pins one. The
+     *        hosted-tool switches are stored per model, so answering for the
+     *        provider's configured model can drop a granted tool from the verdict
+     *        and report a lethal run as safe. Omit it for the configured model,
+     *        which is what the whole-deployment posture check wants.
      * @returns The trifecta status for the resulting tool set.
      */
-    private async computeTrifecta(allowlist?: string[]): Promise<ITrifectaStatus> {
+    private async computeTrifecta(allowlist?: string[], providerId?: string, model?: string): Promise<ITrifectaStatus> {
         const split = allowlist === undefined ? undefined : splitToolAllowlist(allowlist);
         const registryTools = this.registry.listToolInfo();
         const scoped = split === undefined
@@ -268,9 +290,9 @@ export class AiToolsController {
         // the caller.
         let serverTools: IAiToolInfo[] = [];
         try {
-            const provider = this.providers.getActive();
+            const provider = providerId ? this.providers.getProvider(providerId) : this.providers.getActive();
             if (provider && typeof provider.listActiveServerTools === 'function') {
-                serverTools = (await provider.listActiveServerTools()) ?? [];
+                serverTools = (await provider.listActiveServerTools(model)) ?? [];
             }
         } catch {
             serverTools = [];

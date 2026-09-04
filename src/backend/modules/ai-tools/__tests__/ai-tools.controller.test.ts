@@ -454,6 +454,46 @@ describe('AiToolsController — toolAllowlist wiring', () => {
 
             expect(res._json.severity).toBe('lethal');
         });
+
+        it('resolves hosted tools from the pinned provider and model, not the active pair', async () => {
+            // A saved prompt may pin a model on a provider that is not currently
+            // the transport. Hosted-tool switches are stored per model, so asking
+            // the active provider about its configured model can miss a tool the
+            // pinned run really has — and the badge would then read safe for a
+            // run that is lethal.
+            const listActiveServerTools = vi.fn(async () => [HOSTED_FETCH]);
+            const getProvider = vi.fn(() => ({ listActiveServerTools }));
+            const getActive = vi.fn(() => ({ listActiveServerTools: vi.fn(async () => []) }));
+            const { controller } = makeController({
+                registry: { listToolInfo: vi.fn(() => [SECRET]) },
+                policy: { isEgressGated: vi.fn(() => false) },
+                promptVariables: { getSecretVariableNames: vi.fn(() => []) },
+                providers: { getProvider, getActive }
+            });
+            const res = createMockResponse();
+
+            await controller.previewTrifecta({
+                body: { toolAllowlist: ['sec', 'hosted:web_fetch'], providerId: 'other-provider', model: 'pinned-model' }
+            } as any, res);
+
+            expect(getProvider).toHaveBeenCalledWith('other-provider');
+            expect(listActiveServerTools).toHaveBeenCalledWith('pinned-model');
+            expect(getActive).not.toHaveBeenCalled();
+            expect(res._json.severity).toBe('lethal');
+        });
+
+        it('falls back to the active provider when the pin is not a pair of strings', async () => {
+            // A malformed pin must not fail a request whose allowlist is valid,
+            // so the verdict degrades to the active pair rather than 400ing.
+            const { controller } = hostedController();
+            const res = createMockResponse();
+
+            await controller.previewTrifecta({
+                body: { toolAllowlist: ['sec', 'hosted:web_fetch'], providerId: 42, model: null }
+            } as any, res);
+
+            expect(res._json.severity).toBe('lethal');
+        });
     });
 
     describe('listHostedTools', () => {
