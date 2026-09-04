@@ -190,6 +190,23 @@ export function RegistryTab({ onChanged }: { onChanged: () => void }) {
                     ? <div className={styles.placeholder}>No tools are registered.</div>
                     : (
                         <Stack gap="sm">
+                            {/* Result-size behaviour is invisible in the rows below —
+                                nothing in a tool's capability badges says its output
+                                may be shortened — so it is stated once here, where an
+                                operator reading the registry will meet it. */}
+                            <p className={styles.section_note}>
+                                Every tool result is capped before it reaches the model, because one oversized
+                                result fails the whole query with a &ldquo;prompt is too long&rdquo; error after the
+                                tool has already run. A result over the limit is truncated and the model is told
+                                it was truncated and to narrow its request. On top of that cap, results from tools
+                                classed <strong>public</strong> and <strong>untrusted content</strong> &mdash; text
+                                fetched from outside that the platform does not vouch for &mdash; are compacted
+                                first: a long JSON list keeps its first items with long text fields cut, and every
+                                value still shown is exact; a large page with no such structure is replaced by an
+                                extraction of it, written by a separate cheap model that runs with no tools of its
+                                own. No other class is touched, so a secret payload is never sent to a second model
+                                and a figure the platform computed itself is never reworded.
+                            </p>
                             <div className={styles.filters}>
                                 <Select
                                     className={styles.provider_select}

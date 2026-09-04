@@ -29,6 +29,7 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 | File | Responsibility |
 |------|----------------|
 | `AiToolsModule.ts` | Two-phase lifecycle; constructs services, mounts the admin router, publishes `'ai-tools'` + `'ai-tool-governor'`; registers the core built-in tools via `registerBuiltinTools()` — `send-toast` (external/reversible/public; a site-wide `'toast'` WebSocket broadcast) and `propose-social-post` (external/irreversible/forces-curator-review) — plus, on the `'curation'` watch, the `core:social-post` curation type the latter holds into. All provider-neutral, so they survive a provider swap |
+| `result-compaction.ts` | Keeps tool results inside the context window. `capToolResult` is the un-disableable hard cap the governor applies to **every** tool — truncate-and-say-so, never reinterpret. `createToolResultCompactor` is the `ai.toolResult` handler the module registers as `'core'`, scoped by `isCompactable` (`sensitivity: 'public'` **and** `surfacesUntrustedContent: true`) so it shrinks only externally-sourced public text. Three tiers: pass through under 10k chars, deterministic JSON shrink (array cap + long-field trim, values kept exact), then cheap-model extraction via `getActive().query({ toolAllowlist: [] })` for payloads with no structure |
 | `social-post.ts` | The provider-neutral `core:social-post` curation type (`publishesToSinks`, `{ external, public }` ceiling) and the `propose-social-post` tool factory — drafts a sink-agnostic post and holds it in curation for the curator to fan out to publish sinks (X, Telegram) |
 | `services/social-post-store.ts` | `module_ai-tools_social_posts` — the draft lifecycle (`create` / `getById` / `markPublished` / `markRejected` / `editBody`) the `core:social-post` type resolves its opaque `ref` against |
 | `services/ai-tool-registry.ts` | `IAiToolRegistry`: registration, enabled-state (capability-driven default-deny), declarations for a provider |
@@ -52,9 +53,28 @@ The AI *provider* is a swappable plugin (`trp-ai-assistant` for Anthropic today;
 
 `governor.invoke(name, input, ctx)` runs, in order: resolve the tool → enabled-check → per-query allowlist check (deny when `ctx.toolAllowlist` is present and omits the name — narrows only, never widens) → validate `input` against the tool's schema → `ai.toolInvoke` seam (a handler throws `HookAbortError` to veto or hold) → policy check → execute the handler under a 30s wall-clock budget → `ai.toolResult` seam (a waterfall handler alters the raw result or throws `HookAbortError` to withhold it) → wrap the result for provenance → write an `IToolInvocationRecord` → `ai.toolInvoked` seam. It fails safe: an internal fault denies rather than running an ungoverned handler, and a handler fault is caught, audited, and returned to the model as a reason. The result is `{ status: 'ok' | 'denied' | 'pending-approval' | 'error', content, error?, recordId }`.
 
+**Result-size control:** an oversized tool result fails the whole query with the provider's "prompt is too long" error, *after* the tool has run — so an effectful tool can produce its effect for a query that can never complete. Two layers prevent it, and they differ in kind. The **hard cap** (`MAX_TOOL_RESULT_CHARS`, 60,000 characters) is applied by the governor to every tool with no exceptions, between the `ai.toolResult` seam and the provenance wrap, so the envelope encloses an already-bounded value; it only truncates and tells the model it truncated, which is why it is safe on a `secret` log payload and an exact TRX figure alike. It lives in the governor rather than a hook because a hook can be unregistered. The **compactor** is the quality layer on the seam, scoped by capability — see `result-compaction.ts` above. Today `isCompactable` matches `tronrelic-fetch-url` alone; it is written as a capability rule rather than a name list, so a future tool declaring the same shape inherits the behaviour without an edit here.
+
 **Provenance wrap:** when the tool declares `surfacesUntrustedContent`, a successful result's `content` is the `{ untrustedContentNotice, data }` envelope from `wrapUntrustedToolResult` (`@delphian/tronrelic-types`) — the attacker-influenceable payload labeled as data so the provider forwards it JSON-escaped, never as raw text the model could read as instructions. The audit `resultDigest` records the raw value; only what the model sees is wrapped. Because this lives in the governor, no provider transport can bypass it.
 
 **Untrusted-content screen (active):** the wrap is passive; on top of it the governor runs an optional screen on a `surfacesUntrustedContent` result before forwarding. Per `ScreenConfigService`, when enabled (and, under `trifecta` posture, only when `isEgressReachable()` reports an open egress) it calls the active provider's `screenUntrustedContent(text)` — the provider's cheapest model, in an isolated tool-less call — and **withholds** a flagged result from the model (`{ contentWithheld: true, reason }`), recording the verdict on `IToolInvocationRecord.screen` and an offender hit via `policy.recordScreenHit()`. When the screen can't run (no provider screen, or it throws) the configured `onFailure` decides: `open` forwards the wrapped result, `closed` withholds. A flagged-offender tool is throttled by `ToolPolicyEngine` once it crosses `offenderThreshold`. The model choice is the provider's; whether/when to screen is core config.
+
+## System Log Surface
+
+What the module writes to `system_logs`, queryable at `/system/logs`. The audit collection stays the record of *what happened*; these lines are the triage view over it, so none of them carries tool arguments — `recordId` is the handle for pulling the full, sensitivity-redacted record instead. Every line is a child of the module logger, so each carries `module: 'ai-tools'` in its context. All are gated by the configured log level like any other log; set the level to `warn` to keep only the rows that need attention.
+
+| Level | Message | Fires when | Key context |
+|---|---|---|---|
+| info | `AI tool ran: <name>` | Any invocation that reached the handler and did not error | `tool`, `triggerPath`, `status`, `durationMs`, `sideEffect`, `sensitivity`, `screenFlagged`, `queryId`, `recordId` |
+| warn | `AI tool denied: <name>` / `AI tool error: <name>` | Refused before execution — unregistered, disabled, outside the query allowlist, schema-invalid, hook-vetoed, or policy-denied | `reason`, `triggerPath`, `sideEffect`, `recordId` |
+| warn | `AI tool held for admin approval: <name>` | An external/irreversible call parked in the approval queue | `approvalId`, `reversible`, `recordId` |
+| info | `Shrank an oversized AI tool result` | Compaction acted on a public untrusted-content result | `fromChars`, `toChars`, `method` (`structure` or `model-extraction`), `guided` |
+| warn | `Truncated an oversized AI tool result: <name>` | The hard cap fired — compaction did not apply or did not shrink enough | `fromChars`, `limitChars`, `triggerPath` |
+| info | `AI tool result-size control active` | Once, at `run()` | `hardCapChars`, `compactionScope` |
+| error | `AI tool handler failed: <name>` | The handler threw or exceeded its timeout | `error` |
+| warn | Untrusted-content screen lines | The screen flagged a result, could not run, or failed open/closed | `tool`, `reason`, `why` |
+
+The two error paths are distinct and each logs once. A handler that throws or times out produces the `error` line carrying the cause, and the completion line deliberately skips that status rather than reporting the same call twice. An error *before* execution — a governance hook itself failing, or a tool unregistered between approval and release — never reached a handler, so it produces the `warn` refusal line with its reason instead.
 
 ## Capability Classification & Default State
 
@@ -201,6 +221,8 @@ Core-owned, provider-neutral system prompts injected into every query. `SystemPr
 ## Hook Seams
 
 Declared in `src/backend/hooks/registry.ts`. `ai.toolInvoke` (series, `IAiToolInvokeContext`) fires before execution — throw `HookAbortError` to block; lets a compliance or lethal-trifecta plugin veto without forking the provider. `ai.toolResult` (waterfall, `IAiToolInvokeContext`) fires after the handler returns and before the provenance wrap and untrusted-content screen — a handler threads the raw result to alter it (redact / reshape / summarize) or throws `HookAbortError` to withhold it from the model, while the raw result is still digested into the audit record. `ai.toolInvoked` (observer, `IToolInvocationRecord`) fires after, for audit fan-out and alerting. All three surface on `/system/hooks`.
+
+This module is also the first core registrant on one of its own seams: `run()` registers the result compactor on `ai.toolResult` under the `'core'` id at priority 100, so it appears on `/system/hooks` beside any plugin handler. A plugin handler ordering after it sees the compacted value, which is intended — a redaction or policy check should run against what the model will actually receive.
 
 ## Lifecycle Obligations
 

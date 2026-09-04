@@ -33,6 +33,7 @@ import type {
 import { isHookAbortError, wrapUntrustedToolResult } from '@/types';
 import { HOOKS } from '../../../hooks/registry.js';
 import { runWithCurationAutoApprove } from '../../curation/index.js';
+import { capToolResult, MAX_TOOL_RESULT_CHARS } from '../result-compaction.js';
 import type { AiToolRegistry } from './ai-tool-registry.js';
 import type { ToolPolicyEngine } from './tool-policy-engine.js';
 import type { ToolAuditStore } from './tool-audit-store.js';
@@ -577,6 +578,29 @@ export class AiToolGovernor implements IAiToolGovernor {
                 }
             }
 
+            // Hard ceiling on what any tool may return, applied after the seam has
+            // had its chance to compact and before the provenance wrap, so the
+            // envelope encloses an already-bounded value. Unlike the compaction
+            // hook this runs for every tool without exception: it only ever
+            // truncates and says so, so it cannot misreport a secret payload or an
+            // exact figure the way a summary could. It is here rather than in a
+            // hook because a hook can be unregistered, and the ceiling that stops
+            // an oversized result failing the whole query must not be removable.
+            const capped = capToolResult(result, tool.name);
+            if (capped.capped) {
+                // The cap firing means compaction either did not apply to this
+                // tool or did not shrink it enough, so the model is now working
+                // from a cut payload. Worth a warn rather than an info: it is the
+                // point at which the operator's data stopped reaching the model
+                // whole, and repeated hits on one tool say its results need
+                // narrowing at the source.
+                this.logger.warn(
+                    { tool: tool.name, fromChars: capped.originalChars, limitChars: MAX_TOOL_RESULT_CHARS, triggerPath: ctx.triggerPath },
+                    `Truncated an oversized AI tool result: ${tool.name}`
+                );
+            }
+            result = capped.value;
+
             if (withheldByHook !== undefined) {
                 // A post-result hook vetoed the payload: the model must never see
                 // it. Mirror the screen's withhold shape; the raw value is already
@@ -615,6 +639,35 @@ export class AiToolGovernor implements IAiToolGovernor {
         const record = this.buildRecord(tool.name, providerId, cap, ctx, input, status, { resultDigest, error, durationMs: Date.now() - startedAt, screen: screenOutcome });
         await this.audit.record(record);
         await this.notifyInvoked(record);
+
+        // One line per executed call, so an operator triaging at /system/logs can
+        // see that the AI acted at all. Until now the governor logged only its
+        // failure paths, which left the successful case — by far the common one —
+        // visible in the Activity tab and nowhere else, so a question like "did
+        // anything call out to the web last night?" could not be answered from the
+        // logs. Arguments are deliberately absent: the audit record already holds
+        // them redacted by sensitivity, and `recordId` below is the handle for
+        // pulling that record, so nothing is duplicated into a second store with
+        // weaker redaction. An errored call is already logged with its cause in
+        // the catch above, so it is not repeated here.
+        if (status !== 'error') {
+            this.logger.info(
+                {
+                    tool: tool.name,
+                    providerId,
+                    aiProviderId: ctx.aiProviderId,
+                    triggerPath: ctx.triggerPath,
+                    status,
+                    durationMs: record.durationMs,
+                    sideEffect: cap.sideEffect,
+                    sensitivity: cap.sensitivity,
+                    ...(screenOutcome ? { screenFlagged: screenOutcome.flagged } : {}),
+                    ...(ctx.queryId ? { queryId: ctx.queryId } : {}),
+                    recordId: record.id
+                },
+                `AI tool ran: ${tool.name}`
+            );
+        }
 
         return { status, content, error, recordId: record.id };
     }
@@ -766,6 +819,25 @@ export class AiToolGovernor implements IAiToolGovernor {
         const record = this.buildRecord(tool.name, providerId, cap, ctx, input, 'pending-approval', {});
         await this.audit.record(record);
         await this.notifyInvoked(record);
+
+        // Something is now waiting on a human. The Approvals tab carries its own
+        // pending count, but nothing reaches an operator who is not looking at
+        // that tab, and a held action sits indefinitely until someone acts on it.
+        // Warn so it appears in the same triage view as everything else needing
+        // attention, with the approval id to act on.
+        this.logger.warn(
+            {
+                tool: tool.name,
+                providerId,
+                triggerPath: ctx.triggerPath,
+                approvalId: request.id,
+                sideEffect: cap.sideEffect,
+                reversible: cap.reversible,
+                recordId: record.id
+            },
+            `AI tool held for admin approval: ${tool.name}`
+        );
+
         return {
             status: 'pending-approval',
             content: { pendingApproval: true, message: 'This action was held for admin approval and has not run.', approvalId: request.id },
@@ -791,6 +863,28 @@ export class AiToolGovernor implements IAiToolGovernor {
         const record = this.buildRecord(toolName, providerId, cap, ctx, input, status, { error: reason });
         await this.audit.record(record);
         await this.notifyInvoked(record);
+
+        // A refusal is a governance event, not a mishap, and it is the one an
+        // operator most often needs to explain: "the assistant said it could not
+        // do that" is usually a disabled tool, an allowlist that omits it, or the
+        // unattended default-deny, and each reads identically to the user. Warn
+        // rather than info because a refusal the operator did not intend is a
+        // misconfiguration they want surfaced, and the reason string says which
+        // of the gates closed.
+        this.logger.warn(
+            {
+                tool: toolName,
+                providerId,
+                triggerPath: ctx.triggerPath,
+                status,
+                reason,
+                sideEffect: cap.sideEffect,
+                ...(ctx.queryId ? { queryId: ctx.queryId } : {}),
+                recordId: record.id
+            },
+            `AI tool ${status}: ${toolName}`
+        );
+
         return { status, content: { error: reason }, error: reason, recordId: record.id };
     }
 

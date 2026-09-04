@@ -64,6 +64,7 @@ import { createAiToolsAdminRouter } from './api/ai-tools.router.js';
 import { SocialPostStore } from './services/social-post-store.js';
 import { createSocialPostCurationType, createSocialPostTool } from './social-post.js';
 import { createWebFetchTool } from './web-fetch.js';
+import { createToolResultCompactor, MAX_TOOL_RESULT_CHARS } from './result-compaction.js';
 
 /** Service-registry name for the provider-neutral tool registry. */
 export const AI_TOOLS_SERVICE = 'ai-tools';
@@ -664,6 +665,32 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         this.governor.setLiveSegmentSink((queryId, segment) => {
             this.queryStreams.emit(queryId, { queryId, type: 'segment', segment });
         });
+
+        // Compact an oversized result before it reaches the model, on the seam
+        // core declares for exactly this ("alter the result — redact, reshape,
+        // summarize"). Registered as `'core'` because the behaviour has to hold
+        // whichever plugins are installed. It is scoped by capability rather than
+        // by tool name — see `isCompactable` — so it acts only on results that are
+        // both public and externally sourced, and never on a secret payload or on
+        // a figure the platform computed itself. The governor's own hard cap runs
+        // regardless and covers whatever this declines to touch.
+        this.hookRegistry.register(
+            'core',
+            HOOKS.ai.toolResult,
+            createToolResultCompactor({
+                getProvider: () => this.providerRegistry.getActive(),
+                log: (context, message) => this.logger.info(context, message)
+            }),
+            { priority: 100 }
+        );
+        // State the ceiling and the scope once at boot. An operator seeing a
+        // truncation warning later needs to know what the limit was and which
+        // tools compaction covers, and reading it out of the boot log beats
+        // reading it out of the source.
+        this.logger.info(
+            { hardCapChars: MAX_TOOL_RESULT_CHARS, compactionScope: 'sensitivity=public and surfacesUntrustedContent=true' },
+            'AI tool result-size control active'
+        );
 
         this.serviceRegistry.register(AI_TOOLS_SERVICE, this.registry);
         this.serviceRegistry.register(AI_TOOL_GOVERNOR_SERVICE, this.governor);
