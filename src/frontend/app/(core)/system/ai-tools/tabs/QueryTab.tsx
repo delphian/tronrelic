@@ -194,6 +194,22 @@ interface ConversationGroup {
      */
     mode: IAiQueryRecord['mode'];
     /**
+     * Terminal status of the group's latest turn, taken from the first record
+     * encountered (newest-first). Without it the list cannot say whether a run
+     * succeeded, so a failed scheduled prompt looked identical to a clean one
+     * and an operator had to reopen every conversation to find the failure. A
+     * group whose older turns failed but whose latest succeeded reads as
+     * `completed`, which is consistent with `mode` and `lastAt` already
+     * describing the newest turn rather than the whole run.
+     */
+    status: IAiQueryRecord['status'];
+    /**
+     * Failure reason of that latest turn, or null when it succeeded. Carried on
+     * the group so the row can show why a run failed on hover, rather than
+     * making the operator open the conversation to read one sentence.
+     */
+    errorMessage: string | null;
+    /**
      * Estimated total USD cost of the conversation, summed across every priced
      * turn at the rates captured when each turn ran. `null` when not a single
      * turn could be priced, so the row shows a dash rather than a misleading
@@ -505,6 +521,172 @@ function AssistantSegments({ segments, recordsById, onSelectRecord, pending = fa
 }
 
 /**
+ * Key tool-invocation audit records by their provider-neutral `toolUseId` so a
+ * transcript's tool_use segment resolves to its exact record in O(1). Shared by
+ * the open conversation and by each expanded History row, which load their
+ * records from different places but link them to a transcript the same way.
+ * Records without a `toolUseId` (legacy rows, or a provider that predates the
+ * field) are skipped; their calls simply render without a detail link.
+ *
+ * @param records - Audit records for one conversation, in any order.
+ * @returns The records that carry a `toolUseId`, keyed by it.
+ */
+function indexByToolUseId(records: IToolInvocationRecord[]): Map<string, IToolInvocationRecord> {
+    const map = new Map<string, IToolInvocationRecord>();
+    for (const record of records) {
+        if (record.toolUseId) {
+            map.set(record.toolUseId, record);
+        }
+    }
+    return map;
+}
+
+/** Stable empty index for a row whose tool records have not loaded, so an
+ *  expanded transcript never gets a fresh Map identity on every render. */
+const NO_TOOL_RECORDS: Map<string, IToolInvocationRecord> = new Map();
+
+/**
+ * Select the audit records a transcript has no route to. A record is reachable
+ * from a transcript only when its `toolUseId` matches a `tool_use` segment, so a
+ * record written without one — a legacy row, or a provider that never emitted the
+ * pairing id — carries no "Details" link and would be unreachable otherwise.
+ * Listing exactly those leftovers keeps the transcript the primary account of
+ * what ran while making sure no invocation goes missing.
+ *
+ * Shared by the live chat and by an expanded History row so neither can start
+ * double-listing a call that the transcript already shows inline.
+ *
+ * @param turns - The turns rendered above the leftovers, live or replayed.
+ * @param records - The conversation's tool-invocation audit records.
+ * @returns The records the transcript cannot reach, in their original order.
+ */
+function selectUnlinkedRecords(turns: ChatTurn[], records: IToolInvocationRecord[]): IToolInvocationRecord[] {
+    const linked = new Set<string>();
+    for (const turn of turns) {
+        for (const segment of turn.segments ?? []) {
+            if (segment.type === 'tool_use' && segment.id) {
+                linked.add(segment.id);
+            }
+        }
+    }
+    return records.filter(record => !record.toolUseId || !linked.has(record.toolUseId));
+}
+
+/**
+ * Rebuild a stored conversation into the alternating user/assistant turns the
+ * transcript renders. Shared by "Open in chat" and by an expanded History row so
+ * the two cannot drift: a turn that reads one way in chat has to read the same
+ * way in history, since both are replaying the identical persisted record.
+ *
+ * A failed turn carries no answer text and no transcript, so without the
+ * fallback below it would render as a blank assistant bubble that looks like the
+ * model simply said nothing. Surfacing `errorMessage` — or a plain note when the
+ * record has neither text, structure, nor a reason — is what makes a failure
+ * legible at all.
+ *
+ * @param records - One conversation's turns, oldest first.
+ * @returns Chat turns ready to render, two per stored record.
+ */
+function recordsToChatTurns(records: IAiQueryRecord[]): ChatTurn[] {
+    const rebuilt: ChatTurn[] = [];
+    for (const record of records) {
+        rebuilt.push({ id: generateUUID(), role: 'user', content: record.prompt });
+        // A turn has a body when it left answer text OR a structured transcript
+        // (a tool-only round can finish with no final text yet still have plenty
+        // to show). Only a truly empty, non-failed record falls back to the note.
+        const hasBody = !!record.responseText || (record.transcript?.length ?? 0) > 0;
+        rebuilt.push({
+            id: generateUUID(),
+            role: 'assistant',
+            content: record.responseText ?? '',
+            model: record.model,
+            usage: record.usage,
+            costUsd: record.costUsd ?? null,
+            error: record.errorMessage ?? (hasBody ? null : 'No response recorded'),
+            ...(record.transcript && record.transcript.length > 0 ? { segments: record.transcript } : {})
+        });
+    }
+    return rebuilt;
+}
+
+/**
+ * Render one assistant turn's body: its transcript segments or markdown answer,
+ * the failure reason when the turn failed, and the usage, model, and cost line.
+ * Extracted so the live chat and an expanded History row show a past turn in
+ * identical detail. Keeping one copy is what guarantees they agree — the two
+ * surfaces previously shared no markup, which is how History came to show a
+ * conversation's tool calls but never its answer, its error, or its cost.
+ *
+ * Chat-only affordances stay with the caller. The copy button, the save-as-prompt
+ * bookmark, and the granted-tool chips are authoring controls that belong to the
+ * composer's surface, not to a read-only replay of a past run.
+ *
+ * @param turn - The assistant turn to render, live or rebuilt from history.
+ * @param recordsById - Audit records keyed by `toolUseId`, so a tool call in the
+ *        transcript can open its own invocation detail.
+ * @param onSelectRecord - Opens the invocation detail slide-over for one record.
+ * @param modelLabel - Model id to display name, so the usage line names a model
+ *        the way the provider's own picker does rather than by raw id.
+ * @returns The turn's body sections, omitting any the record has no data for.
+ */
+function AssistantTurnBody({ turn, recordsById, onSelectRecord, modelLabel }: {
+    turn: ChatTurn;
+    recordsById: Map<string, IToolInvocationRecord>;
+    onSelectRecord: (record: IToolInvocationRecord) => void;
+    modelLabel: Map<string, string>;
+}) {
+    const usage = turn.usage;
+    return (
+        <>
+            {turn.segments && turn.segments.length > 0 ? (
+                // Any turn with structure renders it: a settled one (live `done` or
+                // reopened from history) shows its full transcript, and a streaming
+                // one shows what has settled so far, so a tool call is visible while
+                // it runs rather than only once the turn ends. The audit-record map
+                // lets each tool call deep-link to its record.
+                <AssistantSegments
+                    segments={turn.segments}
+                    recordsById={recordsById}
+                    onSelectRecord={onSelectRecord}
+                    pending={!!turn.pending}
+                />
+            ) : (
+                <div
+                    className={styles.turn_markdown}
+                    // Assistant output is sanitized by the rehype-sanitize pipeline in renderAssistantHtml.
+                    dangerouslySetInnerHTML={{ __html: renderAssistantHtml(turn.content, !!turn.pending) }}
+                />
+            )}
+
+            {turn.error && (
+                <div className={styles.turn_error}>
+                    <AlertCircle size={14} />
+                    <span>{turn.error}</span>
+                </div>
+            )}
+
+            {usage && (
+                <div className={styles.turn_usage}>
+                    <span>{usage.inputTokens} in / {usage.outputTokens} out</span>
+                    {(usage.cacheReadInputTokens ?? 0) > 0 && (
+                        <span> · {usage.cacheReadInputTokens} cache read</span>
+                    )}
+                    {(usage.cacheCreationInputTokens ?? 0) > 0 && (
+                        <span> · {usage.cacheCreationInputTokens} cache write</span>
+                    )}
+                    {turn.model && (
+                        <span> · {modelLabel.get(turn.model) ?? turn.model}</span>
+                    )}
+                    {turn.costUsd != null && (
+                        <span className={styles.turn_cost}> · ≈ {formatUsd(turn.costUsd)}</span>
+                    )}
+                </div>
+            )}
+        </>
+    );
+}
+
+/**
  * Collapse a newest-first history page into conversation groups, one per run of
  * records sharing a `conversationId`. Records without a conversationId (one-shot
  * turns) are skipped — only multi-turn chats can be reopened. Within the
@@ -537,7 +719,18 @@ function groupConversations(records: IAiQueryRecord[]): ConversationGroup[] {
             existing.firstPrompt = record.prompt;
         } else {
             order.push(id);
-            byId.set(id, { conversationId: id, turns: 1, firstPrompt: record.prompt, lastAt: record.createdAt, mode: record.mode, costUsd: turnCost });
+            // Records arrive newest-first, so this first sighting is the latest
+            // turn — the one whose status and failure reason the row reports.
+            byId.set(id, {
+                conversationId: id,
+                turns: 1,
+                firstPrompt: record.prompt,
+                lastAt: record.createdAt,
+                mode: record.mode,
+                status: record.status,
+                errorMessage: record.errorMessage ?? null,
+                costUsd: turnCost
+            });
         }
     }
     return order.map(id => byId.get(id) as ConversationGroup);
@@ -721,9 +914,19 @@ export function QueryTab() {
      * conversation's tool calls are immutable — no point refetching them.
      */
     const [historyToolRecords, setHistoryToolRecords] = useState<Map<string, IToolInvocationRecord[]>>(() => new Map());
-    /** Conversation ids whose history-row tool records are currently loading. */
+    /**
+     * The replayed turns of each expanded history row, keyed by conversationId
+     * and loaded by the same lazy fetch as the tool records above. Holding them
+     * here is what lets a row show the answer, the failure reason, and the usage
+     * line in place, instead of making the operator leave the list and reopen the
+     * conversation in the chat view to see any of it. Cached on the same terms:
+     * a past conversation is immutable, so a collapse and re-expand refetches
+     * nothing.
+     */
+    const [historyTurns, setHistoryTurns] = useState<Map<string, ChatTurn[]>>(() => new Map());
+    /** Conversation ids whose history-row detail is currently loading. */
     const [historyToolLoading, setHistoryToolLoading] = useState<Set<string>>(() => new Set());
-    /** Conversation ids whose history-row tool-record fetch failed, mapped to the error. */
+    /** Conversation ids whose history-row detail fetch failed, mapped to the error. */
     const [historyToolError, setHistoryToolError] = useState<Map<string, string>>(() => new Map());
     /**
      * Tool-invocation audit records for the open conversation, loaded from the
@@ -741,15 +944,7 @@ export function QueryTab() {
      * without a `toolUseId` (legacy, or the pre-`toolUseId` provider) are skipped
      * — their calls simply render without a detail link.
      */
-    const toolRecordsById = useMemo(() => {
-        const map = new Map<string, IToolInvocationRecord>();
-        for (const record of conversationRecords) {
-            if (record.toolUseId) {
-                map.set(record.toolUseId, record);
-            }
-        }
-        return map;
-    }, [conversationRecords]);
+    const toolRecordsById = useMemo(() => indexByToolUseId(conversationRecords), [conversationRecords]);
 
     /**
      * Registry tool names actually invoked in answer to each user turn, keyed by
@@ -822,17 +1017,25 @@ export function QueryTab() {
      * the transcript the primary account of what ran while making sure no
      * invocation goes missing from the chat.
      */
-    const unlinkedRecords = useMemo(() => {
-        const linked = new Set<string>();
-        for (const turn of messages) {
-            for (const segment of turn.segments ?? []) {
-                if (segment.type === 'tool_use' && segment.id) {
-                    linked.add(segment.id);
-                }
-            }
+    const unlinkedRecords = useMemo(
+        () => selectUnlinkedRecords(messages, conversationRecords),
+        [messages, conversationRecords]
+    );
+
+    /**
+     * Per-conversation tool-record indexes for the expanded History rows, so a
+     * tool call in a replayed transcript opens its invocation detail exactly as
+     * it does in the live chat. Derived once per record-cache change rather than
+     * rebuilt inside the row map, which would re-index every expanded row on any
+     * unrelated render of the tab.
+     */
+    const historyRecordsById = useMemo(() => {
+        const byConversation = new Map<string, Map<string, IToolInvocationRecord>>();
+        for (const [conversationId, records] of historyToolRecords) {
+            byConversation.set(conversationId, indexByToolUseId(records));
         }
-        return conversationRecords.filter(record => !record.toolUseId || !linked.has(record.toolUseId));
-    }, [messages, conversationRecords]);
+        return byConversation;
+    }, [historyToolRecords]);
 
     /**
      * The pending grant as chips under the composer, sorted so the row does not
@@ -1206,17 +1409,24 @@ export function QueryTab() {
     }, []);
 
     /**
-     * Lazily load one history row's tool-invocation audit records the first time
-     * it is expanded, so the row can reveal exactly which tools that conversation
-     * ran without reopening the whole thread. Reads the same admin-gated Activity
-     * feed the chat view uses, scoped by conversationId. Secondary data on a user
-     * action — a failure is captured per-row and shown inline rather than blocking
-     * the list. Idempotent: callers gate on the cache so a record set is fetched
-     * once and reused across collapse/re-expand.
+     * Lazily load everything one history row needs the first time it is expanded:
+     * the conversation's stored turns and its tool-invocation audit records. Both
+     * come from admin-gated endpoints the chat view already reads — the same
+     * conversation fetch "Open in chat" uses, and the Activity feed scoped by
+     * conversationId — so an expanded row can show the answer, the failure reason,
+     * the usage line, and the tool calls without the operator leaving the list.
      *
-     * @param conversationId - The conversation whose tool calls to load.
+     * The two are fetched together and share one loading flag and one error slot,
+     * because they are two halves of a single disclosure: showing the tool table
+     * while the transcript is still arriving would read as though the run produced
+     * nothing else. This is secondary data behind a user action, so a loading line
+     * is correct here and a failure is captured per-row rather than blocking the
+     * list. Idempotent: callers gate on the cache, so an expanded row is fetched
+     * once and reused across collapse and re-expand.
+     *
+     * @param conversationId - The conversation whose detail to load.
      */
-    const loadHistoryToolRecords = useCallback(async (conversationId: string) => {
+    const loadHistoryDetail = useCallback(async (conversationId: string) => {
         setHistoryToolLoading(prev => {
             const next = new Set(prev);
             next.add(conversationId);
@@ -1231,10 +1441,21 @@ export function QueryTab() {
             return next;
         });
         try {
-            const page = await listActivity({ conversationId, limit: 200 });
+            // Issued together so the row settles in one step rather than filling
+            // in piecemeal; either rejecting fails the whole disclosure, which is
+            // the honest outcome when half the detail is missing.
+            const [records, page] = await Promise.all([
+                getConversation(conversationId),
+                listActivity({ conversationId, limit: 200 })
+            ]);
             if (!isMountedRef.current) {
                 return;
             }
+            setHistoryTurns(prev => {
+                const next = new Map(prev);
+                next.set(conversationId, recordsToChatTurns(records));
+                return next;
+            });
             setHistoryToolRecords(prev => {
                 const next = new Map(prev);
                 next.set(conversationId, page.records);
@@ -1246,7 +1467,7 @@ export function QueryTab() {
             }
             setHistoryToolError(prev => {
                 const next = new Map(prev);
-                next.set(conversationId, err instanceof Error ? err.message : 'Failed to load tool calls');
+                next.set(conversationId, err instanceof Error ? err.message : 'Failed to load conversation detail');
                 return next;
             });
         } finally {
@@ -1942,18 +2163,20 @@ export function QueryTab() {
             }
             return next;
         });
-        // Fetch this row's tool calls once, on first expand. Skip when a prior
-        // fetch already succeeded or is still in flight. A prior *failure* does not
-        // skip: re-expanding retries the fetch, and loadHistoryToolRecords clears
-        // the stale error at the start of the new request.
+        // Fetch this row's detail once, on first expand. Skip when a prior fetch
+        // already succeeded or is still in flight. A prior *failure* does not
+        // skip: re-expanding retries the fetch, and loadHistoryDetail clears the
+        // stale error at the start of the new request. The gate reads the turns
+        // cache because the transcript is what the row exists to show; the two
+        // caches are written together, so either would answer the same.
         if (
             willExpand &&
-            !historyToolRecords.has(conversationId) &&
+            !historyTurns.has(conversationId) &&
             !historyToolLoading.has(conversationId)
         ) {
-            void loadHistoryToolRecords(conversationId);
+            void loadHistoryDetail(conversationId);
         }
-    }, [expandedIds, historyToolRecords, historyToolLoading, loadHistoryToolRecords]);
+    }, [expandedIds, historyTurns, historyToolLoading, loadHistoryDetail]);
 
     /** Load the grouped conversation history for the History view. */
     const loadHistory = useCallback(async () => {
@@ -2008,25 +2231,7 @@ export function QueryTab() {
             if (!isMountedRef.current) {
                 return;
             }
-            const rebuilt: ChatTurn[] = [];
-            for (const record of records) {
-                rebuilt.push({ id: generateUUID(), role: 'user', content: record.prompt });
-                // A turn has a body when it left answer text OR a structured
-                // transcript (a tool-only round can finish with no final text yet
-                // still have plenty to show). Only a truly empty, non-failed
-                // record falls back to the "No response recorded" note.
-                const hasBody = !!record.responseText || (record.transcript?.length ?? 0) > 0;
-                rebuilt.push({
-                    id: generateUUID(),
-                    role: 'assistant',
-                    content: record.responseText ?? '',
-                    model: record.model,
-                    usage: record.usage,
-                    costUsd: record.costUsd ?? null,
-                    error: record.errorMessage ?? (hasBody ? null : 'No response recorded'),
-                    ...(record.transcript && record.transcript.length > 0 ? { segments: record.transcript } : {})
-                });
-            }
+            const rebuilt = recordsToChatTurns(records);
             setStreaming(false);
             setError(null);
             streamingTurnIdRef.current = null;
@@ -2222,7 +2427,6 @@ export function QueryTab() {
                         {hasTurns ? (
                             messages.map(turn => {
                                 const isUser = turn.role === 'user';
-                                const usage = turn.usage;
                                 // Chips for a user turn: what the prompt was granted, unioned
                                 // with the registry tools the answer actually called. Both come
                                 // from turnToolsByTurnId, which is also what the bookmark saves,
@@ -2288,49 +2492,13 @@ export function QueryTab() {
                                                         )}
                                                     </div>
                                                 </>
-                                            ) : turn.segments && turn.segments.length > 0 ? (
-                                                // Any turn with structure renders it: a settled one (live `done` or
-                                                // reopened from history) shows its full transcript, and a streaming
-                                                // one shows what has settled so far, so a tool call is visible while
-                                                // it runs rather than only once the turn ends. The audit-record map
-                                                // lets each tool call deep-link to its record.
-                                                <AssistantSegments
-                                                    segments={turn.segments}
+                                            ) : (
+                                                <AssistantTurnBody
+                                                    turn={turn}
                                                     recordsById={toolRecordsById}
                                                     onSelectRecord={setSelectedRecord}
-                                                    pending={!!turn.pending}
+                                                    modelLabel={modelLabel}
                                                 />
-                                            ) : (
-                                                <div
-                                                    className={styles.turn_markdown}
-                                                    // Assistant output is sanitized by the rehype-sanitize pipeline in renderAssistantHtml.
-                                                    dangerouslySetInnerHTML={{ __html: renderAssistantHtml(turn.content, !!turn.pending) }}
-                                                />
-                                            )}
-
-                                            {turn.error && (
-                                                <div className={styles.turn_error}>
-                                                    <AlertCircle size={14} />
-                                                    <span>{turn.error}</span>
-                                                </div>
-                                            )}
-
-                                            {usage && (
-                                                <div className={styles.turn_usage}>
-                                                    <span>{usage.inputTokens} in / {usage.outputTokens} out</span>
-                                                    {(usage.cacheReadInputTokens ?? 0) > 0 && (
-                                                        <span> · {usage.cacheReadInputTokens} cache read</span>
-                                                    )}
-                                                    {(usage.cacheCreationInputTokens ?? 0) > 0 && (
-                                                        <span> · {usage.cacheCreationInputTokens} cache write</span>
-                                                    )}
-                                                    {turn.model && (
-                                                        <span> · {modelLabel.get(turn.model) ?? turn.model}</span>
-                                                    )}
-                                                    {turn.costUsd != null && (
-                                                        <span className={styles.turn_cost}> · ≈ {formatUsd(turn.costUsd)}</span>
-                                                    )}
-                                                </div>
                                             )}
                                         </div>
                                     </div>
@@ -2522,6 +2690,12 @@ export function QueryTab() {
                                                 <ClientTime date={group.lastAt} format="datetime" />
                                                 <span>· {group.turns} turn{group.turns === 1 ? '' : 's'}</span>
                                                 {group.mode === 'scheduled' && <Badge tone="info">Scheduled</Badge>}
+                                                {group.status === 'failed' && (
+                                                    // The reason rides along as a tooltip so the common
+                                                    // case — reading why last night's scheduled run died —
+                                                    // costs a hover rather than an expand.
+                                                    <Badge tone="danger" title={group.errorMessage ?? undefined}>Failed</Badge>
+                                                )}
                                             </span>
                                         </div>
                                         <span
@@ -2549,28 +2723,73 @@ export function QueryTab() {
                                                 <MessageSquare size={16} /> Open in chat
                                             </Button>
                                         </div>
-                                        {isExpanded && (
-                                            // Full-width tool-call detail beneath the row (spans all three
-                                            // grid tracks). Fetched lazily on first expand: a spinner while
-                                            // loading, the inline error on failure, the invocation table when
-                                            // the conversation ran tools, or a plain note when it ran none.
+                                        {isExpanded && (() => {
+                                            // Full-width detail beneath the row (spans all three grid tracks),
+                                            // fetched lazily on first expand. It replays the conversation with
+                                            // the same markup the live chat uses — prompt, answer or transcript,
+                                            // failure reason, usage and cost — then lists any tool call the
+                                            // transcript could not account for, exactly as the chat does.
+                                            const turns = historyTurns.get(group.conversationId) ?? [];
+                                            const records = historyToolRecords.get(group.conversationId) ?? [];
+                                            const leftovers = selectUnlinkedRecords(turns, records);
+                                            return (
                                             <div className={styles.history_item_tools}>
                                                 {historyToolLoading.has(group.conversationId) ? (
-                                                    <span className={styles.history_item_tools_note}>Loading tool calls…</span>
+                                                    <span className={styles.history_item_tools_note}>Loading conversation…</span>
                                                 ) : historyToolError.has(group.conversationId) ? (
                                                     <span className={styles.history_item_tools_note} role="alert">
                                                         {historyToolError.get(group.conversationId)}
                                                     </span>
-                                                ) : (historyToolRecords.get(group.conversationId)?.length ?? 0) > 0 ? (
-                                                    <InvocationTable
-                                                        records={historyToolRecords.get(group.conversationId) as IToolInvocationRecord[]}
-                                                        onSelect={setSelectedRecord}
-                                                    />
                                                 ) : (
-                                                    <span className={styles.history_item_tools_note}>No tool calls in this conversation.</span>
+                                                    <>
+                                                        <div className={styles.history_item_transcript}>
+                                                            {turns.map(turn => {
+                                                                const isUserTurn = turn.role === 'user';
+                                                                return (
+                                                                    <div
+                                                                        key={turn.id}
+                                                                        className={`${styles.turn} ${isUserTurn ? styles.turn_user : styles.turn_assistant}`}
+                                                                    >
+                                                                        <div className={styles.turn_avatar}>
+                                                                            {isUserTurn ? <User size={16} /> : <Bot size={16} />}
+                                                                        </div>
+                                                                        <div className={styles.turn_main}>
+                                                                            <div className={styles.turn_header}>
+                                                                                <span className={styles.turn_role}>{isUserTurn ? 'You' : 'Assistant'}</span>
+                                                                            </div>
+                                                                            {isUserTurn ? (
+                                                                                <div className={styles.turn_text}>{turn.content}</div>
+                                                                            ) : (
+                                                                                <AssistantTurnBody
+                                                                                    turn={turn}
+                                                                                    recordsById={historyRecordsById.get(group.conversationId) ?? NO_TOOL_RECORDS}
+                                                                                    onSelectRecord={setSelectedRecord}
+                                                                                    modelLabel={modelLabel}
+                                                                                />
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                        {leftovers.length > 0 && (
+                                                            <div className={styles.unlinked_records}>
+                                                                <span className={styles.unlinked_records_note}>
+                                                                    Tool calls this transcript cannot link to
+                                                                </span>
+                                                                <InvocationTable records={leftovers} onSelect={setSelectedRecord} />
+                                                            </div>
+                                                        )}
+                                                        {turns.length === 0 && records.length === 0 && (
+                                                            <span className={styles.history_item_tools_note}>
+                                                                Nothing recorded for this conversation.
+                                                            </span>
+                                                        )}
+                                                    </>
                                                 )}
                                             </div>
-                                        )}
+                                            );
+                                        })()}
                                     </li>
                                     );
                                 })}

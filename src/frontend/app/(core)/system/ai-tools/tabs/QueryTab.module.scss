@@ -716,10 +716,27 @@
     border-top: var(--border-width-thin) solid var(--color-border);
 }
 
-/* Loading / empty / error line shown in place of the table. */
+/* Loading / empty / error line shown in place of the detail. */
 .history_item_tools_note {
     font-size: var(--font-size-caption);
     color: var(--color-text-muted);
+}
+
+/* Replayed conversation inside an expanded row. Stacks turns on the same rhythm
+ * as the live transcript so a past run reads identically in both places. Unlike
+ * .transcript it takes no min-height and does not scroll: the row grows to fit
+ * the conversation rather than trapping it in a short pane nested inside the
+ * page's own scroll, which would leave the operator scrolling two containers to
+ * read one answer. The trailing margin separates it from the leftover tool-call
+ * table, and only applies when that table is present. */
+.history_item_transcript {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.history_item_transcript:not(:last-child) {
+    margin-bottom: var(--gap-md);
 }
 
 /*
