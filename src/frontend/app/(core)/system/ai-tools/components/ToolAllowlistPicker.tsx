@@ -29,7 +29,7 @@
 import { useMemo } from 'react';
 import { AlertCircle } from 'lucide-react';
 import type { IAiToolInfo } from '@/types';
-import { hostedToolEntry } from '@/types';
+import { HOSTED_TOOL_PREFIX, hostedToolEntry, isHostedToolEntry } from '@/types';
 import styles from './ToolAllowlistPicker.module.scss';
 
 interface ToolAllowlistPickerProps {
@@ -71,8 +71,16 @@ interface IPickerOption {
  * Disabled registry tools are shown (marked) rather than hidden, so a tool that
  * was selected and later disabled never silently drops out of the prompt's
  * allowlist — the operator sees it and keeps it, and the governor intersects
- * with the live enabled set at run time. Hosted tools have no equivalent state
- * to show, because the provider only reports the ones it would actually run.
+ * with the live enabled set at run time.
+ *
+ * The hosted group follows the same rule for the same reason. The provider
+ * reports only the tools it would currently run, so a granted hosted name it
+ * does not report would otherwise render no row while staying in the selection
+ * and still saving — a grant the operator can neither see nor remove. Those
+ * entries are shown as unavailable instead. The wording differs from the
+ * governed group's because the cause is not necessarily a deliberate switch: the
+ * provider reports nothing when its own read fails, so the row claims only that
+ * the entry is not grantable right now.
  *
  * @param props.tools - All registered governed tools to offer as options.
  * @param props.hostedTools - The provider-hosted tools available to this run.
@@ -104,11 +112,30 @@ export function ToolAllowlistPicker({
         [tools]
     );
 
+    // Available entries first, then any granted name the provider is not
+    // reporting, so the actionable options lead and the leftovers sink — the same
+    // ordering the governed group uses for a disabled-but-selected tool.
     const hostedOptions = useMemo<IPickerOption[]>(
-        () => [...hostedTools]
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map(tool => ({ value: hostedToolEntry(tool.name), label: tool.name, enabled: true })),
-        [hostedTools]
+        () => {
+            const reported = new Set(hostedTools.map(tool => tool.name));
+            const available = [...hostedTools]
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(tool => ({ value: hostedToolEntry(tool.name), label: tool.name, enabled: true }));
+            // A hosted grant the provider does not currently report still sits in
+            // the selection and still saves, so hiding it would leave a grant the
+            // operator can neither see nor remove, and would make the count larger
+            // than the rows shown. The provider reports an empty list for several
+            // different reasons — the tool switched off, removed, a different
+            // provider answering, or a failed read — so the row says only that the
+            // entry is not grantable right now.
+            const unavailable = selected
+                .filter(entry => isHostedToolEntry(entry) && !reported.has(entry.slice(HOSTED_TOOL_PREFIX.length)))
+                .sort((a, b) => a.localeCompare(b))
+                .map(entry => ({ value: entry, label: entry.slice(HOSTED_TOOL_PREFIX.length), enabled: false }));
+
+            return [...available, ...unavailable];
+        },
+        [hostedTools, selected]
     );
 
     const totalCount = registryOptions.length + hostedOptions.length;
@@ -119,12 +146,13 @@ export function ToolAllowlistPicker({
      * bulk action writes, and it deliberately includes the hosted tools: an
      * unrestricted prompt really does run with them, so a bulk action that
      * quietly left them out would produce a narrower prompt than the operator
-     * believed they had asked for.
+     * believed they had asked for. A hosted entry the provider is not reporting
+     * is left out, because naming one the provider cannot host fails the run.
      */
     const availableValues = useMemo(
         () => [
             ...registryOptions.filter(option => option.enabled).map(option => option.value),
-            ...hostedOptions.map(option => option.value)
+            ...hostedOptions.filter(option => option.enabled).map(option => option.value)
         ],
         [registryOptions, hostedOptions]
     );
@@ -149,11 +177,13 @@ export function ToolAllowlistPicker({
      * list markup would let the two drift apart as either group changes.
      *
      * @param options - The rows to render, already in display order.
-     * @param showDisabledTag - Whether to mark a switched-off tool. Only the
-     *        governed group has that state to report.
+     * @param unavailableTag - What to show beside a row that cannot currently
+     *        run. The two groups need different words: a governed tool is
+     *        deliberately switched off, while a hosted one is merely not being
+     *        reported, which may only mean the provider read failed.
      * @returns The list element for that group.
      */
-    const renderGroup = (options: IPickerOption[], showDisabledTag: boolean) => (
+    const renderGroup = (options: IPickerOption[], unavailableTag: string) => (
         <ul className={styles.list}>
             {options.map(option => (
                 <li key={option.value}>
@@ -165,7 +195,7 @@ export function ToolAllowlistPicker({
                             disabled={disabled}
                         />
                         <span className={styles.tool_name}>{option.label}</span>
-                        {showDisabledTag && !option.enabled && <span className={styles.disabled_tag}>(disabled)</span>}
+                        {!option.enabled && <span className={styles.disabled_tag}>{unavailableTag}</span>}
                     </label>
                 </li>
             ))}
@@ -205,13 +235,13 @@ export function ToolAllowlistPicker({
                     {registryOptions.length > 0 && (
                         <>
                             <span className={styles.group_label}>Governed tools</span>
-                            {renderGroup(registryOptions, true)}
+                            {renderGroup(registryOptions, '(disabled)')}
                         </>
                     )}
                     {hostedOptions.length > 0 && (
                         <>
                             <span className={styles.group_label}>Provider-hosted</span>
-                            {renderGroup(hostedOptions, false)}
+                            {renderGroup(hostedOptions, '(unavailable)')}
                             <p className={styles.group_note}>
                                 These run on the AI provider&rsquo;s own servers. The tool governor cannot
                                 apply policy, approval, or rate limits to them, so leaving one unchecked
