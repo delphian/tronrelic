@@ -869,9 +869,35 @@ describe('AiToolsModule', () => {
             expect(result.content).toEqual({ untrustedContentNotice: UNTRUSTED_CONTENT_NOTICE, data: { memo: 'data' } });
         });
 
-        it('fails closed when configured, withholding when the screen is unavailable', async () => {
+        it('fails closed when configured, withholding when the provider exposes no screen', async () => {
             await module.getScreenConfig().update({ enabled: true, postureMode: 'always', onFailure: 'closed' });
+            installProvider(null); // provider without screenUntrustedContent
+            module.getRegistry().registerTool(untrustedReadTool(), 'test');
+
+            const result = await module.getGovernor().invoke('test-untrusted', {}, interactiveCtx);
+
+            expect(result.content).toMatchObject({ contentWithheld: true });
+        });
+
+        it('withholds when the screen runs and throws, even under fail-open', async () => {
+            // A screen that was called and produced no verdict is a different
+            // condition from a provider that has no screen: the call was made
+            // against this payload, and the reasons it fails track that payload
+            // being dangerous — too large for the screening model's own window, or
+            // crafted to break the call. Forwarding would hand the model the one
+            // result nobody could vet, so onFailure does not govern this case.
+            await module.getScreenConfig().update({ enabled: true, postureMode: 'always', onFailure: 'open' });
             installProvider('throw');
+            module.getRegistry().registerTool(untrustedReadTool(), 'test');
+
+            const result = await module.getGovernor().invoke('test-untrusted', {}, interactiveCtx);
+
+            expect(result.content).toMatchObject({ contentWithheld: true });
+        });
+
+        it('withholds a malformed verdict under fail-open, on the same reasoning', async () => {
+            await module.getScreenConfig().update({ enabled: true, postureMode: 'always', onFailure: 'open' });
+            installProvider(async () => (null as any)); // provider returns no verdict
             module.getRegistry().registerTool(untrustedReadTool(), 'test');
 
             const result = await module.getGovernor().invoke('test-untrusted', {}, interactiveCtx);
