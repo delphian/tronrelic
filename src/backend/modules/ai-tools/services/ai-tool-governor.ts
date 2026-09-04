@@ -717,8 +717,12 @@ export class AiToolGovernor implements IAiToolGovernor {
      *  - screen disabled, or no screen deps wired → no-op, forward as before;
      *  - `trifecta` posture and no egress sink enabled → skip (nothing to
      *    exfiltrate to, so the screen would defend an unreachable path);
-     *  - no provider screen available, or the screen throws → honour `onFailure`
-     *    (`open` forwards, `closed` withholds);
+     *  - no provider screen available → honour `onFailure` (`open` forwards,
+     *    `closed` withholds);
+     *  - the screen ran and threw, or returned a malformed verdict → withhold,
+     *    regardless of `onFailure`. The call was made against this payload and
+     *    produced no verdict, so forwarding would single out the one result
+     *    nobody could vet;
      *  - a flagged verdict → record an offender hit and withhold.
      *
      * @param tool - The tool whose untrusted result is being screened.
@@ -771,8 +775,24 @@ export class AiToolGovernor implements IAiToolGovernor {
                 throw new Error('Provider returned an invalid or empty content-screen verdict.');
             }
         } catch (error) {
-            this.logger.warn({ tool: tool.name, error }, 'Untrusted-content screen failed to produce a verdict');
-            return this.onScreenUnavailable(tool, cfg, 'screen error');
+            // A screen that ran and failed withholds, whatever `onFailure` says.
+            // This is not the same condition as a provider that has no screen: the
+            // call was made, against this exact payload, and it did not come back
+            // with a verdict. The reasons it fails are correlated with the payload
+            // being dangerous — an oversized result that will not fit the screening
+            // model's own context window is the plain case, and a result crafted to
+            // break the screening call is the adversarial one. Forwarding then
+            // hands the main model the one payload nobody could vet, which is
+            // exactly backwards. `onFailure` still governs the absent-screen case,
+            // where nothing about the payload is implicated.
+            this.logger.warn(
+                { tool: tool.name, error },
+                'Untrusted-content screen failed to produce a verdict; withholding result'
+            );
+            return {
+                screen: { flagged: false, reason: 'Screen ran and could not produce a verdict; withheld.' },
+                withhold: true
+            };
         }
         if (verdict.flagged) {
             // Count this against the tool's offender window; the policy engine
@@ -785,11 +805,15 @@ export class AiToolGovernor implements IAiToolGovernor {
     }
 
     /**
-     * Resolve what to do when the screen cannot produce a verdict (no provider
-     * screen, or the screen threw), per the admin-configured failure mode.
-     * `open` forwards the result — defense-in-depth degrades gracefully because
-     * the governor's other controls still hold, and failing closed would deny
-     * legitimate reads on a transient outage. `closed` withholds it.
+     * Resolve what to do when there is no screen to run at all, per the
+     * admin-configured failure mode. `open` forwards the result — defense-in-depth
+     * degrades gracefully because the governor's other controls still hold, and
+     * failing closed would deny every legitimate read on a provider that simply
+     * does not implement screening. `closed` withholds it.
+     *
+     * This covers only the absent-screen case. A screen that ran and failed is
+     * handled at the call site and always withholds, because there the failure is
+     * about this particular payload rather than about the deployment.
      *
      * @param tool - The tool whose result could not be screened.
      * @param cfg - The effective screen config carrying the failure mode.
