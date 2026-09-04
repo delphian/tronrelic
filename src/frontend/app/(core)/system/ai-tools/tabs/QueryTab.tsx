@@ -1189,30 +1189,6 @@ export function QueryTab() {
         return () => { cancelled = true; };
     }, []);
 
-    // Load the provider-hosted tools for whichever provider and model the
-    // composer currently names, so the picker offers exactly what this run could
-    // call. Refetched on every change to that pin, because a hosted tool
-    // switched on for one model may be off for another. Secondary data on the
-    // same terms as the registry above: a quiet failure empties the hosted group,
-    // which grants nothing — the safe direction — and never breaks the chat.
-    useEffect(() => {
-        const { providerId, model } = decodeModelPin(modelOverride);
-        let cancelled = false;
-        void (async () => {
-            try {
-                const list = await listHostedTools(providerId ?? undefined, model ?? undefined);
-                if (!cancelled) {
-                    setHostedTools(list);
-                }
-            } catch {
-                if (!cancelled) {
-                    setHostedTools([]);
-                }
-            }
-        })();
-        return () => { cancelled = true; };
-    }, [modelOverride]);
-
     /** The stored document behind the editor, or null while creating a new one. */
     const loadedPrompt = useMemo(
         () => savedPrompts.find(prompt => prompt.id === loadedPromptId) ?? null,
@@ -1239,6 +1215,54 @@ export function QueryTab() {
         }
         return providerId === activeProvider?.id ? model : undefined;
     }, [modelOverride, activeProvider]);
+
+    /**
+     * The provider and model the Tools picker and the trifecta badge must answer
+     * for. The composer serves two purposes that execute on different pairs, so
+     * asking one pin for both would misreport the hosted tools in one of them.
+     *
+     * While a prompt is loaded, the grant being edited is that prompt's persisted
+     * configuration and its autonomous runs resolve the pinned provider, so the
+     * pin is the right question. In plain chat there is no prompt and no schedule:
+     * the send always runs on the active provider with {@link sendModel}, so
+     * asking the pinned provider would offer hosted names the executing provider
+     * cannot host — which fails the whole run rather than being ignored — and hide
+     * the ones it does host.
+     *
+     * `providerId` stays null in the interactive case so the request resolves
+     * whichever provider is active when it lands, rather than a value snapshotted
+     * here.
+     */
+    const hostedToolContext = useMemo(
+        () => (editingPrompt
+            ? decodeModelPin(modelOverride)
+            : { providerId: null as string | null, model: sendModel ?? null }),
+        [editingPrompt, modelOverride, sendModel]
+    );
+
+    // Load the provider-hosted tools for the provider and model that will actually
+    // consume this grant, so the picker offers exactly what the run could call.
+    // Refetched on every change to that pair, because a hosted tool switched on
+    // for one model may be off for another. Secondary data on the same terms as
+    // the registry above: a quiet failure empties the hosted group, which grants
+    // nothing — the safe direction — and never breaks the chat.
+    useEffect(() => {
+        const { providerId, model } = hostedToolContext;
+        let cancelled = false;
+        void (async () => {
+            try {
+                const list = await listHostedTools(providerId ?? undefined, model ?? undefined);
+                if (!cancelled) {
+                    setHostedTools(list);
+                }
+            } catch {
+                if (!cancelled) {
+                    setHostedTools([]);
+                }
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [hostedToolContext]);
 
     /**
      * Whether the composer's pin names a provider that is not the active one — the
@@ -1392,16 +1416,24 @@ export function QueryTab() {
     // toggling issues one request. The verdict is server-computed (it folds in
     // provider server-tools and secret variables an allowlist cannot gate), so
     // this only renders what the preview endpoint returns.
+    //
+    // The request travels with the same pair the picker resolved its hosted tools
+    // from, so the badge and the list can never disagree about which provider is
+    // in play. Hosted-tool switches are stored per provider and per model, and the
+    // verdict intersects the granted `hosted:` names against that provider's
+    // server tools — so asking a different pair silently under-reports and can
+    // call a lethal run safe. Changing the pair re-previews for the same reason.
     useEffect(() => {
         if (!toolsOpen) {
             return;
         }
+        const { providerId, model } = hostedToolContext;
         let cancelled = false;
         setTrifectaLoading(true);
         const timer = setTimeout(() => {
             void (async () => {
                 try {
-                    const status = await getTrifectaPreview(toolSelection);
+                    const status = await getTrifectaPreview(toolSelection, providerId ?? undefined, model ?? undefined);
                     if (!cancelled) {
                         setTrifecta(status);
                     }
@@ -1417,7 +1449,7 @@ export function QueryTab() {
             })();
         }, 350);
         return () => { cancelled = true; clearTimeout(timer); };
-    }, [toolSelection, toolsOpen]);
+    }, [toolSelection, toolsOpen, hostedToolContext]);
 
     /**
      * Mutate a single turn in place by id. Used by the stream handler to append
