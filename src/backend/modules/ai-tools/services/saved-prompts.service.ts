@@ -25,6 +25,7 @@ import type {
     ISavedPromptTrigger,
     ISavedPromptCronTrigger
 } from '@/types';
+import { HOSTED_TOOL_PREFIX } from '@/types';
 
 const { parseExpression } = cronParser;
 
@@ -775,6 +776,12 @@ function assertNonEmptyString(value: unknown, field: string): string {
  * (`^[a-zA-Z0-9_-]{1,64}$`) and would fail the whole allowlist at run time,
  * auto-pausing a trigger — so it fails closed here at save instead.
  *
+ * An entry may also grant a provider-hosted tool, written with the reserved
+ * `hosted:` prefix. The prefix on its own names nothing, and no provider can
+ * report a tool whose name is empty, so such an entry would sit in the list
+ * looking like a grant while matching nothing — rejected for the same reason a
+ * blank registry name is.
+ *
  * @param value - The candidate allowlist from create/update input.
  */
 function validateToolAllowlist(value: unknown): void {
@@ -790,6 +797,9 @@ function validateToolAllowlist(value: unknown): void {
         }
         if (entry !== entry.trim()) {
             throw new SavedPromptValidationError('toolAllowlist entries must not have leading or trailing whitespace');
+        }
+        if (entry === HOSTED_TOOL_PREFIX) {
+            throw new SavedPromptValidationError(`toolAllowlist entry "${HOSTED_TOOL_PREFIX}" must name a provider-hosted tool after the prefix`);
         }
     }
 }

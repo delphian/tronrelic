@@ -111,6 +111,17 @@ export interface IAiQueryOptions {
      * fails the whole run before calling the model when a listed name resolves to
      * no registered tool.
      *
+     * The list also names **provider-hosted tools**, behind the reserved
+     * `hosted:` prefix (`hosted:web_search`) — see `splitToolAllowlist` in
+     * `tool-allowlist.ts` for why one array carries both. A hosted tool runs on
+     * the vendor's infrastructure and never reaches the governor, so leaving it
+     * out of the advertised `tools` array is the *only* control over it, which
+     * makes the filtering enforcement rather than an optimization for that half.
+     * It still only narrows: a hosted tool the provider config has switched off
+     * for the run's model stays off however the allowlist names it. Because no
+     * allowlist written before the prefix existed can contain one, every stored
+     * list reads as granting no hosted tools, which is the intended default-deny.
+     *
      * Trusted-caller-only, like {@link endUser} and {@link injectedSystemPrompt}:
      * set by the admin query route, the scheduled-prompts runner (from the saved
      * prompt's persisted list), or code callers. The model never sets query

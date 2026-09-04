@@ -48,9 +48,15 @@ interface IPanelPosition {
 }
 
 interface ToolAllowlistDropdownProps {
-    /** Every registered tool (enabled and disabled), for the option list. */
+    /** Every registered governed tool (enabled and disabled), for the option list. */
     tools: IAiToolInfo[];
-    /** Currently-granted tool names. */
+    /**
+     * Provider-hosted tools the run could call, for the second option group.
+     * Scoped by the parent to the provider and model this run will use, because
+     * those switches are stored per model.
+     */
+    hostedTools: IAiToolInfo[];
+    /** Currently-granted allowlist entries, hosted ones carrying the `hosted:` prefix. */
     selected: string[];
     /** Receives the next selection whenever an option toggles. */
     onChange: (names: string[]) => void;
@@ -81,10 +87,10 @@ interface ToolAllowlistDropdownProps {
  * Lives at module scope so the default and the {@link ToolAllowlistDropdownProps.hint}
  * override are obviously the same slot rather than a string buried in the JSX.
  */
-const DEFAULT_HINT = 'Registry tools this query may call. Defaults to none — grant only what '
-    + 'this run needs. Provider-hosted tools (web search / fetch), when enabled '
-    + 'for the model, still run regardless of this selection. Naming a tool '
-    + 'that is disabled or removed fails the run.';
+const DEFAULT_HINT = 'Tools this query may call. Defaults to none — grant only what this run '
+    + 'needs. Provider-hosted tools appear here too, and are granted the same '
+    + 'way: unchecked means the request never offers them, so they cannot run. '
+    + 'Naming a tool that is disabled or removed fails the run.';
 
 /**
  * Render the tools trigger button and, while open, its portaled option panel.
@@ -94,6 +100,7 @@ const DEFAULT_HINT = 'Registry tools this query may call. Defaults to none — g
  */
 export function ToolAllowlistDropdown({
     tools,
+    hostedTools,
     selected,
     onChange,
     trifecta,
@@ -230,7 +237,7 @@ export function ToolAllowlistDropdown({
             window.removeEventListener('resize', updatePosition);
             window.removeEventListener('scroll', updatePosition, true);
         };
-    }, [open, tools, selected, trifecta, trifectaLoading, hint]);
+    }, [open, tools, hostedTools, selected, trifecta, trifectaLoading, hint]);
 
     /*
      * Hand focus to the panel once it is open and placed. Portaling moves the
@@ -324,7 +331,12 @@ export function ToolAllowlistDropdown({
                         : { visibility: 'hidden' }}
                 >
                     <p className={styles.hint}>{hint}</p>
-                    <ToolAllowlistPicker tools={tools} selected={selected} onChange={onChange} />
+                    <ToolAllowlistPicker
+                        tools={tools}
+                        hostedTools={hostedTools}
+                        selected={selected}
+                        onChange={onChange}
+                    />
                     <RunTrifectaBadge status={trifecta} loading={trifectaLoading} />
                 </div>,
                 document.body

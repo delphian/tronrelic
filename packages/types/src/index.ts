@@ -84,7 +84,9 @@ export type { IAiTool, IAiToolInputSchema, IAiConversationMessage, IAiProvider, 
 export { AI_TOOL_NAME_PATTERN } from './ai-tools/index.js';
 export { UNTRUSTED_CONTENT_NOTICE, UNTRUSTED_CONTENT_SYSTEM_CLAUSE, wrapUntrustedToolResult } from './ai-tools/index.js';
 export { DEFAULT_UNTRUSTED_SCREEN_CONFIG } from './ai-tools/index.js';
+export { HOSTED_TOOL_PREFIX, isHostedToolEntry, hostedToolEntry, splitToolAllowlist } from './ai-tools/index.js';
 export type {
+    IToolAllowlistSplit,
     IUntrustedToolResult,
     IContentScreenVerdict,
     IUntrustedScreenConfig,

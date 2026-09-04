@@ -33,7 +33,6 @@ import type {
 import { isHookAbortError, wrapUntrustedToolResult } from '@/types';
 import { HOOKS } from '../../../hooks/registry.js';
 import { runWithCurationAutoApprove } from '../../curation/index.js';
-import { capToolResult, MAX_TOOL_RESULT_CHARS } from '../result-compaction.js';
 import type { AiToolRegistry } from './ai-tool-registry.js';
 import type { ToolPolicyEngine } from './tool-policy-engine.js';
 import type { ToolAuditStore } from './tool-audit-store.js';
@@ -414,6 +413,13 @@ export class AiToolGovernor implements IAiToolGovernor {
         // validation and policy (so the autonomous default-deny still applies
         // independently). The three deny reasons stay distinct in the audit record,
         // which is what makes "why didn't this tool fire?" answerable per gate.
+        //
+        // The allowlist may also carry `hosted:`-prefixed entries granting
+        // provider-hosted tools. Those are inert here and need no filtering: a
+        // registry tool name can never contain a colon (AI_TOOL_NAME_PATTERN), so
+        // a hosted entry cannot match `name`, and a hosted tool never reaches this
+        // method at all — it runs on the vendor's side, and the provider enforces
+        // its grant by not advertising it.
         if (ctx.toolAllowlist && !ctx.toolAllowlist.includes(name)) {
             return this.fail(name, providerId, input, ctx, cap, 'denied', `Tool "${name}" is not in this query's tool allowlist.`);
         }
@@ -604,29 +610,6 @@ export class AiToolGovernor implements IAiToolGovernor {
                     this.logger.warn({ tool: tool.name, reason: withheldByHook }, 'ai.toolResult hook withheld a tool result');
                 }
             }
-
-            // Hard ceiling on what any tool may return, applied after the seam has
-            // had its chance to compact and before the provenance wrap, so the
-            // envelope encloses an already-bounded value. Unlike the compaction
-            // hook this runs for every tool without exception: it only ever
-            // truncates and says so, so it cannot misreport a secret payload or an
-            // exact figure the way a summary could. It is here rather than in a
-            // hook because a hook can be unregistered, and the ceiling that stops
-            // an oversized result failing the whole query must not be removable.
-            const capped = capToolResult(result, tool.name);
-            if (capped.capped) {
-                // The cap firing means compaction either did not apply to this
-                // tool or did not shrink it enough, so the model is now working
-                // from a cut payload. Worth a warn rather than an info: it is the
-                // point at which the operator's data stopped reaching the model
-                // whole, and repeated hits on one tool say its results need
-                // narrowing at the source.
-                this.logger.warn(
-                    { tool: tool.name, fromChars: capped.originalChars, limitChars: MAX_TOOL_RESULT_CHARS, triggerPath: ctx.triggerPath },
-                    `Truncated an oversized AI tool result: ${tool.name}`
-                );
-            }
-            result = capped.value;
 
             if (withheldByHook !== undefined) {
                 // A post-result hook vetoed the payload: the model must never see

@@ -165,10 +165,11 @@ export async function getTrifecta(): Promise<ITrifectaStatus> {
 
 /**
  * Fetch the lethal-trifecta status scoped to a hypothetical tool allowlist, for
- * the saved-prompt editor's per-run badge. The allowlist narrows only the
- * governed registry tools; provider server-tools and secret prompt variables
- * still fold in (a per-prompt allowlist cannot disable them), so the badge
- * reflects the true posture a run with this selection would carry.
+ * the saved-prompt editor's per-run badge. The allowlist narrows both the
+ * governed registry tools and the provider-hosted tools it names behind the
+ * `hosted:` prefix; secret prompt variables still fold in, because they inject
+ * into the prompt whichever tools a run selects. The badge therefore reflects
+ * the true posture a run with this selection would carry.
  *
  * @param toolAllowlist - The tool names the run would be allowed to call
  *        (`[]` = no tools; a list = that subset).
@@ -180,6 +181,41 @@ export async function getTrifectaPreview(toolAllowlist: string[]): Promise<ITrif
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ toolAllowlist })
     }), 'load trifecta preview');
+}
+
+/**
+ * List the provider-hosted tools a run could call, so the tool picker can offer
+ * them beside the registry tools.
+ *
+ * These tools are invisible to the core registry — they live in the provider's
+ * own configuration and are switched on per model — so this is the only way the
+ * picker learns their names. The answer is scoped, because a prompt that pins a
+ * model on a particular provider must be offered exactly what that combination
+ * can actually run.
+ *
+ * @param providerId - Which installed provider to ask. Omit for the active one;
+ *        pass a value when the prompt pins a model on a provider that is not
+ *        currently the transport.
+ * @param model - Which model to answer for. Omit for the provider's configured
+ *        model; pass one when the prompt pins a model, since the switches differ
+ *        between models.
+ * @returns The hosted tools available to that provider and model, empty when no
+ *        provider can answer.
+ */
+export async function listHostedTools(providerId?: string, model?: string): Promise<IAiToolInfo[]> {
+    const params = new URLSearchParams();
+    if (providerId) {
+        params.set('providerId', providerId);
+    }
+    if (model) {
+        params.set('model', model);
+    }
+    const query = params.toString();
+    const data = await parse<{ tools: IAiToolInfo[] }>(
+        await fetch(`${BASE}/query/hosted-tools${query ? `?${query}` : ''}`),
+        'load provider-hosted tools'
+    );
+    return data.tools ?? [];
 }
 
 /**
