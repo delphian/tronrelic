@@ -72,8 +72,18 @@ export interface ICappedResult {
 
 /** Collaborators the compactor resolves at call time rather than holding for the life of the process. */
 export interface IResultCompactorDeps {
-    /** Resolves the active AI provider, or null when none is installed or enabled. */
-    getProvider: () => IAiProvider | null;
+    /**
+     * Resolves the provider the extraction call should run on, given the id of
+     * the provider driving this invocation. It takes an id rather than always
+     * resolving the active provider because a saved prompt can pin a provider
+     * that is not the globally active one, and its tool calls then execute under
+     * that pinned provider. Resolving the active provider instead would send the
+     * fetched page and the extraction cost to a vendor this run never chose, or
+     * skip extraction altogether when nothing is globally active even though the
+     * invoking provider is right there. Returns null when neither the invoking
+     * provider nor an active one resolves, which leaves the payload to the hard cap.
+     */
+    getProvider: (aiProviderId?: string) => IAiProvider | null;
     /** Records why a compaction did or did not happen, for an operator reading the query logs. */
     log: (context: Record<string, unknown>, message: string) => void;
 }
@@ -83,10 +93,18 @@ export interface IResultCompactorDeps {
  * result value. `capability` is optional because `IAiToolInvokeContext` declares
  * it so — a call the governor could not resolve to a registered tool reaches the
  * seam without one. Compaction fails closed in that case, since the capability is
- * the only thing that says whether shrinking this result is safe.
+ * the only thing that says whether shrinking this result is safe. `context` is the
+ * invocation's caller and trigger context, read here only for `aiProviderId` so the
+ * extraction tier runs on the provider that actually made the call. It is optional
+ * so a test can build a metadata stub without one; the seam always supplies it.
  */
 type ToolResultHandler = (
-    context: { toolName: string; capability?: IAiToolCapability; input: Record<string, unknown> },
+    context: {
+        toolName: string;
+        capability?: IAiToolCapability;
+        input: Record<string, unknown>;
+        context?: { aiProviderId?: string };
+    },
     value: unknown
 ) => Promise<unknown>;
 
@@ -111,6 +129,43 @@ function serializeResult(value: unknown): string | null {
 }
 
 /**
+ * Cut a payload down until the finished result really does serialize within the
+ * ceiling. Slicing to MAX_TOOL_RESULT_CHARS is not enough on its own, because two
+ * things are added after the slice and neither is measured: the note explaining
+ * the cut, and the JSON escaping applied on the way back out. A slice full of
+ * quote characters doubles in length once re-encoded, so a plain slice can hand
+ * the model a value twice the size of the limit it was meant to enforce. This
+ * searches for the longest prefix whose assembled, serialized form still fits, so
+ * what gets measured is exactly what the model receives.
+ *
+ * @param source - Text to take a prefix of: the raw string for a string result, or its JSON encoding for anything else.
+ * @param build - Assembles a candidate prefix into the value that will be returned, so the note and any JSON envelope are counted in the measurement.
+ * @returns The assembled value, which is guaranteed to serialize to no more than MAX_TOOL_RESULT_CHARS characters.
+ */
+function fitWithinCeiling(source: string, build: (prefix: string) => unknown): unknown {
+    let low = 0;
+    let high = Math.min(source.length, MAX_TOOL_RESULT_CHARS);
+    let fitted = build('');
+
+    // Serialized length only ever grows as the prefix grows, so a binary search
+    // finds the largest prefix that fits in a handful of measurements instead of
+    // trimming a character at a time.
+    while (low <= high) {
+        const midpoint = Math.floor((low + high) / 2);
+        const candidate = build(source.slice(0, midpoint));
+        const length = serializeResult(candidate)?.length ?? Number.MAX_SAFE_INTEGER;
+        if (length <= MAX_TOOL_RESULT_CHARS) {
+            fitted = candidate;
+            low = midpoint + 1;
+        } else {
+            high = midpoint - 1;
+        }
+    }
+
+    return fitted;
+}
+
+/**
  * Enforce the absolute ceiling on a tool result. The truncation is deliberately
  * lossy but honest: the model receives the head of the payload plus an explicit
  * note saying it was cut and what to do instead, rather than a silently shortened
@@ -119,7 +174,9 @@ function serializeResult(value: unknown): string | null {
  *
  * A string result is truncated in place so it stays a string. Anything else is
  * replaced by a marker object, because slicing a JSON encoding partway through a
- * structure would hand the model something it cannot parse.
+ * structure would hand the model something it cannot parse. Either way the head is
+ * sized by `fitWithinCeiling`, so the value that leaves here serializes within the
+ * limit with the note already included rather than merely close to it.
  *
  * @param value - The result about to be returned to the model.
  * @param toolName - Named in the note so the model knows which call to narrow.
@@ -134,15 +191,10 @@ export function capToolResult(value: unknown, toolName: string): ICappedResult {
             `[truncated: ${toolName} returned ${serialized.length} characters, over the ` +
             `${MAX_TOOL_RESULT_CHARS}-character limit for a single tool result. Narrow the request — ` +
             'fewer records, a smaller page, or a more specific query — rather than repeating this call.]';
-        if (typeof value === 'string') {
-            result = { value: `${value.slice(0, MAX_TOOL_RESULT_CHARS)}\n\n${note}`, capped: true, originalChars: serialized.length };
-        } else {
-            result = {
-                value: { truncated: true, note, preview: serialized.slice(0, MAX_TOOL_RESULT_CHARS) },
-                capped: true,
-                originalChars: serialized.length
-            };
-        }
+        const bounded = typeof value === 'string'
+            ? fitWithinCeiling(value, (prefix) => `${prefix}\n\n${note}`)
+            : fitWithinCeiling(serialized, (prefix) => ({ truncated: true, note, preview: prefix }));
+        result = { value: bounded, capped: true, originalChars: serialized.length };
     }
 
     return result;
@@ -304,20 +356,28 @@ function readExtractInstruction(input: Record<string, unknown>): string | null {
 }
 
 /**
- * Ask a cheap model to pull the relevant facts out of an oversized payload that
+ * Ask the model to pull the relevant facts out of an oversized payload that
  * has no structure to shrink — an HTML page, an RSS document, a wall of prose.
  * This is the same shape as a hosted web-fetch tool: a small model reads the
  * document in its own context and returns a short answer, so the calling model
  * never pays for the markup.
  *
- * The call carries no tools (`toolAllowlist: []`). That bounds an injection in
- * the fetched text to producing a misleading summary rather than an action, and it
- * makes recursion back into this same seam impossible.
+ * The call is only made when it can genuinely be made without tools. Passing
+ * `toolAllowlist: []` switches off the governed registry tools, but it has no
+ * effect on tools the provider hosts on its own infrastructure, such as a vendor
+ * `web_search` or `web_fetch`, which the model can invoke without the governor
+ * ever seeing the call. The text being extracted here is attacker-influenceable,
+ * so running it through a call that still carries those tools would give an
+ * injection exactly the outbound reach this seam is supposed to deny. The
+ * provider is therefore asked first through `listActiveServerTools()`, and when
+ * it reports any hosted tool the model tier is skipped and the payload is left to
+ * the deterministic hard cap. Skipping costs detail; running would cost the
+ * boundary.
  *
- * @param provider - The active AI provider, resolved at call time.
+ * @param provider - The provider driving this invocation, resolved at call time.
  * @param text - The oversized payload, itself capped before being sent.
  * @param instruction - What the caller wanted from the document, when it said.
- * @returns The extracted text, or null when the provider failed or returned nothing.
+ * @returns The extracted text, or null when the provider hosts its own tools, failed, or returned nothing.
  */
 async function extractWithModel(provider: IAiProvider, text: string, instruction: string | null): Promise<string | null> {
     const goal = instruction !== null
@@ -332,9 +392,20 @@ async function extractWithModel(provider: IAiProvider, text: string, instruction
 
     let extracted: string | null;
     try {
-        const result = await provider.query({ prompt, toolAllowlist: [], maxTokens: EXTRACT_MAX_TOKENS, expandVariables: false });
-        const responseText = result.responseText?.trim() ?? '';
-        extracted = responseText.length > 0 ? responseText : null;
+        // The method-presence check mirrors the governor's own egress probe: the
+        // contract requires it, but an older active provider may predate it. A
+        // throwing probe falls to the catch below, which skips the extraction
+        // rather than guessing that the call would be tool-free.
+        const hostedTools = typeof provider.listActiveServerTools === 'function'
+            ? await provider.listActiveServerTools()
+            : [];
+        if (hostedTools.length > 0) {
+            extracted = null;
+        } else {
+            const result = await provider.query({ prompt, toolAllowlist: [], maxTokens: EXTRACT_MAX_TOKENS, expandVariables: false });
+            const responseText = result.responseText?.trim() ?? '';
+            extracted = responseText.length > 0 ? responseText : null;
+        }
     } catch {
         extracted = null;
     }
@@ -390,20 +461,32 @@ export function createToolResultCompactor(deps: IResultCompactorDeps): ToolResul
                     'Shrank an oversized AI tool result'
                 );
             } else {
-                const provider = deps.getProvider();
+                const provider = deps.getProvider(context.context?.aiProviderId);
                 const text = body ?? serialized;
                 const extracted = provider !== null
                     ? await extractWithModel(provider, text, readExtractInstruction(context.input))
                     : null;
                 if (extracted !== null) {
-                    result = {
-                        extracted,
+                    // Keep the tool's own envelope and replace only its body, the
+                    // same way the structured tier above does. The fetch tool tells
+                    // the model to cite `finalUrl`, the address that actually
+                    // answered after redirects, and that field exists nowhere else —
+                    // returning a bare summary would leave a redirected fetch cited
+                    // under the URL that was requested rather than the one that
+                    // served the text. The `extracted` flag and the note travel with
+                    // it so the model still knows this is a summary and must not
+                    // quote from it as if it were the source document.
+                    const summary = {
+                        extracted: true,
                         compacted: true,
                         originalChars: text.length,
                         note:
                             'This is an extraction of a larger document, produced by a separate model rather than ' +
                             'read directly. Quote figures from it only as reported here.'
                     };
+                    result = body !== null
+                        ? { ...(value as Record<string, unknown>), content: extracted, ...summary }
+                        : { ...summary, content: extracted };
                     // The one tier that costs money, so it is worth being able to
                     // count how often it fires and against which tool.
                     deps.log(

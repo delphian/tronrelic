@@ -464,6 +464,33 @@ export class AiToolGovernor implements IAiToolGovernor {
         );
         await this.audit.record(record);
         await this.notifyInvoked(record);
+
+        // Mirror executeTool's completion line for a call the governor never
+        // mediated. Without it, "did anything call out to the web last night?"
+        // is answerable from /system/logs only when the fetch ran through a
+        // platform handler — a provider-hosted web_search or web_fetch would be
+        // the one case the question is actually about and the one case missing.
+        // `hosted: true` marks that the governor saw this call only after the
+        // fact, which is also why there is no duration or screen verdict to
+        // report. Arguments stay out of the line exactly as on the governed
+        // path: the audit record holds them redacted by sensitivity, and
+        // `recordId` is the handle for pulling that record.
+        this.logger.info(
+            {
+                tool: record.toolName,
+                providerId: record.providerId,
+                aiProviderId: record.aiProviderId,
+                triggerPath: record.triggerPath,
+                status: record.status,
+                hosted: true,
+                sideEffect: invocation.capability.sideEffect,
+                sensitivity: invocation.capability.sensitivity,
+                ...(record.queryId ? { queryId: record.queryId } : {}),
+                ...(invocation.error ? { error: invocation.error } : {}),
+                recordId: record.id
+            },
+            `AI provider-hosted tool ran: ${record.toolName}`
+        );
     }
 
     /**
