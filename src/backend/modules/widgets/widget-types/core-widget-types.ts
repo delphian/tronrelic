@@ -117,7 +117,10 @@ export const RAW_HTML_CONFIG_SCHEMA: JSONSchema7 = {
         content: {
             type: 'string',
             title: 'Content',
-            description: 'Raw HTML or plain text to render in the zone.'
+            description: 'Raw HTML or plain text to render in the zone.',
+            // Annotation only: AJV does not validate it. The placement form
+            // reads it to offer a multiline editor instead of a one-line input.
+            contentMediaType: 'text/html'
         },
         mode: {
             type: 'string',

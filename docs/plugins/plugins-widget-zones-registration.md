@@ -156,7 +156,9 @@ A widget type may declare `configSchema` — a JSON Schema Draft 7 object — to
 
 The schema flows through `IRegisterWidgetTypeInput.configSchema` (and the convenience `IRegisterWidgetInput.configSchema`) into the widget type descriptor; the validation path retrieves it via `IWidgetsService.getTypeConfigSchema(typeId)`. Validators compile once per schema reference and cache for the descriptor's lifetime — re-enabling a plugin invalidates the cache by minting a fresh descriptor.
 
-Widget types that declare no schema accept any plain JSON object as `instanceConfig` (the shape-only "must be a plain object" guard still applies). For the smoothest operator-UX path keep top-level schema properties as primitives (`string`, `number`, `boolean`, `enum`) — the `/system/widgets` JSON-textarea editor surfaces the structured field errors inline regardless of nesting.
+Widget types that declare no schema accept any plain JSON object as `instanceConfig` (the shape-only "must be a plain object" guard still applies).
+
+The schema is also the widget's settings form. The `/system/widgets` modal renders each top-level property as a control chosen from its shape: a switch for a `boolean`, a segmented control for a short `enum`, a numeric input for a `number`, a textarea for a `string` carrying `contentMediaType` or a `maxLength` over 200, a single-line input for any other `string`, and repeatable rows for an `array` of scalars or flat objects. Give every property a `title` (the label) and a `description` (the help text), and keep properties flat: a nested `object` is editable only through the raw JSON view. The full mapping is in the [Widgets README](../../src/backend/modules/widgets/README.md#how-the-placement-form-renders-a-schema).
 
 ```typescript
 widgets.registerWidget({

@@ -190,3 +190,20 @@ Failures within a fetcher are logged and the widget is omitted — they never pr
 Widget types may declare `configSchema` (JSON Schema Draft 7) on registration. The placement admin API compiles each declared schema once via AJV and validates `instanceConfig` against it on every create and patch. Schema-invalid bodies return 400 with `{ error, errors: [{ path, message }] }`; widget types without a schema fall through to the existing shape-only "plain object" guard. The validator cache is keyed on the schema reference (WeakMap), so re-enabling a plugin mints a fresh descriptor and a fresh compiled validator without explicit invalidation.
 
 Consumers retrieve the schema for an arbitrary `typeId` via `IWidgetsService.getTypeConfigSchema(typeId)` — the controller's single touchpoint into the type-side contract. Adminship still flows through `IWidgetsService`; the registry stays internal to the module.
+
+### How the Placement Form Renders a Schema
+
+The `/system/widgets` create/edit modal builds its Settings section from the schema, so the schema is also the widget's admin form. `title` is the field label (a missing title is sentence-cased from the key) and `description` is the help text under the control. The control is chosen from the property:
+
+| Property shape | Control |
+|---|---|
+| `boolean` | Switch with the description beside it |
+| `enum` of 2–4 short members that is required or has a `default` | Segmented control showing every choice |
+| any other `enum` | Dropdown; an optional enum with no default gets a blank "Default" option |
+| `integer` / `number` | Numeric input honouring `minimum`, `maximum`, and integer step |
+| `string` with `contentMediaType`, or `maxLength` over 200 | Multiline textarea |
+| any other `string` | Single-line input |
+| `array` of scalars or of flat objects | Repeatable rows with add and remove; object items lay their fields side by side |
+| nested `object`, arrays of arrays | Not rendered; editable only through the raw JSON view |
+
+Enum members that are CSS keywords or token names (`flex-start`, `space-between`, `heading-md`, `sm`) are shown with plain-English labels; the persisted value is unchanged. `core:layout-group` is special-cased: its settings render through the same preset-driven layout editor the zone panel uses.

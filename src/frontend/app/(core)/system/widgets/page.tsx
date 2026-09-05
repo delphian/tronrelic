@@ -27,12 +27,14 @@ import {
     Fragment,
     useCallback,
     useEffect,
+    useId,
     useMemo,
     useState,
     type FormEvent,
-    type KeyboardEvent
+    type KeyboardEvent,
+    type ReactNode
 } from 'react';
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, GripVertical, Pencil, Plus, RefreshCw, SlidersHorizontal, Trash2, Ungroup, X } from 'lucide-react';
+import { AlertCircle, ArrowDown, ArrowUp, ChevronDown, ChevronUp, GripVertical, Pencil, Plus, RefreshCw, SlidersHorizontal, Trash2, Ungroup, X } from 'lucide-react';
 import {
     DndContext,
     KeyboardSensor,
@@ -63,8 +65,10 @@ import type { JSONSchema7, JSONSchema7Definition } from 'json-schema';
 import { Page, PageHeader, Stack } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { Button } from '../../../../components/ui/Button';
+import { Field } from '../../../../components/ui/Field';
 import { IconButton } from '../../../../components/ui/IconButton';
 import { Input } from '../../../../components/ui/Input';
+import { SegmentedControl } from '../../../../components/ui/SegmentedControl';
 import { Textarea } from '../../../../components/ui/Textarea';
 import { Switch } from '../../../../components/ui/Switch';
 import { Select } from '../../../../components/ui/Select';
@@ -385,13 +389,230 @@ function ZoneCustomCssField({
 }
 
 /**
- * Per-zone flexbox controls: a preset dropdown that sets the common
- * arrangements in one click, plus granular dropdowns (direction,
- * justify, align, wrap, gap) for fine-tuning. Selecting a preset applies
- * its four flex fields and keeps the chosen gap; touching any granular
- * flex field re-tags the config as `'custom'` so the preset dropdown
- * reflects that the layout no longer matches a named preset. Gap is
- * preset-independent, so changing it preserves the current preset label.
+ * Operator-facing labels for enum values that are CSS keywords or design
+ * token names. A schema enum such as `['flex-start', 'space-between']` is
+ * what the renderer needs, but shown verbatim in a dropdown it reads as
+ * code, and operators told us so. The persisted value is never changed —
+ * only the text on the option. Values not listed here fall back to
+ * sentence-casing in {@link enumOptionLabel}, so the map only needs the
+ * identifiers whose plain-English reading is not obvious from the token.
+ */
+const ENUM_VALUE_LABELS: Readonly<Record<string, string>> = {
+    'flex-start': 'Start',
+    'flex-end': 'End',
+    center: 'Center',
+    'space-between': 'Space between',
+    'space-around': 'Space around',
+    'space-evenly': 'Space evenly',
+    stretch: 'Stretch',
+    baseline: 'Baseline',
+    row: 'Row',
+    'row-reverse': 'Row (reversed)',
+    column: 'Column',
+    'column-reverse': 'Column (reversed)',
+    nowrap: 'No wrap',
+    wrap: 'Wrap',
+    none: 'None',
+    xs: 'Extra small',
+    sm: 'Small',
+    md: 'Medium',
+    lg: 'Large',
+    xl: 'Extra large',
+    'heading-xs': 'Extra small',
+    'heading-sm': 'Small',
+    'heading-md': 'Medium',
+    'heading-lg': 'Large',
+    'heading-xl': 'Extra large',
+    'body-xs': 'Extra small',
+    'body-sm': 'Small',
+    body: 'Medium',
+    'body-lg': 'Large',
+    html: 'HTML',
+    '2d': '2D',
+    '3d': '3D'
+};
+
+/**
+ * Turn one enum member into the text shown on its option or segment. Looks
+ * the value up in {@link ENUM_VALUE_LABELS} first, then sentence-cases it
+ * the same way {@link humanizeKey} treats a property name, so a plugin's
+ * `'show_all'` reads "Show all" without the plugin declaring anything.
+ * Non-string members (a numeric or boolean enum) are shown by their
+ * string form, which is also how the select maps them back on change.
+ *
+ * @param member - One entry of the schema's `enum` array
+ * @returns The label to display for that member
+ */
+function enumOptionLabel(member: unknown): string {
+    const raw = String(member);
+    const known = ENUM_VALUE_LABELS[raw];
+    return known ?? humanizeKey(raw);
+}
+
+/**
+ * Shared flexbox layout editor: a preset dropdown that sets the common
+ * arrangements in one click, plus granular dropdowns (direction, justify,
+ * align, wrap, gap, collapse threshold) for fine-tuning. Used for a zone's
+ * layout on the page and, inside the placement modal, for a layout group's
+ * settings — the two are the same `IZoneLayoutConfig`, and a layout group
+ * edited through seven generic selects was the least friendly part of the
+ * old settings form.
+ *
+ * Selecting a preset applies its four flex fields and keeps the chosen gap;
+ * touching any granular flex field re-tags the config as `'custom'` so the
+ * preset dropdown reflects that the layout no longer matches a named
+ * preset. Gap and collapse are preset-independent, so changing them
+ * preserves the current preset label.
+ *
+ * @param props.idPrefix - Prefix for control ids, unique per host so labels pair with the right control.
+ * @param props.layout - The current effective layout.
+ * @param props.disabled - Whether the controls are inert (busy write).
+ * @param props.onChange - Receives the whole new config on every edit.
+ * @param props.children - Extra host-specific controls rendered after the shared ones.
+ */
+function LayoutConfigControls({
+    idPrefix,
+    layout,
+    disabled,
+    onChange,
+    children
+}: {
+    idPrefix: string;
+    layout: IZoneLayoutConfig;
+    disabled: boolean;
+    onChange: (config: IZoneLayoutConfig) => void;
+    children?: ReactNode;
+}) {
+    /**
+     * Apply a preset: spread its flex fields over the current config,
+     * keep the operator's gap, and stamp the preset name.
+     *
+     * @param preset - Selected preset value from the dropdown.
+     */
+    const applyPreset = (preset: ZoneLayoutPreset) => {
+        if (preset === 'custom') {
+            onChange({ ...layout, preset: 'custom' });
+            return;
+        }
+        onChange({ ...layout, ...LAYOUT_PRESETS[preset], preset });
+    };
+
+    /**
+     * Apply a granular flex change. Any granular edit re-tags the config
+     * as `'custom'` (the layout no longer matches a named preset). Gap and
+     * collapse are excluded — they do not belong to a preset — so changing
+     * them keeps the current preset label.
+     *
+     * @param patch - The single field being changed.
+     * @param keepPreset - True only for the gap and collapse controls.
+     */
+    const applyGranular = (patch: Partial<IZoneLayoutConfig>, keepPreset: boolean) => {
+        onChange({ ...layout, ...patch, preset: keepPreset ? layout.preset : 'custom' });
+    };
+
+    return (
+        <div className={styles.zone_layout}>
+            {/* Essential controls: the preset drives the arrangement; gap and
+                collapse threshold are the two operators most often touch. */}
+            <div className={styles.zone_layout_group}>
+                <div className={styles.zone_layout_field}>
+                    <label className={styles.filter_label} htmlFor={`${idPrefix}-preset`}>Layout</label>
+                    <Select
+                        id={`${idPrefix}-preset`}
+                        value={layout.preset ?? 'custom'}
+                        onChange={(e) => applyPreset(e.target.value as ZoneLayoutPreset)}
+                        disabled={disabled}
+                    >
+                        {PRESET_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </Select>
+                </div>
+                <div className={styles.zone_layout_field}>
+                    <label className={styles.filter_label} htmlFor={`${idPrefix}-gap`}>Gap</label>
+                    <Select
+                        id={`${idPrefix}-gap`}
+                        value={layout.gap}
+                        onChange={(e) => applyGranular({ gap: e.target.value as IZoneLayoutConfig['gap'] }, true)}
+                        disabled={disabled}
+                    >
+                        {GAP_OPTIONS.map(o => <option key={o} value={o}>{enumOptionLabel(o)}</option>)}
+                    </Select>
+                </div>
+                <div className={styles.zone_layout_field}>
+                    <label className={styles.filter_label} htmlFor={`${idPrefix}-collapse`}>Collapse</label>
+                    <Select
+                        id={`${idPrefix}-collapse`}
+                        value={layout.collapseBelow ?? 'never'}
+                        onChange={(e) => applyGranular({ collapseBelow: e.target.value as IZoneLayoutConfig['collapseBelow'] }, true)}
+                        disabled={disabled}
+                    >
+                        {COLLAPSE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </Select>
+                </div>
+            </div>
+
+            {/* Fine-tune: the four flex axes the preset normally sets. Grouped
+                under a label so an operator reads them as the advanced tier
+                rather than peers of the preset. */}
+            <div className={styles.zone_layout_advanced}>
+                <span className={styles.zone_layout_advanced_label}>Fine-tune arrangement</span>
+                <div className={styles.zone_layout_group}>
+                    <div className={styles.zone_layout_field}>
+                        <label className={styles.filter_label} htmlFor={`${idPrefix}-dir`}>Direction</label>
+                        <Select
+                            id={`${idPrefix}-dir`}
+                            value={layout.flexDirection}
+                            onChange={(e) => applyGranular({ flexDirection: e.target.value as IZoneLayoutConfig['flexDirection'] }, false)}
+                            disabled={disabled}
+                        >
+                            {DIRECTION_OPTIONS.map(o => <option key={o} value={o}>{enumOptionLabel(o)}</option>)}
+                        </Select>
+                    </div>
+                    <div className={styles.zone_layout_field}>
+                        <label className={styles.filter_label} htmlFor={`${idPrefix}-justify`}>Justify</label>
+                        <Select
+                            id={`${idPrefix}-justify`}
+                            value={layout.justifyContent}
+                            onChange={(e) => applyGranular({ justifyContent: e.target.value as IZoneLayoutConfig['justifyContent'] }, false)}
+                            disabled={disabled}
+                        >
+                            {JUSTIFY_OPTIONS.map(o => <option key={o} value={o}>{enumOptionLabel(o)}</option>)}
+                        </Select>
+                    </div>
+                    <div className={styles.zone_layout_field}>
+                        <label className={styles.filter_label} htmlFor={`${idPrefix}-align`}>Align</label>
+                        <Select
+                            id={`${idPrefix}-align`}
+                            value={layout.alignItems}
+                            onChange={(e) => applyGranular({ alignItems: e.target.value as IZoneLayoutConfig['alignItems'] }, false)}
+                            disabled={disabled}
+                        >
+                            {ALIGN_OPTIONS.map(o => <option key={o} value={o}>{enumOptionLabel(o)}</option>)}
+                        </Select>
+                    </div>
+                    <div className={styles.zone_layout_field}>
+                        <label className={styles.filter_label} htmlFor={`${idPrefix}-wrap`}>Wrap</label>
+                        <Select
+                            id={`${idPrefix}-wrap`}
+                            value={layout.flexWrap}
+                            onChange={(e) => applyGranular({ flexWrap: e.target.value as IZoneLayoutConfig['flexWrap'] }, false)}
+                            disabled={disabled}
+                        >
+                            {WRAP_OPTIONS.map(o => <option key={o} value={o}>{enumOptionLabel(o)}</option>)}
+                        </Select>
+                    </div>
+                </div>
+            </div>
+
+            {children}
+        </div>
+    );
+}
+
+/**
+ * Per-zone flexbox controls: the shared {@link LayoutConfigControls} plus
+ * the custom CSS block, which only a zone supports (a layout group's
+ * config schema has no `customCss`). Wires the zone id into the control
+ * ids and into the change callback so the page can persist per zone.
  *
  * @param props.zoneId - Zone these controls edit.
  * @param props.layout - The zone's current effective layout.
@@ -409,126 +630,13 @@ function ZoneLayoutControls({
     disabled: boolean;
     onChange: (zoneId: string, config: IZoneLayoutConfig) => void;
 }) {
-    /**
-     * Apply a preset: spread its flex fields over the current config,
-     * keep the operator's gap, and stamp the preset name.
-     *
-     * @param preset - Selected preset value from the dropdown.
-     */
-    const applyPreset = (preset: ZoneLayoutPreset) => {
-        if (preset === 'custom') {
-            onChange(zoneId, { ...layout, preset: 'custom' });
-            return;
-        }
-        onChange(zoneId, { ...LAYOUT_PRESETS[preset], gap: layout.gap, preset });
-    };
-
-    /**
-     * Apply a granular flex change. Any granular edit re-tags the config
-     * as `'custom'` (the layout no longer matches a named preset). Gap is
-     * excluded — it does not belong to a preset — so a gap change keeps
-     * the current preset label.
-     *
-     * @param patch - The single field being changed.
-     * @param keepPreset - True only for the gap control.
-     */
-    const applyGranular = (patch: Partial<IZoneLayoutConfig>, keepPreset: boolean) => {
-        onChange(zoneId, { ...layout, ...patch, preset: keepPreset ? layout.preset : 'custom' });
-    };
-
     return (
-        <div className={styles.zone_layout}>
-            {/* Essential controls: the preset drives the arrangement; gap and
-                collapse threshold are the two operators most often touch. */}
-            <div className={styles.zone_layout_group}>
-                <div className={styles.zone_layout_field}>
-                    <label className={styles.filter_label} htmlFor={`zl-preset-${zoneId}`}>Layout</label>
-                    <Select
-                        id={`zl-preset-${zoneId}`}
-                        value={layout.preset ?? 'custom'}
-                        onChange={(e) => applyPreset(e.target.value as ZoneLayoutPreset)}
-                        disabled={disabled}
-                    >
-                        {PRESET_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </Select>
-                </div>
-                <div className={styles.zone_layout_field}>
-                    <label className={styles.filter_label} htmlFor={`zl-gap-${zoneId}`}>Gap</label>
-                    <Select
-                        id={`zl-gap-${zoneId}`}
-                        value={layout.gap}
-                        onChange={(e) => applyGranular({ gap: e.target.value as IZoneLayoutConfig['gap'] }, true)}
-                        disabled={disabled}
-                    >
-                        {GAP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                    </Select>
-                </div>
-                <div className={styles.zone_layout_field}>
-                    <label className={styles.filter_label} htmlFor={`zl-collapse-${zoneId}`}>Collapse</label>
-                    <Select
-                        id={`zl-collapse-${zoneId}`}
-                        value={layout.collapseBelow ?? 'never'}
-                        onChange={(e) => applyGranular({ collapseBelow: e.target.value as IZoneLayoutConfig['collapseBelow'] }, true)}
-                        disabled={disabled}
-                    >
-                        {COLLAPSE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </Select>
-                </div>
-            </div>
-
-            {/* Fine-tune: the four flex axes the preset normally sets. Grouped
-                under a label so an operator reads them as the advanced tier
-                rather than peers of the preset. */}
-            <div className={styles.zone_layout_advanced}>
-                <span className={styles.zone_layout_advanced_label}>Fine-tune arrangement</span>
-                <div className={styles.zone_layout_group}>
-                    <div className={styles.zone_layout_field}>
-                        <label className={styles.filter_label} htmlFor={`zl-dir-${zoneId}`}>Direction</label>
-                        <Select
-                            id={`zl-dir-${zoneId}`}
-                            value={layout.flexDirection}
-                            onChange={(e) => applyGranular({ flexDirection: e.target.value as IZoneLayoutConfig['flexDirection'] }, false)}
-                            disabled={disabled}
-                        >
-                            {DIRECTION_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                        </Select>
-                    </div>
-                    <div className={styles.zone_layout_field}>
-                        <label className={styles.filter_label} htmlFor={`zl-justify-${zoneId}`}>Justify</label>
-                        <Select
-                            id={`zl-justify-${zoneId}`}
-                            value={layout.justifyContent}
-                            onChange={(e) => applyGranular({ justifyContent: e.target.value as IZoneLayoutConfig['justifyContent'] }, false)}
-                            disabled={disabled}
-                        >
-                            {JUSTIFY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                        </Select>
-                    </div>
-                    <div className={styles.zone_layout_field}>
-                        <label className={styles.filter_label} htmlFor={`zl-align-${zoneId}`}>Align</label>
-                        <Select
-                            id={`zl-align-${zoneId}`}
-                            value={layout.alignItems}
-                            onChange={(e) => applyGranular({ alignItems: e.target.value as IZoneLayoutConfig['alignItems'] }, false)}
-                            disabled={disabled}
-                        >
-                            {ALIGN_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                        </Select>
-                    </div>
-                    <div className={styles.zone_layout_field}>
-                        <label className={styles.filter_label} htmlFor={`zl-wrap-${zoneId}`}>Wrap</label>
-                        <Select
-                            id={`zl-wrap-${zoneId}`}
-                            value={layout.flexWrap}
-                            onChange={(e) => applyGranular({ flexWrap: e.target.value as IZoneLayoutConfig['flexWrap'] }, false)}
-                            disabled={disabled}
-                        >
-                            {WRAP_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                        </Select>
-                    </div>
-                </div>
-            </div>
-
+        <LayoutConfigControls
+            idPrefix={`zl-${zoneId}`}
+            layout={layout}
+            disabled={disabled}
+            onChange={(config) => onChange(zoneId, config)}
+        >
             {/* Custom CSS: declarations only, applied to the zone container
                 as `[data-zone="<id>"] { <css> }` at SSR — mirrors how theme
                 CSS is injected, validated server-side (PostCSS syntax check)
@@ -536,7 +644,7 @@ function ZoneLayoutControls({
             <div className={styles.zone_layout_advanced}>
                 <span className={styles.zone_layout_advanced_label}>Custom CSS</span>
                 <ZoneCustomCssField
-                    id={`zl-css-${zoneId}`}
+                    id={`zl-${zoneId}-css`}
                     value={layout.customCss ?? ''}
                     disabled={disabled}
                     onCommit={(css) => onChange(zoneId, { ...layout, customCss: css.trim().length > 0 ? css : undefined })}
@@ -545,7 +653,7 @@ function ZoneLayoutControls({
                     Declarations only — no selector. Applied as <code>[data-zone=&quot;{zoneId}&quot;] {'{ ... }'}</code>.
                 </span>
             </div>
-        </div>
+        </LayoutConfigControls>
     );
 }
 
@@ -2155,26 +2263,64 @@ function fieldControlType(schema: JSONSchema7): 'boolean' | 'enum' | 'number' | 
 }
 
 /**
- * Locate the `configSchema` declared by a widget type within the
- * type-snapshot, by id. Returns undefined when the type declares none
- * (the editor then falls back to a free-form JSON object).
+ * Whether a string property should be edited in a multiline box rather
+ * than a one-line input. A widget's raw HTML block or a paragraph of copy
+ * was previously squeezed into a single-line input, which hid everything
+ * past the first eighty characters. The schema says which strings are
+ * long-form: a `contentMediaType` (declared by `core:raw-html`) or a
+ * `maxLength` well beyond a one-line value.
+ *
+ * @param schema - The string property's schema
+ * @returns True when the field renders as a textarea
+ */
+function isMultilineString(schema: JSONSchema7): boolean {
+    const longMaxLength = typeof schema.maxLength === 'number' && schema.maxLength > 200;
+    return typeof schema.contentMediaType === 'string' || longMaxLength;
+}
+
+/**
+ * Whether an enum property renders as a segmented control (every choice
+ * visible, one tap to pick) instead of a dropdown. Segments suit a small
+ * set of short choices such as `html | text` or `1h | 24h | 7d`; a dropdown
+ * still serves a long list or long labels, which would not fit on one
+ * row. A segmented control has no "unset" state, so an optional enum with
+ * no schema default keeps the dropdown, whose blank option stands for
+ * "use the widget's default".
+ *
+ * @param field - The enum field descriptor
+ * @returns True when the field renders as segments
+ */
+function enumUsesSegments(field: ConfigFieldDescriptor): boolean {
+    const members = field.schema.enum ?? [];
+    const canBeUnset = !field.required && field.schema.default === undefined;
+    const fewShortChoices = members.length >= 2 && members.length <= 4
+        && members.every(member => enumOptionLabel(member).length <= 14);
+    return !canBeUnset && fewShortChoices;
+}
+
+/** One widget type as the admin snapshot describes it. */
+type WidgetTypeRecord = IWidgetTypeSnapshot['groups'][number]['types'][number];
+
+/**
+ * Locate a widget type's snapshot record by id, so the form can show the
+ * type's label and description alongside the id rather than only the id.
  *
  * @param snapshot - Widget-type snapshot from the admin API
  * @param typeId - Selected widget type id
- * @returns The type's JSON Schema, or undefined
+ * @returns The type record, or undefined when the snapshot lacks it
  */
-function findConfigSchema(snapshot: IWidgetTypeSnapshot | null, typeId: string): JSONSchema7 | undefined {
-    if (!snapshot || !typeId) {
-        return undefined;
-    }
-    for (const group of snapshot.groups) {
-        for (const type of group.types) {
-            if (type.id === typeId) {
-                return type.configSchema;
+function findWidgetType(snapshot: IWidgetTypeSnapshot | null, typeId: string): WidgetTypeRecord | undefined {
+    let found: WidgetTypeRecord | undefined;
+    if (snapshot && typeId) {
+        for (const group of snapshot.groups) {
+            const match = group.types.find(type => type.id === typeId);
+            if (match) {
+                found = match;
+                break;
             }
         }
     }
-    return undefined;
+    return found;
 }
 
 /**
@@ -2445,23 +2591,52 @@ function buildStructuredConfig(
 }
 
 /**
- * Renders one schema-derived instanceConfig field with the control its
- * type implies: a Switch for booleans, a select for enums, a numeric
- * Input for integer/number (with min/max/step), and a text Input
- * otherwise. The label carries the schema title and a required marker;
- * the description becomes help text.
+ * Whether a field takes the full width of the settings grid. Short
+ * controls (a dropdown, a segmented control, a number) sit two to a row;
+ * anything holding free text, a sentence of help beside a switch, or a
+ * list of rows needs the whole width to stay readable.
  *
- * @param props - The field descriptor, its current value, change handler, and disabled flag
+ * @param field - The field descriptor
+ * @returns True when the field spans both grid columns
+ */
+function fieldSpansRow(field: ConfigFieldDescriptor): boolean {
+    const control = fieldControlType(field.schema);
+    return control === 'text' || control === 'array' || control === 'boolean';
+}
+
+/**
+ * Renders one schema-derived instanceConfig field with the control its
+ * type implies: a toggle row for booleans, segments or a dropdown for
+ * enums, a numeric Input for integer/number (with min/max/step), a
+ * textarea for long-form strings, and a text Input otherwise. The label
+ * carries the schema title and a required marker; the description
+ * becomes help text under the control, or a tooltip and placeholder in
+ * compact mode, where a repeated paragraph under every row of a list would
+ * bury the controls.
+ *
+ * @param props.field - The field descriptor
+ * @param props.value - The current working value
+ * @param props.idPrefix - Prefix keeping this field's element id unique across list rows
+ * @param props.disabled - Whether the control is inert (save in flight)
+ * @param props.compact - True inside a list row: help moves into a tooltip and placeholder
+ * @param props.className - Grid placement class supplied by the parent
+ * @param props.onChange - Receives the new working value
  */
 function InstanceConfigField({
     field,
     value,
+    idPrefix,
     disabled,
+    compact = false,
+    className,
     onChange
 }: {
     field: ConfigFieldDescriptor;
     value: unknown;
+    idPrefix: string;
     disabled: boolean;
+    compact?: boolean;
+    className?: string;
     onChange: (next: unknown) => void;
 }) {
     const control = fieldControlType(field.schema);
@@ -2470,29 +2645,34 @@ function InstanceConfigField({
             <InstanceConfigArrayField
                 field={field}
                 value={value}
+                idPrefix={idPrefix}
                 disabled={disabled}
+                className={className}
                 onChange={onChange}
             />
         );
     }
-    const fieldId = `wp-cfg-${field.key}`;
-    const hintId = field.description ? `${fieldId}-hint` : undefined;
+    const fieldId = `${idPrefix}-${field.key}`;
+    const hint = compact ? undefined : field.description;
+    const tooltip = compact ? field.description : undefined;
     const marker = field.required ? <span className={styles.config_required} aria-hidden> *</span> : null;
 
     if (control === 'boolean') {
         return (
-            <div className={styles.field}>
-                <label className={styles.inline_toggle}>
-                    <Switch
-                        size="sm"
-                        on={Boolean(value)}
-                        onChange={onChange}
-                        disabled={disabled}
-                        aria-label={field.label}
-                    />
-                    <span>{field.label}{marker}</span>
+            <div className={cn(styles.toggle_row, className)}>
+                <Switch
+                    id={fieldId}
+                    size="sm"
+                    on={Boolean(value)}
+                    onChange={onChange}
+                    disabled={disabled}
+                    aria-label={field.label}
+                    title={tooltip}
+                />
+                <label htmlFor={fieldId} className={styles.toggle_row_text}>
+                    <span className={styles.field_label}>{field.label}</span>
+                    {hint && <span className={styles.field_hint}>{hint}</span>}
                 </label>
-                {field.description && <span className={styles.field_hint}>{field.description}</span>}
             </div>
         );
     }
@@ -2502,44 +2682,76 @@ function InstanceConfigField({
         // boolean enum is displayed by its String() form but mapped back
         // to its original typed value on change, so the persisted config
         // carries the type the server's AJV schema expects.
-        const rawEnum = field.schema.enum ?? [];
+        const members = field.schema.enum ?? [];
+        const current = value !== undefined && value !== null ? String(value) : '';
+        /**
+         * Map the chosen option's string form back to the typed enum
+         * member before lifting it to the parent.
+         *
+         * @param selected - The option or segment value as a string
+         */
+        const selectMember = (selected: string) => {
+            const match = members.find(member => String(member) === selected);
+            onChange(match !== undefined ? match : selected);
+        };
+
+        if (enumUsesSegments(field)) {
+            // The shared Field cannot label a segmented control (a group has
+            // no id a <label> may point at), so the label and hint are laid
+            // out by hand with the same field tokens.
+            return (
+                <div className={cn(styles.field_group, className)}>
+                    <span className={styles.field_label}>{field.label}{marker}</span>
+                    <SegmentedControl
+                        label={field.label}
+                        value={current}
+                        disabled={disabled}
+                        onChange={selectMember}
+                        options={members.map(member => {
+                            const raw = String(member);
+                            const text = enumOptionLabel(member);
+                            return { id: raw, label: text, title: text === raw ? undefined : raw };
+                        })}
+                    />
+                    {hint && <span className={styles.field_hint}>{hint}</span>}
+                </div>
+            );
+        }
+
         return (
-            <div className={styles.field}>
-                <label htmlFor={fieldId}>{field.label}{marker}</label>
+            <Field label={field.label} required={field.required} hint={hint} className={className}>
                 <Select
                     id={fieldId}
-                    value={value !== undefined && value !== null ? String(value) : ''}
-                    onChange={(e) => {
-                        const selected = e.target.value;
-                        const match = rawEnum.find(option => String(option) === selected);
-                        onChange(match !== undefined ? match : selected);
-                    }}
+                    size="sm"
+                    value={current}
+                    onChange={(e) => selectMember(e.target.value)}
                     disabled={disabled}
-                    aria-describedby={hintId}
+                    title={tooltip}
                 >
-                    {!field.required && <option value="">(default)</option>}
-                    {rawEnum.map(option => {
-                        const optionValue = String(option);
-                        return <option key={optionValue} value={optionValue}>{optionValue}</option>;
+                    {!field.required && <option value="">Default</option>}
+                    {members.map(member => {
+                        const raw = String(member);
+                        return <option key={raw} value={raw}>{enumOptionLabel(member)}</option>;
                     })}
                 </Select>
-                {field.description && <span id={hintId} className={styles.field_hint}>{field.description}</span>}
-            </div>
+            </Field>
         );
     }
 
     if (control === 'number') {
         const min = typeof field.schema.minimum === 'number' ? field.schema.minimum : undefined;
         const max = typeof field.schema.maximum === 'number' ? field.schema.maximum : undefined;
+        const integer = primaryType(field.schema) === 'integer';
         return (
-            <div className={styles.field}>
-                <label htmlFor={fieldId}>{field.label}{marker}</label>
+            <Field label={field.label} required={field.required} hint={hint} className={className}>
                 <Input
                     id={fieldId}
+                    size="sm"
                     type="number"
+                    inputMode={integer ? 'numeric' : 'decimal'}
                     min={min}
                     max={max}
-                    step={primaryType(field.schema) === 'integer' ? 1 : undefined}
+                    step={integer ? 1 : undefined}
                     value={value === undefined || value === null || value === '' ? '' : String(value)}
                     onChange={(e) => {
                         // Keep a clean parse as a number so save/validation
@@ -2556,25 +2768,40 @@ function InstanceConfigField({
                         onChange(Number.isNaN(num) ? text : num);
                     }}
                     disabled={disabled}
-                    aria-describedby={hintId}
+                    title={tooltip}
                 />
-                {field.description && <span id={hintId} className={styles.field_hint}>{field.description}</span>}
-            </div>
+            </Field>
         );
     }
 
+    const text = typeof value === 'string' ? value : '';
     return (
-        <div className={styles.field}>
-            <label htmlFor={fieldId}>{field.label}{marker}</label>
-            <Input
-                id={fieldId}
-                value={typeof value === 'string' ? value : ''}
-                onChange={(e) => onChange(e.target.value)}
-                disabled={disabled}
-                aria-describedby={hintId}
-            />
-            {field.description && <span id={hintId} className={styles.field_hint}>{field.description}</span>}
-        </div>
+        <Field label={field.label} required={field.required} hint={hint} className={className}>
+            {isMultilineString(field.schema) ? (
+                <Textarea
+                    id={fieldId}
+                    size="sm"
+                    className={styles.textarea_content}
+                    rows={6}
+                    value={text}
+                    onChange={(e) => onChange(e.target.value)}
+                    disabled={disabled}
+                    spellCheck={false}
+                    placeholder={tooltip}
+                    title={tooltip}
+                />
+            ) : (
+                <Input
+                    id={fieldId}
+                    size="sm"
+                    value={text}
+                    onChange={(e) => onChange(e.target.value)}
+                    disabled={disabled}
+                    placeholder={tooltip}
+                    title={tooltip}
+                />
+            )}
+        </Field>
     );
 }
 
@@ -2607,12 +2834,16 @@ function singularizeLabel(label: string): string {
 function InstanceConfigArrayField({
     field,
     value,
+    idPrefix,
     disabled,
+    className,
     onChange
 }: {
     field: ConfigFieldDescriptor;
     value: unknown;
+    idPrefix: string;
     disabled: boolean;
+    className?: string;
     onChange: (next: unknown) => void;
 }) {
     const items = Array.isArray(value) ? value : [];
@@ -2654,15 +2885,29 @@ function InstanceConfigArrayField({
     };
 
     return (
-        <div className={styles.field}>
-            <span className={styles.field_label}>{field.label}{marker}</span>
+        <div className={cn(styles.field_group, className)}>
+            <div className={styles.field_group_header}>
+                <span className={styles.field_label}>{field.label}{marker}</span>
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    onClick={addItem}
+                    disabled={disabled}
+                >
+                    <Plus size={14} aria-hidden /> Add {singular.toLowerCase()}
+                </Button>
+            </div>
             {field.description && <span className={styles.field_hint}>{field.description}</span>}
             <div className={styles.config_array}>
                 {items.length === 0 && (
-                    <span className={styles.field_hint}>No entries yet.</span>
+                    <span className={styles.config_array_empty}>
+                        No {field.label.toLowerCase()} yet.
+                    </span>
                 )}
                 {items.map((item, index) => (
                     <div key={index} className={styles.config_array_item}>
+                        <span className={styles.config_array_index} aria-hidden>{index + 1}</span>
                         <div className={styles.config_array_fields}>
                             {kind === 'object'
                                 ? itemFields.map(sub => (
@@ -2672,7 +2917,9 @@ function InstanceConfigArrayField({
                                         value={item && typeof item === 'object'
                                             ? (item as Record<string, unknown>)[sub.key]
                                             : undefined}
+                                        idPrefix={`${idPrefix}-${field.key}-${index}`}
                                         disabled={disabled}
+                                        compact
                                         onChange={(next) => updateItem(index, {
                                             ...(item && typeof item === 'object' ? item as Record<string, unknown> : {}),
                                             [sub.key]: next
@@ -2681,9 +2928,11 @@ function InstanceConfigArrayField({
                                 ))
                                 : (
                                     <InstanceConfigField
-                                        field={{ key: `${field.key}_item`, schema: itemSchema, required: false, label: `${singular} ${index + 1}` }}
+                                        field={{ key: 'item', schema: itemSchema, required: false, label: `${singular} ${index + 1}` }}
                                         value={item}
+                                        idPrefix={`${idPrefix}-${field.key}-${index}`}
                                         disabled={disabled}
+                                        compact
                                         onChange={(next) => updateItem(index, next)}
                                     />
                                 )}
@@ -2699,18 +2948,91 @@ function InstanceConfigArrayField({
                         </IconButton>
                     </div>
                 ))}
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    onClick={addItem}
-                    disabled={disabled}
-                >
-                    <Plus size={14} /> Add {singular.toLowerCase()}
-                </Button>
             </div>
         </div>
     );
+}
+
+/**
+ * Titled group of related fields inside the placement form. Grouping the
+ * form into Placement, Visibility, Title, and Settings is what lets an
+ * operator find one control in a form that used to be a single scroll of
+ * unlabelled rows. A `section` with `aria-labelledby` gives assistive
+ * technology the same grouping.
+ *
+ * @param props.title - Short group name shown as the section heading
+ * @param props.action - Optional control rendered at the right of the heading, such as the JSON toggle
+ * @param props.children - The group's fields
+ */
+function FormSection({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+    const headingId = useId();
+    return (
+        <section className={styles.form_section} aria-labelledby={headingId}>
+            <div className={styles.form_section_header}>
+                <h3 id={headingId} className={styles.form_section_title}>{title}</h3>
+                {action}
+            </div>
+            {children}
+        </section>
+    );
+}
+
+/** Valid `collapseBelow` values, taken from the dropdown options so the two cannot drift. */
+const COLLAPSE_VALUES = COLLAPSE_OPTIONS.map(option => option.value);
+
+/**
+ * Work out which named preset a layout matches, so a layout group whose
+ * saved config never recorded a preset still opens on the preset dropdown
+ * rather than on "Custom".
+ *
+ * @param layout - The flex fields to compare against each preset
+ * @returns The matching preset name, or `'custom'` when none matches
+ */
+function detectPreset(layout: IZoneLayoutConfig): ZoneLayoutPreset {
+    const names = Object.keys(LAYOUT_PRESETS) as Array<Exclude<ZoneLayoutPreset, 'custom'>>;
+    const match = names.find(name => {
+        const preset = LAYOUT_PRESETS[name];
+        return preset.flexDirection === layout.flexDirection
+            && preset.justifyContent === layout.justifyContent
+            && preset.alignItems === layout.alignItems
+            && preset.flexWrap === layout.flexWrap;
+    });
+    return match ?? 'custom';
+}
+
+/**
+ * Read a layout group's working instanceConfig as an `IZoneLayoutConfig`
+ * so the shared layout editor can drive it. Each flex field is accepted
+ * only when it is one of the known values and otherwise falls back to the
+ * schema default, so a half-typed raw-JSON edit cannot put the editor into
+ * a state it cannot render.
+ *
+ * @param value - The form's working config values for the layout group
+ * @returns A complete layout config the editor can display
+ */
+function toLayoutConfig(value: Record<string, unknown>): IZoneLayoutConfig {
+    /**
+     * Accept a working value only when it is one of the allowed members.
+     *
+     * @param key - The config key to read
+     * @param allowed - The values the schema permits for that key
+     * @param fallback - The schema default used when the value is missing or invalid
+     */
+    const pick = <T extends string>(key: string, allowed: ReadonlyArray<T>, fallback: T): T => {
+        const raw = value[key];
+        return typeof raw === 'string' && (allowed as ReadonlyArray<string>).includes(raw) ? raw as T : fallback;
+    };
+    const layout: IZoneLayoutConfig = {
+        flexDirection: pick('flexDirection', DIRECTION_OPTIONS, 'column'),
+        justifyContent: pick('justifyContent', JUSTIFY_OPTIONS, 'flex-start'),
+        alignItems: pick('alignItems', ALIGN_OPTIONS, 'stretch'),
+        flexWrap: pick('flexWrap', WRAP_OPTIONS, 'nowrap'),
+        gap: pick('gap', GAP_OPTIONS, 'md'),
+        collapseBelow: pick('collapseBelow', COLLAPSE_VALUES, 'never')
+    };
+    const presetNames = PRESET_OPTIONS.map(option => option.value);
+    layout.preset = pick('preset', presetNames, detectPreset(layout));
+    return layout;
 }
 
 /* ------------------------------------------------------------------ */
@@ -2760,9 +3082,14 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, placements,
     // Operators edit typed fields by default; an "Edit as JSON" escape
     // hatch exposes the raw object for keys the form cannot represent.
     // Types with no schema fall straight through to the raw editor.
-    const selectedSchema = useMemo(() => findConfigSchema(types, typeId), [types, typeId]);
+    const selectedType = useMemo(() => findWidgetType(types, typeId), [types, typeId]);
+    const selectedSchema = selectedType?.configSchema;
     const configFields = useMemo(() => extractConfigFields(selectedSchema), [selectedSchema]);
     const hasSchemaFields = configFields.length > 0;
+    // Element-id prefix for every control in this form. Generated rather
+    // than fixed so a list row's sub-fields, which repeat per row, never
+    // collide with each other or with a second form on the page.
+    const formId = useId();
 
     // A layout group cannot itself be nested; the Container picker is
     // hidden for it. For every other type, offer the layout-group
@@ -2787,9 +3114,44 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, placements,
         }
     }, [containers, parentId]);
 
+    // A nested widget shows wherever its container shows: the backend
+    // clears a child's own routes on attach. The routes editor is hidden
+    // while a container is selected so the operator is not asked for a
+    // filter that would be discarded.
+    const nested = !isLayoutGroup && parentId.length > 0;
+
     const [configValue, setConfigValue] = useState<Record<string, unknown>>(
         () => coerceInitialConfig(configFields, initial?.instanceConfig as Record<string, unknown> | undefined)
     );
+
+    // A layout group's settings are an IZoneLayoutConfig, so the modal
+    // reuses the preset-driven editor the zone panel uses instead of
+    // seven generic dropdowns. The editor reads a normalised view of the
+    // working values and writes back only the keys the schema declares.
+    const layoutGroupConfig = useMemo(
+        () => (isLayoutGroup ? toLayoutConfig(configValue) : null),
+        [isLayoutGroup, configValue]
+    );
+
+    /**
+     * Copy an edited layout config back into the working config values,
+     * key by key, so the raw-JSON view and the save path see the same
+     * object shape the schema validates.
+     *
+     * @param config - The layout the shared editor produced
+     */
+    const applyLayoutGroupConfig = useCallback((config: IZoneLayoutConfig) => {
+        const source = config as unknown as Record<string, unknown>;
+        setConfigValue(prev => {
+            const next = { ...prev };
+            for (const field of configFields) {
+                if (field.key in source) {
+                    next[field.key] = source[field.key];
+                }
+            }
+            return next;
+        });
+    }, [configFields]);
     const [rawMode, setRawMode] = useState<boolean>(() => !hasSchemaFields);
     const [rawText, setRawText] = useState<string>(
         () => (initial?.instanceConfig ? JSON.stringify(initial.instanceConfig, null, 2) : '')
@@ -3042,244 +3404,322 @@ function PlacementForm({ mode, initial, defaultRoutes, types, zones, placements,
     );
 
     const canSubmit = typeId.length > 0 && zoneId.length > 0;
+    const routesId = `${formId}-routes`;
+    const typeHint = selectedType?.description;
+
+    /**
+     * Pick the settings editor for the current mode and type. Raw JSON
+     * wins when the operator asked for it or the type declares no fields;
+     * a layout group gets the preset editor; every other type gets its
+     * schema fields laid out two to a row.
+     *
+     * @returns The settings body, or a placeholder before a type is chosen
+     */
+    const renderSettings = (): ReactNode => {
+        let body: ReactNode;
+        if (typeId.length === 0) {
+            body = <p className={styles.config_placeholder}>Choose a widget type to see its settings.</p>;
+        } else if (rawMode) {
+            body = (
+                <Field
+                    hint={hasSchemaFields
+                        ? 'Validated against the widget’s settings schema on save.'
+                        : 'This widget declares no settings. Optional JSON here is passed to it as overrides.'}
+                    error={instanceConfigError ?? undefined}
+                >
+                    <Textarea
+                        id={`${formId}-config-json`}
+                        size="sm"
+                        className={styles.textarea}
+                        rows={8}
+                        value={rawText}
+                        onChange={(e) => { setRawText(e.target.value); setInstanceConfigError(null); }}
+                        placeholder="{}"
+                        disabled={saving}
+                        spellCheck={false}
+                        invalid={instanceConfigError !== null}
+                        aria-label="Settings as JSON"
+                    />
+                </Field>
+            );
+        } else if (layoutGroupConfig) {
+            body = (
+                <LayoutConfigControls
+                    idPrefix={`${formId}-layout`}
+                    layout={layoutGroupConfig}
+                    disabled={saving}
+                    onChange={applyLayoutGroupConfig}
+                />
+            );
+        } else {
+            body = (
+                <div className={styles.form_grid}>
+                    {configFields.map(field => (
+                        <InstanceConfigField
+                            key={field.key}
+                            field={field}
+                            value={configValue[field.key]}
+                            idPrefix={`${formId}-config`}
+                            disabled={saving}
+                            className={fieldSpansRow(field) ? styles.form_span : undefined}
+                            onChange={(next) => setConfigValue(prev => ({ ...prev, [field.key]: next }))}
+                        />
+                    ))}
+                </div>
+            );
+        }
+        return body;
+    };
 
     return (
         <form className={styles.form} onSubmit={handleSubmit}>
-            <div className={styles.field}>
-                <label htmlFor="wp-type">Widget type</label>
-                <Select
-                    id="wp-type"
-                    value={typeId}
-                    onChange={(e) => setTypeId(e.target.value)}
-                    disabled={mode === 'edit' || saving}
-                    required
-                >
-                    <option value="">Select a type&hellip;</option>
-                    {types?.groups.map(group => (
-                        <optgroup key={group.pluginId} label={group.pluginId}>
-                            {group.types.map(t => (
-                                <option key={t.id} value={t.id}>{t.label} ({t.id})</option>
-                            ))}
-                        </optgroup>
-                    ))}
-                </Select>
-                {mode === 'edit' && (
-                    <span className={styles.field_hint}>
-                        Type is fixed for existing placements — create a new placement to use a different type.
-                    </span>
-                )}
-            </div>
-
-            <div className={styles.field}>
-                <label htmlFor="wp-zone">Zone</label>
-                <Select
-                    id="wp-zone"
-                    value={zoneId}
-                    onChange={(e) => setZoneId(e.target.value)}
-                    disabled={saving}
-                    required
-                >
-                    <option value="">Select a zone&hellip;</option>
-                    {zones?.tracks.map(track => (
-                        <optgroup key={track.id} label={track.label}>
-                            {track.zones.map(z => (
-                                <option key={z.id} value={z.id}>{z.label} ({z.id})</option>
-                            ))}
-                        </optgroup>
-                    ))}
-                </Select>
-            </div>
-
-            {!isLayoutGroup && containers.length > 0 && (
-                <div className={styles.field}>
-                    <label htmlFor="wp-parent">Container</label>
-                    <Select
-                        id="wp-parent"
-                        value={parentId}
-                        onChange={(e) => setParentId(e.target.value)}
-                        disabled={saving}
-                    >
-                        <option value="">None — place directly in the zone</option>
-                        {containers.map(c => (
-                            <option key={c.id} value={c.id}>
-                                {c.title ?? 'Layout group'} (…{c.id.slice(-6)})
-                            </option>
-                        ))}
-                    </Select>
-                    <span className={styles.field_hint}>
-                        Nest this widget inside a layout group in this zone. The group controls its own
-                        row/column arrangement, and its route filter governs visibility.
-                    </span>
-                </div>
-            )}
-
-            <div className={styles.field}>
-                <label htmlFor="wp-routes">Routes</label>
-                <div className={styles.routes_chips}>
-                    {routes.length === 0 && (
-                        <span className={styles.field_hint}>Leave empty to render on every route.</span>
-                    )}
-                    {routes.map(entry => (
-                        <span key={entry} className={styles.route_chip_editable}>
-                            <code>{entry}</code>
-                            <button
-                                type="button"
-                                aria-label={`Remove ${entry}`}
-                                onClick={() => handleRemoveRoute(entry)}
+            <FormSection title="Placement">
+                <div className={styles.form_grid}>
+                    {mode === 'create' ? (
+                        <Field
+                            label="Widget type"
+                            required
+                            hint={typeHint}
+                            className={styles.form_span}
+                        >
+                            <Select
+                                id={`${formId}-type`}
+                                size="sm"
+                                value={typeId}
+                                onChange={(e) => setTypeId(e.target.value)}
                                 disabled={saving}
-                                className={styles.route_chip_remove}
+                                required
                             >
-                                <X size={12} aria-hidden />
-                            </button>
-                        </span>
-                    ))}
+                                <option value="">Choose a widget</option>
+                                {types?.groups.map(group => (
+                                    <optgroup key={group.pluginId} label={group.pluginId}>
+                                        {group.types.map(t => (
+                                            <option key={t.id} value={t.id}>{t.label}</option>
+                                        ))}
+                                    </optgroup>
+                                ))}
+                            </Select>
+                        </Field>
+                    ) : (
+                        // The type of an existing placement cannot change, so a
+                        // disabled dropdown would only invite a click that does
+                        // nothing. A read-only summary says what the widget is.
+                        <div className={cn(styles.form_static, styles.form_span)}>
+                            <span className={styles.field_label}>Widget type</span>
+                            <span className={styles.form_static_value}>
+                                <span>{selectedType?.label ?? typeId}</span>
+                                <code className={styles.widget_meta}>{typeId}</code>
+                            </span>
+                            {typeHint && <span className={styles.field_hint}>{typeHint}</span>}
+                        </div>
+                    )}
+
+                    <Field label="Zone" required>
+                        <Select
+                            id={`${formId}-zone`}
+                            size="sm"
+                            value={zoneId}
+                            onChange={(e) => setZoneId(e.target.value)}
+                            disabled={saving}
+                            required
+                        >
+                            <option value="">Choose a zone</option>
+                            {zones?.tracks.map(track => (
+                                <optgroup key={track.id} label={track.label}>
+                                    {track.zones.map(z => (
+                                        <option key={z.id} value={z.id}>{z.label}</option>
+                                    ))}
+                                </optgroup>
+                            ))}
+                        </Select>
+                    </Field>
+
+                    <Field label="Order" hint="Lower numbers render first.">
+                        <Input
+                            id={`${formId}-order`}
+                            size="sm"
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            max={10000}
+                            value={order}
+                            onChange={(e) => setOrder(parseInt(e.target.value, 10) || 0)}
+                            disabled={saving}
+                        />
+                    </Field>
+
+                    {!isLayoutGroup && containers.length > 0 && (
+                        <Field
+                            label="Container"
+                            hint={nested
+                                ? 'Nested widgets follow the group’s route filter and arrangement.'
+                                : 'Optionally nest this widget inside a layout group in this zone.'}
+                            className={styles.form_span}
+                        >
+                            <Select
+                                id={`${formId}-parent`}
+                                size="sm"
+                                value={parentId}
+                                onChange={(e) => setParentId(e.target.value)}
+                                disabled={saving}
+                            >
+                                <option value="">None, place directly in the zone</option>
+                                {containers.map(c => (
+                                    <option key={c.id} value={c.id}>
+                                        {c.title ?? 'Layout group'} (…{c.id.slice(-6)})
+                                    </option>
+                                ))}
+                            </Select>
+                        </Field>
+                    )}
                 </div>
-                <div className={styles.routes_input_row}>
-                    <Input
-                        id="wp-routes"
-                        value={routeDraft}
-                        onChange={(e) => { setRouteDraft(e.target.value); setRouteError(null); }}
-                        onKeyDown={handleRouteKey}
-                        placeholder="/about or /tools/* or /system/**"
+            </FormSection>
+
+            <FormSection title="Visibility">
+                <div className={styles.toggle_row}>
+                    <Switch
+                        id={`${formId}-enabled`}
+                        size="sm"
+                        on={enabled}
+                        onChange={setEnabled}
                         disabled={saving}
+                        aria-label="Enabled"
                     />
+                    <label htmlFor={`${formId}-enabled`} className={styles.toggle_row_text}>
+                        <span className={styles.field_label}>Enabled</span>
+                        <span className={styles.field_hint}>A disabled placement keeps its settings but does not render.</span>
+                    </label>
+                </div>
+
+                {!nested && (
+                    <Field
+                        label="Routes"
+                        htmlFor={routesId}
+                        error={routeError ?? undefined}
+                        hint={(
+                            <>
+                                Leave empty to show on every page. <code>/tools/*</code> matches one path segment,
+                                {' '}<code>/system/**</code> matches any depth. Press Enter or comma to add.
+                            </>
+                        )}
+                    >
+                        {routes.length > 0 && (
+                            <div className={styles.routes_chips}>
+                                {routes.map(entry => (
+                                    <span key={entry} className={styles.route_chip_editable}>
+                                        <code>{entry}</code>
+                                        <button
+                                            type="button"
+                                            aria-label={`Remove ${entry}`}
+                                            onClick={() => handleRemoveRoute(entry)}
+                                            disabled={saving}
+                                            className={styles.route_chip_remove}
+                                        >
+                                            <X size={12} aria-hidden />
+                                        </button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                        <div className={styles.routes_input_row}>
+                            <Input
+                                id={routesId}
+                                size="sm"
+                                value={routeDraft}
+                                onChange={(e) => { setRouteDraft(e.target.value); setRouteError(null); }}
+                                onKeyDown={handleRouteKey}
+                                placeholder="/about or /tools/* or /system/**"
+                                disabled={saving}
+                                invalid={routeError !== null}
+                                // Field cannot inject this onto one of several
+                                // children; the ids follow Field's own
+                                // `<controlId>-hint` / `<controlId>-error` naming.
+                                aria-describedby={routeError ? `${routesId}-error` : `${routesId}-hint`}
+                            />
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleAddRoute}
+                                disabled={saving || routeDraft.trim().length === 0}
+                            >
+                                Add
+                            </Button>
+                        </div>
+                    </Field>
+                )}
+            </FormSection>
+
+            <FormSection title="Title">
+                <div className={styles.form_grid}>
+                    <Field label="Title">
+                        <Input
+                            id={`${formId}-title`}
+                            size="sm"
+                            value={title}
+                            onChange={(e) => setTitle(e.target.value)}
+                            placeholder="Widget default"
+                            maxLength={80}
+                            disabled={saving}
+                        />
+                    </Field>
+                    <Field label="Title size">
+                        <Select
+                            id={`${formId}-title-size`}
+                            size="sm"
+                            value={titleSize}
+                            onChange={(e) => setTitleSize(e.target.value as WidgetTitleSize)}
+                            disabled={saving}
+                        >
+                            <option value="heading-xs">Extra small</option>
+                            <option value="heading-sm">Small</option>
+                            <option value="heading-md">Medium (default)</option>
+                            <option value="heading-lg">Large</option>
+                            <option value="heading-xl">Extra large</option>
+                        </Select>
+                    </Field>
+                    <Field
+                        label="Title link"
+                        hint="An internal path starting with /. The link shows only when a title is set."
+                        className={styles.form_span}
+                    >
+                        <Input
+                            id={`${formId}-title-url`}
+                            size="sm"
+                            value={titleUrl}
+                            onChange={(e) => setTitleUrl(e.target.value)}
+                            placeholder="/markets"
+                            maxLength={512}
+                            disabled={saving}
+                        />
+                    </Field>
+                </div>
+            </FormSection>
+
+            <FormSection
+                title="Settings"
+                action={hasSchemaFields ? (
                     <Button
                         type="button"
                         variant="ghost"
-                        size="sm"
-                        onClick={handleAddRoute}
-                        disabled={saving || routeDraft.trim().length === 0}
+                        size="xs"
+                        onClick={rawMode ? exitRawMode : enterRawMode}
+                        disabled={saving}
                     >
-                        Add
+                        {rawMode ? 'Edit with form' : 'Edit as JSON'}
                     </Button>
-                </div>
-                {routeError && <span className={styles.field_error}>{routeError}</span>}
-                <span className={styles.field_hint}>
-                    Press Enter or comma to add. Use <code>/tools/*</code> for a single segment,
-                    {' '}<code>/system/**</code> for any depth.
-                </span>
-            </div>
-
-            <div className={styles.field_row}>
-                <div className={styles.field}>
-                    <label htmlFor="wp-order">Order</label>
-                    <Input
-                        id="wp-order"
-                        type="number"
-                        min={0}
-                        max={10000}
-                        value={order}
-                        onChange={(e) => setOrder(parseInt(e.target.value, 10) || 0)}
-                        disabled={saving}
-                    />
-                </div>
-                <div className={styles.field}>
-                    <label htmlFor="wp-title">Title override</label>
-                    <Input
-                        id="wp-title"
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        placeholder="Optional"
-                        maxLength={80}
-                        disabled={saving}
-                    />
-                </div>
-                <div className={styles.field}>
-                    <label htmlFor="wp-title-size">Title size</label>
-                    <Select
-                        id="wp-title-size"
-                        value={titleSize}
-                        onChange={(e) => setTitleSize(e.target.value as WidgetTitleSize)}
-                        disabled={saving}
-                    >
-                        <option value="heading-xs">Extra small</option>
-                        <option value="heading-sm">Small</option>
-                        <option value="heading-md">Medium (default)</option>
-                        <option value="heading-lg">Large</option>
-                        <option value="heading-xl">Extra large</option>
-                    </Select>
-                    <span className={styles.field_hint}>Heading size of the title above the widget.</span>
-                </div>
-                <div className={styles.field}>
-                    <label htmlFor="wp-title-url">Title link</label>
-                    <Input
-                        id="wp-title-url"
-                        value={titleUrl}
-                        onChange={(e) => setTitleUrl(e.target.value)}
-                        placeholder="/markets (optional)"
-                        maxLength={512}
-                        disabled={saving}
-                    />
-                    <span className={styles.field_hint}>
-                        Internal path only (must start with <code>/</code>). Links the title; needs a title override to show.
-                    </span>
-                </div>
-            </div>
-
-            <div className={styles.field}>
-                <div className={styles.config_header}>
-                    <span className={styles.field_label}>Instance config</span>
-                    {hasSchemaFields && (
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="xs"
-                            onClick={rawMode ? exitRawMode : enterRawMode}
-                            disabled={saving}
-                        >
-                            {rawMode ? 'Edit with form' : 'Edit as JSON'}
-                        </Button>
-                    )}
-                </div>
-
-                {rawMode ? (
-                    <>
-                        <Textarea
-                            id="wp-instance-config"
-                            className={styles.textarea}
-                            rows={6}
-                            value={rawText}
-                            onChange={(e) => { setRawText(e.target.value); setInstanceConfigError(null); }}
-                            placeholder="{}"
-                            disabled={saving}
-                            spellCheck={false}
-                            aria-describedby="wp-instance-config-hint"
-                        />
-                        <span id="wp-instance-config-hint" className={styles.field_hint}>
-                            {hasSchemaFields
-                                ? 'Raw JSON validated against the widget type’s schema on save. Switch back to the form to edit fields individually.'
-                                : 'Optional per-placement JSON object validated against the widget type’s schema on save. Leave empty for no overrides.'}
-                        </span>
-                    </>
-                ) : (
-                    <div className={styles.config_fields}>
-                        {configFields.map(field => (
-                            <InstanceConfigField
-                                key={field.key}
-                                field={field}
-                                value={configValue[field.key]}
-                                disabled={saving}
-                                onChange={(next) => setConfigValue(prev => ({ ...prev, [field.key]: next }))}
-                            />
-                        ))}
-                    </div>
-                )}
-
-                {instanceConfigError && <span className={styles.field_error}>{instanceConfigError}</span>}
-            </div>
-
-            <label className={styles.inline_toggle}>
-                <Switch
-                    size="sm"
-                    on={enabled}
-                    onChange={setEnabled}
-                    disabled={saving}
-                    aria-label="Enabled"
-                />
-                <span>Enabled</span>
-            </label>
+                ) : undefined}
+            >
+                {renderSettings()}
+            </FormSection>
 
             <div className={styles.form_footer}>
+                {instanceConfigError && !rawMode && (
+                    <span className={styles.form_footer_error} role="alert">
+                        <AlertCircle size={14} aria-hidden />
+                        {instanceConfigError}
+                    </span>
+                )}
                 <Button type="button" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Button>
                 <Button type="submit" variant="primary" loading={saving} disabled={!canSubmit}>
                     {mode === 'create' ? 'Place widget' : 'Save changes'}
