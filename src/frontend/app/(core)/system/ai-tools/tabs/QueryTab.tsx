@@ -56,7 +56,7 @@ import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
-import type { IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IAiToolInfo, IAiToolResultSegment, IAiTranscriptSegment, ISavedPrompt, IToolInvocationRecord, ITrifectaStatus } from '@/types';
+import type { AiQueryOutcome, IAiConversationMessage, IAiQueryRecord, IAiStreamChunk, IAiToolInfo, IAiToolResultSegment, IAiTranscriptSegment, ISavedPrompt, IToolInvocationRecord, ITrifectaStatus } from '@/types';
 import { hostedToolEntry } from '@/types';
 import { Stack } from '../../../../../components/layout';
 import { Card } from '../../../../../components/ui/Card';
@@ -208,12 +208,24 @@ interface ConversationGroup {
      * group whose older turns failed but whose latest succeeded reads as
      * `completed`, which is consistent with `mode` and `lastAt` already
      * describing the newest turn rather than the whole run.
+     *
+     * `incomplete` is the third value: the query itself worked but the run
+     * stopped before producing a usable answer. That case used to be stored and
+     * shown as `completed`, which is what let a scheduled prompt appear to run
+     * cleanly every night while producing nothing.
      */
     status: IAiQueryRecord['status'];
     /**
-     * Failure reason of that latest turn, or null when it succeeded. Carried on
-     * the group so the row can show why a run failed on hover, rather than
-     * making the operator open the conversation to read one sentence.
+     * What kind of ending the latest turn had, when the record carries one.
+     * Absent on rows written before the field existed, in which case the row
+     * falls back to `status` alone.
+     */
+    outcome: IAiQueryRecord['outcome'];
+    /**
+     * Why that latest turn produced no clean answer, or null when it did.
+     * Carried on the group so the row can explain a failed or incomplete run on
+     * hover, rather than making the operator open the conversation to read one
+     * sentence.
      */
     errorMessage: string | null;
     /**
@@ -224,6 +236,22 @@ interface ConversationGroup {
      */
     costUsd: number | null;
 }
+
+/**
+ * Badge text for each way a run can end without answering. Naming the outcome
+ * on the row is what makes the list actionable: "Truncated" points an operator
+ * at the token budget while "Tool limit" points at the round budget, and a
+ * single shared "Incomplete" label would send them to read every transcript to
+ * find out which. `answered` and `failed` are absent because those two have
+ * their own presentation — no badge, and the danger badge, respectively.
+ */
+const INCOMPLETE_OUTCOME_LABELS: Partial<Record<AiQueryOutcome, string>> = {
+    truncated: 'Truncated',
+    'tool-limit': 'Tool limit',
+    paused: 'Paused',
+    refused: 'Refused',
+    empty: 'No answer'
+};
 
 /**
  * Generate an RFC-4122 v4 UUID, preferring the native crypto implementation and
@@ -589,7 +617,9 @@ function selectUnlinkedRecords(turns: ChatTurn[], records: IToolInvocationRecord
  * fallback below it would render as a blank assistant bubble that looks like the
  * model simply said nothing. Surfacing `errorMessage` — or a plain note when the
  * record has neither text, structure, nor a reason — is what makes a failure
- * legible at all.
+ * legible at all. The same field now also carries the reason an *incomplete*
+ * run stopped short, so a truncated or refused turn states why beside whatever
+ * partial answer it did manage to produce.
  *
  * @param records - One conversation's turns, oldest first.
  * @returns Chat turns ready to render, two per stored record.
@@ -735,6 +765,7 @@ function groupConversations(records: IAiQueryRecord[]): ConversationGroup[] {
                 lastAt: record.createdAt,
                 mode: record.mode,
                 status: record.status,
+                outcome: record.outcome,
                 errorMessage: record.errorMessage ?? null,
                 costUsd: turnCost
             });
@@ -2818,6 +2849,16 @@ export function QueryTab() {
                                                     // case — reading why last night's scheduled run died —
                                                     // costs a hover rather than an expand.
                                                     <Badge tone="danger" title={group.errorMessage ?? undefined}>Failed</Badge>
+                                                )}
+                                                {group.status === 'incomplete' && (
+                                                    // A run that returned without answering. It is not a
+                                                    // failure — the query worked — so it gets a warning
+                                                    // tone rather than a danger one, and the badge names
+                                                    // the outcome so "Truncated" and "Refused" are
+                                                    // distinguishable at a glance in the list.
+                                                    <Badge tone="warning" title={group.errorMessage ?? undefined}>
+                                                        {INCOMPLETE_OUTCOME_LABELS[group.outcome ?? 'empty'] ?? 'No answer'}
+                                                    </Badge>
                                                 )}
                                             </span>
                                         </div>

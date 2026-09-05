@@ -60,6 +60,20 @@ const QUERY_STREAM_EVENT = 'ai-tools:query-stream';
  */
 const adminActionLog = logger.child({ module: 'ai-tools', surface: 'admin-api' });
 
+/**
+ * Logger for the query backend's own failures, kept separate from the
+ * admin-action audit above because the two answer different questions: that one
+ * records who did something sensitive, this one records what broke.
+ *
+ * It exists because both query paths deliberately tell the caller less than they
+ * know. The streaming path sends the browser a fixed, sanitized sentence so a
+ * provider's internals and credentials cannot reach a client, and the
+ * non-streaming path answers 502. Without these lines the real cause was written
+ * only into the query-history record, so diagnosing a failing query meant reading
+ * a MongoDB collection instead of `/system/logs`.
+ */
+const queryLog = logger.child({ module: 'ai-tools', surface: 'query' });
+
 /** Shape of the POST /query request body. */
 interface IQueryRequestBody {
     prompt?: unknown;
@@ -553,9 +567,16 @@ export class AiToolsController {
      */
     private sendVariableError(res: Response, error: unknown, fallback: string): void {
         if (error instanceof PromptVariableValidationError) {
+            // A caller-actionable rejection: the response already says exactly
+            // what was wrong with the input, so logging it would only fill
+            // `/system/logs` with other people's typos.
             res.status(error.statusCode).json({ error: error.message });
             return;
         }
+        // Anything else is a server fault, and the generic body deliberately
+        // says nothing about it. Log the cause so a variable the admin panel
+        // keeps refusing to save is diagnosable at all.
+        adminActionLog.error({ err: error, fallback }, `Prompt variable operation failed: ${fallback}`);
         res.status(500).json({ error: fallback });
     }
 
@@ -733,7 +754,17 @@ export class AiToolsController {
         let injectedSystemPrompt: string | undefined;
         try {
             injectedSystemPrompt = await this.systemPrompts.compose(endUser ?? null);
-        } catch {
+        } catch (error: unknown) {
+            // Degrading is right — one broken variable in a system prompt should
+            // not 500 the query — but degrading silently is not. The operator's
+            // master and audience-scoped prompts simply stop applying, and the
+            // answer looks merely unhelpful rather than misconfigured. The
+            // scheduled runner logs this same condition at warn; this keeps the
+            // two paths saying the same thing.
+            queryLog.warn(
+                { err: error, userId: endUser?.userId },
+                'Failed to compose injected system prompt for interactive query; proceeding without it'
+            );
             injectedSystemPrompt = undefined;
         }
 
@@ -824,6 +855,14 @@ export class AiToolsController {
                     );
                 })
                 .catch((error: unknown) => {
+                    // The browser is told a fixed sentence, so this is the only
+                    // place the real cause is stated to an operator. Logged at
+                    // error because a stream that died mid-answer is a fault, not
+                    // a rejected input — the request itself was already accepted.
+                    queryLog.error(
+                        { err: error, queryId, model, conversationId },
+                        'Streaming AI query failed before completing'
+                    );
                     // Emit a terminal error chunk so a client still waiting on the
                     // stream unsticks. The message is sanitized — never surface
                     // provider internals or credentials to the browser.
@@ -863,6 +902,12 @@ export class AiToolsController {
             );
             res.json({ result });
         } catch (error: unknown) {
+            // The 502 body carries the provider's message to the calling admin,
+            // but a 502 leaves no trace an operator can find later. Log it for
+            // the same reason as the streaming branch above, so both interactive
+            // paths are diagnosable from `/system/logs` rather than only from
+            // whatever the caller happened to still have on screen.
+            queryLog.error({ err: error, model, conversationId }, 'AI query failed');
             await this.history.append(
                 buildAiQueryRecord(
                     'programmatic',

@@ -557,6 +557,61 @@ describe('runScheduledPrompts', () => {
         });
     });
 
+    it('records a run that returned without answering as incomplete, with a reason and a warning log', async () => {
+        // The reported failure: the model spends its tool rounds, the query
+        // returns, and the run leaves no answer. It used to be stored as
+        // `completed` with a null error and logged nothing at all, so an
+        // operator had no way to tell it from a clean run.
+        provider.query.mockResolvedValueOnce({
+            responseText: '',
+            model: 'claude-x',
+            stopReason: 'tool_use',
+            usage: { inputTokens: 3, outputTokens: 7 }
+        });
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({ id: 'stalled', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'analyze' })
+        ]);
+        const recordQuery = vi.fn(async (_record: IAiQueryRecord) => {});
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider, undefined, undefined, undefined, recordQuery);
+
+        const record = recordQuery.mock.calls[0]?.[0];
+        expect(record).toMatchObject({
+            status: 'incomplete',
+            outcome: 'tool-limit',
+            stopReason: 'tool_use'
+        });
+        expect(record?.errorMessage).toBeTruthy();
+        // The run must be audible, not just visible: a warning is what puts it
+        // on the log filter an operator already watches.
+        expect(logger.warn).toHaveBeenCalledWith(
+            expect.objectContaining({ promptId: 'stalled', outcome: 'tool-limit' }),
+            expect.stringContaining('no usable answer')
+        );
+        // The failure streak is deliberately untouched — an incomplete run is
+        // not a failed query, so it must not creep toward the auto-pause.
+        expect(savedPrompts.resetRunFailures).toHaveBeenCalled();
+    });
+
+    it('logs a terminal line naming the outcome when a run does answer', async () => {
+        provider.query.mockResolvedValueOnce({
+            responseText: 'the answer',
+            model: 'claude-x',
+            stopReason: 'end_turn',
+            usage: { inputTokens: 3, outputTokens: 7 }
+        });
+        const savedPrompts = createMockSavedPrompts([
+            makePrompt({ id: 'clean', cron: '* * * * *', lastRunAt: minutesAgo(5), prompt: 'analyze' })
+        ]);
+
+        await runScheduledPrompts(savedPrompts as any, logger as any, () => provider);
+
+        expect(logger.info).toHaveBeenCalledWith(
+            expect.objectContaining({ promptId: 'clean', outcome: 'answered' }),
+            'Saved prompt run completed'
+        );
+    });
+
     it('records a failed run in the query history with the error and a null response', async () => {
         provider.query.mockRejectedValueOnce(new Error('Provider down'));
         const savedPrompts = createMockSavedPrompts([
