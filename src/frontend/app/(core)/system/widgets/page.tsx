@@ -2755,6 +2755,17 @@ function InstanceConfigField({
         const min = typeof field.schema.minimum === 'number' ? field.schema.minimum : undefined;
         const max = typeof field.schema.maximum === 'number' ? field.schema.maximum : undefined;
         const integer = primaryType(field.schema) === 'integer';
+        // A schema that declares no granularity is saying every value in its
+        // range is allowed, so the input has to say so too. Leaving `step` off
+        // does not mean "no constraint": the browser then applies its own
+        // default of 1, counted from `min`, which turns a continuous range into
+        // a ladder. A field declaring `minimum: 0.5` ends up accepting 0.5 and
+        // 1.5 while rejecting 0.9 on submit, and nothing in the schema asked
+        // for that. `multipleOf` is how a schema states a real granularity, so
+        // honour it when present and otherwise leave the field open.
+        const granularity = typeof field.schema.multipleOf === 'number'
+            ? field.schema.multipleOf
+            : (integer ? 1 : 'any');
         return (
             <Field label={field.label} required={field.required} hint={hint} className={className}>
                 <Input
@@ -2764,7 +2775,7 @@ function InstanceConfigField({
                     inputMode={integer ? 'numeric' : 'decimal'}
                     min={min}
                     max={max}
-                    step={integer ? 1 : undefined}
+                    step={granularity}
                     value={value === undefined || value === null || value === '' ? '' : String(value)}
                     onChange={(e) => {
                         // Keep a clean parse as a number so save/validation
