@@ -20,6 +20,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type {
+    AiQueryOutcome,
     IAiQueryOptions,
     IAiQueryRecord,
     IAiQueryResult,
@@ -30,6 +31,7 @@ import type {
 import type { SavedPromptsService } from './saved-prompts.service.js';
 import type { EndUserResolver } from './end-user-resolver.js';
 import { buildAiQueryRecord } from './ai-query-history.service.js';
+import { classifyAiQueryOutcome } from './classify-query-outcome.js';
 
 /**
  * Minimum contract the executor needs from an AI provider. Declared here rather
@@ -69,10 +71,26 @@ export interface IScheduledPromptRunNotification {
     promptId: string;
     /** Saved-prompt name, for the notification title. */
     name: string;
-    /** Whether the run's query succeeded or threw. */
+    /**
+     * Whether the run's query returned or threw. This is a transport verdict,
+     * not a verdict on the answer — read `outcome` for that. A run that returned
+     * without an answer is `'success'` here and something other than
+     * `'answered'` there.
+     */
     status: 'success' | 'error';
     /** Error message when `status` is `'error'`. */
     error?: string;
+    /**
+     * What the run actually produced, so a notification can say that a prompt
+     * finished without answering instead of reporting a plain success. Absent
+     * only on a pre-query failure, where no query was ever attempted.
+     */
+    outcome?: AiQueryOutcome;
+    /**
+     * Operator-facing reason the run did not answer, when `outcome` is anything
+     * other than `'answered'`. Null or absent on a clean run.
+     */
+    detail?: string | null;
     /** Whether the failure tripped the trigger's consecutive-failure auto-pause. */
     disabled?: boolean;
 }
@@ -312,6 +330,49 @@ export async function executeSavedPrompt(
         // for audit correlation only and never relaxes the governor's autonomous
         // default-deny.
         const result = (await provider.query({ prompt: promptText, model: p.model, mode: 'programmatic', endUser, injectedSystemPrompt, toolAllowlist: p.toolAllowlist, conversationId: historyConversationId })) as IAiQueryResult;
+        // A returned result means the transport worked, not that the model
+        // answered. Classify before doing anything else with it, because
+        // everything below — the log line, the notification, the history row —
+        // has to agree on what this run produced, and this is the one place that
+        // decides.
+        const assessment = classifyAiQueryOutcome(result, null);
+        // Tool calls are counted from the transcript rather than from the audit
+        // store: the operator's first question about a run that produced nothing
+        // is whether it did any work at all, and the transcript already holds
+        // that answer without a second query.
+        const toolCalls = (result.transcript ?? []).filter(segment => segment.type === 'tool_use').length;
+        // Every field is read defensively because the result crosses a plugin
+        // boundary. Assembling a log line must never be what turns a completed
+        // run into a recorded failure, which is what a missing `usage` on a
+        // provider's result would otherwise do here.
+        const runContext = {
+            promptId: p.id,
+            name: p.name,
+            triggerId,
+            outcome: assessment.outcome,
+            stopReason: result.stopReason ?? null,
+            model: result.model ?? p.model ?? null,
+            durationMs: Date.now() - Date.parse(queryStartedAt),
+            responseChars: result.responseText?.length ?? 0,
+            toolCalls,
+            inputTokens: result.usage?.inputTokens ?? 0,
+            outputTokens: result.usage?.outputTokens ?? 0,
+            costUsd: result.costUsd ?? null
+        };
+        // Close every autonomous run with one terminal line. Before this, a
+        // successful-looking run logged only 'Running saved prompt' and then
+        // nothing, so a prompt that stopped without answering was
+        // indistinguishable in the logs from one that worked. `warn` for
+        // anything that is not a real answer puts those runs on the same
+        // `/system/logs` filter an operator already watches for trouble.
+        if (assessment.succeeded) {
+            logger.info(runContext, 'Saved prompt run completed');
+        } else {
+            logger.warn(
+                { ...runContext, detail: assessment.detail },
+                `Saved prompt run produced no usable answer: ${assessment.detail ?? assessment.outcome}`
+            );
+        }
         // Record the run in the core query history so it surfaces in the
         // Query tab beside interactive queries. Tagged `scheduled` to mark
         // it autonomous; the provider transport above stays `programmatic`,
@@ -342,10 +403,20 @@ export async function executeSavedPrompt(
                 );
             }
         }
-        // Tell admins the run finished. Wrapped so a notifier fault cannot
-        // disturb the caller or mask the successful query.
+        // Tell admins the run finished, and say what it produced. The status
+        // stays `'success'` because the query itself did succeed; the outcome
+        // is what lets the notification distinguish a real answer from a run
+        // that stopped early, which the plain success title used to hide.
+        // Wrapped so a notifier fault cannot disturb the caller or mask the
+        // successful query.
         try {
-            notify?.({ promptId: p.id, name: p.name, status: 'success' });
+            notify?.({
+                promptId: p.id,
+                name: p.name,
+                status: 'success',
+                outcome: assessment.outcome,
+                detail: assessment.detail
+            });
         } catch (notifyErr) {
             logger.warn({ err: notifyErr, promptId: p.id }, 'Saved-prompt success notification failed');
         }
@@ -379,7 +450,7 @@ export async function executeSavedPrompt(
             }
         }
         try {
-            notify?.({ promptId: p.id, name: p.name, status: 'error', error: lastRunError, disabled: autoDisabled });
+            notify?.({ promptId: p.id, name: p.name, status: 'error', error: lastRunError, outcome: 'failed', detail: lastRunError, disabled: autoDisabled });
         } catch (notifyErr) {
             logger.warn({ err: notifyErr, promptId: p.id }, 'Saved-prompt failure notification failed');
         }

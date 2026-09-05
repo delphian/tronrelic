@@ -438,7 +438,18 @@ export class PromptVariableRegistry implements IPromptVariableRegistry {
     private async safeSize(name: string): Promise<number> {
         try {
             return Buffer.byteLength(await this.resolve(name), 'utf-8');
-        } catch {
+        } catch (error: unknown) {
+            // Tolerating the failure keeps one broken resolver from emptying the
+            // whole Variables panel, but a size of 0 reads as "this variable is
+            // empty" rather than "this variable is broken" — and a variable that
+            // cannot resolve here will also fail the next prompt that references
+            // it. Logging is what turns that into something an operator can act
+            // on before a query hits it. Fires only on an actual resolver fault,
+            // so it is quiet on a healthy deployment.
+            this.logger.warn(
+                { err: error, variable: name },
+                `Prompt variable "${name}" failed to resolve while sizing; reporting 0 bytes`
+            );
             return 0;
         }
     }

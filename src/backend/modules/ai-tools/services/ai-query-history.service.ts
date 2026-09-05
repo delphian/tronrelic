@@ -15,6 +15,7 @@
  */
 
 import type { AiQueryMode, IAiQueryRecord, IAiQueryResult, IDatabaseService, ISystemLogService } from '@/types';
+import { classifyAiQueryOutcome } from './classify-query-outcome.js';
 
 /** Physical collection name (modules prefix `module_<id>_` manually). */
 const COLLECTION = 'module_ai-tools_query_history';
@@ -30,6 +31,13 @@ const COLLECTION = 'module_ai-tools_query_history';
  * provider reports a structured transcript on `result`, it is persisted so a
  * reopened conversation replays the whole turn (thinking, tool calls, tool
  * results) rather than only `responseText`.
+ *
+ * A returned result is **not** by itself a successful run. The status, outcome,
+ * and stop reason are set from `classifyAiQueryOutcome`, so a run that was
+ * truncated, ran out of tool rounds, paused, was refused, or produced no text at
+ * all is stored as `incomplete` with a stated reason rather than as `completed`.
+ * That classification happens here, in the one builder every path goes through,
+ * so no caller can record a run it judged for itself.
  *
  * @param mode - Execution mode the record is tagged with (`stream` for the
  *        admin stream path, `programmatic` for a non-streaming admin call,
@@ -56,6 +64,8 @@ export function buildAiQueryRecord(
     errorMessage: string | null,
     fallbackModel?: string
 ): IAiQueryRecord {
+    const assessment = classifyAiQueryOutcome(result, errorMessage);
+
     return {
         id,
         mode,
@@ -66,10 +76,18 @@ export function buildAiQueryRecord(
         // Provider-computed estimated cost, persisted so a reopened
         // conversation shows the same figure the live run did.
         costUsd: result?.costUsd ?? null,
-        errorMessage,
-        status: result ? 'completed' : 'failed',
+        // The caller's error when there was one, and otherwise the classifier's
+        // reason for an incomplete run. Both answer the same operator question —
+        // why is there no usable answer here — so they share one field rather
+        // than leaving a truncated or refused run with a blank explanation.
+        errorMessage: errorMessage ?? assessment.detail,
+        status: assessment.status,
+        outcome: assessment.outcome,
         createdAt,
         completedAt: new Date().toISOString(),
+        // Absent when the query threw: there was no turn, so there is no stop
+        // reason, and storing a default would invent a signal that never arrived.
+        ...(result ? { stopReason: result.stopReason } : {}),
         ...(conversationId ? { conversationId } : {}),
         // Persist the structured transcript when the provider reported one, so a
         // reopened conversation replays the turn's thinking, tool calls, and tool

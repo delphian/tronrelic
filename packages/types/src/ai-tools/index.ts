@@ -49,7 +49,7 @@ export type { IAiToolInvokeContext } from './IAiToolHookContext.js';
 export type { IAiConversationMessage } from './IAiConversationMessage.js';
 export type { IAiProvider } from './IAiProvider.js';
 export type { IAiStreamChunk } from './IAiStreamChunk.js';
-export type { IAiQueryRecord, AiQueryMode } from './IAiQueryRecord.js';
+export type { IAiQueryRecord, AiQueryMode, AiQueryOutcome } from './IAiQueryRecord.js';
 export type {
     IAiTranscriptSegment,
     IAiThinkingSegment,
@@ -58,7 +58,7 @@ export type {
     IAiToolResultSegment
 } from './IAiTranscriptSegment.js';
 export type { IAiQueryOptions } from './IAiQueryOptions.js';
-export type { IAiQueryResult } from './IAiQueryResult.js';
+export type { IAiQueryResult, AiStopReason } from './IAiQueryResult.js';
 export type { IModelInfo } from './IModelInfo.js';
 export type {
     ISavedPrompt,

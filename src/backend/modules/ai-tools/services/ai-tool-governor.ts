@@ -367,6 +367,17 @@ export class AiToolGovernor implements IAiToolGovernor {
             // still running until the turn ends. Close the pair before rethrowing;
             // the reason itself stays generic here, since the provider's own catch
             // is what decides what the model and the settled transcript are told.
+            //
+            // Reaching this branch means that never-throws property was broken,
+            // and the tool may or may not have run. Nothing downstream records
+            // it: no audit row is written for a call that escaped the pipeline,
+            // and the provider's own catch reports it as a tool error like any
+            // other. This line is the only place the invariant break itself is
+            // stated, which is why it is an error rather than a warning.
+            this.logger.error(
+                { err: error, tool: name, queryId: ctx.queryId, triggerPath: ctx.triggerPath },
+                'AI tool governance threw instead of denying; the invocation left no audit record'
+            );
             if (toolUseId) {
                 this.emitLiveSegment(ctx, {
                     type: 'tool_result',

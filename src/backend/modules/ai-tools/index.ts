@@ -10,6 +10,8 @@ export { AiToolsModule, AI_TOOLS_SERVICE, AI_TOOL_GOVERNOR_SERVICE, AI_PROVIDERS
 export { AiProviderRegistry } from './services/ai-provider-registry.js';
 export { AiQueryHistoryService } from './services/ai-query-history.service.js';
 export type { IAiQueryHistoryQuery, IAiQueryHistoryPage } from './services/ai-query-history.service.js';
+export { classifyAiQueryOutcome } from './services/classify-query-outcome.js';
+export type { IAiQueryOutcomeAssessment } from './services/classify-query-outcome.js';
 export type { IAiToolsModuleDependencies } from './AiToolsModule.js';
 export { AiToolRegistry } from './services/ai-tool-registry.js';
 export { AiToolGovernor } from './services/ai-tool-governor.js';

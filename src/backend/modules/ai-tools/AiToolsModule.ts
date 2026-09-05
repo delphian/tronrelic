@@ -717,22 +717,33 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             if (!svc) {
                 return;
             }
-            const ok = run.status === 'success';
+            const failed = run.status === 'error';
+            // A run that returned but never produced an answer is neither a
+            // success nor a failure, and reporting it as either was the reason
+            // an operator could watch a prompt "run fine" every night while
+            // producing nothing. It gets its own title and a warning tone so it
+            // reads as needing attention without claiming the query broke.
+            const incomplete = !failed && run.outcome !== undefined && run.outcome !== 'answered';
+            const title = failed
+                ? `Scheduled prompt failed: ${run.name}`
+                : incomplete
+                    ? `Scheduled prompt produced no answer: ${run.name}`
+                    : `Scheduled prompt ran: ${run.name}`;
+            const body = failed
+                ? (run.disabled
+                    ? `${run.error ?? 'Unknown error'} — auto-paused after repeated failures`
+                    : run.error)
+                : incomplete
+                    ? run.detail ?? `Ended as "${run.outcome}" without a usable answer.`
+                    : undefined;
             void svc
                 .notify({
                     category: SCHEDULED_PROMPT_NOTIFY_CATEGORY,
                     typeId: SCHEDULED_PROMPT_CONTENT_TYPE,
-                    ref: {
-                        title: ok ? `Scheduled prompt ran: ${run.name}` : `Scheduled prompt failed: ${run.name}`,
-                        body: ok
-                            ? undefined
-                            : run.disabled
-                                ? `${run.error ?? 'Unknown error'} — auto-paused after repeated failures`
-                                : run.error
-                    },
-                    severity: ok ? 'success' : 'error',
+                    ref: { title, body },
+                    severity: failed ? 'error' : incomplete ? 'warning' : 'success',
                     firedBy: run.promptId,
-                    data: { promptId: run.promptId, disabled: run.disabled ?? false }
+                    data: { promptId: run.promptId, disabled: run.disabled ?? false, outcome: run.outcome ?? null }
                 })
                 .catch((error) => this.logger.warn({ error, promptId: run.promptId }, 'Failed to dispatch scheduled-prompt notification'));
         };
