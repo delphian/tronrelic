@@ -2413,7 +2413,9 @@ function extractConfigFields(schema: JSONSchema7 | undefined): ConfigFieldDescri
  * Build the form's working values from any existing instanceConfig,
  * falling back to each field's schema `default`. Numbers with no value
  * become an empty string so the numeric input renders blank rather than
- * `NaN`; strings/enums default to an empty string; booleans to false.
+ * `NaN`; an enum keeps its saved member whatever its type, so a numeric or
+ * boolean member survives a round trip through edit mode; strings and unset
+ * enums default to an empty string; booleans to false.
  *
  * @param fields - Field descriptors for the active schema
  * @param existing - Saved instanceConfig (edit mode) or undefined
@@ -2441,6 +2443,17 @@ function coerceInitialConfig(
         } else if (control === 'number') {
             const candidate = provided ?? fallback;
             value[field.key] = typeof candidate === 'number' ? candidate : '';
+        } else if (control === 'enum') {
+            // Keep a numeric or boolean enum member in the type it was saved
+            // with. The control displays a member by its String() form and
+            // maps that back to the typed member on change, so narrowing the
+            // seed to a string would blank an existing value in edit mode and
+            // drop it on the next save.
+            const candidate = provided ?? fallback;
+            const isMember = typeof candidate === 'string'
+                || typeof candidate === 'number'
+                || typeof candidate === 'boolean';
+            value[field.key] = isMember ? candidate : '';
         } else {
             const candidate = provided ?? fallback;
             value[field.key] = typeof candidate === 'string' ? candidate : '';
