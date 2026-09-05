@@ -285,8 +285,15 @@ function WidgetItem({ widget, route, params }: WidgetRendererProps) {
         >
             {widget.title && (
                 <h2 className={cn(styles.item_title, TITLE_SIZE_CLASS[widget.titleSize ?? 'heading-md'] ?? styles.item_title_md)}>
+                    {/* The bare `a` rule in globals.scss is deliberately neutral —
+                        inherited color, no underline — so a linked heading would
+                        otherwise look identical to a plain one and offer nothing to
+                        click on until the pointer is already over it. `link` is the
+                        site's global utility class for text that has to read as a
+                        link, so apply it here rather than adding an anchor rule to
+                        this module and inventing a second treatment. */}
                     {widget.titleUrl ? (
-                        <Link href={widget.titleUrl}>{widget.title}</Link>
+                        <Link href={widget.titleUrl} className="link">{widget.title}</Link>
                     ) : (
                         widget.title
                     )}
