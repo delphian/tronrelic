@@ -2763,9 +2763,29 @@ function InstanceConfigField({
         // 1.5 while rejecting 0.9 on submit, and nothing in the schema asked
         // for that. `multipleOf` is how a schema states a real granularity, so
         // honour it when present and otherwise leave the field open.
-        const granularity = typeof field.schema.multipleOf === 'number'
+        //
+        // Two cases must not be forwarded. The browser counts steps from
+        // `min` when `min` is set, while JSON Schema counts multiples from
+        // zero, so `minimum: 1` with `multipleOf: 2` makes the browser accept
+        // 1, 3, 5 and reject the schema-valid 2, 4, 6. Native validation then
+        // blocks the submit event and the operator cannot save at all. The
+        // other is a fractional `multipleOf` on an integer schema: stepping by
+        // 0.5 hands back 1.5, which this form rejects as not a whole number,
+        // and the stepper buttons become a dead end. Drop the multiple in both
+        // cases and let validation enforce the constraint instead.
+        //
+        // An integer schema with no usable `multipleOf` keeps a step of 1,
+        // which is the granularity `type: integer` states by itself. An integer
+        // schema that does declare `multipleOf: 5` steps by 5, because 3 is not
+        // a value the server's Ajv check would accept.
+        const multiple = typeof field.schema.multipleOf === 'number' && field.schema.multipleOf > 0
+            && (!integer || Number.isInteger(field.schema.multipleOf))
             ? field.schema.multipleOf
-            : (integer ? 1 : 'any');
+            : undefined;
+        let granularity: number | 'any' = integer ? 1 : 'any';
+        if (multiple !== undefined) {
+            granularity = min === undefined || min % multiple === 0 ? multiple : 'any';
+        }
         return (
             <Field label={field.label} required={field.required} hint={hint} className={className}>
                 <Input
