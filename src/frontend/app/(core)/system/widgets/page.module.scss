@@ -411,39 +411,131 @@
 /* Placement form                                                      */
 /* ------------------------------------------------------------------ */
 
+/* The create/edit form inside the placement modal. It is its own container
+   so the two-up field grid can collapse on the form's real width — the modal
+   is narrower than the viewport, and on a phone it is narrower still. */
 .form {
+    container-type: inline-size;
+    container-name: placement-form;
     display: flex;
     flex-direction: column;
-    gap: var(--gap-md);
+    gap: var(--gap-lg);
 }
 
-.field {
+/* One titled group of related fields (Placement, Visibility, Title,
+   Settings). The uppercase caption title and hairline keep the groups
+   scannable without adding a boxed surface around each one, which would
+   push the fields inward twice inside an already narrow modal. */
+.form_section {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-2xs);
+    gap: var(--gap-sm);
+    min-width: 0;
 }
 
-.field label,
-.field_label {
-    font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-medium);
+.form_section_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+    padding-bottom: var(--gap-2xs);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.form_section_title {
+    margin: 0;
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+    color: var(--color-text-subtle);
+}
+
+/* Two-up grid for short controls (selects, numbers). Wide controls — text,
+   multiline text, toggles with a sentence of help, and repeatable lists —
+   take the full width with .form_span. Rows align to the top so a field
+   with a hint does not stretch its neighbour's control downward. */
+.form_grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--gap-sm) var(--gap-md);
+    align-items: start;
+}
+
+.form_span {
+    grid-column: 1 / -1;
+}
+
+/* Read-only summary standing in for a control that cannot change — the
+   widget type of an existing placement. Laid out like a Field so the eye
+   reads it as part of the same column. */
+.form_static {
+    display: flex;
+    flex-direction: column;
+    gap: var(--field-gap);
+    min-width: 0;
+}
+
+.form_static_value {
+    display: inline-flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
     color: var(--color-text);
 }
 
+/* Label styling for the controls the shared <Field> cannot wrap — a
+   segmented control (no id to label), a toggle row, a repeatable list.
+   Uses the same field tokens so the labels match Field-wrapped ones. */
+.field_label {
+    font-size: var(--field-label-font-size);
+    font-weight: var(--field-label-font-weight);
+    color: var(--field-label-color);
+}
+
 .field_hint {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
+    font-size: var(--field-message-font-size);
+    line-height: var(--line-height-normal);
+    color: var(--field-hint-color);
 }
 
-.field_error {
-    font-size: var(--font-size-caption);
-    color: var(--color-danger-text);
+.config_required {
+    color: var(--color-danger);
 }
 
-.field_row {
+/* A labelled control the shared <Field> cannot wrap, stacked the same way
+   Field stacks its parts so the two kinds sit level in the grid. */
+.field_group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--field-gap);
+    min-width: 0;
+}
+
+/* Label on the left, an add button on the right, for a repeatable list. */
+.field_group_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
+/* A boolean setting: the switch, then its name and one line of help beside
+   it. Reads as a settings row rather than as a labelled input, which is how
+   an operator expects an on/off choice to look. */
+.toggle_row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-    gap: var(--gap-md);
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--gap-sm);
+    align-items: start;
+    padding: var(--padding-2xs) 0;
+}
+
+.toggle_row_text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    cursor: pointer;
 }
 
 /* Shared <Textarea> supplies background, border, radius, padding, resize,
@@ -453,11 +545,17 @@
     font-family: var(--font-mono);
 }
 
+/* Multiline text setting (raw HTML, long copy). Body face rather than mono
+   because the value is content, not code, and a resize handle so a long
+   block can be opened up without leaving the modal. */
+.textarea_content {
+    resize: vertical;
+}
+
 .routes_chips {
     display: flex;
     flex-wrap: wrap;
     gap: var(--gap-xs);
-    min-height: var(--button-height-sm);
     align-items: center;
 }
 
@@ -509,48 +607,36 @@
     min-width: 0;
 }
 
-.inline_toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--gap-sm);
-    color: var(--color-text);
+/* Placeholder shown where the settings would be, before a widget type has
+   been chosen in create mode. */
+.config_placeholder {
+    margin: 0;
+    color: var(--color-text-muted);
     font-size: var(--font-size-body-sm);
+    font-style: italic;
 }
 
-.config_header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--gap-sm);
-}
-
-.config_fields {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-md);
-    padding: var(--card-padding-sm);
-    background: var(--color-surface-muted);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-}
-
-.config_required {
-    color: var(--color-danger-text);
-}
-
-/* Repeatable array field: a column of item rows plus an add-row button. */
+/* Repeatable array setting: a column of item rows. The add button lives in
+   the group header above, so the column holds only rows. */
 .config_array {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-sm);
+    gap: var(--gap-xs);
 }
 
-/* One array row: its field(s) take the remaining width, the remove button
- * sits at the top-right so it stays aligned with the first field even when an
- * object item stacks several sub-fields. */
+.config_array_empty {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    font-style: italic;
+}
+
+/* One array row: a row number, the row's controls, and a remove button. The
+   remove button aligns to the bottom edge so it sits level with the controls
+   rather than floating beside their labels. */
 .config_array_item {
-    display: flex;
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: end;
     gap: var(--gap-sm);
     padding: var(--padding-sm);
     background: var(--color-surface);
@@ -558,21 +644,57 @@
     border-radius: var(--radius-sm);
 }
 
-/* The editable fields within a row — for object items this stacks the
- * sub-fields; for scalar items it holds the single control. */
-.config_array_fields {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
+.config_array_index {
+    align-self: center;
+    min-width: 1.5em;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
 }
 
+/* The controls within a row. Object items lay their sub-fields side by side
+   so a row reads like a table row; a scalar item is one control. Each cell
+   floors at a legible width and wraps onto a second line when the row runs
+   out of room. */
+.config_array_fields {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--gap-xs) var(--gap-sm);
+    align-items: end;
+}
+
+/* Sticks to the bottom of the modal's scrolling body so Save and Cancel stay
+   reachable while a long settings list is scrolled. The negative margins run
+   the bar out to the body's edges, over its padding, so it reads as a bar of
+   the dialog rather than a strip floating inside the form. */
 .form_footer {
+    position: sticky;
+    bottom: 0;
     display: flex;
+    align-items: center;
     justify-content: flex-end;
     gap: var(--gap-sm);
-    margin-top: var(--gap-sm);
+    margin: 0 calc(-1 * var(--modal-body-padding)) calc(-1 * var(--modal-body-padding));
+    padding: var(--gap-sm) var(--modal-body-padding);
+    background: var(--modal-dialog-background);
+    border-top: var(--modal-header-border);
+}
+
+/* Save-time error in the footer, where it is visible whatever is scrolled
+   into view. Pushed to the left so the buttons keep their place. */
+.form_footer_error {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: var(--gap-2xs);
+    margin-right: auto;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-danger-text);
+}
+
+.form_footer_error svg {
+    flex-shrink: 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -607,9 +729,6 @@
         flex-basis: auto;
         max-width: none;
     }
-    .field_row {
-        grid-template-columns: minmax(0, 1fr);
-    }
     .layout_toggle_preset {
         display: none;
     }
@@ -628,5 +747,17 @@
 @container widgets-admin (max-width: #{$breakpoint-mobile-sm}) {
     .zone_layout_field {
         flex-basis: 100%;
+    }
+}
+
+/* The placement form measures itself, not the page: the modal that holds it
+   is narrower than the viewport. Below primary-mobile width the two-up grid
+   becomes one column so no control drops under a legible width. */
+@container placement-form (max-width: #{$breakpoint-mobile-md}) {
+    .form_grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .form_section_header {
+        flex-wrap: wrap;
     }
 }
