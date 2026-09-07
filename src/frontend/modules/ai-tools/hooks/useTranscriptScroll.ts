@@ -43,10 +43,11 @@ export interface ITranscriptScroll {
  * Manage auto-follow and the live-edge indicator for a scrolling transcript.
  *
  * The scroll listener cannot tell a user's wheel from a programmatic scroll, so
- * every scroll the hook performs itself sets a one-shot flag the next scroll
- * event consumes. Programmatic scrolls are instant rather than smooth for the
- * same reason: a smooth scroll fires many events, and the flag can only excuse
- * one.
+ * a scroll the hook performs itself sets a one-shot flag the next scroll event
+ * consumes. The flag is set only when the position really moved, because that
+ * is exactly when the browser fires the event that clears it. Programmatic
+ * scrolls are instant rather than smooth for the same reason: a smooth scroll
+ * fires many events, and the flag can only excuse one.
  *
  * @param ref - The scrolling transcript element.
  * @returns The follow state and the scroll actions.
@@ -54,7 +55,7 @@ export interface ITranscriptScroll {
 export function useTranscriptScroll(ref: RefObject<HTMLDivElement | null>): ITranscriptScroll {
     const [atBottom, setAtBottom] = useState(true);
     const followRef = useRef(true);
-    /** Set before a programmatic scroll so its scroll event is not read as user intent. */
+    /** Set by a programmatic scroll that moved, so its event is not read as user intent. */
     const programmaticRef = useRef(false);
 
     /**
@@ -99,8 +100,17 @@ export function useTranscriptScroll(ref: RefObject<HTMLDivElement | null>): ITra
             return;
         }
         followRef.current = true;
-        programmaticRef.current = true;
+        // Claim the one-shot flag only when the position actually moves. The
+        // browser fires a scroll event on a change and not otherwise, so
+        // assigning the value scrollTop already holds — a transcript shorter
+        // than the pane, or a chunk that added no height — would leave the flag
+        // set for the reader's next real scroll to be swallowed by, and
+        // following would stay on after the reader had scrolled away. Reading
+        // scrollTop back is exact here because the transcript sets
+        // scroll-behavior: auto, so the assignment settles before the next line.
+        const before = element.scrollTop;
         element.scrollTop = element.scrollHeight;
+        programmaticRef.current = element.scrollTop !== before;
         setAtBottom(true);
     }, [ref]);
 
@@ -112,8 +122,12 @@ export function useTranscriptScroll(ref: RefObject<HTMLDivElement | null>): ITra
         // offsetTop is measured from the transcript's padding edge, which is the
         // transcript's offsetParent because the stylesheet positions it.
         const paddingTop = Number.parseFloat(getComputedStyle(element).paddingTop) || 0;
-        programmaticRef.current = true;
+        // Same rule as scrollToBottom: anchoring a turn that already sits at the
+        // top of the pane moves nothing and fires no scroll event, so the flag
+        // must not be left set for the reader's next scroll to be swallowed by.
+        const before = element.scrollTop;
         element.scrollTop = Math.max(0, target.offsetTop - paddingTop);
+        programmaticRef.current = element.scrollTop !== before;
         followRef.current = distanceFromBottom() < AT_BOTTOM_THRESHOLD_PX;
         setAtBottom(followRef.current);
     }, [ref, distanceFromBottom]);

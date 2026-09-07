@@ -203,9 +203,12 @@
 
 /* Reserve room under the newest turn. Without it a send could not scroll the
    new message to the top of the pane, because there would be nothing below it
-   to scroll into. Applied to the last turn only, so earlier turns keep their
-   natural spacing. */
-.transcript > :last-child:not(.empty_state):not(.chat_error) {
+   to scroll into. The last turn is matched by its <article> root rather than by
+   :last-child, because the trailing .unlinked_records block renders after the
+   turns and would otherwise take the reserve, stretching that footnote into a
+   tall blank area under the tool table. Earlier turns keep their natural
+   spacing. */
+.transcript > article:last-of-type {
     min-height: var(--query-anchor-reserve);
 }
 

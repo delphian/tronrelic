@@ -206,15 +206,19 @@ export async function executeSavedPrompt(
         logger.warn({ promptId: p.id, name: p.name, triggerId }, `Saved prompt run skipped: ${reason}`);
         // Surface the skipped run in the Query tab so a pre-run failure is not
         // invisible there — critical for a manual run, which has no trigger banner
-        // to fall back on. Best-effort, mirroring the post-query branches. The ids
-        // and timestamp are built locally because the run-wide ones are declared
-        // later in this function (referencing them here would hit the TDZ); the raw
-        // prompt is recorded since a pre-run failure never reached per-run variable
-        // substitution.
+        // to fall back on. Best-effort, mirroring the post-query branches. The row
+        // id and timestamp are built locally because the run-wide ones are declared
+        // later in this function (referencing them here would hit the TDZ), but the
+        // conversation id still honours `opts.conversationId`: a manual run-now has
+        // already handed that id back to the browser, which polls it for the result,
+        // so recording the failure under a fresh id would leave that poll waiting on
+        // an empty conversation while the failure hid under an unrelated history
+        // row. The raw prompt is recorded since a pre-run failure never reached
+        // per-run variable substitution.
         if (recordQuery) {
             try {
                 await recordQuery(
-                    buildAiQueryRecord('scheduled', p.prompt, randomUUID(), new Date().toISOString(), randomUUID(), null, reason, p.model)
+                    buildAiQueryRecord('scheduled', p.prompt, opts.conversationId ?? randomUUID(), new Date().toISOString(), randomUUID(), null, reason, p.model)
                 );
             } catch (historyErr) {
                 logger.warn({ err: historyErr, promptId: p.id, name: p.name }, 'Failed to record skipped saved-prompt query history');
