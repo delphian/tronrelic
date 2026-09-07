@@ -1216,7 +1216,17 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
     // has asked for its new message to be anchored at the top of the pane, so
     // the answer streams into the space beneath it; otherwise the live edge is
     // followed only while the reader is already there.
+    //
+    // Skip all of it while the tab is hidden. The sibling tabs keep this one
+    // mounted behind `hidden`, so the transcript has no layout box and every
+    // measurement reads zero: the scroll would not move, and the hook's one-shot
+    // "this scroll was mine" flag would be left set for the next real scroll to
+    // swallow. Streaming carries on while hidden, so `active` is a dependency
+    // and the rule re-runs the moment the tab is shown again.
     useEffect(() => {
+        if (!active) {
+            return;
+        }
         const anchorId = pendingAnchorTurnIdRef.current;
         if (anchorId) {
             pendingAnchorTurnIdRef.current = null;
@@ -1227,7 +1237,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
             }
         }
         followIfEnabled();
-    }, [messages, anchorToTop, followIfEnabled]);
+    }, [messages, active, anchorToTop, followIfEnabled]);
 
     // Grow the composer with its text up to a cap, then scroll inside it. The
     // height is reset before measuring so the field also shrinks when text is
@@ -2048,7 +2058,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                                 variant="ghost"
                                 size="sm"
                                 onClick={handleNewChat}
-                                disabled={streaming || (!hasTurns && !editingPrompt && !input)}
+                                disabled={streaming || (!hasTurns && !editingPrompt && !input && !awaitingRunId)}
                                 aria-label="Start a new conversation"
                             >
                                 <Plus size={16} /> New chat

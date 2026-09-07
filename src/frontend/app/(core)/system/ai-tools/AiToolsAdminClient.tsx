@@ -20,7 +20,9 @@
  *
  * When holds are already waiting on first load the shell opens on Approvals
  * instead of Query, so the operator lands on the decision that needs them — unless
- * a `?tab=` deep link already named a tab, in which case that choice wins. A menu
+ * the address already named a destination, with either a `?tab=` deep link or a
+ * `?conversation=` one that only the Query tab can show, in which case that
+ * choice wins. A menu
  * node cannot carry a live count, so the pending-approval tally rides a summary
  * badge above the tab row rather than on the Approvals node itself. Governed
  * events arrive as WebSocket refetch signals — the count itself always comes from
@@ -90,14 +92,15 @@ interface IAiToolsAdminClientProps {
     /**
      * The `?tab=` value from the request URL, read SSR-first in `page.tsx` so a
      * refreshed, bookmarked, or shared deep link opens on the right panel. An
-     * unknown or absent value resolves to `query` and lets the pending-approval
-     * auto-route decide the initial panel.
+     * unknown or absent value resolves to `query` and, unless a conversation was
+     * deep-linked, lets the pending-approval auto-route decide the initial panel.
      */
     initialTab?: string;
     /**
      * The `?conversation=` value from the request URL, read SSR-first so a
      * refreshed or shared address reopens the conversation that was on screen.
-     * Handed straight to the Query tab, which owns the conversation.
+     * Handed straight to the Query tab, which owns the conversation, and also
+     * treated as an explicit destination, since only that tab can display it.
      */
     initialConversationId?: string | null;
 }
@@ -115,10 +118,12 @@ export function AiToolsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
     /** True once the initial pending fetch has auto-routed, so it fires at most once. */
     const autoRoutedRef = useRef(false);
     /**
-     * True once the operator drives a tab choice — or a `?tab=` deep link already
-     * named one — so the initial auto-route to Approvals never yanks them away.
+     * True once the operator drives a tab choice — or the request URL already
+     * named a destination, either with `?tab=` or with a `?conversation=` deep
+     * link that only the Query tab can display — so the initial auto-route to
+     * Approvals never yanks them away from what they asked for.
      */
-    const userPickedRef = useRef(isTabId(initialTab));
+    const userPickedRef = useRef(isTabId(initialTab) || Boolean(initialConversationId));
 
     const refreshPending = useCallback(async (): Promise<number | null> => {
         try {
