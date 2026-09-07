@@ -466,7 +466,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             () => this.serviceRegistry.get<IAccountDirectoryService>('accounts')
         );
 
-        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig, this.queryStreams, (id: string) => this.runSavedPromptNow(id), BINDABLE_HOOK_INFOS);
+        this.controller = new AiToolsController(this.registry, this.policy, this.audit, this.approvals, this.governor, this.providerRegistry, this.queryHistory, this.savedPrompts, this.promptVariables, this.systemPrompts, this.resolveEndUser, this.screenConfig, this.queryStreams, (id: string, conversationId?: string) => this.runSavedPromptNow(id, conversationId), BINDABLE_HOOK_INFOS);
 
         this.logger.info('ai-tools module initialized');
     }
@@ -619,9 +619,13 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
      * feedback and the run was not scheduled.
      *
      * @param promptId - The saved prompt to run now.
+     * @param conversationId - Conversation id the run's history row is recorded
+     *   under. The controller mints it before firing and returns it to the
+     *   browser, so the Query tab can open the result once it lands. Omitted
+     *   means the executor mints its own.
      * @returns Resolves once the run and its history recording settle.
      */
-    async runSavedPromptNow(promptId: string): Promise<void> {
+    async runSavedPromptNow(promptId: string, conversationId?: string): Promise<void> {
         // Fired fire-and-forget from the controller (`void this.runSavedPromptNow(id)`),
         // so a rejection here has no awaiter and would surface as an unhandled promise
         // rejection. executeSavedPrompt never throws, but the savedPrompts lookup can
@@ -633,7 +637,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
                 this.logger.warn({ promptId }, 'runSavedPromptNow: prompt not found');
                 return;
             }
-            await executeSavedPrompt(prompt, this.buildSavedPromptExecutionDeps(), {});
+            await executeSavedPrompt(prompt, this.buildSavedPromptExecutionDeps(), { conversationId });
         } catch (err) {
             this.logger.error({ err, promptId }, 'runSavedPromptNow: failed to load or execute saved prompt');
         }

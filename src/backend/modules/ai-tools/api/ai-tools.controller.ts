@@ -197,7 +197,7 @@ export class AiToolsController {
         private readonly resolveEndUser: EndUserResolver,
         private readonly screenConfig: ScreenConfigService,
         private readonly queryStreams: QueryStreamRegistry,
-        private readonly runSavedPromptNow: (promptId: string) => Promise<void>,
+        private readonly runSavedPromptNow: (promptId: string, conversationId?: string) => Promise<void>,
         private readonly bindableHooks: ReadonlyArray<{ id: string; description: string }> = []
     ) {}
 
@@ -1113,7 +1113,9 @@ export class AiToolsController {
      * immediate error, then fires the run WITHOUT awaiting it: the autonomous
      * query can take minutes and its result lands in the Query-tab history like
      * any scheduled firing, so blocking the request would only risk a gateway
-     * timeout while adding nothing. Returns 202 Accepted once the run has started.
+     * timeout while adding nothing. Returns 202 Accepted once the run has started,
+     * carrying the `conversationId` the result will be recorded under so the
+     * Query tab can open it the moment the row lands.
      */
     runPrompt = async (req: Request, res: Response): Promise<void> => {
         try {
@@ -1140,9 +1142,12 @@ export class AiToolsController {
                 return;
             }
             // Fire-and-forget: the shared executor records its own history and never
-            // throws, so nothing here needs to await or catch it.
-            void this.runSavedPromptNow(id);
-            res.status(202).json({ success: true, started: true });
+            // throws, so nothing here needs to await or catch it. The conversation
+            // id is minted here rather than by the executor so it can be handed
+            // back before the run settles.
+            const conversationId = randomUUID();
+            void this.runSavedPromptNow(id, conversationId);
+            res.status(202).json({ success: true, started: true, conversationId });
         } catch {
             // The prompt lookup hits Mongo, which can reject on a DB fault; without
             // this guard the async handler's rejection would go unhandled (Express 4

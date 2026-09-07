@@ -4,3 +4,5 @@
  */
 
 export * from './api/client';
+export { useViewportFill } from './hooks/useViewportFill';
+export { useTranscriptScroll, type ITranscriptScroll } from './hooks/useTranscriptScroll';

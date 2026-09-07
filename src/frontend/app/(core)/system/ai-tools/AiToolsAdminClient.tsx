@@ -12,6 +12,12 @@
  * Clicking a tab drives local state via `onItemSelect` rather than navigating;
  * `activeUrl` highlights the active tab since the route is identical across them.
  *
+ * The Query tab stays mounted behind the other three rather than being torn
+ * down on a tab switch. It holds a live conversation and possibly a stream in
+ * flight, and unmounting it discarded both — an operator who glanced at
+ * Approvals came back to an empty chat. The other tabs are cheap to rebuild
+ * and re-fetch on open, so they still mount on demand.
+ *
  * When holds are already waiting on first load the shell opens on Approvals
  * instead of Query, so the operator lands on the decision that needs them — unless
  * a `?tab=` deep link already named a tab, in which case that choice wins. A menu
@@ -32,6 +38,7 @@ import { RegistryTab } from './tabs/RegistryTab';
 import { ActivityTab } from './tabs/ActivityTab';
 import { ApprovalsTab } from './tabs/ApprovalsTab';
 import { QueryTab } from './tabs/QueryTab';
+import { writeAiToolsSearchParam } from './tabs/aiToolsUrl';
 import styles from './page.module.scss';
 
 /** The dashboard tabs; the `?tab=` value carried by each submenu node. */
@@ -87,15 +94,22 @@ interface IAiToolsAdminClientProps {
      * auto-route decide the initial panel.
      */
     initialTab?: string;
+    /**
+     * The `?conversation=` value from the request URL, read SSR-first so a
+     * refreshed or shared address reopens the conversation that was on screen.
+     * Handed straight to the Query tab, which owns the conversation.
+     */
+    initialConversationId?: string | null;
 }
 
 /**
  * AI tool governance admin client shell.
  *
- * @param props - SSR submenu tree, its timestamp, and the deep-linked initial tab.
+ * @param props - SSR submenu tree, its timestamp, and the deep-linked initial
+ *   tab and conversation.
  * @returns The page.
  */
-export function AiToolsAdminClient({ submenuTree, submenuGeneratedAt, initialTab }: IAiToolsAdminClientProps) {
+export function AiToolsAdminClient({ submenuTree, submenuGeneratedAt, initialTab, initialConversationId = null }: IAiToolsAdminClientProps) {
     const [activeTab, setActiveTab] = useState<TabId>(isTabId(initialTab) ? initialTab : 'query');
     const [pending, setPending] = useState(0);
     /** True once the initial pending fetch has auto-routed, so it fires at most once. */
@@ -124,7 +138,7 @@ export function AiToolsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
             if (count && count > 0 && !autoRoutedRef.current && !userPickedRef.current) {
                 autoRoutedRef.current = true;
                 setActiveTab('approvals');
-                window.history.replaceState(null, '', '/system/ai-tools?tab=approvals');
+                writeAiToolsSearchParam('tab', 'approvals');
             }
         })();
     }, [refreshPending]);
@@ -143,11 +157,12 @@ export function AiToolsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
      * Activate the clicked tab and keep its URL a real deep link.
      *
      * `MenuNavClient` suppresses the <Link> navigation when `onItemSelect` is set,
-     * so this both drives `activeTab` and rewrites the address in place with
-     * `history.replaceState` (no server round-trip) so the registered `?tab=` URLs
-     * become true deep links; `page.tsx` reads that value SSR-first to seed the
-     * panel on next load. Recording the pick also locks out the pending-approval
-     * auto-route so it can never override the operator's choice.
+     * so this both drives `activeTab` and rewrites the address in place (no
+     * server round-trip) so the registered `?tab=` URLs become true deep links;
+     * `page.tsx` reads that value SSR-first to seed the panel on next load. Only
+     * the `tab` key is written, so the Query tab's `?conversation=` survives a
+     * visit to another tab. Recording the pick also locks out the
+     * pending-approval auto-route so it can never override the operator's choice.
      *
      * @param item - The clicked submenu node, carrying its `?tab=` url.
      */
@@ -155,7 +170,7 @@ export function AiToolsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
         userPickedRef.current = true;
         const tab = tabFromUrl(item.url);
         setActiveTab(tab);
-        window.history.replaceState(null, '', `/system/ai-tools?tab=${tab}`);
+        writeAiToolsSearchParam('tab', tab);
     }, []);
 
     return (
@@ -178,7 +193,11 @@ export function AiToolsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
             </div>
 
             <div className={styles.content}>
-                {activeTab === 'query' && <QueryTab />}
+                {/* Hidden rather than unmounted while another tab is open, so the
+                    conversation and any in-flight stream survive the visit. */}
+                <div hidden={activeTab !== 'query'}>
+                    <QueryTab active={activeTab === 'query'} initialConversationId={initialConversationId} />
+                </div>
                 {activeTab === 'registry' && <RegistryTab onChanged={noop} />}
                 {activeTab === 'activity' && <ActivityTab />}
                 {activeTab === 'approvals' && <ApprovalsTab onChanged={refreshPending} />}
