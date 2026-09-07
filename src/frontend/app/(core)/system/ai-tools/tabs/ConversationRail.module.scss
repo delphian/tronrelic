@@ -1,0 +1,168 @@
+/**
+ * Styles for the conversation rail beside the AI Tools Query tab's chat. The
+ * rail fills the height its parent gives it and scrolls its own list, so a
+ * long history never lengthens the page. Rows are quiet by default and lift on
+ * hover; the open conversation carries a primary wash so the operator can see
+ * where they are in the list.
+ */
+
+.rail {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--card-border-radius);
+    background: var(--color-surface-muted);
+    overflow: hidden;
+}
+
+.rail_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+    padding: var(--padding-sm) var(--card-padding-sm);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    flex-shrink: 0;
+}
+
+.rail_title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+/* The only scrolling region in the rail. */
+.rail_body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    padding: var(--padding-sm);
+}
+
+.rail_note {
+    padding: var(--padding-xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.day {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.day_label {
+    margin: 0;
+    padding: 0 var(--padding-xs);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/* A row is the open button plus a copy control beside it, kept as siblings
+   because a button cannot legally contain another button. */
+.row {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap-2xs);
+    border-radius: var(--radius-sm);
+    transition: background-color var(--transition-fast);
+
+    &:hover {
+        background: var(--color-surface-elevated);
+    }
+}
+
+.row_active {
+    background: var(--color-primary-alpha-15);
+
+    &:hover {
+        background: var(--color-primary-alpha-18);
+    }
+}
+
+.row_button {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    padding: var(--padding-xs) var(--padding-sm);
+    border: none;
+    border-radius: inherit;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+/* Two lines of the opening prompt, then an ellipsis. */
+.row_title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}
+
+.row_meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.row_cost {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Copy sits in the row's corner and shows on hover or focus, so the list
+   stays a list of titles rather than a list of buttons. */
+.row_copy {
+    flex-shrink: 0;
+    margin: var(--gap-2xs) var(--gap-2xs) 0 0;
+    opacity: var(--opacity-0);
+    transition: opacity var(--transition-fast);
+}
+
+.row:hover .row_copy,
+.row:focus-within .row_copy {
+    opacity: var(--opacity-100);
+}
+
+/* Hover-capability query, not a viewport one: touch screens cannot hover. */
+@media (hover: none) {
+    .row_copy {
+        opacity: var(--opacity-100);
+    }
+}
+
+.load_more {
+    align-self: center;
+}

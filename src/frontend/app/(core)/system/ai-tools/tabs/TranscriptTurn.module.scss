@@ -1,0 +1,430 @@
+/**
+ * Styles for one transcript turn on the AI Tools Query tab: the user bubble,
+ * the assistant prose, the hover-revealed footer of actions and usage, and the
+ * collapsed thinking and tool-call cards inside an assistant turn.
+ *
+ * The turn deliberately carries no avatar and no role label. The two roles are
+ * told apart by shape and placement — a bubble on the right is the operator, a
+ * flush block on the left is the model — which is the convention every current
+ * chat interface uses and the one a reader arrives already knowing.
+ */
+
+/*
+ * ===========================================================================
+ * TURN FRAME
+ * ===========================================================================
+ */
+.turn {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+}
+
+/* The operator's message: a bubble against the right edge, never the full
+   width, so the eye can tell the two speakers apart from across the room. */
+.turn_user {
+    align-self: flex-end;
+    align-items: flex-end;
+    max-width: 80%;
+}
+
+.turn_assistant {
+    align-self: stretch;
+}
+
+.turn_text {
+    padding: var(--padding-sm) var(--padding-md);
+    background: var(--color-primary-alpha-15);
+    border: var(--border-width-thin) solid var(--color-primary-alpha-38);
+    border-radius: var(--radius-md);
+    border-bottom-right-radius: var(--radius-xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    line-height: var(--line-height-relaxed);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/*
+ * ===========================================================================
+ * FOOTER — actions that appear on hover or focus, and the usage line.
+ * ===========================================================================
+ */
+.turn_footer {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+    min-height: var(--button-height-xs);
+}
+
+.turn_footer_user {
+    justify-content: flex-end;
+}
+
+/* Hidden until the turn is hovered or holds focus. Opacity rather than
+   display, so the footer keeps its height and the transcript never reflows
+   under the pointer, and so a keyboard user tabbing into the controls reveals
+   them through :focus-within. */
+.turn_actions {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    opacity: var(--opacity-0);
+    transition: opacity var(--transition-fast);
+}
+
+.turn:hover .turn_actions,
+.turn:focus-within .turn_actions {
+    opacity: var(--opacity-100);
+}
+
+/* A hover-capability query, not a viewport one: a touch screen has no hover,
+   so the actions would be unreachable if they waited for it. */
+@media (hover: none) {
+    .turn_actions {
+        opacity: var(--opacity-100);
+    }
+}
+
+.turn_tool_list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-2xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/* A granted-but-unused tool: outlined and muted, so the row reads as
+   background information until something in it actually fired. */
+.turn_tool_chip {
+    padding: 0 var(--padding-2xs);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-relaxed);
+    color: var(--color-text-muted);
+    overflow-wrap: anywhere;
+}
+
+/* A tool the model actually called. Filled surface, brighter text, and heavier
+   weight all shift together so the state stays legible without relying on hue
+   alone, and every chip also names its state in a `title`. */
+.turn_tool_chip--called {
+    border-color: var(--color-success-alpha-45);
+    background: var(--color-success-alpha-18);
+    color: var(--color-success-text);
+    font-weight: var(--font-weight-medium);
+}
+
+.turn_meta {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+/* The cost-and-model summary is itself the disclosure control, so the line
+   stays one quiet phrase until someone asks for the token counts. */
+.turn_meta_toggle {
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+
+    &:hover {
+        color: var(--color-text);
+    }
+}
+
+.turn_meta_detail {
+    font-variant-numeric: tabular-nums;
+}
+
+.turn_error {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-danger);
+}
+
+/*
+ * ===========================================================================
+ * ASSISTANT PROSE — rendered markdown.
+ * ===========================================================================
+ */
+.turn_markdown {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    line-height: var(--line-height-relaxed);
+    overflow-wrap: anywhere;
+
+    h1, h2, h3, h4, h5, h6 {
+        margin: var(--gap-sm) 0 var(--gap-xs) 0;
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-text);
+
+        &:first-child {
+            margin-top: 0;
+        }
+    }
+
+    h1 { font-size: var(--font-size-heading-md); }
+    h2 { font-size: var(--font-size-heading-sm); }
+    h3 { font-size: var(--font-size-body-lg); }
+
+    p {
+        margin: 0 0 var(--gap-xs) 0;
+
+        &:last-child {
+            margin-bottom: 0;
+        }
+    }
+
+    ul, ol {
+        margin: 0 0 var(--gap-xs) 0;
+        padding-left: var(--padding-md);
+    }
+
+    li {
+        margin-bottom: var(--gap-2xs);
+    }
+
+    code {
+        font-family: var(--font-mono);
+        font-size: var(--font-size-caption);
+        background: var(--color-surface-muted);
+        padding: var(--padding-2xs) var(--padding-xs);
+        border-radius: var(--radius-sm);
+    }
+
+    pre {
+        margin: 0 0 var(--gap-xs) 0;
+        padding: var(--padding-xs);
+        background: var(--color-surface);
+        border: var(--border-width-thin) solid var(--color-border);
+        border-radius: var(--radius-sm);
+        overflow-x: auto;
+
+        code {
+            background: none;
+            padding: 0;
+            font-size: var(--font-size-caption);
+        }
+    }
+
+    blockquote {
+        margin: 0 0 var(--gap-xs) 0;
+        padding: var(--padding-xs) var(--padding-sm);
+        border-left: var(--border-width-thick) solid var(--color-primary);
+        color: var(--color-text-muted);
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 0 0 var(--gap-xs) 0;
+        font-size: var(--font-size-caption);
+    }
+
+    th, td {
+        padding: var(--padding-xs) var(--padding-xs);
+        border: var(--border-width-thin) solid var(--color-border);
+        text-align: left;
+    }
+
+    th {
+        background: var(--color-surface-muted);
+        font-weight: var(--font-weight-semibold);
+    }
+
+    strong {
+        font-weight: var(--font-weight-semibold);
+    }
+
+    a {
+        color: var(--color-primary);
+        text-decoration: none;
+
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+
+    hr {
+        border: none;
+        border-top: var(--border-width-thin) solid var(--color-border);
+        margin: var(--gap-sm) 0;
+    }
+}
+
+/* Blinking caret appended to a streaming assistant turn. */
+.cursor {
+    display: inline-block;
+    width: var(--border-width-medium);
+    height: 1.1em;
+    background: var(--color-primary);
+    margin-left: var(--border-width-thin);
+    vertical-align: text-bottom;
+    animation: blink 0.8s step-end infinite;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: var(--opacity-100); }
+    50% { opacity: var(--opacity-0); }
+}
+
+/*
+ * ===========================================================================
+ * TRANSCRIPT SEGMENTS — thinking, tool calls, tool results, and prose, in
+ * occurrence order.
+ * ===========================================================================
+ */
+.segments {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+/* Every non-prose event is a collapsed <details>. The chevron is the only
+   affordance saying "there is more here", so it rotates with the card's own
+   open state, and the native disclosure triangle is suppressed to keep one
+   consistent glyph across browsers. */
+.disclosure_chevron {
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+    transition: transform var(--transition-base);
+}
+
+details[open] > summary > .disclosure_chevron {
+    transform: rotate(90deg);
+}
+
+.thinking_summary,
+.tool_call > summary,
+.tool_result > summary {
+    list-style: none;
+    cursor: pointer;
+
+    &::-webkit-details-marker {
+        display: none;
+    }
+}
+
+/* Thinking — collapsed by default so a long reasoning chain never buries the
+   answer; the muted body reads as secondary, set off by a left accent rule. */
+.thinking {
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    padding: var(--padding-xs) var(--padding-sm);
+}
+
+.thinking_summary {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    cursor: pointer;
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+}
+
+.thinking_body {
+    margin-top: var(--gap-xs);
+    padding-left: var(--padding-sm);
+    border-left: var(--border-width-thick) solid var(--color-border);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    line-height: var(--line-height-relaxed);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* Tool call + result blocks share a bordered, muted-surface frame. A call whose
+   result was paired to it hosts that result inside its own frame. */
+.tool_call,
+.tool_result {
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    padding: var(--padding-xs) var(--padding-sm);
+}
+
+/* Standalone (unpaired) result block — the left accent marks the outcome. */
+.tool_result {
+    border-left: var(--border-width-thick) solid var(--color-success);
+}
+
+.tool_result--error {
+    border-left-color: var(--color-danger);
+}
+
+.tool_call_header {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+}
+
+.tool_call_name {
+    font-family: var(--font-mono);
+    color: var(--color-text);
+}
+
+/* A call the model has dispatched but that has not answered yet. */
+.tool_call_status {
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
+/* Pushes the audit-detail affordance to the right of the tool-call header. */
+.tool_call_action {
+    margin-left: auto;
+}
+
+/* Caps a payload so a large one scrolls within the card instead of pushing the
+   answer text far down the transcript. */
+.tool_payload {
+    margin: var(--gap-xs) 0 0 0;
+    padding: var(--padding-xs);
+    max-height: var(--code-block-max-height);
+    overflow: auto;
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text);
+    line-height: var(--line-height-relaxed);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* "Tool result" label inside a call's frame. */
+.tool_result_header {
+    margin-top: var(--gap-sm);
+}
+
+/* Nested result payload. Declared after `.tool_payload` on purpose: the two
+   classes carry equal specificity and are applied to the same element, so the
+   accent only survives `.tool_payload`'s `border` shorthand by being written
+   later in the sheet. */
+.tool_result_payload {
+    border-left: var(--border-width-thick) solid var(--color-success);
+}
+
+.tool_result_payload--error {
+    border-left-color: var(--color-danger);
+}

@@ -3,12 +3,14 @@
 /**
  * @file PromptEditorBar.tsx
  *
- * The strip under the Conversation header that appears once a saved prompt is
- * loaded (or a new one is being written). It carries everything the retired
- * saved-prompts panel used to spread across a row of its own: the name field,
+ * The strip directly above the composer that appears once a saved prompt is
+ * loaded (or a new one is being written). It is what makes the editing mode
+ * visible: the composer behaves differently while a prompt is loaded (Send
+ * keeps the text, the tool grant is sticky), and without a labelled strip
+ * beside the field those differences read as bugs. It carries the name field,
  * the unsaved-changes indicator, the single Save, run-now, duplicate, delete,
- * and the toggle that reveals the triggers editor — plus the live "last run /
- * next run" status the panel used to show per row.
+ * and the toggle that reveals the triggers panel — plus the live "last run /
+ * next run" status.
  *
  * The single Save is the point. Because the composer textarea *is* the prompt
  * body, an operator edits body, model, tools, and triggers in one surface, and
@@ -21,7 +23,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Save, Play, CopyPlus, Trash2, CalendarClock, X, AlertCircle } from 'lucide-react';
+import { Save, Play, CopyPlus, Trash2, CalendarClock, X, AlertCircle, Pencil } from 'lucide-react';
 import type { ISavedPrompt } from '@/types';
 import { Input } from '../../../../../components/ui/Input';
 import { Button } from '../../../../../components/ui/Button';
@@ -122,6 +124,11 @@ export function PromptEditorBar({
     return (
         <div className={`${styles.bar} ${runError ? styles.bar_error : ''}`}>
             <div className={styles.bar_row}>
+                {/* Names the mode. The composer below is this prompt's body while
+                    the strip is showing, and this label is what says so. */}
+                <span className={styles.bar_label}>
+                    <Pencil size={12} /> {prompt ? 'Editing prompt' : 'New prompt'}
+                </span>
                 <Input
                     type="text"
                     value={name}
@@ -223,7 +230,7 @@ export function PromptEditorBar({
                     </span>
                 )}
                 <span className={styles.bar_meta_hint}>
-                    The composer below holds this prompt&apos;s text.
+                    The composer below holds this prompt&apos;s text; Send tests it without clearing it.
                 </span>
             </div>
         </div>

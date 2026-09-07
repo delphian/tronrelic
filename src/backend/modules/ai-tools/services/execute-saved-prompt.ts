@@ -158,6 +158,15 @@ export interface ISavedPromptExecutionOptions {
      * registry variables in the text still expand provider-side as usual.
      */
     variables?: Record<string, string>;
+    /**
+     * Conversation id to record this run's history row under. A manual "run
+     * now" supplies one it minted before firing, so the operator's browser can
+     * open the result conversation as soon as the row lands rather than
+     * hunting for it in the history list. Omitted by the cron runner and the
+     * hook worker, which have no caller waiting on the id and let the executor
+     * mint its own.
+     */
+    conversationId?: string;
 }
 
 /**
@@ -284,9 +293,11 @@ export async function executeSavedPrompt(
     // run gets its own conversationId because the History view only surfaces
     // records that carry one (a record without it is a hidden one-shot) — a
     // unique id makes the autonomous turn a reopenable one-turn conversation.
+    // A caller that already minted one (manual run-now) has it honoured so it
+    // can point the operator at the result.
     const queryStartedAt = new Date().toISOString();
     const historyId = randomUUID();
-    const historyConversationId = randomUUID();
+    const historyConversationId = opts.conversationId ?? randomUUID();
 
     try {
         logger.info(

@@ -1,13 +1,15 @@
 /**
- * Styles for the saved-prompt editing surface now embedded in the Query tab's
- * Conversation card: the prompt bar under the header (PromptEditorBar) and the
- * triggers editor that unfolds beneath the composer (PromptTriggersEditor).
+ * Styles for the saved-prompt editing surface embedded in the Query tab's chat
+ * card: the editing strip directly above the composer (PromptEditorBar) and
+ * the triggers panel that opens above that strip (PromptTriggersEditor).
  *
- * Both sit *inside* the chat card rather than in a panel of their own, so the
- * treatment here is deliberately quieter than the retired modal's: muted
- * surfaces and hairline rules that read as part of the card, not as a second
- * card stacked inside it. Cron/trigger visual states (valid, invalid, paused,
- * failed) carry over from the modal unchanged so they stay learnable.
+ * The strip is the one loud element in the card on purpose. While it shows,
+ * the composer is a prompt's body rather than a chat message, and the primary
+ * wash and accent rule are what tell the operator the surface is in that
+ * mode. The triggers panel stays quiet — muted surface, hairline rule — so it
+ * reads as part of the card. Cron/trigger visual states (valid, invalid,
+ * paused, failed) carry over from the retired modal unchanged so they stay
+ * learnable.
  *
  * Visual surfaces come from the Input / Button / IconButton / Switch primitives;
  * this module adds only layout, the states those primitives do not carry, and
@@ -16,7 +18,7 @@
 
 /*
  * ===========================================================================
- * PROMPT BAR — name, unsaved indicator, single Save, and the row actions.
+ * EDITING STRIP — mode label, name, unsaved indicator, Save, and the actions.
  * ===========================================================================
  */
 .bar {
@@ -24,17 +26,31 @@
     flex-direction: column;
     gap: var(--gap-2xs);
     padding: var(--padding-xs) var(--card-padding-sm);
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-    background: var(--color-surface-muted);
+    border-top: var(--border-width-thin) solid var(--color-primary-alpha-38);
+    border-left: var(--border-width-thick) solid var(--color-primary);
+    background: var(--color-primary-alpha-10);
     /* The chat card is a flex column that clips its overflow, and the transcript
        is the only child meant to absorb pressure. Matching .composer's opt-out of
        shrinking keeps this strip whole instead of letting it compress and clip. */
     flex-shrink: 0;
 }
 
-/* A failing trigger is worth seeing from the header, not only in the editor. */
+/* A failing trigger is worth seeing from the strip, not only in the panel. */
 .bar_error {
-    border-bottom-color: var(--color-danger-alpha-50);
+    border-left-color: var(--color-danger);
+}
+
+/* Names the mode beside the name field. */
+.bar_label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+    color: var(--color-primary);
+    white-space: nowrap;
 }
 
 .bar_row {
@@ -76,7 +92,7 @@
 /*
  * Triggers disclosure — a chip rather than a button so it reads as a section
  * toggle beside the icon actions, and takes the primary wash while open to
- * pair with the editor showing below the composer.
+ * pair with the panel showing above the strip.
  */
 .triggers_toggle {
     display: inline-flex;
@@ -126,7 +142,8 @@
 
 /*
  * ===========================================================================
- * TRIGGERS EDITOR — unfolds under the composer, inside the same card.
+ * TRIGGERS PANEL — opens above the editing strip, inside the same card. The
+ * card gives it a capped, scrolling slot, so it never has to grow the card.
  * ===========================================================================
  */
 .triggers {
@@ -136,9 +153,6 @@
     padding: var(--padding-sm) var(--card-padding-sm) var(--card-padding-sm);
     border-top: var(--border-width-thin) solid var(--color-border);
     background: var(--color-surface-muted);
-    /* Same reason as .bar: several trigger rows must grow the card, not be
-       squeezed against the clipped edge of a fixed-height flex column. */
-    flex-shrink: 0;
 }
 
 .field_label {

@@ -2,6 +2,12 @@
 
 This guide keeps TronRelic's documentation consistent, concise, and immediately useful. Share it with anyone writing a new document or refreshing an existing one.
 
+## What This Guide Covers
+
+These rules apply to written artifacts only: the Markdown files under `docs/`, module and plugin `README.md` files, and doc comments in source. A reader comes to those cold and reads them once, which is why the guidance below tells you to lead with why, spell terms out, and keep the sentences that orient someone new.
+
+They do not apply to a chat reply from an AI coding assistant. That reader is present and can ask a follow-up question, so the same completeness that helps in a document buries the answer in a reply. Answer a question with the conclusion first and expand when asked, and do not treat anything below as a reason to write a longer reply.
+
 ## Before You Write
 
 Load the project rules first. Read `README.md`, the project instruction files such as `CLAUDE.md`, and any reference material specific to your topic before you start drafting. Identify your audience — plugin authors, maintainers, or operators — and write for that group. Each document should solve a single reader problem. When a neighbouring topic comes up, link to the document that owns it rather than restating it.

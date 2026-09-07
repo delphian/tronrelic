@@ -53,17 +53,25 @@ async function fetchSubmenu(): Promise<{ roots: MenuNodeSerialized[]; generatedA
  * AI tool governance dashboard page (server entry).
  *
  * @param props - Next.js route props.
- * @param props.searchParams - The `?tab=` deep link (a Promise in Next.js 15+),
- *   read SSR-first to seed the initially active panel so a refreshed, bookmarked,
- *   or shared link opens on the selected tab instead of falling back to Query.
+ * @param props.searchParams - The `?tab=` and `?conversation=` deep links (a
+ *   Promise in Next.js 15+), read SSR-first so a refreshed, bookmarked, or
+ *   shared link opens on the selected tab and, for the Query tab, reopens the
+ *   conversation that was on screen.
  * @returns The client shell seeded with the SSR-fetched submenu tree.
  */
 export default async function AiToolsAdminPage({
     searchParams
 }: {
-    searchParams: Promise<{ tab?: string }>;
+    searchParams: Promise<{ tab?: string; conversation?: string }>;
 }) {
     const { roots, generatedAt } = await fetchSubmenu();
-    const { tab } = await searchParams;
-    return <AiToolsAdminClient submenuTree={roots} submenuGeneratedAt={generatedAt} initialTab={tab} />;
+    const { tab, conversation } = await searchParams;
+    return (
+        <AiToolsAdminClient
+            submenuTree={roots}
+            submenuGeneratedAt={generatedAt}
+            initialTab={tab}
+            initialConversationId={conversation ?? null}
+        />
+    );
 }

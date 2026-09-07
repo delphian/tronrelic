@@ -673,10 +673,15 @@ export async function deleteSavedPrompt(id: string): Promise<void> {
  * message on an upfront rejection (404 missing prompt, 400 no provider).
  *
  * @param id - The saved prompt id to run now.
- * @returns Resolves once the run has been accepted.
+ * @returns The conversation id the run's result will be recorded under, so the
+ *   caller can open it once the run settles.
  */
-export async function runSavedPromptNow(id: string): Promise<void> {
-    await parse(await fetch(`${BASE}/query/prompts/${encodeURIComponent(id)}/run`, { method: 'POST' }), 'run saved prompt');
+export async function runSavedPromptNow(id: string): Promise<string> {
+    const data = await parse<{ conversationId: string }>(
+        await fetch(`${BASE}/query/prompts/${encodeURIComponent(id)}/run`, { method: 'POST' }),
+        'run saved prompt'
+    );
+    return data.conversationId;
 }
 
 /**
