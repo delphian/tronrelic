@@ -16,7 +16,7 @@
 
 import { useCallback, useState } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page, PageHeader } from '../../../../components/layout';
+import { Page } from '../../../../components/layout';
 import { MenuNavClient } from '../../../../components/layout/MenuNav/MenuNavClient';
 import { CollectionBrowser } from '../../../database';
 import type { IWidgetsAdminData } from '../../types/IWidgetsAdminData';
@@ -74,7 +74,7 @@ export interface IWidgetsAdminClientProps {
 }
 
 /**
- * Widgets admin shell: header, tab row, and the active panel.
+ * Widgets admin shell: tab row and the active panel.
  *
  * @param props - See {@link IWidgetsAdminClientProps}.
  * @returns The page.
@@ -96,11 +96,6 @@ export function WidgetsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
 
     return (
         <Page>
-            <PageHeader
-                title="Widgets"
-                subtitle="Choose what appears around each page's content, and in what order."
-            />
-
             <div className={styles.submenu}>
                 <MenuNavClient
                     namespace={SUBMENU_NAMESPACE}
@@ -112,7 +107,7 @@ export function WidgetsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
                 />
             </div>
 
-            <div className={styles.content}>
+            <div>
                 {/* Hidden rather than unmounted while another tab is open. The
                     workbench seeds its state once from the server snapshot, so
                     unmounting it would discard every placement added, moved, or
