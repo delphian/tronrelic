@@ -472,20 +472,33 @@ export class PlacementService implements IPlacementService {
     async detachChildrenOf(parentId: string, routes: ReadonlyArray<string>): Promise<number> {
         if (!ObjectId.isValid(parentId)) return 0;
         const collection = this.database.getCollection<IWidgetPlacementDocument>(WIDGET_PLACEMENT_COLLECTION);
+        const now = new Date();
         // Relocate every child back to the zone by clearing its parent
         // link. Used when a container is deleted so operator-configured
         // children survive rather than cascade-deleting with the parent.
         //
-        // The children also adopt the container's routes. Each was stored
-        // with an empty filter because the container governed where the
-        // group rendered, and an empty filter on a top-level row means
-        // every route, so detaching without this would quietly publish
-        // each child site-wide.
-        const result = await collection.updateMany(
-            { parentId: new ObjectId(parentId) },
-            { $unset: { parentId: '' }, $set: { routes: [...routes], updatedAt: new Date() } }
+        // A child stored with an empty filter adopts the container's
+        // routes. It was stored that way because the container governed
+        // where the group rendered, and an empty filter on a top-level row
+        // means every route, so detaching without this would quietly
+        // publish that child site-wide.
+        const inherited = await collection.updateMany(
+            { parentId: new ObjectId(parentId), routes: { $size: 0 } },
+            { $unset: { parentId: '' }, $set: { routes: [...routes], updatedAt: now } }
         );
-        return result.modifiedCount ?? 0;
+        // A child that carries a filter of its own keeps it. That filter
+        // already applied alongside the container's while the row was
+        // nested, so replacing it with the container's would widen where
+        // the row renders. The intersection of the two cannot be written
+        // as a pattern list in every case — an empty intersection would
+        // read as "every route" — so the child's own filter is what
+        // survives. This runs second, once the rows above have already
+        // lost their parent link, so it only sees the remainder.
+        const kept = await collection.updateMany(
+            { parentId: new ObjectId(parentId) },
+            { $unset: { parentId: '' }, $set: { updatedAt: now } }
+        );
+        return (inherited.modifiedCount ?? 0) + (kept.modifiedCount ?? 0);
     }
 
     async findById(id: string): Promise<IWidgetPlacement | null> {

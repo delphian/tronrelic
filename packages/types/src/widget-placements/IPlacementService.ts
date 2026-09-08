@@ -208,12 +208,15 @@ export interface IPlacementService {
      * means "every route" once the row stands on its own, so detaching
      * without restoring a filter would silently publish each child across
      * the whole site. The caller therefore passes the container's own
-     * routes and every child adopts them, staying visible exactly where
-     * the group was.
+     * routes and every child with an empty filter adopts them, staying
+     * visible exactly where the group was. A child that carries a filter
+     * of its own keeps it, because that filter already applied alongside
+     * the container's and replacing it would widen where the row renders.
      *
      * @param parentId - The container placement id whose children detach.
      * @param routes - The container's route filter, adopted by each child
-     *   so its visibility does not widen when the container disappears.
+     *   that has none of its own, so no child's visibility widens when the
+     *   container disappears.
      * @returns Count of child placements detached.
      */
     detachChildrenOf(parentId: string, routes: ReadonlyArray<string>): Promise<number>;

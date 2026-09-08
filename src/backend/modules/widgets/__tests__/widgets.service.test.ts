@@ -692,6 +692,42 @@ describe('WidgetsService nesting (layout groups)', () => {
         expect(detached?.routes).toEqual(['/tools/*']);
     });
 
+    it('leaves a nested child its own filter when the container is deleted', async () => {
+        const { widgets } = await setupWithContainer();
+        const scoped = await widgets.createPlacement({
+            typeId: 'core:layout-group', zoneId: 'main-after', routes: ['/markets/**']
+        });
+        const child = await widgets.createPlacement({
+            typeId: 't', zoneId: 'main-after', parentId: scoped.id, routes: []
+        });
+        // A patch carrying only `routes` leaves the row nested, so a child
+        // can end up narrower than its container. Both filters apply while
+        // it is nested, so the child renders on one page only.
+        await widgets.updatePlacement(child.id, { routes: ['/markets/btc'] });
+
+        await widgets.deletePlacement(scoped.id);
+
+        // Inheriting `/markets/**` here would widen the row from one page
+        // to every market page, so its own filter has to survive.
+        const survivor = await widgets.findPlacementById(child.id);
+        expect(survivor?.parentId).toBeUndefined();
+        expect(survivor?.routes).toEqual(['/markets/btc']);
+    });
+
+    it('leaves a nested child its own filter when detached by patch', async () => {
+        const { widgets } = await setupWithContainer();
+        const scoped = await widgets.createPlacement({
+            typeId: 'core:layout-group', zoneId: 'main-after', routes: ['/markets/**']
+        });
+        const child = await widgets.createPlacement({
+            typeId: 't', zoneId: 'main-after', parentId: scoped.id, routes: []
+        });
+        await widgets.updatePlacement(child.id, { routes: ['/markets/btc'] });
+
+        const detached = await widgets.updatePlacement(child.id, { parentId: null });
+        expect(detached?.routes).toEqual(['/markets/btc']);
+    });
+
     it('leaves a top-level row alone when it is detached with no parent', async () => {
         const { widgets } = await setupWithContainer();
         const row = await widgets.createPlacement({

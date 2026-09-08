@@ -354,8 +354,9 @@ export function usePlacementsWorkbench(initial: IWidgetsAdminData): IPlacementsW
                 // Detaching while that empty filter is still in place would
                 // silently promote the row to every page, so adopt the
                 // container's own filter and keep it exactly where it was
-                // visible.
-                if (parentChanged && destContainerId === null && sourceContainerId) {
+                // visible. A row that already carries a filter of its own
+                // keeps it — sending the container's would widen it.
+                if (parentChanged && destContainerId === null && sourceContainerId && moved.routes.length === 0) {
                     const sourceContainer = pool.find(row => row.id === sourceContainerId);
                     if (sourceContainer) patch.routes = [...sourceContainer.routes];
                 }

@@ -466,12 +466,15 @@ export class WidgetsService implements IWidgetsService {
         // because its container decided which pages the group appeared
         // on, and an empty filter on a top-level row means every route —
         // so clearing the link alone would publish the row site-wide. It
-        // adopts the container's routes instead, unless the caller stated
-        // a filter of its own in the same patch, which wins.
+        // adopts the container's routes instead. Two cases override that:
+        // a filter stated by the caller in the same patch, and a filter the
+        // row already carries. The stored filter applied alongside the
+        // container's while the row was nested, so overwriting it here
+        // would widen where the row renders.
         if (patch.parentId === null && patch.routes === undefined) {
             const existing = await this.placements.findById(id);
             if (!existing) return null;
-            if (existing.parentId !== undefined) {
+            if (existing.parentId !== undefined && existing.routes.length === 0) {
                 const parent = await this.placements.findById(existing.parentId);
                 if (parent) {
                     return this.placements.update(id, { ...patch, routes: [...parent.routes] });
