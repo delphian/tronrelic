@@ -74,7 +74,7 @@ export interface IWidgetsAdminClientProps {
 }
 
 /**
- * Widgets admin shell: tab row and the active panel.
+ * Widgets admin shell: the page heading, the tab row, and the active panel.
  *
  * @param props - See {@link IWidgetsAdminClientProps}.
  * @returns The page.
@@ -96,6 +96,13 @@ export function WidgetsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
 
     return (
         <Page>
+            {/* The System container around this page contributes navigation and
+                no heading of its own, so without this the document would open
+                at the workbench's <h2> and skip a level, leaving a screen
+                reader with nothing that names the page. Kept visually hidden
+                because a visible title only repeated the active tab. */}
+            <h1 className={styles.sr_only}>Widgets</h1>
+
             <div className={styles.submenu}>
                 <MenuNavClient
                     namespace={SUBMENU_NAMESPACE}
