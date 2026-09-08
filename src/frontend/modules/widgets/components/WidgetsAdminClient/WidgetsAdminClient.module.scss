@@ -1,12 +1,10 @@
 /**
- * Submenu tab row and the active panel below it, mirroring the
- * /system/address-tags reference implementation.
+ * Submenu tab row above the active panel, mirroring the
+ * /system/address-tags reference implementation. The panel itself carries no
+ * spacing rule, so the only separation between the tabs and the panel is the
+ * gap the surrounding Page grid already provides.
  */
 
 .submenu {
     margin-top: var(--gap-sm);
-}
-
-.content {
-    margin-top: var(--gap-md);
 }
