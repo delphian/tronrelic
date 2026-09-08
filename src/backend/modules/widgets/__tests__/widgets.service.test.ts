@@ -634,6 +634,29 @@ describe('WidgetsService nesting (layout groups)', () => {
         expect(survivor).not.toBeNull();
         expect(survivor?.parentId).toBeUndefined();
     });
+
+    it('gives a detached child the container routes so it does not go site-wide', async () => {
+        const { widgets } = await setupWithContainer();
+        // A container scoped to one page. Its children are stored with an
+        // empty route filter because the container decides where the group
+        // renders.
+        const scoped = await widgets.createPlacement({
+            typeId: 'core:layout-group', zoneId: 'main-after', routes: ['/markets']
+        });
+        const child = await widgets.createPlacement({
+            typeId: 't', zoneId: 'main-after', parentId: scoped.id, routes: []
+        });
+        expect(child.routes).toEqual([]);
+
+        await widgets.deletePlacement(scoped.id);
+
+        // An empty filter on a top-level row means every route, so the
+        // child has to inherit the container's filter rather than keep the
+        // empty one it was stored with.
+        const survivor = await widgets.findPlacementById(child.id);
+        expect(survivor?.parentId).toBeUndefined();
+        expect(survivor?.routes).toEqual(['/markets']);
+    });
 });
 
 describe('WidgetsService.fetchWidgetsForRoute', () => {

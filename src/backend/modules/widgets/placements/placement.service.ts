@@ -469,15 +469,21 @@ export class PlacementService implements IPlacementService {
         return publicShape;
     }
 
-    async detachChildrenOf(parentId: string): Promise<number> {
+    async detachChildrenOf(parentId: string, routes: ReadonlyArray<string>): Promise<number> {
         if (!ObjectId.isValid(parentId)) return 0;
         const collection = this.database.getCollection<IWidgetPlacementDocument>(WIDGET_PLACEMENT_COLLECTION);
         // Relocate every child back to the zone by clearing its parent
         // link. Used when a container is deleted so operator-configured
         // children survive rather than cascade-deleting with the parent.
+        //
+        // The children also adopt the container's routes. Each was stored
+        // with an empty filter because the container governed where the
+        // group rendered, and an empty filter on a top-level row means
+        // every route, so detaching without this would quietly publish
+        // each child site-wide.
         const result = await collection.updateMany(
             { parentId: new ObjectId(parentId) },
-            { $unset: { parentId: '' }, $set: { updatedAt: new Date() } }
+            { $unset: { parentId: '' }, $set: { routes: [...routes], updatedAt: new Date() } }
         );
         return result.modifiedCount ?? 0;
     }

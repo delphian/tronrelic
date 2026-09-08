@@ -203,8 +203,18 @@ export interface IPlacementService {
      * cascade-deleting its children (and losing operator config), the
      * service relocates them to the zone at their existing order.
      *
+     * A nested child is stored with an empty `routes` array because its
+     * container decided which pages the group appeared on. An empty array
+     * means "every route" once the row stands on its own, so detaching
+     * without restoring a filter would silently publish each child across
+     * the whole site. The caller therefore passes the container's own
+     * routes and every child adopts them, staying visible exactly where
+     * the group was.
+     *
      * @param parentId - The container placement id whose children detach.
+     * @param routes - The container's route filter, adopted by each child
+     *   so its visibility does not widen when the container disappears.
      * @returns Count of child placements detached.
      */
-    detachChildrenOf(parentId: string): Promise<number>;
+    detachChildrenOf(parentId: string, routes: ReadonlyArray<string>): Promise<number>;
 }

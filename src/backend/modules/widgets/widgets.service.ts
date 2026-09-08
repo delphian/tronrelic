@@ -473,9 +473,12 @@ export class WidgetsService implements IWidgetsService {
         }
         // Deleting a container relocates its children back to the zone
         // rather than cascade-deleting them, so operator-configured
-        // widgets survive the container's removal.
+        // widgets survive the container's removal. They inherit the
+        // container's routes because that is the filter they were
+        // rendering under; keeping their stored empty filter would read
+        // as "every route" and widen each child to the whole site.
         if (existing.typeId === LAYOUT_GROUP_TYPE_ID) {
-            await this.placements.detachChildrenOf(id);
+            await this.placements.detachChildrenOf(id, existing.routes);
         }
         return this.placements.delete(id);
     }
