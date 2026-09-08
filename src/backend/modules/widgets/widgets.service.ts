@@ -448,9 +448,8 @@ export class WidgetsService implements IWidgetsService {
 
         // Attaching to a container (parentId is a string): validate the
         // one-level contract against the row being moved and force it
-        // into the parent's zone with an empty route filter. Detaching
-        // (`parentId: null`) needs no validation — it just clears the
-        // link — and omission leaves nesting untouched.
+        // into the parent's zone with an empty route filter. Omission
+        // leaves nesting untouched.
         if (typeof patch.parentId === 'string') {
             const existing = await this.placements.findById(id);
             if (!existing) return null;
@@ -460,6 +459,24 @@ export class WidgetsService implements IWidgetsService {
                 zoneId: parent.zoneId,
                 routes: []
             });
+        }
+
+        // Detaching (`parentId: null`) needs no nesting validation, but it
+        // does need a route filter. The row is stored with an empty one
+        // because its container decided which pages the group appeared
+        // on, and an empty filter on a top-level row means every route —
+        // so clearing the link alone would publish the row site-wide. It
+        // adopts the container's routes instead, unless the caller stated
+        // a filter of its own in the same patch, which wins.
+        if (patch.parentId === null && patch.routes === undefined) {
+            const existing = await this.placements.findById(id);
+            if (!existing) return null;
+            if (existing.parentId !== undefined) {
+                const parent = await this.placements.findById(existing.parentId);
+                if (parent) {
+                    return this.placements.update(id, { ...patch, routes: [...parent.routes] });
+                }
+            }
         }
 
         return this.placements.update(id, patch);

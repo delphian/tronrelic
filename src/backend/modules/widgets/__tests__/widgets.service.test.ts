@@ -657,6 +657,52 @@ describe('WidgetsService nesting (layout groups)', () => {
         expect(survivor?.parentId).toBeUndefined();
         expect(survivor?.routes).toEqual(['/markets']);
     });
+
+    it('gives a row detached by patch the container routes', async () => {
+        const { widgets } = await setupWithContainer();
+        const scoped = await widgets.createPlacement({
+            typeId: 'core:layout-group', zoneId: 'main-after', routes: ['/markets']
+        });
+        const child = await widgets.createPlacement({
+            typeId: 't', zoneId: 'main-after', parentId: scoped.id, routes: []
+        });
+
+        // Detaching through the API rather than by deleting the container
+        // hits the same trap: the stored empty filter would read as every
+        // route once the row stands on its own.
+        const detached = await widgets.updatePlacement(child.id, { parentId: null });
+        expect(detached?.parentId).toBeUndefined();
+        expect(detached?.routes).toEqual(['/markets']);
+    });
+
+    it('lets a route filter sent with the detach patch win over the container', async () => {
+        const { widgets } = await setupWithContainer();
+        const scoped = await widgets.createPlacement({
+            typeId: 'core:layout-group', zoneId: 'main-after', routes: ['/markets']
+        });
+        const child = await widgets.createPlacement({
+            typeId: 't', zoneId: 'main-after', parentId: scoped.id, routes: []
+        });
+
+        // The inheritance is only a fallback. A caller that states where
+        // the row should render is the authority on it.
+        const detached = await widgets.updatePlacement(child.id, {
+            parentId: null, routes: ['/tools/*']
+        });
+        expect(detached?.routes).toEqual(['/tools/*']);
+    });
+
+    it('leaves a top-level row alone when it is detached with no parent', async () => {
+        const { widgets } = await setupWithContainer();
+        const row = await widgets.createPlacement({
+            typeId: 't', zoneId: 'main-after', routes: []
+        });
+
+        // A no-op detach on a row that was never nested must not invent a
+        // filter — an empty one here genuinely means every route.
+        const patched = await widgets.updatePlacement(row.id, { parentId: null });
+        expect(patched?.routes).toEqual([]);
+    });
 });
 
 describe('WidgetsService.fetchWidgetsForRoute', () => {
