@@ -74,6 +74,25 @@ export class InvalidParentPlacementError extends WidgetsServiceError {
 }
 
 /**
+ * Thrown when a patch tries to give a route filter to a placement that is
+ * nested inside a layout-group container. A container decides which pages
+ * its group appears on, so a nested row is stored with an empty `routes`
+ * array and the rest of the system relies on that: the SSR resolver, the
+ * admin editor's hidden route field, and the inheritance that runs when a
+ * row is detached all assume it. Accepting the filter and quietly ignoring
+ * it would leave the caller believing the row is scoped when it is not, so
+ * the write is refused instead. Detach the row in the same patch
+ * (`parentId: null`) to set a filter on it. HTTP maps this to 400.
+ */
+export class RouteFilterOnNestedPlacementError extends WidgetsServiceError {
+    constructor() {
+        super(
+            'A placement nested in a layout group cannot carry its own routes — the container decides where the group renders. Send parentId: null in the same patch to detach the row and scope it.'
+        );
+    }
+}
+
+/**
  * Thrown when the controller attempts to DELETE a plugin-source
  * placement. The supported reversals are disable and restore-defaults;
  * deletion would silently re-appear on the next plugin enable.

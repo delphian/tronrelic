@@ -692,18 +692,49 @@ describe('WidgetsService nesting (layout groups)', () => {
         expect(detached?.routes).toEqual(['/tools/*']);
     });
 
-    it('leaves a nested child its own filter when the container is deleted', async () => {
-        const { widgets } = await setupWithContainer();
+    it('refuses to put a route filter on a row that stays nested', async () => {
+        const { widgets, container } = await setupWithContainer();
+        const child = await widgets.createPlacement({
+            typeId: 't', zoneId: 'main-after', parentId: container.id, routes: []
+        });
+
+        // The container decides where the group renders, so a filter on a
+        // still-nested row would be stored and then ignored. Refusing the
+        // write is what keeps the caller from believing it took effect.
+        await expect(widgets.updatePlacement(child.id, { routes: ['/markets'] }))
+            .rejects.toThrow(/cannot carry its own routes/);
+
+        const unchanged = await widgets.findPlacementById(child.id);
+        expect(unchanged?.routes).toEqual([]);
+    });
+
+    it('accepts a route filter when the same patch detaches the row', async () => {
+        const { widgets, container } = await setupWithContainer();
+        const child = await widgets.createPlacement({
+            typeId: 't', zoneId: 'main-after', parentId: container.id, routes: []
+        });
+
+        // Detaching in the same patch is the supported way to scope a row
+        // that is currently nested.
+        const detached = await widgets.updatePlacement(child.id, {
+            parentId: null, routes: ['/markets']
+        });
+        expect(detached?.parentId).toBeUndefined();
+        expect(detached?.routes).toEqual(['/markets']);
+    });
+
+    it('leaves a stored nested filter alone when the container is deleted', async () => {
+        const { widgets, placements } = await setupWithContainer();
         const scoped = await widgets.createPlacement({
             typeId: 'core:layout-group', zoneId: 'main-after', routes: ['/markets/**']
         });
         const child = await widgets.createPlacement({
             typeId: 't', zoneId: 'main-after', parentId: scoped.id, routes: []
         });
-        // A patch carrying only `routes` leaves the row nested, so a child
-        // can end up narrower than its container. Both filters apply while
-        // it is nested, so the child renders on one page only.
-        await widgets.updatePlacement(child.id, { routes: ['/markets/btc'] });
+        // Written straight through the placement service, bypassing the
+        // guard above, because rows in this shape predate it. Both filters
+        // apply while the row is nested, so it renders on one page only.
+        await placements.update(child.id, { routes: ['/markets/btc'] });
 
         await widgets.deletePlacement(scoped.id);
 
@@ -714,15 +745,15 @@ describe('WidgetsService nesting (layout groups)', () => {
         expect(survivor?.routes).toEqual(['/markets/btc']);
     });
 
-    it('leaves a nested child its own filter when detached by patch', async () => {
-        const { widgets } = await setupWithContainer();
+    it('leaves a stored nested filter alone when the row is detached by patch', async () => {
+        const { widgets, placements } = await setupWithContainer();
         const scoped = await widgets.createPlacement({
             typeId: 'core:layout-group', zoneId: 'main-after', routes: ['/markets/**']
         });
         const child = await widgets.createPlacement({
             typeId: 't', zoneId: 'main-after', parentId: scoped.id, routes: []
         });
-        await widgets.updatePlacement(child.id, { routes: ['/markets/btc'] });
+        await placements.update(child.id, { routes: ['/markets/btc'] });
 
         const detached = await widgets.updatePlacement(child.id, { parentId: null });
         expect(detached?.routes).toEqual(['/markets/btc']);

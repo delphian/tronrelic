@@ -56,6 +56,7 @@ import {
     MissingPluginDefaultsError,
     PluginPlacementDeletionForbiddenError,
     RestoreDefaultsOnOperatorRowError,
+    RouteFilterOnNestedPlacementError,
     UnknownWidgetTypeError,
     UnknownZoneError,
     WidgetTypeOwnerConflictError
@@ -459,6 +460,22 @@ export class WidgetsService implements IWidgetsService {
                 zoneId: parent.zoneId,
                 routes: []
             });
+        }
+
+        // A row that stays nested cannot take a route filter of its own.
+        // Its container decides where the group renders, which is why
+        // nesting stores an empty filter, and the resolver, the admin
+        // editor, and the detach inheritance all read the row that way.
+        // Accepting the filter and ignoring it would leave the caller
+        // believing the row is scoped when it is not, so the write is
+        // refused. Detaching in the same patch is the supported way to
+        // scope the row, and is handled below.
+        if (patch.parentId === undefined && patch.routes !== undefined && patch.routes.length > 0) {
+            const existing = await this.placements.findById(id);
+            if (!existing) return null;
+            if (existing.parentId !== undefined) {
+                throw new RouteFilterOnNestedPlacementError();
+            }
         }
 
         // Detaching (`parentId: null`) needs no nesting validation, but it
