@@ -42,8 +42,9 @@ export function placementMatchesRoute(routes: ReadonlyArray<string>, route: stri
 /**
  * Light validation for a typed path, mirroring the server's
  * `normaliseRoutePattern` rules the admin API enforces: non-empty,
- * whitespace-free, starting with `/`. Rejecting a bad path here means the
- * operator sees the problem in the field instead of in a failed save.
+ * whitespace-free, starting with `/`, and using `*` only as a trailing
+ * `/*` or `/**` marker. Rejecting a bad path here means the operator sees
+ * the problem in the field instead of in a failed save.
  *
  * @param value - Raw text from a path input.
  * @returns The trimmed path, or null when it is not a valid route.
@@ -53,6 +54,18 @@ export function normaliseRouteInput(value: string): string | null {
     let result: string | null = trimmed;
     if (trimmed.length === 0 || !trimmed.startsWith('/') || /\s/.test(trimmed)) {
         result = null;
+    } else {
+        // Strip one trailing glob marker, then reject any `*` left behind.
+        // The server does exactly this, so `/tools/*/extra` and `/tools*`
+        // have to fail in the field rather than on save.
+        const withoutTrailingGlob = trimmed.endsWith('/**')
+            ? trimmed.slice(0, -3)
+            : trimmed.endsWith('/*')
+                ? trimmed.slice(0, -2)
+                : trimmed;
+        if (withoutTrailingGlob.includes('*')) {
+            result = null;
+        }
     }
     return result;
 }

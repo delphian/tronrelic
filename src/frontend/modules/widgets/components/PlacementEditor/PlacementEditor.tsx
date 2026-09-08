@@ -234,7 +234,7 @@ export function PlacementEditor({
     const addRoute = useCallback((raw: string) => {
         const path = normaliseRouteInput(raw);
         if (!path) {
-            setRouteError('Enter a path starting with /, with no spaces.');
+            setRouteError('Enter a path starting with /, with no spaces. Use * only at the end, as /* or /**.');
         } else if (routes.includes(path)) {
             setRouteError('That path is already listed.');
         } else {
@@ -302,6 +302,13 @@ export function PlacementEditor({
             return;
         }
         setConfigError(null);
+        // An empty list under "Only some pages" would be sent as `routes: []`,
+        // which the resolver reads as "every page" — the opposite of what this
+        // form promises. Make the operator name a page or switch scope first.
+        if (!nested && routeScope === 'some' && routes.length === 0) {
+            setRouteError('Add at least one page, or choose Every page.');
+            return;
+        }
         setSaveError(null);
         setSaving(true);
 
