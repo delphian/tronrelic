@@ -91,6 +91,7 @@ A page file with 500 lines of component logic is the failure mode this rule prev
 | `menu` | Navigation system (PriorityNav, useMenuConfig) |
 | `address-labels` | Address labeling and display |
 | `scheduler` | Scheduler monitoring UI |
+| `widgets` | The `/system/widgets` admin shell and placement editor (page picker, widget library, zone board, editor panel); `server.ts` holds the SSR fetch |
 
 Before adding a new module, list `src/frontend/modules/` and grep for existing components. Reimplementing capabilities that already exist is a common failure mode.
 

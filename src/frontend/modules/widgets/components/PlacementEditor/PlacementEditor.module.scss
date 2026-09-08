@@ -1,0 +1,234 @@
+/**
+ * The add/edit form inside the slide-over. It is its own container so the
+ * two-up grid collapses on the panel's real width, which is narrower than
+ * the viewport and narrower still on a phone.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+.form {
+    container-type: inline-size;
+    container-name: placement-editor;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+}
+
+/* One titled group. A hairline under the title keeps the groups scannable
+   without boxing each one, which would push the fields inward twice
+   inside an already narrow panel. */
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    min-width: 0;
+}
+
+.section_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+    padding-bottom: var(--gap-2xs);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+}
+
+.section_title {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-muted);
+}
+
+/* Two-up for short controls; wide controls take the row with .span. Rows
+   align to the top so a field with a hint does not stretch its neighbour. */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--gap-sm) var(--gap-md);
+    align-items: start;
+}
+
+.span {
+    grid-column: 1 / -1;
+}
+
+/* Read-only summary standing in for a control that cannot change: the
+   widget type of an existing row. */
+.static {
+    display: flex;
+    flex-direction: column;
+    gap: var(--field-gap);
+    min-width: 0;
+}
+
+.static_value {
+    display: inline-flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+    color: var(--color-text);
+    font-weight: var(--font-weight-medium);
+}
+
+.static_code {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-normal);
+    color: var(--color-text-muted);
+}
+
+.static_meta {
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-normal);
+    color: var(--color-text-muted);
+}
+
+.label {
+    font-size: var(--field-label-font-size);
+    font-weight: var(--field-label-font-weight);
+    color: var(--field-label-color);
+}
+
+.hint {
+    font-size: var(--field-message-font-size);
+    line-height: var(--line-height-normal);
+    color: var(--field-hint-color);
+}
+
+.field_group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--field-gap);
+    min-width: 0;
+}
+
+.routes {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+}
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-xs);
+    align-items: center;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: var(--padding-2xs) var(--padding-xs);
+    background: var(--color-primary-alpha-15);
+    border: var(--border-width-thin) solid var(--color-primary-alpha-38);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text);
+}
+
+.chip_remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--icon-size-xs);
+    height: var(--icon-size-xs);
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: background-color var(--transition-base), color var(--transition-base);
+}
+
+.chip_remove:hover {
+    background: var(--color-danger-alpha-18);
+    color: var(--color-danger-text);
+}
+
+.chip_remove:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-shadow);
+}
+
+.routes_input {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    flex-wrap: wrap;
+}
+
+.routes_input > :first-child {
+    flex: 1 1 160px;
+    min-width: 0;
+}
+
+.placeholder {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    font-style: italic;
+}
+
+.json {
+    font-family: var(--font-mono);
+}
+
+/* Sticks to the bottom of the panel's scrolling body so the primary action
+   stays reachable while a long settings list is scrolled. The negative
+   margins run the bar out over the body's padding so it reads as a bar of
+   the panel rather than a strip floating inside the form. */
+.footer {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
+    margin: 0 calc(-1 * var(--modal-body-padding)) calc(-1 * var(--modal-body-padding));
+    padding: var(--gap-sm) var(--modal-body-padding);
+    background: var(--modal-dialog-background);
+    border-top: var(--modal-header-border);
+}
+
+.footer_left,
+.footer_right {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.enabled {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    cursor: pointer;
+}
+
+.footer_error {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: var(--gap-2xs);
+    flex: 1 1 100%;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-danger-text);
+}
+
+.footer_error svg {
+    flex-shrink: 0;
+}
+
+@container placement-editor (max-width: #{$breakpoint-mobile-md}) {
+    .grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .section_header {
+        flex-wrap: wrap;
+    }
+}

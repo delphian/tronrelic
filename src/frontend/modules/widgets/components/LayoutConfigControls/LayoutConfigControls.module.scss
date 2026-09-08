@@ -1,0 +1,80 @@
+/**
+ * Flexbox layout editor shared by the zone layout panel and the layout
+ * group settings. The essential row (arrangement, gap, collapse) sits first;
+ * fine-tuning and custom CSS are native disclosures so they cost nothing
+ * until opened.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+.layout {
+    container-type: inline-size;
+    container-name: layout-controls;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
+    align-items: flex-end;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--field-gap);
+    /* Hold a steady width and wrap when the container runs out of room,
+       rather than growing to fill and stretching the selects thin. */
+    flex: 0 1 180px;
+    min-width: 150px;
+}
+
+.label {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.advanced {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.advanced_summary {
+    cursor: pointer;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+    user-select: none;
+}
+
+.advanced_summary:hover {
+    color: var(--color-text);
+}
+
+.advanced[open] > .advanced_summary {
+    margin-bottom: var(--gap-xs);
+}
+
+.css_block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--field-gap);
+}
+
+.css_textarea {
+    font-family: var(--font-mono);
+}
+
+.css_note {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+@container layout-controls (max-width: #{$breakpoint-mobile-sm}) {
+    .field {
+        flex-basis: 100%;
+    }
+}

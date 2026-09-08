@@ -1,0 +1,167 @@
+/**
+ * Widget catalog. A quiet list: the zones on the right are where the eye
+ * should go, so entries here are plain rows with a grip, a name, one line
+ * of description, and an add button.
+ */
+
+.library {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.title {
+    margin: 0;
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.hint {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.search {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search_icon {
+    position: absolute;
+    left: var(--padding-sm);
+    color: var(--color-text-muted);
+    pointer-events: none;
+}
+
+.search_input {
+    width: 100%;
+    padding-left: calc(var(--padding-sm) * 2 + var(--icon-size-xs));
+}
+
+.group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+}
+
+.group_title {
+    margin: 0;
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-subtle);
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--gap-xs);
+    padding: var(--padding-xs) var(--padding-sm) var(--padding-xs) var(--padding-2xs);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    transition: border-color var(--transition-base);
+}
+
+.item:hover {
+    border-color: var(--color-primary-alpha-38);
+}
+
+/* The source item stays in place while its overlay travels; dimming it
+   shows where the drag came from. */
+.item--dragging {
+    opacity: var(--opacity-50);
+}
+
+.handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--button-height-xs);
+    height: var(--button-height-sm);
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    border-radius: var(--radius-xs);
+    cursor: grab;
+    touch-action: none;
+}
+
+.handle:hover {
+    color: var(--color-text);
+}
+
+.handle:disabled {
+    cursor: not-allowed;
+    opacity: var(--opacity-50);
+}
+
+.handle:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-shadow);
+}
+
+.item_main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+}
+
+.item_headline {
+    display: flex;
+    align-items: baseline;
+    gap: var(--gap-xs);
+    min-width: 0;
+}
+
+.item_label {
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.item_count {
+    flex-shrink: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+/* Two lines at most: the library is a picker, and the full description
+   shows again in the editor once a widget is chosen. */
+.item_description {
+    margin: 0;
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.empty {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}

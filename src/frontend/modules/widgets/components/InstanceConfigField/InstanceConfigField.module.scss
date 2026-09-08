@@ -1,0 +1,102 @@
+/**
+ * Schema-driven setting controls. Labels use the same field tokens as the
+ * shared <Field> so a control Field cannot wrap (segments, a toggle row, a
+ * repeatable list) sits level with the ones it can.
+ */
+
+.label {
+    font-size: var(--field-label-font-size);
+    font-weight: var(--field-label-font-weight);
+    color: var(--field-label-color);
+}
+
+.hint {
+    font-size: var(--field-message-font-size);
+    line-height: var(--line-height-normal);
+    color: var(--field-hint-color);
+}
+
+.required {
+    color: var(--color-danger);
+}
+
+/* A labelled control stacked the way Field stacks its parts. */
+.group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--field-gap);
+    min-width: 0;
+}
+
+.group_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
+/* A boolean setting: the switch, then its name and one line of help.
+   Reads as a settings row, which is how an on/off choice is expected to
+   look. */
+.toggle_row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--gap-sm);
+    align-items: start;
+    padding: var(--padding-2xs) 0;
+}
+
+.toggle_text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    cursor: pointer;
+}
+
+/* Long-form content keeps the body face because it is content, not code. */
+.textarea_content {
+    resize: vertical;
+}
+
+.array {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+}
+
+.array_empty {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    font-style: italic;
+}
+
+/* One list row: its number, its controls, and a remove button aligned to
+   the bottom edge so it sits level with the controls rather than their
+   labels. */
+.array_item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: end;
+    gap: var(--gap-sm);
+    padding: var(--padding-sm);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+}
+
+.array_index {
+    align-self: center;
+    min-width: 1.5em;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+.array_fields {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--gap-xs) var(--gap-sm);
+    align-items: end;
+}
