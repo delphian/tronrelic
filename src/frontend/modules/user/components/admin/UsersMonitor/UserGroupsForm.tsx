@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Lock } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
+import { Badge } from '../../../../../components/ui/Badge';
 import styles from './UserGroupsForm.module.scss';
 
 interface UserGroup {
@@ -139,12 +140,9 @@ export function UserGroupsForm({ userId, initialGroups, onCancel, onSubmit }: Pr
                                         <span className={styles.group_name}>
                                             <code className={styles.group_slug}>{group.id}</code>
                                             {group.system && (
-                                                <span
-                                                    className="badge badge--info"
-                                                    title="System group"
-                                                >
+                                                <Badge tone="info" size="sm" title="System group">
                                                     <Lock size={12} aria-hidden="true" /> system
-                                                </span>
+                                                </Badge>
                                             )}
                                         </span>
                                         {group.description && (

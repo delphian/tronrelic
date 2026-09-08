@@ -18,6 +18,7 @@ import { Card } from '../../../../components/ui/Card';
 import { AddressSelector } from '../../../../components/ui/AddressSelector';
 import { isValidTronAddress } from '../../../../lib/tronAddress';
 import { Button } from '../../../../components/ui/Button';
+import { Badge } from '../../../../components/ui/Badge';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { TronAddress } from '../../../../components/ui/TronAddress';
 import { checkApprovals } from '../../api/client';
@@ -160,9 +161,9 @@ export function ApprovalChecker() {
                                             <Td>{approval.allowanceFormatted}</Td>
                                             <Td>
                                                 {approval.isUnlimited ? (
-                                                    <span className="badge badge--danger">Unlimited</span>
+                                                    <Badge tone="danger" size="sm">Unlimited</Badge>
                                                 ) : (
-                                                    <span className="badge badge--success">Limited</span>
+                                                    <Badge tone="success" size="sm">Limited</Badge>
                                                 )}
                                             </Td>
                                         </Tr>

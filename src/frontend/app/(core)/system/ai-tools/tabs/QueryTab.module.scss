@@ -121,14 +121,21 @@
 }
 
 /* The conversation's opening line, clipped to one line so a long prompt never
-   pushes the header's controls out of reach. */
+   pushes the header's controls out of reach.
+
+   Set at --font-size-caption to match .rail_title, the "Conversations" heading
+   in the rail immediately to its left. The two label the same kind of thing —
+   one names the open conversation, the other names the list of past ones — so a
+   larger size here made the header read as the page's title rather than as one
+   label beside another. Every other item in this header row (the saved-prompt
+   trigger, the cost, the streaming note) already sits at caption. */
 .chat_title {
     flex: 1 1 8rem;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-medium);
     color: var(--color-text);
 }
@@ -410,9 +417,9 @@
     }
 }
 
-/* Per-query model override dropdown. Theming comes from the shared <Select>
- * primitive; this only caps the width in the composer footer (the class lands
- * on the Select wrapper). */
+/* Per-query model override dropdown. Padding and type both come from the shared
+ * <Select> primitive's `sm` step, so this only caps the width in the composer
+ * footer (the class lands on the Select wrapper). */
 .model_select {
     max-width: var(--max-width-xs);
 }

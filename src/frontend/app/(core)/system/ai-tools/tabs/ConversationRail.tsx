@@ -198,15 +198,19 @@ export function ConversationRail({
                                             <span className={styles.row_meta}>
                                                 <ClientTime date={group.lastAt} format="time" />
                                                 <span>· {group.turns} turn{group.turns === 1 ? '' : 's'}</span>
-                                                {group.mode === 'scheduled' && <Badge tone="info">Scheduled</Badge>}
+                                                {/* Every badge in this row takes the dense step. The rail is
+                                                    17rem wide and each row already carries a time, a turn
+                                                    count and a cost, so a full-size pill pushed the rest of
+                                                    the line onto a wrap. */}
+                                                {group.mode === 'scheduled' && <Badge tone="info" size="sm">Scheduled</Badge>}
                                                 {group.status === 'failed' && (
                                                     // The reason rides along as a tooltip so the common
                                                     // case — reading why last night's scheduled run died —
                                                     // costs a hover rather than an open.
-                                                    <Badge tone="danger" title={group.errorMessage ?? undefined}>Failed</Badge>
+                                                    <Badge tone="danger" size="sm" title={group.errorMessage ?? undefined}>Failed</Badge>
                                                 )}
                                                 {group.status === 'incomplete' && (
-                                                    <Badge tone="warning" title={group.errorMessage ?? undefined}>
+                                                    <Badge tone="warning" size="sm" title={group.errorMessage ?? undefined}>
                                                         {INCOMPLETE_OUTCOME_LABELS[group.outcome ?? 'empty'] ?? 'No answer'}
                                                     </Badge>
                                                 )}

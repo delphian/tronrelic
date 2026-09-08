@@ -309,9 +309,9 @@ export function ToolAllowlistDropdown({
                 aria-controls={open ? panelId : undefined}
                 title="Tools this query may call"
             >
-                <Wrench size={16} />
+                <Wrench size={14} />
                 <span className={styles.trigger_label}>Tools — {label}</span>
-                <ChevronDown size={16} className={styles.trigger_caret} aria-hidden="true" />
+                <ChevronDown size={14} className={styles.trigger_caret} aria-hidden="true" />
             </button>
 
             {open && createPortal(

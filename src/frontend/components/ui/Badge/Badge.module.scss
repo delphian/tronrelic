@@ -10,11 +10,36 @@
     align-items: center;
     gap: var(--badge-gap);
     border-radius: var(--badge-border-radius);
-    padding: var(--badge-padding);
     font-size: var(--badge-font-size);
     letter-spacing: var(--badge-letter-spacing);
     text-transform: uppercase;
     border: var(--badge-border-width) solid transparent;
+}
+
+/*
+ * Size Variants — padding only, unlike the button and input ladders.
+ *
+ * The badge's font size already sits at the 0.72rem legibility floor, so there
+ * is no type step underneath it and a font ladder here would be four names for
+ * a single value. The pill around the word is what makes a badge too heavy in a
+ * dense list, and that is what these steps shrink. `md` is the value every
+ * badge had before the prop existed, so a caller that passes no `size` renders
+ * exactly as it did.
+ */
+.badge--xs {
+    padding: var(--badge-padding-xs);
+}
+
+.badge--sm {
+    padding: var(--badge-padding-sm);
+}
+
+.badge--md {
+    padding: var(--badge-padding-md);
+}
+
+.badge--lg {
+    padding: var(--badge-padding-lg);
 }
 
 /* Live Indicator - Recording dot with pulse animation */

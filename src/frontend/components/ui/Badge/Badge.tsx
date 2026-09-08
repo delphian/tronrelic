@@ -10,6 +10,15 @@ import styles from './Badge.module.scss';
 export type BadgeTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 
 /**
+ * Density steps a Badge can render at, sharing the xs/sm/md/lg names the button
+ * and input ladders use so a caller sizes a badge the same way it sizes any
+ * other control. Exported for the same reason `BadgeTone` is: a caller that
+ * picks a step from its own layout state can type that choice against the
+ * component rather than restating the union.
+ */
+export type BadgeSize = 'xs' | 'sm' | 'md' | 'lg';
+
+/**
  * BadgeProps interface defines the properties available for the Badge component.
  *
  * Extends standard span attributes to support visual tone variants for displaying
@@ -21,6 +30,16 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
      * @default 'neutral'
      */
     tone?: BadgeTone;
+
+    /**
+     * How much padding surrounds the label. Pass a smaller step when badges sit
+     * in a dense list — a sidebar, a table cell, a narrow rail — where the pill
+     * at full size takes more width than the word inside it deserves. The text
+     * itself does not shrink: the badge font already sits at the design
+     * system's legibility floor, so only the pill moves.
+     * @default 'md'
+     */
+    size?: BadgeSize;
 
     /**
      * Whether to display a pulsing red recording indicator dot before the badge content.
@@ -40,6 +59,21 @@ const toneClass: Record<NonNullable<BadgeProps['tone']>, string> = {
     success: `${styles.badge} ${styles['badge--success']}`,
     warning: `${styles.badge} ${styles['badge--warning']}`,
     danger: `${styles.badge} ${styles['badge--danger']}`
+};
+
+/**
+ * Maps size prop values to their corresponding CSS Module class names.
+ * Controls how much padding surrounds the badge's label.
+ *
+ * One of these always applies, because `size` defaults to 'md'. That matters:
+ * the base `.badge` class carries no padding of its own, so a badge rendered
+ * without a size class would collapse onto its text.
+ */
+const sizeClass: Record<BadgeSize, string> = {
+    xs: styles['badge--xs'],
+    sm: styles['badge--sm'],
+    md: styles['badge--md'],
+    lg: styles['badge--lg']
 };
 
 /**
@@ -69,12 +103,18 @@ const toneClass: Record<NonNullable<BadgeProps['tone']>, string> = {
  * </Badge>
  * ```
  *
- * @param props - Badge component properties including tone variant, live indicator flag, and children
+ * @example Dense list — a narrow rail or a table cell, where the default pill
+ * takes more width than the label needs.
+ * ```tsx
+ * <Badge tone="info" size="sm">Scheduled</Badge>
+ * ```
+ *
+ * @param props - Badge component properties including tone variant, density step, live indicator flag, and children
  * @returns A styled span element with badge styling
  */
-export function Badge({ tone = 'neutral', showLiveIndicator = false, children, className, ...props }: PropsWithChildren<BadgeProps>) {
+export function Badge({ tone = 'neutral', size = 'md', showLiveIndicator = false, children, className, ...props }: PropsWithChildren<BadgeProps>) {
     return (
-        <span className={cn(toneClass[tone], className)} {...props}>
+        <span className={cn(toneClass[tone], sizeClass[size], className)} {...props}>
             {showLiveIndicator && <span className={styles.live_indicator} aria-hidden="true" />}
             {children}
         </span>

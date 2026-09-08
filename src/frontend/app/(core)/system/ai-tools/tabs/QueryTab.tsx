@@ -2056,12 +2056,12 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                         <div className={styles.chat_header_actions}>
                             <Button
                                 variant="ghost"
-                                size="sm"
+                                size="xs"
                                 onClick={handleNewChat}
                                 disabled={streaming || (!hasTurns && !editingPrompt && !input && !awaitingRunId)}
                                 aria-label="Start a new conversation"
                             >
-                                <Plus size={16} /> New chat
+                                <Plus size={14} /> New chat
                             </Button>
                         </div>
                     </div>
@@ -2212,6 +2212,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                                     <Select
                                         value={modelOverride}
                                         onChange={(e) => setModelOverride(e.target.value)}
+                                        size="sm"
                                         className={styles.model_select}
                                         aria-label="Model for the next message"
                                         title={editingPrompt
@@ -2257,7 +2258,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                                     {streaming ? (
                                         <Button
                                             variant="danger"
-                                            size="sm"
+                                            size="xs"
                                             onClick={() => { void handleStop(); }}
                                             aria-label="Stop the in-flight response"
                                         >
@@ -2266,12 +2267,12 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                                     ) : (
                                         <Button
                                             variant="primary"
-                                            size="sm"
+                                            size="xs"
                                             onClick={() => { void handleSend(); }}
                                             disabled={!input.trim() || (needsToolPrefill && toolsLoading)}
                                             aria-label="Send message"
                                         >
-                                            <ArrowUp size={16} /> Send
+                                            <ArrowUp size={14} /> Send
                                         </Button>
                                     )}
                                 </div>

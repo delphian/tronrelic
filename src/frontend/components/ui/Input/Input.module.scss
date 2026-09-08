@@ -15,21 +15,28 @@
     transition: var(--input-transition);
 }
 
-/* Size Variants (padding only; font-size holds so xs stays legible) */
+/* Size Variants — padding and type move together, so a dense control reads as
+   one step down rather than as a full-size field squeezed into less room. The
+   xs step holds its type at the 0.72rem legibility floor instead of continuing
+   the descent; see the ladder in semantic-tokens.scss. */
 .input--xs {
     padding: var(--input-padding-xs);
+    font-size: var(--input-font-size-xs);
 }
 
 .input--sm {
     padding: var(--input-padding-sm);
+    font-size: var(--input-font-size-sm);
 }
 
 .input--md {
     padding: var(--input-padding-md);
+    font-size: var(--input-font-size-md);
 }
 
 .input--lg {
     padding: var(--input-padding-lg);
+    font-size: var(--input-font-size-lg);
 }
 
 .input:focus {

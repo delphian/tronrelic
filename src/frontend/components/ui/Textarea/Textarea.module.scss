@@ -19,21 +19,28 @@
     resize: vertical;
 }
 
-/* Size Variants (padding only; font-size holds so xs stays legible) */
+/* Size Variants — padding and type move together, matching Input and Select so
+   the three primitives stay interchangeable at a given density. The xs step
+   holds its type at the 0.72rem legibility floor instead of continuing the
+   descent; see the ladder in semantic-tokens.scss. */
 .textarea--xs {
     padding: var(--input-padding-xs);
+    font-size: var(--input-font-size-xs);
 }
 
 .textarea--sm {
     padding: var(--input-padding-sm);
+    font-size: var(--input-font-size-sm);
 }
 
 .textarea--md {
     padding: var(--input-padding-md);
+    font-size: var(--input-font-size-md);
 }
 
 .textarea--lg {
     padding: var(--input-padding-lg);
+    font-size: var(--input-font-size-lg);
 }
 
 .textarea::placeholder {
