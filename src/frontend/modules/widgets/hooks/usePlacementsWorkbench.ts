@@ -280,6 +280,11 @@ export function usePlacementsWorkbench(initial: IWidgetsAdminData): IPlacementsW
                         next.routes = [];
                     }
                 }
+                // A detach carries the container's routes across so the row
+                // keeps its page filter. Mirror it locally too, or the
+                // optimistic copy would show the row site-wide until the
+                // next refetch lands.
+                if (op.patch.routes !== undefined) next.routes = [...op.patch.routes];
                 byId.set(op.id, next);
             }
             return Array.from(byId.values());
@@ -344,6 +349,16 @@ export function usePlacementsWorkbench(initial: IWidgetsAdminData): IPlacementsW
             if (p.id === moved.id) {
                 if (parentChanged) patch.parentId = destContainerId;
                 if (destContainerId === null && zoneChanged) patch.zoneId = destZone;
+                // Leaving a container: the row is stored with `routes: []`
+                // because the container governed which pages it showed on.
+                // Detaching while that empty filter is still in place would
+                // silently promote the row to every page, so adopt the
+                // container's own filter and keep it exactly where it was
+                // visible.
+                if (parentChanged && destContainerId === null && sourceContainerId) {
+                    const sourceContainer = pool.find(row => row.id === sourceContainerId);
+                    if (sourceContainer) patch.routes = [...sourceContainer.routes];
+                }
             }
             if (Object.keys(patch).length > 0) ops.push({ id: p.id, patch });
         });
@@ -519,14 +534,24 @@ export function usePlacementsWorkbench(initial: IWidgetsAdminData): IPlacementsW
      * its anchor, or after the last row), then the list is renumbered.
      *
      * @param input - The row to create.
-     * @param position - Where it should land, or null to append to its zone.
+     * @param position - Supplies the ordering the drop asked for, or null to
+     *   append to its zone. The container comes from `input`, not from here.
      * @returns The created row.
      */
     const createPlacementAt = useCallback(async (
         input: IPlacementInput,
         position: IInsertPosition | null
     ): Promise<IWidgetPlacement> => {
-        const containerId = position?.parentId ?? input.parentId ?? null;
+        // The submitted form is the operator's final word on the destination.
+        // A drop only seeds the editor's container, and the operator may pick
+        // a different layout group, or none at all, before saving. Trusting
+        // the drop's container here would let the `applyMove` below patch the
+        // new row straight back into the container it was dropped on.
+        // Resolving the anchor against the chosen container also discards a
+        // stale `beforeId`, because a row living in the drop container is not
+        // in the list the operator chose, which leaves the new row appended
+        // to that list rather than misplaced.
+        const containerId = input.parentId ?? null;
         const list = siblingListFrom(placements, containerId, input.zoneId);
         const anchor = position?.beforeId ? list.find(p => p.id === position.beforeId) : undefined;
         const last = list[list.length - 1];

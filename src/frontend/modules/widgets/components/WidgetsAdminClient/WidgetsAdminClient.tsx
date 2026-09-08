@@ -113,7 +113,16 @@ export function WidgetsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
             </div>
 
             <div className={styles.content}>
-                {activeTab === 'placements' && <PlacementsWorkbench initial={data} />}
+                {/* Hidden rather than unmounted while another tab is open. The
+                    workbench seeds its state once from the server snapshot, so
+                    unmounting it would discard every placement added, moved, or
+                    removed during this visit and drop its live-update listener,
+                    and returning to the tab would show the original snapshot
+                    again. The collection browser loads on mount, so it stays
+                    conditional and does no work in the background. */}
+                <div hidden={activeTab !== 'placements'}>
+                    <PlacementsWorkbench initial={data} />
+                </div>
                 {activeTab === 'database' && (
                     <CollectionBrowser prefix={COLLECTION_PREFIX} title="Widget Collections" />
                 )}
