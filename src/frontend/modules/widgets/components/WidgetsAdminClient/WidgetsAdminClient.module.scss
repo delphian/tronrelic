@@ -1,10 +1,28 @@
 /**
- * Submenu tab row above the active panel, mirroring the
- * /system/address-tags reference implementation. The panel itself carries no
- * spacing rule, so the only separation between the tabs and the panel is the
- * gap the surrounding Page grid already provides.
+ * The accessible page heading, the submenu tab row below it, and the active
+ * panel below that, mirroring the /system/address-tags reference
+ * implementation. The panel itself carries no spacing rule, so the only
+ * separation between the tabs and the panel is the gap the surrounding Page
+ * grid already provides.
  */
 
 .submenu {
     margin-top: var(--gap-sm);
+}
+
+/* Accessible-name-only page heading, so the document still has an <h1> once
+ * the visible title is gone. Standard screen-reader-only pattern, kept scoped
+ * to this module for the same reason MenuNav keeps its own copy: `.text-muted`
+ * is the project's one general global utility, and a visually-hidden rule does
+ * not get added to globals.scss for a single caller. */
+.sr_only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
