@@ -1,0 +1,190 @@
+/**
+ * One placed widget. Three columns: drag handle, the widget's identity and
+ * route filter, and the inline actions. State is carried by the border and
+ * text colour, not the switch alone, so an off row reads as off from across
+ * the room.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+.row {
+    container-type: inline-size;
+    container-name: placement-row;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--gap-sm);
+    padding: var(--padding-xs) var(--padding-sm);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    transition: border-color var(--transition-base), box-shadow var(--transition-base), opacity var(--transition-base);
+}
+
+.row:hover {
+    border-color: var(--color-primary-alpha-38);
+}
+
+/* Off: dashed outline and muted name. The switch still shows the state; the
+   outline makes it legible without reading the switch. */
+.row--off {
+    border-style: dashed;
+}
+
+.row--off .name {
+    color: var(--color-text-muted);
+}
+
+/* On another page: shown for reference under the zone's disclosure, not
+   draggable, dimmed so it cannot be mistaken for something on this page. */
+.row--off_page {
+    opacity: var(--opacity-70);
+    background: transparent;
+}
+
+.row--dragging {
+    opacity: var(--opacity-55);
+    box-shadow: var(--shadow-md);
+    cursor: grabbing;
+}
+
+.handle,
+.handle_placeholder {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--button-height-xs);
+    height: var(--button-height-sm);
+}
+
+.handle {
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    border-radius: var(--radius-xs);
+    cursor: grab;
+    transition: color var(--transition-base), background-color var(--transition-base);
+    touch-action: none;
+}
+
+.handle:hover {
+    color: var(--color-text);
+    background: var(--color-surface);
+}
+
+.handle:active {
+    cursor: grabbing;
+}
+
+.handle:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-shadow);
+}
+
+.main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+}
+
+.headline {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.group_icon {
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+}
+
+/* The name is the row's primary action: a bare button so it reads as text
+   but opens the editor, matching the pencil at the row's end. */
+.name {
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--color-text);
+    font: inherit;
+    font-weight: var(--font-weight-semibold);
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.name:hover {
+    color: var(--color-primary);
+}
+
+.name:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-shadow);
+    border-radius: var(--radius-xs);
+}
+
+.meta {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    white-space: nowrap;
+}
+
+.routes {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-2xs);
+}
+
+.route {
+    display: inline-block;
+    padding: 0 var(--padding-xs);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-xs);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.routes_all {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-caption);
+}
+
+.actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--gap-xs);
+}
+
+.reorder {
+    display: inline-flex;
+    align-items: center;
+}
+
+/* The width dropdown sizes to its short labels; the caption face keeps it
+   from crowding the switch beside it. */
+.width {
+    font-size: var(--font-size-caption);
+}
+
+/* Narrow rows: the action cluster wraps under the identity line rather than
+   squeezing the name to nothing. */
+@container placement-row (max-width: #{$breakpoint-mobile-md}) {
+    .row {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .actions {
+        grid-column: 1 / -1;
+        flex-wrap: wrap;
+    }
+}

@@ -7,7 +7,7 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 | | |
 |---|---|
 | Module id | `widgets` |
-| Admin UI | `/system/widgets` |
+| Admin UI | `/system/widgets` — Placements tab (the editor, `src/frontend/modules/widgets/`) and Database tab (`CollectionBrowser` scoped to `module_widgets_`) |
 | Public service | `'widgets'` on the service registry (`IWidgetsService`) |
 | Backend API base | `/api/admin/system/widgets/placements`, `/api/admin/system/widget-types`, `/api/admin/system/zones` (now also `PATCH /:zoneId/layout`), plus SSR fetch at `/api/widgets` |
 | WebSocket event | `widgets:placements-update` (also fired on zone-layout change — no separate event) |
@@ -15,6 +15,7 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 | Storage | `module_widgets_placements`, `module_widgets_zone_layouts` (MongoDB) |
 | Migration | `module:widgets:001_create_widget_placements` (placements collection + 4 indexes); `module:widgets:002_seed_block_ticker_placement` (idempotent seed of one operator-source `core:block-ticker` placement in `ticker-after`, guarded on absence so it runs once and never fights an operator edit); `module:widgets:003_add_parent_id_index` (sparse `parentId` index for child grouping); `module:widgets:004_repair_plugin_placement_index` (drops the mis-scoped sparse unique `(typeId, pluginId)` index and recreates it partial — `partialFilterExpression: { pluginId: { $exists: true } }` — so operators can place a widget type more than once). The zone-layouts collection needs no migration — `ZoneLayoutService.load()` creates its unique index idempotently at boot. |
 | System menu node | "Widgets" under the System container — seeded by `WidgetsModule.run()` |
+| Submenu namespace | `widgets` — memory-only tab nodes (`?tab=placements`, `?tab=database`) seeded by `WidgetsModule.run()`; the page renders them with `MenuNavClient` (menu module's Submenu Pattern) |
 
 ## Source Map
 
@@ -191,9 +192,19 @@ Widget types may declare `configSchema` (JSON Schema Draft 7) on registration. T
 
 Consumers retrieve the schema for an arbitrary `typeId` via `IWidgetsService.getTypeConfigSchema(typeId)` — the controller's single touchpoint into the type-side contract. Adminship still flows through `IWidgetsService`; the registry stays internal to the module.
 
+## Admin Editor
+
+`/system/widgets` is organised around a page. The operator picks a page from the site's navigation (the `main` menu namespace, fetched server-side), a route pattern a placement already uses, or a path they type; the board then shows every zone with the rows that resolve on that page, using a client-side mirror of `routeMatches`. "Every page" is the default and shows site-wide rows only. Rows placed in a zone that belong to other pages are never hidden: each zone lists them under a disclosure so an operator can always find a row they placed.
+
+The left column holds the page picker and the widget library, which lists every registered type with its description and placement count. A library entry is dragged onto a zone, a gap between rows, or a layout group, or added with its button; either gesture opens the editor panel (a `SlideOver`) with the type and destination pre-filled, and the row is created only when the panel is saved, because types with required settings would fail a blind create. A new row lands where it was dropped: it is created with a provisional `order` just below its anchor, then the list is renumbered through the same move engine drag-drop uses.
+
+Each zone card carries a layout strip: a miniature flex container driven by the zone's `layoutConfig` and each row's `layoutWeight`, drawing only the rows that would render on the selected page. It exists because arrangement, gap, and width were otherwise invisible until the live page was visited. Clicking a block opens that row in the panel.
+
+The server entry (`app/(core)/system/widgets/page.tsx`) fetches zones, types, placements, the `main` menu, and the `widgets` submenu with the visitor's cookies forwarded, so the first paint carries real data. The client keeps the snapshot current by refetching on `widgets:placements-update`.
+
 ### How the Placement Form Renders a Schema
 
-The `/system/widgets` create/edit modal builds its Settings section from the schema, so the schema is also the widget's admin form. `title` is the field label (a missing title is sentence-cased from the key) and `description` is the help text under the control. The control is chosen from the property:
+The editor panel builds its Settings section from the schema, so the schema is also the widget's admin form. `title` is the field label (a missing title is sentence-cased from the key) and `description` is the help text under the control. The control is chosen from the property:
 
 | Property shape | Control |
 |---|---|
@@ -206,4 +217,4 @@ The `/system/widgets` create/edit modal builds its Settings section from the sch
 | `array` of scalars or of flat objects | Repeatable rows with add and remove; object items lay their fields side by side |
 | nested `object`, arrays of arrays | Not rendered; editable only through the raw JSON view |
 
-Enum members that are CSS keywords or token names (`flex-start`, `space-between`, `heading-md`, `sm`) are shown with plain-English labels; the persisted value is unchanged. `core:layout-group` is special-cased: its settings render through the same preset-driven layout editor the zone panel uses.
+Enum members that are CSS keywords or token names (`flex-start`, `space-between`, `heading-md`, `sm`) are shown with plain-English labels; the persisted value is unchanged. `core:layout-group` is special-cased: its settings render through the same preset-driven layout editor the zone panel uses. The schema helpers live in `src/frontend/modules/widgets/lib/configSchema.ts`.

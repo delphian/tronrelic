@@ -1,0 +1,122 @@
+/**
+ * Miniature flex container depicting a zone's arrangement. The flex values
+ * arrive as custom properties set inline by the component, the same way the
+ * live WidgetZone renderer receives its config, so the strip and the page
+ * agree by construction.
+ */
+
+.strip {
+    padding: var(--padding-xs);
+    background: var(--color-surface-accent);
+    border: var(--border-width-thin) dashed var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.container {
+    display: flex;
+    flex-direction: var(--strip-direction, row);
+    justify-content: var(--strip-justify, flex-start);
+    align-items: var(--strip-align, center);
+    flex-wrap: var(--strip-wrap, nowrap);
+    gap: var(--strip-gap, var(--gap-xs));
+    min-width: 0;
+}
+
+.container--nested {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* One widget. Natural width by default so a spread-out row visibly spreads;
+   a weighted block grows against a zero basis exactly as the renderer's
+   weighted item does. */
+.block {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--gap-2xs);
+    flex: 0 1 auto;
+    min-width: 0;
+    min-height: var(--button-height-xs);
+    padding: var(--padding-2xs) var(--padding-sm);
+    background: var(--color-primary-alpha-15);
+    border: var(--border-width-thin) solid var(--color-primary-alpha-38);
+    border-radius: var(--radius-xs);
+    color: var(--color-text);
+    font-size: var(--font-size-caption);
+    cursor: pointer;
+    transition: background-color var(--transition-base), border-color var(--transition-base);
+}
+
+.block:hover {
+    background: var(--color-primary-alpha-30);
+    border-color: var(--color-primary);
+}
+
+.block:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-shadow);
+}
+
+.block_label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.block_weight {
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+}
+
+.weighted {
+    flex: var(--strip-grow, 1) 1 0;
+}
+
+/* In a stacked container every block takes the full width, matching how a
+   column zone stretches its items. */
+.container--column > .block,
+.container--column > .group {
+    width: 100%;
+    flex: 0 0 auto;
+}
+
+/* A layout group: its label above a nested container, outlined rather than
+   filled so the widgets inside it stay the filled shapes. */
+.group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    flex: 0 1 auto;
+    min-width: 0;
+    padding: var(--padding-2xs);
+    border: var(--border-width-thin) dashed var(--color-border-strong);
+    border-radius: var(--radius-xs);
+}
+
+.group_label {
+    align-self: flex-start;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    cursor: pointer;
+}
+
+.group_label:hover {
+    color: var(--color-text);
+}
+
+.group_label:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-shadow);
+    border-radius: var(--radius-xs);
+}
+
+.group_empty {
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-caption);
+    font-style: italic;
+}

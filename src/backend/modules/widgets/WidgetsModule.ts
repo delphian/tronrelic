@@ -53,6 +53,32 @@ import { WebSocketService } from '../../services/websocket.service.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 
 /**
+ * Dedicated menu namespace for the `/system/widgets` in-page tab row. Kept
+ * out of `main` so the tabs never appear in the global navigation; only the
+ * page's own `MenuNavClient` reads this namespace (menu module's Submenu
+ * Pattern). The frontend shell repeats the literal because it cannot import
+ * backend code.
+ */
+export const WIDGETS_SUBMENU_NAMESPACE = 'widgets';
+
+/**
+ * The in-page tab row, declared as menu nodes rather than a hand-rolled
+ * button array so it inherits per-user gating, ordering, and live
+ * `menu:update` refresh, and so a plugin can contribute a tab later. Each
+ * `url` carries a `?tab=` value the client reads to pick the active panel.
+ *
+ * Database is the obligation any component that owns a collection carries:
+ * this module owns `module_widgets_placements` and
+ * `module_widgets_zone_layouts`, and an operator diagnosing a placement
+ * should not have to leave for `/system/database` and pick this module's
+ * rows back out of the whole deployment's inventory.
+ */
+const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
+    { label: 'Placements', tab: 'placements', icon: 'LayoutGrid', order: 0 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 1 }
+];
+
+/**
  * Dependencies required by the widgets module.
  *
  * The internal registries (`ZoneRegistry`, `WidgetTypeRegistry`) are
@@ -308,6 +334,26 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
             enabled: true
         });
         this.logger.info('Widgets admin menu entry seeded under the System container');
+
+        // Register the in-page tab row as a namespaced menu (Submenu
+        // Pattern). The nodes are memory-only and live outside the System
+        // container, so the container's non-bypassable `requiresAdmin`
+        // force does not reach them — the module sets `requiresAdmin` per
+        // node itself. The page renders this namespace with MenuNavClient
+        // instead of hand-rolling tabs.
+        for (const tab of SUBMENU_TABS) {
+            await this.menuService.create({
+                namespace: WIDGETS_SUBMENU_NAMESPACE,
+                label: tab.label,
+                url: `/system/widgets?tab=${tab.tab}`,
+                icon: tab.icon,
+                order: tab.order,
+                parent: null,
+                enabled: true,
+                requiresAdmin: true
+            });
+        }
+        this.logger.info({ tabs: SUBMENU_TABS.length }, 'Widgets admin submenu registered');
 
         this.logger.info('Widgets module running');
     }

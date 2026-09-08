@@ -1,0 +1,131 @@
+/**
+ * Two-column workbench: the page picker and widget library in a narrow
+ * sidebar, the zone board filling the rest. Collapses to one column, with
+ * the sidebar first, when the container is too narrow for both.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+.workbench {
+    container-type: inline-size;
+    container-name: placements-workbench;
+    display: grid;
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+    gap: var(--gap-lg);
+    align-items: start;
+}
+
+/* Sticky so the library stays in reach while a long board scrolls; the
+   offset keeps it clear of the page header rather than glued to the top. */
+.sidebar {
+    position: sticky;
+    top: var(--gap-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+    max-height: calc(100vh - var(--gap-lg));
+    overflow-y: auto;
+    padding: var(--card-padding-sm);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.board {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+    min-width: 0;
+}
+
+.track {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.track_header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+.track_title {
+    margin: 0;
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.track_note {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.zones {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.error {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    padding: var(--alert-padding);
+    background: var(--alert-danger-background);
+    border: var(--alert-border-width) solid var(--alert-danger-border);
+    border-radius: var(--alert-border-radius);
+    color: var(--alert-danger-color);
+    font-size: var(--alert-font-size);
+}
+
+.error_text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.no_zones {
+    margin: 0;
+    color: var(--color-text-muted);
+}
+
+/* The chip that travels under the pointer while a library item is dragged. */
+.drag_chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: var(--padding-xs) var(--padding-sm);
+    background: var(--color-surface-accent);
+    border: var(--border-width-thin) solid var(--color-primary);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-md);
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+    cursor: grabbing;
+}
+
+.panel_title {
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.panel_subtitle {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+@container placements-workbench (max-width: #{$breakpoint-tablet}) {
+    .workbench {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .sidebar {
+        position: static;
+        max-height: none;
+        overflow: visible;
+    }
+}

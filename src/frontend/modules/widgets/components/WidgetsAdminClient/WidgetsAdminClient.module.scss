@@ -1,0 +1,12 @@
+/**
+ * Submenu tab row and the active panel below it, mirroring the
+ * /system/address-tags reference implementation.
+ */
+
+.submenu {
+    margin-top: var(--gap-sm);
+}
+
+.content {
+    margin-top: var(--gap-md);
+}

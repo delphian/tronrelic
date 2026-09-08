@@ -1,0 +1,214 @@
+/**
+ * One zone card on the placement board: header, optional layout panel, the
+ * arrangement strip, the rows with their drop rails and group regions, and
+ * the disclosure of rows that belong to other pages.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+.zone {
+    container-type: inline-size;
+    container-name: zone-board;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    padding: var(--card-padding-sm);
+    background: var(--color-surface);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    transition: border-color var(--transition-base), background-color var(--transition-base);
+}
+
+.zone--drop_target {
+    border-color: var(--color-primary);
+    background: var(--color-primary-alpha-10);
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+    flex-wrap: wrap;
+}
+
+.identity {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    min-width: 0;
+}
+
+.title {
+    margin: 0;
+    font-size: var(--font-size-body-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.info {
+    display: inline-flex;
+    align-items: center;
+    color: var(--color-text-muted);
+    border-radius: var(--radius-full);
+    cursor: help;
+}
+
+.info:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-shadow);
+}
+
+/* Where the zone renders, stated once next to its name; the track heading
+   above says the same for the group, this repeats it for a card seen alone. */
+.reach {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+.header_actions {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    margin-left: auto;
+}
+
+/* Toggle for the zone's layout panel. Shows the active arrangement so a
+   non-default layout stays legible while the panel is shut. */
+.layout_toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: var(--padding-2xs) var(--padding-xs);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    cursor: pointer;
+    transition: color var(--transition-base), background-color var(--transition-base), border-color var(--transition-base);
+}
+
+.layout_toggle:hover {
+    color: var(--color-text);
+    border-color: var(--color-border-strong);
+}
+
+.layout_toggle--open {
+    color: var(--color-text);
+    border-color: var(--color-primary-alpha-38);
+    background: var(--color-primary-alpha-10);
+}
+
+.layout_toggle:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-shadow);
+}
+
+.layout_panel {
+    padding: var(--card-padding-sm);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+}
+
+.strip {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.strip_note {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+/* The rails supply the inter-row spacing and are the explicit top-level
+   drop targets, so the list itself adds no gap. */
+.rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.gap_rail {
+    height: var(--gap-sm);
+    border-radius: var(--radius-full);
+    transition: height var(--transition-base), background-color var(--transition-base);
+}
+
+.gap_rail--active {
+    height: var(--gap-lg);
+    background: var(--color-primary-alpha-15);
+    border: var(--border-width-medium) dashed var(--color-primary);
+}
+
+.empty {
+    margin: 0;
+    padding: var(--padding-sm);
+    border: var(--border-width-thin) dashed var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    text-align: center;
+}
+
+/* A layout group's children, indented under its row with a left rule so
+   the nesting reads at a glance. */
+.group_area {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    margin: var(--gap-2xs) 0 var(--gap-xs) var(--gap-lg);
+    padding: var(--gap-2xs) 0 var(--gap-2xs) var(--gap-md);
+    border-left: var(--border-width-medium) solid var(--color-border-strong);
+    border-radius: var(--radius-xs);
+    transition: background-color var(--transition-base), border-color var(--transition-base);
+}
+
+.group_area--drop_target {
+    background: var(--color-primary-alpha-10);
+    border-left-color: var(--color-primary);
+}
+
+.group_empty {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    font-style: italic;
+}
+
+.elsewhere {
+    border-top: var(--border-width-thin) solid var(--color-border);
+    padding-top: var(--gap-xs);
+}
+
+.elsewhere_summary {
+    cursor: pointer;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    user-select: none;
+}
+
+.elsewhere_summary:hover {
+    color: var(--color-text);
+}
+
+.elsewhere_rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    margin-top: var(--gap-xs);
+}
+
+@container zone-board (max-width: #{$breakpoint-mobile-md}) {
+    .header_actions {
+        margin-left: 0;
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .group_area {
+        margin-left: var(--gap-sm);
+        padding-left: var(--gap-sm);
+    }
+}
