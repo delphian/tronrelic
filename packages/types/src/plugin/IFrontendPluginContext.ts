@@ -86,6 +86,14 @@ export interface IUIComponents {
     Badge: ComponentType<{
         children?: React.ReactNode;
         tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger';
+        /**
+         * Padding density; steps the pill around the label and nothing else,
+         * because the badge font already sits at the design system's
+         * legibility floor. Reach for `sm` or below in a dense list — a
+         * sidebar, a table cell, a narrow rail — where the full-size pill
+         * takes more width than the word inside it deserves.
+         */
+        size?: 'xs' | 'sm' | 'md' | 'lg';
         title?: string;
         className?: string;
     }>;
