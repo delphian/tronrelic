@@ -708,6 +708,40 @@ describe('WidgetsService nesting (layout groups)', () => {
         expect(unchanged?.routes).toEqual([]);
     });
 
+    it('refuses a route filter sent alongside the row\'s current parentId', async () => {
+        const { widgets, container } = await setupWithContainer();
+        const child = await widgets.createPlacement({
+            typeId: 't', zoneId: 'main-after', parentId: container.id, routes: []
+        });
+
+        // A client that PATCHes a full editable representation echoes the
+        // parent back unchanged. The row still ends up nested, so it is
+        // the same refusal as above rather than a silent 200 that drops
+        // the filter on the way through the attach branch.
+        await expect(widgets.updatePlacement(child.id, {
+            parentId: container.id, routes: ['/markets']
+        })).rejects.toThrow(/cannot carry its own routes/);
+
+        const unchanged = await widgets.findPlacementById(child.id);
+        expect(unchanged?.routes).toEqual([]);
+    });
+
+    it('refuses a route filter sent alongside a parentId that attaches the row', async () => {
+        const { widgets, container } = await setupWithContainer();
+        const loose = await widgets.createPlacement({
+            typeId: 't', zoneId: 'main-after', routes: []
+        });
+
+        // Attaching a top-level row while stating a filter leaves it
+        // nested too, so the filter would be dropped by the attach branch.
+        await expect(widgets.updatePlacement(loose.id, {
+            parentId: container.id, routes: ['/markets']
+        })).rejects.toThrow(/cannot carry its own routes/);
+
+        const unchanged = await widgets.findPlacementById(loose.id);
+        expect(unchanged?.parentId).toBeUndefined();
+    });
+
     it('accepts a route filter when the same patch detaches the row', async () => {
         const { widgets, container } = await setupWithContainer();
         const child = await widgets.createPlacement({
