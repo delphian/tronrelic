@@ -4,6 +4,15 @@
  * long history never lengthens the page. Rows are quiet by default and lift on
  * hover; the open conversation carries a primary wash so the operator can see
  * where they are in the list.
+ *
+ * Every size in here sits at the bottom of the type scale — the header label at
+ * --font-size-caption, the row title at --font-size-body-xs, and the day labels,
+ * row metadata and empty-state note at --font-size-caption. The rail is a
+ * secondary index beside the chat rather than reading material, so it is meant
+ * to be scanned at a glance and must not compete with the transcript it sits
+ * next to. Those two tokens are the smallest Layer 2 sizes available (both
+ * 0.72rem); going below them would mean reaching into the Layer 1 scale, which
+ * component code may not do.
  */
 
 .rail {
@@ -31,8 +40,8 @@
     display: inline-flex;
     align-items: center;
     gap: var(--gap-xs);
-    font-size: var(--font-size-body-sm);
-    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
     color: var(--color-text);
 }
 
@@ -123,7 +132,8 @@
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
+    line-height: var(--line-height-tight);
     color: var(--color-text);
     overflow-wrap: anywhere;
 }
