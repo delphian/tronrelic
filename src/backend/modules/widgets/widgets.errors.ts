@@ -75,13 +75,19 @@ export class InvalidParentPlacementError extends WidgetsServiceError {
 
 /**
  * Thrown when a patch tries to give a route filter to a placement that is
- * nested inside a layout-group container. A container decides which pages
- * its group appears on, so a nested row is stored with an empty `routes`
- * array and the rest of the system relies on that: the SSR resolver, the
- * admin editor's hidden route field, and the inheritance that runs when a
- * row is detached all assume it. Accepting the filter and quietly ignoring
- * it would leave the caller believing the row is scoped when it is not, so
- * the write is refused instead. Detach the row in the same patch
+ * still nested inside a layout-group container once the patch applies. A
+ * container decides which pages its group appears on, so a nested row is
+ * stored with an empty `routes` array and the rest of the system relies on
+ * that: the SSR resolver, the admin editor's hidden route field, and the
+ * inheritance that runs when a row is detached all assume it. Accepting the
+ * filter and quietly ignoring it would leave the caller believing the row is
+ * scoped when it is not, so the write is refused instead.
+ *
+ * The test is where the patch leaves the row, not which fields it names, so
+ * this covers three shapes: a filter sent on its own for an already-nested
+ * row, a filter sent alongside the row's current `parentId` (what a client
+ * PATCHing a full representation does), and a filter sent alongside a new
+ * `parentId` that attaches the row. Detach the row in the same patch
  * (`parentId: null`) to set a filter on it. HTTP maps this to 400.
  */
 export class RouteFilterOnNestedPlacementError extends WidgetsServiceError {

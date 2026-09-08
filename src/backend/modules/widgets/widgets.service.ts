@@ -447,6 +447,28 @@ export class WidgetsService implements IWidgetsService {
             throw new UnknownZoneError(patch.zoneId);
         }
 
+        // A row that is still nested once the patch applies cannot take a
+        // route filter of its own. Its container decides where the group
+        // renders, which is why nesting stores an empty filter, and the
+        // resolver, the admin editor, and the detach inheritance all read
+        // the row that way. Accepting the filter and ignoring it would
+        // leave the caller believing the row is scoped when it is not, so
+        // the write is refused. The test is the nesting the patch leaves
+        // behind, not whether `parentId` was omitted: a caller sending a
+        // full representation echoes the row's current parent back, and a
+        // caller attaching a row states a new one, and in both cases the
+        // attach branch below would drop the filter and answer 200.
+        // Detaching in the same patch is the supported way to scope the
+        // row, and is handled further down.
+        if (patch.routes !== undefined && patch.routes.length > 0 && patch.parentId !== null) {
+            const existing = await this.placements.findById(id);
+            if (!existing) return null;
+            const staysNested = typeof patch.parentId === 'string' || existing.parentId !== undefined;
+            if (staysNested) {
+                throw new RouteFilterOnNestedPlacementError();
+            }
+        }
+
         // Attaching to a container (parentId is a string): validate the
         // one-level contract against the row being moved and force it
         // into the parent's zone with an empty route filter. Omission
@@ -460,22 +482,6 @@ export class WidgetsService implements IWidgetsService {
                 zoneId: parent.zoneId,
                 routes: []
             });
-        }
-
-        // A row that stays nested cannot take a route filter of its own.
-        // Its container decides where the group renders, which is why
-        // nesting stores an empty filter, and the resolver, the admin
-        // editor, and the detach inheritance all read the row that way.
-        // Accepting the filter and ignoring it would leave the caller
-        // believing the row is scoped when it is not, so the write is
-        // refused. Detaching in the same patch is the supported way to
-        // scope the row, and is handled below.
-        if (patch.parentId === undefined && patch.routes !== undefined && patch.routes.length > 0) {
-            const existing = await this.placements.findById(id);
-            if (!existing) return null;
-            if (existing.parentId !== undefined) {
-                throw new RouteFilterOnNestedPlacementError();
-            }
         }
 
         // Detaching (`parentId: null`) needs no nesting validation, but it
