@@ -39,21 +39,29 @@
     cursor: pointer;
 }
 
-/* Size Variants (padding only; font-size holds so xs stays legible) */
+/* Size Variants — padding and type move together, matching Input and Textarea.
+   Padding still goes through --select-padding rather than the shorthand, so the
+   chevron's right-hand clearance survives every step (see above); font-size has
+   no such constraint and is set directly. The xs step holds its type at the
+   0.72rem legibility floor; see the ladder in semantic-tokens.scss. */
 .select--xs {
     --select-padding: var(--input-padding-xs);
+    font-size: var(--input-font-size-xs);
 }
 
 .select--sm {
     --select-padding: var(--input-padding-sm);
+    font-size: var(--input-font-size-sm);
 }
 
 .select--md {
     --select-padding: var(--input-padding-md);
+    font-size: var(--input-font-size-md);
 }
 
 .select--lg {
     --select-padding: var(--input-padding-lg);
+    font-size: var(--input-font-size-lg);
 }
 
 /* Keyboard-only focus ring (mouse clicks should not leave a lingering ring). */

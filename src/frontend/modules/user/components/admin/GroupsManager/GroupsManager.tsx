@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Lock, Users as UsersIcon } from 'lucide-react';
 import { Button } from '../../../../../components/ui/Button';
+import { Badge } from '../../../../../components/ui/Badge';
 import { Card } from '../../../../../components/ui/Card';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
 import { useModal } from '../../../../../components/ui/ModalProvider';
@@ -244,12 +245,9 @@ export function GroupsManager() {
                                     <td className={styles.slug_cell}>
                                         <code className={styles.slug}>{group.id}</code>
                                         {group.system && (
-                                            <span
-                                                className="badge badge--info"
-                                                title="System group — read-only"
-                                            >
+                                            <Badge tone="info" size="sm" title="System group — read-only">
                                                 <Lock size={12} aria-hidden="true" /> system
-                                            </span>
+                                            </Badge>
                                         )}
                                     </td>
                                     <td>{group.name}</td>

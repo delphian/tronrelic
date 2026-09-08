@@ -68,7 +68,7 @@ Buttons and badges are React components backed by scoped SCSS Modules, so use `<
 | Pattern | Use |
 |---------|-----|
 | Button | `<Button>` from `components/ui/Button` (variants `primary/secondary/ghost/danger/warning`; sizes `xs/sm/md/lg`) |
-| Badge | `<Badge>` from `components/ui/Badge` (tones `neutral/info/success/warning/danger`) |
+| Badge | `<Badge>` from `components/ui/Badge` (tones `neutral/info/success/warning/danger`; sizes `xs/sm/md/lg`, which step the pill's padding only — the label already sits at the type floor) |
 | Headline statistic | `<StatGrid>` with `<StatTile>` from `components/ui/StatTile`, using `size="md"` for a page band and `size="sm"` for an admin strip. Never hand-write label and value markup, and do not use the legacy `.stat-grid` or `.stat-card__*` global classes. |
 | Labelled or validated field | `<Field>` from `components/ui/Field`, wrapping the control. Owns the label, the `hint`/`error` message, and the `aria-describedby` between them. Set `invalid` on the control itself for the danger border and `aria-invalid` |
 | Muted text | The `text-muted` class |

@@ -390,10 +390,28 @@
 
     /* Badge - Base Properties */
     --badge-gap: var(--spacing-2);                     /* 0.35rem */
-    --badge-padding: var(--spacing-2) var(--spacing-5);/* 0.35rem 0.75rem */
     --badge-font-size: var(--font-size-xs);            /* 0.72rem */
     --badge-letter-spacing: var(--letter-spacing-wide);/* 0.08em */
     --badge-border-width: var(--border-width-thin);    /* 1px */
+
+    /* Badge - Size Variants
+     *
+     * Padding only. The badge's own font size already sits at the 0.72rem
+     * legibility floor, so unlike the button and input ladders there is no type
+     * step to take underneath it — a font ladder here would be four names for
+     * one value. What actually makes a badge too heavy in a dense list is the
+     * pill around the word, which is what these steps shrink.
+     *
+     * md is the long-standing value, so a caller that passes no `size` is
+     * unaffected. Vertical padding holds at 0.25rem from md down to sm because
+     * that is the lowest rung the spacing scale offers above zero; xs halves
+     * both axes off the same rungs, matching --button-padding-xs. */
+    --badge-padding-xs: calc(var(--spacing-1) * 0.5) calc(var(--spacing-3) * 0.5); /* half of sm */
+    --badge-padding-sm: var(--spacing-1) var(--spacing-3);  /* 0.25rem 0.5rem */
+    --badge-padding-md: var(--spacing-2) var(--spacing-5);  /* 0.25rem 0.75rem */
+    --badge-padding-lg: var(--spacing-3) var(--spacing-7);  /* 0.5rem 1rem */
+    /* Deprecated alias for --badge-padding-md; prefer the Badge `size` prop. */
+    --badge-padding: var(--badge-padding-md);
 
     /* Badge - Neutral Variant */
     --badge-neutral-background: color-mix(in srgb, var(--color-text) 12%, transparent);
@@ -479,7 +497,25 @@
     /* Deprecated alias for --input-padding-md. Retained because ~20 call sites
        still hardcode it; prefer the Input/Textarea/Select `size` prop. */
     --input-padding: var(--input-padding-md);
-    --input-font-size: 0.98rem;
+
+    /* Type ladder, shared by <Input>, <Textarea>, and <Select>.
+     *
+     * The three primitives used to hold one font size across every density step,
+     * so a `size="sm"` control tightened its padding while its text stayed at the
+     * default. That reads correctly in a form, where a dropdown sits beside a
+     * full-size text field, and wrongly in a dense strip of secondary controls,
+     * where the untouched text made the control the loudest thing in the row.
+     *
+     * md keeps the previous single value, so nothing that does not pass `size`
+     * moves. xs holds at the 0.72rem legibility floor rather than halving sm, the
+     * same floor and for the same reason as --button-font-size-xs. */
+    --input-font-size-xs: var(--font-size-xs);   /* 0.72rem - legibility floor */
+    --input-font-size-sm: var(--font-size-sm);   /* 0.85rem */
+    --input-font-size-md: 0.98rem;               /* the long-standing default */
+    --input-font-size-lg: var(--font-size-lg);   /* 1.05rem */
+    /* Deprecated alias for --input-font-size-md, kept because several plugin
+       pages style their own controls with it; prefer the `size` prop. */
+    --input-font-size: var(--input-font-size-md);
     --input-transition: border-color var(--transition-base),
                         box-shadow var(--transition-base);
 

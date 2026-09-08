@@ -6,18 +6,26 @@
  * happens to be nearby. The panel is portaled to `<body>` and positioned in JS,
  * so everything here is presentation only; `top`/`left`/`width`/`max-height`
  * arrive as inline style from the component.
+ *
+ * Padding and type are the `sm` step of the shared input ladder rather than the
+ * default `md`, because the composer footer is a strip of secondary controls
+ * beside the granted-tool chips — at the default size this trigger and the model
+ * dropdown were the largest text in the composer and pulled the eye off the
+ * message itself. The `<Select>` beside it is passed `size="sm"`, which resolves
+ * to these same two tokens. Move the two together, or the sibling relationship
+ * this file is built on breaks.
  */
 
 .trigger {
     display: inline-flex;
     align-items: center;
     gap: var(--gap-xs);
-    padding: var(--input-padding-md);
+    padding: var(--input-padding-sm);
     border: var(--input-border);
     border-radius: var(--input-border-radius);
     background: var(--input-background);
     color: var(--color-text);
-    font-size: var(--input-font-size);
+    font-size: var(--input-font-size-sm);
     line-height: var(--line-height-normal);
     transition: var(--input-transition);
     cursor: pointer;
