@@ -288,7 +288,7 @@ type DensityStep = 'compact' | 'cozy' | 'default' | 'roomy';
 const SITE_DENSITY: DensityStep = 'default';
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  // Extract pathname from middleware-set header for ticker-after widget zone
+  // Extract pathname from middleware-set header for the site-host widget zones
   const headersList = await headers();
   const pathname = headersList.get('x-pathname') || '/';
 
@@ -338,6 +338,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       </head>
       <body>
         <Providers ssrSession={ssrSession}>
+          {/* Sits above MainHeader so an operator can place a widget at the very
+              top of the page. WidgetZone returns null when nothing is placed
+              here, so an empty site-top adds no markup. */}
+          <WidgetZone name="site-top" widgets={widgetBundle.widgets} layout={widgetBundle.zones['site-top']} route={pathname} params={{}} />
           <MainHeader />
           <WidgetZone name="ticker-after" widgets={widgetBundle.widgets} layout={widgetBundle.zones['ticker-after']} route={pathname} params={{}} />
           <main>

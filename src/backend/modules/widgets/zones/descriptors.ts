@@ -26,6 +26,15 @@ import type { IRegisterZoneInput } from '@/types';
  */
 export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
     {
+        id: 'site-top',
+        label: 'Site top',
+        description:
+            'The first thing inside <body>, above the main navigation, across every route the root layout serves — admin pages included. Use it for content that has to sit above the header, such as a block ticker strip or a site-wide announcement bar. The zone imposes no width constraint of its own, so set its arrangement, gap, and any custom CSS from the zone layout controls.',
+        host: 'site',
+        layout: 'vertical',
+        order: 0
+    },
+    {
         id: 'ticker-after',
         label: 'Site Header',
         description:

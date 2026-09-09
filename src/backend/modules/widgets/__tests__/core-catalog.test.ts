@@ -112,16 +112,27 @@ describe('Core zone catalog', () => {
         expect(widgets.hasZone('footer')).toBe(true);
     });
 
+    it('declares a site-host site-top zone above the header zone', () => {
+        // The zone only does its job if it sorts ahead of 'ticker-after',
+        // because the editor track is what tells an operator which zone is
+        // the top of the page. `order: 0` is also the case a truthiness
+        // check on the field would silently drop.
+        const siteTop = CORE_ZONE_DESCRIPTORS.find(z => z.id === 'site-top');
+        expect(siteTop).toBeDefined();
+        expect(siteTop?.host).toBe('site');
+        expect(siteTop?.order).toBe(0);
+    });
+
     it('orders site-track zones by descriptor order, not alphabetically', () => {
-        // Regression guard: the footer zone must follow the block-ticker
-        // zone in the editor (page top-to-bottom order). The previous
+        // Regression guard: the site track must read page top-to-bottom —
+        // site-top, then the header zone, then the footer. The previous
         // alphabetical snapshot sort put 'footer' ahead of 'ticker-after'.
         const { widgets } = buildWidgetsService();
         for (const descriptor of CORE_ZONE_DESCRIPTORS) {
             widgets.registerZone(descriptor, 'core');
         }
         const siteTrack = widgets.listZones().tracks.find(track => track.id === 'site');
-        expect(siteTrack?.zones.map(zone => zone.id)).toEqual(['ticker-after', 'footer']);
+        expect(siteTrack?.zones.map(zone => zone.id)).toEqual(['site-top', 'ticker-after', 'footer']);
     });
 });
 
