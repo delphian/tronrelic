@@ -8,7 +8,7 @@ Plugins ship pages and background jobs, but inline UI on someone else's page use
 
 ## Three Concepts
 
-**Zones** are named slots a layout exposes. Core declares five built-in zones (see [Core Zone Catalog](#core-zone-catalog) below); plugins declare additional zones through the unified widgets service. The zone registry is in-memory, rebuilt from registrations on plugin enable, and lost on restart.
+**Zones** are named slots a layout exposes. Core declares seven built-in zones (see [Core Zone Catalog](#core-zone-catalog) below); plugins declare additional zones through the unified widgets service. The zone registry is in-memory, rebuilt from registrations on plugin enable, and lost on restart.
 
 **Widget types** are the renderable units. They are plugin-owned — core ships zero — and register through the unified widgets service. Each type carries the data-fetching function the SSR resolver calls and the component the frontend renders. The widget-type registry is also in-memory.
 
@@ -20,7 +20,9 @@ Every operation — register, list, mutate, resolve — flows through one named 
 
 | Zone id | Host | Where it renders | Typical use |
 |---|---|---|---|
-| `ticker-after` | `site` | Root layout, below the block ticker | Reaches every route the root layout serves — scope with route filters |
+| `site-top` | `site` | Root layout, the first element inside `<body>`, above the header | The only zone above the site navigation — announcement bars, a ticker strip pinned to the top |
+| `ticker-after` | `site` | Root layout, directly below the main navigation | Reaches every route the root layout serves — scope with route filters |
+| `footer` | `site` | Root layout, below `<main>` inside a semantic `<footer>` | Site-wide links, legal text, attribution |
 | `main-before` | `core` | Above page content inside the `(core)` route group | Banners, alerts on front-of-house pages |
 | `main-after` | `core` | Below page content inside the `(core)` route group | Feeds, summaries on front-of-house pages |
 | `plugin-content:before` | `plugin` | Above each plugin page via `PluginPageWithZones` | Cross-plugin injection above plugin pages |
