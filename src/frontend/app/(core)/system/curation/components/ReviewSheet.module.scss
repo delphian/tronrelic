@@ -1,0 +1,84 @@
+/**
+ * Styles for the review sheet — the item under review, beside the queue list.
+ *
+ * Drawn with the card tokens rather than the <Card> component because the
+ * decision area at the foot has to run edge to edge on its own surface, the
+ * way the ai-tools composer does, and <Card> always applies padding. The sheet
+ * declares the `review-sheet` container so the heading row, the content, and
+ * the destination lanes respond to the sheet's own width — correct beside the
+ * rail, stacked under it, or in any narrower panel.
+ */
+
+@use '../../../../breakpoints' as *;
+
+.sheet {
+    container-type: inline-size;
+    container-name: review-sheet;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border: var(--card-border);
+    border-radius: var(--card-border-radius);
+    background: var(--card-background);
+    box-shadow: var(--card-shadow);
+    overflow: hidden;
+}
+
+.head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    padding: var(--card-padding-md) var(--card-padding-md) 0;
+}
+
+.head_text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+}
+
+/* The heading only takes focus from script, after a decision; the ring shows
+ * for keyboard users and stays hidden after a mouse click. */
+.title {
+    font-size: var(--font-size-heading-sm);
+    line-height: var(--line-height-tight);
+    overflow-wrap: anywhere;
+
+    &:focus {
+        outline: none;
+    }
+
+    &:focus-visible {
+        outline: var(--focus-outline-width) solid var(--focus-outline-color);
+        outline-offset: var(--focus-outline-offset);
+    }
+}
+
+.meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-2xs) var(--gap-md);
+    margin: 0;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+/* Grows so the decision area sits at the foot of the sheet even when the
+ * sheet is stretched to the queue list's height. */
+.content {
+    flex: 1 1 auto;
+    padding: var(--card-padding-sm) var(--card-padding-md) var(--card-padding-md);
+}
+
+@container review-sheet (max-width: #{$breakpoint-mobile-md}) {
+    .head {
+        flex-direction: column;
+        padding: var(--card-padding-sm) var(--card-padding-sm) 0;
+    }
+
+    .content {
+        padding: var(--card-padding-sm);
+    }
+}

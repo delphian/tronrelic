@@ -2176,7 +2176,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                             <Textarea
                                 ref={textareaRef}
                                 variant="ghost"
-                                size="sm"
+                                size="xs"
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={handleKeyDown}

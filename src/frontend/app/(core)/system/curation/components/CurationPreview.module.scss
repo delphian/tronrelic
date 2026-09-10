@@ -1,0 +1,80 @@
+/**
+ * The held content rendered as a proof. The text sits at body size with a
+ * relaxed line height — larger than anything else in the review sheet —
+ * because the content is what the curator is judging. It sits on an inset
+ * surface so it reads as the thing under review rather than as page chrome.
+ * Labelled fields follow as a definition list.
+ */
+
+.preview {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    min-width: 0;
+}
+
+.proof {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--gap-sm);
+    padding: var(--card-padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+}
+
+.body {
+    margin: 0;
+    max-width: var(--max-width-prose);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-relaxed);
+    color: var(--color-text);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* Large enough to judge a generated image, not a thumbnail. Contained rather
+ * than cropped so the curator sees the whole frame that will be published. */
+.image {
+    display: block;
+    max-width: min(100%, var(--max-width-sm));
+    max-height: var(--max-width-xs);
+    width: auto;
+    height: auto;
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-base);
+    object-fit: contain;
+}
+
+.empty {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+/* Labels hug their content; values take the rest and wrap long ids. */
+.fields {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--gap-2xs) var(--gap-md);
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+}
+
+/* Each label and value pair is wrapped for valid markup, then flattened so
+ * both land directly in the parent grid's two columns. */
+.field {
+    display: contents;
+}
+
+.field dt {
+    color: var(--color-text-muted);
+}
+
+.field dd {
+    margin: 0;
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}

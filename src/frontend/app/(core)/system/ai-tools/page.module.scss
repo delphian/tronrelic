@@ -15,17 +15,12 @@
     gap: var(--gap-sm);
 }
 
-/* The in-page tab row (menu module's Submenu Pattern, rendered by MenuNavClient). */
-.submenu {
-    margin-top: var(--gap-sm);
-}
-
 /* Active tab panel. Declares the `ai-tools-dashboard` container so the tables it
  * hosts (Activity feed, invocation table) can reflow their columns to the panel's
  * own width via `@container` — correct inside the slideout/modal contexts this
- * dashboard renders in. */
+ * dashboard renders in. Spacing above it comes from the Section that groups it
+ * with the tab row, so it carries no margin of its own. */
 .content {
-    margin-top: var(--gap-md);
     display: flex;
     flex-direction: column;
     gap: var(--gap-md);

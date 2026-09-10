@@ -131,6 +131,7 @@ export function PromptEditorBar({
                 </span>
                 <Input
                     type="text"
+                    size="xs"
                     value={name}
                     onChange={(e) => onNameChange(e.target.value)}
                     placeholder="Prompt name…"

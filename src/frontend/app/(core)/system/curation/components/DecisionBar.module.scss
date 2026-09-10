@@ -1,0 +1,159 @@
+/**
+ * Styles for the decision area at the foot of the review sheet and the
+ * destination picker inside it.
+ *
+ * The area sits on the muted surface the ai-tools composer uses, so it reads as
+ * the place you act, separate from the content above it. Amber appears here for
+ * one reason only: something selected will be seen by the public or leave
+ * TronRelic. The lane container queries respond to the `review-sheet`
+ * container declared by ReviewSheet.module.scss.
+ */
+
+@use '../../../../breakpoints' as *;
+
+.bar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+    padding: var(--card-padding-sm) var(--card-padding-md) var(--card-padding-md);
+    border-top: var(--border-width-thin) solid var(--color-border);
+    background: var(--color-surface-muted);
+}
+
+@container review-sheet (max-width: #{$breakpoint-mobile-md}) {
+    .bar {
+        padding: var(--card-padding-sm);
+    }
+}
+
+/* Reject is pushed to the far end so the destructive button never sits next
+ * to Approve, where a slip of the pointer would hit it. */
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.reject {
+    margin-left: auto;
+}
+
+.hint {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.hint_warning {
+    color: var(--color-warning-text);
+}
+
+/* ============================================================================
+ * DESTINATION PICKER
+ * ========================================================================== */
+
+/* A <fieldset> carries an intrinsic min-width of min-content that ignores flex
+ * and grid shrinking; without the override it refuses to narrow below its
+ * longest destination name. */
+.picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: none;
+}
+
+.picker_legend {
+    margin-bottom: var(--gap-xs);
+    padding: 0;
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+/* Side by side once each lane can have a comfortable width; a single lane
+ * fills the row. */
+.lanes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--max-width-xs)), 1fr));
+    gap: var(--gap-sm);
+}
+
+.lane {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+    padding: var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+}
+
+.lane_public {
+    border-color: var(--color-warning-alpha-40);
+    background: var(--color-warning-alpha-15);
+}
+
+.lane_head {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.lane_public .lane_head {
+    color: var(--color-warning-text);
+}
+
+.lane_note {
+    margin: 0 0 var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.option {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    min-width: 0;
+    padding: var(--padding-2xs) var(--padding-xs);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    cursor: pointer;
+
+    &:hover {
+        background: var(--color-surface-elevated);
+    }
+}
+
+.option input {
+    flex: 0 0 auto;
+    margin: 0;
+    accent-color: var(--color-primary);
+}
+
+.lane_public .option input {
+    accent-color: var(--color-warning);
+}
+
+/* Long destination names (Telegram channel titles) truncate to one line; the
+ * full name is in the element's title. */
+.option_label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.picker_footer {
+    display: flex;
+    justify-content: flex-end;
+}

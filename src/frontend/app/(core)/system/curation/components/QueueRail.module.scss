@@ -1,0 +1,124 @@
+/**
+ * Styles for the queue list beside the review sheet. The rail fills whatever
+ * height its slot gives it and scrolls its own list, so a long queue never
+ * lengthens the page. Rows are quiet by default and lift on hover; the open
+ * item carries a primary wash and outline so the curator can see where they
+ * are in the queue. Sizes match the ai-tools conversation rail, the other
+ * index-beside-a-workspace on the System pages.
+ */
+
+.rail {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--card-border-radius);
+    background: var(--color-surface-muted);
+    overflow: hidden;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+    padding: var(--padding-sm) var(--card-padding-sm);
+    border-bottom: var(--border-width-thin) solid var(--color-border);
+    flex-shrink: 0;
+}
+
+.title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.count {
+    font-size: var(--font-size-caption);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-muted);
+}
+
+/* The only scrolling region in the rail. */
+.list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    margin: 0;
+    padding: var(--padding-sm);
+    list-style: none;
+}
+
+/* A transparent border at rest keeps the row the same size when the selected
+ * outline appears, so the list never shifts under the pointer. */
+.row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    width: 100%;
+    padding: var(--padding-xs) var(--padding-sm);
+    border: var(--border-width-thin) solid transparent;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+
+    &:hover {
+        background: var(--color-surface-elevated);
+    }
+}
+
+.row_active {
+    border-color: var(--color-primary-alpha-38);
+    background: var(--color-primary-alpha-15);
+
+    &:hover {
+        background: var(--color-primary-alpha-18);
+    }
+}
+
+.row_title {
+    font-size: var(--font-size-body-xs);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}
+
+/* Two lines of the body text, then an ellipsis. */
+.row_snippet {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-muted);
+    overflow-wrap: anywhere;
+}
+
+.row_meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+.row_provider {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
