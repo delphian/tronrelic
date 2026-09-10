@@ -31,7 +31,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
-import { Page } from '../../../../components/layout';
+import { Page, Section } from '../../../../components/layout';
 import { Badge } from '../../../../components/ui/Badge';
 import { MenuNavClient } from '../../../../components/layout/MenuNav/MenuNavClient';
 import { getSocket } from '../../../../lib/socketClient';
@@ -186,7 +186,10 @@ export function AiToolsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
                 </div>
             )}
 
-            <div className={styles.submenu}>
+            {/* The tab row and its panel share one Section so the gap between
+                them is a section gap, not the page gap meant for separating
+                major page blocks. */}
+            <Section gap="md">
                 <MenuNavClient
                     namespace={SUBMENU_NAMESPACE}
                     items={submenuTree}
@@ -195,18 +198,18 @@ export function AiToolsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
                     activeUrl={`/system/ai-tools?tab=${activeTab}`}
                     onItemSelect={handleTabSelect}
                 />
-            </div>
 
-            <div className={styles.content}>
-                {/* Hidden rather than unmounted while another tab is open, so the
-                    conversation and any in-flight stream survive the visit. */}
-                <div hidden={activeTab !== 'query'}>
-                    <QueryTab active={activeTab === 'query'} initialConversationId={initialConversationId} />
+                <div className={styles.content}>
+                    {/* Hidden rather than unmounted while another tab is open, so the
+                        conversation and any in-flight stream survive the visit. */}
+                    <div hidden={activeTab !== 'query'}>
+                        <QueryTab active={activeTab === 'query'} initialConversationId={initialConversationId} />
+                    </div>
+                    {activeTab === 'registry' && <RegistryTab onChanged={noop} />}
+                    {activeTab === 'activity' && <ActivityTab />}
+                    {activeTab === 'approvals' && <ApprovalsTab onChanged={refreshPending} />}
                 </div>
-                {activeTab === 'registry' && <RegistryTab onChanged={noop} />}
-                {activeTab === 'activity' && <ActivityTab />}
-                {activeTab === 'approvals' && <ApprovalsTab onChanged={refreshPending} />}
-            </div>
+            </Section>
         </Page>
     );
 }

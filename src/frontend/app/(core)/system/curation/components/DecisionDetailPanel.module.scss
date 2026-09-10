@@ -1,0 +1,105 @@
+/**
+ * Styles for the decision record inside the History slide-over: the verdict
+ * line, then three titled sections — the content, the per-destination ledger,
+ * and the identifying facts. Section titles are set small and in sentence case
+ * because the slide-over's own header already names the item.
+ */
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+}
+
+.verdict {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.verdict_meta {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.section_title {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-normal);
+    color: var(--color-text);
+}
+
+.note {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+/* One row per destination: the outcome, the destination, and — on its own
+ * line — why it failed or was refused, shown in full rather than hidden in a
+ * tooltip, because that reason is usually what the operator came to read. */
+.ledger {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.ledger_row {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: center;
+    gap: var(--gap-2xs) var(--gap-sm);
+    padding: var(--padding-sm) var(--padding-md);
+
+    & + & {
+        border-top: var(--border-width-thin) solid var(--color-border);
+    }
+}
+
+.ledger_sink {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}
+
+.ledger_detail {
+    grid-column: 2;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    overflow-wrap: anywhere;
+}
+
+.ledger_detail_error {
+    color: var(--color-danger-text);
+}
+
+/* Labels hug their content; values take the rest and wrap long ids. */
+.kv {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--gap-2xs) var(--gap-md);
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+}
+
+.kv dt {
+    color: var(--color-text-muted);
+}
+
+.kv dd {
+    margin: 0;
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}

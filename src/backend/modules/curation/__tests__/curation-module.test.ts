@@ -115,6 +115,17 @@ describe('CurationModule', () => {
             expect(mockMenu.create).toHaveBeenCalledWith(expect.objectContaining({ url: '/system/curation' }));
         });
 
+        it('registers the admin-only Pending, History, and Database tab nodes in the curation namespace during run()', async () => {
+            await module.run();
+            for (const tab of ['pending', 'history', 'database']) {
+                expect(mockMenu.create).toHaveBeenCalledWith(expect.objectContaining({
+                    namespace: 'curation',
+                    url: `/system/curation?tab=${tab}`,
+                    requiresAdmin: true
+                }));
+            }
+        });
+
         it('registers the curation gate sink on the content router during run()', async () => {
             await module.run();
 

@@ -225,6 +225,7 @@ export function PromptTriggersEditor({
                                     <Input
                                         id={`trigger-cron-${promptId}-${draft.key}`}
                                         type="text"
+                                        size="xs"
                                         value={draft.cron}
                                         onChange={(e) => updateDraft(draft.key, { cron: e.target.value })}
                                         placeholder="0 * * * *"
@@ -292,6 +293,7 @@ export function PromptTriggersEditor({
                                 <Input
                                     id={`trigger-filter-${promptId}-${draft.key}`}
                                     type="text"
+                                    size="xs"
                                     value={draft.typeIdFilter}
                                     onChange={(e) => updateDraft(draft.key, { typeIdFilter: e.target.value })}
                                     placeholder="blog:post — blank fires on every event"

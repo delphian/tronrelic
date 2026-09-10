@@ -1,354 +1,39 @@
-@use '../../../breakpoints' as *;
+/**
+ * Styles for the /system/curation shell: the accessible page heading, the
+ * waiting-count strip above the tab row, and the panel container. Each tab
+ * brings its own module for everything inside the panel.
+ */
 
-/* Page-level vertical rhythm for the curation admin surface. */
-.container {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-lg);
-}
-
-/* Pending-count summary row above the queue. */
+/* Carries the live waiting count a menu node cannot. Mirrors the ai-tools
+ * summary strip. */
 .summary {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--gap-sm);
-    font-size: var(--font-size-body-sm);
 }
 
-/* Type name + provider/source stack inside a table cell. */
-.tool_name {
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-}
-
-.tool_desc {
-    margin-top: var(--gap-2xs);
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
-    max-width: var(--max-width-prose);
-}
-
-/* Inline row actions (pending/history toggle, approve/edit/reject). */
-.row_actions {
-    display: flex;
-    gap: var(--gap-sm);
-    align-items: center;
-    flex-wrap: wrap;
-}
-
-/* Empty / loading placeholder text. */
-.placeholder {
-    padding: var(--padding-lg);
-    text-align: center;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-body-sm);
-}
-
-/* Curation queue preview cell: body text, media thumbnail, labelled fields. */
-.curation_preview {
+/* The active tab's panel. Spacing above it comes from the Section that groups
+ * it with the tab row, so it carries no margin of its own. */
+.content {
     display: flex;
     flex-direction: column;
-    gap: var(--gap-xs);
-    max-width: var(--max-width-prose);
-}
-
-.curation_body {
-    color: var(--color-text);
-    font-size: var(--font-size-body-sm);
-    white-space: pre-wrap;
-    word-break: break-word;
-}
-
-.curation_thumb {
-    max-width: var(--avatar-size-lg);
-    max-height: var(--avatar-size-lg);
-    width: auto;
-    height: auto;
-    border-radius: var(--radius-sm);
-    border: var(--border-width-thin) solid var(--color-border);
-    object-fit: cover;
-}
-
-.curation_fields {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--gap-xs);
-}
-
-.curation_field {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-}
-
-.curation_field_label {
-    color: var(--color-text-subtle);
-}
-
-/* Pending review card: one held item presented as a focused work item rather
-   than a table row. Establishes a container so the inner content|rail split
-   responds to the card's own width — correct inside slideouts and modals, not
-   just the full viewport. */
-.review_card {
-    container-type: inline-size;
-    container-name: review-card;
-}
-
-/* Content beside decision rail. Single column by default (narrow containers);
-   the rail drops below the content. Widens to two columns once the card has the
-   room, giving the sink picker a column of its own. */
-.review_grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: var(--gap-lg);
-}
-
-@container review-card (min-width: #{$breakpoint-mobile-lg}) {
-    .review_grid {
-        /* Wider decision rail so long sink names (Telegram channel titles) have
-           room before truncating — one step up from --max-width-xs. */
-        grid-template-columns: minmax(0, 1fr) var(--max-width-sm);
-    }
-}
-
-/* Content region: metadata header then the expandable preview. min-width:0 lets
-   long unbroken body text wrap instead of forcing the grid column wider. */
-.review_content {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
+    gap: var(--gap-md);
     min-width: 0;
 }
 
-.review_meta {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-}
-
-.review_meta_head {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-sm);
-    flex-wrap: wrap;
-}
-
-.review_title {
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-}
-
-.review_submeta {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-}
-
-/* Decision rail. Stacked above the content it follows on narrow cards (top
-   divider); becomes a true side rail with a left divider once two columns fit. */
-.review_rail {
-    display: flex;
-    flex-direction: column;
-    /* Honor the fixed rail track: a grid item defaults to min-width:auto, so a
-       long sink name (a Telegram channel title) would blow the column past its
-       max-width-sm track and defeat the .sink_label ellipsis. */
-    min-width: 0;
-    padding-top: var(--gap-md);
-    border-top: var(--border-width-thin) solid var(--color-border);
-}
-
-@container review-card (min-width: #{$breakpoint-mobile-lg}) {
-    .review_rail {
-        padding-top: 0;
-        padding-left: var(--gap-lg);
-        border-top: none;
-        border-left: var(--border-width-thin) solid var(--color-border);
-    }
-}
-
-/* Secondary hint while a card's eligible sinks are still loading. */
-.rail_hint {
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-}
-
-/* Sink picker: the publish sinks a curator selects when approving a
-   publishes-to-sinks item. Grouped in a fieldset for accessible labelling,
-   then split into internal and external sub-groups so exposure is preattentive. */
-.picker {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
-    margin: 0;
+/* Accessible-name-only page heading, so the document still has an <h1> without
+ * a visible title. Standard screen-reader-only pattern, kept scoped to this
+ * page for the same reason the widgets admin keeps its own copy: `.text-muted`
+ * is the project's one general global utility. */
+.sr_only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
     padding: 0;
-    border: none;
-    /* A <fieldset> carries an intrinsic min-width:min-content that ignores flex
-       and grid shrinking; without this override the picker refuses to narrow
-       below its widest sink name, cascading the overflow up the rail. */
-    min-width: 0;
-}
-
-.picker_legend {
-    padding: 0;
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-muted);
-}
-
-/* One reach group (internal or external). The external variant is tinted amber
-   so a public sink never reads as a calm, default-safe choice. */
-.picker_group {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-    padding: var(--padding-sm);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-surface-muted);
-}
-
-.picker_group_external {
-    border-color: var(--color-warning);
-    background: var(--color-warning-alpha-15);
-}
-
-.picker_group_title {
-    font-size: var(--font-size-caption);
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: var(--letter-spacing-wide);
-    text-transform: uppercase;
-    color: var(--color-text-muted);
-}
-
-.sink_option {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-xs);
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text);
-    cursor: pointer;
-}
-
-.sink_option input {
-    accent-color: var(--color-primary);
-}
-
-.sink_icon {
-    flex: 0 0 auto;
-    color: var(--color-text-muted);
-}
-
-/* Sink label grows so the reach badge sits flush at the row's end. Truncated to
-   a single line (min-width:0 lets it shrink inside the flex row) — long sink
-   names like the Telegram channel would otherwise wrap to many lines; the full
-   name shows on the element's hover title. */
-.sink_label {
-    flex: 1 1 auto;
-    min-width: 0;
-    white-space: nowrap;
+    margin: -1px;
     overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* Live summary of the current selection's blast radius, above the actions. */
-.publish_summary {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-2xs);
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-}
-
-.summary_warn {
-    flex: 0 0 auto;
-    color: var(--color-warning);
-}
-
-/* Decision actions. Reject is pushed to the far end so the destructive button is
-   never adjacent to Approve — a Fitts's-law gap against the mis-click. */
-.actions {
-    display: flex;
-    gap: var(--gap-sm);
-    align-items: center;
-    flex-wrap: wrap;
-    margin-top: var(--gap-md);
-}
-
-.action_reject {
-    margin-left: auto;
-}
-
-/* External-publish confirmation modal: the warning banner and the named list of
-   public channels the approval will fire. */
-.confirm_warning {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-xs);
-    color: var(--color-warning-text);
-    font-size: var(--font-size-body-sm);
-}
-
-.confirm_list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-
-.confirm_item {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-xs);
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text);
-}
-
-/* Per-sink delivery outcomes shown on a decided item in history. */
-.sink_outcomes {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--gap-xs);
-}
-
-/* Mobile: a four-column curation table is too wide on phones, so collapse each
-   row into a stacked card. The shared Table declares container-name: table, so
-   we react to the table's own width — the switch stays correct inside slideouts
-   and modals, not just the full viewport. The column headers are dropped and
-   each cell carries its own label via the data-label attribute the rows set, so
-   the meaning of every value survives the layout change. */
-@container table (max-width: #{$breakpoint-mobile-lg}) {
-    .curation_table thead {
-        display: none;
-    }
-
-    .curation_table tr {
-        display: block;
-        padding: var(--padding-sm);
-        border-bottom: var(--border-width-thin) solid var(--color-border);
-    }
-
-    .curation_table td {
-        display: block;
-        padding: var(--padding-2xs) 0;
-        border-bottom: none;
-    }
-
-    /* Surface the dropped column header as an inline label above each value. */
-    .curation_table td::before {
-        content: attr(data-label);
-        display: block;
-        margin-bottom: var(--gap-2xs);
-        font-size: var(--font-size-caption);
-        font-weight: var(--font-weight-semibold);
-        letter-spacing: var(--letter-spacing-wide);
-        text-transform: uppercase;
-        color: var(--color-text-muted);
-    }
-
-    /* The prose-width caps are unnecessary once each cell owns the full card
-       width; let preview and field content use the available space. */
-    .curation_table .curation_preview,
-    .curation_table .tool_desc {
-        max-width: none;
-    }
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }

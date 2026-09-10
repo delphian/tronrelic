@@ -71,6 +71,28 @@ const CURATION_HELD_NOTIFY_CATEGORY = 'curation.held';
 const CURATION_HELD_CONTENT_TYPE = 'curation:held';
 
 /**
+ * Dedicated menu namespace for the /system/curation in-page tab row. Kept out of
+ * `main` so the tabs never appear in the global nav — only the page's own
+ * `MenuNavClient` reads this namespace (the menu module's Submenu Pattern).
+ */
+const SUBMENU_NAMESPACE = 'curation';
+
+/**
+ * The in-page tab row, declared as menu nodes rather than a hand-rolled button
+ * pair so the row inherits per-user gating, ordering, and live `menu:update`
+ * refresh from the menu service. Each `url` carries a `?tab=` value the page
+ * reads to pick the active panel; the route itself is the same for every tab.
+ * Pending comes first because it is the default panel. Database is the
+ * obligation every component that owns collections carries: it shows this
+ * module's `module_curation_*` collections on its own page.
+ */
+const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
+    { label: 'Pending', tab: 'pending', icon: 'Inbox', order: 0 },
+    { label: 'History', tab: 'history', icon: 'History', order: 1 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 2 }
+];
+
+/**
  * Dependencies the curation module needs at bootstrap. A subset of the shared
  * module dependency bundle, so the bootstrap can inject `sharedDeps` directly.
  */
@@ -287,6 +309,22 @@ export class CurationModule implements IModule<ICurationModuleDependencies> {
             parent: MAIN_SYSTEM_CONTAINER_ID,
             enabled: true
         });
+
+        // Register the in-page tab row as a namespaced menu. The nodes are
+        // memory-only and sit outside the System container, so the container's
+        // forced `requiresAdmin` does not reach them — each node sets it itself.
+        for (const tab of SUBMENU_TABS) {
+            await this.menuService.create({
+                namespace: SUBMENU_NAMESPACE,
+                label: tab.label,
+                url: `/system/curation?tab=${tab.tab}`,
+                icon: tab.icon,
+                order: tab.order,
+                parent: null,
+                enabled: true,
+                requiresAdmin: true
+            });
+        }
 
         this.logger.info({ service: CURATION_SERVICE }, 'curation module running (admin router mounted, service registered)');
     }

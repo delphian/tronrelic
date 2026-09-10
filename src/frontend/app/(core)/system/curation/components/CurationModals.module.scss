@@ -1,0 +1,55 @@
+/**
+ * Styles for the two modals the review sheet opens: the public-publish
+ * confirmation and the text editor. Both end in the same right-aligned row of
+ * buttons, with the committing action last.
+ */
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--gap-sm);
+}
+
+.warning {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap-xs);
+    margin: 0;
+    padding: var(--alert-padding);
+    border: var(--alert-border-width) solid var(--alert-warning-border);
+    border-radius: var(--alert-border-radius);
+    background: var(--alert-warning-background);
+    color: var(--alert-warning-color);
+    font-size: var(--font-size-body-sm);
+}
+
+.warning_icon {
+    flex: 0 0 auto;
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.list_item {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    min-width: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+}
+
+.list_label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

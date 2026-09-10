@@ -1,0 +1,93 @@
+/**
+ * Styles for the Pending tab's review desk: the queue list and the review
+ * sheet side by side, stacking on a narrow container.
+ *
+ * The desk row takes its height from the review sheet, with a floor so a short
+ * item still leaves the list usable. The list does not add to that height: it
+ * is positioned to fill its slot and scrolls inside it, so a long queue never
+ * stretches the sheet or the page.
+ */
+
+@use '../../../../breakpoints' as *;
+
+/*
+ * Tab-scoped sizing tokens. Defined here rather than in semantic-tokens.scss
+ * because they describe this desk's layout and nothing else. The rail width
+ * matches the ai-tools conversation rail so the two System workspaces line up.
+ */
+.pending {
+    --desk-rail-width: 17rem;
+    --desk-min-height: 28rem;
+    --desk-rail-stacked-height: 14rem;
+
+    container-type: inline-size;
+    container-name: curation-desk;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+/* Narrow: the list sits above the sheet at a capped height. */
+.desk {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: var(--desk-rail-stacked-height) auto;
+    gap: var(--gap-md);
+}
+
+@container curation-desk (min-width: #{$breakpoint-mobile-lg}) {
+    .desk {
+        grid-template-columns: var(--desk-rail-width) minmax(0, 1fr);
+        grid-template-rows: minmax(var(--desk-min-height), auto);
+    }
+}
+
+.rail_slot {
+    position: relative;
+    min-height: 0;
+}
+
+/* Fills the slot without contributing to the row's height; see the header. */
+.rail_fill {
+    position: absolute;
+    inset: 0;
+}
+
+.placeholder {
+    margin: 0;
+    padding: var(--padding-lg);
+    text-align: center;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+/* An empty queue is the good outcome, so it reads as done rather than as
+ * missing data: a success-toned check and a line saying what happens next. */
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--gap-xs);
+    padding: var(--padding-xl) var(--padding-lg);
+    border: var(--border-width-thin) dashed var(--color-border-strong);
+    border-radius: var(--card-border-radius);
+    text-align: center;
+}
+
+.empty_icon {
+    color: var(--color-success);
+}
+
+.empty_title {
+    margin: 0;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.empty_note {
+    margin: 0;
+    max-width: var(--max-width-prose);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}

@@ -1,0 +1,136 @@
+/**
+ * Styles for the History tab: a short intro, the decisions table, and the
+ * narrow-container layout that turns each row into a stacked card. The table
+ * uses the shared Table primitive; this module adds only the row affordance,
+ * the item cell, and the delivery summary.
+ */
+
+@use '../../../../breakpoints' as *;
+
+.history {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.intro {
+    margin: 0;
+    max-width: var(--max-width-prose);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.placeholder {
+    margin: 0;
+    padding: var(--padding-lg);
+    text-align: center;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+/* The whole row opens the record. */
+.row {
+    cursor: pointer;
+}
+
+/* The prose-width cap is what bounds the one-line excerpt below; without a
+ * limit its nowrap text would widen the table instead of truncating. */
+.item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+    max-width: var(--max-width-prose);
+}
+
+.item_button {
+    align-self: flex-start;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+        color: var(--color-primary);
+        text-decoration: underline;
+    }
+}
+
+.item_meta {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+.excerpt {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.outcomes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-2xs);
+}
+
+.none {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-subtle);
+}
+
+/* Keeps a full date and time on one line so it never wraps mid-value. */
+.col_time {
+    white-space: nowrap;
+}
+
+.record_title {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+/* Narrow: a four-column table is too wide, so each row becomes a stacked card.
+ * The shared Table declares `container-name: table`, so this reacts to the
+ * table's own width — correct inside slide-overs and modals, not only the
+ * full window. Column headers are dropped and each cell shows its own label
+ * from the `data-label` attribute, so every value keeps its meaning. */
+@container table (max-width: #{$breakpoint-mobile-lg}) {
+    .table_wrap thead {
+        display: none;
+    }
+
+    .table_wrap tr {
+        display: block;
+        padding: var(--padding-sm);
+        border-bottom: var(--border-width-thin) solid var(--color-border);
+    }
+
+    .table_wrap td {
+        display: block;
+        padding: var(--padding-2xs) 0;
+        border-bottom: none;
+    }
+
+    .table_wrap td::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: var(--gap-2xs);
+        font-size: var(--font-size-caption);
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-text-muted);
+    }
+
+    .table_wrap .item {
+        max-width: none;
+    }
+
+    .table_wrap .col_time {
+        white-space: normal;
+    }
+}
