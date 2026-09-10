@@ -180,16 +180,18 @@ export function AiToolsAdminClient({ submenuTree, submenuGeneratedAt, initialTab
 
     return (
         <Page>
-            {pending > 0 && (
-                <div className={styles.summary}>
-                    <Badge tone="warning">{pending} pending approval{pending === 1 ? '' : 's'}</Badge>
-                </div>
-            )}
-
-            {/* The tab row and its panel share one Section so the gap between
-                them is a section gap, not the page gap meant for separating
-                major page blocks. */}
+            {/* The pending-approval count, the tab row, and the panel share one
+                Section so the space between them is a section gap. As separate
+                children of Page they would each be spaced by the page gap, which
+                is meant for separating major page blocks and left the count
+                floating far above the tabs it describes. */}
             <Section gap="md">
+                {pending > 0 && (
+                    <div className={styles.summary}>
+                        <Badge tone="warning">{pending} pending approval{pending === 1 ? '' : 's'}</Badge>
+                    </div>
+                )}
+
                 <MenuNavClient
                     namespace={SUBMENU_NAMESPACE}
                     items={submenuTree}

@@ -41,7 +41,7 @@
 
 .hint {
     margin: 0;
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
     color: var(--color-text-muted);
 }
 
@@ -69,7 +69,7 @@
 .picker_legend {
     margin-bottom: var(--gap-xs);
     padding: 0;
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
 }
@@ -102,7 +102,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--gap-xs);
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
 }
@@ -124,7 +124,7 @@
     min-width: 0;
     padding: var(--padding-2xs) var(--padding-xs);
     border-radius: var(--radius-sm);
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
     color: var(--color-text);
     cursor: pointer;
 

@@ -16,7 +16,7 @@
 .intro {
     margin: 0;
     max-width: var(--max-width-prose);
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
     color: var(--color-text-muted);
 }
 
@@ -24,8 +24,16 @@
     margin: 0;
     padding: var(--padding-lg);
     text-align: center;
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
     color: var(--color-text-muted);
+}
+
+/* One step below the shared Table's default cell size, set through the
+ * table's own `--table-font-size` override hook so no cell rule has to win a
+ * specificity contest. The custom property inherits from this wrapper down to
+ * the <table> element that reads it. */
+.table_wrap {
+    --table-font-size: var(--font-size-body-sm);
 }
 
 /* The whole row opens the record. */
@@ -70,7 +78,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
     color: var(--color-text-muted);
 }
 
@@ -81,7 +89,7 @@
 }
 
 .none {
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
     color: var(--color-text-subtle);
 }
 

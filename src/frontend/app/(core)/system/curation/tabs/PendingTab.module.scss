@@ -57,7 +57,7 @@
     margin: 0;
     padding: var(--padding-lg);
     text-align: center;
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
     color: var(--color-text-muted);
 }
 
@@ -80,7 +80,7 @@
 
 .empty_title {
     margin: 0;
-    font-size: var(--font-size-body);
+    font-size: var(--font-size-body-sm);
     font-weight: var(--font-weight-medium);
     color: var(--color-text);
 }
@@ -88,6 +88,6 @@
 .empty_note {
     margin: 0;
     max-width: var(--max-width-prose);
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
     color: var(--color-text-muted);
 }

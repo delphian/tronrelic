@@ -139,7 +139,7 @@ export function HistoryTab() {
                             return (
                                 <Tr key={item.id} className={styles.row} onClick={() => setSelectedId(item.id)}>
                                     <Td data-label="Decision">
-                                        <Badge tone={decisionTone(item.status)} size="sm">{decisionLabel(item.status)}</Badge>
+                                        <Badge tone={decisionTone(item.status)} size="xs">{decisionLabel(item.status)}</Badge>
                                     </Td>
                                     <Td data-label="Item">
                                         <div className={styles.item}>

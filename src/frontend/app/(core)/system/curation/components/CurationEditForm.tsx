@@ -50,12 +50,13 @@ export function CurationEditForm({ initialBody, onCancel, onSave }: ICurationEdi
                 value={body}
                 onChange={event => setBody(event.target.value)}
                 rows={8}
+                size="sm"
                 aria-label="Edit the held text"
                 disabled={saving}
             />
             <div className={styles.actions}>
-                <Button variant="ghost" size="sm" disabled={saving} onClick={onCancel}>Cancel</Button>
-                <Button variant="primary" size="sm" loading={saving} onClick={() => { void submit(); }}>Save</Button>
+                <Button variant="ghost" size="xs" disabled={saving} onClick={onCancel}>Cancel</Button>
+                <Button variant="primary" size="xs" loading={saving} onClick={() => { void submit(); }}>Save</Button>
             </div>
         </Stack>
     );

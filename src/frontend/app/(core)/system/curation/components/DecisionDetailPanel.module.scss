@@ -19,7 +19,7 @@
 }
 
 .verdict_meta {
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
     color: var(--color-text-muted);
 }
 
@@ -30,7 +30,7 @@
 }
 
 .section_title {
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
     letter-spacing: var(--letter-spacing-normal);
     color: var(--color-text);
@@ -38,7 +38,7 @@
 
 .note {
     margin: 0;
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
     color: var(--color-text-muted);
 }
 
@@ -69,7 +69,7 @@
 }
 
 .ledger_sink {
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
     color: var(--color-text);
     overflow-wrap: anywhere;
 }
@@ -91,7 +91,7 @@
     grid-template-columns: max-content minmax(0, 1fr);
     gap: var(--gap-2xs) var(--gap-md);
     margin: 0;
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
 }
 
 .kv dt {

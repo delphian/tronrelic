@@ -1,6 +1,6 @@
 /**
- * The held content rendered as a proof. The text sits at body size with a
- * relaxed line height — larger than anything else in the review sheet —
+ * The held content rendered as a proof. The text sits at secondary body size
+ * with a relaxed line height — a step above the rest of the review sheet —
  * because the content is what the curator is judging. It sits on an inset
  * surface so it reads as the thing under review rather than as page chrome.
  * Labelled fields follow as a definition list.
@@ -27,7 +27,7 @@
 .body {
     margin: 0;
     max-width: var(--max-width-prose);
-    font-size: var(--font-size-body);
+    font-size: var(--font-size-body-sm);
     line-height: var(--line-height-relaxed);
     color: var(--color-text);
     white-space: pre-wrap;
@@ -50,7 +50,7 @@
 
 .empty {
     margin: 0;
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
     color: var(--color-text-muted);
 }
 
@@ -60,7 +60,7 @@
     grid-template-columns: max-content minmax(0, 1fr);
     gap: var(--gap-2xs) var(--gap-md);
     margin: 0;
-    font-size: var(--font-size-body-sm);
+    font-size: var(--font-size-body-xs);
 }
 
 /* Each label and value pair is wrapped for valid markup, then flattened so
