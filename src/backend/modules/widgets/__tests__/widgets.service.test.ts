@@ -20,6 +20,7 @@ import { ZoneRegistry } from '../zones/zone-registry.js';
 import { WidgetTypeRegistry } from '../widget-types/widget-type-registry.js';
 import { PlacementService } from '../placements/placement.service.js';
 import { PlacementResolver } from '../placements/placement-resolver.js';
+import { WidgetRouteCache } from '../placements/WidgetRouteCache.js';
 import { ZoneLayoutService } from '../zones/zone-layout.service.js';
 import { __resetKnownZonesForTests } from '../zones/define-zone.js';
 import { __resetKnownWidgetTypesForTests } from '../widget-types/define-widget-type.js';
@@ -72,7 +73,7 @@ function buildWidgetsService(): {
     ZoneLayoutService.setDependencies(db, logger);
     const zoneLayouts = ZoneLayoutService.getInstance();
     WidgetsService.__resetForTests();
-    WidgetsService.setDependencies(zones, types, placements, resolver, zoneLayouts, logger);
+    WidgetsService.setDependencies(zones, types, placements, resolver, new WidgetRouteCache(), zoneLayouts, logger);
     return { widgets: WidgetsService.getInstance(), zones, types, placements, logger };
 }
 
@@ -832,6 +833,52 @@ describe('WidgetsService.fetchWidgetsForRoute', () => {
 
         const markets = await widgets.fetchWidgetsForRoute('/markets');
         expect(markets.map(w => w.id)).toEqual(['p:markets']);
+    });
+
+    /**
+     * Register one plugin widget on `/` whose fetcher is a spy, so tests
+     * can count how often resolution actually ran.
+     *
+     * @returns The wired service and the fetcher spy.
+     */
+    async function setupHomeWidget() {
+        const { widgets } = buildWidgetsService();
+        widgets.registerZone({ id: 'main-after', label: 'm', description: 'm', host: 'core' }, 'core');
+        const fetcher = vi.fn(async () => ({ kind: 'home' }));
+        await widgets.registerWidget({
+            id: 'p:home',
+            label: 'Home',
+            description: 'Home',
+            defaultZoneId: 'main-after',
+            defaultRoutes: ['/'],
+            defaultDataFetcher: fetcher
+        }, 'p');
+        return { widgets, fetcher };
+    }
+
+    it('serves a repeat request for the same route from the cache', async () => {
+        const { widgets, fetcher } = await setupHomeWidget();
+
+        await widgets.fetchWidgetsForRoute('/');
+        await widgets.fetchWidgetsForRoute('/');
+        expect(fetcher).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows a placement edit on the next request instead of after expiry', async () => {
+        const { widgets } = await setupHomeWidget();
+        expect((await widgets.fetchWidgetsForRoute('/')).map(w => w.id)).toEqual(['p:home']);
+
+        const [row] = await widgets.listPlacements({ pluginId: 'p' });
+        await widgets.updatePlacement(row.id, { enabled: false });
+        expect(await widgets.fetchWidgetsForRoute('/')).toEqual([]);
+    });
+
+    it('drops a disabled plugin\'s widgets on the next request', async () => {
+        const { widgets } = await setupHomeWidget();
+        expect((await widgets.fetchWidgetsForRoute('/')).map(w => w.id)).toEqual(['p:home']);
+
+        await widgets.unregisterAllForOwner('p');
+        expect(await widgets.fetchWidgetsForRoute('/')).toEqual([]);
     });
 });
 

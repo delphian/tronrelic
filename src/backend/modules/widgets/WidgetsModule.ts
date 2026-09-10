@@ -43,6 +43,7 @@ import { WidgetTypesController } from './api/widget-types.controller.js';
 import { createWidgetTypesAdminRouter } from './api/widget-types.routes.js';
 import { PlacementService } from './placements/placement.service.js';
 import { PlacementResolver } from './placements/placement-resolver.js';
+import { WidgetRouteCache } from './placements/WidgetRouteCache.js';
 import { ZoneRegistry } from './zones/zone-registry.js';
 import { ZoneLayoutService } from './zones/zone-layout.service.js';
 import { WidgetTypeRegistry } from './widget-types/widget-type-registry.js';
@@ -128,6 +129,7 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
     private widgetTypeRegistry!: WidgetTypeRegistry;
     private placementService!: PlacementService;
     private placementResolver!: PlacementResolver;
+    private routeCache!: WidgetRouteCache;
     private widgetsService!: WidgetsService;
     private zonesController!: ZonesController;
     private placementsController!: PlacementsController;
@@ -221,6 +223,12 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
             });
         });
 
+        // Short-lived per-route cache in front of the resolver. Every page
+        // render resolves its route's widgets, so a burst of page requests
+        // would otherwise repeat the placement query and every data fetcher.
+        // WidgetsService clears it on every write.
+        this.routeCache = new WidgetRouteCache();
+
         // Singleton-backed unified widgets service. Composes the internal
         // collaborators behind one IWidgetsService surface.
         WidgetsService.setDependencies(
@@ -228,6 +236,7 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
             this.widgetTypeRegistry,
             this.placementService,
             this.placementResolver,
+            this.routeCache,
             this.zoneLayoutService,
             this.logger
         );

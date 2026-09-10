@@ -25,6 +25,7 @@ Owns every concern of the widget subsystem behind a single public surface: `IWid
 | `widgets.service.ts` | `WidgetsService` singleton implementing `IWidgetsService`. Composes the three internal collaborators behind one surface; published on the service registry |
 | `placements/placement.service.ts` | `IPlacementService` singleton (internal): CRUD, `ensurePluginPlacement`, `softDisableForPlugin`, `findByRoute`, `restoreToPluginDefaults`, `detachChildrenOf` (container-delete child relocation), broadcast hook |
 | `placements/placement-resolver.ts` | SSR-time join of placements ↔ widget-type descriptors with 5s timeout and JSON serialisability check |
+| `placements/WidgetRouteCache.ts` | Per-route cache in front of the resolver: 5s expiry, concurrent requests for a route share one resolution, 200-route cap, cleared by `WidgetsService` on every write |
 | `placements/route-matcher.ts` | `routeMatches` predicate, `normaliseRoutePattern` validator, `partitionRoutePatterns` for the admin path |
 | `widget-types/widget-type-registry.ts` | Internal widget-type registry — instantiated by `WidgetsModule.init()` |
 | `widget-types/define-widget-type.ts` | Descriptor mint — runtime registry refuses unminted descriptors |
@@ -195,6 +196,12 @@ The container's `instanceConfig` *is* an `IZoneLayoutConfig`; its data fetcher e
 `PlacementResolver.resolveForRoute(route, params)` (called via `widgets.fetchWidgetsForRoute(route, params)`) runs at every page render: queries enabled placements matching the route via `placementService.findByRoute`, looks up each type's `defaultDataFetcher` in the widget-type registry, invokes each fetcher with `(route, params, { id, instanceConfig })` where the third arg carries the placement's id and operator-editable instance config, runs them in parallel under a 5-second per-fetcher timeout, validates JSON-serialisability via round-trip, sorts by `(zoneId, order)`, and returns the `IWidgetData[]` bundle the frontend embeds. The resolver substitutes `{}` for `instanceConfig` when a placement carries no overrides, so fetchers can read keys without null-guarding every access.
 
 Failures within a fetcher are logged and the widget is omitted — they never propagate out. Placements whose `typeId` is unregistered (e.g. plugin disabled) are silently skipped, leaving the rest of the route's widgets unaffected.
+
+### Route Cache
+
+`fetchWidgetsForRoute` does not resolve on every call. Every page render calls it twice (root layout and page), and a single client requesting pages quickly would otherwise repeat the placement query and every data fetcher each time, so `WidgetRouteCache` holds each route's result for 5 seconds. The key is the route plus `params`. Nothing about the requesting visitor is in the key, because no fetcher receives the request or user — **a widget type whose data depends on the visitor must not be added without changing this cache.** Concurrent requests for a route share one resolution, a failed resolution is not stored, each caller receives its own copy, and the cache holds at most 200 routes.
+
+`WidgetsService` clears the cache on every write that changes what a route resolves to: placement create, update, delete, and restore-defaults, `registerType` (and its disposer), `registerWidget`, and `unregisterAllForOwner`. Operator edits therefore render on the next request. What can be up to 5 seconds old is the data a fetcher returns — the latest block, recent activity, a newly published post — in server-rendered HTML; widgets with live updates correct it after hydration. The cache is per process, so a write on one backend instance does not clear another instance's cache until it expires.
 
 ## Instance-Config Schema Validation
 

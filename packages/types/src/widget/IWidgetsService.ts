@@ -171,6 +171,12 @@ export interface IWidgetsService {
      * by zone then order. Failures within a fetcher are logged and the
      * widget is omitted from the response — they never throw out.
      *
+     * Results are cached per route and params for a few seconds, and the
+     * cache is cleared by every placement or registration write, so
+     * fetcher data (not placement changes) may be up to that old. Each
+     * call returns its own copy. Fetchers receive no request or user, so
+     * the result must be the same for every visitor.
+     *
      * The SSR entry point used by `/api/widgets`.
      */
     fetchWidgetsForRoute(
