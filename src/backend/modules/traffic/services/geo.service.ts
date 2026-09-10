@@ -222,8 +222,9 @@ export function getDeviceCategory(userAgent: string | undefined): DeviceCategory
 
 /**
  * Resolve the visitor's IP address for country lookup, the analytics
- * source hashes, and admin audit logging. The address is used in memory
- * only and never stored.
+ * source hashes, and admin audit logging. Analytics never stores the raw
+ * address, only the derived country and keyed hashes; an admin audit-log
+ * entry does record it.
  *
  * The result is `req.ip` unless the request carries Cloudflare's
  * CF-Connecting-IP together with CF-Ray. Express resolves `req.ip` from
