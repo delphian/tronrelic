@@ -129,8 +129,10 @@ export interface IHttpRequest<
     /**
      * Client IP address.
      *
-     * Respects X-Forwarded-For header when behind a proxy. Useful for
-     * rate limiting, logging, and security.
+     * Taken from X-Forwarded-For only as far as the address added by a
+     * trusted proxy (loopback or private network), so a client cannot
+     * choose this value by sending its own header. Useful for rate
+     * limiting, logging, and security.
      *
      * @example
      * ```typescript

@@ -47,6 +47,7 @@ import type {
     IZoneLayoutConfig
 } from '@/types';
 import type { PlacementResolver } from './placements/placement-resolver.js';
+import type { WidgetRouteCache } from './placements/WidgetRouteCache.js';
 import { ZoneLayoutService } from './zones/zone-layout.service.js';
 import { defineZone } from './zones/define-zone.js';
 import { defineWidgetType } from './widget-types/define-widget-type.js';
@@ -108,6 +109,7 @@ export class WidgetsService implements IWidgetsService {
         private readonly widgetTypes: IWidgetTypeRegistry,
         private readonly placements: IPlacementService,
         private readonly resolver: PlacementResolver,
+        private readonly routeCache: WidgetRouteCache,
         private readonly zoneLayouts: ZoneLayoutService,
         private readonly logger: ISystemLogService
     ) {}
@@ -121,6 +123,7 @@ export class WidgetsService implements IWidgetsService {
         widgetTypes: IWidgetTypeRegistry,
         placements: IPlacementService,
         resolver: PlacementResolver,
+        routeCache: WidgetRouteCache,
         zoneLayouts: ZoneLayoutService,
         logger: ISystemLogService
     ): void {
@@ -130,6 +133,7 @@ export class WidgetsService implements IWidgetsService {
                 widgetTypes,
                 placements,
                 resolver,
+                routeCache,
                 zoneLayouts,
                 logger
             );
@@ -201,7 +205,10 @@ export class WidgetsService implements IWidgetsService {
         route: string,
         params: Record<string, string> = {}
     ): Promise<IWidgetData[]> {
-        return this.resolver.resolveForRoute(route, params);
+        // Every page render calls this (twice), so results are held for a
+        // few seconds per route. Writes below clear the cache, so only live
+        // fetcher data can be that stale, never placement changes.
+        return this.routeCache.get(route, params, () => this.resolver.resolveForRoute(route, params));
     }
 
     // ------------------------------------------------------------
@@ -237,7 +244,16 @@ export class WidgetsService implements IWidgetsService {
             defaultDataFetcher: input.defaultDataFetcher,
             configSchema: input.configSchema
         });
-        return this.widgetTypes.register(ownerId, descriptor);
+        const disposeType = this.widgetTypes.register(ownerId, descriptor);
+
+        // A newly registered type lets placements that were skipped as
+        // unregistered start rendering, and disposing it hides them again,
+        // so both change what a route resolves to.
+        this.routeCache.clear();
+        return () => {
+            disposeType();
+            this.routeCache.clear();
+        };
     }
 
     registerZone(
@@ -337,6 +353,10 @@ export class WidgetsService implements IWidgetsService {
                 'Failed to upsert plugin placement during registerWidget'
             );
         }
+
+        // The upsert goes straight to the placement service, so clear here
+        // rather than relying on registerType's clear, which ran before it.
+        this.routeCache.clear();
     }
 
     async unregisterAllForOwner(ownerId: string): Promise<void> {
@@ -383,6 +403,10 @@ export class WidgetsService implements IWidgetsService {
             );
         }
 
+        // Soft-disabled placements and disposed types must stop rendering on
+        // the next request, not after the cache expires.
+        this.routeCache.clear();
+
         if (placementCount > 0 || typeCount > 0 || zoneCount > 0) {
             this.logger.info(
                 { ownerId, placements: placementCount, types: typeCount, zones: zoneCount },
@@ -416,7 +440,26 @@ export class WidgetsService implements IWidgetsService {
         return this.placements.findById(id);
     }
 
+    /**
+     * Create a placement and clear the route cache so it renders on the
+     * next request.
+     *
+     * @param input - Operator-supplied placement from the admin API.
+     * @returns The stored placement.
+     */
     async createPlacement(input: IPlacementInput): Promise<IWidgetPlacement> {
+        return this.clearingRouteCache(() => this.writeNewPlacement(input));
+    }
+
+    /**
+     * Validate and persist a new placement. Kept separate from
+     * `createPlacement` so the public method can clear the route cache
+     * around every exit path of this one.
+     *
+     * @param input - Operator-supplied placement from the admin API.
+     * @returns The stored placement.
+     */
+    private async writeNewPlacement(input: IPlacementInput): Promise<IWidgetPlacement> {
         if (!this.widgetTypes.has(input.typeId)) {
             throw new UnknownWidgetTypeError(input.typeId);
         }
@@ -439,7 +482,31 @@ export class WidgetsService implements IWidgetsService {
         return this.placements.create(input);
     }
 
+    /**
+     * Apply a placement patch and clear the route cache so the change
+     * renders on the next request.
+     *
+     * @param id - Placement to change.
+     * @param patch - Fields the operator changed.
+     * @returns The updated placement, or `null` when it does not exist.
+     */
     async updatePlacement(
+        id: string,
+        patch: IPlacementPatch
+    ): Promise<IWidgetPlacement | null> {
+        return this.clearingRouteCache(() => this.writePlacementPatch(id, patch));
+    }
+
+    /**
+     * Validate nesting rules and persist a placement patch. Kept separate
+     * from `updatePlacement` so the public method can clear the route
+     * cache around every exit path of this one.
+     *
+     * @param id - Placement to change.
+     * @param patch - Fields the operator changed.
+     * @returns The updated placement, or `null` when it does not exist.
+     */
+    private async writePlacementPatch(
         id: string,
         patch: IPlacementPatch
     ): Promise<IWidgetPlacement | null> {
@@ -508,7 +575,27 @@ export class WidgetsService implements IWidgetsService {
         return this.placements.update(id, patch);
     }
 
+    /**
+     * Delete a placement and clear the route cache so it stops rendering
+     * on the next request.
+     *
+     * @param id - Placement to delete.
+     * @returns `true` when a placement was deleted, `false` when none existed.
+     */
     async deletePlacement(id: string): Promise<boolean> {
+        return this.clearingRouteCache(() => this.removePlacement(id));
+    }
+
+    /**
+     * Delete an operator placement, relocating a container's children
+     * first. Kept separate from `deletePlacement` so the public method can
+     * clear the route cache even when the relocation succeeds and the
+     * delete then fails.
+     *
+     * @param id - Placement to delete.
+     * @returns `true` when a placement was deleted, `false` when none existed.
+     */
+    private async removePlacement(id: string): Promise<boolean> {
         const existing = await this.placements.findById(id);
         if (!existing) return false;
         if (existing.source === 'plugin') {
@@ -572,7 +659,26 @@ export class WidgetsService implements IWidgetsService {
         return parent;
     }
 
+    /**
+     * Restore a plugin placement's defaults and clear the route cache so
+     * the restored row renders on the next request.
+     *
+     * @param id - Plugin-source placement to restore.
+     * @returns The restored placement, or `null` when it does not exist.
+     */
     async restorePluginDefaults(id: string): Promise<IWidgetPlacement | null> {
+        return this.clearingRouteCache(() => this.writePluginDefaults(id));
+    }
+
+    /**
+     * Apply the cached registration defaults to a plugin placement. Kept
+     * separate from `restorePluginDefaults` so the public method can clear
+     * the route cache around it.
+     *
+     * @param id - Plugin-source placement to restore.
+     * @returns The restored placement, or `null` when it does not exist.
+     */
+    private async writePluginDefaults(id: string): Promise<IWidgetPlacement | null> {
         const existing = await this.placements.findById(id);
         if (!existing) return null;
         if (existing.source !== 'plugin' || !existing.pluginId) {
@@ -595,6 +701,25 @@ export class WidgetsService implements IWidgetsService {
     // ------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------
+
+    /**
+     * Run a placement write, then clear the route cache whether the write
+     * succeeded or threw.
+     *
+     * Clearing on failure too matters because some writes touch several
+     * rows (deleting a container relocates its children first), so a
+     * failure part-way can still have changed what a route resolves to.
+     *
+     * @param write - The placement write to perform.
+     * @returns Whatever the write returns.
+     */
+    private async clearingRouteCache<T>(write: () => Promise<T>): Promise<T> {
+        try {
+            return await write();
+        } finally {
+            this.routeCache.clear();
+        }
+    }
 
     /**
      * Reject empty or non-string owner ids early so downstream Mongo

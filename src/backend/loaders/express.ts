@@ -14,7 +14,12 @@ import { corsOriginCallback } from '../config/cors.js';
 export function createExpressApp(): Express {
   const app = express();
 
-  app.set('trust proxy', true);
+  // Trust only proxies on loopback and private networks (Nginx arrives via
+  // Docker's port proxy, the frontend from the Docker network), so `req.ip`
+  // is the last address one of our own proxies added. `true` trusted every
+  // hop, which made `req.ip` the left-most X-Forwarded-For entry — a value
+  // any client can write — and let callers pick their own rate-limit key.
+  app.set('trust proxy', 'loopback, uniquelocal');
   app.use(requestContext);
   app.use(helmet());
 
