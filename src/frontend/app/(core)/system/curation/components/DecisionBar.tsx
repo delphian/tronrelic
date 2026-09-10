@@ -223,24 +223,24 @@ export function DecisionBar({ item, busyAction, locked, onApprove, onReject, onS
             <div className={styles.actions}>
                 <Button
                     variant={publishing ? 'warning' : 'primary'}
-                    size="md"
+                    size="sm"
                     loading={busyAction === 'approve'}
                     disabled={locked || sinksLoading || noSinkSelected}
                     onClick={handleApprove}
                     aria-describedby={hintId}
                 >
-                    {publishing ? <Globe size={18} aria-hidden="true" /> : <Check size={18} aria-hidden="true" />}
+                    {publishing ? <Globe size={16} aria-hidden="true" /> : <Check size={16} aria-hidden="true" />}
                     {publishing ? 'Approve and publish' : 'Approve'}
                 </Button>
                 <Button
                     variant="danger"
-                    size="md"
+                    size="sm"
                     className={styles.reject}
                     loading={busyAction === 'reject'}
                     disabled={locked}
                     onClick={() => onReject(item.id)}
                 >
-                    <X size={18} aria-hidden="true" /> Reject
+                    <X size={16} aria-hidden="true" /> Reject
                 </Button>
             </div>
 

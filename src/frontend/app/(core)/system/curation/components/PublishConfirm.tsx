@@ -49,9 +49,9 @@ export function PublishConfirm({ channels, onConfirm, onCancel }: IPublishConfir
                 ))}
             </ul>
             <div className={styles.actions}>
-                <Button variant="ghost" size="sm" onClick={onCancel} autoFocus>Cancel</Button>
-                <Button variant="warning" size="sm" onClick={onConfirm}>
-                    <Globe size={16} aria-hidden="true" /> Publish to {countLabel(channels.length, 'destination')}
+                <Button variant="ghost" size="xs" onClick={onCancel} autoFocus>Cancel</Button>
+                <Button variant="warning" size="xs" onClick={onConfirm}>
+                    <Globe size={14} aria-hidden="true" /> Publish to {countLabel(channels.length, 'destination')}
                 </Button>
             </div>
         </Stack>

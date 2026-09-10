@@ -42,7 +42,7 @@
 /* The heading only takes focus from script, after a decision; the ring shows
  * for keyboard users and stays hidden after a mouse click. */
 .title {
-    font-size: var(--font-size-heading-sm);
+    font-size: var(--font-size-heading-xs);
     line-height: var(--line-height-tight);
     overflow-wrap: anywhere;
 

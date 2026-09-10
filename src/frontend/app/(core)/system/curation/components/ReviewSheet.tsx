@@ -75,8 +75,8 @@ export function ReviewSheet({ item, busyAction, locked, autoFocusHeading, onAppr
                     </p>
                 </div>
                 {item.preview.editable && (
-                    <Button variant="ghost" size="sm" disabled={locked} onClick={() => onEdit(item)}>
-                        <Pencil size={16} aria-hidden="true" /> Edit text
+                    <Button variant="ghost" size="xs" disabled={locked} onClick={() => onEdit(item)}>
+                        <Pencil size={14} aria-hidden="true" /> Edit text
                     </Button>
                 )}
             </header>

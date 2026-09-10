@@ -144,15 +144,18 @@ export function CurationAdminClient({ submenuTree, submenuGeneratedAt, initialTa
                 the active tab. */}
             <h1 className={styles.sr_only}>Curation</h1>
 
-            {pending > 0 && (
-                <div className={styles.summary}>
-                    <Badge tone="warning">{pending} waiting for review</Badge>
-                </div>
-            )}
-
-            {/* The tab row and its panel share one Section so the gap between
-                them is a section gap, not the larger page gap. */}
+            {/* The waiting count, the tab row, and the panel share one Section
+                so the space between them is a section gap. As separate children
+                of Page they would each be spaced by the page gap, which is meant
+                for separating major page blocks and left the count floating far
+                above the tabs it describes. */}
             <Section gap="md">
+                {pending > 0 && (
+                    <div className={styles.summary}>
+                        <Badge tone="warning" size="sm">{pending} waiting for review</Badge>
+                    </div>
+                )}
+
                 <MenuNavClient
                     namespace={SUBMENU_NAMESPACE}
                     items={submenuTree}

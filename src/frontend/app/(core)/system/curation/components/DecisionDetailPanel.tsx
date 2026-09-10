@@ -34,7 +34,7 @@ export function DecisionDetailPanel({ item }: { item: ICurationItemView }) {
     return (
         <div className={styles.panel}>
             <div className={styles.verdict}>
-                <Badge tone={decisionTone(item.status)} size="lg">{decisionLabel(item.status)}</Badge>
+                <Badge tone={decisionTone(item.status)} size="md">{decisionLabel(item.status)}</Badge>
                 <span className={styles.verdict_meta}>
                     {item.decidedBy ? `by ${item.decidedBy}` : 'Decider not recorded'}
                     {item.decidedAt && <> on <ClientTime date={item.decidedAt} format="datetime" /></>}
@@ -56,7 +56,7 @@ export function DecisionDetailPanel({ item }: { item: ICurationItemView }) {
                             const detail = outcome.error ?? outcome.reason;
                             return (
                                 <li key={outcome.sinkId} className={styles.ledger_row}>
-                                    <Badge tone={outcomeTone(outcome.status)} size="sm">{outcomeLabel(outcome.status)}</Badge>
+                                    <Badge tone={outcomeTone(outcome.status)} size="xs">{outcomeLabel(outcome.status)}</Badge>
                                     <span className={styles.ledger_sink}>{outcome.sinkId}</span>
                                     {detail && (
                                         <span className={cn(styles.ledger_detail, outcome.status === 'failed' && styles.ledger_detail_error)}>
