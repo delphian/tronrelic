@@ -75,8 +75,8 @@ const FORWARDED_HEADERS = [
     // Cloudflare edge headers, forwarded verbatim. `cf-ray` marks a request
     // that traversed the Cloudflare proxy (absent on direct-to-origin hits),
     // `cf-ipcountry` is the edge geo, and `cf-connecting-ip` is the client
-    // address the backend's getClientIP prefers over the spoofable
-    // X-Forwarded-For chain. These are unverified client-supplied headers a
+    // address the backend's getClientIP prefers over `req.ip`. These are
+    // unverified client-supplied headers a
     // direct-to-origin client can forge, so cf-ray is consistency hygiene,
     // not a trust boundary — the origin firewall allow-listing Cloudflare's
     // ranges is authoritative.
@@ -168,12 +168,12 @@ function buildBootstrapBody(request: NextRequest, tid: string, referralCode: str
  * `node-fetch`'s default UA on every event.
  *
  * `X-Forwarded-For` is preserved verbatim from the inbound chain (or
- * seeded from `X-Real-IP` when no chain exists) so the backend's
- * `getClientIP` helper still reads the original client at the head of
- * the list. We deliberately do NOT append our own hop: the next hop is
- * an in-cluster server-to-server fetch and adding the Docker bridge IP
- * would shift the original client out of the head position, defeating
- * the helper.
+ * seeded from `X-Real-IP` when no chain exists). This fetch reaches the
+ * backend from inside the Docker network, so without the header the
+ * backend would see this container's address for every visitor. With it,
+ * Express walks the chain from the right, skips the loopback and
+ * private-network hops it trusts, and resolves `req.ip` to the visitor
+ * address Nginx added.
  */
 function buildForwardedHeaders(request: NextRequest): Record<string, string> {
     const headers: Record<string, string> = {
@@ -187,9 +187,8 @@ function buildForwardedHeaders(request: NextRequest): Record<string, string> {
         }
     }
 
-    // Preserve the original client IP at the head of X-Forwarded-For so
-    // the backend's getClientIP reads through to the real visitor instead
-    // of the Docker bridge.
+    // Carry the visitor address through so the backend resolves req.ip to
+    // the visitor rather than to this container.
     const inboundForwardedFor = request.headers.get('x-forwarded-for');
     const directIp = request.headers.get('x-real-ip');
     if (inboundForwardedFor) {

@@ -221,43 +221,43 @@ export function getDeviceCategory(userAgent: string | undefined): DeviceCategory
 }
 
 /**
- * Extract client IP from Express request.
+ * Resolve the visitor's IP address for country lookup, the analytics
+ * source hashes, and admin audit logging. The address is used in memory
+ * only and never stored.
  *
- * Handles X-Forwarded-For header for reverse proxy setups.
- * IP is used for lookup only, never stored.
+ * The result is `req.ip` unless the request carries Cloudflare's
+ * CF-Connecting-IP together with CF-Ray. Express resolves `req.ip` from
+ * X-Forwarded-For only as far as the last address added by a trusted
+ * proxy (loopback or private network, per `trust proxy` in
+ * `loaders/express.ts`). This function never reads X-Forwarded-For
+ * itself, because the left-most entry of that header is whatever the
+ * client chose to send.
  *
- * @param req - Express request object
- * @returns Client IP address
+ * @param req - The incoming request, or the part of it that carries the
+ *   Express-resolved `ip` and the raw headers.
+ * @returns The client address, or `undefined` when the request has none.
  */
 export function getClientIP(req: { ip?: string; headers: Record<string, string | string[] | undefined> }): string | undefined {
+    let clientIP = req.ip;
+
     // Prefer Cloudflare's CF-Connecting-IP: for traffic that transits the
-    // Cloudflare edge it is set to the true client address and, unlike
-    // X-Forwarded-For, cannot be forged by the client (the edge overwrites
-    // it on ingress). It is honored only when CF-Ray is also present —
-    // a spoofer can send both together, so this gate is consistency
-    // hygiene, not a security boundary; the real enforcement is
+    // Cloudflare edge it is set to the true client address, and the edge
+    // overwrites any value the client sent. It is honored only when CF-Ray
+    // is also present — a spoofer can send both together, so this gate is
+    // consistency hygiene, not a security boundary; the real enforcement is
     // allow-listing Cloudflare's published IP ranges at the origin
-    // firewall. Where that is not enforced the only exposure is poisoned
-    // analytics geo: this value feeds country derivation and an admin
-    // audit-log field, never rate limiting or geo-blocking.
+    // firewall. Where that is not enforced the exposure is poisoned
+    // analytics: this value feeds country derivation, the source hashes,
+    // and an admin audit-log field, never rate limiting or geo-blocking.
     const cfConnecting = req.headers['cf-connecting-ip'];
     if (cfConnecting && req.headers['cf-ray']) {
         const raw = Array.isArray(cfConnecting) ? cfConnecting[0] : cfConnecting;
         // Defensive: the header is single-valued from Cloudflare, but a
         // misbehaving hop could comma-join — take the first entry.
-        return raw.split(',')[0].trim();
+        clientIP = raw.split(',')[0].trim();
     }
 
-    // Check X-Forwarded-For header (from reverse proxy)
-    const forwarded = req.headers['x-forwarded-for'];
-    if (forwarded) {
-        const ips = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-        // Take the first IP (original client)
-        return ips.split(',')[0].trim();
-    }
-
-    // Fall back to direct connection IP
-    return req.ip;
+    return clientIP;
 }
 
 /**
