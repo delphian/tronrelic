@@ -108,15 +108,35 @@ export function PendingTab({ onChanged }: { onChanged: () => void }) {
         setSelectedId(current => pickSelection(current, previous, next));
     }, []);
 
-    /** Fetch the queue, reporting a failure above the desk. */
+    // Monotonic load id. A decision triggers two overlapping loads, the one in
+    // `resolve()` and the one the `curation:changed` signal starts, and either
+    // can resolve first. Only the newest load may apply its result, so an older
+    // response can never restore a decided item or move the selection using a
+    // list that is already out of date.
+    const requestId = useRef(0);
+
+    /**
+     * Fetch the queue, reporting a failure above the desk. A response that a
+     * newer load has already superseded is dropped, whether it succeeded or
+     * failed, so only the latest request changes the list, the error, or the
+     * loading state.
+     */
     const load = useCallback(async () => {
+        const id = ++requestId.current;
         try {
-            applyList(await listCurations());
-            setError(null);
+            const next = await listCurations();
+            if (id === requestId.current) {
+                applyList(next);
+                setError(null);
+            }
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to load the curation queue');
+            if (id === requestId.current) {
+                setError(err instanceof Error ? err.message : 'Failed to load the curation queue');
+            }
         } finally {
-            setLoading(false);
+            if (id === requestId.current) {
+                setLoading(false);
+            }
         }
     }, [applyList]);
 
