@@ -12,7 +12,7 @@
  * tab, or by another admin, appears here without a reload.
  */
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../../components/ui/Table';
 import { Badge } from '../../../../../components/ui/Badge';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
@@ -65,15 +65,33 @@ export function HistoryTab() {
     const [error, setError] = useState<string | null>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
 
-    /** Fetch the decided items, reporting a failure above the table. */
+    // Monotonic load id. The mount load and each `curation:changed` refetch can
+    // overlap, and either can resolve first. Only the newest load may apply its
+    // result, so a slower, older response cannot overwrite a newer list.
+    const requestId = useRef(0);
+
+    /**
+     * Fetch the decided items, reporting a failure above the table. A response
+     * that a newer load has already superseded is dropped, whether it succeeded
+     * or failed, so only the latest request changes the list, the error, or the
+     * loading state.
+     */
     const load = useCallback(async () => {
+        const id = ++requestId.current;
         try {
-            setItems(await listCurationHistory());
-            setError(null);
+            const next = await listCurationHistory();
+            if (id === requestId.current) {
+                setItems(next);
+                setError(null);
+            }
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to load curation history');
+            if (id === requestId.current) {
+                setError(err instanceof Error ? err.message : 'Failed to load curation history');
+            }
         } finally {
-            setLoading(false);
+            if (id === requestId.current) {
+                setLoading(false);
+            }
         }
     }, []);
 
@@ -126,8 +144,14 @@ export function HistoryTab() {
                                     <Td data-label="Item">
                                         <div className={styles.item}>
                                             {/* The button makes the row reachable by keyboard; the
-                                                row's own click handler covers the pointer. */}
-                                            <button type="button" className={styles.item_button} onClick={() => setSelectedId(item.id)}>
+                                                row's own click handler covers the pointer. The button
+                                                stops propagation so one click opens the record once,
+                                                matching RegistryToolRow. */}
+                                            <button
+                                                type="button"
+                                                className={styles.item_button}
+                                                onClick={(event) => { event.stopPropagation(); setSelectedId(item.id); }}
+                                            >
                                                 {title}
                                             </button>
                                             <span className={styles.item_meta}>{item.providerId}</span>
