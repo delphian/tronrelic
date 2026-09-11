@@ -6,8 +6,9 @@
  * Lets an administrator replace the header's "Sign in" button with an image,
  * such as the site mascot, without a code change or a redeploy. The image is
  * chosen through the platform file picker, so it can be uploaded on the spot
- * or picked from files already uploaded, and saving it changes the header on
- * the next page load.
+ * or picked from files already uploaded. Saving it updates the administrator's
+ * own header straight away, and every other visitor sees it on their next page
+ * load.
  *
  * The picker is delivered by whichever files-provider plugin is enabled. When
  * none is, the card still shows the current image and can remove it, and says
@@ -20,6 +21,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ImageIcon, Save, Trash2, UserRound } from 'lucide-react';
 import { Card } from '../../../../../components/ui/Card';
 import { Button } from '../../../../../components/ui/Button';
@@ -50,6 +52,7 @@ export function AuthButtonImageSection() {
     const [saving, setSaving] = useState(false);
     const { push: pushToast } = useToast();
     const { pick, isAvailable: pickerAvailable } = useFilePicker();
+    const router = useRouter();
 
     /**
      * Load the stored image when the card mounts.
@@ -116,10 +119,14 @@ export function AuthButtonImageSection() {
     }, []);
 
     /**
-     * Save the draft and adopt whatever the backend stored.
+     * Save the draft, adopt whatever the backend stored, and refresh the header.
      *
      * The response rather than the draft becomes the saved state, because the
-     * backend is the authority on what was written and trims the values.
+     * backend is the authority on what was written and trims the values. The
+     * site header lives in the root layout, which client-side navigation never
+     * renders again, so the route is refreshed after a successful save. That
+     * re-runs the server components, including the header's branding read,
+     * while keeping this page's client state such as the selected tab.
      */
     const handleSave = useCallback(async () => {
         setSaving(true);
@@ -128,10 +135,11 @@ export function AuthButtonImageSection() {
             const next = await updateAuthButtonImage(draft);
             setDraft(next);
             setSaved(next);
+            router.refresh();
             pushToast({
                 tone: 'success',
                 title: next.authButtonImageUrl ? 'Sign-in button image saved' : 'Sign-in button image removed',
-                description: 'The header shows the change on the next page load.'
+                description: 'The site header now shows the change.'
             });
         } catch (error) {
             pushToast({
@@ -142,7 +150,7 @@ export function AuthButtonImageSection() {
         } finally {
             setSaving(false);
         }
-    }, [draft, pushToast]);
+    }, [draft, pushToast, router]);
 
     const previewUrl = draft.authButtonImageUrl;
     const dirty = draft.authButtonImageUrl !== saved.authButtonImageUrl
