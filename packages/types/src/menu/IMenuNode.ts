@@ -83,10 +83,25 @@ export interface IMenuNode {
     parent?: string | null;
 
     /**
-     * Visibility flag controlling whether the node appears in navigation.
-     * Disabled nodes remain in the tree but are hidden from users.
+     * Master switch for the node. A disabled node is removed from navigation
+     * and also stops answering everywhere else, including its auto-generated
+     * category landing page. Use `hidden` instead when the node should keep
+     * working and only drop out of the menu.
      */
     enabled: boolean;
+
+    /**
+     * Remove the node from rendered navigation while keeping it active.
+     *
+     * Some pages need to exist without a menu entry, such as a category whose
+     * landing page is linked from elsewhere. A hidden node, together with its
+     * descendants, is left out of the navigation tree returned by
+     * `GET /api/menu`. Everything else treats it as a normal node: its
+     * category landing page still resolves, it still appears as a card on its
+     * parent's landing page, and its children stay reachable by URL.
+     * `undefined` and `false` both mean the node is shown.
+     */
+    hidden?: boolean;
 
     /**
      * Required group memberships for visibility (OR-of-membership).

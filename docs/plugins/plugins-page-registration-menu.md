@@ -38,7 +38,8 @@ export const myBackendPlugin = definePlugin({
 | `icon` | Lucide icon name (e.g. `BarChart3`, `Activity`, `Settings`) |
 | `order` | Sort position; lower = earlier; default 999 |
 | `parent` | Parent node `_id`, or `null` for top-level |
-| `enabled` | Visibility toggle |
+| `enabled` | Master switch; `false` also turns off the node's category landing page |
+| `hidden` | `true` removes the node and its children from navigation only; its landing page and card on the parent's landing page keep working |
 | `requiresGroups` | OR-of-membership across admin-defined groups |
 | `requiresAdmin` | Visibility predicate via the viewer's `isAdmin(req)` flag (derived from the Better Auth session) |
 

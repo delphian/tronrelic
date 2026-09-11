@@ -20,7 +20,7 @@ import type { IMenuNode, IMenuNodeWithChildren } from './IMenuNode.js';
  * - `plugin-overridden` — Memory-only AND has a row in `menu_node_overrides`
  *   keyed by `(namespace, url)`. The plugin still owns lifecycle, but the
  *   admin has customized `order` / `label` / `icon` / `description` /
- *   `enabled` and those customizations persist across restarts via the
+ *   `enabled` / `hidden` and those customizations persist across restarts via the
  *   overrides collection.
  */
 export type MenuNodeOrigin = 'manual' | 'plugin' | 'plugin-overridden';

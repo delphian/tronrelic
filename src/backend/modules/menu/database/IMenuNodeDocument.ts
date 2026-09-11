@@ -27,6 +27,11 @@ export interface IMenuNodeDocument {
     parent: ObjectId | null;
     enabled: boolean;
     /**
+     * Leave the node out of rendered navigation while keeping it active.
+     * See `IMenuNode.hidden` for semantics.
+     */
+    hidden?: boolean;
+    /**
      * Required group memberships (OR-of-membership). See
      * `IMenuNode.requiresGroups` for semantics.
      */

@@ -135,6 +135,7 @@ export interface MenuNodeSerialized {
   order: number;
   parent?: string | null;
   enabled: boolean;
+  hidden?: boolean;
   namespace?: string;
   requiresGroups?: string[];
   requiresAdmin?: boolean;

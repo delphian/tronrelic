@@ -4,7 +4,8 @@
  * Runs inside the Next.js server during render so the editor's first paint
  * carries real zones, widget types, placements, and the site's page list.
  * The admin endpoints are cookie-gated, so the visitor's cookies are
- * forwarded; the menu read is public and gated per node.
+ * forwarded. The page list comes from the admin menu read
+ * (`/api/menu/manage`), which is admin-gated the same way.
  *
  * Only `page.tsx` imports this file. It reaches into `next/headers`, which
  * is server-only, so it is deliberately kept out of the module's client
@@ -42,25 +43,28 @@ async function fetchJson<T>(path: string, cookieHeader: string, what: string): P
 }
 
 /**
- * Fetch a menu namespace tree, returning an empty tree on any failure so a
- * menu outage never blocks the editor. The tab row and the page list both
- * refill on the next live `menu:update` or client refetch.
+ * Read a menu tree from one of the menu endpoints, returning an empty tree
+ * on any failure so a menu outage never blocks the editor. The tab row and
+ * the page list both refill on the next live `menu:update` or client
+ * refetch.
  *
- * @param namespace - The menu namespace to read.
+ * @param path - Menu endpoint path, including its `namespace` query.
  * @param cookieHeader - The serialised request cookies.
- * @returns The namespace's root nodes and snapshot timestamp.
+ * @param what - Short noun naming the tree, used in the error message.
+ * @returns The tree's root nodes and snapshot timestamp.
  */
-export async function fetchMenuNamespace(
-    namespace: string,
-    cookieHeader: string
+async function fetchMenuTree(
+    path: string,
+    cookieHeader: string,
+    what: string
 ): Promise<{ roots: MenuNodeSerialized[]; generatedAt: string }> {
     const fallback = { roots: [] as MenuNodeSerialized[], generatedAt: new Date().toISOString() };
     let result = fallback;
     try {
         const data = await fetchJson<{ tree?: { roots?: MenuNodeSerialized[]; generatedAt?: string } }>(
-            `/api/menu?namespace=${encodeURIComponent(namespace)}`,
+            path,
             cookieHeader,
-            `the ${namespace} menu`
+            what
         );
         result = {
             roots: data.tree?.roots ?? [],
@@ -70,6 +74,26 @@ export async function fetchMenuNamespace(
         result = fallback;
     }
     return result;
+}
+
+/**
+ * Fetch a menu namespace's navigation tree, as the menu chrome renders it.
+ * The page uses this for its own tab row, which should match what the
+ * operator sees in navigation.
+ *
+ * @param namespace - The menu namespace to read.
+ * @param cookieHeader - The serialised request cookies.
+ * @returns The namespace's root nodes and snapshot timestamp.
+ */
+export async function fetchMenuNamespace(
+    namespace: string,
+    cookieHeader: string
+): Promise<{ roots: MenuNodeSerialized[]; generatedAt: string }> {
+    return fetchMenuTree(
+        `/api/menu?namespace=${encodeURIComponent(namespace)}`,
+        cookieHeader,
+        `the ${namespace} menu`
+    );
 }
 
 /**
@@ -84,7 +108,11 @@ export async function fetchWidgetsAdminData(): Promise<IWidgetsAdminData> {
     const cookieHeader = (await cookies()).toString();
     const data: IWidgetsAdminData = { zones: null, types: null, placements: [], pages: [], loadError: null };
 
-    const menu = await fetchMenuNamespace('main', cookieHeader);
+    // The page list reads the admin view of the menu, not the navigation
+    // read. Navigation drops nodes hidden from the menu, but a hidden page
+    // still renders and still has widget zones, so it must stay placeable.
+    // `pageOptionsFromMenu` skips the disabled nodes this view includes.
+    const menu = await fetchMenuTree('/api/menu/manage?namespace=main', cookieHeader, 'the main menu');
     data.pages = pageOptionsFromMenu(menu.roots);
 
     try {

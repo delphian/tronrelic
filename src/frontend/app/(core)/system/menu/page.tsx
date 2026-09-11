@@ -302,21 +302,59 @@ export default function MenuAdminPage() {
         []
     );
 
-    const toggleEnabled = useCallback(
-        async (node: IMenuNode, next: boolean) => {
-            if (!node._id) return;
-            setBusyNodeId(node._id);
-            try {
-                await handleUpdate(node._id, { enabled: next });
-                await reloadTree();
-                notifySuccess(next ? 'Menu item enabled' : 'Menu item disabled');
-            } catch (err) {
-                notifyError('Could not update menu item', err);
-            } finally {
-                setBusyNodeId(null);
+    /**
+     * Save a single-field change made from a switch in the items table.
+     *
+     * The Enabled and In menu switches both save one field, refresh the tree,
+     * and report the result, so they share this handler rather than each
+     * repeating the busy-row and toast handling.
+     *
+     * @param node - The row whose switch was flipped
+     * @param updates - The one field being changed
+     * @param successTitle - Toast text telling the operator what changed
+     */
+    const applyRowUpdate = useCallback(
+        async (node: IMenuNode, updates: Partial<IMenuNode>, successTitle: string) => {
+            if (node._id) {
+                setBusyNodeId(node._id);
+                try {
+                    await handleUpdate(node._id, updates);
+                    await reloadTree();
+                    notifySuccess(successTitle);
+                } catch (err) {
+                    notifyError('Could not update menu item', err);
+                } finally {
+                    setBusyNodeId(null);
+                }
             }
         },
         [handleUpdate, notifyError, notifySuccess, reloadTree]
+    );
+
+    /**
+     * Turn a node on or off entirely. Turning it off also stops its category
+     * landing page from resolving, unlike hiding it from the menu.
+     *
+     * @param node - The row whose Enabled switch was flipped
+     * @param next - The new enabled state
+     */
+    const toggleEnabled = useCallback(
+        (node: IMenuNode, next: boolean) =>
+            applyRowUpdate(node, { enabled: next }, next ? 'Menu item enabled' : 'Menu item disabled'),
+        [applyRowUpdate]
+    );
+
+    /**
+     * Show a node in navigation or hide it. A hidden node keeps working: its
+     * landing page still resolves and it still appears on its parent's page.
+     *
+     * @param node - The row whose In menu switch was flipped
+     * @param next - True to show the node in navigation, false to hide it
+     */
+    const toggleInMenu = useCallback(
+        (node: IMenuNode, next: boolean) =>
+            applyRowUpdate(node, { hidden: !next }, next ? 'Menu item shown in menu' : 'Menu item hidden from menu'),
+        [applyRowUpdate]
     );
 
     const openItemModal = useCallback(
@@ -370,7 +408,7 @@ export default function MenuAdminPage() {
                     {' '}This row is owned by a plugin and will reappear on the next plugin load.
                     {node.origin === 'plugin-overridden' && (
                         <>
-                            {' '}The saved override (label, order, icon, description, enabled) will also persist.
+                            {' '}The saved override (label, order, icon, description, enabled, in menu) will also persist.
                             {' '}To remove the row permanently, disable the plugin.
                         </>
                     )}
@@ -557,6 +595,7 @@ export default function MenuAdminPage() {
                             onEdit={(node) => openItemModal('edit', node)}
                             onDelete={openDeleteModal}
                             onToggleEnabled={toggleEnabled}
+                            onToggleInMenu={toggleInMenu}
                         />
                     )}
 
@@ -586,9 +625,10 @@ interface ItemsTabProps {
     onEdit: (node: IMenuNodeAdminView) => void;
     onDelete: (node: IMenuNodeAdminView) => void;
     onToggleEnabled: (node: IMenuNodeAdminView, next: boolean) => void;
+    onToggleInMenu: (node: IMenuNodeAdminView, next: boolean) => void;
 }
 
-function ItemsTab({ flatNodes, busyNodeId, onCreate, onEdit, onDelete, onToggleEnabled }: ItemsTabProps) {
+function ItemsTab({ flatNodes, busyNodeId, onCreate, onEdit, onDelete, onToggleEnabled, onToggleInMenu }: ItemsTabProps) {
     return (
         <Stack gap="sm">
             <div className={styles.items_header}>
@@ -614,6 +654,7 @@ function ItemsTab({ flatNodes, busyNodeId, onCreate, onEdit, onDelete, onToggleE
                             <Th width="shrink">Parent</Th>
                             <Th width="shrink">Origin</Th>
                             <Th width="shrink">Enabled</Th>
+                            <Th width="shrink">In menu</Th>
                             <Th width="shrink">Actions</Th>
                         </Tr>
                     </Thead>
@@ -645,6 +686,15 @@ function ItemsTab({ flatNodes, busyNodeId, onCreate, onEdit, onDelete, onToggleE
                                         onChange={(next) => onToggleEnabled(node, next)}
                                         disabled={busyNodeId === node._id}
                                         aria-label={`${node.enabled ? 'Disable' : 'Enable'} ${node.label}`}
+                                    />
+                                </Td>
+                                <Td>
+                                    <Switch
+                                        size="sm"
+                                        on={!node.hidden}
+                                        onChange={(next) => onToggleInMenu(node, next)}
+                                        disabled={busyNodeId === node._id}
+                                        aria-label={`${node.hidden ? 'Show' : 'Hide'} ${node.label} in menu`}
                                     />
                                 </Td>
                                 <Td>
@@ -911,6 +961,7 @@ function MenuNodeForm({ mode, initial, availableParents, availableGroups, onSubm
         order: initial?.order ?? 0,
         parent: initial?.parent ?? null,
         enabled: initial?.enabled ?? true,
+        hidden: initial?.hidden ?? false,
         requiresGroups: initial?.requiresGroups,
         requiresAdmin: initial?.requiresAdmin ?? false
     });
@@ -940,6 +991,9 @@ function MenuNodeForm({ mode, initial, availableParents, availableGroups, onSubm
                 label: typeof data.label === 'string' ? data.label.trim() : data.label,
                 url: blankToUndefined(data.url) as string | undefined,
                 icon: blankToUndefined(data.icon) as string | undefined,
+                // Sent as an explicit boolean so a PATCH can move a hidden
+                // node back into the menu; an omitted key means "unchanged".
+                hidden: Boolean(data.hidden),
                 requiresGroups: data.requiresGroups ?? [],
                 requiresAdmin: Boolean(data.requiresAdmin)
             };
@@ -1091,16 +1145,38 @@ function MenuNodeForm({ mode, initial, availableParents, availableGroups, onSubm
                 </label>
             </fieldset>
 
-            <label className={styles.inline_toggle}>
-                <Switch
-                    size="sm"
-                    on={data.enabled ?? true}
-                    onChange={(next) => setData({ ...data, enabled: next })}
-                    disabled={saving}
-                    aria-label="Enabled"
-                />
-                <span>Enabled</span>
-            </label>
+            <div className={styles.field}>
+                <label className={styles.inline_toggle}>
+                    <Switch
+                        size="sm"
+                        on={data.enabled ?? true}
+                        onChange={(next) => setData({ ...data, enabled: next })}
+                        disabled={saving}
+                        aria-label="Enabled"
+                    />
+                    <span>Enabled</span>
+                </label>
+                <p className={styles.field_hint}>
+                    Turning this off removes the item everywhere, including its category landing page.
+                </p>
+            </div>
+
+            <div className={styles.field}>
+                <label className={styles.inline_toggle}>
+                    <Switch
+                        size="sm"
+                        on={!data.hidden}
+                        onChange={(next) => setData({ ...data, hidden: !next })}
+                        disabled={saving}
+                        aria-label="Show in menu"
+                    />
+                    <span>Show in menu</span>
+                </label>
+                <p className={styles.field_hint}>
+                    Turning this off removes the item and its children from navigation only. Its category
+                    landing page and its card on the parent&apos;s landing page keep working.
+                </p>
+            </div>
 
             <div className={styles.form_footer}>
                 <Button type="button" variant="ghost" onClick={onCancel} disabled={saving}>
