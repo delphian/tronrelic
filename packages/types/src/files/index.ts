@@ -13,7 +13,9 @@ export type {
     IFileListFilter,
     IVariantOptions,
     IVariantFit,
-    IFileVariant
+    IFileVariant,
+    ICropRegion,
+    ICropOptions
 } from './IFileService.js';
 export { FILE_SOURCE_KINDS, FileValidationError, FileSizeExceededError } from './IFileService.js';
 export type { IFilesSettings, IFilesSettingsService } from './IFilesSettings.js';

@@ -73,6 +73,26 @@ export interface IFileRecord {
 
     /** Wall-clock timestamp at upload. */
     uploadedAt: Date;
+
+    /**
+     * Pixel width of the source image, when the provider could read it.
+     * Absent for non-images, for formats the provider cannot decode, and for
+     * rows stored before dimensions were recorded — so a consumer showing
+     * "1920x1080" must handle the value being missing rather than print
+     * "undefined" next to a real filename.
+     */
+    width?: number;
+
+    /** Pixel height of the source image, under the same conditions as `width`. */
+    height?: number;
+
+    /**
+     * Id of the file this one was cropped from, set only on a file produced by
+     * {@link IFileService.createCrop}. Crops are separate files rather than
+     * edits in place, so this is what lets an operator (or a cleanup job) tell
+     * a derived image apart from an original upload and trace it back.
+     */
+    derivedFrom?: string;
 }
 
 /**
@@ -153,8 +173,69 @@ export interface IFileVariant {
 export interface IFileListFilter {
     source?: IFileSource;
     mimeType?: string;
+
+    /**
+     * Case-insensitive substring match against the original filename. Exists
+     * because paging a flat inventory is not a way to find a known file: a
+     * browse UI with only "load more" makes anything past the newest page
+     * effectively unreachable.
+     */
+    search?: string;
+
     limit?: number;
     skip?: number;
+}
+
+/**
+ * The region of a source image a crop keeps, in **source pixel coordinates**
+ * measured from the top-left corner of the image as stored.
+ *
+ * Source pixels rather than fractions of the image because the caller that
+ * produces these numbers is a crop UI displaying a scaled copy: it already
+ * knows the source dimensions it scaled from, and converting once on that side
+ * keeps rounding in one place instead of splitting it across client and server.
+ */
+export interface ICropRegion {
+    /** Distance from the left edge of the source to the left edge of the crop. */
+    x: number;
+
+    /** Distance from the top edge of the source to the top edge of the crop. */
+    y: number;
+
+    /** Width of the kept region. */
+    width: number;
+
+    /** Height of the kept region. */
+    height: number;
+}
+
+/**
+ * Caller-supplied options on `createCrop()`.
+ *
+ * A crop writes a new file rather than replacing the original, so these
+ * options describe the new file as much as the operation: `source` and
+ * `uploadedBy` tag it the same way an upload would, because otherwise every
+ * crop would land in whatever namespace the original happened to use and an
+ * operator could not tell who made it.
+ */
+export interface ICropOptions {
+    /** The part of the source image to keep. Clamped to the real image bounds. */
+    region: ICropRegion;
+
+    /**
+     * Optional box the kept region is scaled into after cropping. Supply it
+     * when the consumer needs a specific output size — a social card, an avatar
+     * — and leave it out to store the cropped pixels at their own size. The
+     * crop already fixes the aspect ratio, so passing only `width` is the
+     * normal case and `height` follows from it.
+     */
+    resize?: { width: number; height?: number };
+
+    /** Namespace for the new file. Defaults to the source file's own namespace. */
+    source?: IFileSource;
+
+    /** Identity to record against the new file, for the same audit reason uploads carry one. */
+    uploadedBy?: string | null;
 }
 
 /**
@@ -237,6 +318,28 @@ export interface IFileService {
      * them from the result rather than assuming the request was honored.
      */
     getVariant(id: string, options: IVariantOptions): Promise<IFileVariant | null>;
+
+    /**
+     * Cut a caller-chosen region out of a stored image and save it as a **new**
+     * file, returning that file's record.
+     *
+     * This is the operation `getVariant` cannot do. A variant is a rendering of
+     * the whole image at a different size, center-cropped at best, and it lives
+     * in a cache that is thrown away when the source is deleted. A crop is a
+     * decision a person made about which part of the picture matters, so it
+     * becomes a real inventory row that outlives the original and can be handed
+     * to any consumer that takes a `fileId`.
+     *
+     * Nothing is modified in place. The original stays exactly as uploaded,
+     * which is what lets a user re-crop from the full picture after seeing the
+     * first attempt, and the new record carries `derivedFrom` pointing back.
+     *
+     * The region is clamped to the real image bounds before cutting, so a
+     * rectangle that runs off the edge yields the overlapping part rather than
+     * an error. Returns null when the id does not resolve, when the source is
+     * not a decodable raster image, or when the clamped region has no area.
+     */
+    createCrop(id: string, options: ICropOptions): Promise<IFileRecord | null>;
 
     /**
      * Enumerate records matching the filter, sorted by `uploadedAt` desc.
