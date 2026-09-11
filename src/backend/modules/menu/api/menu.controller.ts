@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { MenuService } from '../services/menu.service.js';
 import { ADMIN_NAMESPACES } from '../constants.js';
 import { isAdmin } from '../../../api/middleware/admin-auth.js';
-import type { IMenuNodeWithChildren, IMenuTree, IMenuViewer, IAuthSession } from '@/types';
+import type { IMenuNode, IMenuNodeWithChildren, IMenuTree, IMenuViewer, IAuthSession } from '@/types';
 
 /**
  * Acceptable namespace identifiers. Lowercase ASCII, hyphens allowed,
@@ -145,10 +145,16 @@ const createNodeSchema = z.object({
     parent: objectIdField.nullable().optional(),
 
     /**
-     * Visibility flag controlling whether the node appears in navigation.
-     * Defaults to true.
+     * Master switch for the node. A disabled node disappears from navigation
+     * and its category landing page stops resolving. Defaults to true.
      */
     enabled: z.boolean().optional(),
+
+    /**
+     * Keep the node out of navigation while it stays active everywhere else
+     * — see IMenuNode.hidden. Defaults to shown.
+     */
+    hidden: z.boolean().optional(),
 
     /**
      * Required group memberships (OR-of-membership).
@@ -196,6 +202,7 @@ const updateNodeSchema = z.object({
     order: z.number().int().min(0).max(100_000).optional(),
     parent: objectIdField.nullable().optional(),
     enabled: z.boolean().optional(),
+    hidden: z.boolean().optional(),
     requiresGroups: requiresGroupsField,
     requiresAdmin: z.boolean().optional()
 });
@@ -249,27 +256,71 @@ const namespaceConfigSchema = z.object({
  * ```
  */
 /**
- * Recursively strip disabled nodes from a built tree. Mutates a copy
- * (the input is not modified) so the public response sees only items
- * the operator has explicitly enabled.
+ * Decide whether a node belongs in rendered navigation.
+ *
+ * Two flags remove a node from the menu for different reasons. A disabled
+ * node is switched off entirely. A hidden node is still active — its
+ * category landing page resolves and it still appears as a card on its
+ * parent's landing page — but it has no menu entry. Only the navigation
+ * read applies this check; `resolve` checks `enabled` alone.
+ *
+ * @param node - The node being considered for the navigation tree
+ * @returns True when the node should be rendered in navigation
  */
-function filterEnabledTree(roots: IMenuNodeWithChildren[]): IMenuNodeWithChildren[] {
+function isShownInNavigation(node: IMenuNode): boolean {
+    return node.enabled && !node.hidden;
+}
+
+/**
+ * Recursively strip disabled and hidden nodes from a built tree so the
+ * navigation response contains only items the operator wants in the menu.
+ * A removed node takes its whole subtree with it, because a child cannot
+ * render in the menu without its parent. Works on copies; the input tree
+ * is not modified.
+ *
+ * @param roots - Root nodes of the viewer-filtered tree
+ * @returns New root list containing only nodes shown in navigation
+ */
+function filterNavigationTree(roots: IMenuNodeWithChildren[]): IMenuNodeWithChildren[] {
     return roots
-        .filter((node) => node.enabled)
+        .filter(isShownInNavigation)
         .map((node) => ({
             ...node,
-            children: filterEnabledTree(node.children)
+            children: filterNavigationTree(node.children)
         }));
 }
 
 /**
- * Build a public-safe view of a tree by removing disabled nodes from
- * both the hierarchical `roots` and the flat `all` list.
+ * Flatten a built tree back into the flat `all` list.
+ *
+ * Deriving `all` from the filtered roots keeps the two views in agreement:
+ * a child of a hidden or disabled node is absent from `roots`, so it must
+ * be absent from `all` too. The `children` arrays are dropped so each
+ * entry keeps the plain `IMenuNode` shape.
+ *
+ * @param roots - Root nodes of an already-filtered tree
+ * @returns Every node in the tree, depth first, without `children`
+ */
+function flattenTree(roots: IMenuNodeWithChildren[]): IMenuNode[] {
+    const out: IMenuNode[] = [];
+    for (const { children, ...node } of roots) {
+        out.push(node, ...flattenTree(children));
+    }
+    return out;
+}
+
+/**
+ * Build the navigation view of a tree by removing disabled and hidden
+ * nodes, with their descendants, from both `roots` and the flat `all` list.
+ *
+ * @param tree - The viewer-filtered tree from the service
+ * @returns The tree the navigation chrome renders
  */
 function publicTreeView(tree: IMenuTree): IMenuTree {
+    const roots = filterNavigationTree(tree.roots);
     return {
-        roots: filterEnabledTree(tree.roots),
-        all: tree.all.filter((n) => n.enabled),
+        roots,
+        all: flattenTree(roots),
         generatedAt: tree.generatedAt
     };
 }
@@ -325,7 +376,8 @@ export class MenuController {
      * Get the user-visible menu tree for the navigation chrome.
      *
      * Returns the hierarchical menu projected through the cookie-resolved
-     * visitor's gating: nodes with `enabled: false` are stripped, and per-node
+     * visitor's gating: nodes with `enabled: false` or `hidden: true` are
+     * stripped along with their descendants, and per-node
      * gating fields (`requiresGroups`, `requiresAdmin`) narrow the tree to
      * what this visitor may see. Admins receive the same
      * shape as everyone else — the origin-tagged management view lives at
@@ -868,6 +920,11 @@ export class MenuController {
      * at least one enabled child. Returns the node and its direct children sorted
      * by order. Used by the frontend catch-all route to render auto-generated
      * category landing pages.
+     *
+     * `hidden` is deliberately ignored here. Hiding a node only removes it
+     * from navigation, so a hidden category still resolves and hidden
+     * children still appear as cards. `enabled: false` is what turns a
+     * landing page off.
      *
      * **Route:** GET /api/menu/resolve
      *

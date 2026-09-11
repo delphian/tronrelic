@@ -3,7 +3,8 @@
  *
  * Operators previously had to type a URL from memory before they could see
  * a page's widgets. The picker now offers the site's real pages, taken from
- * the navigation menu, so choosing a page is a click. Route patterns that
+ * the `main` menu tree, so choosing a page is a click. That includes pages
+ * hidden from navigation, which still render widget zones. Route patterns that
  * placements already target are listed too, because a widget scoped to
  * `/tools/*` is only reachable through that pattern, and any path the
  * operator types during the session stays selectable until they leave.
@@ -16,13 +17,18 @@ import type { IWidgetPlacement } from '@/types';
 import type { IPageOption } from '../types/IPageOption';
 
 /**
- * Walk the navigation tree and collect every node that links to a page on
- * this site. Admin pages under `/system` are excluded because no widget
- * zone renders there, so listing them would only offer pages the editor
- * cannot affect. External links and container nodes without a URL are
- * skipped for the same reason.
+ * Walk the menu tree and collect every node that links to a page on this
+ * site. Admin pages under `/system` are excluded because no widget zone
+ * renders there, so listing them would only offer pages the editor cannot
+ * affect. External links and container nodes without a URL are skipped for
+ * the same reason.
  *
- * @param roots - Root nodes of the `main` menu namespace.
+ * The tree is the admin view, which includes disabled nodes. A disabled
+ * node and its subtree are skipped, matching what the navigation read used
+ * to supply. A node hidden from navigation is kept, because hiding only
+ * removes the menu entry and the page itself still renders.
+ *
+ * @param roots - Root nodes of the `main` menu namespace, from the admin view.
  * @returns Page options in menu order, deduplicated by path.
  */
 export function pageOptionsFromMenu(roots: ReadonlyArray<MenuNodeSerialized>): IPageOption[] {
@@ -30,20 +36,22 @@ export function pageOptionsFromMenu(roots: ReadonlyArray<MenuNodeSerialized>): I
     const options: IPageOption[] = [];
 
     /**
-     * Visit one node and its children, appending each linkable page.
+     * Visit one enabled node and its children, appending each linkable page.
      *
      * @param node - The node to visit.
      */
     const visit = (node: MenuNodeSerialized): void => {
-        const url = node.url;
-        const isInternal = typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
-        const isAdmin = typeof url === 'string' && (url === '/system' || url.startsWith('/system/'));
-        if (isInternal && !isAdmin && !seen.has(url)) {
-            seen.add(url);
-            options.push({ value: url, label: node.label || url, source: 'menu' });
-        }
-        for (const child of node.children ?? []) {
-            visit(child);
+        if (node.enabled) {
+            const url = node.url;
+            const isInternal = typeof url === 'string' && url.startsWith('/') && !url.startsWith('//');
+            const isAdmin = typeof url === 'string' && (url === '/system' || url.startsWith('/system/'));
+            if (isInternal && !isAdmin && !seen.has(url)) {
+                seen.add(url);
+                options.push({ value: url, label: node.label || url, source: 'menu' });
+            }
+            for (const child of node.children ?? []) {
+                visit(child);
+            }
         }
     };
 

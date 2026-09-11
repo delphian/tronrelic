@@ -355,6 +355,7 @@ export class MenuService implements IMenuService {
             order: nodeData.order ?? 0,
             parent: nodeData.parent ?? null,
             enabled: nodeData.enabled ?? true,
+            hidden: nodeData.hidden,
             requiresGroups: nodeData.requiresGroups,
             requiresAdmin: nodeData.requiresAdmin
         };
@@ -408,6 +409,7 @@ export class MenuService implements IMenuService {
                 order: node.order,
                 parent: node.parent ? new ObjectId(node.parent) : null,
                 enabled: node.enabled,
+                hidden: node.hidden,
                 requiresGroups: node.requiresGroups,
                 requiresAdmin: node.requiresAdmin,
                 createdAt: now,
@@ -445,6 +447,7 @@ export class MenuService implements IMenuService {
                 order: override?.order ?? node.order,
                 parent: node.parent,
                 enabled: override?.enabled ?? node.enabled,
+                hidden: override?.hidden ?? node.hidden,
                 requiresGroups: node.requiresGroups,
                 requiresAdmin: node.requiresAdmin,
                 createdAt: new Date(),
@@ -603,6 +606,7 @@ export class MenuService implements IMenuService {
                     ...(normalizedUpdates.order !== undefined && { order: normalizedUpdates.order }),
                     ...(normalizedUpdates.parent !== undefined && { parent: normalizedUpdates.parent ? new ObjectId(normalizedUpdates.parent) : null }),
                     ...(normalizedUpdates.enabled !== undefined && { enabled: normalizedUpdates.enabled }),
+                    ...(normalizedUpdates.hidden !== undefined && { hidden: normalizedUpdates.hidden }),
                     ...(normalizedUpdates.requiresGroups !== undefined && { requiresGroups: normalizedUpdates.requiresGroups }),
                     ...(normalizedUpdates.requiresAdmin !== undefined && { requiresAdmin: normalizedUpdates.requiresAdmin }),
                     updatedAt: new Date()
@@ -1331,6 +1335,7 @@ export class MenuService implements IMenuService {
                 ...(updates.label !== undefined && { label: updates.label }),
                 ...(updates.description !== undefined && { description: updates.description }),
                 ...(updates.enabled !== undefined && { enabled: updates.enabled }),
+                ...(updates.hidden !== undefined && { hidden: updates.hidden }),
                 updatedAt: now
             };
 
@@ -1490,6 +1495,7 @@ export class MenuService implements IMenuService {
             order: doc.order ?? 0,
             parent: doc.parent ? doc.parent.toString() : null,
             enabled: doc.enabled ?? true,
+            hidden: doc.hidden,
             requiresGroups: doc.requiresGroups,
             requiresAdmin: doc.requiresAdmin,
             createdAt: doc.createdAt,

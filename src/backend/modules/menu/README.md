@@ -78,12 +78,12 @@ Reads are public — the frontend chrome fetches without a token; per-user gatin
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| GET | `/api/menu` | Public | Viewer-filtered tree. Query: `namespace` (default `main`). Returns `{ success, tree: { roots, all } }` |
-| GET | `/api/menu/resolve` | Public | Resolve `url` to a container node + enabled children (category landing pages). Query: `url` (required), `namespace`. Admins bypass gating; 404 when node or children absent |
+| GET | `/api/menu` | Public | Viewer-filtered navigation tree; disabled and hidden nodes are removed with their descendants. Query: `namespace` (default `main`). Returns `{ success, tree: { roots, all } }` |
+| GET | `/api/menu/resolve` | Public | Resolve `url` to a container node + enabled children (category landing pages). Query: `url` (required), `namespace`. Ignores `hidden`. Admins bypass gating; 404 when node or children absent |
 | GET | `/api/menu/namespaces` | Public | All namespace ids |
 | GET | `/api/menu/namespace/:namespace/config` | Public | `IMenuNamespaceConfig` (defaults if unset) |
 | GET | `/api/menu/manage` | `requireAdmin` | Origin-tagged full tree incl. disabled/gated rows (admin UI only) |
-| POST | `/api/menu` | `requireAdmin` | Create persisted node. Body: `label` (required), `description`, `url`, `icon`, `order`, `parent` (24-hex ObjectId), `enabled`, `requiresGroups`, `requiresAdmin` |
+| POST | `/api/menu` | `requireAdmin` | Create persisted node. Body: `label` (required), `description`, `url`, `icon`, `order`, `parent` (24-hex ObjectId), `enabled`, `hidden`, `requiresGroups`, `requiresAdmin` |
 | PATCH | `/api/menu/:id` | `requireAdmin` | Update node (any fields) |
 | DELETE | `/api/menu/:id` | `requireAdmin` | Delete node — no cascade |
 | PUT | `/api/menu/namespace/:namespace/config` | `requireAdmin` | Replace config. Body: `overflow`, `icons`, `layout`, `styling` |
@@ -101,7 +101,7 @@ Reads are public — the frontend chrome fetches without a token; per-user gatin
 | Collection | Keyed by | Contents |
 |------------|----------|----------|
 | `menu_nodes` | `_id` | Persisted (`persist=true`) nodes only — admin-created entries. Memory-only nodes never appear here |
-| `menu_node_overrides` | `(namespace, url)` | Admin customizations of memory-only nodes: `order`, `label`, `description`, `icon`, `enabled`. Applied over plugin defaults on every re-registration, so customizations survive restarts without plugin code changes. URL is the stable identity — URL-less nodes are ineligible; a URL change on a memory-only node does not survive restart |
+| `menu_node_overrides` | `(namespace, url)` | Admin customizations of memory-only nodes: `order`, `label`, `description`, `icon`, `enabled`, `hidden`. Applied over plugin defaults on every re-registration, so customizations survive restarts without plugin code changes. URL is the stable identity — URL-less nodes are ineligible; a URL change on a memory-only node does not survive restart |
 | `menu_namespace_config` | `namespace` | Per-namespace rendering config (`overflow`, `icons`, `layout`, `styling`) |
 
 ## Node Semantics
@@ -119,6 +119,15 @@ Reads are public — the frontend chrome fetches without a token; per-user gatin
 **Auto-derived URLs.** Container nodes that omit `url` get one by slugifying the label: `/{slug}` at root, `{parent-url}/{slug}` nested. The derived URL is the override key and the category-landing-page route. Slugification producing an empty string throws.
 
 **Category landing pages.** Every container with children gets an auto page at its URL: the frontend catch-all route (`app/[...slug]/page.tsx`) calls `GET /api/menu/resolve?url=...` and renders a card grid of children (icon, label, `description`). A real page registered at the same URL takes precedence.
+
+**Disabled versus hidden.** Two flags take a node out of the menu, and they differ in what else stops working.
+
+| Field | Navigation (`GET /api/menu`) | Own landing page (`/resolve`) | Card on parent's landing page |
+|-------|------------------------------|-------------------------------|-------------------------------|
+| `enabled: false` | Removed, with descendants | 404 | Removed |
+| `hidden: true` | Removed, with descendants | Still resolves | Still shown |
+
+Use `hidden` for a page that should exist without a menu entry, such as a category landing page linked from elsewhere. The filter lives in the controller's navigation read only (`publicTreeView`); the service's tree methods, the admin view, and `resolve` ignore the flag. The `/system/menu` Items table has an **In menu** switch for it.
 
 ## Visibility Gating
 
