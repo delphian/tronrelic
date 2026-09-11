@@ -31,16 +31,16 @@ import styles from './MainHeader.module.scss';
  * - Wallet button (MainHeaderControls - client-rendered), shown as the
  *   administrator-chosen image when one is set
  *
- * The branding read happens here, on the server, so the chosen image is in the
- * first HTML response and the button never switches from text to image after
- * the page loads.
+ * The branding read happens on the server, inside BrandedHeaderControls, so the
+ * chosen image is in the first HTML response and the button never switches from
+ * text to image after the page loads.
  *
  * Responsive behavior uses container queries via MenuNav component to automatically
  * switch between horizontal navigation and hamburger menu.
+ *
+ * @returns The site header element.
  */
-export async function MainHeader() {
-    const { authButtonImageUrl } = await fetchHeaderBranding();
-
+export function MainHeader() {
     return (
         <header className={styles.header}>
             <div className={styles.container}>
@@ -48,7 +48,7 @@ export async function MainHeader() {
                     TronRelic
                 </Link>
 
-                <MainHeaderControls authButtonImageUrl={authButtonImageUrl} />
+                <BrandedHeaderControls />
 
                 <div className={styles.nav_section}>
                     <MenuNavSSR namespace="main" ariaLabel="Main navigation" />
@@ -56,4 +56,23 @@ export async function MainHeader() {
             </div>
         </header>
     );
+}
+
+/**
+ * Header controls with the administrator's sign-in button image applied.
+ *
+ * The branding read lives in its own server component instead of in
+ * MainHeader so that it renders as a sibling of MenuNavSSR. React starts
+ * sibling server components at the same time, so the branding request and
+ * the menu request run concurrently rather than one after the other. This
+ * keeps the header from adding a second sequential backend round trip to
+ * every page render.
+ *
+ * @returns The header controls, given the chosen image URL, or null so the
+ *     default text sign-in button renders.
+ */
+async function BrandedHeaderControls() {
+    const { authButtonImageUrl } = await fetchHeaderBranding();
+
+    return <MainHeaderControls authButtonImageUrl={authButtonImageUrl} />;
 }
