@@ -33,7 +33,7 @@ export type {
     IRegisterWidgetInput,
     WidgetsRegistrationDisposer
 } from './widget/index.js';
-export type { ISystemConfig, ISystemConfigService } from './system-config/index.js';
+export type { ISystemConfig, ISystemConfigService, IBrandingConfig } from './system-config/index.js';
 export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from './system-log/index.js';
 export { LOG_LEVELS, shouldLog, type LogLevelName } from './system-log/index.js';
 export type { ISchedulerService, CronJobHandler } from './scheduler/ISchedulerService.js';

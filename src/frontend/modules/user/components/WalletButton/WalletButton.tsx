@@ -8,12 +8,18 @@
  * identity pill — clicking navigates to `/profile`, the private settings hub
  * where wallet management, notifications, and sign-out now live.
  *
+ * When an administrator has chosen an image on the Configuration tab of
+ * `/system/system`, both states render that image as one round button instead.
+ * The click still does the same thing for each state, and the accessible name
+ * and tooltip say which action it takes and, when signed in, who is signed in.
+ *
  * The file and component names are retained to minimise churn in the header
  * import graph (`MainHeader` imports `WalletButton`), but the affordance is
  * identity-driven rather than wallet-driven.
  */
 
 import { useCallback } from 'react';
+import type { ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogIn, User as UserIcon } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button';
@@ -21,6 +27,18 @@ import { useModal } from '../../../../components/ui/ModalProvider';
 import { useAuthSession } from '../SessionProvider';
 import { AuthModal } from '../AuthModal';
 import styles from './WalletButton.module.scss';
+
+/**
+ * Props for the header auth button.
+ */
+interface IWalletButtonProps {
+    /**
+     * Image to render in place of both text states, as chosen by an
+     * administrator. Omitted or null keeps the default "Sign in" button and
+     * identity pill, which is what surfaces other than the header get.
+     */
+    imageUrl?: string | null;
+}
 
 /**
  * Render an identity label suitable for a tight header button.
@@ -52,12 +70,19 @@ function buildIdentityLabel(user: { email?: string | null; name?: string | null;
  * "(blank)" to "Sign in." The pending window is normally a single
  * client tick because SSR resolves the session before render; only
  * cold loads with no cookie hit this code path.
+ *
+ * @param props - Optional administrator-chosen image for the button.
+ * @returns The sign-in button, the identity pill, the image button, or
+ *          nothing while the session is pending.
  */
-export function WalletButton() {
+export function WalletButton({ imageUrl = null }: IWalletButtonProps) {
     const { session, isLoggedIn, isPending } = useAuthSession();
     const { open, close } = useModal();
     const router = useRouter();
 
+    /**
+     * Open the sign-in dialog, closing it again once sign-in succeeds.
+     */
     const openAuthModal = useCallback(() => {
         const id = open({
             title: 'Sign in',
@@ -66,17 +91,38 @@ export function WalletButton() {
         });
     }, [close, open]);
 
+    /**
+     * Send a signed-in visitor to their private profile page.
+     */
     const goToProfile = useCallback(() => {
         router.push('/profile');
     }, [router]);
 
-    if (isPending) {
-        return null;
-    }
+    const user = isLoggedIn ? session?.user ?? null : null;
+    let content: ReactNode = null;
 
-    if (isLoggedIn && session?.user) {
-        const label = buildIdentityLabel(session.user);
-        return (
+    if (isPending) {
+        content = null;
+    } else if (imageUrl) {
+        const label = user ? `Open your profile (${buildIdentityLabel(user)})` : 'Sign in';
+        content = (
+            <button
+                type="button"
+                className={styles.image_btn}
+                onClick={user ? goToProfile : openAuthModal}
+                aria-label={label}
+                title={label}
+            >
+                {/* Plain <img> is the project's convention for uploaded images.
+                    The alt is empty because the button's aria-label already
+                    names the action, and the image would only repeat it. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={imageUrl} alt="" className={styles.image} />
+            </button>
+        );
+    } else if (user) {
+        const label = buildIdentityLabel(user);
+        content = (
             <Button
                 variant="secondary"
                 size="sm"
@@ -88,17 +134,19 @@ export function WalletButton() {
                 <span className={styles.identity_text}>{label}</span>
             </Button>
         );
+    } else {
+        content = (
+            <button
+                type="button"
+                className={styles.signin_btn}
+                onClick={openAuthModal}
+                aria-label="Sign in"
+            >
+                <LogIn size={14} aria-hidden />
+                <span className={styles.signin_text}>Sign in</span>
+            </button>
+        );
     }
 
-    return (
-        <button
-            type="button"
-            className={styles.signin_btn}
-            onClick={openAuthModal}
-            aria-label="Sign in"
-        >
-            <LogIn size={14} aria-hidden />
-            <span className={styles.signin_text}>Sign in</span>
-        </button>
-    );
+    return content;
 }

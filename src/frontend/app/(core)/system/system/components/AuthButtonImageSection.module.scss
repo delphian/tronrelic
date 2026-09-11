@@ -1,0 +1,38 @@
+/**
+ * AuthButtonImageSection styles.
+ *
+ * Only the preview is styled here. The card's header, hint text, and action row
+ * reuse ProviderSection.module.scss so this card matches its neighbours on the
+ * Configuration tab.
+ *
+ * The preview repeats the header button's round ring on purpose, so what the
+ * administrator sees here is the shape visitors will see. It is drawn at the
+ * large avatar size rather than the header's size so the image can be judged.
+ */
+
+.preview_row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-md);
+}
+
+.preview {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: var(--avatar-size-lg);
+    height: var(--avatar-size-lg);
+    overflow: hidden;
+    background: var(--color-primary-alpha-18);
+    border: var(--border-width-medium) solid var(--color-primary);
+    border-radius: var(--radius-full);
+    color: var(--color-text-muted);
+}
+
+.preview_img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}

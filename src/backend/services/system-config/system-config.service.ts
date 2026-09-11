@@ -238,6 +238,8 @@ export class SystemConfigService implements ISystemConfigService {
             | 'emitBufferMaxDepth'
             | 'emitBufferRefillIntervalMs'
             | 'emitBufferCatchupIntervalMs'
+            | 'authButtonImageUrl'
+            | 'authButtonImageFileId'
         >>,
         updatedBy?: string
     ): Promise<ISystemConfig> {

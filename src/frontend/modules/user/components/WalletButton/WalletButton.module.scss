@@ -1,9 +1,11 @@
 /**
  * WalletButton (Phase 3) styles.
  *
- * Two header affordances:
+ * Three header affordances:
  *   - `signin_btn`: anonymous-visitor CTA opening the AuthModal.
  *   - `identity_btn`: logged-in pill linking to the profile page.
+ *   - `image_btn`: round image button replacing both of the above when an
+ *     administrator has chosen an image on /system/system.
  *
  * Both collapse to icon-only on mobile via the same @media breakpoint
  * MainHeader uses, since this component is a content-sized flex item
@@ -70,6 +72,54 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* ============================================================================
+ * Image button (administrator-chosen image)
+ *
+ * One round, fixed-size button for both signed-out and signed-in visitors, so
+ * the header does not change shape when someone signs in. It carries the same
+ * primary ring and lift as the sign-in pill so it still reads as the site's
+ * main call to action. The background shows through a transparent image, which
+ * is what gives a cut-out mascot its circle.
+ *
+ * Already icon-sized, so the mobile rules below leave it alone.
+ * ============================================================================
+ */
+.image_btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: var(--avatar-size-md);
+    height: var(--avatar-size-md);
+    padding: 0;
+    overflow: hidden;
+    background: var(--color-primary-alpha-18);
+    border: var(--border-width-medium) solid var(--color-primary);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    transition: all var(--transition-base);
+    box-shadow: var(--button-primary-shadow);
+}
+
+.image_btn:hover {
+    border-color: var(--color-primary-strong);
+    box-shadow: var(--button-primary-shadow-hover);
+    transform: translateY(-1px);
+}
+
+.image_btn:focus-visible {
+    outline: var(--focus-outline-width) solid var(--focus-outline-color);
+    outline-offset: var(--focus-outline-offset);
+    box-shadow: var(--focus-shadow);
+}
+
+.image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
 /* ============================================================================

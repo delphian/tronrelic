@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { IBrandingConfig } from '@/types';
 import { SystemConfigService } from '../../services/system-config/index.js';
 import { ChainParametersService } from '../../modules/chain-parameters/index.js';
 
@@ -74,6 +75,46 @@ export function configRouter() {
                     isUsingFallback: false // Live data from backend
                 }
             });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+    /**
+     * GET /api/config/branding
+     *
+     * Returns the settings that change how the site looks to visitors, currently
+     * just the image the header shows in place of the sign-in button.
+     *
+     * Why a separate endpoint from /public:
+     * The frontend keeps the /public response for the life of its container,
+     * which suits URLs that only change on a redeploy. An administrator edits
+     * branding from /system/system and expects the next page load to show it,
+     * so the header reads this endpoint on every server render instead. The
+     * read is cheap: SystemConfigService answers from memory and drops its
+     * cache on every save, so a change is visible straight away.
+     *
+     * Response format:
+     * {
+     *   success: true,
+     *   branding: { authButtonImageUrl: string | null }
+     * }
+     *
+     * Security:
+     * No authentication required. The image URL is already rendered in public
+     * HTML, and it was validated when an administrator saved it.
+     */
+    router.get('/branding', async (_req, res, next) => {
+        try {
+            const config = await SystemConfigService.getInstance().getConfig();
+
+            // Documents written before the field existed read back without it,
+            // so undefined is normalized to null for the frontend.
+            const branding: IBrandingConfig = {
+                authButtonImageUrl: config.authButtonImageUrl ?? null
+            };
+
+            res.json({ success: true, branding });
         } catch (error) {
             next(error);
         }
