@@ -28,6 +28,7 @@ Every section still fetches its own admin endpoint and renders independently —
 | Overview | Server | `ServerSection` | `/health/redis`, `/health/server`, `/health/infrastructure` | Droplet CPU/load/memory/disk; per-container CPU, memory, health, restarts; Redis ping, key count, evictions; process uptime and heap |
 | Overview | Blockchain | `BlockchainSection` | `/blockchain/status`, `/metrics`, `/observers`, `/scheduler/health` | Sync lag, throughput, observer queues, **Trigger Sync Now** button |
 | Configuration | System Config | `SystemConfigSection` | GET/PATCH `/config/system` | Edit `siteUrl` from the UI |
+| Configuration | Sign-in button image | `AuthButtonImageSection` | GET/PATCH `/config/system` | Choose an image with the file picker to replace the header's sign-in button; the header reads it per request from the public `GET /api/config/branding`, so a save shows on the next page load. Choosing needs an enabled files provider (`trp-files` by default) |
 | Configuration | Block feed buffer | `EmitBufferSection` | GET/PATCH `/config/system` | Tune the feed's playout buffer; saving applies to the running feed with no restart |
 | Configuration | TronScan | `TronScanProviderSection` | GET/PATCH provider config | Runtime configuration for external data providers |
 | WebSockets | WebSockets | `WebSocketsSection` | `/websockets/stats`, `/websockets/aggregate` | Per-plugin and aggregate WS metrics |

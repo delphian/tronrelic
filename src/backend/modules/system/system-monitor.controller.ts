@@ -9,6 +9,7 @@ import { BlockchainObserverService } from '../../services/blockchain-observer/in
 import { SystemConfigService } from '../../services/system-config/index.js';
 import { blockchainConfig } from '../../config/blockchain.js';
 import { EMIT_BUFFER_LIMITS } from '../../config/emit-buffer.js';
+import { validateAuthButtonImage } from './validateAuthButtonImage.js';
 
 /** The emit-buffer settings this endpoint accepts, in the order the form shows them. */
 const EMIT_BUFFER_FIELDS = [
@@ -255,11 +256,26 @@ export class SystemMonitorController {
 
     Object.assign(updates, emitBuffer.updates);
 
+    // The sign-in button image is a URL rendered in the header of every public
+    // page, so it gets its own check rather than the loose URL test siteUrl
+    // uses. The URL and the file id it came from are validated and written as
+    // one setting.
+    const authButtonImage = validateAuthButtonImage(body);
+
+    if (authButtonImage.error) {
+      return res.status(400).json({
+        success: false,
+        error: authButtonImage.error
+      });
+    }
+
+    Object.assign(updates, authButtonImage.updates);
+
     // Require at least one field to update
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'At least one field must be provided (siteUrl, logLevel, systemLogsMaxCount, systemLogsRetentionDays, emitBuffer*)'
+        error: 'At least one field must be provided (siteUrl, logLevel, systemLogsMaxCount, systemLogsRetentionDays, emitBuffer*, authButtonImageUrl)'
       });
     }
 

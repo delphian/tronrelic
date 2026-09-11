@@ -19,6 +19,7 @@ import type { LogLevelName } from '../system-log/LogLevels.js';
  * - `systemLogsMaxCount` - Maximum number of log entries to retain (default: 10000)
  * - `systemLogsRetentionDays` - Number of days to keep logs before deletion (default: 30)
  * - `emitBuffer*` - The five settings shaping the block feed's playout buffer
+ * - `authButtonImage*` - The image the header shows in place of the sign-in button
  *
  * **Future Settings (examples):**
  * - `maintenanceMode` - Boolean flag to enable read-only mode
@@ -240,6 +241,34 @@ export interface ISystemConfig {
      * Default: 2000ms.
      */
     emitBufferCatchupIntervalMs: number;
+
+    /**
+     * Image the site header shows in place of the sign-in button.
+     *
+     * An administrator chooses it with the file picker on the Configuration tab
+     * of `/system/system`. When set, the header renders this image as a round
+     * button for every visitor: an anonymous visitor who clicks it gets the
+     * sign-in dialog, and a signed-in visitor goes to their profile. When null
+     * or absent, the header keeps its default text button.
+     *
+     * Stored as the opaque URL the files provider returned. It may be
+     * root-relative (`/uploads/...`) or absolute, and must not be rebuilt.
+     *
+     * Optional because a configuration document written before this field
+     * existed does not carry it, and `getConfig()` reads documents without
+     * applying schema defaults. Treat undefined the same as null.
+     */
+    authButtonImageUrl?: string | null;
+
+    /**
+     * Files-provider inventory id of the image in `authButtonImageUrl`.
+     *
+     * Kept beside the URL so the stored image can be traced back to the file it
+     * came from. It is only ever written together with the URL, and it is
+     * cleared whenever the URL is cleared or replaced without an id, so the two
+     * never describe different files.
+     */
+    authButtonImageFileId?: string | null;
 
     /**
      * Timestamp of last configuration update.
