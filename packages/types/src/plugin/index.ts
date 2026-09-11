@@ -32,6 +32,7 @@ export type {
     IFilePickerProvider,
     IFileSelection,
     IFilePickOptions,
+    IImagePickConstraints,
     IImageGenClient,
     IImageGenProvider,
     IImageGenOptions

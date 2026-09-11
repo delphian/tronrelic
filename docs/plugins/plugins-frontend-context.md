@@ -106,9 +106,35 @@ const { pick, isAvailable } = context.useFilePicker();
 
 const onChoose = async () => {
     const file = await pick({ accept: ['image/*'], title: 'Choose image' });
-    if (file) setImageUrl(file.url);   // IFileSelection: { fileId, url, mimeType, name }
+    if (file) setImageUrl(file.url);   // IFileSelection: { fileId, url, mimeType, name, width?, height? }
 };
 ```
+
+**Asking for a shape (`options.image`).** A consumer that renders an image at a
+fixed ratio — a link-preview card, a header band, a button graphic — should say
+so, instead of taking whatever was uploaded and correcting it on the server
+afterwards. That correction is applied out of the user's sight, to a picture they
+were never shown, and it routinely cuts the subject in half.
+
+```typescript
+const image = await pick({
+    accept: ['image/*'],
+    title: 'Choose social image',
+    image: { aspectRatio: 1200 / 630, width: 1200, height: 630 }
+});
+```
+
+`aspectRatio` is the shape, `width`/`height` the size the result is saved at, and
+`crop` says how insistent the request is: `'optional'` (the default) offers a
+crop step the user may skip, `'required'` sends every chosen image through it,
+and `'off'` hides cropping entirely. A provider that can crop uses the ratio
+twice — to frame its browse previews so the grid shows the part of each image
+that would be used, and to lock the crop window — and returns the result as an
+ordinary selection carrying `width` and `height`.
+
+Like every other field here it is **advisory**. A provider without a crop step
+ignores the block and returns the file unchanged, so keep validating what comes
+back rather than assuming the shape was honored.
 
 The picker is **core interface, provider-delivered**: core owns `useFilePicker`, but the concrete picker UI is supplied at runtime by whichever files-provider plugin is enabled (`trp-files` by default). That plugin registers its picker via `registerProvider` from its side-effect component, so **last registration wins** — an operator can disable the default provider and enable an alternative, and every consumer picks up the new UI with no code change. `registerProvider` is for provider plugins only; ordinary consumers use `pick`.
 

@@ -1302,6 +1302,51 @@ export interface IWebSocketClient {
  * ```
  */
 /**
+ * The shape a consumer needs an image to come back in, and how hard a
+ * requirement that is.
+ *
+ * This exists because a consumer that needs a fixed ratio — a link-preview card,
+ * a header band, a button graphic — used to have no way to say so. It took
+ * whatever the user happened to upload and squared it up afterwards on the
+ * server, which is a correction applied out of the user's sight, to a picture
+ * they were never shown. Stating the shape here lets the picker show the crop
+ * before anything is committed, so the person choosing the image decides which
+ * part of it survives.
+ *
+ * Every field is advisory in the same sense as `accept`: a provider that cannot
+ * crop ignores the block and returns the file as-is, so a consumer must still
+ * cope with an image that does not match.
+ */
+export interface IImagePickConstraints {
+    /**
+     * Desired width divided by height — `16 / 9` for a social card, `1` for a
+     * square avatar. Omit it to let the user choose the shape themselves.
+     */
+    aspectRatio?: number;
+
+    /**
+     * Pixel width the cropped result should be scaled to. Supply it when the
+     * consumer renders at a known size, so the stored file is that size instead
+     * of a full-resolution crop the browser shrinks on every page view.
+     */
+    width?: number;
+
+    /** Pixel height for the scaled result. Usually implied by `width` and `aspectRatio`. */
+    height?: number;
+
+    /**
+     * How insistent the shape is.
+     *
+     * `'optional'` (the default) offers cropping and lets the user skip it.
+     * `'required'` sends every chosen image through the crop step before it can
+     * be returned, which is the setting for a slot where a wrong-shaped image
+     * would visibly break the layout. `'off'` hides cropping entirely — use it
+     * when the consumer wants the original bytes untouched.
+     */
+    crop?: 'required' | 'optional' | 'off';
+}
+
+/**
  * Options a consumer passes when opening the file picker. All advisory to the
  * active provider — a provider may ignore hints it cannot honor.
  */
@@ -1318,6 +1363,12 @@ export interface IFilePickOptions {
 
     /** Whether the picker offers an upload control (default true) or is browse-only. */
     allowUpload?: boolean;
+
+    /**
+     * The shape the consumer wants an image in. Only meaningful when the accept
+     * hints admit images; a provider ignores it for any other file type.
+     */
+    image?: IImagePickConstraints;
 }
 
 /**
@@ -1337,6 +1388,16 @@ export interface IFileSelection {
 
     /** Original filename, for display. */
     name: string;
+
+    /**
+     * Pixel width of the image, when the provider knows it. A consumer that
+     * asked for a specific shape can check what it actually got — a provider
+     * with no cropping returns the original dimensions, or none at all.
+     */
+    width?: number;
+
+    /** Pixel height, under the same conditions as `width`. */
+    height?: number;
 }
 
 /**
