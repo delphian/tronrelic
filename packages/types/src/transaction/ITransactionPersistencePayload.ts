@@ -11,6 +11,24 @@ export interface ITransactionPersistencePayload {
     txId: string;
     /** Block number containing this transaction */
     blockNumber: number;
+    /**
+     * Zero-based position of this transaction in its block, as the block lists
+     * it. The chain executes a block's transactions in that order, so an
+     * observer relating two transactions from one block — a delegation and the
+     * reclaim that follows it — needs this value. Every transaction in a block
+     * shares one timestamp, and observers receive a block's batch grouped by
+     * transaction type, so neither can recover the order.
+     *
+     * Counted before sync skips anything, so the value matches the chain even
+     * when a transaction without contract data is dropped.
+     *
+     * Optional because it is set only on transactions delivered by block sync.
+     * It is not written to the transactions collection: no stored read needs it,
+     * and the field would add bytes to every document on a collection whose
+     * per-block write size is kept deliberately small. Documents read back from
+     * the database, and transactions fetched one at a time, do not carry it.
+     */
+    transactionIndex?: number;
     /** Transaction execution timestamp */
     timestamp: Date;
     /** Primary transaction type (TransferContract, TriggerSmartContract, etc.) */

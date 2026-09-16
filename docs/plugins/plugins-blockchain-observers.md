@@ -57,6 +57,8 @@ Plugins type the parameter as `ITransaction` from `@/types`. The runtime instanc
 - **rawValue** — original contract parameter values from TronGrid
 - **info** — transaction receipt with energy/bandwidth (may be null)
 
+To relate two transactions from the same block, use `payload.transactionIndex`, the transaction's position in its block. The chain executes a block in that order, while every transaction in the block shares one timestamp and a batch observer receives the block grouped by transaction type, so neither the timestamp nor arrival order can tell you which ran first. The field is present on transactions delivered by sync and absent on documents read back from the database. See [system-blockchain-sync-architecture.md](../system/system-blockchain-sync-architecture.md#order-within-a-block).
+
 Addresses arrive Base58, amounts in both SUN and TRX, USD already converted. Observers receive model objects, never raw TronGrid responses — that abstraction enables future provider changes.
 
 ## Creating an Observer

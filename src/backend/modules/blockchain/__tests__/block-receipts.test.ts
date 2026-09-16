@@ -30,6 +30,7 @@ import { httpClient } from '../../../lib/http-client.js';
 import { TronGridClient } from '../tron-grid.client.js';
 import { TransactionModel } from '../../../database/models/transaction-model.js';
 import { BlockModel } from '../../../database/models/block-model.js';
+import { toTransactionWriteFields } from '../transaction-write.js';
 
 /** Block height used throughout; no case depends on its particular value. */
 const BLOCK_NUMBER = 85_753_457;
@@ -165,6 +166,29 @@ describe('what block sync actually persists', () => {
         });
 
         expect(written.internalTransactions).toHaveLength(1);
+    });
+
+    it('stores no transactionIndex field, which only observers read', () => {
+        // Every transaction delivered to observers carries its position in the
+        // block, and the commit builds its `$set` from that same payload. The
+        // position is not written because no stored read uses it, and it would
+        // add bytes to every document in the collection. The schema cast keeps
+        // an undeclared field on this path, so `toTransactionWriteFields` is
+        // the only thing leaving it out.
+        const payload = {
+            txId: 'tx-a',
+            blockNumber: BLOCK_NUMBER,
+            transactionIndex: 99,
+            timestamp: new Date(1_787_931_852_000),
+            type: 'DelegateResourceContract',
+            from: { address: 'TFrom' },
+            to: { address: 'TTo' }
+        };
+
+        const written = persistedFields(TransactionModel, toTransactionWriteFields(payload));
+
+        expect(written).not.toHaveProperty('transactionIndex');
+        expect(written.blockNumber).toBe(BLOCK_NUMBER);
     });
 
     it('stores receiptsFetched on the block document in both states', () => {
