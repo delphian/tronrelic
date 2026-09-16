@@ -221,6 +221,12 @@ Within one commit the order after the write is observers, then the `block:new` b
 
 Each observer runs its own async queue. The blockchain service does not await the queue drain; it awaits only `enqueue()`, which is fast.
 
+### Order Within a Block
+
+The chain executes a block's transactions in the order the block lists them, so that order decides things an observer may need to know, such as whether a reclaim ran before or after the call its delegation was meant to serve. Two things hide it. Every transaction in a block shares one timestamp, and a batch observer receives its block grouped by transaction type, so a delegation and a reclaim arrive in separate arrays.
+
+`payload.transactionIndex` restores it. It is the transaction's zero-based position in TronGrid's block array, counted before sync skips a transaction without contract data, so it matches the chain. Relate transactions from one block by `blockNumber` and then `transactionIndex`, never by `txId`, which orders them arbitrarily. The field is set only on transactions delivered by sync. It is not written to the `transactions` collection, so a document read back from MongoDB does not carry it.
+
 ### Error Isolation
 
 If `observer.enqueue()` throws, the error is logged with the observer name and tx context, and the loop continues. Other observers still receive the transaction. Sync continues to the next transaction. A crashing observer cannot block sync or starve siblings.

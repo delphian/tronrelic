@@ -14,6 +14,7 @@ import { QueueService } from '../../services/queue.service.js';
 import { blockchainConfig } from '../../config/blockchain.js';
 import { TronGridClient, type TronGridBlock, type TronGridTransaction, type TronGridTransactionInfo } from './tron-grid.client.js';
 import { normalizeContractType, resolveOwnerAddress, resolveRecipient, resolveAmounts, describeContract } from './transaction-parse.js';
+import { toTransactionWriteFields } from './transaction-write.js';
 import { resolveCaughtUpMode } from './sync-mode.js';
 import { resolveBlockAgeInBlocks } from './block-pacer.js';
 import { BlockEmitter, type IBlockNewPayload, type IPreparedBlock } from './block-emitter.js';
@@ -1078,7 +1079,7 @@ export class BlockchainService implements IBlockchainService {
                 // union, so narrow only that field and keep the rest compiler-checked.
                 update: {
                     $set: {
-                        ...transaction.payload,
+                        ...toTransactionWriteFields(transaction.payload),
                         type: transaction.payload.type as TransactionDoc['type']
                     }
                 },
@@ -1887,7 +1888,10 @@ export class BlockchainService implements IBlockchainService {
             const processed: ProcessedTransaction[] = [];
             const operations: AnyBulkWriteOperation<TransactionDoc>[] = [];
 
-            for (const transaction of transactions) {
+            // The index comes from TronGrid's array rather than from `processed`,
+            // so a transaction skipped below still occupies its position and the
+            // survivors keep the positions the chain gave them.
+            for (const [transactionIndex, transaction] of transactions.entries()) {
                 try {
                     // Null when receipts are switched off, or when this particular
                     // transaction had none in the batch response. Either way the
@@ -1895,7 +1899,7 @@ export class BlockchainService implements IBlockchainService {
                     // internal-transaction fields go unpopulated, which is what
                     // every deployment has had until the switch existed.
                     const info = receipts.get(transaction.txID) ?? null;
-                    const result = this.buildTransactionRecord(block, transaction, info, buildContext);
+                    const result = this.buildTransactionRecord(block, transaction, transactionIndex, info, buildContext);
                     if (!result) {
                         continue;
                     }
@@ -2068,10 +2072,19 @@ export class BlockchainService implements IBlockchainService {
      * block context, enriches sender and receiver addresses with exchange/wallet labels, extracts memos and contract details, and builds
      * resource consumption metrics. The resulting ProcessedTransaction provides a complete, framework-independent view of the transaction
      * that observers and the database layer can consume without touching raw TronGrid responses, making future blockchain provider swaps easier.
+     *
+     * @param block - The block the transaction came from, which supplies its height.
+     * @param transaction - The raw transaction as TronGrid listed it.
+     * @param transactionIndex - The transaction's position in `block.transactions`. Observers need it to relate two transactions from
+     *                           one block, because every transaction in a block shares a timestamp and the chain executes them in this order.
+     * @param info - The transaction's receipt, or null when receipts were not fetched.
+     * @param context - Block-wide values: the TRX price and the block time.
+     * @returns The enriched transaction, or null when it carries no contract data.
      */
     private buildTransactionRecord(
         block: TronGridBlock,
         transaction: TronGridTransaction,
+        transactionIndex: number,
         info: TronGridTransactionInfo | null,
         context: TransactionBuildContext
     ): ProcessedTransaction | null {
@@ -2117,6 +2130,7 @@ export class BlockchainService implements IBlockchainService {
         const payload: TransactionPersistencePayload = {
             txId: transaction.txID,
             blockNumber,
+            transactionIndex,
             timestamp,
             type: contractType,
             // TRON protocol: resource field is "ENERGY" for energy operations, or undefined/null for BANDWIDTH
