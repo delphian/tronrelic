@@ -116,6 +116,27 @@
     background: var(--color-surface-muted);
 }
 
+/*
+ * The read-only input mirroring the selected address. It exists so an outside
+ * `<label>` has a form control to point at once the chip has replaced the
+ * search box, and so assistive technology reads the field with its current
+ * value; it is never seen. The project keeps visually-hidden rules scoped to
+ * the component needing one rather than adding a global utility, so this
+ * repeats the standard clipping recipe. Taken out of flow so it cannot affect
+ * the row it sits in.
+ */
+.value_mirror {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .selected_address {
     flex: 1 1 auto;
     min-width: 0;

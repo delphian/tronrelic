@@ -119,10 +119,9 @@ export interface FieldProps {
      * and drops the rest swallows them: the label ends up naming an id that is
      * in no element, and the message is referenced by nothing. Nothing on
      * screen shows this, and no warning can catch it, because from Field's side
-     * the props were passed successfully. `AccountPicker` and `AddressSelector`
-     * in this repository are two components that do not currently forward them
-     * — give those an `aria-label` and pass `htmlFor` rather than relying on
-     * this wiring.
+     * the props were passed successfully. `AccountPicker` in this repository is
+     * one component that does not currently forward them — give it an
+     * `aria-label` and pass `htmlFor` rather than relying on this wiring.
      */
     children: ReactNode;
 

@@ -593,6 +593,17 @@ export interface IUIComponents {
         'aria-label'?: string;
         /** Maximum number of suggestions to offer. @default 10 */
         limit?: number;
+        /**
+         * Id of the control a `<label>` points at. Forwarded to whichever form
+         * control the current state renders, which is what lets `ui.Field` put
+         * a visible label on this selector: Field generates an id, clones it
+         * onto its child, and points its label at it.
+         */
+        id?: string;
+        /** Id of the element describing the control, such as a validation message. */
+        'aria-describedby'?: string;
+        /** Announces that a value is demanded. Usually set by `ui.Field required`. */
+        'aria-required'?: boolean;
     }>;
 
     /**
