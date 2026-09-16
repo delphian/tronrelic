@@ -414,10 +414,17 @@ export function AddressSelector({
                     its current value. It is out of the tab order because it shows
                     nothing: a sighted keyboard user would otherwise land on an
                     invisible stop, and the clear button beside it is the control
-                    they actually need. */}
+                    they actually need. It carries `disabled` alongside the clear
+                    button so both states report the same availability: `readOnly`
+                    and `tabIndex={-1}` stop editing and tabbing but not label
+                    activation, so without it a click on the outside label moves
+                    focus onto an invisible control of an unavailable selector,
+                    and assistive technology announces a read-only field where the
+                    search state announces an unavailable one. */}
                 <input
                     type="text"
                     readOnly
+                    disabled={disabled}
                     tabIndex={-1}
                     id={id}
                     value={value}
