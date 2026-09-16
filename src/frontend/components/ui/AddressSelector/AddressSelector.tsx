@@ -120,6 +120,31 @@ export interface AddressSelectorProps {
 
     /** Maximum number of suggestions to offer. @default 10 */
     limit?: number;
+
+    /**
+     * Id for the control a `<label>` points at, so a visible label can name
+     * this field.
+     *
+     * Forwarded to whichever real form control the current state renders, which
+     * is what makes `<Field label="…">` work: Field generates an id, clones it
+     * onto its child, and points its label at it. A component that accepts only
+     * its own named props swallows that id, and the label then names an element
+     * that is in no document — it looks right on screen and announces nothing.
+     */
+    id?: string;
+
+    /**
+     * Id of the element describing this control, such as a hint or a validation
+     * message. Forwarded alongside `id` for the same reason: `<Field>` renders
+     * the message and expects the control to reference it.
+     */
+    'aria-describedby'?: string;
+
+    /**
+     * Announces that a value is demanded. Set by `<Field required>` rather than
+     * passed by hand in most cases.
+     */
+    'aria-required'?: boolean;
 }
 
 /**
@@ -150,7 +175,10 @@ export function AddressSelector({
     disabled,
     placeholder,
     'aria-label': ariaLabel,
-    limit = MAX_SUGGESTIONS
+    limit = MAX_SUGGESTIONS,
+    id,
+    'aria-describedby': ariaDescribedBy,
+    'aria-required': ariaRequired
 }: AddressSelectorProps) {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<IAddressTagGroupView[]>([]);
@@ -376,6 +404,28 @@ export function AddressSelector({
     if (value) {
         return (
             <div className={styles.selected}>
+                {/* A hidden read-only field carrying the chosen address, why: an
+                    outside `<label>` can only point at a form control, and this
+                    state renders none — the chip is a `TronAddress` and the only
+                    other element is the clear button, which a label click would
+                    activate, wiping the very value the label names. Mirroring the
+                    value into a real input gives the label a legitimate target in
+                    both states and puts the field in the accessibility tree with
+                    its current value. It is out of the tab order because it shows
+                    nothing: a sighted keyboard user would otherwise land on an
+                    invisible stop, and the clear button beside it is the control
+                    they actually need. */}
+                <input
+                    type="text"
+                    readOnly
+                    tabIndex={-1}
+                    id={id}
+                    value={value}
+                    className={styles.value_mirror}
+                    aria-label={ariaLabel ?? (id ? undefined : 'TRON address')}
+                    aria-describedby={ariaDescribedBy}
+                    aria-required={ariaRequired}
+                />
                 <TronAddress address={value} tools={false} className={styles.selected_address} />
                 <button
                     type="button"
@@ -395,15 +445,24 @@ export function AddressSelector({
         <div className={styles.search} ref={containerRef} onKeyDown={handleKeyDown}>
             <div className={styles.search_input}>
                 <Search size={16} aria-hidden="true" className={styles.search_icon} />
+                {/* The built-in `aria-label` is a fallback rather than a default:
+                    an `aria-label` outranks a `<label>` element, so applying it
+                    unconditionally would silently override the visible label of
+                    any field wrapping this control. It is used only when no id
+                    was handed down, which is the case where nothing else names
+                    the field. */}
                 <Input
                     type="text"
                     className={styles.search_field}
+                    id={id}
                     value={query}
                     onChange={(event) => handleQueryChange(event.target.value)}
                     onFocus={() => setIsOpen(true)}
                     placeholder={placeholder ?? 'Paste a TRON address, or search by address or tag'}
-                    aria-label={ariaLabel ?? 'TRON address'}
+                    aria-label={ariaLabel ?? (id ? undefined : 'TRON address')}
                     aria-controls={listId}
+                    aria-describedby={ariaDescribedBy}
+                    aria-required={ariaRequired}
                     disabled={disabled}
                 />
             </div>
