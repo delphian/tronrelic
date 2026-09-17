@@ -30,6 +30,56 @@ export const ANONYMOUS_MAX_DEPTH = 1;
 export const AUTHENTICATED_MAX_ADDRESSES = 10;
 
 /**
+ * A qualification that applies to one rung of a ladder.
+ *
+ * Why the stream carries these rather than leaving the UI to infer them: the
+ * reasons a rung is weaker than it looks live in how the edge was resolved, and
+ * that knowledge is here, not in the browser. A ladder rendered without them
+ * reads as a chain of equally solid facts, which is the tool's central honesty
+ * problem — a rung naming a contract, a rung naming a transaction signer, and a
+ * rung whose timing nothing could verify all look identical otherwise.
+ *
+ * - `internal-transfer` — the activating value came out of a contract's balance.
+ * - `climbed-caller` — the rung is the signer of that contract call, not the
+ *   contract, because the signer is the party worth following.
+ * - `caller-unresolved` — an internal activation whose signer could not be read,
+ *   so the rung is the contract and everything above it is the contract's own
+ *   history rather than this account's.
+ * - `creation-time-unverified` — the subject carries no creation stamp, so the
+ *   attribution rests on the transaction's type alone.
+ */
+export type ActivationHopCaveat =
+    | 'internal-transfer'
+    | 'climbed-caller'
+    | 'caller-unresolved'
+    | 'creation-time-unverified';
+
+/**
+ * List the qualifications that apply to one resolved edge.
+ *
+ * Kept a pure function of the edge so the wording in the UI and the reasoning
+ * behind it cannot drift apart: whatever the stream says about a rung is derived
+ * here, from the same object the rung was built from, and is unit-testable
+ * without an HTTP round trip.
+ *
+ * @param edge - The resolved activation edge for one hop.
+ * @returns Caveat codes for that hop, empty for an ordinary signed transfer
+ *   whose timing checked out — the case that needs no qualification.
+ */
+export function resolveHopCaveats(edge: IActivatingTransaction): ActivationHopCaveat[] {
+    const caveats: ActivationHopCaveat[] = [];
+    const isInternal = edge.contractType === 'InternalTransaction';
+    if (isInternal) {
+        caveats.push('internal-transfer');
+        caveats.push(edge.callerAddress ? 'climbed-caller' : 'caller-unresolved');
+    }
+    if (edge.creationTimeVerified === false) {
+        caveats.push('creation-time-unverified');
+    }
+    return caveats;
+}
+
+/**
  * The gated, validated execution plan for one origins query. Separating this from
  * the streaming loop keeps the gating policy a pure, testable function of the raw
  * input and the caller's auth state.
@@ -108,27 +158,14 @@ export class AddressOriginsService {
     }
 
     /**
-     * Climb one address's activation ancestry, forwarding the streaming callback
-     * and shared edge cache straight through to the core service.
+     * Climb one address's activation ancestry, stepped one hop per `next()`.
      *
-     * @param address - Base58 address to climb.
-     * @param options - Depth cap, per-hop `onHop` stream callback, and the batch's
-     *   shared edge cache (see {@link IActivationClimbOptions}).
-     * @returns The collected ancestry, including the `stopReason` the SSE layer
-     *   forwards so the client can word its terminal message accurately.
-     */
-    public async climb(address: string, options: IActivationClimbOptions): Promise<IActivationAncestry> {
-        return this.blockchain().climbActivationAncestry(address, options);
-    }
-
-    /**
-     * The same climb, stepped one hop per `next()`, for the multi-wallet stream.
-     *
-     * Why the streaming handler wants this shape: a whole-chain `climb()` per
-     * wallet can only run to completion before the next wallet starts, so the last
-     * wallet in a ten-wallet comparison shows nothing until the first nine finish.
-     * Advancing one generator per wallet round-robin fills every ladder together at
-     * the same total provider cost — the walk is throttled either way.
+     * Why the streaming handler wants this shape rather than a whole-chain climb:
+     * a per-wallet climb can only run to completion before the next wallet starts,
+     * so the last wallet in a ten-wallet comparison shows nothing until the first
+     * nine finish. Advancing one generator per wallet round-robin fills every
+     * ladder together at the same total provider cost — the walk is throttled
+     * either way.
      *
      * @param address - Base58 address to climb.
      * @param options - Depth cap and the batch's shared edge cache; passing the

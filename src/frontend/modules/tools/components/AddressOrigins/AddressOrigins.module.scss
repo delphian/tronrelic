@@ -2,9 +2,11 @@
  * Address Origins tool styles.
  *
  * Layout structure comes from the shared layout components; this module styles
- * the input rows, the per-wallet activation ladders, and the shared-ancestor
- * highlight. Responsive column count is driven by a container query so the tool
- * adapts whether it sits full-page or inside a narrower shell.
+ * the input rows, the per-wallet activation ladders, the shared-ancestor
+ * highlight, and the per-rung qualifications and leads that keep a ladder from
+ * reading as a chain of equally solid facts. Responsive column count is driven
+ * by a container query so the tool adapts whether it sits full-page or inside a
+ * narrower shell.
  */
 
 @use '../../../../app/breakpoints' as *;
@@ -91,15 +93,107 @@
     gap: var(--gap-2xs);
 }
 
+/*
+ * A rung is a small stack rather than one row: the account and its role read
+ * first, then the evidence, then the qualifications, then any lead to follow.
+ * Separate lines are what stop a wrapped row from mixing a caveat chip in among
+ * the addresses, which is exactly where it would be misread.
+ */
 .node {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--gap-xs);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--gap-2xs);
     padding: var(--padding-2xs) var(--padding-xs);
     border-radius: var(--radius-xs);
     border: var(--border-width-thin) solid transparent;
     font-size: var(--font-size-body-sm);
+}
+
+.node_main,
+.node_meta,
+.caveats,
+.leads {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+/* Indented under the account they qualify, so the rung reads as one unit. */
+.node_meta,
+.caveats,
+.leads {
+    padding-left: var(--padding-sm);
+}
+
+.caveat {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: 0 var(--padding-2xs);
+    border-radius: var(--radius-full);
+    border: var(--border-width-thin) solid currentColor;
+    font-size: var(--font-size-caption);
+    cursor: help;
+}
+
+.caveat_warn {
+    color: var(--color-warning);
+}
+
+.caveat_info {
+    color: var(--color-text-muted);
+}
+
+/*
+ * A lead is dashed rather than solid to read as "a path not taken" beside the
+ * rung the climb did follow, and solid on hover to confirm it is clickable.
+ */
+.lead {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: 0 var(--padding-2xs);
+    border-radius: var(--radius-full);
+    border: var(--border-width-thin) dashed var(--color-border-strong);
+    background: transparent;
+    color: var(--color-primary);
+    font-family: inherit;
+    font-size: var(--font-size-caption);
+    cursor: pointer;
+    transition: background-color var(--transition-base), border-color var(--transition-base);
+
+    &:hover {
+        border-style: solid;
+        background: var(--color-primary-alpha-10);
+    }
+}
+
+.guide {
+    padding: var(--padding-sm);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+.guide_summary {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    cursor: pointer;
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.guide_list {
+    margin: var(--gap-sm) 0 0;
+    padding-left: var(--padding-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    line-height: var(--line-height-relaxed);
 }
 
 .node_shared {
@@ -112,12 +206,15 @@
     flex-shrink: 0;
 }
 
+/* Also the rung's role chip, which carries a title explaining the role — hence
+   the help cursor, so the explanation is discoverable rather than hidden. */
 .tag {
     font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     color: var(--color-text-muted);
     letter-spacing: var(--letter-spacing-wide);
+    cursor: help;
 }
 
 .addr {

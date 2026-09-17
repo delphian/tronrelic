@@ -43,19 +43,35 @@ export interface IOverviewTimeseriesPoint {
 }
 
 /**
- * The transaction that activated an account, together with the account that
- * performed the activation.
+ * The transaction that activated an account, together with every party that
+ * transaction names and how much of the attribution could be verified.
  *
  * Why plugins need this: a TRON address only exists on-chain after a funded
  * account pays (~1 TRX) to create it, so an account's oldest transaction is its
  * activation and that transaction's owner is the activator. Ancestry tooling —
- * tracing an address back toward a shared origin — climbs this edge repeatedly,
- * using {@link IActivatingTransaction.activatorAddress} to take the next step and
- * the txId/timestamp for provenance. Returned by
- * {@link IBlockchainService.getActivatingTransaction}.
+ * tracing an address back toward a shared origin — climbs this edge repeatedly.
+ * Returned by {@link IBlockchainService.getActivatingTransaction}.
+ *
+ * **One activation can name two different parties, and a consumer that collapses
+ * them into one is making a claim the chain does not support.** When a contract
+ * created the account, the TRX came out of the contract's own balance
+ * ({@link activatorAddress}) while a key-controlled account signed the
+ * transaction that ran that code ({@link callerAddress}). Neither is "the
+ * creator" on its own: the contract is code and cannot own anything, and the
+ * signer may be a relayer acting for someone else or may have merely passed
+ * value through the contract. Both are recorded so the consumer can show both.
+ *
+ * Climbing follows `callerAddress ?? activatorAddress`, because the chain of
+ * accounts that moved value is what provenance tooling is after; walking up from
+ * the contract instead reaches whoever deployed it, which says nothing about the
+ * account under inspection.
  */
 export interface IActivatingTransaction {
-    /** Base58 address that activated (funded or deployed) the queried account. */
+    /**
+     * Base58 address the activating value came from — the transaction signer for
+     * an ordinary transfer, or the contract itself for a TVM-level activation.
+     * This is the mechanically attributable party, not necessarily an actor.
+     */
     activatorAddress: string;
     /** Transaction id of the activating transaction, for provenance and linking. */
     txId: string;
@@ -63,6 +79,38 @@ export interface IActivatingTransaction {
     blockTimestamp: number;
     /** Contract type of the activating transaction (e.g. `TransferContract`). */
     contractType: string;
+    /**
+     * The account whose activation this edge explains. Present so a consumer
+     * holding several interleaved climbs can attribute an edge without relying on
+     * arrival order.
+     */
+    subjectAddress?: string;
+    /**
+     * Base58 account that signed the transaction whose execution activated the
+     * subject. Set only for a TVM-level activation, where it is a different party
+     * from {@link activatorAddress}; absent when the activating transaction was
+     * signed by the activator itself, and absent when the parent transaction
+     * could not be read (in which case the climb falls back to the contract).
+     */
+    callerAddress?: string;
+    /**
+     * Other base58 accounts holding owner or active permission over
+     * {@link subjectAddress}, excluding the subject itself.
+     *
+     * Why it rides on an activation edge: reading the subject's account record is
+     * already required to verify the activation, and a multi-signed account is one
+     * whose activity may have been authorised by keys that appear nowhere in the
+     * ancestry — so a consumer presenting a single ladder should offer these as
+     * further leads rather than implying the one path is the whole story.
+     */
+    subjectControllers?: string[];
+    /**
+     * Whether the attribution was checked against the subject's own creation
+     * stamp. False means the account carries none — contract accounts do not — so
+     * the edge rests on the activating transaction's type alone and is weaker
+     * evidence. Consumers should say so rather than presenting both alike.
+     */
+    creationTimeVerified?: boolean;
 }
 
 /**

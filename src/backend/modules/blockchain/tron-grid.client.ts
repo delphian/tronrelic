@@ -46,19 +46,28 @@ const REQUEST_THROTTLE_MS = 200;
  * Tolerance for the account `create_time` vs activating-transaction
  * `block_timestamp` comparison in {@link TronGridClient.getActivatingTransaction}.
  *
- * Why this exists: an account's `create_time` is stamped from the activating
- * transaction's own creation clock, while the v1 transactions feed reports that
- * same transaction's `block_timestamp` — its block-confirmation time, one block
- * later. Empirically the two differ by exactly one block (3000 ms) for every
- * genuine, visible activation. A naive strict `block_timestamp > create_time`
- * therefore misfires on legitimate activations, wrongly concluding the account
- * was activated by an invisible internal transfer and returning null for the
- * overwhelming majority of ordinary wallets. Requiring the gap to exceed a
- * window comfortably larger than block-timing skew — but far smaller than the
- * minutes-to-years gap a truly internal activation leaves before its first
- * VISIBLE transaction — separates the two cases correctly.
+ * Why a tolerance is needed at all: `create_time` is not the activating
+ * transaction's own timestamp. Every activation path in java-tron stamps the new
+ * account with `latestBlockHeaderTimestamp`, and a block's own header timestamp
+ * is not saved until after its transactions have executed — so a transaction in
+ * block N writes the timestamp of block N-1. `create_time` therefore sits
+ * exactly one block interval (3000 ms) before the `block_timestamp` the v1 feed
+ * reports for that same transaction. A strict `block_timestamp > create_time`
+ * comparison rejects every ordinary wallet on that offset alone. Measured on 45
+ * mainnet accounts the gap was 3000 ms in 44 cases.
+ *
+ * Why three blocks rather than one: a missed block slot widens the gap to 6000
+ * or 9000 ms without making the activation any less genuine, because the stamp
+ * comes from whatever the previous block header said. Three blocks covers that.
+ *
+ * Why not wider: this window is the width of the hole left in the guard, and a
+ * contract-created account is routinely acted on within seconds of being
+ * created, so a minute-wide tolerance accepts that later, unrelated sender as
+ * the activator — exactly the false edge the check exists to reject. The
+ * timestamp test is deliberately not the only test for that reason; see
+ * {@link ACCOUNT_CREATING_CONTRACT_TYPES}.
  */
-const ACTIVATION_CREATE_TIME_SKEW_MS = 60_000;
+const ACTIVATION_CREATE_TIME_SKEW_MS = 9_000;
 
 // Collect all available API keys
 function getApiKeys(): string[] {
@@ -428,6 +437,58 @@ const INTERNAL_ACTIVATION_CONTRACT_TYPE = 'InternalTransaction';
  * against the shared TronGrid budget.
  */
 const INTERNAL_ACTIVATION_SCAN_LIMIT = 20;
+
+/**
+ * Contract types that can bring a new account into existence, and therefore the
+ * only ones whose sender may be attributed as an activator.
+ *
+ * On TRON an account comes into existence in exactly these ways: a TRX transfer,
+ * a TRC-10 asset transfer, an explicit account creation, a contract deployment,
+ * or a TVM-level transfer of TRX/TRC-10 (which this feed cannot see at all and
+ * which `resolveInternalActivator` handles instead). Nothing else creates an
+ * account, and two types make that concrete: `DelegateResourceContract` and
+ * `AccountPermissionUpdateContract` are both *rejected* by java-tron when the
+ * target account does not exist, so neither can ever be an activation.
+ *
+ * Why this is a filter and not a comment: the timestamp check alone is not
+ * sufficient. A mainnet account activated by an internal transfer was found
+ * whose oldest visible transaction is a third party's `DelegateResourceContract`
+ * landing three blocks after creation — inside any sane skew window. Attributing
+ * that delegator would be a false parent presented as fact, and the fix is to
+ * ask what the transaction *does* rather than only when it happened. The type
+ * filter also covers the case where `create_time` is unavailable (contract
+ * accounts carry none), which leaves the timestamp check with nothing to test.
+ *
+ * A TRC-20 transfer is deliberately absent. It only writes an entry in the token
+ * contract's own storage, so it activates nothing — an address can hold a USDT
+ * balance with no account record at all.
+ *
+ * `AccountCreateContract` is the protobuf name; `CreateAccountContract` is the
+ * spelling some tooling reports, so both are accepted rather than betting on
+ * which one a given response carries.
+ */
+/**
+ * What one `wallet/getaccount` read contributes to an activation edge.
+ *
+ * Bundled rather than returned as two values because both come off the same
+ * response and both paths through {@link TronGridClient.getActivatingTransaction}
+ * need them: the creation stamp to verify the attribution, the controllers to
+ * report who else can act for the account.
+ */
+interface IAccountActivationFacts {
+    /** Creation stamp in epoch ms, or undefined when the record carries none. */
+    createTime?: number;
+    /** Other accounts holding owner or active permission, excluding the subject. */
+    controllers: string[];
+}
+
+const ACCOUNT_CREATING_CONTRACT_TYPES = new Set([
+    'AccountCreateContract',
+    'CreateAccountContract',
+    'TransferContract',
+    'TransferAssetContract',
+    'CreateSmartContract'
+]);
 
 export class TronGridClient {
     private static instance: TronGridClient | null = null;
@@ -1041,30 +1102,32 @@ export class TronGridClient {
      * activator. The `owner !== self` check alone cannot tell this false edge apart
      * from a genuine funder→account transfer, because both have a third-party owner.
      *
-     * How: after finding a candidate edge, validate it against the account's
-     * authoritative `create_time` via {@link getAccount}. When the oldest visible
-     * transaction is later than account creation by more than one block of skew
-     * ({@link ACTIVATION_CREATE_TIME_SKEW_MS}), activation happened earlier through
-     * an internal transfer this feed cannot see, so the activator is unresolvable
-     * here from the top-level feed, so the method falls back to
-     * {@link resolveInternalActivator}, which reads the same activation off the
+     * How: after finding a candidate edge, put it through
+     * {@link isPlausibleActivation}, which asks both what the transaction does
+     * and when it happened — the account's authoritative `create_time` comes from
+     * {@link getAccount} for the second half of that test. A candidate that fails
+     * either half is not the activation, which means the real one happened
+     * through an internal transfer this feed cannot see, so the method falls back
+     * to {@link resolveInternalActivator}: it reads the same activation off the
      * internal-transactions endpoint and returns the contract that paid for it.
      * Only when that fallback also finds nothing is the activator truly
-     * unresolvable and null returned. The skew tolerance is essential:
-     * `create_time` is the activating tx's creation-clock stamp and trails its
-     * block-confirmed `block_timestamp` by exactly one block (~3000 ms) even for a
-     * genuine visible activation, so a strict comparison would reject every
-     * ordinary wallet. This second lookup is paid only when
-     * a candidate edge exists — accounts with no transactions or an outgoing first
-     * transaction still resolve in a single request. Both calls share the rotating-
-     * key headers and global TronGrid rate budget, so a caller climbing a chain must
-     * still stay sequential and bound its depth.
+     * unresolvable and null returned.
+     *
+     * Cost: two throttled requests on the common path, three when the internal
+     * fallback runs — which includes accounts with no top-level transactions at
+     * all, because those still need the account record and the internal feed
+     * before they can be called unresolvable. Every call shares the rotating-key
+     * headers and the global TronGrid rate budget, so a caller climbing a chain
+     * must stay sequential and bound its depth.
      *
      * @param base58Address - Account whose activator to resolve, base58 format.
      * @returns The activating edge — from the top-level feed, or from the internal
      *   feed when the account was activated by a contract — or null when neither
      *   feed yields a usable edge (no transactions at all, or an activation whose
      *   sender cannot be attributed).
+     * @throws When the account record cannot be read, because the guard below
+     *   cannot distinguish a genuine activation from a false one without it and
+     *   an unverified edge must never be published as fact.
      */
     async getActivatingTransaction(base58Address: string): Promise<IActivatingTransaction | null> {
         const response = await this.getAccountTransactions<IAccountTransactionsResponse>(base58Address, {
@@ -1073,11 +1136,10 @@ export class TronGridClient {
             order_by: 'block_timestamp,asc'
         });
         let result: IActivatingTransaction | null = null;
-        // Tracked separately from `createTime` itself: an account whose create_time
-        // TronGrid omits is indistinguishable from one never looked up, and the
-        // fallback must not pay for a second getAccount call it already made.
-        let createTimeResolved = false;
-        let createTime: number | undefined;
+        // Read once and reused by both paths below: the account record carries the
+        // creation stamp the guard needs and the permission keys the subject is
+        // controlled by, and neither path should pay for a second lookup.
+        let facts: IAccountActivationFacts | null = null;
         const oldest = response.data?.[0];
         const contract = oldest?.raw_data?.contract?.[0];
         const activatorAddress = TronGridClient.toBase58Address(contract?.parameter?.value?.owner_address);
@@ -1087,26 +1149,17 @@ export class TronGridClient {
             // was activated at its authoritative create_time; if that predates the
             // oldest visible transaction, the real (internal) activation is invisible
             // to this feed and attributing this transfer's sender would be a false
-            // edge, so leave result null. Only proceed when create_time is unknown
-            // (nothing to disprove the edge) or matches the oldest visible tx.
-            const account = await this.getAccount(base58Address);
-            createTime = account?.create_time;
-            createTimeResolved = true;
-            // Only strictly LATER than creation counts as a false edge. `create_time`
-            // is the activating tx's creation-clock stamp and lags its block-confirmed
-            // `block_timestamp` by exactly one block (~3000 ms) for a genuine visible
-            // activation, so a bare `>` would reject every ordinary wallet. Require the
-            // gap to exceed the block-skew tolerance — a real internal activation leaves
-            // its first visible tx minutes-to-years after creation, far beyond this.
-            const creationPrecedesOldestVisibleTx =
-                typeof createTime === 'number' &&
-                oldest.block_timestamp - createTime > ACTIVATION_CREATE_TIME_SKEW_MS;
-            if (!creationPrecedesOldestVisibleTx) {
+            // edge, so leave result null.
+            facts = await this.fetchAccountActivationFacts(base58Address);
+            if (TronGridClient.isPlausibleActivation(oldest.block_timestamp, facts.createTime, contract?.type)) {
                 result = {
+                    subjectAddress: base58Address,
                     activatorAddress,
                     txId: oldest.txID,
                     blockTimestamp: oldest.block_timestamp,
-                    contractType: contract?.type ?? 'unknown'
+                    contractType: contract?.type ?? 'unknown',
+                    subjectControllers: facts.controllers,
+                    creationTimeVerified: typeof facts.createTime === 'number'
                 };
             }
         }
@@ -1117,14 +1170,117 @@ export class TronGridClient {
             // edge. All three are the signature of a contract-created account, whose
             // activating value move is an internal transfer. Resolving it costs one
             // more request and is paid only on this uncommon path.
-            if (!createTimeResolved) {
-                const account = await this.getAccount(base58Address);
-                createTime = account?.create_time;
-                createTimeResolved = true;
+            if (!facts) {
+                facts = await this.fetchAccountActivationFacts(base58Address);
             }
-            result = await this.resolveInternalActivator(base58Address, createTime);
+            result = await this.resolveInternalActivator(base58Address, facts);
         }
         return result;
+    }
+
+    /**
+     * Read everything the account record contributes to an activation edge in one
+     * request: the creation stamp the guard checks against, and the other accounts
+     * holding permission over this one.
+     *
+     * Why the two come together: both live on the same `wallet/getaccount`
+     * response, the guard already requires that call, and a separate lookup for
+     * the permission keys would double the cost of the common path for
+     * information already in hand.
+     *
+     * Why a failed lookup throws: the guard treats an unknown `create_time` as
+     * having nothing to disprove a candidate edge with. `getAccount` answers null
+     * on a transport failure, so folding that into the same undefined value let
+     * one failed request turn into a confidently-wrong parent presented to the
+     * user as fact. The ancestry climb reports the throw as `provider-error` and
+     * the tool offers a retry.
+     *
+     * @param base58Address - Account to read.
+     * @returns Its creation stamp (undefined when the record carries none, as
+     *   contract and genesis-era accounts do) and its other controllers.
+     * @throws When the account lookup itself failed, so a provider outage is
+     *   never mistaken for an account without a creation stamp.
+     */
+    private async fetchAccountActivationFacts(base58Address: string): Promise<IAccountActivationFacts> {
+        const account = await this.getAccount(base58Address);
+        if (!account) {
+            throw new Error(`TronGrid account lookup failed for ${base58Address}; cannot verify its activating transaction.`);
+        }
+        return {
+            createTime: typeof account.create_time === 'number' ? account.create_time : undefined,
+            controllers: TronGridClient.resolveAccountControllers(base58Address, account)
+        };
+    }
+
+    /**
+     * List the other accounts that can authorise this account's transactions.
+     *
+     * Why an ancestry consumer wants this: a multi-signed account acts on keys
+     * that may appear nowhere in its activation ancestry, so a single ladder
+     * presented as the whole story is misleading. Surfacing the co-controllers
+     * lets the reader follow a second lead instead.
+     *
+     * Every account has owner and active permissions listing itself, so the
+     * subject is filtered out — what is left is non-empty only for genuinely
+     * shared control. Addresses arrive base58 already because `getAccount` is
+     * called with TronGrid's `visible` flag set.
+     *
+     * @param base58Address - The subject, excluded from its own controller list.
+     * @param account - Account record whose permission keys to read.
+     * @returns De-duplicated controller addresses, empty for a normal account.
+     */
+    private static resolveAccountControllers(
+        base58Address: string,
+        account: TronGridAccountResponse
+    ): string[] {
+        const permissions = [account.owner_permission, ...(account.active_permission ?? [])];
+        const controllers = new Set<string>();
+        for (const permission of permissions) {
+            for (const key of permission?.keys ?? []) {
+                if (key.address && key.address !== base58Address) {
+                    controllers.add(key.address);
+                }
+            }
+        }
+        return [...controllers];
+    }
+
+    /**
+     * Decide whether a candidate top-level transaction can be the account's
+     * activation.
+     *
+     * Two independent tests, and a candidate must pass both. **What it does**: a
+     * transaction type that cannot create an account never activated one, no
+     * matter how close to creation it landed (see
+     * {@link ACCOUNT_CREATING_CONTRACT_TYPES}). **When it happened**: a creating
+     * transaction confirmed more than {@link ACTIVATION_CREATE_TIME_SKEW_MS}
+     * after the account already existed is ordinary later funding rather than the
+     * activation. Each test catches false edges the other lets through — a
+     * delegation landing in the very next block passes the timestamp test, and a
+     * transfer arriving years later passes the type test.
+     *
+     * The timestamp test is skipped, not failed, when the account carries no
+     * `create_time`. Contract accounts have none, so requiring one would refuse
+     * to resolve any deployed contract to its deployer; the type test still
+     * applies and is what keeps that case honest.
+     *
+     * @param blockTimestamp - Block-confirmation time of the candidate transaction.
+     * @param createTime - The account's creation stamp, or undefined when TronGrid
+     *   carries none, which disables the proximity test alone.
+     * @param contractType - Candidate's contract type, tested against the set of
+     *   types that can create an account.
+     * @returns True when the candidate may be attributed as the activator.
+     */
+    private static isPlausibleActivation(
+        blockTimestamp: number,
+        createTime: number | undefined,
+        contractType: string | undefined
+    ): boolean {
+        const couldCreateAccount = ACCOUNT_CREATING_CONTRACT_TYPES.has(contractType ?? '');
+        const withinCreationWindow =
+            typeof createTime !== 'number' ||
+            blockTimestamp - createTime <= ACTIVATION_CREATE_TIME_SKEW_MS;
+        return couldCreateAccount && withinCreationWindow;
     }
 
     /**
@@ -1137,30 +1293,44 @@ export class TronGridClient {
      * and lets the climb continue through it.
      *
      * How: take the oldest confirmed inbound, non-reverted, value-bearing
-     * internal transfer and treat its sender as the activator. Rows are filtered
-     * rather than trusting position — the feed carries the account's outbound
-     * transfers and reverted rows too, and neither activates anything. The
+     * internal transfer and treat its sender as the activator. `only_to=true`
+     * asks the provider for inbound rows alone, so the page cannot be filled
+     * with the account's own outbound transfers and push the activating row past
+     * the scan limit — which would report a contract-created account as having
+     * no attributable activator at all. Rows are still filtered here rather than
+     * trusting position, because a reverted or zero-value inbound row activates
+     * nothing and the provider has no flag for either. The
      * candidate is then held to the same `create_time` proximity test the
      * top-level path uses ({@link ACTIVATION_CREATE_TIME_SKEW_MS}): a transfer
      * arriving long after the account already existed is ordinary later activity,
      * not the activation, and attributing it would trade one false edge for
      * another.
      *
+     * The contract is only half the answer, so the parent transaction is read as
+     * well and its signer recorded as {@link IActivatingTransaction.callerAddress}.
+     * A contract is code and cannot own an account; the signer is the
+     * key-controlled party that caused the execution and paid for it. Both are
+     * genuine and neither is sufficient — the signer may be a relayer acting for
+     * someone else, and the value may have been passed through the contract from
+     * the signer rather than drawn from the contract's own balance, which this
+     * feed cannot distinguish. Recording both is the only honest option, and it
+     * costs one extra request on a path taken by roughly one account in fifty.
+     *
      * @param base58Address - Account whose activator to resolve, base58 format.
-     * @param createTime - The account's authoritative creation stamp, already
-     *        fetched by the caller so this method adds no second `getAccount`
-     *        call; `undefined` when TronGrid omits it, which disables the
-     *        proximity test rather than rejecting the edge (nothing to disprove
-     *        it with).
+     * @param facts - The subject's creation stamp and controllers, already fetched
+     *        by the caller so this method adds no second `getAccount` call. An
+     *        absent creation stamp disables the proximity test rather than
+     *        rejecting the edge, there being nothing to disprove it with.
      * @returns The internal activating edge, or null when no inbound transfer
      *          qualifies — the genuinely unresolvable case.
      */
     private async resolveInternalActivator(
         base58Address: string,
-        createTime: number | undefined
+        facts: IAccountActivationFacts
     ): Promise<IActivatingTransaction | null> {
         const response = await this.getAccountInternalTransactions<IAccountInternalTransactionsResponse>(base58Address, {
             only_confirmed: true,
+            only_to: true,
             limit: INTERNAL_ACTIVATION_SCAN_LIMIT,
             order_by: 'block_timestamp,asc'
         });
@@ -1181,10 +1351,11 @@ export class TronGridClient {
                 continue;
             }
             const arrivedAfterCreation =
-                typeof createTime === 'number' &&
-                timestamp - createTime > ACTIVATION_CREATE_TIME_SKEW_MS;
+                typeof facts.createTime === 'number' &&
+                timestamp - facts.createTime > ACTIVATION_CREATE_TIME_SKEW_MS;
             if (!arrivedAfterCreation) {
                 result = {
+                    subjectAddress: base58Address,
                     activatorAddress: sender,
                     // The parent transaction hash, not `internal_tx_id`: consumers link
                     // this id to an explorer, and only the enclosing transaction has a
@@ -1192,7 +1363,10 @@ export class TronGridClient {
                     // TronGrid returns without a parent id still yields provenance.
                     txId: item.tx_id ?? item.internal_tx_id ?? '',
                     blockTimestamp: timestamp,
-                    contractType: INTERNAL_ACTIVATION_CONTRACT_TYPE
+                    contractType: INTERNAL_ACTIVATION_CONTRACT_TYPE,
+                    callerAddress: await this.resolveTransactionSigner(item.tx_id),
+                    subjectControllers: facts.controllers,
+                    creationTimeVerified: typeof facts.createTime === 'number'
                 };
             }
             // The oldest qualifying row decides the outcome either way: if it failed
@@ -1200,6 +1374,34 @@ export class TronGridClient {
             break;
         }
         return result;
+    }
+
+    /**
+     * Resolve the key-controlled account that signed a transaction.
+     *
+     * Why the activation path needs it: an internal transfer names the contract
+     * whose balance moved, and a contract cannot own anything. The signer of the
+     * enclosing transaction is the party that ran that code and paid the energy,
+     * so it is the account an ancestry climb should follow. It is deliberately not
+     * presented as "the funder" — a relayer signs on someone else's behalf, and
+     * the value may have originated with the signer rather than the contract.
+     *
+     * A failure returns undefined rather than throwing: the activation edge itself
+     * is already resolved and useful, so losing the signer should cost the extra
+     * lead, not the hop. The climb then falls back to the contract.
+     *
+     * @param txId - Enclosing transaction hash, taken from the internal row.
+     * @returns The signer in base58, or undefined when the transaction could not
+     *   be read or carries no owner — both of which leave the edge intact.
+     */
+    private async resolveTransactionSigner(txId: string | undefined): Promise<string | undefined> {
+        let signer: string | undefined;
+        if (txId) {
+            const transaction = await this.getTransactionById(txId);
+            const owner = transaction?.raw_data?.contract?.[0]?.parameter?.value?.owner_address;
+            signer = TronGridClient.toBase58Address(typeof owner === 'string' ? owner : null) ?? undefined;
+        }
+        return signer;
     }
 
     /**

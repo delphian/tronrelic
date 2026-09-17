@@ -8,12 +8,13 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { IServiceRegistry } from '@/types';
+import type { IActivatingTransaction, IServiceRegistry } from '@/types';
 import type { AddressService } from '../services/address.service.js';
 import {
     AddressOriginsService,
     ANONYMOUS_MAX_DEPTH,
-    AUTHENTICATED_MAX_ADDRESSES
+    AUTHENTICATED_MAX_ADDRESSES,
+    resolveHopCaveats
 } from '../services/address-origins.service.js';
 
 /**
@@ -68,5 +69,53 @@ describe('AddressOriginsService.resolvePlan', () => {
     it('yields no addresses when none are valid', () => {
         const plan = service.resolvePlan(['', 'garbage', '   '], true);
         expect(plan.addresses).toEqual([]);
+    });
+});
+
+/**
+ * Build an activation edge with only the fields the caveat rules read, why: the
+ * rules are a pure function of the edge, so a fixture carrying the whole shape
+ * would obscure which field drove each outcome.
+ *
+ * @param overrides - The fields under test.
+ * @returns An edge sufficient for {@link resolveHopCaveats}.
+ */
+function edge(overrides: Partial<IActivatingTransaction>): IActivatingTransaction {
+    return {
+        activatorAddress: validAddress('1'),
+        txId: 'tx',
+        blockTimestamp: 1_700_000_000_000,
+        contractType: 'TransferContract',
+        creationTimeVerified: true,
+        ...overrides
+    };
+}
+
+describe('resolveHopCaveats', () => {
+    it('qualifies nothing on an ordinary verified transfer', () => {
+        expect(resolveHopCaveats(edge({}))).toEqual([]);
+    });
+
+    it('reports a contract-funded hop and says the signer was followed', () => {
+        const caveats = resolveHopCaveats(edge({
+            contractType: 'InternalTransaction',
+            callerAddress: validAddress('2')
+        }));
+        expect(caveats).toEqual(['internal-transfer', 'climbed-caller']);
+    });
+
+    it('warns when an internal hop has no signer, because the ladder then follows code', () => {
+        const caveats = resolveHopCaveats(edge({ contractType: 'InternalTransaction' }));
+        expect(caveats).toEqual(['internal-transfer', 'caller-unresolved']);
+    });
+
+    it('flags an edge the account\'s own record could not confirm', () => {
+        expect(resolveHopCaveats(edge({ creationTimeVerified: false }))).toEqual(['creation-time-unverified']);
+    });
+
+    it('stays quiet when the verification flag is absent rather than false', () => {
+        // An edge read from a cache written before the flag existed must not be
+        // presented as unverified when nothing is known either way.
+        expect(resolveHopCaveats(edge({ creationTimeVerified: undefined }))).toEqual([]);
     });
 });

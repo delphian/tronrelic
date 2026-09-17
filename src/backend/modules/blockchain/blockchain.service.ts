@@ -67,6 +67,40 @@ export type TransactionPersistencePayload = ITransactionPersistencePayload;
 export const MAX_ACTIVATION_ANCESTRY_DEPTH = 20;
 
 /**
+ * Redis key segment under which one account's resolved activation edge is
+ * memoized. The version suffix is part of the contract: an entry written before
+ * the edge gained its second party and its verification flag would deserialize
+ * into a valid-looking edge missing both, and the climb would silently follow the
+ * contract instead of the signer for up to the cache's retention. Bump it
+ * whenever the stored shape changes.
+ */
+const ACTIVATION_EDGE_CACHE_SEGMENT = 'activation-edge:v2';
+
+/**
+ * Retention for a resolved activation edge.
+ *
+ * An activation happens once and never changes, so the answer is permanently
+ * correct and the only reason to expire it at all is to keep the keyspace
+ * bounded. Long retention is what makes the ancestry climb affordable: a ladder
+ * costs two to three throttled TronGrid calls per hop on the queue that live
+ * block sync also uses, and without this cache every repeat trace — the same
+ * wallet looked up twice, or two wallets sharing a tail across separate
+ * requests — pays that cost again and pushes the block feed behind.
+ */
+const ACTIVATION_EDGE_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+/**
+ * Retention for "no activator could be attributed".
+ *
+ * Deliberately much shorter than a resolved edge, because a null is a statement
+ * about what the provider could show us rather than about the chain: an account
+ * whose internal-transaction history was not indexed yet, or a lookup that hit
+ * an edge case, may well resolve later. Caching that answer for a month would
+ * freeze a temporary blind spot into a permanent one.
+ */
+const ACTIVATION_EDGE_MISS_TTL_SECONDS = 6 * 60 * 60;
+
+/**
  * Accumulator for tracking smart contract activity within a block.
  * Used to aggregate multiple calls to the same contract method for analytics purposes.
  */
@@ -758,16 +792,101 @@ export class BlockchainService implements IBlockchainService {
      * account's creation time so an internally-activated account yields null
      * rather than a false edge, and decoding the owner to base58 — lives in the
      * client; this method only exposes it through the published
-     * `IBlockchainService` contract. Because a call costs up to two throttled
-     * TronGrid requests, a caller climbing a chain must stay sequential and bound
-     * its depth.
+     * `IBlockchainService` contract.
+     *
+     * The Redis memoization added here is not an optimization detail — it is what
+     * keeps the feature from starving block sync. An uncached lookup costs two to
+     * three throttled TronGrid requests on the same 200 ms queue live sync uses,
+     * and a ten-wallet ancestry trace can ask for two hundred of them. An
+     * activation never changes, so the cached answer is permanently correct and
+     * repeat traces cost nothing. A caller climbing a chain must still stay
+     * sequential and bound its depth, because a cold climb pays full price.
      *
      * @param base58Address - Account whose activator to resolve, base58 format.
      * @returns The activating edge, or null when the account has no transactions
      *   or its activator is not resolvable from the top-level feed.
+     * @throws When the provider lookup fails outright, so a caller can report an
+     *   interrupted climb rather than presenting a partial chain as complete.
      */
     async getActivatingTransaction(base58Address: string): Promise<IActivatingTransaction | null> {
-        return this.tronClient.getActivatingTransaction(base58Address);
+        const cached = await this.readCachedActivationEdge(base58Address);
+        let result: IActivatingTransaction | null;
+        if (cached.hit) {
+            result = cached.edge;
+        } else {
+            result = await this.tronClient.getActivatingTransaction(base58Address);
+            await this.writeCachedActivationEdge(base58Address, result);
+        }
+        return result;
+    }
+
+    /**
+     * Build the Redis key holding one account's memoized activation edge.
+     *
+     * @param base58Address - Account the edge belongs to.
+     * @returns The namespaced key, so a deployment sharing a Redis instance with
+     *   another cannot read the other's entries.
+     */
+    private activationEdgeKey(base58Address: string): string {
+        return `${env.REDIS_NAMESPACE}:${ACTIVATION_EDGE_CACHE_SEGMENT}:${base58Address}`;
+    }
+
+    /**
+     * Read a memoized activation edge, reporting whether there was an entry at
+     * all separately from what it held.
+     *
+     * Why the two are separate: "no activator could be attributed" is itself a
+     * cacheable answer, so a plain null return could not distinguish a cached
+     * null from a cache miss and every unresolvable account would be looked up
+     * again on every trace. A Redis failure is reported as a miss, because the
+     * cache is an accelerator and losing it must degrade cost, never correctness.
+     *
+     * @param base58Address - Account whose edge to look for.
+     * @returns `hit` false when nothing usable was stored; otherwise `edge` is
+     *   the stored edge or null for a stored "unresolvable".
+     */
+    private async readCachedActivationEdge(
+        base58Address: string
+    ): Promise<{ hit: boolean; edge: IActivatingTransaction | null }> {
+        let outcome: { hit: boolean; edge: IActivatingTransaction | null } = { hit: false, edge: null };
+        try {
+            const raw = await this.redis.get(this.activationEdgeKey(base58Address));
+            if (raw !== null) {
+                outcome = { hit: true, edge: JSON.parse(raw) as IActivatingTransaction | null };
+            }
+        } catch (error) {
+            logger.warn(
+                { base58Address, error: error instanceof Error ? error.message : String(error) },
+                'Activation-edge cache read failed; falling back to a live lookup'
+            );
+        }
+        return outcome;
+    }
+
+    /**
+     * Memoize the outcome of an activation lookup.
+     *
+     * A resolved edge and an unresolvable answer get different retentions for the
+     * reason given on the two TTL constants: the first is a permanent fact about
+     * the chain, the second only a report of what the provider could show. A
+     * failed write is logged and ignored, since the caller already has its answer.
+     *
+     * @param base58Address - Account the outcome belongs to.
+     * @param edge - The resolved edge, or null when none could be attributed.
+     */
+    private async writeCachedActivationEdge(
+        base58Address: string,
+        edge: IActivatingTransaction | null
+    ): Promise<void> {
+        const ttlSeconds = edge ? ACTIVATION_EDGE_TTL_SECONDS : ACTIVATION_EDGE_MISS_TTL_SECONDS;
+        try {
+            await this.redis.setex(this.activationEdgeKey(base58Address), ttlSeconds, JSON.stringify(edge));
+        } catch (error) {
+            logger.warn(
+                { base58Address, error: error instanceof Error ? error.message : String(error) },
+                'Activation-edge cache write failed; the next lookup will repeat the provider calls'
+            );
+        }
     }
 
     /**
@@ -780,9 +899,13 @@ export class BlockchainService implements IBlockchainService {
      * published service keeps the one tricky piece (a mis-bounded climb silently
      * misreports every address as its own origin) correct in a single place.
      *
+     * Which address each hop follows: `callerAddress ?? activatorAddress`. An
+     * activation that ran through a contract names two parties, and the signer is
+     * the one worth climbing — see the note on {@link IActivatingTransaction}.
+     *
      * How it stops: every ending is reported through `stopReason` — a `null` edge
      * is `'unresolved'` (no further activator could be attributed, which is *not*
-     * proof of a root), the depth cap is `'depth-cap'`, a repeated activator
+     * proof of a root), the depth cap is `'depth-cap'`, a repeated account
      * (impossible on chain, but a provider quirk must not loop us) is `'cycle'`,
      * and a thrown provider call is `'provider-error'`, signalling a partial that
      * a retry may extend. The legacy `originReached`/`truncated` booleans are
@@ -816,13 +939,14 @@ export class BlockchainService implements IBlockchainService {
      * exist exactly once, which is why {@link climbActivationAncestry} is now a
      * thin drain of this method instead of a parallel implementation.
      *
-     * The shared `edgeCache` holds the in-flight *promise* per child address, not
-     * the resolved edge. Interleaved ladders converging on a common ancestor reach
-     * it at nearly the same moment, and a resolved-value cache is still empty for
-     * the second climber while the first one's request is in flight — so both
-     * would fetch, and keep duplicating every remaining call of the shared tail.
-     * Awaiting the cached promise collapses that back to one climb's worth of
-     * provider traffic. A rejected lookup is evicted so a later climb can retry.
+     * The shared `edgeCache` holds the in-flight *promise* per child address
+     * rather than the resolved edge. Today's only caller advances one ladder at a
+     * time and so could get by with a resolved-value cache, but the promise form
+     * is what makes the cache safe for a caller that does overlap two climbs: a
+     * value cache is still empty for the second climber while the first one's
+     * request is in flight, so both would fetch and then duplicate every
+     * remaining call of the shared tail. A rejected lookup is evicted so a later
+     * climb can retry.
      *
      * @param base58Address - Account whose ancestry to climb, base58 format.
      * @param options - Depth cap, per-hop `onHop` callback (still fired, for the
@@ -877,16 +1001,30 @@ export class BlockchainService implements IBlockchainService {
                 break;
             }
 
+            // Follow the signer when the activation ran through a contract. The
+            // contract's balance moved the value, but a contract is code: climbing
+            // it walks to whoever deployed it, which for a router or a sweeper
+            // factory says nothing about the account under inspection. The signer
+            // is the key-controlled account that caused the transfer, so it keeps
+            // the ladder on the chain of accounts that actually moved value. Both
+            // parties stay on the edge for the consumer to show.
+            const nextAddress = edge.callerAddress ?? edge.activatorAddress;
+
+            // Cycle check before the hop is recorded or streamed: a repeated
+            // account is not a rung of the ladder, and emitting it first left the
+            // UI showing the same account twice with no way to tell that the
+            // duplicate was the stop condition rather than real ancestry.
+            if (seen.has(nextAddress)) {
+                stopReason = 'cycle';
+                break;
+            }
+
             chain.push(edge);
             options.onHop?.(edge, depth);
             yield edge;
 
-            if (seen.has(edge.activatorAddress)) {
-                stopReason = 'cycle';
-                break;
-            }
-            seen.add(edge.activatorAddress);
-            current = edge.activatorAddress;
+            seen.add(nextAddress);
+            current = nextAddress;
         }
 
         if (stopReason === 'depth-cap') {
