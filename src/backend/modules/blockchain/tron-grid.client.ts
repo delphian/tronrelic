@@ -425,7 +425,7 @@ interface IAccountInternalTransactionsResponse {
  * synthetic label tells consumers (and the ladder UI that prints it) that the
  * hop came from TVM-level execution rather than a signed top-level contract.
  */
-const INTERNAL_ACTIVATION_CONTRACT_TYPE = 'InternalTransaction';
+export const INTERNAL_ACTIVATION_CONTRACT_TYPE = 'InternalTransaction';
 
 /**
  * Page size for the internal-transactions activator lookup. The activating
