@@ -71,7 +71,13 @@ export type {
 } from './notifications/index.js';
 export type { IWalletService, ILinkedWallet, WalletAction, IWalletChallenge, IWalletMutationInput, IAccountDirectoryService, IAccountSummary, IAccountMatch, IListAccountsOptions, IListAccountsResult, IUserSettingsService, IUserSettingDefinition } from './identity/index.js';
 export type { IUserGroup, ICreateUserGroupInput, IUpdateUserGroupInput, IUserGroupService } from './user/index.js';
-export type { ITronGridService, ITronGridAccountResponse, ITronGridAccountPermission } from './tron-grid/index.js';
+export type {
+    ITronGridService,
+    ITronGridAccountResponse,
+    ITronGridAccountPermission,
+    ITronGridDelegatedResource,
+    ITronGridDelegatedResourceResponse
+} from './tron-grid/index.js';
 export type { ITrc10, ITrc10FrozenSupply } from './trc10/index.js';
 export type { IBlockStats, IBlock, IBlockTransaction, IBlockTransactionParty, IBlockTransactionContract, IResourceUsage, IValueTransfer, ValueTransferOrigin, ValueAssetType, IBlockchainService, IActivatingTransaction, IActivationAncestry, ActivationClimbStopReason, IActivationClimbOptions, ITransactionTimeseriesPoint, IOverviewTimeseriesPoint, OverviewTimeseriesWindow, ITransactionDetailService } from './blockchain/index.js';
 export type { IToolsService, IAddressConversionResult, IAddressValidationResult } from './tools/index.js';

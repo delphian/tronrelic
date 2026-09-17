@@ -1,5 +1,7 @@
 export type {
     ITronGridService,
     ITronGridAccountResponse,
-    ITronGridAccountPermission
+    ITronGridAccountPermission,
+    ITronGridDelegatedResource,
+    ITronGridDelegatedResourceResponse
 } from './ITronGridService.js';

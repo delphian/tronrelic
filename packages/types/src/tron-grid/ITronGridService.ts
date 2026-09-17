@@ -33,6 +33,38 @@ export interface ITronGridAccountResponse {
     owner_permission?: ITronGridAccountPermission;
 }
 
+/**
+ * One resource delegation between two accounts, as TronGrid's
+ * `/wallet/getdelegatedresourcev2` reports it.
+ *
+ * Amounts are the staked SUN currently delegated for each resource, which is
+ * the account's standing position rather than any single delegation that built
+ * it.
+ */
+export interface ITronGridDelegatedResource {
+    /** The delegating account. */
+    from?: string;
+    /** The receiving account. */
+    to?: string;
+    /** Staked SUN currently delegated as energy. */
+    frozen_balance_for_energy?: number;
+    /** Lock expiry for the energy delegation, epoch milliseconds, when locked. */
+    expire_time_for_energy?: number;
+    /** Staked SUN currently delegated as bandwidth. */
+    frozen_balance_for_bandwidth?: number;
+    /** Lock expiry for the bandwidth delegation, epoch milliseconds, when locked. */
+    expire_time_for_bandwidth?: number;
+}
+
+/**
+ * TronGrid's `/wallet/getdelegatedresourcev2` response. Absent entries mean the
+ * delegating account currently delegates nothing to the receiver.
+ */
+export interface ITronGridDelegatedResourceResponse {
+    /** The delegations from one account to another, usually one entry. */
+    delegatedResource?: ITronGridDelegatedResource[];
+}
+
 import type { ITrc10 } from '../trc10/index.js';
 
 /**
@@ -52,6 +84,27 @@ export interface ITronGridService {
      * @returns Account response or null if request fails
      */
     getAccount(address: string, visible?: boolean): Promise<ITronGridAccountResponse | null>;
+
+    /**
+     * Read how much one account currently delegates to another.
+     *
+     * A delegation transaction states only the amount it adds, so a consumer
+     * needing an account's standing position toward a receiver — the stake a
+     * lender holds at a pool, say — cannot work it out from the transactions it
+     * observed. This reads the position from account state instead, through the
+     * same rate-limited request queue block sync uses, so a plugin calling it
+     * shares the platform's TronGrid budget rather than competing with it.
+     *
+     * @param fromAddress - Base58 delegating account.
+     * @param toAddress - Base58 receiving account.
+     * @param visible - Whether addresses are Base58 in the response (default: true).
+     * @returns The delegations between the two, or null when the request fails.
+     */
+    getDelegatedResource(
+        fromAddress: string,
+        toAddress: string,
+        visible?: boolean
+    ): Promise<ITronGridDelegatedResourceResponse | null>;
 
     /**
      * Create an independent TronWeb instance pre-configured with the platform's
