@@ -1,0 +1,202 @@
+/*
+ * One rung of an activation ladder.
+ *
+ * The rung is the page's signature element, so it is worth saying what it is
+ * doing. A ladder is a sequence, and the old flat list of rows did not read as
+ * one: nothing connected a rung to the rung above it, so a chain of six
+ * accounts looked like six unrelated findings. Here a continuous rule runs down
+ * the left of every ladder and each rung hangs a numbered disc on it, which is
+ * what turns the list back into a chain the eye can follow.
+ *
+ * The rule is drawn in two segments per rung rather than one, because the
+ * segment above the disc and the segment below it have to be switchable
+ * independently: the topmost rung must stop the rule at its disc so the chain
+ * visibly ends, and the traced wallet must start the rule at its disc so nothing
+ * trails off above the account the reader typed in. `.connector::before` draws
+ * the upper segment and `.rung::before` the lower one.
+ *
+ * Content other than the disc is indented past it, so the address, the evidence
+ * and the caveats all line up in one column beside the rule instead of stepping
+ * in and out around the disc.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+.rung {
+    /*
+     * Rung-scoped geometry. Declared here rather than in semantic-tokens.scss
+     * because these two describe this ladder's spine and nothing else: the disc
+     * diameter sets where the rule is drawn, and the indent is derived from it
+     * so the two can never drift apart.
+     */
+    --rung-disc-size: 1.5rem;
+    --rung-indent: calc(var(--rung-disc-size) + var(--gap-sm));
+
+    container-type: inline-size;
+    container-name: ladder-rung;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    padding: 0 var(--padding-xs) var(--gap-sm);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-body-sm);
+}
+
+/*
+ * The rule below this rung's disc, running down to meet the next rung. Removed
+ * on the topmost rung so the chain stops at its last account rather than
+ * pointing at nothing.
+ */
+.rung::before {
+    content: '';
+    position: absolute;
+    top: calc(var(--rung-disc-size) / 2);
+    bottom: 0;
+    left: calc(var(--padding-xs) + var(--rung-disc-size) / 2);
+    width: var(--border-width-medium);
+    transform: translateX(-50%);
+    background: var(--color-border-strong);
+}
+
+.rung_last::before {
+    display: none;
+}
+
+/*
+ * The relationship, stated in words on the rule itself. This is what lets a
+ * ladder be read as a sentence — wallet, activated by, account, activated by,
+ * account — instead of as a column of addresses whose connection the reader has
+ * to supply. The date is the edge's own, not the account's: it is when this
+ * account brought the one below it into existence.
+ */
+.connector {
+    position: relative;
+    margin: 0;
+    padding-left: var(--rung-indent);
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-caption);
+}
+
+/* The rule above this rung's disc, continuing down from the rung before it. */
+.connector::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--rung-disc-size) / 2);
+    width: var(--border-width-medium);
+    transform: translateX(-50%);
+    background: var(--color-border-strong);
+}
+
+.head {
+    display: grid;
+    grid-template-columns: var(--rung-disc-size) minmax(0, 1fr);
+    column-gap: var(--gap-sm);
+    align-items: start;
+}
+
+/*
+ * The node on the rule. Opaque rather than transparent so the rule passes behind
+ * it instead of through it, and sized from the same variable the rule is
+ * positioned by, so the disc is always centred on the line.
+ */
+.disc {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--rung-disc-size);
+    height: var(--rung-disc-size);
+    border: var(--border-width-thin) solid var(--color-border-strong);
+    border-radius: var(--radius-full);
+    background: var(--color-surface-accent);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+
+/*
+ * Convergence is the one thing this page spends the primary colour on. A filled
+ * disc is what makes a shared account findable while scrolling several ladders,
+ * which a tinted background alone was not.
+ */
+.disc_shared {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    font-weight: var(--font-weight-semibold);
+}
+
+.rung_shared {
+    background: var(--color-primary-alpha-10);
+}
+
+/* Holds the disc's height so the address beside it lines up with the node. */
+.identity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+    min-width: 0;
+    min-height: var(--rung-disc-size);
+}
+
+.evidence,
+.caveats,
+.leads {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+    padding-left: var(--rung-indent);
+}
+
+/*
+ * The contract type is machine vocabulary read against an explorer, so it takes
+ * the monospace chip the rest of the site uses for exact technical values rather
+ * than being set in the body face like prose.
+ */
+.contract_type {
+    padding: 0 var(--padding-xs);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-muted);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+}
+
+/*
+ * Carries each chip's explanation to assistive technology. The `title` attribute
+ * this replaces was skipped by screen readers and unreachable on touch, and
+ * making every chip focusable instead would put a dozen tab stops on each rung.
+ * Duplicated per module rather than globalised, matching the rest of the
+ * codebase — `.text-muted` is the only utility class held globally.
+ */
+.sr_only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/*
+ * In a narrow ladder — a phone, or several ladders side by side — the indent
+ * costs more than the alignment buys, so the supporting rows sit under the disc
+ * instead of beside it. The rule and the disc are untouched, so the chain still
+ * reads as a chain.
+ */
+@container ladder-rung (max-width: #{$breakpoint-mobile-sm}) {
+    .evidence,
+    .caveats,
+    .leads {
+        padding-left: var(--gap-sm);
+    }
+}

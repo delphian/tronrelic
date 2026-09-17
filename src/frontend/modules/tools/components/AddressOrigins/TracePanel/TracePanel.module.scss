@@ -1,0 +1,124 @@
+/*
+ * The panel a reader starts from.
+ *
+ * The rows are a real <fieldset>, so the browser's own reset has to be undone:
+ * its default border and padding would draw a second box inside the card, and
+ * its default legend placement would notch that border. The group still needs to
+ * be a fieldset rather than a styled div, because a <legend> is what names a set
+ * of interchangeable inputs to a screen reader.
+ *
+ * Trace comes before Add a wallet in the source, so the control that finishes
+ * the task is the first one a keyboard reaches and the one the eye lands on
+ * first. Adding another row is the secondary path and reads that way.
+ */
+
+@use '../../../../../app/breakpoints' as *;
+
+/*
+ * Declared on a wrapper rather than on the fieldset so the rule that stacks the
+ * action row can see the panel's full width — the buttons sit outside the
+ * fieldset, and a container only sizes its own descendants.
+ */
+.panel {
+    container-type: inline-size;
+    container-name: trace-panel;
+}
+
+.fieldset {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+}
+
+.legend {
+    padding: 0;
+    margin-bottom: var(--gap-sm);
+    color: var(--field-label-color);
+    font-size: var(--field-label-font-size);
+    font-weight: var(--field-label-font-weight);
+}
+
+.rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-sm);
+    min-width: 0;
+}
+
+/* The selector takes the room; the remove control keeps its own size. */
+.row > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+/*
+ * A refused trace reads as a refusal. The global `.alert` utility is toneless —
+ * muted text inside a neutral border — so a rate-limit message set in it reads
+ * as a footnote next to the button that just failed. The alert tokens carry the
+ * danger treatment the utility does not expose.
+ */
+.error {
+    margin: 0;
+    padding: var(--alert-padding);
+    border: var(--alert-border-width) solid var(--alert-danger-border);
+    border-radius: var(--alert-border-radius);
+    background: var(--alert-danger-background);
+    color: var(--alert-danger-color);
+    font-size: var(--alert-font-size);
+    line-height: var(--line-height-normal);
+}
+
+.note {
+    margin: 0;
+    max-width: var(--max-width-prose);
+    color: var(--color-warning-text);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-normal);
+}
+
+/*
+ * What a signed-out reader is and is not getting. Drawn as a quiet inset rather
+ * than an alert: it is the standing terms of the free tier, not something that
+ * went wrong, and an alert-toned box here would cry wolf on every visit.
+ */
+.tier {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--gap-sm);
+    margin: 0;
+    padding: var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+}
+
+.tier svg {
+    flex-shrink: 0;
+    margin-top: var(--gap-2xs);
+}
+
+/* At phone width the two controls each take a full row rather than splitting
+   one, so neither is squeezed to its label. */
+@container trace-panel (max-width: #{$breakpoint-mobile-md}) {
+    .actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}

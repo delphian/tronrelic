@@ -1,0 +1,66 @@
+/*
+ * Leads offered beneath a rung.
+ *
+ * A lead is drawn with a dashed outline so it reads as a path the climb did not
+ * take, sitting beside the rung it did. The outline goes solid on hover, because
+ * a dashed border on its own does not say the thing is clickable. Focus styling
+ * is left to the global `button:focus-visible` rule in globals.scss — the pill
+ * shape takes that outline cleanly, so overriding it here would only make this
+ * one control differ from every other button on the page.
+ */
+
+.leads {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.lead {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-2xs);
+    padding: var(--padding-2xs) var(--padding-xs);
+    border: var(--border-width-thin) dashed var(--color-border-strong);
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: var(--color-text-muted);
+    font: inherit;
+    font-size: var(--font-size-caption);
+    cursor: pointer;
+    transition: color var(--transition-base), background-color var(--transition-base), border-style var(--transition-base);
+}
+
+.lead:hover {
+    border-style: solid;
+    background: var(--color-surface-elevated);
+    color: var(--color-text);
+}
+
+/*
+ * Convergence is the one thing this page spends the primary colour on, so a lead
+ * another trace also reached says so in that colour and nothing else here
+ * competes for it.
+ */
+.lead_shared {
+    color: var(--color-primary);
+    font-weight: var(--font-weight-semibold);
+}
+
+/*
+ * Carries the lead's explanation to assistive technology without adding a tab
+ * stop or a line of visible text to an already dense rung. Duplicated per module
+ * rather than globalised, matching the rest of the codebase — `.text-muted` is
+ * the only utility class held globally.
+ */
+.sr_only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
