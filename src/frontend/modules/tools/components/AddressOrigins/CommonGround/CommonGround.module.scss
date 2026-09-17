@@ -1,0 +1,107 @@
+/*
+ * The convergence panel in the results rail.
+ *
+ * This is the one surface on the page allowed to carry the primary colour as a
+ * border, because convergence is the single finding the multi-wallet mode exists
+ * to produce and everything else on screen is deliberately quieter than it.
+ *
+ * Each entry is an account, then how far up it sat in each trace, then the offer
+ * to trace it. The reach line is set in tabular figures so a column of "3 of 4"
+ * readings lines up while results are still arriving and the counts are changing.
+ */
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    padding: var(--card-padding-sm);
+    border: var(--border-width-thin) solid var(--color-primary-alpha-38);
+    border-radius: var(--radius-md);
+    background: var(--color-primary-alpha-10);
+}
+
+.header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.title {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    margin: 0;
+    color: var(--color-text);
+    font-size: var(--font-size-heading-xs);
+    font-weight: var(--font-weight-semibold);
+}
+
+.note {
+    margin: 0;
+    max-width: var(--max-width-prose);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-caption);
+    line-height: var(--line-height-normal);
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--gap-2xs);
+    padding: var(--padding-xs) var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    min-width: 0;
+}
+
+.reach {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-2xs) var(--gap-sm);
+    margin: 0;
+    font-size: var(--font-size-caption);
+}
+
+.count {
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--font-weight-semibold);
+}
+
+.steps {
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/*
+ * A bare button that reads as text, the same affordance the widgets placement
+ * row uses for its own primary action. A full button here would give three
+ * entries three heavy controls in a narrow rail.
+ */
+.follow {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--color-primary);
+    font: inherit;
+    font-size: var(--font-size-caption);
+    text-align: left;
+    cursor: pointer;
+    transition: color var(--transition-base);
+}
+
+.follow:hover {
+    color: var(--color-secondary);
+    text-decoration: underline;
+}

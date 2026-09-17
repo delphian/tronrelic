@@ -1,0 +1,62 @@
+/*
+ * The standing reading guide.
+ *
+ * A definition list rather than a bulleted list, because each entry really is a
+ * term and its explanation: the heading is the mistaken reading and the body is
+ * what the data supports instead. Each pair is wrapped in a div — valid inside a
+ * <dl> — so the pair can hold its parts close together while the list spaces the
+ * pairs further apart. Without that the gap between a heading and its own body
+ * would equal the gap between entries, and the five points would read as ten.
+ *
+ * Quieter than everything it sits beside — muted body text, no border of its
+ * own — because it must stay available without competing with the results it
+ * qualifies.
+ */
+
+.guide {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    padding: var(--card-padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface-muted);
+}
+
+.title {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    margin: 0;
+    color: var(--color-text);
+    font-size: var(--font-size-heading-xs);
+    font-weight: var(--font-weight-semibold);
+}
+
+.points {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    margin: 0;
+}
+
+.point {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.point_heading {
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-normal);
+}
+
+.point_body {
+    margin: 0;
+    max-width: var(--max-width-prose);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+}
