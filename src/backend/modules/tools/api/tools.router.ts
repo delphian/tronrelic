@@ -37,6 +37,19 @@ export function createToolsRouter(controller: ToolsController): Router {
         keyPrefix: 'tools:approval'
     });
 
+    // The origins stream is the one tool endpoint whose cost is unbounded by its
+    // own request body: a signed-in caller can ask for ten wallets climbed twenty
+    // hops, and each hop is two to three throttled TronGrid calls on the queue
+    // live block sync shares. At the shared 30-per-minute limit one caller could
+    // queue tens of thousands of provider calls and push the block feed behind,
+    // so this endpoint gets a limit sized to the work it commissions rather than
+    // to the work a calculator call does.
+    const originsRateLimiter = createRateLimiter({
+        windowSeconds: 60,
+        maxRequests: 6,
+        keyPrefix: 'tools:origins'
+    });
+
     router.post('/address/convert', rateLimiter, asyncHandler(controller.convertAddress));
     router.post('/energy/estimate', rateLimiter, asyncHandler(controller.estimateEnergy));
     router.post('/stake/from-trx', rateLimiter, asyncHandler(controller.estimateStakeFromTrx));
@@ -54,7 +67,7 @@ export function createToolsRouter(controller: ToolsController): Router {
     // GET-only); addresses ride the query string. Access tiers are enforced inside
     // the handler from the session, so the route itself stays public — anonymous
     // callers still get a single one-hop lookup.
-    router.get('/origins/stream', rateLimiter, asyncHandler(controller.streamAddressOrigins));
+    router.get('/origins/stream', originsRateLimiter, asyncHandler(controller.streamAddressOrigins));
 
     return router;
 }

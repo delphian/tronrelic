@@ -10,12 +10,13 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import type { IActivatingTransaction } from '@/types';
+import { logger } from '../../../lib/logger.js';
 import type { AddressService } from '../services/address.service.js';
 import type { CalculatorService } from '../services/calculator.service.js';
 import type { SignatureService } from '../../auth/signature.service.js';
 import type { ApprovalService } from '../services/approval.service.js';
 import type { TimestampService } from '../services/timestamp.service.js';
-import type { AddressOriginsService } from '../services/address-origins.service.js';
+import { resolveHopCaveats, type AddressOriginsService } from '../services/address-origins.service.js';
 
 const addressSchema = z
     .object({
@@ -55,6 +56,17 @@ const addressOriginsQuerySchema = z.object({
     // happen in AddressOriginsService.resolvePlan. Bounded length guards the parse.
     addresses: z.string().trim().min(1).max(1000)
 });
+
+/**
+ * How often the origins stream writes a no-op SSE comment while a climb is
+ * waiting on the provider queue.
+ *
+ * Chosen well inside the 60-second read timeout a default proxy applies, and
+ * far inside the 300 seconds this deployment's nginx allows, so a climb stuck
+ * behind a long provider queue keeps its connection instead of being cut and
+ * reported to the user as a failure.
+ */
+const ORIGINS_KEEPALIVE_INTERVAL_MS = 20_000;
 
 const timestampConvertSchema = z.object({
     timestamp: z.coerce.number().int().min(0).max(32503680000).optional(),
@@ -194,12 +206,14 @@ export class ToolsController {
      *
      * The handler owns its own error and lifecycle handling because once the SSE
      * headers flush, delegating to the global error middleware would try to rewrite
-     * a committed response. A provider failure mid-climb is caught inside the climb
-     * and returned as a partial (an `address-done` with neither terminal flag set,
-     * which the client renders as an interruption); an `address-error` event fires
-     * only when the climb call itself throws (e.g. the blockchain service is
-     * unavailable), and a client disconnect stops every ladder at its next hop
-     * boundary — the abandoned generators simply make no further calls.
+     * a committed response — so every write, including the opening `start` event,
+     * happens inside the try block that swallows and logs instead of rethrowing.
+     * A provider failure mid-climb is caught inside the climb and returned as a
+     * partial (an `address-done` carrying `stopReason: 'provider-error'`, which the
+     * client renders as an interruption); an `address-error` event fires only when
+     * the climb call itself throws (e.g. the blockchain service is unavailable),
+     * and a client disconnect stops every ladder at its next hop boundary — the
+     * abandoned generators simply make no further calls.
      */
     streamAddressOrigins = async (req: Request, res: Response): Promise<void> => {
         const parsed = addressOriginsQuerySchema.safeParse(req.query);
@@ -234,27 +248,35 @@ export class ToolsController {
             clientGone = true;
         });
 
-        send('start', {
-            addresses: plan.addresses,
-            loggedIn,
-            maxDepth: plan.maxDepth ?? null,
-            limited: plan.limited
-        });
+        // A hop is one or more calls on a queue shared with live block sync, so a
+        // busy deployment can leave a climb waiting far longer than any one
+        // lookup takes. A proxy that sees no bytes for its read timeout closes the
+        // connection, and the user reads that as a failed trace. An SSE comment
+        // line costs nothing, is ignored by EventSource, and keeps the connection
+        // demonstrably alive while the queue drains.
+        const keepalive = setInterval(() => {
+            if (!clientGone && !res.writableEnded) {
+                res.write(': keepalive\n\n');
+            }
+        }, ORIGINS_KEEPALIVE_INTERVAL_MS);
 
-        // One edge cache shared across every address: a tail common to several
-        // wallets is fetched once, and the client uses the repeated activator to
-        // highlight a shared ancestor. It caches the in-flight lookup rather than
-        // the resolved edge, which is what keeps two ladders converging on the
-        // same ancestor at the same moment from duplicating the shared tail.
+        // One edge cache shared across every address in this request: a tail
+        // common to several wallets is fetched once, and the client uses the
+        // repeated activator to highlight a shared ancestor. Resolved edges are
+        // also memoized in Redis by the blockchain service, so a repeat trace of
+        // the same wallet costs no provider calls at all; this map is what keeps
+        // one request from asking twice for the same address.
         const edgeCache = new Map<string, Promise<IActivatingTransaction | null>>();
 
         // One stepped climb per wallet, advanced round-robin below. Each wallet's
         // own hop depth is tracked here because the generator yields edges, not
-        // positions.
+        // positions, and `subject` tracks which account the next hop explains so
+        // the client can attach a hop to the right rung without counting arrivals.
         let active = plan.addresses.map((address, sourceIndex) => ({
             address,
             sourceIndex,
             depth: 0,
+            subject: address,
             steps: this.addressOriginsService.climbSteps(address, {
                 maxDepth: plan.maxDepth,
                 edgeCache
@@ -262,6 +284,13 @@ export class ToolsController {
         }));
 
         try {
+            send('start', {
+                addresses: plan.addresses,
+                loggedIn,
+                maxDepth: plan.maxDepth ?? null,
+                limited: plan.limited
+            });
+
             // Round-robin rather than wallet-by-wallet: every ladder advances one
             // hop per pass, so a ten-wallet comparison fills in together instead of
             // leaving the last wallet blank until the first nine complete. Total
@@ -293,16 +322,28 @@ export class ToolsController {
                             });
                             continue;
                         }
+                        // Both parties ride along, plus which one the climb
+                        // followed and what qualifies the rung. The UI renders the
+                        // followed account as the rung and the other party as a
+                        // lead the reader can pivot to, which is the whole point
+                        // of carrying two addresses instead of collapsing them.
+                        const climbedAddress = step.value.callerAddress ?? step.value.activatorAddress;
                         send('hop', {
                             sourceIndex,
                             address,
                             depth: track.depth,
+                            subjectAddress: step.value.subjectAddress ?? track.subject,
                             activatorAddress: step.value.activatorAddress,
+                            callerAddress: step.value.callerAddress ?? null,
+                            climbedAddress,
+                            subjectControllers: step.value.subjectControllers ?? [],
+                            caveats: resolveHopCaveats(step.value),
                             txId: step.value.txId,
                             blockTimestamp: step.value.blockTimestamp,
                             contractType: step.value.contractType
                         });
                         track.depth += 1;
+                        track.subject = climbedAddress;
                         // Only a wallet that yielded a hop has more to climb; a
                         // finished or failed one is simply not carried forward.
                         survivors.push(track);
@@ -318,7 +359,18 @@ export class ToolsController {
             if (!clientGone) {
                 send('complete', {});
             }
+        } catch (error) {
+            // The response was committed the moment the SSE headers flushed, so
+            // rethrowing here would reach the global error middleware and have it
+            // try to write a JSON body and a status onto a response that already
+            // has both. Log it and close the stream instead; the client treats a
+            // stream that ends without `complete` as an interrupted trace.
+            logger.error(
+                { addresses: plan.addresses, error: error instanceof Error ? error.message : String(error) },
+                'Address-origins stream failed after the response was committed'
+            );
         } finally {
+            clearInterval(keepalive);
             if (!res.writableEnded) {
                 res.end();
             }

@@ -80,20 +80,29 @@ function internalRow(overrides: Record<string, unknown> = {}) {
     };
 }
 
+/** Base58 account used as the signer of a contract call in the internal cases. */
+const CALLER = 'TAUN6FwrnwwmaEqYcckffC7wYmbaS6cBiX';
+
 describe('TronGridClient.getActivatingTransaction', () => {
     let client: TronGridClient;
     let topLevel: ReturnType<typeof vi.fn>;
     let internal: ReturnType<typeof vi.fn>;
     let account: ReturnType<typeof vi.fn>;
+    let transaction: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
         client = TronGridClient.getInstance();
         topLevel = vi.fn();
         internal = vi.fn();
         account = vi.fn().mockResolvedValue({ create_time: CREATE_TIME });
+        transaction = vi.fn().mockResolvedValue({
+            txID: 'parent-tx',
+            raw_data: { contract: [{ type: 'TriggerSmartContract', parameter: { value: { owner_address: toHex(CALLER) } } }] }
+        });
         vi.spyOn(client, 'getAccountTransactions').mockImplementation(topLevel as never);
         vi.spyOn(client, 'getAccountInternalTransactions').mockImplementation(internal as never);
         vi.spyOn(client, 'getAccount').mockImplementation(account as never);
+        vi.spyOn(client, 'getTransactionById').mockImplementation(transaction as never);
     });
 
     it('accepts a top-level transfer whose timestamp sits within block skew of create_time', async () => {
@@ -181,5 +190,155 @@ describe('TronGridClient.getActivatingTransaction', () => {
         const edge = await client.getActivatingTransaction(SUBJECT);
 
         expect(edge?.activatorAddress).toBe(CONTRACT);
+    });
+
+    it('rejects a top-level transfer that post-dates creation by more than the block-skew window', async () => {
+        // Four blocks late. The old minute-wide tolerance accepted this, which is
+        // how a transfer arriving seconds after a contract-created account was
+        // born got reported as the account's activator.
+        topLevel.mockResolvedValue(topLevelResponse(toHex(FUNDER), CREATE_TIME + 12_000));
+        internal.mockResolvedValue({ data: [internalRow()] });
+
+        const edge = await client.getActivatingTransaction(SUBJECT);
+
+        expect(edge?.activatorAddress).toBe(CONTRACT);
+    });
+
+    it('refuses a delegation as the activator even when it lands inside the creation window', async () => {
+        // Taken from a real mainnet account activated by an internal transfer:
+        // its oldest visible transaction is a third party's resource delegation
+        // three blocks after creation. That is inside any sane skew window, so a
+        // timestamp test on its own attributes the delegator. java-tron rejects a
+        // delegation to an account that does not exist, so it cannot be an
+        // activation, and only the contract-type test can see that.
+        topLevel.mockResolvedValue({
+            data: [{
+                txID: 'delegate-tx',
+                block_timestamp: CREATE_TIME + 9_000,
+                raw_data: { contract: [{ type: 'DelegateResourceContract', parameter: { value: { owner_address: toHex(FUNDER) } } }] }
+            }]
+        });
+        internal.mockResolvedValue({ data: [internalRow()] });
+
+        const edge = await client.getActivatingTransaction(SUBJECT);
+
+        expect(edge).toMatchObject({ activatorAddress: CONTRACT, contractType: 'InternalTransaction' });
+    });
+
+    it('throws rather than attributing an unverified activator when the account lookup fails', async () => {
+        // getAccount answers null on a transport failure. Treating that as "this
+        // account has no create_time" disabled the guard entirely and published
+        // whoever the oldest visible transaction belonged to as the activator.
+        account.mockResolvedValue(null);
+        topLevel.mockResolvedValue(topLevelResponse(toHex(FUNDER), CREATE_TIME + 3_000));
+
+        await expect(client.getActivatingTransaction(SUBJECT)).rejects.toThrow(/account lookup failed/i);
+        expect(internal).not.toHaveBeenCalled();
+    });
+
+    it('refuses a non-creating contract type as the activator when create_time is unavailable', async () => {
+        // The shape of mainnet's burn address: no create_time, and an unrelated
+        // third party's contract call as the oldest visible transaction.
+        account.mockResolvedValue({});
+        topLevel.mockResolvedValue({
+            data: [{
+                txID: 'toplevel-tx',
+                block_timestamp: CREATE_TIME,
+                raw_data: { contract: [{ type: 'TriggerSmartContract', parameter: { value: { owner_address: toHex(FUNDER) } } }] }
+            }]
+        });
+        internal.mockResolvedValue({ data: [] });
+
+        const edge = await client.getActivatingTransaction(SUBJECT);
+
+        expect(edge).toBeNull();
+    });
+
+    it('still attributes a deployer when create_time is unavailable and the transaction created an account', async () => {
+        account.mockResolvedValue({});
+        topLevel.mockResolvedValue({
+            data: [{
+                txID: 'deploy-tx',
+                block_timestamp: CREATE_TIME,
+                raw_data: { contract: [{ type: 'CreateSmartContract', parameter: { value: { owner_address: toHex(FUNDER) } } }] }
+            }]
+        });
+
+        const edge = await client.getActivatingTransaction(SUBJECT);
+
+        expect(edge).toMatchObject({ activatorAddress: FUNDER, contractType: 'CreateSmartContract' });
+        expect(internal).not.toHaveBeenCalled();
+    });
+
+    it('records the contract and the signer as separate parties on an internal edge', async () => {
+        topLevel.mockResolvedValue({ data: [] });
+        internal.mockResolvedValue({ data: [internalRow()] });
+
+        const edge = await client.getActivatingTransaction(SUBJECT);
+
+        // The contract's balance moved the value; the signer ran the code. Both
+        // are true and neither is "the creator", so collapsing them into one
+        // field is what this asserts against.
+        expect(edge).toMatchObject({
+            subjectAddress: SUBJECT,
+            activatorAddress: CONTRACT,
+            callerAddress: CALLER,
+            creationTimeVerified: true
+        });
+    });
+
+    it('leaves the signer absent when the parent transaction cannot be read', async () => {
+        topLevel.mockResolvedValue({ data: [] });
+        internal.mockResolvedValue({ data: [internalRow()] });
+        transaction.mockResolvedValue(null);
+
+        const edge = await client.getActivatingTransaction(SUBJECT);
+
+        // The edge still stands on the internal row alone; only the extra lead is
+        // lost, and a climb then continues from the contract.
+        expect(edge?.activatorAddress).toBe(CONTRACT);
+        expect(edge?.callerAddress).toBeUndefined();
+    });
+
+    it('reports co-controllers of the subject and excludes the subject itself', async () => {
+        account.mockResolvedValue({
+            create_time: CREATE_TIME,
+            owner_permission: { keys: [{ address: SUBJECT, weight: 1 }] },
+            active_permission: [{ id: 2, keys: [{ address: SUBJECT, weight: 1 }, { address: CALLER, weight: 1 }] }]
+        });
+        topLevel.mockResolvedValue(topLevelResponse(toHex(FUNDER), CREATE_TIME + 3_000));
+
+        const edge = await client.getActivatingTransaction(SUBJECT);
+
+        // Every account lists itself in its own permissions, so only a genuinely
+        // shared key should survive the filter.
+        expect(edge?.subjectControllers).toEqual([CALLER]);
+    });
+
+    it('marks an edge unverified when the subject carries no creation stamp', async () => {
+        account.mockResolvedValue({});
+        topLevel.mockResolvedValue({
+            data: [{
+                txID: 'deploy-tx',
+                block_timestamp: CREATE_TIME,
+                raw_data: { contract: [{ type: 'CreateSmartContract', parameter: { value: { owner_address: toHex(FUNDER) } } }] }
+            }]
+        });
+
+        const edge = await client.getActivatingTransaction(SUBJECT);
+
+        expect(edge?.creationTimeVerified).toBe(false);
+    });
+
+    it('asks the internal feed for inbound rows only', async () => {
+        topLevel.mockResolvedValue({ data: [] });
+        internal.mockResolvedValue({ data: [internalRow()] });
+
+        await client.getActivatingTransaction(SUBJECT);
+
+        // Without only_to the account's own outbound transfers share the page and
+        // can push the activating row past the scan limit, which reads as "no
+        // activator" for a contract-created account.
+        expect(internal).toHaveBeenCalledWith(SUBJECT, expect.objectContaining({ only_to: true, order_by: 'block_timestamp,asc' }));
     });
 });

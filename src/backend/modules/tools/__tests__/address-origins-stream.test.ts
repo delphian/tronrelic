@@ -120,6 +120,94 @@ async function runStream(addresses: string[], hopCounts: number[]): Promise<ICap
     return captured;
 }
 
+/**
+ * Drive the handler over one wallet whose single hop is a contract activation,
+ * why: the wire payload has to name both parties and say which one the ladder
+ * followed, and that assembly happens only in the handler.
+ *
+ * @returns The frames emitted for that one hop.
+ */
+async function runInternalHopStream(): Promise<ICapturedEvent[]> {
+    const internalEdge: IActivatingTransaction = {
+        subjectAddress: 'wallet',
+        activatorAddress: 'contract',
+        callerAddress: 'signer',
+        txId: 'parent-tx',
+        blockTimestamp: 1_700_000_000_000,
+        contractType: 'InternalTransaction',
+        subjectControllers: ['co-signer'],
+        creationTimeVerified: true
+    };
+
+    /**
+     * Yield the single internal hop, then report the climb as exhausted.
+     *
+     * @returns Generator matching `AddressOriginsService.climbSteps`.
+     */
+    async function* climb(): AsyncGenerator<IActivatingTransaction, IActivationAncestry, void> {
+        yield internalEdge;
+        return {
+            address: 'wallet',
+            chain: [internalEdge],
+            stopReason: 'unresolved',
+            originReached: true,
+            truncated: false
+        };
+    }
+
+    const originsService = {
+        resolvePlan: () => ({ addresses: ['wallet'], maxDepth: undefined, limited: false }),
+        climbSteps: () => climb()
+    } as unknown as AddressOriginsService;
+
+    const controller = new ToolsController(
+        null as unknown as AddressService,
+        null as unknown as CalculatorService,
+        null as unknown as SignatureService,
+        null as unknown as ApprovalService,
+        null as unknown as TimestampService,
+        originsService
+    );
+
+    const captured: ICapturedEvent[] = [];
+    const res = {
+        writeHead: vi.fn(),
+        flushHeaders: vi.fn(),
+        write: (chunk: string) => {
+            const [eventLine, dataLine] = chunk.trim().split('\n');
+            captured.push({
+                event: eventLine.replace('event: ', ''),
+                data: JSON.parse(dataLine.replace('data: ', ''))
+            });
+            return true;
+        },
+        end: vi.fn(),
+        writableEnded: false
+    } as unknown as Response;
+
+    await controller.streamAddressOrigins(
+        { query: { addresses: 'wallet' }, authSession: {}, on: vi.fn() } as unknown as Request,
+        res
+    );
+    return captured;
+}
+
+describe('streamAddressOrigins hop payload', () => {
+    it('names both parties and says the signer is the one followed', async () => {
+        const events = await runInternalHopStream();
+        const hop = events.find(entry => entry.event === 'hop');
+
+        expect(hop?.data).toMatchObject({
+            subjectAddress: 'wallet',
+            activatorAddress: 'contract',
+            callerAddress: 'signer',
+            climbedAddress: 'signer',
+            subjectControllers: ['co-signer'],
+            caveats: ['internal-transfer', 'climbed-caller']
+        });
+    });
+});
+
 describe('streamAddressOrigins multi-wallet ordering', () => {
     it('advances every wallet one hop per pass rather than finishing one first', async () => {
         const events = await runStream(['walletA', 'walletB'], [3, 3]);

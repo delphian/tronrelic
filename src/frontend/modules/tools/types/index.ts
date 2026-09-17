@@ -84,11 +84,39 @@ export interface IOriginHop {
     sourceIndex: number;
     address: string;
     depth: number;
+    /** The account this hop explains — the rung immediately below this one. */
+    subjectAddress: string;
+    /** Where the activating value came from: a signer, or a contract's balance. */
     activatorAddress: string;
+    /** Signer of the contract call, when the activation ran through a contract. */
+    callerAddress: string | null;
+    /** The party the climb followed, and therefore the account this rung shows. */
+    climbedAddress: string;
+    /** Other accounts holding permission over `subjectAddress`, as further leads. */
+    subjectControllers: string[];
+    /** What qualifies this rung; see {@link OriginHopCaveat}. */
+    caveats: OriginHopCaveat[];
     txId: string;
     blockTimestamp: number;
     contractType: string;
 }
+
+/**
+ * Why one rung of a ladder is weaker than it looks, mirroring the backend's
+ * `ActivationHopCaveat`.
+ *
+ * Kept as a local copy for the same reason as {@link OriginStopReason}: this is
+ * the SSE wire shape the tool page parses, not the service contract. The UI turns
+ * each code into a short chip plus the sentence that explains it, because a
+ * ladder rendered without them reads as a chain of equally solid facts when a
+ * rung naming a contract, a rung naming a transaction signer, and a rung whose
+ * timing nothing could verify are three different claims.
+ */
+export type OriginHopCaveat =
+    | 'internal-transfer'
+    | 'climbed-caller'
+    | 'caller-unresolved'
+    | 'creation-time-unverified';
 
 /** Lifecycle of a single address's climb in the UI. */
 export type OriginLadderStatus = 'climbing' | 'done' | 'error';

@@ -23,9 +23,9 @@ The module resolves two shared services from `IServiceRegistry` during `init()`:
 | Registry Key | Service | Purpose |
 |---|---|---|
 | `chain-parameters` | `IChainParametersService` | Live `energyPerTrx`, `bandwidthPerTrx`, and `energyFee` ratios for stake and energy calculations |
-| `tronweb` | `TronWeb` | Configured TronWeb instance for signature verification and address normalization |
+| `blockchain` | `IBlockchainService` | The activation-ancestry climb behind the Address Origins tool, resolved per request rather than at init so boot order cannot leave a stale reference |
 
-Both are required — `init()` throws if either is missing, causing application shutdown per the fail-fast convention.
+`chain-parameters` is required at init — `init()` throws if it is missing, causing application shutdown per the fail-fast convention. `blockchain` is resolved lazily and throws only if a request reaches the origins stream with no such service registered. The TronWeb instance used for signature verification and address normalization is not a registry service: `init()` builds it from `TronGridClient.createTronWeb()`.
 
 ## Available Tools
 
@@ -47,13 +47,30 @@ The Signature Verifier supports direct URL linking via query parameters: `/tools
 
 Endpoints are rate-limited at 30 requests per 60-second window per IP address, using the same Redis-backed `createRateLimiter` infrastructure as other public routes. All tools are unauthenticated except the approval checker, which is gated by the shared `requireLogin` middleware (`api/middleware/require-login.ts`) and has its own tighter limiter (10 requests per 60 seconds).
 
+The origins stream has its own limiter too, at 6 requests per 60 seconds. It is the one endpoint whose cost is not bounded by its own request: a signed-in caller can ask for ten wallets climbed twenty hops, and each uncached hop is two or three throttled TronGrid calls on the queue live block sync shares. At the general 30-per-minute limit one caller could commission tens of thousands of provider calls and leave the block feed running behind.
+
 ### Async Error Handling
 
 All route handlers are wrapped with `asyncHandler` so that thrown errors (Zod validation failures, service exceptions, TronGrid timeouts) reach the global error handler middleware instead of becoming unhandled promise rejections.
 
 ### Address Origins Streaming and Access Tiers
 
-`GET /api/tools/origins/stream` is a Server-Sent Events endpoint (the tool's parents must appear as they resolve, not after the whole climb). It is intentionally public but **branches on the session**: an anonymous caller gets one address climbed a single hop (its immediate parent), while a valid session unlocks up to ten wallets climbed to the full depth cap, with ancestors shared across wallets highlighted. The gate is enforced server-side in `AddressOriginsService.resolvePlan` — the client cannot lift its own tier. The climb itself lives on the core blockchain service; the tool only adds the gating policy and the SSE plumbing. Wallets are climbed **round-robin** — the handler holds one `climbActivationAncestrySteps()` generator per wallet and advances each by a single hop per pass — so every ladder grows together instead of the tenth wallet sitting blank until the first nine finish. Cost is unchanged: the walk is one throttled provider call at a time either way. All wallets share one edge cache, which stores the in-flight lookup rather than the resolved edge so converging ladders fetch a common tail once (see the [blockchain module README](../blockchain/README.md)). The handler sets `Cache-Control: no-transform` to opt out of the global `compression()` middleware (which would otherwise buffer events) and owns its own error/disconnect handling because the response is already committed once the stream opens.
+`GET /api/tools/origins/stream` is a Server-Sent Events endpoint (the tool's parents must appear as they resolve, not after the whole climb). It is intentionally public but **branches on the session**: an anonymous caller gets one address climbed a single hop (its immediate parent), while a valid session unlocks up to ten wallets climbed to the full depth cap, with ancestors shared across wallets highlighted. The gate is enforced server-side in `AddressOriginsService.resolvePlan` — the client cannot lift its own tier. The climb itself lives on the core blockchain service; the tool only adds the gating policy and the SSE plumbing. Wallets are climbed **round-robin** — the handler holds one `climbActivationAncestrySteps()` generator per wallet and advances each by a single hop per pass — so every ladder grows together instead of the tenth wallet sitting blank until the first nine finish. Cost is unchanged: the walk is one throttled provider call at a time either way. All wallets share one per-request edge cache so converging ladders fetch a common tail once, and resolved edges are memoized in Redis by the blockchain service, so a wallet traced twice costs nothing the second time (see the [blockchain module README](../blockchain/README.md)).
+
+### What Each Hop Publishes, and Why It Says So Much
+
+A ladder of identical-looking rows invites the reader to treat every rung as the same kind of fact, and they are not. Each `hop` event therefore carries both parties of the activation (`activatorAddress`, `callerAddress`), which one the climb followed (`climbedAddress`), the account the hop explains (`subjectAddress`), any co-controllers of that account (`subjectControllers`), and a `caveats` list from `resolveHopCaveats`.
+
+| Caveat | Meaning |
+|---|---|
+| `internal-transfer` | The activating value came out of a contract's balance — code, which owns nothing |
+| `climbed-caller` | The rung is the signer of that contract call, followed because the contract leads only to its deployer |
+| `caller-unresolved` | An internal activation whose signer could not be read, so the rung is the contract and everything above it is that contract's history |
+| `creation-time-unverified` | The subject carries no creation stamp, so the attribution rests on the transaction type alone |
+
+The UI turns each code into a chip plus the sentence explaining it, renders the party the climb passed over as a "trace contract" lead, offers each co-controller as a "trace controller" lead, and carries a standing reading guide covering the claims no per-hop chip can make: that activation is a fee payment rather than ownership, that a shared ancestor is only as meaningful as it is rare, and that a chain which ends has run out of indexed history rather than reached an origin.
+
+The handler sets `Cache-Control: no-transform` to opt out of the global `compression()` middleware (which would otherwise buffer events), writes an SSE comment every 20 seconds so a proxy cannot time out a climb that is waiting on a deep provider queue, and owns its own error handling for every write including the opening `start` event — once the stream opens the response is committed, so an error that escaped to the global middleware would try to rewrite a response that already has a status and a body.
 
 ### Input Validation
 
@@ -84,7 +101,7 @@ The module creates a "Tools" container node in the `main` namespace with child e
 
 ## Module Lifecycle
 
-**init() phase:** Stores injected dependencies, registers TransactionModel with the database service, resolves `IChainParametersService` and `TronWeb` from the service registry, creates CalculatorService and SignatureService, creates ToolsController. Does NOT mount routes or register menu items.
+**init() phase:** Stores injected dependencies, registers TransactionModel with the database service, resolves `IChainParametersService` from the service registry, builds a TronWeb instance from `TronGridClient`, creates the address, calculator, signature, approval, timestamp, and address-origins services, and creates ToolsController. Does NOT mount routes or register menu items.
 
 **run() phase:** Registers the Tools menu category and child items in the `main` namespace, mounts the tools router at `/api/tools` with rate limiting and async error handling.
 
