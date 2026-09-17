@@ -12,7 +12,7 @@ import { CORE_NETWORK_ACTIVITY_ROLLUPS_COLLECTION, type CoreNetworkActivityRollu
 import { DelegationFlowModel, ContractActivityModel, TokenModel } from '../../database/models/index.js';
 import { QueueService } from '../../services/queue.service.js';
 import { blockchainConfig } from '../../config/blockchain.js';
-import { TronGridClient, type TronGridBlock, type TronGridTransaction, type TronGridTransactionInfo } from './tron-grid.client.js';
+import { TronGridClient, INTERNAL_ACTIVATION_CONTRACT_TYPE, type TronGridBlock, type TronGridTransaction, type TronGridTransactionInfo } from './tron-grid.client.js';
 import { normalizeContractType, resolveOwnerAddress, resolveRecipient, resolveAmounts, describeContract } from './transaction-parse.js';
 import { toTransactionWriteFields } from './transaction-write.js';
 import { resolveCaughtUpMode } from './sync-mode.js';
@@ -864,12 +864,42 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
+     * Report whether an edge is missing a party the provider was meant to supply,
+     * so the cache can hold it for hours rather than a month.
+     *
+     * Why this matters: a TVM-level activation names the contract whose balance
+     * moved and the account that signed the call, and the climb follows the
+     * signer. The signer comes from a second provider lookup that returns
+     * undefined when the request fails after its retries, which leaves an edge
+     * that looks fully resolved but sends the climb up the contract instead.
+     * Retaining that answer for the full month would turn a brief outage or an
+     * indexing delay into a month of wrong ancestry, so it is held like an
+     * unresolved answer and asked again soon.
+     *
+     * The cost of judging this by the absent field alone is that an internal row
+     * which genuinely has no parent transaction hash is also re-resolved every
+     * few hours forever. That path is rare and cheap; telling "no signer exists"
+     * apart from "the signer lookup failed" would need another field on the
+     * published edge.
+     *
+     * @param edge - The freshly resolved edge about to be memoized, checked
+     *        before it is written rather than after it is read.
+     * @returns True when the edge came from TVM execution but carries no
+     *          `callerAddress`, the one field a later retry can still fill in.
+     */
+    private isIncompleteActivationEdge(edge: IActivatingTransaction): boolean {
+        return edge.contractType === INTERNAL_ACTIVATION_CONTRACT_TYPE && !edge.callerAddress;
+    }
+
+    /**
      * Memoize the outcome of an activation lookup.
      *
      * A resolved edge and an unresolvable answer get different retentions for the
      * reason given on the two TTL constants: the first is a permanent fact about
-     * the chain, the second only a report of what the provider could show. A
-     * failed write is logged and ignored, since the caller already has its answer.
+     * the chain, the second only a report of what the provider could show. An
+     * edge that is resolved but incomplete takes the shorter retention too, since
+     * the part that is missing is exactly the part a retry can recover. A failed
+     * write is logged and ignored, since the caller already has its answer.
      *
      * @param base58Address - Account the outcome belongs to.
      * @param edge - The resolved edge, or null when none could be attributed.
@@ -878,7 +908,9 @@ export class BlockchainService implements IBlockchainService {
         base58Address: string,
         edge: IActivatingTransaction | null
     ): Promise<void> {
-        const ttlSeconds = edge ? ACTIVATION_EDGE_TTL_SECONDS : ACTIVATION_EDGE_MISS_TTL_SECONDS;
+        const ttlSeconds = edge && !this.isIncompleteActivationEdge(edge)
+            ? ACTIVATION_EDGE_TTL_SECONDS
+            : ACTIVATION_EDGE_MISS_TTL_SECONDS;
         try {
             await this.redis.setex(this.activationEdgeKey(base58Address), ttlSeconds, JSON.stringify(edge));
         } catch (error) {

@@ -302,14 +302,24 @@ export function AddressOrigins() {
      *
      * A signed-in reader gets the lead added as another wallet, so the new ladder
      * sits beside the original and any shared ancestor between them is highlighted
-     * immediately. An anonymous reader has one slot, so the lead replaces it.
+     * immediately. When the lead is already one of the compared wallets, that same
+     * comparison is re-traced rather than collapsed down to the lead on its own,
+     * because a click on one rung should never throw away the other wallets and
+     * their results. At the wallet cap the lead could only be added by silently
+     * dropping a wallet the reader entered, so the click is refused with a message
+     * naming what to do instead. An anonymous reader has one slot, so the lead
+     * replaces it.
      *
      * @param address - The account to trace from, taken from a rendered rung.
      */
     const forkTrace = (address: string) => {
         const existing = effectiveAddresses();
-        const targets = isLoggedIn && !existing.includes(address)
-            ? [...existing, address].slice(0, MAX_ADDRESSES)
+        if (isLoggedIn && !existing.includes(address) && existing.length >= MAX_ADDRESSES) {
+            setError(`Already comparing ${MAX_ADDRESSES} wallets. Remove one to follow this lead.`);
+            return;
+        }
+        const targets = isLoggedIn
+            ? (existing.includes(address) ? existing : [...existing, address])
             : [address];
         setAddresses(targets);
         startTrace(targets);
@@ -421,6 +431,7 @@ export function AddressOrigins() {
                                             reads the wallet's account record. */}
                                         <LeadList
                                             controllers={ladder.hops[0]?.subjectControllers ?? []}
+                                            shared={sharedParties}
                                             onFollow={forkTrace}
                                         />
                                     </li>
@@ -564,7 +575,7 @@ function HopRung({ hop, shared, controllers, onFollow }: IHopRungProps) {
                 </div>
             )}
 
-            <LeadList contractParty={contractParty} controllers={controllers} onFollow={onFollow} />
+            <LeadList contractParty={contractParty} controllers={controllers} shared={shared} onFollow={onFollow} />
         </li>
     );
 }
@@ -577,6 +588,12 @@ interface ILeadListProps {
     contractParty?: string | null;
     /** Accounts that co-control the rung's own account. */
     controllers: string[];
+    /**
+     * Accounts named by more than one ladder. A lead needs this because the shared
+     * party of a hop is often the contract the climb stepped over rather than the
+     * account it followed, and that account is rendered here and nowhere else.
+     */
+    shared: Set<string>;
     /** Start a new trace from the chosen lead. */
     onFollow: (address: string) => void;
 }
@@ -590,10 +607,15 @@ interface ILeadListProps {
  * account — lets the reader test the other reading instead of trusting the single
  * path the tool chose.
  *
+ * A lead also carries the shared badge when another ladder named the same
+ * account. Without it, two wallets funded by one contract through different
+ * signers would show the shared-ancestor legend while nothing on the page was
+ * highlighted, because neither ladder climbs through the contract they share.
+ *
  * @param props - {@link ILeadListProps}.
  * @returns The leads row, or null when this rung has nothing further to offer.
  */
-function LeadList({ contractParty, controllers, onFollow }: ILeadListProps) {
+function LeadList({ contractParty, controllers, shared, onFollow }: ILeadListProps) {
     const leads: Array<{ address: string; label: string; hint: string }> = [];
     if (contractParty) {
         leads.push({
@@ -622,6 +644,11 @@ function LeadList({ contractParty, controllers, onFollow }: ILeadListProps) {
                 >
                     {lead.label === 'contract' ? <Cpu size={12} aria-hidden="true" /> : <Key size={12} aria-hidden="true" />}
                     trace {lead.label}
+                    {shared.has(lead.address) && (
+                        <span className={styles.shared_badge} title="Named by more than one ladder — a lead, not proof">
+                            <Users size={12} aria-hidden="true" /> shared
+                        </span>
+                    )}
                 </button>
             ))}
         </div>
