@@ -243,9 +243,16 @@ export class ToolsController {
             res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
         };
 
+        // The abort side of the same fact: `clientGone` is what the loop below
+        // reads at each hop boundary, while the signal is what releases a step
+        // already sitting out its pacing interval. Without the signal a
+        // disconnect would still be honoured, but only after the current step
+        // had burned the rest of its slot for a client that had already left.
+        const disconnected = new AbortController();
         let clientGone = false;
         req.on('close', () => {
             clientGone = true;
+            disconnected.abort();
         });
 
         // A hop is one or more calls on a queue shared with live block sync, so a
@@ -268,6 +275,12 @@ export class ToolsController {
         // one request from asking twice for the same address.
         const edgeCache = new Map<string, Promise<IActivatingTransaction | null>>();
 
+        // One pacer for the whole request, shared by every ladder: the interval
+        // rations this request's upward steps as a group, so comparing ten
+        // wallets costs the provider what comparing one does, and takes
+        // correspondingly longer. The service owns the interval itself.
+        const pacer = this.addressOriginsService.createUpwalkPacer(disconnected.signal);
+
         // One stepped climb per wallet, advanced round-robin below. Each wallet's
         // own hop depth is tracked here because the generator yields edges, not
         // positions, and `subject` tracks which account the next hop explains so
@@ -277,10 +290,11 @@ export class ToolsController {
             sourceIndex,
             depth: 0,
             subject: address,
-            steps: this.addressOriginsService.climbSteps(address, {
-                maxDepth: plan.maxDepth,
-                edgeCache
-            })
+            steps: this.addressOriginsService.climbSteps(
+                address,
+                { maxDepth: plan.maxDepth, edgeCache },
+                pacer
+            )
         }));
 
         try {
@@ -296,6 +310,12 @@ export class ToolsController {
             // leaving the last wallet blank until the first nine complete. Total
             // provider cost is unchanged — the climb is one throttled call at a
             // time either way — only the order the hops arrive in differs.
+            //
+            // Because the pacer above is shared, each pass of this loop spends the
+            // pacing interval per surviving wallet, so adding a wallet to the
+            // comparison lengthens the whole trace rather than running alongside
+            // it. That is the intended trade: the request's provider footprint
+            // stays flat no matter how many wallets it names.
             while (active.length > 0 && !clientGone) {
                 const survivors: typeof active = [];
                 for (const track of active) {
