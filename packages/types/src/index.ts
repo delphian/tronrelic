@@ -38,6 +38,9 @@ export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, I
 export { LOG_LEVELS, shouldLog, type LogLevelName } from './system-log/index.js';
 export type { ISchedulerService, CronJobHandler } from './scheduler/ISchedulerService.js';
 export type { ISchedulerJobStatus, ISchedulerMonitorProps } from './scheduler/ISchedulerJobStatus.js';
+export type { ICronTrigger } from './scheduler/ICronTrigger.js';
+export type { ICronTriggerCallbacks } from './scheduler/ICronTriggerCallbacks.js';
+export type { ICronHandle } from './scheduler/ICronHandle.js';
 export type { ISkeletonProps } from './ui/ISkeletonProps.js';
 export type { ICollectionBrowserProps } from './ui/ICollectionBrowserProps.js';
 export type { IClickHouseTableBrowserProps } from './ui/IClickHouseTableBrowserProps.js';

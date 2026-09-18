@@ -13,6 +13,7 @@ import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { SchedulerService } from './services/scheduler.service.js';
+import { NodeCronTrigger } from './services/NodeCronTrigger.js';
 import { SchedulerController } from './api/scheduler.controller.js';
 import { createSchedulerRouter } from './api/scheduler.routes.js';
 import { registerCoreJobs } from './jobs/core-jobs.js';
@@ -74,8 +75,9 @@ export class SchedulerModule implements IModule<ISchedulerModuleDependencies> {
             return;
         }
 
-        // Initialize the scheduler service singleton
-        SchedulerService.setDependencies(this.database);
+        // Initialize the scheduler service singleton. The module chooses the cron
+        // library here; the service only knows the ICronTrigger interface.
+        SchedulerService.setDependencies(this.database, new NodeCronTrigger());
 
         // Create controller
         this.controller = new SchedulerController(this.database, this.moduleLogger);
