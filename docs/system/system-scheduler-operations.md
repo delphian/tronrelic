@@ -71,6 +71,14 @@ Standard 5-field cron (`minute hour day-of-month month day-of-week`), or a 6-fie
 
 The backend does not check the field count itself. It passes the string to node-cron, so a malformed expression surfaces as an error from the reschedule rather than as a validation failure on the request. The `/system` schedule editor checks the field count in the browser before sending, and accepts either form.
 
+## How a Scheduled Time Becomes a Run
+
+`SchedulerService` does not import a cron library. It receives an `ICronTrigger` (from `@/types`) through `setDependencies`, and `SchedulerModule` passes in `NodeCronTrigger`, the only backend file that imports node-cron. The trigger reports each scheduled time, called a slot, and each slot it missed. The service decides whether a slot starts a run.
+
+Each slot starts at most one run. The service records the latest slot each job has handled and ignores any slot at or before it. This rule exists because node-cron 3, run with `recoverMissedExecutions`, fired every scheduled second a second time on its next poll, so every job ran twice and any run longer than a second logged a skip. node-cron 4 plans each slot once, and the service rule keeps that true whatever the library does.
+
+A missed slot still gets a run, because a five-field expression such as `0 * * * *` matches one second per hour and losing it loses the whole run. node-cron 4 runs a slot it wakes up to up to one second late, and reports anything later as missed. The service turns missed slots into a single catch-up run when the job is idle, and logs `Scheduled Job Recovering Missed Slot`. Further missed slots while that run is in progress, and missed slots older than an on-time slot already handled, are dropped at debug level.
+
 ## Troubleshooting
 
 Most stalls reduce to four checks: is the global flag on (`echo $ENABLE_SCHEDULER`), is the specific job enabled in `/system`, did the last run fail (red badge → tail backend logs for the job name), and is `last run` ancient (job never fired — wait one tick, or force it with the "Run now" button / the run endpoint above).
@@ -81,6 +89,8 @@ Most stalls reduce to four checks: is the global flag on (`echo $ENABLE_SCHEDULE
 | One job stuck on red badge | Upstream failure — TronGrid rate limit, MongoDB slow, plugin bug; tail logs filtered by job name |
 | One job runs but data still stale | Wrong job — confirm the right job feeds the data (e.g., `chain-parameters:fetch` not `blockchain:sync` for energy ratios) |
 | Job duration grows over time | Backlog catching up (acceptable) or unbounded query (open a ticket); check `/system` Blockchain Status if it's `blockchain:sync` |
+| `Scheduled Job Skipped: <job> - previous execution still running` | A run took longer than the job's schedule period. Compare the job's run durations in `scheduler_executions` with its period, and look for what slowed it |
+| Two runs of one job one second apart in `scheduler_executions` | The node-cron 3 double fire; the backend is running an image from before the node-cron 4 upgrade |
 | Cron edit didn't take effect | Invalid expression rejected with 400, or the next tick hasn't fired yet — settings persist in `scheduler_configs`; verify via `GET /scheduler/status` |
 
 For pipeline-specific failures in `blockchain:sync`, see [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md).

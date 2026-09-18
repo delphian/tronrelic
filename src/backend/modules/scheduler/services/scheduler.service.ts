@@ -8,8 +8,7 @@
  * @module modules/scheduler/services/scheduler.service
  */
 
-import cron, { ScheduledTask } from 'node-cron';
-import type { IDatabaseService } from '@/types';
+import type { ICronHandle, ICronTrigger, IDatabaseService } from '@/types';
 import { logger } from '../../../lib/logger.js';
 import { SchedulerConfigModel, type SchedulerConfigDoc } from '../database/scheduler-config.model.js';
 import { SchedulerExecutionModel, type SchedulerExecutionDoc } from '../database/scheduler-execution.model.js';
@@ -24,7 +23,11 @@ export type CronJobHandler = () => Promise<void> | void;
  * @property currentSchedule - Active cron expression (may differ if admin changed it)
  * @property enabled - Whether job is currently active
  * @property handler - Async function to execute on schedule
- * @property task - Active node-cron ScheduledTask (undefined if disabled)
+ * @property task - Handle to the live cron schedule (undefined if disabled)
+ * @property lastSlotMs - Scheduled time, in epoch milliseconds, of the latest
+ *                        slot this job has already handled. A slot at or before
+ *                        it is a duplicate and never starts a run. Zero until
+ *                        the first slot arrives.
  */
 interface RegisteredJob {
     name: string;
@@ -32,8 +35,17 @@ interface RegisteredJob {
     currentSchedule: string;
     enabled: boolean;
     handler: CronJobHandler;
-    task?: ScheduledTask;
+    task?: ICronHandle;
+    lastSlotMs: number;
 }
+
+/**
+ * Whether a slot arrived on time or was reported as missed by the trigger.
+ *
+ * A missed slot is handled differently: it only starts a catch-up run when the
+ * job is idle, and it is dropped quietly otherwise.
+ */
+type SlotKind = 'scheduled' | 'missed';
 
 /**
  * Centralized cron scheduler with dynamic reconfiguration support.
@@ -47,7 +59,7 @@ interface RegisteredJob {
  *
  * @example
  * // In SchedulerModule.init()
- * SchedulerService.setDependencies(database);
+ * SchedulerService.setDependencies(database, new NodeCronTrigger());
  *
  * // In SchedulerModule.run()
  * const scheduler = SchedulerService.getInstance();
@@ -57,6 +69,7 @@ interface RegisteredJob {
 export class SchedulerService {
     private static instance: SchedulerService | null = null;
     private static database: IDatabaseService | null = null;
+    private static cronTrigger: ICronTrigger | null = null;
 
     private readonly jobs = new Map<string, RegisteredJob>();
     private readonly runningJobs = new Set<string>();
@@ -70,9 +83,14 @@ export class SchedulerService {
      * Must be called once during module initialization before any getInstance() calls.
      *
      * @param database - Database service for MongoDB operations
+     * @param cronTrigger - Turns each job's cron expression into timed
+     *                      callbacks. Injected so the scheduler does not depend
+     *                      on a particular cron library, and so tests can
+     *                      deliver exact scheduled times without a real clock.
      */
-    public static setDependencies(database: IDatabaseService): void {
+    public static setDependencies(database: IDatabaseService, cronTrigger: ICronTrigger): void {
         SchedulerService.database = database;
+        SchedulerService.cronTrigger = cronTrigger;
     }
 
     /**
@@ -83,10 +101,10 @@ export class SchedulerService {
      */
     public static getInstance(): SchedulerService {
         if (!SchedulerService.instance) {
-            if (!SchedulerService.database) {
+            if (!SchedulerService.database || !SchedulerService.cronTrigger) {
                 throw new Error('SchedulerService.setDependencies() must be called before getInstance()');
             }
-            SchedulerService.instance = new SchedulerService(SchedulerService.database);
+            SchedulerService.instance = new SchedulerService(SchedulerService.database, SchedulerService.cronTrigger);
         }
         return SchedulerService.instance;
     }
@@ -102,6 +120,7 @@ export class SchedulerService {
         }
         SchedulerService.instance = null;
         SchedulerService.database = null;
+        SchedulerService.cronTrigger = null;
     }
 
     /**
@@ -110,8 +129,12 @@ export class SchedulerService {
      * Private constructor - use getInstance() instead.
      *
      * @param database - Database service for MongoDB operations
+     * @param cronTrigger - Source of scheduled and missed times for each job
      */
-    private constructor(private readonly database: IDatabaseService) {
+    private constructor(
+        private readonly database: IDatabaseService,
+        private readonly cronTrigger: ICronTrigger
+    ) {
         this.database.registerModel(this.CONFIG_COLLECTION, SchedulerConfigModel);
         this.database.registerModel(this.EXECUTION_COLLECTION, SchedulerExecutionModel);
     }
@@ -137,7 +160,8 @@ export class SchedulerService {
             currentSchedule: defaultSchedule,
             enabled: true,
             handler,
-            task: undefined
+            task: undefined,
+            lastSlotMs: 0
         });
 
         if (this.started) {
@@ -246,7 +270,7 @@ export class SchedulerService {
      * 1. Check if configuration exists in MongoDB
      * 2. If not, create default config with defaultSchedule and enabled=true
      * 3. If config exists, use stored schedule and enabled state
-     * 4. Schedule enabled jobs with node-cron
+     * 4. Schedule enabled jobs with the injected cron trigger
      */
     async start(): Promise<void> {
         for (const [name] of this.jobs.entries()) {
@@ -359,50 +383,105 @@ export class SchedulerService {
     }
 
     /**
-     * Schedule a single job with node-cron.
+     * Start a job's cron schedule through the injected trigger.
      *
-     * The cron tick delegates to {@link executeJob} so a scheduled run and a
-     * manual {@link runNow} share one execution path — identical overlap
-     * protection, audit record, and never-throw contract. The callback is sync and
-     * fire-and-forget (`void`) because executeJob owns all error handling, so an
-     * unhandled rejection can never escape the node-cron callback.
-     *
-     * `recoverMissedExecutions` must stay on, and the reason is not obvious from
-     * its name. node-cron does not sleep until the next matching time; it polls
-     * on a `setTimeout(…, 1000)` chain measured from the end of the previous
-     * poll, so each poll lands a few milliseconds later within its second than
-     * the one before. Once that drift accumulates past a second, two
-     * consecutive polls land in second N and second N+2, and no poll ever
-     * observes the second in between. The library does look back at that second
-     * on the following poll, but it only fires it when this option is set —
-     * which it is not by default.
-     *
-     * A five-field cron expression is padded to a seconds field of exactly `0`,
-     * so a job written `0 * * * *` has one firing second per hour. Losing that
-     * one second loses the whole run, with no execution record and no warning.
-     * Measured on production, roughly one second in every three hundred is
-     * skipped, which costs an hourly job a run about once a fortnight. There is
-     * no way to buy those back by editing a schedule, because the narrow window
-     * is the point of an hourly or daily job.
-     *
-     * Turning recovery on cannot stampede. After a long stall node-cron replays
-     * every missed match inside a single poll callback, and {@link executeJob}
-     * adds the job to `runningJobs` synchronously before its first `await`, so
-     * the first replayed match runs and the rest return early and log that the
-     * previous execution is still running.
+     * Both trigger callbacks go through {@link handleSlot}, which decides
+     * whether a scheduled time starts a run. The trigger only reports times;
+     * it never runs a job itself.
      *
      * @param job - Job to schedule
      */
     private scheduleJob(job: RegisteredJob): void {
-        const task = cron.schedule(
-            job.currentSchedule,
-            () => {
-                void this.executeJob(job);
-            },
-            { recoverMissedExecutions: true }
-        );
+        job.task = this.cronTrigger.schedule(job.currentSchedule, {
+            onSlot: (slot) => this.handleSlot(job, slot, 'scheduled'),
+            onMissed: (slot) => this.deferMissedSlot(job, slot)
+        });
+    }
 
-        job.task = task;
+    /**
+     * Handle a missed time one event-loop turn later than it was reported.
+     *
+     * When a trigger wakes up late it can report missed times and an on-time
+     * time from the same wake-up. node-cron reports the missed ones first and
+     * synchronously, and delivers the on-time one a few microtasks later.
+     * Handled in that order, the missed time would start a catch-up run and the
+     * on-time time would then log a false "previous execution still running"
+     * skip. Waiting for `setImmediate` lets the on-time time go first, after
+     * which the older missed time is recognised as already covered.
+     *
+     * The job may be unregistered or disabled during that wait, for example by
+     * a plugin being switched off. A catch-up run must not start for a job the
+     * scheduler no longer holds, so the deferred call checks first.
+     *
+     * @param job - Job the missed time belongs to.
+     * @param slot - The missed scheduled time.
+     */
+    private deferMissedSlot(job: RegisteredJob, slot: Date): void {
+        setImmediate(() => {
+            if (this.jobs.get(job.name) === job && job.enabled) {
+                this.handleSlot(job, slot, 'missed');
+            }
+        });
+    }
+
+    /**
+     * Decide whether one scheduled time starts a run, then start it.
+     *
+     * Each scheduled time starts at most one run. node-cron 3 broke that rule:
+     * with `recoverMissedExecutions` on, it fired every scheduled second a
+     * second time on its next poll, so every job ran twice and any run longer
+     * than a second logged a "previous execution still running" skip. The rule
+     * is enforced here, against the job's `lastSlotMs`, so it holds whatever the
+     * cron library does. A slot at or before the last one handled is dropped.
+     *
+     * A missed time still gets a run, because a five-field expression such as
+     * `0 * * * *` matches only one second per hour, and losing that second
+     * would lose the whole hourly run with no record of it. After a long stall
+     * the trigger can report several missed times for the same job in a row.
+     * Only the first one that finds the job idle starts a catch-up run; the
+     * rest are dropped at debug level, because the run already in progress
+     * covers them and logging each one as a skip would only add noise. A
+     * missed time older than an on-time slot already handled is dropped as a
+     * duplicate, since that on-time run covers it.
+     *
+     * An on-time slot that finds the job still running falls through to
+     * {@link executeJob}, which logs the skip. That warning now only appears
+     * when a run really does take longer than the job's schedule period.
+     *
+     * @param job - Job the scheduled time belongs to.
+     * @param slot - Scheduled time reported by the trigger. Milliseconds are
+     *               dropped before comparing, so two reports of the same
+     *               second always count as the same slot.
+     * @param kind - Whether the trigger reported the time on time or as missed.
+     */
+    private handleSlot(job: RegisteredJob, slot: Date, kind: SlotKind): void {
+        const slotMs = Math.floor(slot.getTime() / 1000) * 1000;
+        const isDuplicate = slotMs <= job.lastSlotMs;
+        const coveredByRunningExecution = kind === 'missed' && this.runningJobs.has(job.name);
+
+        if (!isDuplicate) {
+            job.lastSlotMs = slotMs;
+        }
+
+        if (isDuplicate) {
+            logger.debug(
+                { jobName: job.name, slot: new Date(slotMs).toISOString(), kind },
+                `Scheduled Job Slot Ignored: ${job.name} - slot already handled`
+            );
+        } else if (coveredByRunningExecution) {
+            logger.debug(
+                { jobName: job.name, slot: new Date(slotMs).toISOString() },
+                `Scheduled Job Missed Slot Dropped: ${job.name} - a run is already in progress`
+            );
+        } else {
+            if (kind === 'missed') {
+                logger.info(
+                    { jobName: job.name, slot: new Date(slotMs).toISOString() },
+                    `Scheduled Job Recovering Missed Slot: ${job.name}`
+                );
+            }
+            void this.executeJob(job);
+        }
     }
 
     /**
