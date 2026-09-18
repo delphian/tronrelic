@@ -55,7 +55,22 @@ All route handlers are wrapped with `asyncHandler` so that thrown errors (Zod va
 
 ### Address Origins Streaming and Access Tiers
 
-`GET /api/tools/origins/stream` is a Server-Sent Events endpoint (the tool's parents must appear as they resolve, not after the whole climb). It is intentionally public but **branches on the session**: an anonymous caller gets one address climbed a single hop (its immediate parent), while a valid session unlocks up to ten wallets climbed to the full depth cap, with ancestors shared across wallets highlighted. The gate is enforced server-side in `AddressOriginsService.resolvePlan` — the client cannot lift its own tier. The climb itself lives on the core blockchain service; the tool only adds the gating policy and the SSE plumbing. Wallets are climbed **round-robin** — the handler holds one `climbActivationAncestrySteps()` generator per wallet and advances each by a single hop per pass — so every ladder grows together instead of the tenth wallet sitting blank until the first nine finish. Cost is unchanged: the walk is one throttled provider call at a time either way. All wallets share one per-request edge cache so converging ladders fetch a common tail once, and resolved edges are memoized in Redis by the blockchain service, so a wallet traced twice costs nothing the second time (see the [blockchain module README](../blockchain/README.md)).
+`GET /api/tools/origins/stream` is a Server-Sent Events endpoint (the tool's parents must appear as they resolve, not after the whole climb). It is intentionally public but **branches on the session**: an anonymous caller gets one address climbed a single hop (its immediate parent), while a valid session unlocks up to ten wallets climbed to the full depth cap, with ancestors shared across wallets highlighted. The gate is enforced server-side in `AddressOriginsService.resolvePlan` — the client cannot lift its own tier. The climb itself lives on the core blockchain service; the tool only adds the gating policy and the SSE plumbing. Wallets are climbed **round-robin** — the handler holds one `climbActivationAncestrySteps()` generator per wallet and advances each by a single hop per pass — so every ladder grows together instead of the tenth wallet sitting blank until the first nine finish. Cost is unchanged: the walk is one throttled provider call at a time either way, and every hop is paced as described under [Upwalk Pacing](#upwalk-pacing). All wallets share one per-request edge cache so converging ladders fetch a common tail once, and resolved edges are memoized in Redis by the blockchain service, so a wallet traced twice costs nothing the second time (see the [blockchain module README](../blockchain/README.md)).
+
+### Upwalk Pacing
+
+Each upward step of a ladder — one hop — occupies at least `ORIGINS_UPWALK_INTERVAL_MS` (2 seconds), set in `services/address-origins.service.ts`. Core already spaces individual TronGrid calls 200ms apart, but that spacing protects the provider from the process as a whole. This one stops a single origins request spending all of that allowance on itself while live block sync waits behind it. The interval applies to hops, not to calls: the two or three provider calls inside one hop still run at core's rate.
+
+| Rule | Behaviour |
+|---|---|
+| Scope | One `CallPacer` per request, built by `AddressOriginsService.createUpwalkPacer()` and shared by every ladder in that request. Adding wallets lengthens the trace instead of multiplying its provider load. |
+| Measurement | Start to start. The interval is measured from when a hop starts, and the wait happens after the hop's calls finish, so hops reach the client at an even cadence however long each one spent in the provider queue. A hop that already took longer than the interval is sent at once. |
+| First hop | Not paced, so every ladder shows its first rung immediately. |
+| Closing step | The final call, which reports how the climb ended rather than yielding a rung, is not paced. |
+| Disconnect | The handler aborts the pacer's signal when the client closes, so a hop waiting out its interval stops waiting. |
+| Cached hops | Paced like any other. The tool cannot see whether a hop came from the Redis edge cache, so a repeat trace takes as long as the first one. |
+
+The pacer itself is `lib/CallPacer.ts`, a generic utility that knows nothing about blockchains. `climbSteps` wraps the core generator's `next()` in `pacer.run()` and decides per call whether to pad it.
 
 ### What Each Hop Publishes, and Why It Says So Much
 

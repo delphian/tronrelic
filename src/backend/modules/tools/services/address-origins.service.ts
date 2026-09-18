@@ -6,8 +6,9 @@
  * cycle-guarded activation climb — lives once on the core blockchain service
  * (`climbActivationAncestry`); this service adds the tool's two concerns on top:
  * validating/gating the request (anonymous callers get one address and only the
- * immediate parent; registered callers get the multi-wallet, full-ladder climb)
- * and resolving the blockchain service lazily from the registry so a boot-order
+ * immediate parent; registered callers get the multi-wallet, full-ladder climb),
+ * pacing the climb so one request cannot drain the shared provider queue, and
+ * resolving the blockchain service lazily from the registry so a boot-order
  * change can never leave the tool holding a stale reference.
  */
 
@@ -18,6 +19,7 @@ import type {
     IActivationClimbOptions,
     IActivatingTransaction
 } from '@/types';
+import { CallPacer } from '../lib/CallPacer.js';
 import type { AddressService } from './address.service.js';
 
 /** Anonymous callers may submit a single address. */
@@ -28,6 +30,24 @@ export const ANONYMOUS_MAX_DEPTH = 1;
 
 /** Registered callers may compare up to this many wallets in one query. */
 export const AUTHENTICATED_MAX_ADDRESSES = 10;
+
+/**
+ * Minimum wall-clock time one upward step of a ladder occupies.
+ *
+ * This is the tool's own rationing, and it is deliberately coarser than the
+ * 200ms spacing core puts between individual TronGrid calls. Core's spacing
+ * protects the provider from the process as a whole; this one stops a single
+ * origins request from spending the whole of that allowance on itself while live
+ * block sync waits behind it. A step costs two or three provider calls, so a
+ * signed-in caller climbing ten wallets to the depth cap would otherwise
+ * commission several hundred calls back to back.
+ *
+ * It is a property of the step, not of the call: the calls inside one step still
+ * run at whatever rate core allows, and the interval is measured from when the
+ * step starts, so a step that spends longer than this waiting on the queue is
+ * never delayed on top of that.
+ */
+export const ORIGINS_UPWALK_INTERVAL_MS = 2000;
 
 /**
  * A qualification that applies to one rung of a ladder.
@@ -158,25 +178,70 @@ export class AddressOriginsService {
     }
 
     /**
-     * Climb one address's activation ancestry, stepped one hop per `next()`.
+     * Build the pacer that rations one request's upward steps.
+     *
+     * Why the caller holds the pacer rather than the service owning one: this
+     * service is a singleton shared by every request, and the interval is meant
+     * to ration each request rather than to queue one caller behind another. A
+     * fresh pacer per request gives each stream its own budget; every ladder
+     * within that stream then shares it, which is what makes a multi-wallet
+     * comparison cost the same in provider pressure as a single-wallet one.
+     *
+     * @param signal - Aborted when the request is over, so a step waiting out its
+     *   interval stops waiting instead of holding a timer for a client that has
+     *   already gone.
+     * @returns A pacer scoped to one request, to hand to {@link climbSteps}.
+     */
+    public createUpwalkPacer(signal?: AbortSignal): CallPacer {
+        return new CallPacer(ORIGINS_UPWALK_INTERVAL_MS, signal);
+    }
+
+    /**
+     * Climb one address's activation ancestry, stepped one hop per `next()` and
+     * paced so consecutive steps cannot run back to back.
      *
      * Why the streaming handler wants this shape rather than a whole-chain climb:
      * a per-wallet climb can only run to completion before the next wallet starts,
      * so the last wallet in a ten-wallet comparison shows nothing until the first
      * nine finish. Advancing one generator per wallet round-robin fills every
-     * ladder together at the same total provider cost — the walk is throttled
-     * either way.
+     * ladder together at the same total provider cost.
+     *
+     * Two steps are deliberately left unpaced. A ladder's first hop runs at once,
+     * because a trace that shows nothing for two seconds reads as a page that
+     * failed rather than one that is being careful. And the final call — the one
+     * that reports how the climb ended rather than yielding a rung — is not
+     * padded either, since delaying it would add the full interval to the end of
+     * every ladder without a rung to show for it.
      *
      * @param address - Base58 address to climb.
      * @param options - Depth cap and the batch's shared edge cache; passing the
      *   same cache to every wallet is what keeps a converging tail to one lookup.
+     * @param pacer - The request's pacer from {@link createUpwalkPacer}. Every
+     *   ladder in one request must be given the same instance, or each ladder
+     *   paces itself and a ten-wallet request runs ten times as hot.
      * @returns Generator yielding each hop, returning the completed ancestry.
      */
-    public climbSteps(
+    public async *climbSteps(
         address: string,
-        options: IActivationClimbOptions
+        options: IActivationClimbOptions,
+        pacer: CallPacer
     ): AsyncGenerator<IActivatingTransaction, IActivationAncestry, void> {
-        return this.blockchain().climbActivationAncestrySteps(address, options);
+        const steps = this.blockchain().climbActivationAncestrySteps(address, options);
+        let hopsYielded = 0;
+        let step: IteratorResult<IActivatingTransaction, IActivationAncestry>;
+
+        do {
+            step = await pacer.run(
+                () => steps.next(),
+                { shouldPace: result => hopsYielded > 0 && !result.done }
+            );
+            if (!step.done) {
+                hopsYielded += 1;
+                yield step.value;
+            }
+        } while (!step.done);
+
+        return step.value;
     }
 
     /**

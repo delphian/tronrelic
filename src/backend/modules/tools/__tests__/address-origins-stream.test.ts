@@ -1,5 +1,6 @@
 /**
- * @fileoverview Tests for the Address Origins SSE stream's multi-wallet ordering.
+ * @fileoverview Tests for the Address Origins SSE stream's multi-wallet ordering
+ * and its upwalk-pacer wiring.
  *
  * Why this exists: the handler climbs several wallets from one request, and the
  * order it advances them in is the whole user-visible difference between "every
@@ -11,7 +12,7 @@
  * the terminal events that close each ladder.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, type Mock } from 'vitest';
 import type { Request, Response } from 'express';
 import type { IActivatingTransaction, IActivationAncestry } from '@/types';
 import type { AddressService } from '../services/address.service.js';
@@ -21,6 +22,7 @@ import type { ApprovalService } from '../services/approval.service.js';
 import type { TimestampService } from '../services/timestamp.service.js';
 import type { AddressOriginsService } from '../services/address-origins.service.js';
 import { ToolsController } from '../api/tools.controller.js';
+import { CallPacer } from '../lib/CallPacer.js';
 
 /** One captured SSE frame, parsed back out of the raw `res.write` payload. */
 interface ICapturedEvent {
@@ -72,17 +74,37 @@ async function* fakeClimb(label: string, hopCount: number): AsyncGenerator<IActi
     };
 }
 
+/** What one stubbed stream run produced, for assertions on output and wiring. */
+interface IStreamRun {
+    /** Every SSE frame the handler emitted, in emission order. */
+    events: ICapturedEvent[];
+    /** Spy on the pacer factory, to count how many pacers the request built. */
+    createUpwalkPacer: Mock<(signal?: AbortSignal) => CallPacer>;
+    /** Spy on the per-wallet climb, to see which pacer each ladder was given. */
+    climbSteps: Mock<
+        (address: string, options?: unknown, pacer?: CallPacer) => AsyncGenerator<IActivatingTransaction, IActivationAncestry, void>
+    >;
+}
+
 /**
  * Drive `streamAddressOrigins` against stubbed services and collect what it wrote.
  *
  * @param addresses - Wallets the stubbed plan should climb, in order.
  * @param hopCounts - Hop count per wallet, index-aligned with `addresses`.
- * @returns Every SSE frame the handler emitted, in emission order.
+ * @returns The emitted frames, plus spies on the pacer wiring.
  */
-async function runStream(addresses: string[], hopCounts: number[]): Promise<ICapturedEvent[]> {
+async function runStream(addresses: string[], hopCounts: number[]): Promise<IStreamRun> {
+    // A zero interval keeps these ordering tests instant. The pacing rule itself
+    // is exercised against the real interval in the service's own suite; here
+    // the concern is only how the handler wires the pacer to the ladders.
+    const createUpwalkPacer = vi.fn((_signal?: AbortSignal) => new CallPacer(0));
+    const climbSteps = vi.fn((address: string, _options?: unknown, _pacer?: CallPacer) =>
+        fakeClimb(address, hopCounts[addresses.indexOf(address)])
+    );
     const originsService = {
         resolvePlan: () => ({ addresses, maxDepth: undefined, limited: false }),
-        climbSteps: (address: string) => fakeClimb(address, hopCounts[addresses.indexOf(address)])
+        createUpwalkPacer,
+        climbSteps
     } as unknown as AddressOriginsService;
 
     const controller = new ToolsController(
@@ -117,7 +139,7 @@ async function runStream(addresses: string[], hopCounts: number[]): Promise<ICap
     } as unknown as Request;
 
     await controller.streamAddressOrigins(req, res);
-    return captured;
+    return { events: captured, createUpwalkPacer, climbSteps };
 }
 
 /**
@@ -157,6 +179,7 @@ async function runInternalHopStream(): Promise<ICapturedEvent[]> {
 
     const originsService = {
         resolvePlan: () => ({ addresses: ['wallet'], maxDepth: undefined, limited: false }),
+        createUpwalkPacer: () => new CallPacer(0),
         climbSteps: () => climb()
     } as unknown as AddressOriginsService;
 
@@ -208,9 +231,34 @@ describe('streamAddressOrigins hop payload', () => {
     });
 });
 
+describe('streamAddressOrigins upwalk pacing', () => {
+    it('builds one pacer for the request and gives every ladder that same one', async () => {
+        const run = await runStream(['walletA', 'walletB', 'walletC'], [1, 1, 1]);
+
+        // One pacer per request is the product rule: a pacer per ladder would
+        // let a ten-wallet comparison run ten times as hot as a single wallet.
+        expect(run.createUpwalkPacer).toHaveBeenCalledTimes(1);
+        const pacer = run.createUpwalkPacer.mock.results[0].value;
+        expect(run.climbSteps).toHaveBeenCalledTimes(3);
+        for (const call of run.climbSteps.mock.calls) {
+            expect(call[2]).toBe(pacer);
+        }
+    });
+
+    it('ties the pacer to the client connection so a disconnect cancels its wait', async () => {
+        const run = await runStream(['walletA'], [1]);
+        const signal = run.createUpwalkPacer.mock.calls[0][0];
+
+        expect(signal).toBeInstanceOf(AbortSignal);
+        // The stubbed request never closes, so the signal must still be live;
+        // an already-aborted signal would disable pacing for every request.
+        expect(signal?.aborted).toBe(false);
+    });
+});
+
 describe('streamAddressOrigins multi-wallet ordering', () => {
     it('advances every wallet one hop per pass rather than finishing one first', async () => {
-        const events = await runStream(['walletA', 'walletB'], [3, 3]);
+        const { events } = await runStream(['walletA', 'walletB'], [3, 3]);
         const hops = events
             .filter(entry => entry.event === 'hop')
             .map(entry => `${entry.data.sourceIndex}:${entry.data.depth}`);
@@ -219,7 +267,7 @@ describe('streamAddressOrigins multi-wallet ordering', () => {
     });
 
     it('drops a finished wallet from the rotation and keeps climbing the rest', async () => {
-        const events = await runStream(['walletA', 'walletB'], [1, 3]);
+        const { events } = await runStream(['walletA', 'walletB'], [1, 3]);
         const hops = events
             .filter(entry => entry.event === 'hop')
             .map(entry => `${entry.data.sourceIndex}:${entry.data.depth}`);
@@ -230,7 +278,7 @@ describe('streamAddressOrigins multi-wallet ordering', () => {
     });
 
     it('closes each ladder with its own address-done and ends with one complete', async () => {
-        const events = await runStream(['walletA', 'walletB'], [2, 1]);
+        const { events } = await runStream(['walletA', 'walletB'], [2, 1]);
         const terminal = events.filter(entry => entry.event === 'address-done');
 
         expect(terminal.map(entry => entry.data.sourceIndex).sort()).toEqual([0, 1]);

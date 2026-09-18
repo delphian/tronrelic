@@ -1,19 +1,32 @@
 /**
- * @fileoverview Tests for the Address Origins gating policy.
+ * @fileoverview Tests for the Address Origins gating and pacing policy.
  *
  * The access tiers are the security boundary of the tool — anonymous callers must
  * not be able to climb the full ladder or fan out across many wallets no matter
  * what they submit. `resolvePlan` is where that rule is enforced, so it is tested
  * directly and independently of the SSE transport.
+ *
+ * The pacing rule is the tool's other self-imposed limit, and it is tested here
+ * for the same reason: which steps are held back and which are let through is a
+ * property of `climbSteps`, not of the transport, and the two exemptions (a
+ * ladder's first rung and its closing step) are easy to lose in a refactor
+ * without any other test noticing.
  */
 
-import { describe, it, expect } from 'vitest';
-import type { IActivatingTransaction, IServiceRegistry } from '@/types';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import type {
+    IActivatingTransaction,
+    IActivationAncestry,
+    IBlockchainService,
+    IServiceRegistry
+} from '@/types';
 import type { AddressService } from '../services/address.service.js';
+import { CallPacer } from '../lib/CallPacer.js';
 import {
     AddressOriginsService,
     ANONYMOUS_MAX_DEPTH,
     AUTHENTICATED_MAX_ADDRESSES,
+    ORIGINS_UPWALK_INTERVAL_MS,
     resolveHopCaveats
 } from '../services/address-origins.service.js';
 
@@ -117,5 +130,122 @@ describe('resolveHopCaveats', () => {
         // An edge read from a cache written before the flag existed must not be
         // presented as unverified when nothing is known either way.
         expect(resolveHopCaveats(edge({ creationTimeVerified: undefined }))).toEqual([]);
+    });
+});
+
+/**
+ * Build a service whose climb is a fixed list of hops, why: the pacing tests
+ * care only about *when* each hop reaches the consumer, so a stubbed climb that
+ * resolves instantly makes every millisecond in the assertions attributable to
+ * the pacer rather than to a simulated provider.
+ *
+ * @param hopCount - Number of rungs the stubbed ladder yields before ending.
+ * @returns A service wired to that stubbed climb.
+ */
+function serviceWithClimb(hopCount: number): AddressOriginsService {
+    /**
+     * Yield `hopCount` synthetic rungs, then report the climb as exhausted.
+     *
+     * @returns Generator matching `IBlockchainService.climbActivationAncestrySteps`.
+     */
+    async function* climb(): AsyncGenerator<IActivatingTransaction, IActivationAncestry, void> {
+        const chain: IActivatingTransaction[] = [];
+        for (let depth = 0; depth < hopCount; depth += 1) {
+            const hop = edge({ txId: `tx-${depth}` });
+            chain.push(hop);
+            yield hop;
+        }
+        return {
+            address: validAddress('1'),
+            chain,
+            stopReason: 'unresolved',
+            originReached: true,
+            truncated: false
+        };
+    }
+
+    const blockchain = { climbActivationAncestrySteps: () => climb() } as unknown as IBlockchainService;
+    const registry = {
+        get: (name: string) => (name === 'blockchain' ? blockchain : undefined)
+    } as unknown as IServiceRegistry;
+
+    return new AddressOriginsService(registry, stubAddressService);
+}
+
+/**
+ * Drain a paced climb and record when each event reached the consumer.
+ *
+ * @param service - Service whose `climbSteps` is under test.
+ * @param pacer - Pacer shared by the drain, standing in for the request's own.
+ * @returns Millisecond offsets for each rung, plus a final entry for the moment
+ *   the climb reported its ending.
+ */
+async function arrivalOffsets(service: AddressOriginsService, pacer: CallPacer): Promise<number[]> {
+    const startedAt = Date.now();
+    const offsets: number[] = [];
+
+    const drain = (async () => {
+        const steps = service.climbSteps(validAddress('1'), {}, pacer);
+        let step = await steps.next();
+        while (!step.done) {
+            offsets.push(Date.now() - startedAt);
+            step = await steps.next();
+        }
+        offsets.push(Date.now() - startedAt);
+    })();
+
+    await vi.advanceTimersByTimeAsync(ORIGINS_UPWALK_INTERVAL_MS * 10);
+    await drain;
+    return offsets;
+}
+
+describe('AddressOriginsService.climbSteps pacing', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('holds each rung after the first for the upwalk interval', async () => {
+        vi.useFakeTimers();
+        const offsets = await arrivalOffsets(serviceWithClimb(3), new CallPacer(ORIGINS_UPWALK_INTERVAL_MS));
+
+        // First rung immediately (a trace that shows nothing for two seconds
+        // reads as broken), then one every interval, and the closing step with
+        // no extra wait because it carries no rung to show.
+        expect(offsets).toEqual([0, 2000, 4000, 4000]);
+    });
+
+    it('shares one pacer across ladders, so a second wallet waits its turn', async () => {
+        vi.useFakeTimers();
+        const pacer = new CallPacer(ORIGINS_UPWALK_INTERVAL_MS);
+        const startedAt = Date.now();
+        const arrivals: string[] = [];
+
+        // Two ladders advanced round-robin exactly as the SSE handler drives
+        // them. Sharing the pacer is what keeps a multi-wallet request costing
+        // the provider what a single-wallet one does.
+        const first = serviceWithClimb(2).climbSteps(validAddress('1'), {}, pacer);
+        const second = serviceWithClimb(2).climbSteps(validAddress('2'), {}, pacer);
+
+        const drain = (async () => {
+            for (let pass = 0; pass < 2; pass += 1) {
+                await first.next();
+                arrivals.push(`a@${Date.now() - startedAt}`);
+                await second.next();
+                arrivals.push(`b@${Date.now() - startedAt}`);
+            }
+        })();
+
+        await vi.advanceTimersByTimeAsync(ORIGINS_UPWALK_INTERVAL_MS * 10);
+        await drain;
+
+        // Both first rungs are exempt, so they arrive together; every rung after
+        // that takes a full slot of its own.
+        expect(arrivals).toEqual(['a@0', 'b@0', 'a@2000', 'b@4000']);
+    });
+
+    it('paces nothing when the pacer is configured with no interval', async () => {
+        vi.useFakeTimers();
+        const offsets = await arrivalOffsets(serviceWithClimb(3), new CallPacer(0));
+        expect(offsets).toEqual([0, 0, 0, 0]);
     });
 });
