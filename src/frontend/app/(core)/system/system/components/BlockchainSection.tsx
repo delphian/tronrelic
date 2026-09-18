@@ -114,6 +114,21 @@ const PIPELINE_TOTAL_WARNING_OVERSHOOT_MS = 20;
 const PIPELINE_TOTAL_DANGER_OVERSHOOT_MS = 100;
 
 /**
+ * Share of one block period an observer may spend before its average turns
+ * amber. At half the period it still keeps up, but it has spent most of the
+ * headroom that absorbs a slow block, so it is worth looking at before it
+ * becomes a problem.
+ */
+const OBSERVER_AVG_WARNING_FRACTION = 0.5;
+
+/**
+ * Share of one block period at which an observer can no longer keep up. Work
+ * arriving once per block that takes a whole block period to process leaves no
+ * margin, so its queue grows from the next slow block onward.
+ */
+const OBSERVER_AVG_DANGER_FRACTION = 1;
+
+/**
  * Inputs for the blockchain console.
  */
 interface IBlockchainSectionProps {
@@ -230,7 +245,7 @@ export function BlockchainSection({ onRefresh }: IBlockchainSectionProps) {
 
             <PipelineMetricsBlock status={status} />
 
-            <ObserverPerformanceBlock observers={observers} />
+            <ObserverPerformanceBlock observers={observers} blockIntervalSeconds={status?.blockIntervalSeconds} />
         </div>
     );
 }
@@ -436,15 +451,19 @@ function PipelineMetricsBlock({ status }: PipelineMetricsBlockProps) {
 
 interface ObserverPerformanceBlockProps {
     observers: ObserverStats[];
+    /** Block period from the status payload, used to colour each observer's per-block average. Absent until the first poll resolves. */
+    blockIntervalSeconds?: number | null;
 }
 
-function ObserverPerformanceBlock({ observers }: ObserverPerformanceBlockProps) {
+function ObserverPerformanceBlock({ observers, blockIntervalSeconds }: ObserverPerformanceBlockProps) {
     return (
         <div className={styles.block}>
             <header className={styles.block_header}>
                 <h4 className={styles.block_title}>Observer Performance</h4>
                 <span className={styles.block_note}>
-                    Async transaction processors — high queue depth or processing time signals a bottleneck.
+                    Async transaction processors. Time is the work done per block, so compare it against the
+                    block interval rather than against the transaction count beside it — a high figure or a
+                    growing queue signals a bottleneck.
                 </span>
             </header>
 
@@ -457,9 +476,9 @@ function ObserverPerformanceBlock({ observers }: ObserverPerformanceBlockProps) 
                     <Thead>
                         <Tr>
                             <Th>Observer</Th>
-                            <Th>Avg Time</Th>
+                            <Th>Avg / Block</Th>
                             <Th>Queue</Th>
-                            <Th>Processed</Th>
+                            <Th>Transactions</Th>
                             <Th>Errors</Th>
                             <Th>Error Rate</Th>
                         </Tr>
@@ -481,7 +500,7 @@ function ObserverPerformanceBlock({ observers }: ObserverPerformanceBlockProps) 
                                 </Td>
                                 <Td>
                                     <span className={styles.cell_inline}>
-                                        <Badge tone={observer.avgProcessingTimeMs > 100 ? 'warning' : 'neutral'}>
+                                        <Badge tone={getObserverAvgTimeTone(observer.avgProcessingTimeMs, blockIntervalSeconds)}>
                                             {`${observer.avgProcessingTimeMs.toFixed(1)} ms`}
                                         </Badge>
                                         <span className={styles.observer_meta}>
@@ -631,15 +650,62 @@ function getPipelineTotalTone(
     totalMs: number,
     blockIntervalSeconds: number | null | undefined
 ): 'warning' | 'danger' | undefined {
-    const intervalSeconds =
-        typeof blockIntervalSeconds === 'number' && Number.isFinite(blockIntervalSeconds) && blockIntervalSeconds > 0
-            ? blockIntervalSeconds
-            : BLOCK_INTERVAL_SECONDS_FALLBACK;
-    const blockPeriodMs = intervalSeconds * 1000;
+    const blockPeriodMs = resolveBlockPeriodMs(blockIntervalSeconds);
 
     if (totalMs > blockPeriodMs + PIPELINE_TOTAL_DANGER_OVERSHOOT_MS) return 'danger';
     if (totalMs > blockPeriodMs + PIPELINE_TOTAL_WARNING_OVERSHOOT_MS) return 'warning';
     return undefined;
+}
+
+/**
+ * Decide how alarming an observer's average processing time should look.
+ *
+ * Every observer base class reports this figure per block, so the honest
+ * comparison is against the time the chain takes to produce a block rather than
+ * against a fixed millisecond count. The old fixed threshold of 100 ms was read
+ * as "slow" for an observer that saw a handful of transactions per block and as
+ * routine for one that saw hundreds, which meant the busiest observers sat
+ * permanently amber and operators learned to ignore the column.
+ *
+ * The period is read from the status payload for the same reason
+ * `getPipelineTotalTone` reads it: a deployment can set a different
+ * `blockIntervalSeconds`, and a hardcoded three seconds would mis-colour every
+ * row there. It is guarded because it arrives over the network and is absent
+ * until the first poll resolves.
+ *
+ * @param avgMs - The observer's average work per block, in milliseconds.
+ * @param blockIntervalSeconds - Block period echoed by the status payload, which is the budget an observer's per-block cost is judged against.
+ * @returns The tone the average cell should carry, staying neutral while the observer has headroom to spare.
+ */
+function getObserverAvgTimeTone(
+    avgMs: number,
+    blockIntervalSeconds: number | null | undefined
+): 'neutral' | 'warning' | 'danger' {
+    const blockPeriodMs = resolveBlockPeriodMs(blockIntervalSeconds);
+
+    if (avgMs > blockPeriodMs * OBSERVER_AVG_DANGER_FRACTION) return 'danger';
+    if (avgMs > blockPeriodMs * OBSERVER_AVG_WARNING_FRACTION) return 'warning';
+    return 'neutral';
+}
+
+/**
+ * Turn the block period reported by the status payload into milliseconds.
+ *
+ * Both the pipeline Total cell and the observer table judge a duration against
+ * one block period, so they share this guard rather than each keeping a copy.
+ * The value arrives over the network and is absent until the first poll
+ * resolves, so anything that is not a positive finite number falls back to
+ * `BLOCK_INTERVAL_SECONDS_FALLBACK`.
+ *
+ * @param blockIntervalSeconds - Block period echoed by the status payload, possibly missing or malformed.
+ * @returns The block period in milliseconds that the caller's thresholds are scaled against.
+ */
+function resolveBlockPeriodMs(blockIntervalSeconds: number | null | undefined): number {
+    const intervalSeconds =
+        typeof blockIntervalSeconds === 'number' && Number.isFinite(blockIntervalSeconds) && blockIntervalSeconds > 0
+            ? blockIntervalSeconds
+            : BLOCK_INTERVAL_SECONDS_FALLBACK;
+    return intervalSeconds * 1000;
 }
 
 function getSuccessRateTone(rate: number): 'success' | 'warning' | 'danger' {

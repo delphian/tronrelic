@@ -16,11 +16,24 @@ export interface IObserverStats {
     totalErrors: number;
     /** Total number of transactions dropped due to queue overflow */
     totalDropped: number;
-    /** Average processing time per transaction in milliseconds */
+    /**
+     * Average milliseconds of work this observer performs per block.
+     *
+     * Every observer base class reports this in the same unit, so the figures
+     * are comparable across a dashboard row even though the three base classes
+     * are invoked at different granularities. A transaction observer sums the
+     * time it spends on each transaction in a block and counts that as one
+     * sample; a batch observer and a block observer each already run once per
+     * block. Per block is the useful unit because it is what a reader compares
+     * against TRON's block interval to judge whether an observer can keep up.
+     *
+     * Blocks in which the observer had no relevant work do not count, so this
+     * is the cost of an active block rather than an average over the chain.
+     */
     avgProcessingTimeMs: number;
-    /** Minimum processing time observed in milliseconds */
+    /** Lowest per-block processing time observed, in milliseconds */
     minProcessingTimeMs: number;
-    /** Maximum processing time observed in milliseconds */
+    /** Highest per-block processing time observed, in milliseconds */
     maxProcessingTimeMs: number;
     /** Timestamp of last successful processing */
     lastProcessedAt: string | null;
@@ -38,7 +51,16 @@ export interface IObserverStats {
     maxBatchSize?: number;
 
     // Optional block observer metrics (only present for block observers)
-    /** Total number of blocks processed (block observers only) */
+    /**
+     * Number of blocks this observer performed work for.
+     *
+     * Set by block observers, which are invoked once per block, and by
+     * transaction observers, which derive it by counting the distinct blocks
+     * their transactions arrived from. It is the divisor behind
+     * `avgProcessingTimeMs`, so a reader can tell how many samples that average
+     * rests on. Batch observers report the equivalent count as
+     * `batchesProcessed` instead.
+     */
     blocksProcessed?: number;
     /** Average number of transactions per block (block observers only) */
     avgTransactionsPerBlock?: number;

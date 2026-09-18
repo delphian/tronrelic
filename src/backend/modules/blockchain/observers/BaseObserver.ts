@@ -29,6 +29,18 @@ export abstract class BaseObserver implements IBaseObserver {
     private lastProcessedAt: Date | null = null;
     private lastErrorAt: Date | null = null;
 
+    // Per-block timing. This class is invoked once per transaction, while the
+    // batch and block observers are each invoked once per block, and all three
+    // feed the same `avgProcessingTimeMs` column on the /system dashboard.
+    // Reporting a per-transaction average here put two different units in that
+    // column, so a busy observer looked hundreds of times slower than a quiet
+    // one purely because more transactions per block landed on it. Summing a
+    // block's transactions into one sample removes that, and per block is the
+    // figure worth comparing against TRON's block interval anyway.
+    private blocksSeen = 0;
+    private currentBlockNumber: number | null = null;
+    private currentBlockTimeMs = 0;
+
     /**
      * Create a new observer with injected logging.
      *
@@ -129,9 +141,8 @@ export abstract class BaseObserver implements IBaseObserver {
                     const processingTimeMs = Date.now() - startTime;
                     this.totalProcessed += 1;
                     this.totalProcessingTimeMs += processingTimeMs;
-                    this.minProcessingTimeMs = Math.min(this.minProcessingTimeMs, processingTimeMs);
-                    this.maxProcessingTimeMs = Math.max(this.maxProcessingTimeMs, processingTimeMs);
                     this.lastProcessedAt = new Date();
+                    this.accumulateBlockTime(transaction.payload.blockNumber, processingTimeMs);
                 } catch (error) {
                     // Track error
                     this.totalErrors += 1;
@@ -152,6 +163,54 @@ export abstract class BaseObserver implements IBaseObserver {
         } finally {
             this.isProcessing = false;
         }
+    }
+
+    /**
+     * Fold one transaction's processing time into the block it belongs to.
+     *
+     * The queue is first-in-first-out and sync notifies observers a whole block
+     * at a time, so transactions arrive grouped by block and a change in block
+     * number is a reliable boundary. That is what lets this class report a
+     * per-block figure without sync having to tell it where a block ends.
+     *
+     * Blocks carrying no transaction this observer subscribes to never reach
+     * the queue and so are never counted. The resulting average is therefore
+     * the cost of a block that had relevant work, not an average across the
+     * chain — which matches how the batch observer counts, since its own
+     * pre-filter drops empty selections before they are enqueued.
+     *
+     * @param blockNumber The block the just-processed transaction came from,
+     * used as the boundary marker rather than as a value worth storing.
+     * @param processingTimeMs What this transaction cost, to be added to its
+     * block's running total rather than recorded as a sample of its own.
+     */
+    private accumulateBlockTime(blockNumber: number, processingTimeMs: number): void {
+        if (blockNumber !== this.currentBlockNumber) {
+            this.sealCurrentBlock();
+            this.currentBlockNumber = blockNumber;
+            this.blocksSeen += 1;
+        }
+
+        this.currentBlockTimeMs += processingTimeMs;
+    }
+
+    /**
+     * Close off the block being accumulated and record it as one timing sample.
+     *
+     * Min and max are only meaningful once a block is complete, so they are
+     * updated here rather than per transaction. This must not be called from
+     * `getStats()`: the dashboard polls while a block is still draining, and
+     * sealing a partial block there would both understate the minimum and split
+     * one block's cost across two samples.
+     */
+    private sealCurrentBlock(): void {
+        if (this.currentBlockNumber === null) {
+            return;
+        }
+
+        this.minProcessingTimeMs = Math.min(this.minProcessingTimeMs, this.currentBlockTimeMs);
+        this.maxProcessingTimeMs = Math.max(this.maxProcessingTimeMs, this.currentBlockTimeMs);
+        this.currentBlockTimeMs = 0;
     }
 
     /**
@@ -193,6 +252,11 @@ export abstract class BaseObserver implements IBaseObserver {
 
         this.stopped = true;
 
+        // Seal the block that was mid-flight so the observer's final min and max
+        // include the last block it actually worked on. Nothing further will be
+        // enqueued, so there is no later transaction to close it out.
+        this.sealCurrentBlock();
+
         const discarded = this.queue.length;
         if (discarded > 0) {
             this.totalDropped += discarded;
@@ -217,10 +281,17 @@ export abstract class BaseObserver implements IBaseObserver {
      * Returns real-time metrics including queue depth, processing times, error rates,
      * and throughput information. This method is called by the observer registry
      * to aggregate statistics across all observers for monitoring dashboards.
+     *
+     * Timing is reported per block rather than per transaction so that this
+     * observer's figures mean the same thing as the batch and block observers'
+     * on the same dashboard. This method deliberately does not seal the block
+     * currently being processed — see `sealCurrentBlock` — so a block still
+     * draining contributes its partial time to the average and is left out of
+     * the minimum and maximum until it completes.
      */
     public getStats(): IObserverStats {
-        const avgProcessingTimeMs = this.totalProcessed > 0
-            ? Number((this.totalProcessingTimeMs / this.totalProcessed).toFixed(2))
+        const avgProcessingTimeMs = this.blocksSeen > 0
+            ? Number((this.totalProcessingTimeMs / this.blocksSeen).toFixed(2))
             : 0;
 
         const minProcessingTimeMs = this.minProcessingTimeMs === Number.POSITIVE_INFINITY
@@ -238,7 +309,8 @@ export abstract class BaseObserver implements IBaseObserver {
             maxProcessingTimeMs: this.maxProcessingTimeMs,
             lastProcessedAt: this.lastProcessedAt?.toISOString() ?? null,
             lastErrorAt: this.lastErrorAt?.toISOString() ?? null,
-            errorRate: this.calculateErrorRate()
+            errorRate: this.calculateErrorRate(),
+            blocksProcessed: this.blocksSeen
         };
     }
 }
