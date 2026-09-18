@@ -160,6 +160,13 @@ export abstract class BaseObserver implements IBaseObserver {
                     );
                 }
             }
+
+            // The committer hands a whole block to observers without yielding, so
+            // every transaction of a block is queued before this loop can empty.
+            // An empty queue therefore means the block just worked on is complete,
+            // and sealing it here keeps an idle or sparse observer's min and max
+            // from waiting on a later block that may be a long time coming.
+            this.sealCurrentBlock();
         } finally {
             this.isProcessing = false;
         }
@@ -170,7 +177,7 @@ export abstract class BaseObserver implements IBaseObserver {
      *
      * The queue is first-in-first-out and sync notifies observers a whole block
      * at a time, so transactions arrive grouped by block and a change in block
-     * number is a reliable boundary. That is what lets this class report a
+     * number, or the queue draining, is a reliable boundary. That is what lets this class report a
      * per-block figure without sync having to tell it where a block ends.
      *
      * Blocks carrying no transaction this observer subscribes to never reach
@@ -198,10 +205,16 @@ export abstract class BaseObserver implements IBaseObserver {
      * Close off the block being accumulated and record it as one timing sample.
      *
      * Min and max are only meaningful once a block is complete, so they are
-     * updated here rather than per transaction. This must not be called from
+     * updated here rather than per transaction. Callers are a change of block
+     * number, the queue draining, and `stop()`. This must not be called from
      * `getStats()`: the dashboard polls while a block is still draining, and
      * sealing a partial block there would both understate the minimum and split
      * one block's cost across two samples.
+     *
+     * The current block number is cleared once the block is recorded, so a block
+     * can only be sealed once and repeated calls do nothing. If more transactions
+     * from the same block ever arrived after a seal, they would start a fresh
+     * sample instead of adding to a total already written into min and max.
      */
     private sealCurrentBlock(): void {
         if (this.currentBlockNumber === null) {
@@ -211,6 +224,7 @@ export abstract class BaseObserver implements IBaseObserver {
         this.minProcessingTimeMs = Math.min(this.minProcessingTimeMs, this.currentBlockTimeMs);
         this.maxProcessingTimeMs = Math.max(this.maxProcessingTimeMs, this.currentBlockTimeMs);
         this.currentBlockTimeMs = 0;
+        this.currentBlockNumber = null;
     }
 
     /**
