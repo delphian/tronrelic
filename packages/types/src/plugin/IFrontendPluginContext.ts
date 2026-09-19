@@ -4,6 +4,7 @@ import type { ISchedulerMonitorProps } from '../scheduler/ISchedulerJobStatus.js
 import type { ISkeletonProps } from '../ui/ISkeletonProps.js';
 import type { ICollectionBrowserProps } from '../ui/ICollectionBrowserProps.js';
 import type { IClickHouseTableBrowserProps } from '../ui/IClickHouseTableBrowserProps.js';
+import type { ISystemLogsMonitorProps } from '../ui/ISystemLogsMonitorProps.js';
 
 /**
  * User state exposed to frontend plugins.
@@ -1055,6 +1056,23 @@ export interface ISystemComponents {
      * ```
      */
     ClickHouseTableBrowser: ComponentType<IClickHouseTableBrowserProps>;
+
+    /**
+     * System log viewer, scoped to one service's entries.
+     *
+     * Lets a plugin admin page offer a Logs tab over its own log entries, so
+     * an operator reads the plugin's errors and warnings without leaving for
+     * `/system/logs`. Pass `service` as `plugin:<manifest id>`, which is the
+     * service name the injected plugin logger records under. Filtering and
+     * level counts run server-side, and the deployment-wide "Clear All Logs"
+     * action is removed in scoped mode.
+     *
+     * @example
+     * ```tsx
+     * <context.system.SystemLogsMonitor service="plugin:my-plugin" />
+     * ```
+     */
+    SystemLogsMonitor: ComponentType<ISystemLogsMonitorProps>;
 }
 
 /**

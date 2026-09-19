@@ -70,12 +70,15 @@ export async function getSystemLogs(query: LogsQuery = {}): Promise<LogsResponse
  * Returns counts by severity level, service, and resolution status.
  * Used by the dashboard metrics and service filter dropdown.
  *
+ * @param service Optional exact service name. When given, every count covers
+ * only that service, which is what a log viewer scoped to one plugin shows.
  * @returns Log statistics object
  * @throws Error if the API request fails
  */
-export async function getLogStats(): Promise<LogStats> {
+export async function getLogStats(service?: string): Promise<LogStats> {
+    const query = service ? `?service=${encodeURIComponent(service)}` : '';
     const response = await fetch(
-        `/api/admin/system/logs/stats`
+        `/api/admin/system/logs/stats${query}`
     );
 
     if (!response.ok) {

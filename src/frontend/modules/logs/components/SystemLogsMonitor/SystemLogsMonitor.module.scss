@@ -17,6 +17,12 @@
     container-name: system-logs-monitor;
 }
 
+/* Optional heading set by an embedding page (the scoped plugin Logs tab). */
+.title {
+    margin: 0;
+    font-size: var(--font-size-heading-sm);
+}
+
 /* Statistics */
 /* Filters */
 .filters {

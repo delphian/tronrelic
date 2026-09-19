@@ -324,9 +324,13 @@ export interface ISystemLogService {
      * Provides counts by log level, service, and resolved status for admin
      * dashboard widgets and health monitoring.
      *
+     * @param service Optional exact service name, such as `plugin:my-plugin`.
+     * When given, every count covers only that service's entries, so a log
+     * viewer scoped to one plugin shows figures for that plugin alone rather
+     * than for the whole deployment.
      * @returns Statistics object with counts and breakdowns
      */
-    getStatistics(): Promise<{
+    getStatistics(service?: string): Promise<{
         total: number;
         byLevel: Record<LogLevel, number>;
         byService: Record<string, number>;

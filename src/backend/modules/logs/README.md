@@ -71,7 +71,7 @@ All under `/api/admin/system/logs`, all require `X-Admin-Token` header.
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/` | Paginated logs with level/service/date/resolved filters |
-| GET | `/stats` | Aggregate counts by level and service, unresolved count |
+| GET | `/stats` | Aggregate counts by level and service, unresolved count. Optional `service` query scopes every count to that exact service (index-backed, cached per service for 30s) |
 | GET | `/:id` | Single log entry (404 if missing) |
 | PATCH | `/:id/resolve` | Mark as resolved with `resolvedBy` field |
 | PATCH | `/:id/unresolve` | Revert resolution |
@@ -103,6 +103,7 @@ All under `/api/admin/system/logs`, all require `X-Admin-Token` header.
 
 ## Frontend Notes
 
+- `SystemLogsMonitor` is republished to plugins as `context.system.SystemLogsMonitor` (props `ISystemLogsMonitorProps`). With `service` set (e.g. `plugin:whale-alerts`), entries and stats are scoped server-side, the service selector is hidden, and "Clear All Logs" is removed because it deletes every service's logs
 - `SystemLogsMonitor` defaults to error-level filter, configurable via checkboxes
 - Polling intervals: None, 1s, 10s, 30s, 60s via dropdown
 - New log detection compares IDs against previous fetch, flashes new rows for 2s

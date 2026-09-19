@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Trash2, ChevronDown, ChevronUp } from 'lucide-react';
-import type { LogLevel } from '@/types';
+import type { ISystemLogsMonitorProps, LogLevel } from '@/types';
 import { Button } from '../../../../components/ui/Button';
 import { Select } from '../../../../components/ui/Select';
 import { StatTile, StatGrid } from '../../../../components/ui/StatTile';
@@ -34,8 +34,18 @@ import styles from './SystemLogsMonitor.module.scss';
  * **Security:**
  * Authorization rides the same-origin Better Auth session cookie;
  * the backend `requireAdmin` middleware resolves it per request.
+ *
+ * **Scoped mode:**
+ * Plugins embed this component through `context.system` with `service` set,
+ * for a Logs tab on their own admin page. The list and the level counts are
+ * then filtered to that service on the server, the service selector is
+ * hidden, and "Clear All Logs" is removed, because it deletes every
+ * service's logs rather than the scoped ones.
+ *
+ * @param props Optional `service` scope and `title` heading; both omitted on `/system/logs`.
+ * @returns The log viewer.
  */
-export function SystemLogsMonitor() {
+export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
     const [logs, setLogs] = useState<SystemLog[]>([]);
     const [stats, setStats] = useState<LogStats | null>(null);
     const [loading, setLoading] = useState(true);
@@ -49,6 +59,9 @@ export function SystemLogsMonitor() {
     // Filters
     const [selectedLevels, setSelectedLevels] = useState<LogLevel[]>(['error']);
     const [serviceFilter, setServiceFilter] = useState('');
+
+    // A fixed scope from the embedding page wins over the selector.
+    const effectiveService = service ?? (serviceFilter.trim() || undefined);
 
     // Live polling (interval in milliseconds, 0 means disabled)
     const [pollingInterval, setPollingInterval] = useState(10000);
@@ -89,7 +102,7 @@ export function SystemLogsMonitor() {
         try {
             const data = await getSystemLogs({
                 levels: selectedLevels.length > 0 ? selectedLevels : undefined,
-                service: serviceFilter.trim() || undefined,
+                service: effectiveService,
                 page,
                 limit
             });
@@ -135,17 +148,18 @@ export function SystemLogsMonitor() {
         } finally {
             setLoading(false);
         }
-    }, [limit, page, selectedLevels, serviceFilter, setInitialLoadState]);
+    }, [limit, page, selectedLevels, effectiveService, setInitialLoadState]);
 
     /**
      * Fetches log statistics from the admin API.
      *
      * Provides counts by severity level and service for dashboard metrics
-     * and the service filter dropdown.
+     * and the service filter dropdown. In scoped mode the counts cover only
+     * the scoped service.
      */
     const fetchStats = useCallback(async () => {
         try {
-            const logStats = await getLogStats();
+            const logStats = await getLogStats(service);
             setStats(logStats);
 
             // Reset service filter if the selected service no longer exists in stats
@@ -158,7 +172,7 @@ export function SystemLogsMonitor() {
         } catch (error) {
             console.error('Failed to fetch log stats:', error);
         }
-    }, []);
+    }, [service]);
 
     /**
      * Executes the clear-all-logs API call and refreshes state.
@@ -348,6 +362,8 @@ export function SystemLogsMonitor() {
 
     return (
         <div className={styles.container}>
+            {title && <h2 className={styles.title}>{title}</h2>}
+
             {/* Statistics */}
             {/*
               * Dense seven-up level breakdown, so the compact tile density.
@@ -384,7 +400,7 @@ export function SystemLogsMonitor() {
                     </div>
                 </fieldset>
 
-                <div className={styles.filter_group}>
+                {!service && <div className={styles.filter_group}>
                     <label className={styles.filter_label} htmlFor="service-filter">
                         Service Filter:
                     </label>
@@ -406,7 +422,7 @@ export function SystemLogsMonitor() {
                             </option>
                         ))}
                     </Select>
-                </div>
+                </div>}
 
                 <div className={styles.filter_group}>
                     <label className={styles.filter_label} htmlFor="limit-filter">
@@ -448,16 +464,18 @@ export function SystemLogsMonitor() {
                     </Select>
                 </div>
 
-                <div className={styles.filter_group_right}>
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        icon={<Trash2 size={14} />}
-                        onClick={handleClearLogs}
-                    >
-                        Clear All Logs
-                    </Button>
-                </div>
+                {!service && (
+                    <div className={styles.filter_group_right}>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            icon={<Trash2 size={14} />}
+                            onClick={handleClearLogs}
+                        >
+                            Clear All Logs
+                        </Button>
+                    </div>
+                )}
             </div>
 
             {/* Logs Table */}
