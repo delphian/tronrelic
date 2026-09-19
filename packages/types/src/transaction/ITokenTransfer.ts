@@ -1,5 +1,7 @@
 /**
- * A TRC20 token movement decoded from a `TriggerSmartContract` call.
+ * A TRC20 token transfer requested by a `TriggerSmartContract` call, decoded
+ * from its call data. It records what the call asked for, not proof that the
+ * tokens moved.
  *
  * For a token transfer the transaction's own `to` is the token contract and
  * its TRX amount is the call value (normally zero), so the real recipient and
@@ -15,7 +17,7 @@ export interface ITokenTransfer {
     /** Base58 address of the TRC20 token contract that was called. */
     contractAddress: string;
 
-    /** Which standard method moved the tokens. */
+    /** Which standard transfer method was called. */
     method: 'transfer' | 'transferFrom';
 
     /**
