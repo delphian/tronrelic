@@ -500,11 +500,27 @@ export class PageContentType implements IManagedContentType<IPageContent, IPageW
      * Drop the render caches for every slug a change may have affected, so the
      * next visitor is served whatever version core now resolves.
      *
+     * Invalidation is best-effort and never throws. Every caller runs it after
+     * the page document has already been written, and core treats a thrown
+     * error as a failed author write and rolls back only its own row. A Redis
+     * failure here would therefore split the page from core's record (for
+     * example a soft-deleted page that core still lists as live). A failed
+     * slug is logged as a warning instead, and its stale entry expires with
+     * the cache TTL.
+     *
      * @param slugs - The slugs to invalidate; duplicates and blanks are skipped.
      */
     private async invalidate(...slugs: Array<string | undefined>): Promise<void> {
         const unique = Array.from(new Set(slugs.filter((slug): slug is string => Boolean(slug))));
-        await Promise.all(unique.map((slug) => this.markdown.invalidateAllCaches(slug)));
+        const results = await Promise.allSettled(unique.map((slug) => this.markdown.invalidateAllCaches(slug)));
+        results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+                this.logger.warn(
+                    { slug: unique[index], error: result.reason },
+                    'Page render cache invalidation failed; stale render will expire with the cache TTL'
+                );
+            }
+        });
 
         return;
     }
