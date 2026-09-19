@@ -288,7 +288,17 @@ function ToastItem({ toast, onDismiss }: { toast: ToastPayload; onDismiss: () =>
                 {titleHref
                     ? <a className={styles.item__title_link} href={titleHref}><strong>{title}</strong></a>
                     : <strong>{title}</strong>}
-                {description && <p className={styles.item__description}>{description}</p>}
+                {/* A div rather than a paragraph, because a description may now
+                  * hold any component and several render a block element —
+                  * TronAddress emits a div for its tools menu, which React
+                  * refuses to nest inside a p. Guarded on the values that have
+                  * genuinely nothing to show rather than on truthiness, because
+                  * React draws the number 0, and a plain `&&` would let a bare
+                  * unstyled "0" escape the container. Empty string and false
+                  * stay suppressed: callers pass `err.message`, which can be
+                  * empty, and the `cond && <Foo/>` idiom, which yields false. */}
+                {description !== null && description !== undefined && description !== false && description !== ''
+                    && <div className={styles.item__description}>{description}</div>}
             </div>
             <div className={styles.item__actions}>
                 {actionLabel && (

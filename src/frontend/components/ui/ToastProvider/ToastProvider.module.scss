@@ -169,9 +169,12 @@
  * scoped class once descriptions could carry rendered components rather than
  * only text. The flex row is what that change needs: an address chip or icon
  * sits on the same line as the words around it and wraps onto a second line
- * inside the toast's fixed width, which a plain paragraph would not do unless
- * every caller restyled it. A description that is still a single string is one
- * anonymous flex item and wraps exactly as it did before.
+ * inside the toast's fixed width, which undecorated block content would not do
+ * unless every caller restyled it. A description that is still a single string
+ * is one anonymous flex item and wraps exactly as it did before.
+ *
+ * The element is a div rather than a paragraph so that a description holding a
+ * component which renders a block element is still valid markup.
  */
 .item__description {
     margin: 0;
