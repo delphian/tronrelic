@@ -21,7 +21,7 @@
  * @module backend/hooks/registry
  */
 
-import type { IHeadFragment, ISsrHeadContext, IAiToolInvokeContext, IToolInvocationRecord, IWalletLinkedContext, ISyndicationDeliveredContext, IContentPublishedContext, ISitemapEntry, ISitemapHookContext } from '@/types';
+import type { IHeadFragment, ISsrHeadContext, IAiToolInvokeContext, IToolInvocationRecord, IWalletLinkedContext, ISyndicationDeliveredContext, IContentPublishedContext, IContentWriteContext, ISitemapEntry, ISitemapHookContext } from '@/types';
 import { defineHook } from './define-hook.js';
 
 /**
@@ -234,6 +234,65 @@ export const HOOKS = {
                 'the owning typeId, the opaque ref, and the decision-time descriptor so a subscriber can load ' +
                 'the full record and react. Fires only after a successful approved-status applyEdit commit — ' +
                 'handlers cannot change the outcome.'
+        }),
+        /**
+         * Series seam fired by the core content service before it creates a
+         * managed content item — after it issues the id, before it writes the
+         * core row or calls the content author. A handler throws
+         * `HookAbortError` to refuse the create; the service reports that to
+         * its caller with the `vetoed` error code. Lets any module or plugin
+         * enforce a rule over all managed content without the author knowing.
+         */
+        beforeCreate: defineHook<IContentWriteContext, void, 'series'>({
+            id: 'content.beforeCreate',
+            kind: 'series',
+            phase: 'content.lifecycle',
+            order: 20,
+            description:
+                'Inspect a managed content item before the core content service creates it. Carries the type, the ' +
+                'new id, the actor, and the creation input. Throw HookAbortError to refuse the create.'
+        }),
+        /**
+         * Series seam fired by the core content service before it changes a
+         * managed content item. A handler throws `HookAbortError` to refuse
+         * the change; nothing is written.
+         */
+        beforeUpdate: defineHook<IContentWriteContext, void, 'series'>({
+            id: 'content.beforeUpdate',
+            kind: 'series',
+            phase: 'content.lifecycle',
+            order: 30,
+            description:
+                'Inspect a change to a managed content item before the core content service applies it. Carries ' +
+                'the type, the id, the actor, and the change input. Throw HookAbortError to refuse the change.'
+        }),
+        /**
+         * Series seam fired by the core content service before it soft-deletes
+         * a managed content item. A handler throws `HookAbortError` to refuse
+         * the delete.
+         */
+        beforeDelete: defineHook<IContentWriteContext, void, 'series'>({
+            id: 'content.beforeDelete',
+            kind: 'series',
+            phase: 'content.lifecycle',
+            order: 40,
+            description:
+                'Inspect a managed content item before the core content service soft-deletes it. Carries the type, ' +
+                'the id, and the actor. Throw HookAbortError to refuse the delete.'
+        }),
+        /**
+         * Series seam fired by the core content service before it restores a
+         * soft-deleted managed content item. A handler throws `HookAbortError`
+         * to keep the item deleted.
+         */
+        beforeRestore: defineHook<IContentWriteContext, void, 'series'>({
+            id: 'content.beforeRestore',
+            kind: 'series',
+            phase: 'content.lifecycle',
+            order: 50,
+            description:
+                'Inspect a soft-deleted managed content item before the core content service restores it. Carries ' +
+                'the type, the id, and the actor. Throw HookAbortError to keep it deleted.'
         })
     },
     observer: {} as Record<string, never>

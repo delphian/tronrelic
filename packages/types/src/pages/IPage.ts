@@ -1,15 +1,46 @@
+import type { ContentCurationState } from '../content/ContentCurationState.js';
+
 /**
  * Represents a custom page created by administrators.
  *
  * Pages store content as markdown with frontmatter, which is rendered to HTML
  * for server-side delivery. The frontmatter is the authoritative source for
  * metadata fields when saving/updating pages.
+ *
+ * Pages are managed content (`core:page`): the review and deletion fields
+ * below come from the core content service. A page created before the
+ * `module:pages:007_adopt_pages_as_managed_content` migration ran has no
+ * `contentId` yet, and cannot be changed until the migration runs.
  */
 export interface IPage {
     /**
-     * Unique MongoDB identifier for the page.
+     * Unique MongoDB identifier for the page. Internal to the pages module;
+     * address a page by `contentId`.
      */
     _id?: string;
+
+    /**
+     * Core content id — the identifier every admin route and the curation
+     * queue use for this page. Absent only on a page the migration has not
+     * adopted yet.
+     */
+    contentId?: string;
+
+    /**
+     * Review state of the page's latest edit. Absent when the page has never
+     * entered review.
+     */
+    curation?: ContentCurationState;
+
+    /**
+     * Whether a curator has approved some version of the page. When true and
+     * `curation` is `pending` or `rejected`, visitors keep seeing the approved
+     * version while the latest edit waits or is reworked.
+     */
+    hasApprovedVersion?: boolean;
+
+    /** When the page was soft-deleted; absent while it is live. */
+    deletedAt?: Date;
 
     /**
      * Page title displayed in browser tabs, search results, and admin lists.

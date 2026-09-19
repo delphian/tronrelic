@@ -8,6 +8,7 @@
  */
 
 export type { IPage } from './IPage.js';
+export type { IPageContent } from './IPageContent.js';
 export type { IPageSettings } from './IPageSettings.js';
 export type { IPageService } from './IPageService.js';
 export type { IMarkdownService, IFrontmatterData, IParsedMarkdown } from './IMarkdownService.js';

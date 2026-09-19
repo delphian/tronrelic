@@ -41,3 +41,14 @@ export type {
 } from './IContentRouter.js';
 export { readContentField } from './IContentFields.js';
 export type { IContentFields } from './IContentFields.js';
+export type { IContent } from './IContent.js';
+export type { ContentCurationState } from './ContentCurationState.js';
+export type { ContentVersion } from './ContentVersion.js';
+export type { ContentPayload } from './ContentPayload.js';
+export type { ContentErrorCode } from './ContentErrorCode.js';
+export type { IContentActor } from './IContentActor.js';
+export type { IContentPayloadRecord } from './IContentPayloadRecord.js';
+export type { IContentReadRequest } from './IContentReadRequest.js';
+export type { IContentListQuery } from './IContentListQuery.js';
+export type { IManagedContentType } from './IManagedContentType.js';
+export type { IContentService } from './IContentService.js';

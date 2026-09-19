@@ -39,6 +39,13 @@ interface SitemapData {
 const CACHE_TTL_MS = 10 * 60 * 1000;
 
 /**
+ * Lists the CMS pages a visitor can reach, as `{ slug, updatedAt }`. Supplied
+ * by the page service, which resolves managed pages through the core content
+ * service so a page with only a pending edit, or a deleted page, is left out.
+ */
+export type SitemapPageLister = () => Promise<Array<{ slug: string; updatedAt: string }>>;
+
+/**
  * Create sitemap data router.
  *
  * Provides a single GET endpoint returning all dynamic URLs for sitemap
@@ -47,9 +54,16 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
  * @param database - Database service for MongoDB access
  * @param hookRegistry - Hook registry used to invoke `http.sitemapEntries` so
  *   plugins can contribute their own per-resource URLs (blog posts, etc.).
+ * @param listPages - Lists the reachable CMS pages; the router no longer
+ *   queries the `pages` collection itself, because page visibility now depends
+ *   on review state held by the core content service.
  * @returns Express router with sitemap data endpoint
  */
-export function sitemapRouter(database: IDatabaseService, hookRegistry: IHookRegistry): Router {
+export function sitemapRouter(
+    database: IDatabaseService,
+    hookRegistry: IHookRegistry,
+    listPages: SitemapPageLister
+): Router {
     const router = Router();
     let cache: SitemapCache | null = null;
 
@@ -74,7 +88,7 @@ export function sitemapRouter(database: IDatabaseService, hookRegistry: IHookReg
             // and a throwing handler is isolated by the waterfall invoker so a
             // single misbehaving plugin never blanks the whole sitemap.
             const [pages, pluginPages] = await Promise.all([
-                fetchPublishedPages(database),
+                fetchPublishedPages(listPages),
                 fetchPluginPages(database)
             ]);
 
@@ -109,27 +123,17 @@ export function sitemapRouter(database: IDatabaseService, hookRegistry: IHookReg
 }
 
 /**
- * Fetch all published CMS page slugs with updatedAt timestamps.
+ * Fetch all reachable CMS page slugs with updatedAt timestamps. A failure
+ * returns an empty list so one broken source never blanks the whole sitemap.
  *
- * @param database - Database service
+ * @param listPages - The page service's reachable-page lister.
  * @returns Array of page entries for sitemap
  */
 async function fetchPublishedPages(
-    database: IDatabaseService
+    listPages: SitemapPageLister
 ): Promise<Array<{ slug: string; updatedAt: string }>> {
     try {
-        const collection = database.getCollection('pages');
-        const pages = await collection
-            .find(
-                { published: true },
-                { projection: { slug: 1, updatedAt: 1 } }
-            )
-            .toArray();
-
-        return pages.map(p => ({
-            slug: p.slug as string,
-            updatedAt: (p.updatedAt as Date)?.toISOString() ?? new Date().toISOString()
-        }));
+        return await listPages();
     } catch (error) {
         console.error('Failed to fetch sitemap data:', error);
         return [];

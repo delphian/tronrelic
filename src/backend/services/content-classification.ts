@@ -87,43 +87,62 @@ export function isWithinCeiling(reach: IContentClassification, ceiling: IContent
 }
 
 /**
- * Validate a sink's `reach` against the governed vocabulary, throwing on the
- * first problem so registration fails fast — the same stance the hook registry
- * takes when it refuses a descriptor it did not mint. Catches three malformations
- * the `IContentClassification` type cannot prevent at runtime (a plugin built
- * against a stale vocabulary, a JS caller, a hand-built object): an unknown
- * dimension key, a missing dimension, or an out-of-vocabulary level.
+ * Validate a classification against the governed vocabulary, throwing on the
+ * first problem so a registration fails fast — the same stance the hook
+ * registry takes when it refuses a descriptor it did not mint. Catches three
+ * malformations the `IContentClassification` type cannot prevent at runtime (a
+ * plugin built against a stale vocabulary, a JS caller, a hand-built object): an
+ * unknown dimension key, a missing dimension, or an out-of-vocabulary level.
+ * Shared by sink `reach` and managed content type ceilings so both registries
+ * refuse exactly the same malformations.
  *
- * @param reach - The classification a sink declared as its reach.
+ * @param classification - The classification to check.
+ * @param subject - What the classification belongs to, named in the error so
+ *   the operator can tell a bad sink from a bad content type (e.g. `sink reach`).
  * @throws Error naming the offending dimension or level.
  */
-export function assertValidReach(reach: IContentClassification): void {
-    if (reach === null || typeof reach !== 'object') {
-        throw new Error('Sink reach must be a { egress, audience } classification object.');
+export function assertValidClassification(classification: IContentClassification, subject: string): void {
+    if (classification === null || typeof classification !== 'object') {
+        const capitalized = subject.charAt(0).toUpperCase() + subject.slice(1);
+        throw new Error(`${capitalized} must be a { egress, audience } classification object.`);
     }
 
-    for (const key of Object.keys(reach)) {
+    for (const key of Object.keys(classification)) {
         if (!(CLASSIFICATION_DIMENSIONS as ReadonlyArray<string>).includes(key)) {
             throw new Error(
-                `Unknown classification dimension '${key}' in sink reach. ` +
+                `Unknown classification dimension '${key}' in ${subject}. ` +
                 `Known dimensions: ${CLASSIFICATION_DIMENSIONS.join(', ')}.`
             );
         }
     }
 
-    if (egressRank(reach.egress) < 0) {
+    if (egressRank(classification.egress) < 0) {
         throw new Error(
-            `Unknown egress level '${String(reach.egress)}' in sink reach. ` +
+            `Unknown egress level '${String(classification.egress)}' in ${subject}. ` +
             `Known levels: ${CONTENT_EGRESS_LEVELS.join(', ')}.`
         );
     }
 
-    if (audienceRank(reach.audience) < 0) {
+    if (audienceRank(classification.audience) < 0) {
         throw new Error(
-            `Unknown audience level '${String(reach.audience)}' in sink reach. ` +
+            `Unknown audience level '${String(classification.audience)}' in ${subject}. ` +
             `Known levels: ${CONTENT_AUDIENCE_LEVELS.join(', ')}.`
         );
     }
+
+    return;
+}
+
+/**
+ * Validate a sink's `reach` against the governed vocabulary so the router
+ * refuses a malformed sink at registration rather than silently never
+ * admitting it.
+ *
+ * @param reach - The classification a sink declared as its reach.
+ * @throws Error naming the offending dimension or level.
+ */
+export function assertValidReach(reach: IContentClassification): void {
+    assertValidClassification(reach, 'sink reach');
 
     return;
 }

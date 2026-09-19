@@ -55,6 +55,7 @@ describe('PagesModule', () => {
     let mockCache: MockCacheService;
     let mockMenu: MockMenuService;
     let mockApp: MockExpressApp;
+    let mockContent: { registerType: ReturnType<typeof vi.fn> };
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -63,6 +64,7 @@ describe('PagesModule', () => {
         mockCache = new MockCacheService();
         mockMenu = new MockMenuService();
         mockApp = new MockExpressApp();
+        mockContent = { registerType: vi.fn(() => () => undefined) };
     });
 
     describe('metadata', () => {
@@ -82,6 +84,7 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
+                contentService: mockContent as any,
                 app: mockApp as any
             })).resolves.not.toThrow();
         });
@@ -92,9 +95,22 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
+                contentService: mockContent as any,
                 app: mockApp as any
             });
             expect(mockApp.use).not.toHaveBeenCalled();
+        });
+
+        it('does not register the page content type during init()', async () => {
+            const module = new PagesModule();
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                contentService: mockContent as any,
+                app: mockApp as any
+            });
+            expect(mockContent.registerType).not.toHaveBeenCalled();
         });
 
         it('does not register menu items during init()', async () => {
@@ -103,6 +119,7 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
+                contentService: mockContent as any,
                 app: mockApp as any
             });
             expect(mockMenu.create).not.toHaveBeenCalled();
@@ -115,12 +132,30 @@ describe('PagesModule', () => {
             await expect(module.run()).rejects.toThrow();
         });
 
+        it('registers core:page as managed content', async () => {
+            const module = new PagesModule();
+            await module.init({
+                database: mockDatabase,
+                cacheService: mockCache,
+                menuService: mockMenu,
+                contentService: mockContent as any,
+                app: mockApp as any
+            });
+            await module.run();
+
+            expect(mockContent.registerType).toHaveBeenCalledWith(
+                expect.objectContaining({ typeId: 'core:page' }),
+                'pages'
+            );
+        });
+
         it('registers the Pages menu item under the System container', async () => {
             const module = new PagesModule();
             await module.init({
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
+                contentService: mockContent as any,
                 app: mockApp as any
             });
             await module.run();
@@ -142,6 +177,7 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
+                contentService: mockContent as any,
                 app: mockApp as any
             });
             await module.run();
@@ -164,6 +200,7 @@ describe('PagesModule', () => {
                 database: mockDatabase,
                 cacheService: mockCache,
                 menuService: mockMenu,
+                contentService: mockContent as any,
                 app: mockApp as any
             });
             await expect(module.run()).rejects.toThrow('Failed to register pages menu item');
@@ -177,6 +214,7 @@ describe('PagesModule', () => {
                 database: null as any,
                 cacheService: mockCache,
                 menuService: mockMenu,
+                contentService: mockContent as any,
                 app: mockApp as any
             })).rejects.toThrow();
         });

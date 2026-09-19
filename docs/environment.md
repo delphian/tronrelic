@@ -80,7 +80,7 @@ Mounting the Docker socket read-only with `:ro` does not help. That flag applies
 
 ## Reserved Object Storage Variables
 
-File uploads in the pages module always use the local filesystem today, because `PagesModule` instantiates `LocalStorageProvider` unconditionally. The `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, and `STORAGE_FORCE_PATH_STYLE` variables are reserved for a future S3-compatible provider that has not been built yet. Setting them today does nothing.
+File uploads always use the local filesystem today, because the `trp-files` plugin, which owns the platform's file inventory, instantiates `LocalStorageProvider` unconditionally. The `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, and `STORAGE_FORCE_PATH_STYLE` variables are reserved for a future S3-compatible provider that has not been built yet. Setting them today does nothing.
 
 ## Validation Stops Startup on Failure
 

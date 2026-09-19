@@ -36,6 +36,7 @@ import type { IToolInvocationRecord } from '../ai-tools/IToolInvocationRecord.js
 import type { IWalletLinkedContext } from './IWalletLinkedContext.js';
 import type { ISyndicationDeliveredContext } from './ISyndicationDeliveredContext.js';
 import type { IContentPublishedContext } from './IContentPublishedContext.js';
+import type { IContentWriteContext } from './IContentWriteContext.js';
 import type { ISitemapEntry, ISitemapHookContext } from './ISitemapEntry.js';
 
 /**
@@ -136,7 +137,8 @@ export interface ICoreSchedulerHooks {
 /**
  * Content-lifecycle-phase declared seams. Mirrors the `HOOKS.content` object in
  * core's `registry.ts`. These seams fire from inside the curation decision
- * commit, so the admin timeline groups them under the `content.lifecycle` track.
+ * commit and the core content service's write path, so the admin timeline
+ * groups them under the `content.lifecycle` track.
  */
 export interface ICoreContentHooks {
     /**
@@ -148,6 +150,31 @@ export interface ICoreContentHooks {
      * handlers cannot change the outcome.
      */
     readonly published: HookDescriptor<IContentPublishedContext, void, 'observer'>;
+
+    /**
+     * Series seam fired before the core content service creates a managed
+     * content item. Throw `HookAbortError` to refuse the create; the service
+     * reports it with the `vetoed` error code and the handler's message.
+     */
+    readonly beforeCreate: HookDescriptor<IContentWriteContext, void, 'series'>;
+
+    /**
+     * Series seam fired before the core content service changes a managed
+     * content item. Throw `HookAbortError` to refuse the change.
+     */
+    readonly beforeUpdate: HookDescriptor<IContentWriteContext, void, 'series'>;
+
+    /**
+     * Series seam fired before the core content service soft-deletes a managed
+     * content item. Throw `HookAbortError` to refuse the delete.
+     */
+    readonly beforeDelete: HookDescriptor<IContentWriteContext, void, 'series'>;
+
+    /**
+     * Series seam fired before the core content service restores a
+     * soft-deleted managed content item. Throw `HookAbortError` to refuse it.
+     */
+    readonly beforeRestore: HookDescriptor<IContentWriteContext, void, 'series'>;
 }
 
 /**
