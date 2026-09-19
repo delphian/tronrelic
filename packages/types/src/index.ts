@@ -2,7 +2,7 @@ export type { Block } from './Block.js';
 export type { IBaseObserver, IBaseBatchObserver, TransactionBatches, IBaseBlockObserver, IBlockData, IBlockchainObserverService, IWebSocketService, IPluginContext, IObserverStats, IPluginWebSocketManager, PluginSubscriptionHandler, PluginUnsubscribeHandler, IPluginWebSocketStats, IAggregatePluginWebSocketStats } from './observer/index.js';
 export type { IPlugin, IPluginManifest, IAdminUIConfig, IApiRouteConfig, HttpMethod, ApiRouteHandler, ApiMiddleware, IMenuItemConfig, IPageConfig, IServerDataContext, IPluginPageMetadata, IPluginMetadata, IPluginManagementRequest, IPluginManagementResponse, IPluginInfo, IFrontendPluginContext, IUIComponents, ILayoutComponents, ISubMenuItem, IChartComponents, ISystemComponents, IApiClient, IWebSocketClient, IPluginUserState, IFilePickerClient, IFilePickerProvider, IFileSelection, IFilePickOptions, IImagePickConstraints, IImageGenClient, IImageGenProvider, IImageGenOptions } from './plugin/index.js';
 export { definePlugin, PLUGIN_ID_PATTERN, pluginPrefix } from './plugin/index.js';
-export type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags } from './transaction/index.js';
+export type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, ITokenTransfer } from './transaction/index.js';
 export { ProcessedTransaction } from './transaction/index.js';
 export type { IHttpRequest, IHttpResponse, IHttpNext } from './http/index.js';
 // DRAFT (tronrelic#289) — proposed core-owned HTTP client contract; additive and
@@ -83,6 +83,7 @@ export type {
     ITronGridDelegatedResourceResponse
 } from './tron-grid/index.js';
 export type { ITrc10, ITrc10FrozenSupply } from './trc10/index.js';
+export type { ITrc20TokenInfo } from './trc20/index.js';
 export type { IBlockStats, IBlock, IBlockTransaction, IBlockTransactionParty, IBlockTransactionContract, IResourceUsage, IValueTransfer, ValueTransferOrigin, ValueAssetType, IBlockchainService, IActivatingTransaction, IActivationAncestry, ActivationClimbStopReason, IActivationClimbOptions, ITransactionTimeseriesPoint, IOverviewTimeseriesPoint, OverviewTimeseriesWindow, ITransactionDetailService } from './blockchain/index.js';
 export type { IToolsService, IAddressConversionResult, IAddressValidationResult } from './tools/index.js';
 export type { AccountIngestionStatus, AccountHistoryTickKind, AccountHistoryTickSkipReason, IAccountHistorySourceFlags, IAccountHistorySourcePages, IAccountHistoryTickAccountOutcome, IAccountHistoryTickOutcome, ITrackedAccount, IAccountIngestionProgress, IAccountHistorySettings, IAccountHistoryAccountStats, IAccountHistoryStats, IAddTrackedAccountInput, IAccountTransactionQuery, IValueTransferCursor, IValueTransferQuery, IAccountTransactionPage, IActivityCalendarBucket, IWalletActivityStats, IWalletResourceTotals, FlowGranularity, IWalletFlowBucket, IWalletCounterparty, IWalletActivitySummary, IWalletValuationSummary, IAccountTokenBalance, IAccountBalanceSnapshot, ITokenMetadata, IAccountHistoryService } from './account-history/index.js';

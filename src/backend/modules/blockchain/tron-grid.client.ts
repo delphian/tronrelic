@@ -4,7 +4,18 @@ import { env } from '../../config/env.js';
 import { blockchainConfig } from '../../config/blockchain.js';
 import { retry } from '../../lib/retry.js';
 import { logger } from '../../lib/logger.js';
-import type { ITrc10, IActivatingTransaction } from '@/types';
+import type { ITrc10, ITrc20TokenInfo, IActivatingTransaction } from '@/types';
+import { decodeAbiDecimals, decodeAbiString } from './trc20-metadata.js';
+
+/**
+ * TRON's all-zero address (hex `41` followed by twenty zero bytes).
+ *
+ * `/wallet/triggerconstantcontract` requires an owner, but a view call only
+ * simulates execution and signs nothing, so any address works. The zero
+ * address is used because nobody holds its key, which makes it plain that the
+ * call cannot act for a real account.
+ */
+const ZERO_ADDRESS = 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb';
 
 /**
  * Raw TRC10 asset-issue record as TronGrid returns it from
@@ -494,6 +505,13 @@ export class TronGridClient {
     private static instance: TronGridClient | null = null;
 
     /**
+     * TRC20 metadata already read from a contract, keyed by contract address.
+     * A deployed token's decimals cannot change, so a hit never needs
+     * refreshing; this keeps repeated lookups off the shared request queue.
+     */
+    private readonly trc20TokenInfoCache = new Map<string, ITrc20TokenInfo>();
+
+    /**
    * Private constructor to enforce singleton pattern
    * Rate limiting is enforced at the module level (global queue/state)
    * but singleton ensures we don't waste memory with multiple instances
@@ -847,6 +865,74 @@ export class TronGridClient {
             logger.error({ error, address }, 'Failed to fetch withdrawable reward');
             return 0;
         }
+    }
+
+    /**
+     * Call a read-only contract method and return its raw answer.
+     *
+     * Uses `/wallet/triggerconstantcontract`, which executes the call without
+     * a transaction, so it costs no energy and needs no key for the owner;
+     * see {@link ZERO_ADDRESS}. Returns null on a failed call, a reverted
+     * call, or a transport failure (logged), so a caller branches on presence
+     * rather than catching.
+     *
+     * @param contractAddress - Base58 address of the contract to call.
+     * @param functionSelector - Solidity signature such as `decimals()`.
+     * @returns The ABI-encoded return data as hex, or null when unavailable.
+     */
+    async callConstantContract(contractAddress: string, functionSelector: string): Promise<string | null> {
+        let answer: string | null = null;
+        try {
+            const response = await retry(
+                () => this.post<{ constant_result?: string[]; result?: { result?: boolean } }>(
+                    '/wallet/triggerconstantcontract',
+                    {
+                        owner_address: ZERO_ADDRESS,
+                        contract_address: contractAddress,
+                        function_selector: functionSelector,
+                        visible: true
+                    }
+                ),
+                {
+                    ...blockchainConfig.retry,
+                    onRetry: (attempt, error) =>
+                        logger.warn({ attempt, error, contractAddress, functionSelector }, 'Retrying TronGrid triggerconstantcontract')
+                }
+            );
+            const result = response?.constant_result?.[0];
+            answer = response?.result?.result !== false && typeof result === 'string' && result.length > 0 ? result : null;
+        } catch (error) {
+            logger.error({ error, contractAddress, functionSelector }, 'Failed to call constant contract method');
+        }
+        return answer;
+    }
+
+    /**
+     * Read a TRC20 token's symbol, name, and decimals from its contract. See
+     * {@link ITronGridService.getTrc20TokenInfo}.
+     *
+     * `decimals()` decides whether the address is a token at all: without it
+     * no amount can be converted, so the lookup answers null and nothing is
+     * cached, letting a later call retry. `symbol()` and `name()` are optional
+     * metadata and a missing answer is recorded as null.
+     *
+     * @param contractAddress - Base58 address of the token contract.
+     * @returns The token's details, or null when it is not a readable TRC20 token.
+     */
+    async getTrc20TokenInfo(contractAddress: string): Promise<ITrc20TokenInfo | null> {
+        let info = this.trc20TokenInfoCache.get(contractAddress) ?? null;
+
+        if (!info) {
+            const decimals = decodeAbiDecimals(await this.callConstantContract(contractAddress, 'decimals()'));
+            if (decimals !== null) {
+                const symbol = decodeAbiString(await this.callConstantContract(contractAddress, 'symbol()'));
+                const name = decodeAbiString(await this.callConstantContract(contractAddress, 'name()'));
+                info = { contractAddress, symbol, name, decimals };
+                this.trc20TokenInfoCache.set(contractAddress, info);
+            }
+        }
+
+        return info;
     }
 
     /**

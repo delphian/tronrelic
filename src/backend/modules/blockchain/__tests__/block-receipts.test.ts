@@ -191,6 +191,32 @@ describe('what block sync actually persists', () => {
         expect(written.blockNumber).toBe(BLOCK_NUMBER);
     });
 
+    it('stores no tokenTransfer field, which is decoded from stored call data', () => {
+        // Observers receive the decoded TRC20 movement, but the call data it
+        // comes from is already stored under contract.parameters.rawData, so
+        // writing the decoded copy would duplicate bytes on every token transfer.
+        const payload = {
+            txId: 'tx-b',
+            blockNumber: BLOCK_NUMBER,
+            timestamp: new Date(1_787_931_852_000),
+            type: 'TriggerSmartContract',
+            from: { address: 'TFrom' },
+            to: { address: 'TContract' },
+            tokenTransfer: {
+                contractAddress: 'TContract',
+                method: 'transfer' as const,
+                from: 'TFrom',
+                to: 'TTo',
+                rawAmount: '1000000'
+            }
+        };
+
+        const written = persistedFields(TransactionModel, toTransactionWriteFields(payload));
+
+        expect(written).not.toHaveProperty('tokenTransfer');
+        expect(written.txId).toBe('tx-b');
+    });
+
     it('stores receiptsFetched on the block document in both states', () => {
         // The flag separates a measured zero from an unmeasured one, so it has to
         // survive as a real boolean rather than being dropped as an unknown path

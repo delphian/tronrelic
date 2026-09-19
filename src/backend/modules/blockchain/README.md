@@ -26,6 +26,12 @@ A contract-created account is funded by a TVM-level transfer no top-level feed r
 
 Every ending is reported as `stopReason`: `'unresolved'`, `'depth-cap'`, `'cycle'`, or `'provider-error'`. **`'unresolved'` is not proof of a root** — a climb can only report that it ran out of resolvable activators, never that an account has none, and consumers must not word it as "origin reached". The legacy `originReached` / `truncated` booleans are derived from `stopReason` so existing consumers keep working.
 
+## TRC20 transfers and token metadata
+
+`token-transfer.ts` decodes a `TriggerSmartContract` call to `transfer(address,uint256)` or `transferFrom(address,address,uint256)` into `ITokenTransfer`. Block sync attaches it as `payload.tokenTransfer` so observers read the real recipient and token amount instead of decoding call data themselves. `rawAmount` is a decimal string because a uint256 does not fit a JavaScript number. The field is observer-only: `toTransactionWriteFields()` leaves it out of the stored document, since the call data it comes from is already stored.
+
+`TronGridClient.getTrc20TokenInfo()` (published on `ITronGridService`, so plugins call it as `context.tronGrid.getTrc20TokenInfo()`, beside `getTrc10()`) reads a token's `decimals()`, `symbol()`, and `name()` through `callConstantContract()`, which runs `/wallet/triggerconstantcontract` on the shared queue with the all-zero address (`ZERO_ADDRESS`) as the owner, since a view call signs nothing. `trc20-metadata.ts` decodes the answers, accepting both ABI `string` and legacy `bytes32` returns. A hit is cached in memory for the life of the process because deployed decimals never change; a miss (no `decimals()` answer) is not cached. Call it when a token is configured, never per transaction.
+
 A sibling transport, `TronScanClient`, lives in the [providers module](../providers/README.md) — a distinct provider with its own base URL, key, and rate budget, currently backing the local TRX price series. Reach for TronGrid for chain and account data; use TronScan only where no TronGrid path exists.
 
 ## Feed cadence

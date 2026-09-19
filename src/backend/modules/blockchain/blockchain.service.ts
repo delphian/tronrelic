@@ -15,6 +15,7 @@ import { blockchainConfig } from '../../config/blockchain.js';
 import { TronGridClient, INTERNAL_ACTIVATION_CONTRACT_TYPE, type TronGridBlock, type TronGridTransaction, type TronGridTransactionInfo } from './tron-grid.client.js';
 import { normalizeContractType, resolveOwnerAddress, resolveRecipient, resolveAmounts, describeContract } from './transaction-parse.js';
 import { toTransactionWriteFields } from './transaction-write.js';
+import { decodeTokenTransfer } from './token-transfer.js';
 import { resolveCaughtUpMode } from './sync-mode.js';
 import { resolveBlockAgeInBlocks } from './block-pacer.js';
 import { BlockEmitter, type IBlockNewPayload, type IPreparedBlock } from './block-emitter.js';
@@ -2339,6 +2340,17 @@ export class BlockchainService implements IBlockchainService {
             ...(payload.analysis ?? {}),
             relatedAddresses: Array.from(relatedAddresses).slice(0, 50)
         };
+
+        // Decode a TRC20 transfer once here so observers do not each carry a
+        // calldata decoder. Observer-only: toTransactionWriteFields() leaves it
+        // out of the stored document.
+        if (contractType === 'TriggerSmartContract' && payload.contract?.address) {
+            payload.tokenTransfer = decodeTokenTransfer(
+                payload.contract.address,
+                ownerAddress,
+                typeof value.data === 'string' ? value.data : undefined
+            );
+        }
 
         const snapshot = this.toSnapshot(payload);
 
