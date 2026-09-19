@@ -221,7 +221,7 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
                     </Stack>
 
                     <Card padding="md">
-                        <Table variant="compact">
+                        <Table variant="compact" flush>
                             <Thead>
                                 <Tr>
                                     <Th>Asset</Th>
@@ -287,7 +287,7 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
                         ) : diagnostics.unpricedTokens.length === 0 ? (
                             <span className="text-muted">All held tokens have local price coverage.</span>
                         ) : (
-                            <Table variant="compact">
+                            <Table variant="compact" flush>
                                 <Thead>
                                     <Tr><Th>Unpriced token contract (excluded from USD totals)</Th></Tr>
                                 </Thead>

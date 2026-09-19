@@ -71,6 +71,7 @@ Buttons and badges are React components backed by scoped SCSS Modules, so use `<
 | Badge | `<Badge>` from `components/ui/Badge` (tones `neutral/info/success/warning/danger`; sizes `xs/sm/md/lg`, which step the pill's padding only — the label already sits at the type floor) |
 | Headline statistic | `<StatGrid>` with `<StatTile>` from `components/ui/StatTile`, using `size="md"` for a page band and `size="sm"` for an admin strip. Never hand-write label and value markup, and do not use the legacy `.stat-grid` or `.stat-card__*` global classes. |
 | Labelled or validated field | `<Field>` from `components/ui/Field`, wrapping the control. Owns the label, the `hint`/`error` message, and the `aria-describedby` between them. Set `invalid` on the control itself for the danger border and `aria-invalid` |
+| Table filling a card | `<Table flush>` from `components/ui/Table`, when the table is the last thing in the `<Card>` and fills its width. Runs the table out to the card's edges instead of drawing a second boundary inside the first. See [ui-components.md](./ui-components.md#a-table-inside-a-card-runs-to-the-cards-edges) |
 | Muted text | The `text-muted` class |
 
 ### Icons
@@ -87,6 +88,7 @@ Take every icon from `lucide-react`. Use 14px inline, 16px in headings, 18px in 
 - [ ] State changes give visual feedback for loading, error, and success
 - [ ] Markup is semantic, and icon-only buttons carry an ARIA label so screen readers can announce them
 - [ ] Validation messages go through `<Field>` rather than loose markup, so the message is associated with the control
+- [ ] A table that fills a card and is the last thing in it passes `flush`, so it reaches the card's edges instead of drawing a second border inside the card's
 - [ ] Timestamps use `ClientTime` or another two-phase rendering approach
 - [ ] Tested as a full page, in a slideout, in a modal, and at mobile width
 

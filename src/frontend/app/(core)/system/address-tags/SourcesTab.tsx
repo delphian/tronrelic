@@ -192,7 +192,7 @@ export function SourcesTab() {
                             {loading ? 'Loading source statuses…' : 'No sources registered.'}
                         </div>
                     ) : (
-                        <Table className={styles.sources_table}>
+                        <Table flush className={styles.sources_table}>
                             <Thead>
                                 <Tr>
                                     <Th>Source</Th>

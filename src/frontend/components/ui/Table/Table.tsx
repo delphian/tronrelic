@@ -27,6 +27,21 @@ interface TableProps extends TableHTMLAttributes<HTMLTableElement> {
      * @default false
      */
     stickyHeader?: boolean;
+    /**
+     * Run the table out to the edges of the `<Card>` holding it, instead of
+     * sitting inside the card's padding with a border of its own.
+     *
+     * Set this whenever the table is the last thing in a card and fills the
+     * card's width. The card already draws the boundary, so the table drawing a
+     * second one inside it stacks two borders a few pixels apart and spends
+     * width the columns need — which is worst on a narrow screen, where that
+     * doubled gutter is the difference between a column fitting and scrolling.
+     *
+     * Leave it off when something follows the table inside the same card, since
+     * the variant pulls itself down onto the card's bottom edge.
+     * @default false
+     */
+    flush?: boolean;
 }
 
 /**
@@ -57,9 +72,15 @@ interface TableProps extends TableHTMLAttributes<HTMLTableElement> {
  * @param props - Table component properties
  * @returns A styled table element with wrapper
  */
-export function Table({ variant = 'default', stickyHeader = false, className, children, ...props }: TableProps) {
+export function Table({ variant = 'default', stickyHeader = false, flush = false, className, children, ...props }: TableProps) {
     return (
-        <div className={cn(styles.table_wrapper, stickyHeader && styles.table_wrapper_sticky)}>
+        <div
+            className={cn(
+                styles.table_wrapper,
+                stickyHeader && styles.table_wrapper_sticky,
+                flush && styles.table_wrapper_flush
+            )}
+        >
             <table
                 className={cn(
                     styles.table,
