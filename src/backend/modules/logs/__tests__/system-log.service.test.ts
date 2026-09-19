@@ -1223,6 +1223,39 @@ describe('SystemLogService - MongoDB Operations', () => {
     });
 
     /**
+     * Test: getStatistics with a service counts only that service.
+     *
+     * A plugin's scoped Logs tab must never show deployment-wide totals, so
+     * every query has to filter on the service and the total has to come from
+     * that service's own level counts rather than the collection estimate.
+     */
+    it('should scope statistics to one service when a service is given', async () => {
+        const mockCountExec = vi.fn().mockResolvedValue(4);
+        const mockAggregateExec = vi.fn().mockResolvedValue([
+            { _id: 'error', count: 4 },
+            { _id: 'info', count: 6 }
+        ]);
+        const estimated = vi.fn();
+
+        (SystemLog.estimatedDocumentCount as any) = estimated;
+        (SystemLog.countDocuments as any) = vi.fn(() => ({ exec: mockCountExec }));
+        (SystemLog.aggregate as any) = vi.fn(() => ({ exec: mockAggregateExec }));
+
+        const stats = await service.getStatistics('plugin:whale-alerts');
+
+        expect(SystemLog.aggregate).toHaveBeenCalledWith([
+            { $match: { service: 'plugin:whale-alerts' } },
+            { $group: { _id: '$level', count: { $sum: 1 } } }
+        ]);
+        expect(SystemLog.countDocuments).toHaveBeenCalledWith({ service: 'plugin:whale-alerts', resolved: false });
+        expect(estimated).not.toHaveBeenCalled();
+        expect(stats.total).toBe(10);
+        expect(stats.unresolved).toBe(4);
+        expect(stats.byLevel.error).toBe(4);
+        expect(stats.byService).toEqual({ 'plugin:whale-alerts': 10 });
+    });
+
+    /**
      * Test: markAsResolved should update log entry.
      *
      * Verifies that marking a log as resolved updates the database document.

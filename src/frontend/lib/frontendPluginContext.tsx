@@ -39,6 +39,7 @@ import { LineChart } from '../features/charts/components/LineChart';
 import { BarChart } from '../features/charts/components/BarChart';
 import { SchedulerMonitor } from '../modules/scheduler';
 import { CollectionBrowser, ClickHouseTableBrowser } from '../modules/database';
+import { SystemLogsMonitor } from '../modules/logs';
 import { Page, PageHeader, Stack, Grid, Section } from '../components/layout';
 // Imported by direct path, not the layout barrel: the barrel is kept
 // client-safe and excludes MenuNav (MenuNavSSR pulls next/headers). SubMenu
@@ -396,7 +397,8 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
         const system: ISystemComponents = {
             SchedulerMonitor,
             CollectionBrowser,
-            ClickHouseTableBrowser
+            ClickHouseTableBrowser,
+            SystemLogsMonitor
         };
 
         const api = new ApiClient();
@@ -515,7 +517,8 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
     const system: ISystemComponents = {
         SchedulerMonitor,
         CollectionBrowser,
-        ClickHouseTableBrowser
+        ClickHouseTableBrowser,
+        SystemLogsMonitor
     };
 
     const api = new ApiClient();

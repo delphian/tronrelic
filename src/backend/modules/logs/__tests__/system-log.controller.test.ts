@@ -252,11 +252,26 @@ describe('SystemLogController', () => {
 
             await controller.getStats(req as Request, res as Response, next);
 
-            expect(mockService.getStatistics).toHaveBeenCalled();
+            expect(mockService.getStatistics).toHaveBeenCalledWith(undefined);
             expect(res.json).toHaveBeenCalledWith({
                 success: true,
                 stats: mockStats
             });
+        });
+
+        /**
+         * Test: getStats passes a service query through so the counts are scoped.
+         */
+        it('should scope statistics when a service query is given', async () => {
+            mockService.getStatistics.mockResolvedValue({ total: 1 });
+
+            const req = createMockRequest({ query: { service: 'plugin:whale-alerts' } });
+            const res = createMockResponse();
+            const next = createMockNext();
+
+            await controller.getStats(req as Request, res as Response, next);
+
+            expect(mockService.getStatistics).toHaveBeenCalledWith('plugin:whale-alerts');
         });
 
         /**

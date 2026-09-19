@@ -79,6 +79,24 @@ export class SystemLogService implements ISystemLogService {
         unresolved: number;
     }> | null = null;
 
+    /**
+     * Per-service statistics cache, keyed by exact service name.
+     *
+     * A scoped log viewer polls its counts as often as the console does, so
+     * each service's figures are held for the same TTL as the global ones.
+     * The queries behind them are index-backed (`{service: 1, timestamp: -1}`)
+     * rather than full scans, but repeating them every second is still waste.
+     */
+    private readonly scopedStatistics = new Map<string, {
+        cachedAt: number;
+        stats: {
+            total: number;
+            byLevel: Record<LogLevel, number>;
+            byService: Record<string, number>;
+            unresolved: number;
+        };
+    }>();
+
     /** All valid log levels for detecting unfiltered queries. */
     private static readonly ALL_LEVELS: readonly LogLevel[] = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
 
@@ -887,14 +905,20 @@ export class SystemLogService implements ISystemLogService {
     /**
      * Get aggregate statistics about system logs.
      *
+     * @param service Optional exact service name. When given, every count
+     * covers only that service's entries; see {@link getServiceStatistics}.
      * @returns Statistics object with counts and breakdowns
      */
-    public async getStatistics(): Promise<{
+    public async getStatistics(service?: string): Promise<{
         total: number;
         byLevel: Record<LogLevel, number>;
         byService: Record<string, number>;
         unresolved: number;
     }> {
+        if (service) {
+            return this.getServiceStatistics(service);
+        }
+
         // Return cached statistics if within TTL. The two $group aggregations
         // perform full collection scans on 1M+ docs each — running these on
         // every poll (1-10s) saturates MongoDB CPU. A 30-second cache keeps
@@ -972,6 +996,57 @@ export class SystemLogService implements ISystemLogService {
     }
 
     /**
+     * Count one service's log entries by level.
+     *
+     * Serves the log viewer a plugin embeds on its own admin page, where
+     * deployment-wide totals would be misleading. Every query filters on
+     * `service` first, so it runs on the `{service: 1, timestamp: -1}` index
+     * instead of scanning the collection. `byService` holds just this service,
+     * keeping the result shape identical to the unscoped statistics.
+     *
+     * @param service Exact service name, such as `plugin:my-plugin`.
+     * @returns Counts covering only that service's entries.
+     */
+    private async getServiceStatistics(service: string): Promise<{
+        total: number;
+        byLevel: Record<LogLevel, number>;
+        byService: Record<string, number>;
+        unresolved: number;
+    }> {
+        const cached = this.scopedStatistics.get(service);
+        if (cached && (Date.now() - cached.cachedAt) < SystemLogService.STATISTICS_CACHE_TTL_MS) {
+            return cached.stats;
+        }
+
+        const [byLevel, unresolved] = await Promise.all([
+            SystemLog.aggregate([
+                { $match: { service } },
+                { $group: { _id: '$level', count: { $sum: 1 } } }
+            ]).exec(),
+            SystemLog.countDocuments({ service, resolved: false }).exec()
+        ]);
+
+        const levelCounts: Record<LogLevel, number> = {
+            trace: 0,
+            debug: 0,
+            info: 0,
+            warn: 0,
+            error: 0,
+            fatal: 0
+        };
+        let total = 0;
+        for (const item of byLevel) {
+            levelCounts[item._id as LogLevel] = item.count;
+            total += item.count;
+        }
+
+        const stats = { total, byLevel: levelCounts, byService: { [service]: total }, unresolved };
+        this.scopedStatistics.set(service, { cachedAt: Date.now(), stats });
+
+        return stats;
+    }
+
+    /**
      * Invalidate the in-memory statistics cache.
      *
      * Called after mutations (resolve, unresolve, delete) so the next
@@ -980,6 +1055,7 @@ export class SystemLogService implements ISystemLogService {
     private invalidateStatisticsCache(): void {
         this.cachedStatistics = null;
         this.statisticsCachedAt = 0;
+        this.scopedStatistics.clear();
     }
 
     // ========================================================================

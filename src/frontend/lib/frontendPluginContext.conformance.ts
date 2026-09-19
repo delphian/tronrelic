@@ -68,6 +68,7 @@ import type { BarChart as Impl_BarChart } from '../features/charts/components/Ba
 import type { SchedulerMonitor as Impl_SchedulerMonitor } from '../modules/scheduler';
 import type { CollectionBrowser as Impl_CollectionBrowser } from '../modules/database';
 import type { ClickHouseTableBrowser as Impl_ClickHouseTableBrowser } from '../modules/database';
+import type { SystemLogsMonitor as Impl_SystemLogsMonitor } from '../modules/logs';
 
 /**
  * The props a declaration exposes to plugins that the implementation would
@@ -134,5 +135,6 @@ type _Conformance_BarChart = AssertConformant<NoPhantomProps<ComponentProps<ICha
 type _Conformance_SchedulerMonitor = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['SchedulerMonitor']>, ComponentProps<typeof Impl_SchedulerMonitor>>>;
 type _Conformance_CollectionBrowser = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['CollectionBrowser']>, ComponentProps<typeof Impl_CollectionBrowser>>>;
 type _Conformance_ClickHouseTableBrowser = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['ClickHouseTableBrowser']>, ComponentProps<typeof Impl_ClickHouseTableBrowser>>>;
+type _Conformance_SystemLogsMonitor = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['SystemLogsMonitor']>, ComponentProps<typeof Impl_SystemLogsMonitor>>>;
 
 export type {};

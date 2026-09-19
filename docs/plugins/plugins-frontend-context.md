@@ -14,7 +14,7 @@ interface IFrontendPluginContext {
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
     ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, ConfirmDialog, AccountPicker, AddressSelector, Table family
     charts: IChartComponents;      // LineChart, BarChart
-    system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser (admin)
+    system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor (admin)
     api: IApiClient;               // get/post/put/patch/delete with runtime base URL
     websocket: IWebSocketClient;   // socket + auto-prefixed helpers
     useUser: () => IPluginUserState;
@@ -40,10 +40,10 @@ The `definePlugin({ pages: [{ path, component }] })` registration wires `context
 
 ## Admin Surfaces (`context.system`)
 
-Three core admin components are republished to plugins so a plugin's own admin
-page can offer Schedules and Database tabs without sending the operator back to
-`/system`. Import them from the context — never by relative path across the
-workspace.
+Four core admin components are republished to plugins so a plugin's own admin
+page can offer Schedules, Database, and Logs tabs without sending the operator
+back to `/system`. Import them from the context — never by relative path across
+the workspace.
 
 **A plugin that registers a scheduler job or owns storage must offer those
 tabs.** That is a platform rule rather than a suggestion, and it applies to
@@ -58,6 +58,15 @@ the `trp-onchain-typologies` workbench page is the reference implementation.
 | `SchedulerMonitor` | Job status, enable/disable, cron editing | `jobFilter` — names or a predicate |
 | `CollectionBrowser` | MongoDB collections, documents, edit, delete | `prefix`, e.g. `plugin_<id>_` |
 | `ClickHouseTableBrowser` | ClickHouse tables and rows (read-only) | `pluginId` — your `manifest.id` |
+| `SystemLogsMonitor` | Log entries, level counts, live polling | `service` — `plugin:<manifest.id>` |
+
+`SystemLogsMonitor` is optional rather than required, but it is the Logs tab to
+use when a plugin wants one. The plugin logger records every entry under the
+service name `plugin:<manifest.id>`, so pass that. A child logger that sets its
+own `service` binding records under that name instead and falls outside the
+scope. In scoped mode both the entries and the level counts are filtered on the
+server, the service selector is hidden, and "Clear All Logs" is removed because
+it deletes every service's logs.
 
 Both browsers filter **server-side**, so a scoped page never receives the rest
 of the deployment's inventory. `CollectionBrowser` takes `allowEdit` and
@@ -95,6 +104,7 @@ const { system } = context;
 <system.SchedulerMonitor jobFilter={(job) => job.name.startsWith('my-plugin:')} hideStats />
 <system.CollectionBrowser prefix="plugin_my-plugin_" allowDelete={false} />
 <system.ClickHouseTableBrowser pluginId="my-plugin" hideWhenEmpty />
+<system.SystemLogsMonitor service="plugin:my-plugin" />
 ```
 
 ## File Picker (`context.useFilePicker`)

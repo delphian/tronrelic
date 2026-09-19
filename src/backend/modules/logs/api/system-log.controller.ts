@@ -93,13 +93,18 @@ export class SystemLogController {
      * Get aggregate statistics about system logs.
      *
      * Returns counts by level, service, and resolved status.
-     * Used by admin dashboard widgets.
+     * Used by admin dashboard widgets. An optional `service` query parameter
+     * restricts every count to that service, for log viewers a plugin embeds
+     * on its own admin page.
      *
      * @route GET /api/admin/system/logs/stats
      */
     public getStats = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
         try {
-            const stats = await this.logService.getStatistics();
+            const service = typeof req.query.service === 'string' && req.query.service.length > 0
+                ? req.query.service
+                : undefined;
+            const stats = await this.logService.getStatistics(service);
             res.json({ success: true, stats });
         } catch (error) {
             next(error);

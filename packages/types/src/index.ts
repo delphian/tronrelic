@@ -44,6 +44,7 @@ export type { ICronHandle } from './scheduler/ICronHandle.js';
 export type { ISkeletonProps } from './ui/ISkeletonProps.js';
 export type { ICollectionBrowserProps } from './ui/ICollectionBrowserProps.js';
 export type { IClickHouseTableBrowserProps } from './ui/IClickHouseTableBrowserProps.js';
+export type { ISystemLogsMonitorProps } from './ui/ISystemLogsMonitorProps.js';
 export type { IDatabaseService } from './database/IDatabaseService.js';
 export type { IMigration, IMigrationContext, MigrationTarget } from './database/IMigration.js';
 export type { IClickHouseService, IPluginClickHouseService } from './clickhouse/index.js';
