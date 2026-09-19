@@ -84,7 +84,7 @@ export interface ITransactionPersistencePayload {
         parameters?: Record<string, unknown>;
     };
     /**
-     * The TRC20 token movement this call performed, decoded from `contract`'s
+     * The TRC20 token transfer this call requested, decoded from `contract`'s
      * call data. Set only on `TriggerSmartContract` transactions that call a
      * standard `transfer` or `transferFrom`; absent otherwise.
      *
@@ -93,8 +93,12 @@ export interface ITransactionPersistencePayload {
      * and the transactions collection is kept deliberately small per block.
      * Documents read back from the database do not carry it.
      *
-     * The status of the call is in `status`: a transfer that reverted is still
-     * decoded, so check for `'SUCCESS'` before treating the tokens as moved.
+     * It is not proof that tokens moved. A call that reverted is still
+     * decoded, so check `status === 'SUCCESS'` first, but that check rules
+     * out reverts only: a non-standard token that returns `false` instead of
+     * reverting also ends as `'SUCCESS'` with nothing moved. Sync cannot tell
+     * the two apart, because the return value and `Transfer` log are only in
+     * block receipts, which are off by default.
      */
     tokenTransfer?: ITokenTransfer;
     /** Optional transaction memo or note */
