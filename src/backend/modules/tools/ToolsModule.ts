@@ -184,7 +184,9 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
             const container = await this.menuService.create({
                 namespace: 'main',
                 label: 'Tools',
-                description: 'TRON blockchain utilities',
+                // Also the /tools landing page's meta description and subtitle,
+                // so keep it a full sentence under ~160 characters.
+                description: 'Free TRON tools for wallets, energy, and tokens. Convert addresses, estimate energy costs, verify signatures, check token approvals, and trace wallet origins.',
                 icon: 'Wrench',
                 order: 60,
                 parent: null,
@@ -194,14 +196,14 @@ export class ToolsModule implements IModule<IToolsModuleDependencies> {
             const parentId = container._id?.toString() ?? null;
 
             const children = [
-                { label: 'Address Converter', url: '/tools/address-converter', icon: 'ArrowLeftRight', order: 10, description: 'Convert between TRON hex and base58check address formats.' },
-                { label: 'Address Generator', url: '/tools/address-generator', icon: 'KeyRound', order: 15, description: 'Generate random TRON addresses in-browser with vanity pattern search.' },
-                { label: 'Energy Estimator', url: '/tools/energy-estimator', icon: 'Zap', order: 20, description: 'Estimate daily energy requirements and compare staking vs rental costs.' },
-                { label: 'Stake Calculator', url: '/tools/stake-calculator', icon: 'Calculator', order: 30, description: 'Calculate energy and bandwidth from a TRX stake, or TRX needed for a target energy amount.' },
-                { label: 'Signature Verifier', url: '/tools/signature-verifier', icon: 'ShieldCheck', order: 40, description: 'Verify a TRON wallet signed a specific message. Supports direct URL linking.' },
-                { label: 'Approval Checker', url: '/tools/approval-checker', icon: 'Shield', order: 45, description: 'Scan a TRON address for active TRC20 token approvals and unlimited allowances.' },
-                { label: 'Address Origins', url: '/tools/address-origins', icon: 'GitBranch', order: 48, description: 'Trace an address back through its activation chain to its final originator, and spot shared ancestors across wallets.' },
-                { label: 'Timestamp Converter', url: '/tools/timestamp-converter', icon: 'Clock', order: 50, description: 'Convert between Unix timestamps, dates, and TRON block numbers.' },
+                { label: 'Address Converter', url: '/tools/address-converter', icon: 'ArrowLeftRight', order: 10, description: 'Convert a TRON address between its Base58 form (starting with T) and its hex form (starting with 41).' },
+                { label: 'Address Generator', url: '/tools/address-generator', icon: 'KeyRound', order: 15, description: 'Create a new TRON wallet with a recovery phrase, or search for a vanity address. Everything runs in your browser, so keys never leave your device.' },
+                { label: 'Energy Estimator', url: '/tools/energy-estimator', icon: 'Zap', order: 20, description: 'Estimate how much energy your smart contract calls need each day, and compare the cost of staking TRX with renting energy.' },
+                { label: 'Stake Calculator', url: '/tools/stake-calculator', icon: 'Calculator', order: 30, description: 'See how much energy and bandwidth a TRX stake gives you, or how much TRX to stake for the energy you need, at live network rates.' },
+                { label: 'Signature Verifier', url: '/tools/signature-verifier', icon: 'ShieldCheck', order: 40, description: 'Check whether a TRON wallet signed a message, to confirm who controls an address. Share any result as a link.' },
+                { label: 'Approval Checker', url: '/tools/approval-checker', icon: 'Shield', order: 45, description: 'Find every TRC20 token approval on a TRON wallet, including unlimited allowances, and see which contracts can spend its tokens.' },
+                { label: 'Address Origins', url: '/tools/address-origins', icon: 'GitBranch', order: 48, description: 'Trace a TRON wallet back through the accounts that activated it to find where it came from, and spot ancestors shared by several wallets.' },
+                { label: 'Timestamp Converter', url: '/tools/timestamp-converter', icon: 'Clock', order: 50, description: 'Convert between Unix timestamps, calendar dates, and TRON block numbers, in either direction.' },
             ];
 
             await Promise.all(children.map(child =>
