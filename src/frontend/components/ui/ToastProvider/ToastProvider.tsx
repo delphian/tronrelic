@@ -20,8 +20,28 @@ export interface ToastOptions {
     tone?: ToastTone;
     /** Primary message text */
     title: string;
-    /** Optional secondary description text */
-    description?: string;
+    /**
+     * Optional destination the title links to, so a toast announcing an event
+     * can send the reader to the page that shows it in full.
+     *
+     * The title stays a plain string and this stays a plain path because the
+     * anchor belongs to the toast rather than to the caller. A caller passing
+     * its own markup would style its title independently, and toast titles
+     * across the application would stop matching each other. Leave it unset
+     * for a toast with nowhere useful to go.
+     */
+    titleHref?: string;
+    /**
+     * Optional secondary description.
+     *
+     * Accepts any renderable content rather than only a string, because a
+     * description often needs the same component the rest of the application
+     * uses to present a value — a copyable address chip, for instance.
+     * Rewriting such a value as bare text inside a toast drops the affordances
+     * that component carries and lets its presentation drift from every other
+     * place the value appears.
+     */
+    description?: ReactNode;
     /** Auto-dismiss duration in milliseconds (0 = no auto-dismiss) */
     duration?: number;
     /** Optional action button label */
@@ -258,12 +278,17 @@ function toneClassName(tone: ToastTone) {
  * @returns Rendered toast notification card
  */
 function ToastItem({ toast, onDismiss }: { toast: ToastPayload; onDismiss: () => void }) {
-    const { tone = 'info', title, description, actionLabel, onAction } = toast;
+    const { tone = 'info', title, titleHref, description, actionLabel, onAction } = toast;
     return (
         <div className={cn(toneClassName(tone))}>
             <div className={styles.item__meta}>
-                <strong>{title}</strong>
-                {description && <p className="text-subtle" style={{ margin: 0 }}>{description}</p>}
+                {/* The anchor wraps the existing <strong> rather than replacing
+                  * it, so a linked title keeps the same weight and size as an
+                  * unlinked one and the two read as the same element. */}
+                {titleHref
+                    ? <a className={styles.item__title_link} href={titleHref}><strong>{title}</strong></a>
+                    : <strong>{title}</strong>}
+                {description && <p className={styles.item__description}>{description}</p>}
             </div>
             <div className={styles.item__actions}>
                 {actionLabel && (

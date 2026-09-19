@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { ISchedulerMonitorProps } from '../scheduler/ISchedulerJobStatus.js';
 import type { ISkeletonProps } from '../ui/ISkeletonProps.js';
@@ -1712,13 +1712,19 @@ export interface IFrontendPluginContext {
      * Returns methods to push and dismiss toast notifications. Must be called
      * within a component context (similar to React hooks pattern).
      *
+     * Set `titleHref` to send the reader to the page that shows the event in
+     * full, and pass rendered content as the `description` when a value has a
+     * component of its own — an address belongs in `ui.TronAddress` here just
+     * as it does in a table.
+     *
      * @example
      * ```typescript
      * const { push } = context.useToast();
      * push({
      *     tone: 'warning',
      *     title: 'Whale transfer detected',
-     *     description: '1,500,000 TRX transferred',
+     *     titleHref: '/tools/whales',
+     *     description: <ui.TronAddress address={transfer.fromAddress} />,
      *     duration: 7000
      * });
      * ```
@@ -1728,7 +1734,18 @@ export interface IFrontendPluginContext {
             id?: string;
             tone?: 'info' | 'success' | 'warning' | 'danger';
             title: string;
-            description?: string;
+            /**
+             * Destination the title links to, for a toast whose subject has a
+             * page of its own. Core renders the anchor, so every linked toast
+             * title looks the same wherever it was pushed from.
+             */
+            titleHref?: string;
+            /**
+             * Secondary content. Accepts rendered output rather than only a
+             * string, so a value keeps the component the rest of the interface
+             * shows it with instead of being flattened to text for the toast.
+             */
+            description?: ReactNode;
             duration?: number;
             actionLabel?: string;
             onAction?: () => void;
