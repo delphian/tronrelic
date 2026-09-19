@@ -66,6 +66,7 @@ export interface ITronGridDelegatedResourceResponse {
 }
 
 import type { ITrc10 } from '../trc10/index.js';
+import type { ITrc20TokenInfo } from '../trc20/index.js';
 
 /**
  * TronGrid service interface for plugins.
@@ -149,4 +150,22 @@ export interface ITronGridService {
      * @returns The account's token, or null when the account has issued none.
      */
     getTrc10ByOwner(ownerAddress: string): Promise<ITrc10 | null>;
+
+    /**
+     * Read a TRC20 token's symbol, name, and decimals from its contract.
+     *
+     * The TRC20 counterpart of {@link ITronGridService.getTrc10}. Exists so a
+     * consumer turning raw token amounts into human figures, such as a
+     * threshold configured in whole tokens, uses the decimals the contract
+     * declares instead of assuming USDT's 6. Makes up to three read-only
+     * contract calls on the shared rate-limited queue; a successful answer is
+     * cached for the life of the process, because a deployed token's decimals
+     * cannot change. Call it when a token is configured, not per transaction.
+     *
+     * @param contractAddress - Base58 address of the token contract.
+     * @returns The token's details, or null when the address does not answer
+     *   `decimals()` (not a TRC20 token, or the lookup failed; failures are
+     *   not cached).
+     */
+    getTrc20TokenInfo(contractAddress: string): Promise<ITrc20TokenInfo | null>;
 }

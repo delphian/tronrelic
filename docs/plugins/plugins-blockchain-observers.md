@@ -59,6 +59,8 @@ Plugins type the parameter as `ITransaction` from `@/types`. The runtime instanc
 
 To relate two transactions from the same block, use `payload.transactionIndex`, the transaction's position in its block. The chain executes a block in that order, while every transaction in the block shares one timestamp and a batch observer receives the block grouped by transaction type, so neither the timestamp nor arrival order can tell you which ran first. The field is present on transactions delivered by sync and absent on documents read back from the database. See [system-blockchain-sync-architecture.md](../system/system-blockchain-sync-architecture.md#order-within-a-block).
 
+For a TRC20 token transfer, use `payload.tokenTransfer` (`ITokenTransfer`). On a `TriggerSmartContract` the payload's own `to` is the token contract and its TRX amount is the call value, usually zero, so the real recipient and token amount exist only in the call data. Sync decodes standard `transfer` and `transferFrom` calls once into `{ contractAddress, method, from, to, rawAmount }`, where `rawAmount` is a decimal string in the token's smallest units. Do not write your own calldata decoder. Check `payload.status === 'SUCCESS'` before treating tokens as moved, because a reverted transfer is still decoded. To turn `rawAmount` into whole tokens, get the token's decimals once from `context.tronGrid.getTrc20TokenInfo()` (`ITronGridService`). Like `transactionIndex`, the field is observer-only and absent on documents read back from the database.
+
 Addresses arrive Base58, amounts in both SUN and TRX, USD already converted. Observers receive model objects, never raw TronGrid responses — that abstraction enables future provider changes.
 
 ## Creating an Observer

@@ -6,6 +6,8 @@
  * TRX units, and USD conversions are complete. This abstraction isolates observers from
  * database implementation details while providing all necessary transaction context.
  */
+import type { ITokenTransfer } from './ITokenTransfer.js';
+
 export interface ITransactionPersistencePayload {
     /** Unique transaction identifier from the blockchain */
     txId: string;
@@ -81,6 +83,20 @@ export interface ITransactionPersistencePayload {
         method?: string;
         parameters?: Record<string, unknown>;
     };
+    /**
+     * The TRC20 token movement this call performed, decoded from `contract`'s
+     * call data. Set only on `TriggerSmartContract` transactions that call a
+     * standard `transfer` or `transferFrom`; absent otherwise.
+     *
+     * Delivered to observers only. It is not written to the transactions
+     * collection, because the call data it comes from is already stored there
+     * and the transactions collection is kept deliberately small per block.
+     * Documents read back from the database do not carry it.
+     *
+     * The status of the call is in `status`: a transfer that reverted is still
+     * decoded, so check for `'SUCCESS'` before treating the tokens as moved.
+     */
+    tokenTransfer?: ITokenTransfer;
     /** Optional transaction memo or note */
     memo?: string | null;
     /**

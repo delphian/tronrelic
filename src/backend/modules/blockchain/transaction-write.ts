@@ -23,14 +23,18 @@ import type { ITransactionPersistencePayload } from '@/types';
  * delivered to observers only is left out in one place rather than at each
  * call site.
  *
+ * `tokenTransfer` is left out for the same reason as `transactionIndex`: it is
+ * decoded from the call data, which `contract.parameters.rawData` already
+ * stores, so writing it would duplicate bytes on every TRC20 transfer.
+ *
  * @param payload - The transaction as block sync prepared it, including the
  *                  fields only observers read.
- * @returns The same fields minus `transactionIndex`, ready to spread into
- *          `$set`.
+ * @returns The same fields minus `transactionIndex` and `tokenTransfer`, ready
+ *          to spread into `$set`.
  */
 export function toTransactionWriteFields(
     payload: ITransactionPersistencePayload
-): Omit<ITransactionPersistencePayload, 'transactionIndex'> {
-    const { transactionIndex: _observerOnly, ...fields } = payload;
+): Omit<ITransactionPersistencePayload, 'transactionIndex' | 'tokenTransfer'> {
+    const { transactionIndex: _observerOnly, tokenTransfer: _decodedOnly, ...fields } = payload;
     return fields;
 }
