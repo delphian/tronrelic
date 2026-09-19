@@ -27,7 +27,7 @@ Agents and operators routinely waste effort building features the platform alrea
 | trp-telegram-bot | Telegram webhook bot serving `/price` market lookups; IP allowlist, secret token, per-user rate limit. | [README](../../src/plugins/trp-telegram-bot/README.md) |
 | trp-themes | Site-wide CSS theme management: admins create themes from a CSS template and enable any subset; every visitor sees the same result. | [README](../../src/plugins/trp-themes/README.md) |
 | trp-trc10-authority | Authority on TRC10 token creation: observes `AssetIssueContract`, resolves new tokens against TronGrid, serves a public newest-tokens listing, and offers TronLink-based minting. | [README](../../src/plugins/trp-trc10-authority/README.md) |
-| trp-whale-alerts | Whale transfer detection: `TransferContract` observer against an admin-configured threshold; `/whales` dashboard, homepage widget, `whale-alerts:large-transfer` WebSocket room. | [README](../../src/plugins/trp-whale-alerts/README.md) |
+| trp-whale-alerts | Whale transfer detection: `TransferContract` observer against an admin-configured threshold; `/tools/whales` dashboard, homepage widget, `whale-alerts:large-transfer` WebSocket room. | [README](../../src/plugins/trp-whale-alerts/README.md) |
 | trp-x-poster | Service-registry `x-poster` provider; `postTweet` (immediate or scheduled), `readTimelines`, image upload via X v1.1 media. | [README](../../src/plugins/trp-x-poster/README.md) |
 
 ## Further Reading
