@@ -90,6 +90,8 @@ Create services that handle business logic, controllers that handle HTTP request
 
 If your service implements an `IXxxService` interface, it must be a singleton (see [modules.md#service-types-and-singleton-usage](./modules.md#service-types-and-singleton-usage)).
 
+If the module owns content the platform stores and publishes, it must be managed content: implement `IManagedContentType` and route every operation through `IContentService`. The pages module's `services/page-content-type.ts` is the reference. See [modules.md](./modules.md#owning-content).
+
 ### 4. Register in Bootstrap
 
 Add the module to `src/backend/index.ts`. Construct and `init()` it alongside the other module inits in `bootstrapInit()` (after `MenuModule.init()`, in the same block as Logs/Pages/Theme/Scheduler/Identity/Traffic/AddressLabels/Tools); call its `run()` from `bootstrapRun()` before `loadPlugins(...)`:
@@ -123,7 +125,7 @@ Accept dependencies through `init()` parameters and depend on interfaces (`IData
 
 ### Service Composition
 
-Create services in `init()` and activate them in `run()`. Pass all dependencies to service constructors. Keep services focused on single responsibilities. Use abstract base classes for pluggable infrastructure (storage providers, adapters). The pages module demonstrates this with `PageService` depending on `IStorageProvider` — enabling local, S3, or Cloudflare backends without code changes.
+Create services in `init()` and activate them in `run()`. Pass all dependencies to service constructors. Keep services focused on single responsibilities. Depend on interfaces for anything another component provides. The pages module demonstrates this with `PageService` receiving `IContentService` through `init()` rather than constructing the core content service itself.
 
 ### Error Handling
 

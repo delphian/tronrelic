@@ -141,6 +141,10 @@ if (groups && userId && await groups.isAdmin(userId)) {
 
 See the [Identity Module README](../../src/backend/modules/identity/README.md#published-service-contracts) for the `IUserGroupService` method table and the `admin`-group semantics.
 
+## Platform-Provided Services: `content`
+
+Core publishes the managed content service as `'content'` (`IContentService`) before any module or plugin starts. A plugin that owns content — an item the platform stores and publishes, such as a post, article, or draft — must use it: implement `IManagedContentType`, register it with `registerType()` from a `watch('content', …)` handler, and call the returned disposer in `disable()`. Every create, read, update, delete, and restore of that content then goes through the service, carrying an `IContentActor` that says who is acting and whether they are a curator. The contract types ship in `@/types`. See [system-content.md](../system/system-content.md) for the model and the author contract.
+
 ## Further Reading
 
 - [plugins.md](./plugins.md) — Plugin system overview

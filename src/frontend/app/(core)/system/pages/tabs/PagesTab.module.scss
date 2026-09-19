@@ -80,7 +80,8 @@
 .page_header {
     display: flex;
     align-items: center;
-    gap: var(--spacing-5);
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
 }
 
 .page_title {
@@ -110,6 +111,16 @@
     font-size: var(--font-size-sm);
     color: var(--color-text-muted);
     line-height: 1.5;
+}
+
+/* Explains why a page is not what visitors currently see (pending review,
+   or not yet adopted by the managed-content migration). Warning-text rather
+   than the solid warning colour, which fails contrast on the dark surface. */
+.page_notice {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-warning-text);
+    line-height: var(--line-height-normal);
 }
 
 .page_meta {

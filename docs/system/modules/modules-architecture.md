@@ -41,7 +41,8 @@ The application bootstrap (`src/backend/index.ts`) splits into `bootstrapInit()`
 11. `serviceRegistry.register('chain-parameters', ChainParametersService.getInstance())`
 12. **`MenuModule.init()`**
 13. `new CacheService(redis, coreDatabase)` and assemble `sharedDeps`
-14. **Remaining module inits in this order:** Logs, Pages, Widgets, Scheduler, Identity, Traffic, AddressLabels, Tools (Traffic receives `scheduler` and `clickhouse` on top of `sharedDeps`)
+14. `ContentService` constructed and published as `'content'` — before module init, so the pages module receives it as `contentService` and registers `core:page` in `run()`
+15. **Remaining module inits in this order:** Logs, Pages, Widgets, Scheduler, Identity, Traffic, AddressLabels, Tools (Traffic receives `scheduler` and `clickhouse` on top of `sharedDeps`)
 
 **`bootstrapRun()`** — in this order:
 

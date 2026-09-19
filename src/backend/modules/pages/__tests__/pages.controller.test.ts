@@ -4,16 +4,19 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PagesController } from '../api/pages.controller.js';
 import type { IPageService } from '@/types';
 import type { Request, Response } from 'express';
+import { ContentError } from '../../../services/content-error.js';
 
 class MockPageService implements IPageService {
     createPage = vi.fn();
     updatePage = vi.fn();
     getPageById = vi.fn();
-    getPageBySlug = vi.fn();
-    findPageByOldSlug = vi.fn();
+    getPublicPageBySlug = vi.fn();
+    findPublicPageByOldSlug = vi.fn();
     listPages = vi.fn();
     deletePage = vi.fn();
+    restorePage = vi.fn();
     getPageStats = vi.fn();
+    listSitemapPages = vi.fn();
     renderPageHtml = vi.fn();
     invalidatePageCache = vi.fn();
     previewMarkdown = vi.fn();
@@ -121,6 +124,33 @@ describe('PagesController', () => {
             await controller.createPage(createMockRequest({ body: { content: 'x' } }), res);
             expect(res.status).toHaveBeenCalledWith(400);
         });
+
+        it('passes a curator actor for a signed-in admin', async () => {
+            mockService.createPage.mockResolvedValue({ contentId: 'a' });
+            const res = createMockResponse();
+            await controller.createPage(
+                createMockRequest({ body: { content: 'x' }, adminVia: 'user', userId: 'u1' } as Partial<Request>),
+                res
+            );
+            expect(mockService.createPage).toHaveBeenCalledWith('x', { id: 'u1', kind: 'user', isCurator: true });
+        });
+
+        it('passes a non-curator actor for the service token', async () => {
+            mockService.createPage.mockResolvedValue({ contentId: 'a' });
+            const res = createMockResponse();
+            await controller.createPage(
+                createMockRequest({ body: { content: 'x' }, adminVia: 'service-token' } as Partial<Request>),
+                res
+            );
+            expect(mockService.createPage).toHaveBeenCalledWith('x', { id: 'system:service-token', kind: 'system', isCurator: false });
+        });
+
+        it('returns 403 when a content hook vetoes the create', async () => {
+            mockService.createPage.mockRejectedValue(new ContentError('vetoed', 'blocked'));
+            const res = createMockResponse();
+            await controller.createPage(createMockRequest({ body: { content: 'x' } }), res);
+            expect(res.status).toHaveBeenCalledWith(403);
+        });
     });
 
     describe('updatePage', () => {
@@ -135,7 +165,7 @@ describe('PagesController', () => {
         });
 
         it('returns 404 when the page is not found', async () => {
-            mockService.updatePage.mockRejectedValue(new Error('Page with ID x not found'));
+            mockService.updatePage.mockRejectedValue(new ContentError('not-found', 'No content with id x'));
             const res = createMockResponse();
             await controller.updatePage(
                 createMockRequest({ params: { id: 'x' }, body: { content: 'x' } }),
@@ -155,10 +185,26 @@ describe('PagesController', () => {
         });
 
         it('returns 404 when the page is missing', async () => {
-            mockService.deletePage.mockRejectedValue(new Error('not found'));
+            mockService.deletePage.mockRejectedValue(new ContentError('not-found', 'No content with id x'));
             const res = createMockResponse();
             await controller.deletePage(createMockRequest({ params: { id: 'x' } }), res);
             expect(res.status).toHaveBeenCalledWith(404);
+        });
+    });
+
+    describe('restorePage', () => {
+        it('returns the restored page', async () => {
+            mockService.restorePage.mockResolvedValue({ contentId: 'x' });
+            const res = createMockResponse();
+            await controller.restorePage(createMockRequest({ params: { id: 'x' } }), res);
+            expect(res.json).toHaveBeenCalledWith({ contentId: 'x' });
+        });
+
+        it('returns 409 when the page is not deleted', async () => {
+            mockService.restorePage.mockRejectedValue(new ContentError('not-deleted', 'Page x is not deleted'));
+            const res = createMockResponse();
+            await controller.restorePage(createMockRequest({ params: { id: 'x' } }), res);
+            expect(res.status).toHaveBeenCalledWith(409);
         });
     });
 
@@ -198,15 +244,15 @@ describe('PagesController', () => {
 
     describe('public endpoints', () => {
         it('getPublicPage returns 404 when page is unpublished and no redirect exists', async () => {
-            mockService.getPageBySlug.mockResolvedValue(null);
-            mockService.findPageByOldSlug.mockResolvedValue(null);
+            mockService.getPublicPageBySlug.mockResolvedValue(null);
+            mockService.findPublicPageByOldSlug.mockResolvedValue(null);
             const res = createMockResponse();
             await controller.getPublicPage(createMockRequest({ params: { slug: 'x' } }), res);
             expect(res.status).toHaveBeenCalledWith(404);
         });
 
         it('getPublicPage returns the page with a normalized slug', async () => {
-            mockService.getPageBySlug.mockResolvedValue({ slug: '/x', published: true });
+            mockService.getPublicPageBySlug.mockResolvedValue({ slug: '/x', published: true });
             const res = createMockResponse();
             await controller.getPublicPage(createMockRequest({ params: { slug: 'x' } }), res);
             expect(res.json).toHaveBeenCalledWith({
@@ -234,7 +280,7 @@ describe('PagesController', () => {
             mockService.renderPublicPageBySlug
                 .mockResolvedValueOnce(null)
                 .mockResolvedValueOnce({ html: '<h1>Y</h1>', metadata: { title: 'Y' } });
-            mockService.findPageByOldSlug.mockResolvedValue({ slug: '/y', published: true });
+            mockService.findPublicPageByOldSlug.mockResolvedValue({ slug: '/y', published: true });
 
             const res = createMockResponse();
             await controller.renderPublicPage(createMockRequest({ params: { slug: 'x' } }), res);

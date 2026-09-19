@@ -43,4 +43,6 @@ export type { ISyndicationDeliveredContext } from './ISyndicationDeliveredContex
 
 export type { IContentPublishedContext } from './IContentPublishedContext.js';
 
+export type { IContentWriteContext } from './IContentWriteContext.js';
+
 export type { ISitemapEntry, ISitemapHookContext, SitemapChangeFrequency } from './ISitemapEntry.js';

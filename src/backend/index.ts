@@ -27,6 +27,7 @@ import { ServiceRegistry } from './services/service-registry.js';
 import { ContentRegistry, CONTENT_TYPES_SERVICE } from './services/content-registry.js';
 import { ContentTypesController, createContentTypesAdminRouter } from './services/content-types-admin.js';
 import { ContentRouter, CONTENT_ROUTER_SERVICE } from './services/content-router.js';
+import { ContentService, CONTENT_SERVICE } from './services/content-service.js';
 import { ClassificationGate, AllowAllRoutingPolicy } from './services/content-routing-gate.js';
 import { ContentRouterController, createContentRouterAdminRouter } from './services/content-router-admin.js';
 import { createInternalPublishSink } from './services/internal-publish-sink.js';
@@ -37,7 +38,7 @@ import { MenuModule, MAIN_SYSTEM_CONTAINER_ID } from './modules/menu/index.js';
 import { LogsModule } from './modules/logs/index.js';
 import { DatabaseModule } from './modules/database/index.js';
 import { ClickHouseModule } from './modules/clickhouse/index.js';
-import { PagesModule } from './modules/pages/index.js';
+import { PagesModule, PageService } from './modules/pages/index.js';
 import { WidgetsModule } from './modules/widgets/index.js';
 import { IdentityModule } from './modules/identity/index.js';
 import { TrafficModule } from './modules/traffic/index.js';
@@ -327,7 +328,10 @@ async function bootstrapInit(): Promise<BootstrapContext> {
 
     // Mount API routes now that coreDatabase and the hook registry exist.
     // Routers receive the shared instances via dependency injection.
-    app.use('/api', createApiRouter(coreDatabase, hookRegistry));
+    // The sitemap lists pages through the page service, so pending, rejected,
+    // and deleted pages never leak into it. The service is configured later in
+    // module init; the resolver runs per request, after bootstrap completes.
+    app.use('/api', createApiRouter(coreDatabase, hookRegistry, () => PageService.getInstance().listSitemapPages()));
 
     await initializeCoreServices(coreDatabase);
 
@@ -359,6 +363,16 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // before its consumers.
     const contentRouter = new ContentRouter(new ClassificationGate(new AllowAllRoutingPolicy()), logger);
     serviceRegistry.register(CONTENT_ROUTER_SERVICE, contentRouter);
+
+    // Core content service: the single entry point for every create, read,
+    // update, delete, and restore of managed content. Owns the core
+    // `content_items` collection, runs the `content.before*` veto hooks, and
+    // holds reviewed changes in curation (resolved lazily — curation inits
+    // later). Published before module init so pages can register `core:page`.
+    ContentService.setDependencies(coreDatabase, hookRegistry, serviceRegistry, logger);
+    const contentService = ContentService.getInstance();
+    await contentService.ensureIndexes();
+    serviceRegistry.register(CONTENT_SERVICE, contentService);
 
     // Register the internal publish sink — a credential-free `publish`-kind
     // destination so the curation destination picker has a real, selectable
@@ -416,7 +430,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     const schedulerModule = new SchedulerModule();
 
     await logsModule.init({ pinoLogger, database: coreDatabase, app, serviceRegistry });
-    await pagesModule.init(sharedDeps);
+    await pagesModule.init({ ...sharedDeps, contentService });
     await widgetsModule.init(sharedDeps);
     await schedulerModule.init({ database: coreDatabase, menuService, app });
     const schedulerService = schedulerModule.getSchedulerService();

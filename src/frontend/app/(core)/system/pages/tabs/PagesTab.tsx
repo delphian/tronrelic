@@ -8,39 +8,58 @@ import { Card } from '../../../../../components/ui/Card';
 import { Input } from '../../../../../components/ui/Input';
 import { Select } from '../../../../../components/ui/Select';
 import { StatTile, StatGrid } from '../../../../../components/ui/StatTile';
-import { Plus, Edit, Trash2, Eye, EyeOff, Search } from 'lucide-react';
+import { ClientTime } from '../../../../../components/ui/ClientTime';
+import { Plus, Edit, Trash2, Eye, EyeOff, Search, RotateCcw, Clock, XCircle, Archive } from 'lucide-react';
 import type { IPage } from '@/types';
 import styles from './PagesTab.module.scss';
 import { PageEditor } from '../components/PageEditor';
+
+/**
+ * Page counts returned with the list. Published and draft counts describe the
+ * latest edits of live pages; review and deletion counts come from the core
+ * content service.
+ */
+interface IPageStats {
+    total: number;
+    published: number;
+    drafts: number;
+    pendingReview: number;
+    deleted: number;
+}
 
 /**
  * API response for pages list endpoint.
  */
 interface IPagesListResponse {
     pages: IPage[];
-    stats: {
-        total: number;
-        published: number;
-        drafts: number;
-    };
+    stats: IPageStats;
 }
+
+/** The list filters the status dropdown offers. */
+type PageListFilter = 'all' | 'published' | 'drafts' | 'pending' | 'deleted';
 
 /**
  * Pages tab - List and edit pages.
  *
  * Provides comprehensive page management including:
- * - List view with search and filtering
+ * - List view with search and filtering, including pages awaiting review and
+ *   soft-deleted pages
  * - Markdown editor with live preview
- * - Create, update, and delete operations
- * - Publish/unpublish toggle
+ * - Create, update, soft-delete, and restore operations
+ * - Review state per page: a change made through the service token or an
+ *   automated caller waits in /system/curation while the approved version
+ *   stays live
+ *
+ * Pages are addressed by their core content id. A page the adoption migration
+ * has not reached yet has no content id, so it is shown read-only with a note.
  */
 export function PagesTab() {
     const [pages, setPages] = useState<IPage[]>([]);
-    const [stats, setStats] = useState({ total: 0, published: 0, drafts: 0 });
+    const [stats, setStats] = useState<IPageStats>({ total: 0, published: 0, drafts: 0, pendingReview: 0, deleted: 0 });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
-    const [publishedFilter, setPublishedFilter] = useState<'all' | 'published' | 'drafts'>('all');
+    const [listFilter, setListFilter] = useState<PageListFilter>('all');
     const [editingPage, setEditingPage] = useState<IPage | null>(null);
     const [isCreating, setIsCreating] = useState(false);
 
@@ -54,8 +73,10 @@ export function PagesTab() {
         try {
             const params = new URLSearchParams();
             if (searchQuery) params.append('search', searchQuery);
-            if (publishedFilter === 'published') params.append('published', 'true');
-            if (publishedFilter === 'drafts') params.append('published', 'false');
+            if (listFilter === 'published') params.append('published', 'true');
+            if (listFilter === 'drafts') params.append('published', 'false');
+            if (listFilter === 'pending') params.append('curation', 'pending');
+            if (listFilter === 'deleted') params.append('deleted', 'true');
 
             const response = await fetch(`/api/admin/pages?${params}`, {
                 headers: { 'Content-Type': 'application/json' }
@@ -74,18 +95,19 @@ export function PagesTab() {
         } finally {
             setLoading(false);
         }
-    }, [searchQuery, publishedFilter]);
+    }, [searchQuery, listFilter]);
 
     /**
-     * Delete a page by ID.
+     * Soft-delete a page by content id.
      *
-     * Sends DELETE request to API, shows confirmation dialog before proceeding,
-     * and refreshes the list after successful deletion.
+     * Deletion never removes data and never frees the page's URL, so the
+     * confirmation tells the admin how to undo it rather than warning that it
+     * is permanent.
      *
-     * @param id - Page ID to delete
+     * @param id - The page's core content id
      */
     const deletePage = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this page? This action cannot be undone.')) {
+        if (!confirm('Delete this page? It stops being served, and you can restore it from the Deleted filter. Its URL stays reserved.')) {
             return;
         }
 
@@ -95,12 +117,35 @@ export function PagesTab() {
             });
 
             if (!response.ok) {
-                throw new Error(`Failed to delete page: ${response.statusText}`);
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.message || `Failed to delete page: ${response.statusText}`);
             }
 
             await fetchPages();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to delete page');
+        }
+    };
+
+    /**
+     * Restore a soft-deleted page by content id, then refresh the list.
+     *
+     * @param id - The page's core content id
+     */
+    const restorePage = async (id: string) => {
+        try {
+            const response = await fetch(`/api/admin/pages/${id}/restore`, {
+                method: 'POST'
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.message || `Failed to restore page: ${response.statusText}`);
+            }
+
+            await fetchPages();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to restore page');
         }
     };
 
@@ -163,6 +208,8 @@ export function PagesTab() {
                     <StatTile size="sm" surface={false} label="Total Pages" value={stats.total} />
                     <StatTile size="sm" surface={false} label="Published" value={stats.published} />
                     <StatTile size="sm" surface={false} label="Drafts" value={stats.drafts} />
+                    <StatTile size="sm" surface={false} label="Awaiting Review" value={stats.pendingReview} />
+                    <StatTile size="sm" surface={false} label="Deleted" value={stats.deleted} />
                 </StatGrid>
             </Card>
 
@@ -187,13 +234,15 @@ export function PagesTab() {
                         <Search size={20} className={styles.search_icon} />
                     </div>
                     <Select
-                        value={publishedFilter}
-                        onChange={e => setPublishedFilter(e.target.value as typeof publishedFilter)}
-                        aria-label="Filter pages by published status"
+                        value={listFilter}
+                        onChange={e => setListFilter(e.target.value as PageListFilter)}
+                        aria-label="Filter pages by status"
                     >
                         <option value="all">All Pages</option>
                         <option value="published">Published Only</option>
                         <option value="drafts">Drafts Only</option>
+                        <option value="pending">Awaiting Review</option>
+                        <option value="deleted">Deleted</option>
                     </Select>
                     <Button
                         variant="primary"
@@ -223,7 +272,7 @@ export function PagesTab() {
                 ) : (
                     <div className={styles.pages_list}>
                         {pages.map(page => (
-                            <div key={page._id} className={styles.page_row}>
+                            <div key={page.contentId ?? page._id} className={styles.page_row}>
                                 <div className={styles.page_info}>
                                     <div className={styles.page_header}>
                                         <h3 className={styles.page_title}>{page.title}</h3>
@@ -240,6 +289,24 @@ export function PagesTab() {
                                                 </>
                                             )}
                                         </Badge>
+                                        {page.curation === 'pending' && (
+                                            <Badge tone="warning">
+                                                <Clock size={12} />
+                                                Awaiting review
+                                            </Badge>
+                                        )}
+                                        {page.curation === 'rejected' && (
+                                            <Badge tone="danger">
+                                                <XCircle size={12} />
+                                                Edit rejected
+                                            </Badge>
+                                        )}
+                                        {page.deletedAt && (
+                                            <Badge tone="neutral">
+                                                <Archive size={12} />
+                                                Deleted
+                                            </Badge>
+                                        )}
                                     </div>
                                     <Link href={page.slug} className={styles.page_slug} target="_blank">
                                         {page.slug}
@@ -247,27 +314,53 @@ export function PagesTab() {
                                     {page.description && (
                                         <p className={styles.page_description}>{page.description}</p>
                                     )}
+                                    {(page.curation === 'pending' || page.curation === 'rejected') && page.hasApprovedVersion && (
+                                        <p className={styles.page_notice}>
+                                            Visitors see the last approved version until this edit is approved. Review it in System → Curation.
+                                        </p>
+                                    )}
+                                    {!page.contentId && (
+                                        <p className={styles.page_notice}>
+                                            This page predates managed content and cannot be changed until the
+                                            migration <code>module:pages:007_adopt_pages_as_managed_content</code> runs
+                                            from System → Database.
+                                        </p>
+                                    )}
                                     <p className={styles.page_meta}>
-                                        Updated: {new Date(page.updatedAt).toLocaleDateString()}
+                                        Updated: <ClientTime date={page.updatedAt} format="date" />
                                     </p>
                                 </div>
                                 <div className={styles.page_actions}>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        icon={<Edit size={16} />}
-                                        onClick={() => setEditingPage(page)}
-                                    >
-                                        Edit
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        icon={<Trash2 size={16} />}
-                                        onClick={() => page._id && deletePage(page._id)}
-                                    >
-                                        Delete
-                                    </Button>
+                                    {page.contentId && page.deletedAt && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            icon={<RotateCcw size={16} />}
+                                            onClick={() => page.contentId && void restorePage(page.contentId)}
+                                        >
+                                            Restore
+                                        </Button>
+                                    )}
+                                    {page.contentId && !page.deletedAt && (
+                                        <>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                icon={<Edit size={16} />}
+                                                onClick={() => setEditingPage(page)}
+                                            >
+                                                Edit
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                icon={<Trash2 size={16} />}
+                                                onClick={() => page.contentId && void deletePage(page.contentId)}
+                                            >
+                                                Delete
+                                            </Button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         ))}

@@ -9,6 +9,7 @@
 import type { Express, Router } from 'express';
 import type {
     ICacheService,
+    IContentService,
     IDatabaseService,
     IMenuService,
     IModule,
@@ -27,6 +28,11 @@ export interface IPagesModuleDependencies {
     database: IDatabaseService;
     cacheService: ICacheService;
     menuService: IMenuService;
+    /**
+     * The core content service. Pages are managed content (`core:page`), so
+     * every page write and public read passes through it.
+     */
+    contentService: IContentService;
     app: Express;
 }
 
@@ -35,7 +41,8 @@ export interface IPagesModuleDependencies {
  *
  * Lifecycle:
  * - `init()` — store deps, configure `PageService` singleton, build controller.
- * - `run()` — register `/system/pages` menu item, mount admin and public routers.
+ * - `run()` — register the `core:page` managed content type, register the
+ *   `/system/pages` menu item, mount admin and public routers.
  *
  * No file dependencies — uploads go through the Files module's
  * `/api/admin/files` admin surface, which is registered before Pages so
@@ -53,21 +60,29 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
     private database!: IDatabaseService;
     private cacheService!: ICacheService;
     private menuService!: IMenuService;
+    private contentService!: IContentService;
     private app!: Express;
     private pageService!: PageService;
     private controller!: PagesController;
 
     private readonly logger = logger.child({ module: 'pages' });
 
+    /**
+     * Store dependencies and build the page service and controller. Nothing
+     * is registered or mounted yet.
+     *
+     * @param dependencies - Core services the module needs.
+     */
     async init(dependencies: IPagesModuleDependencies): Promise<void> {
         this.logger.info('Initializing pages module...');
 
         this.database = dependencies.database;
         this.cacheService = dependencies.cacheService;
         this.menuService = dependencies.menuService;
+        this.contentService = dependencies.contentService;
         this.app = dependencies.app;
 
-        PageService.setDependencies(this.database, this.cacheService, this.logger);
+        PageService.setDependencies(this.database, this.cacheService, this.contentService, this.logger);
         this.pageService = PageService.getInstance();
 
         this.controller = new PagesController(this.pageService, this.logger);
@@ -75,8 +90,19 @@ export class PagesModule implements IModule<IPagesModuleDependencies> {
         this.logger.info('Pages module initialized');
     }
 
+    /**
+     * Register pages as managed content, then the admin menu item and the
+     * admin and public routers.
+     */
     async run(): Promise<void> {
         this.logger.info('Running pages module...');
+
+        // Register before mounting routes so the first request already finds
+        // the type. The content service binds it into the curation queue as
+        // soon as curation publishes itself. The returned disposer is not kept:
+        // a module lives for the whole process and never unregisters.
+        this.contentService.registerType(this.pageService.getContentType(), this.metadata.id);
+        this.logger.info('core:page registered as managed content');
 
         try {
             await this.menuService.create({

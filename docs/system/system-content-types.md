@@ -19,6 +19,8 @@ Pipelines bind their own verbs onto a content type:
 - **Curation** registers a type as an `ICurationType` — an `IContentType` plus the required declarative `decisionStatus` bookkeeping — and mirrors the content facet into the shared registry. See [system-curation.md](./system-curation.md).
 - **Notifications** fires `notify({ category, typeId, ref })`; dispatch resolves the type, calls `describe(ref)`, and routes to the channels whose declared capabilities can render the descriptor's features. See [system-notifications.md](./system-notifications.md).
 
+- **Managed content** extends a content type into `IManagedContentType`, whose items all pass through the core content service for create, read, update, delete, and restore. See [system-content.md](./system-content.md).
+
 The split is deliberate: generic operate-on-own-record operations (`describe`, `applyEdit`) live on `IContentType`; pipeline-decision semantics (curation's declarative `decisionStatus` map, applied *through* the generic `applyEdit`) stay on the binding, because "approve" only means something inside a review lifecycle.
 
 ## The Contract
@@ -50,6 +52,7 @@ The split is deliberate: generic operate-on-own-record operations (`describe`, `
 ## Further Reading
 
 - [system-curation.md](./system-curation.md) — the curation pipeline; `ICurationType` as an `IContentType` plus review verbs
+- [system-content.md](./system-content.md) — managed content: `IContent`, `IManagedContentType`, and the core CRUD path
 - [system-notifications.md](./system-notifications.md) — the notification pipeline; capability routing over the descriptor
 - [system-hooks.md](./system-hooks.md) — the sibling bootstrap-level registry whose admin introspection pattern this mirrors
 - [plugins-service-registry.md](../plugins/plugins-service-registry.md) — resolving `'content-types'` from the registry

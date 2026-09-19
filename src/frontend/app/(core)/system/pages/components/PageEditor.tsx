@@ -72,8 +72,11 @@ export function PageEditor({ page, onSave, onCancel }: PageEditorProps) {
     /**
      * Save page (create or update).
      *
-     * Sends POST for new pages or PATCH for existing pages. Validates that
-     * content is not empty before submitting. Calls onSave callback on success.
+     * Sends POST for new pages or PATCH for existing pages, addressed by the
+     * page's core content id. Validates that content is not empty before
+     * submitting. Calls onSave callback on success. When the save comes from
+     * a caller that is not a curator, the server holds the change for review
+     * and the list shows it as awaiting review.
      */
     const savePage = async () => {
         if (!content.trim()) {
@@ -85,8 +88,8 @@ export function PageEditor({ page, onSave, onCancel }: PageEditorProps) {
         setError(null);
 
         try {
-            const isUpdate = !!page?._id;
-            const url = isUpdate ? `/api/admin/pages/${page._id}` : '/api/admin/pages';
+            const isUpdate = !!page?.contentId;
+            const url = isUpdate ? `/api/admin/pages/${page.contentId}` : '/api/admin/pages';
             const method = isUpdate ? 'PATCH' : 'POST';
 
             const response = await fetch(url, {

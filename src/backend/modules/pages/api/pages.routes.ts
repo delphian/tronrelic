@@ -5,9 +5,13 @@ import type { PagesController } from './pages.controller.js';
  * Create the Pages admin router. Mounted at `/api/admin/pages` with
  * `requireAdmin` middleware. Static routes (`/preview`, `/settings`) come
  * before `/:id` so the dynamic page-id parameter does not capture them.
+ * `:id` is the page's core content id.
  *
  * File endpoints used to live here under `/files/*` — they moved to the
  * Files module's router at `/api/admin/files`.
+ *
+ * @param controller - The pages controller the routes bind to.
+ * @returns The admin router.
  */
 export function createPagesRouter(controller: PagesController): Router {
     const router = Router();
@@ -22,6 +26,7 @@ export function createPagesRouter(controller: PagesController): Router {
     router.get('/:id', controller.getPage.bind(controller));
     router.patch('/:id', controller.updatePage.bind(controller));
     router.delete('/:id', controller.deletePage.bind(controller));
+    router.post('/:id/restore', controller.restorePage.bind(controller));
 
     return router;
 }

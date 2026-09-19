@@ -12,6 +12,7 @@ import { systemRouter } from './system.router.js';
 import { configRouter } from './config.router.js';
 import { widgetRouter } from './widget.router.js';
 import { sitemapRouter } from './sitemap.router.js';
+import type { SitemapPageLister } from './sitemap.router.js';
 import pluginsRouter from './plugins.routes.js';
 import pluginManagementRouter from './plugin-management.routes.js';
 import { PluginApiService } from '../../services/plugin-api.service.js';
@@ -26,9 +27,16 @@ import { PluginApiService } from '../../services/plugin-api.service.js';
  * @param database - Shared database service instance from bootstrap
  * @param hookRegistry - Shared hook registry, forwarded to routers that invoke
  *   core seams (the sitemap router fires `http.sitemapEntries`).
+ * @param listSitemapPages - Lists the CMS pages a visitor can reach, forwarded
+ *   to the sitemap router so page visibility is decided by the page service
+ *   (and through it the core content service) rather than by a raw query.
  * @returns Express router with all API routes mounted
  */
-export function createApiRouter(database: IDatabaseService, hookRegistry: IHookRegistry) {
+export function createApiRouter(
+  database: IDatabaseService,
+  hookRegistry: IHookRegistry,
+  listSitemapPages: SitemapPageLister
+) {
   const router = Router();
 
   // Routers without database dependency
@@ -48,7 +56,7 @@ export function createApiRouter(database: IDatabaseService, hookRegistry: IHookR
   router.use('/live', liveRouter(database));
   router.use('/tokens', tokensRouter(database));
   router.use('/admin/system', systemRouter(database));
-  router.use('/sitemap-data', sitemapRouter(database, hookRegistry));
+  router.use('/sitemap-data', sitemapRouter(database, hookRegistry, listSitemapPages));
 
   // Note: Menu, Pages, and Database (migrations) routers are mounted directly
   // by their respective modules in bootstrap (apps/backend/src/index.ts) to follow

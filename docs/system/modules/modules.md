@@ -34,6 +34,12 @@ A module that registers a scheduler job or owns a collection must surface each o
 
 `/system/address-tags` is the reference implementation. The full rule, including the props each component scopes on, is in [frontend.md](../../frontend/frontend.md#a-component-that-owns-schedules-or-storage-surfaces-them).
 
+## Owning Content
+
+A module that owns content — an item the platform stores and publishes, such as a page, post, or draft — must make it managed content. The module receives `IContentService` through `init(deps)`, registers its `IManagedContentType` in `run()`, stores only the type's own fields in its own collection, and sends every create, read, update, delete, and restore through the service. Core then runs the veto hooks, records who acted, holds non-curator changes for review, and serves visitors the last approved version. Do not implement `ICurationType` for a content type.
+
+The pages module (`core:page`) is the reference implementation. See [system-content.md](../system-content.md) for the contract.
+
 ## Choosing Between a Module and a Plugin
 
 | Criteria | Module | Plugin |
@@ -85,7 +91,7 @@ Confirm the feature really is essential infrastructure; if the application would
 - [modules-creating.md](./modules-creating.md) — step-by-step creation guide
 
 **Example modules** (each directory holds a README.md with complete documentation):
-- [Pages](../../../src/backend/modules/pages/) — the reference implementation, covering storage providers, file uploads, and the markdown content management system
+- [Pages](../../../src/backend/modules/pages/) — the reference implementation, covering managed content (`core:page`), admin routes, and the markdown content management system
 - [Menu](../../../src/backend/modules/menu/) — navigation entries, event-driven validation, and WebSocket updates
 - [Identity](../../../src/backend/modules/identity/) — Better Auth, user groups, wallets proven by signature, and the account directory
 - [Traffic](../../../src/backend/modules/traffic/) — ClickHouse `traffic_events` analytics, the tid and ref cookies, and bot and geography classification
