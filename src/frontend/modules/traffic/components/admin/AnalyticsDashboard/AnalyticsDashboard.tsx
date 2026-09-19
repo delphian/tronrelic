@@ -348,31 +348,29 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                                 {landingPages.length === 0 ? (
                                     <div className={styles.empty_state}>No landing page data for this period</div>
                                 ) : (
-                                    <div className={styles.table_wrapper}>
-                                        <Table>
-                                            <Thead>
-                                                <Tr>
-                                                    <Th scope="col">Page</Th>
-                                                    <Th scope="col" className={styles.table__number}>Visitors</Th>
-                                                    <Th scope="col" className={styles.table__bar_cell}></Th>
+                                    <Table flush>
+                                        <Thead>
+                                            <Tr>
+                                                <Th scope="col">Page</Th>
+                                                <Th scope="col" className={styles.table__number}>Visitors</Th>
+                                                <Th scope="col" className={styles.table__bar_cell}></Th>
+                                            </Tr>
+                                        </Thead>
+                                        <Tbody>
+                                            {landingPages.map(p => (
+                                                <Tr key={p.path}>
+                                                    <Td className={styles.table__truncate} title={p.path}>{p.path}</Td>
+                                                    <Td className={styles.table__number}>{p.visitors.toLocaleString()}</Td>
+                                                    <Td className={styles.table__bar_cell}>
+                                                        <div
+                                                            className={styles.table__bar}
+                                                            style={{ width: `${(p.visitors / maxPageVisitors) * 100}%` }}
+                                                        />
+                                                    </Td>
                                                 </Tr>
-                                            </Thead>
-                                            <Tbody>
-                                                {landingPages.map(p => (
-                                                    <Tr key={p.path}>
-                                                        <Td className={styles.table__truncate} title={p.path}>{p.path}</Td>
-                                                        <Td className={styles.table__number}>{p.visitors.toLocaleString()}</Td>
-                                                        <Td className={styles.table__bar_cell}>
-                                                            <div
-                                                                className={styles.table__bar}
-                                                                style={{ width: `${(p.visitors / maxPageVisitors) * 100}%` }}
-                                                            />
-                                                        </Td>
-                                                    </Tr>
-                                                ))}
-                                            </Tbody>
-                                        </Table>
-                                    </div>
+                                            ))}
+                                        </Tbody>
+                                    </Table>
                                 )}
                             </div>
                         </Card>
@@ -393,232 +391,230 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                                 {trafficSources.length === 0 ? (
                                     <div className={styles.empty_state}>No traffic data for this period</div>
                                 ) : (
-                                    <div className={styles.table_wrapper}>
-                                        <Table>
-                                            <Thead>
-                                                <Tr>
-                                                    <Th scope="col" className={styles.table__expand_cell}></Th>
-                                                    <Th scope="col">Source</Th>
-                                                    <Th scope="col">Category</Th>
-                                                    <Th scope="col" className={styles.table__number}>Visitors</Th>
-                                                    <Th scope="col" className={styles.table__bar_cell}></Th>
-                                                    <Th scope="col" className={styles.table__number}>%</Th>
-                                                </Tr>
-                                            </Thead>
-                                            <Tbody>
-                                                {trafficSources.map(s => {
-                                                    const isExpanded = expandedSource === s.source;
-                                                    const details = sourceDetails[s.source];
-                                                    const isLoading = sourceDetailsLoading === s.source;
-                                                    return (
-                                                        <React.Fragment key={s.source}>
-                                                            <Tr
-                                                                className={`${styles.table__row_clickable} ${isExpanded ? styles.table__row_expanded : ''}`}
-                                                                onClick={() => toggleSourceDetails(s.source)}
-                                                                role="button"
-                                                                tabIndex={0}
-                                                                onKeyDown={(e) => {
-                                                                    if (e.key === 'Enter' || e.key === ' ') {
-                                                                        e.preventDefault();
-                                                                        toggleSourceDetails(s.source);
-                                                                    }
-                                                                }}
-                                                                aria-expanded={isExpanded}
-                                                            >
-                                                                <Td className={styles.table__expand_cell}>
-                                                                    {isExpanded
-                                                                        ? <ChevronDown size={14} />
-                                                                        : <ChevronRight size={14} />
-                                                                    }
-                                                                </Td>
-                                                                <Td>{s.source}</Td>
-                                                                <Td>
-                                                                    <Badge {...getCategoryBadgeProps(s.category)}>
-                                                                        {s.category}
-                                                                    </Badge>
-                                                                </Td>
-                                                                <Td className={styles.table__number}>{s.visitors.toLocaleString()}</Td>
-                                                                <Td className={styles.table__bar_cell}>
-                                                                    <div
-                                                                        className={styles.table__bar}
-                                                                        style={{ width: `${(s.visitors / maxSourceCount) * 100}%` }}
-                                                                    />
-                                                                </Td>
-                                                                <Td className={styles.table__number}>{s.percentage}%</Td>
-                                                            </Tr>
-                                                            {isExpanded && (
-                                                                <Tr className={styles.detail_row}>
-                                                                    <Td colSpan={6} className={styles.detail_row__cell}>
-                                                                        {isLoading ? (
-                                                                            <div className={styles.detail_loading}>Loading details...</div>
-                                                                        ) : details ? (
-                                                                            <div className={styles.detail_grid}>
-                                                                                {/* Engagement + Conversion cards. Sessions are
-                                                                                    derived server-side from the page-event stream
-                                                                                    (30-minute inactivity rule), so these are real
-                                                                                    values; a zero means no interactive page views
-                                                                                    from this cohort in the window. */}
-                                                                                <div className={styles.detail_cards}>
-                                                                                    <div
-                                                                                        className={styles.detail_card}
-                                                                                        title="Derived sessions per visitor (30-minute inactivity rule over page events)"
-                                                                                    >
-                                                                                        <span className={styles.detail_card__value}>
-                                                                                            {details.engagement.avgSessions}
-                                                                                        </span>
-                                                                                        <span className={styles.detail_card__label}>Avg Sessions</span>
-                                                                                    </div>
-                                                                                    <div className={styles.detail_card}>
-                                                                                        <span className={styles.detail_card__value}>
-                                                                                            {details.engagement.avgPageViews}
-                                                                                        </span>
-                                                                                        <span className={styles.detail_card__label}>Avg Pages</span>
-                                                                                    </div>
-                                                                                    <div
-                                                                                        className={styles.detail_card}
-                                                                                        title="Average derived-session duration (last hit minus first hit; single-page sessions count as 0s)"
-                                                                                    >
-                                                                                        <span className={styles.detail_card__value}>
-                                                                                            {formatDuration(details.engagement.avgDuration)}
-                                                                                        </span>
-                                                                                        <span className={styles.detail_card__label}>Avg Duration</span>
-                                                                                    </div>
-                                                                                    <div
-                                                                                        className={styles.detail_card}
-                                                                                        title="Visitors from this source who were logged in at any point during the window (includes returning account holders)"
-                                                                                    >
-                                                                                        <span className={styles.detail_card__value}>
-                                                                                            {details.conversion.conversionRate}%
-                                                                                        </span>
-                                                                                        <span className={styles.detail_card__label}>Logged-In Rate</span>
-                                                                                    </div>
+                                    <Table flush>
+                                        <Thead>
+                                            <Tr>
+                                                <Th scope="col" className={styles.table__expand_cell}></Th>
+                                                <Th scope="col">Source</Th>
+                                                <Th scope="col">Category</Th>
+                                                <Th scope="col" className={styles.table__number}>Visitors</Th>
+                                                <Th scope="col" className={styles.table__bar_cell}></Th>
+                                                <Th scope="col" className={styles.table__number}>%</Th>
+                                            </Tr>
+                                        </Thead>
+                                        <Tbody>
+                                            {trafficSources.map(s => {
+                                                const isExpanded = expandedSource === s.source;
+                                                const details = sourceDetails[s.source];
+                                                const isLoading = sourceDetailsLoading === s.source;
+                                                return (
+                                                    <React.Fragment key={s.source}>
+                                                        <Tr
+                                                            className={`${styles.table__row_clickable} ${isExpanded ? styles.table__row_expanded : ''}`}
+                                                            onClick={() => toggleSourceDetails(s.source)}
+                                                            role="button"
+                                                            tabIndex={0}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                                    e.preventDefault();
+                                                                    toggleSourceDetails(s.source);
+                                                                }
+                                                            }}
+                                                            aria-expanded={isExpanded}
+                                                        >
+                                                            <Td className={styles.table__expand_cell}>
+                                                                {isExpanded
+                                                                    ? <ChevronDown size={14} />
+                                                                    : <ChevronRight size={14} />
+                                                                }
+                                                            </Td>
+                                                            <Td>{s.source}</Td>
+                                                            <Td>
+                                                                <Badge {...getCategoryBadgeProps(s.category)}>
+                                                                    {s.category}
+                                                                </Badge>
+                                                            </Td>
+                                                            <Td className={styles.table__number}>{s.visitors.toLocaleString()}</Td>
+                                                            <Td className={styles.table__bar_cell}>
+                                                                <div
+                                                                    className={styles.table__bar}
+                                                                    style={{ width: `${(s.visitors / maxSourceCount) * 100}%` }}
+                                                                />
+                                                            </Td>
+                                                            <Td className={styles.table__number}>{s.percentage}%</Td>
+                                                        </Tr>
+                                                        {isExpanded && (
+                                                            <Tr className={styles.detail_row}>
+                                                                <Td colSpan={6} className={styles.detail_row__cell}>
+                                                                    {isLoading ? (
+                                                                        <div className={styles.detail_loading}>Loading details...</div>
+                                                                    ) : details ? (
+                                                                        <div className={styles.detail_grid}>
+                                                                            {/* Engagement + Conversion cards. Sessions are
+                                                                                derived server-side from the page-event stream
+                                                                                (30-minute inactivity rule), so these are real
+                                                                                values; a zero means no interactive page views
+                                                                                from this cohort in the window. */}
+                                                                            <div className={styles.detail_cards}>
+                                                                                <div
+                                                                                    className={styles.detail_card}
+                                                                                    title="Derived sessions per visitor (30-minute inactivity rule over page events)"
+                                                                                >
+                                                                                    <span className={styles.detail_card__value}>
+                                                                                        {details.engagement.avgSessions}
+                                                                                    </span>
+                                                                                    <span className={styles.detail_card__label}>Avg Sessions</span>
                                                                                 </div>
+                                                                                <div className={styles.detail_card}>
+                                                                                    <span className={styles.detail_card__value}>
+                                                                                        {details.engagement.avgPageViews}
+                                                                                    </span>
+                                                                                    <span className={styles.detail_card__label}>Avg Pages</span>
+                                                                                </div>
+                                                                                <div
+                                                                                    className={styles.detail_card}
+                                                                                    title="Average derived-session duration (last hit minus first hit; single-page sessions count as 0s)"
+                                                                                >
+                                                                                    <span className={styles.detail_card__value}>
+                                                                                        {formatDuration(details.engagement.avgDuration)}
+                                                                                    </span>
+                                                                                    <span className={styles.detail_card__label}>Avg Duration</span>
+                                                                                </div>
+                                                                                <div
+                                                                                    className={styles.detail_card}
+                                                                                    title="Visitors from this source who were logged in at any point during the window (includes returning account holders)"
+                                                                                >
+                                                                                    <span className={styles.detail_card__value}>
+                                                                                        {details.conversion.conversionRate}%
+                                                                                    </span>
+                                                                                    <span className={styles.detail_card__label}>Logged-In Rate</span>
+                                                                                </div>
+                                                                            </div>
 
-                                                                                {/* Landing Pages */}
-                                                                                {details.landingPages.length > 0 && (
+                                                                            {/* Landing Pages */}
+                                                                            {details.landingPages.length > 0 && (
+                                                                                <div className={styles.detail_section}>
+                                                                                    <h4 className={styles.detail_section__title}>Landing Pages</h4>
+                                                                                    <ul className={styles.detail_list}>
+                                                                                        {details.landingPages.map(lp => (
+                                                                                            <li key={lp.path} className={styles.detail_list__item}>
+                                                                                                <span className={styles.detail_list__label}>{lp.path}</span>
+                                                                                                <span className={styles.detail_list__value}>
+                                                                                                    {lp.count} ({lp.percentage}%)
+                                                                                                </span>
+                                                                                            </li>
+                                                                                        ))}
+                                                                                    </ul>
+                                                                                </div>
+                                                                            )}
+
+                                                                            {/* Countries + Devices side by side */}
+                                                                            <div className={styles.detail_columns}>
+                                                                                {details.countries.length > 0 && (
                                                                                     <div className={styles.detail_section}>
-                                                                                        <h4 className={styles.detail_section__title}>Landing Pages</h4>
+                                                                                        <h4 className={styles.detail_section__title}>Countries</h4>
                                                                                         <ul className={styles.detail_list}>
-                                                                                            {details.landingPages.map(lp => (
-                                                                                                <li key={lp.path} className={styles.detail_list__item}>
-                                                                                                    <span className={styles.detail_list__label}>{lp.path}</span>
+                                                                                            {details.countries.map(c => (
+                                                                                                <li key={c.country} className={styles.detail_list__item}>
+                                                                                                    <span className={styles.detail_list__label}>{c.country}</span>
                                                                                                     <span className={styles.detail_list__value}>
-                                                                                                        {lp.count} ({lp.percentage}%)
+                                                                                                        {c.count} ({c.percentage}%)
                                                                                                     </span>
                                                                                                 </li>
                                                                                             ))}
                                                                                         </ul>
                                                                                     </div>
                                                                                 )}
-
-                                                                                {/* Countries + Devices side by side */}
-                                                                                <div className={styles.detail_columns}>
-                                                                                    {details.countries.length > 0 && (
-                                                                                        <div className={styles.detail_section}>
-                                                                                            <h4 className={styles.detail_section__title}>Countries</h4>
-                                                                                            <ul className={styles.detail_list}>
-                                                                                                {details.countries.map(c => (
-                                                                                                    <li key={c.country} className={styles.detail_list__item}>
-                                                                                                        <span className={styles.detail_list__label}>{c.country}</span>
-                                                                                                        <span className={styles.detail_list__value}>
-                                                                                                            {c.count} ({c.percentage}%)
-                                                                                                        </span>
-                                                                                                    </li>
-                                                                                                ))}
-                                                                                            </ul>
-                                                                                        </div>
-                                                                                    )}
-                                                                                    {details.devices.length > 0 && (
-                                                                                        <div className={styles.detail_section}>
-                                                                                            <h4 className={styles.detail_section__title}>Devices</h4>
-                                                                                            <ul className={styles.detail_list}>
-                                                                                                {details.devices.map(d => (
-                                                                                                    <li key={d.device} className={styles.detail_list__item}>
-                                                                                                        <span className={styles.detail_list__label}>{d.device}</span>
-                                                                                                        <span className={styles.detail_list__value}>
-                                                                                                            {d.count} ({d.percentage}%)
-                                                                                                        </span>
-                                                                                                    </li>
-                                                                                                ))}
-                                                                                            </ul>
-                                                                                        </div>
-                                                                                    )}
-                                                                                </div>
-
-                                                                                {/* Search Keywords — GSC enriched when available */}
-                                                                                {(details.gscKeywords && details.gscKeywords.length > 0) ? (
+                                                                                {details.devices.length > 0 && (
                                                                                     <div className={styles.detail_section}>
-                                                                                        <h4 className={styles.detail_section__title}>
-                                                                                            Search Keywords
-                                                                                            <Badge tone="info" className={styles.gsc_badge}>Search Console</Badge>
-                                                                                        </h4>
-                                                                                        <Table className={styles.gsc_table}>
-                                                                                            <Thead>
-                                                                                                <Tr>
-                                                                                                    <Th scope="col" className={styles.gsc_table__keyword}>Keyword</Th>
-                                                                                                    <Th scope="col" className={styles.gsc_table__metric}>Clicks</Th>
-                                                                                                    <Th scope="col" className={styles.gsc_table__metric}>Impr.</Th>
-                                                                                                    <Th scope="col" className={styles.gsc_table__metric}>CTR</Th>
-                                                                                                    <Th scope="col" className={styles.gsc_table__metric}>Pos.</Th>
-                                                                                                </Tr>
-                                                                                            </Thead>
-                                                                                            <Tbody>
-                                                                                                {details.gscKeywords.map(kw => (
-                                                                                                    <Tr key={kw.keyword}>
-                                                                                                        <Td className={styles.gsc_table__keyword}>{kw.keyword}</Td>
-                                                                                                        <Td className={styles.gsc_table__metric}>{kw.clicks.toLocaleString()}</Td>
-                                                                                                        <Td className={styles.gsc_table__metric}>{kw.impressions.toLocaleString()}</Td>
-                                                                                                        <Td className={styles.gsc_table__metric}>{(kw.ctr * 100).toFixed(1)}%</Td>
-                                                                                                        <Td className={styles.gsc_table__metric}>{kw.position.toFixed(1)}</Td>
-                                                                                                    </Tr>
-                                                                                                ))}
-                                                                                            </Tbody>
-                                                                                        </Table>
-                                                                                    </div>
-                                                                                ) : details.searchKeywords.length > 0 ? (
-                                                                                    <div className={styles.detail_section}>
-                                                                                        <h4 className={styles.detail_section__title}>Search Keywords</h4>
+                                                                                        <h4 className={styles.detail_section__title}>Devices</h4>
                                                                                         <ul className={styles.detail_list}>
-                                                                                            {details.searchKeywords.map(kw => (
-                                                                                                <li key={kw.keyword} className={styles.detail_list__item}>
-                                                                                                    <span className={styles.detail_list__label}>{kw.keyword}</span>
-                                                                                                    <span className={styles.detail_list__value}>{kw.count}</span>
-                                                                                                </li>
-                                                                                            ))}
-                                                                                        </ul>
-                                                                                    </div>
-                                                                                ) : null}
-
-                                                                                {/* UTM Campaigns (if any) */}
-                                                                                {details.utmCampaigns.length > 0 && (
-                                                                                    <div className={styles.detail_section}>
-                                                                                        <h4 className={styles.detail_section__title}>UTM Campaigns</h4>
-                                                                                        <ul className={styles.detail_list}>
-                                                                                            {details.utmCampaigns.map(utm => (
-                                                                                                <li
-                                                                                                    key={`${utm.source}|${utm.medium}|${utm.campaign}`}
-                                                                                                    className={styles.detail_list__item}
-                                                                                                >
-                                                                                                    <span className={styles.detail_list__label}>
-                                                                                                        {utm.source} / {utm.medium} / {utm.campaign}
+                                                                                            {details.devices.map(d => (
+                                                                                                <li key={d.device} className={styles.detail_list__item}>
+                                                                                                    <span className={styles.detail_list__label}>{d.device}</span>
+                                                                                                    <span className={styles.detail_list__value}>
+                                                                                                        {d.count} ({d.percentage}%)
                                                                                                     </span>
-                                                                                                    <span className={styles.detail_list__value}>{utm.count}</span>
                                                                                                 </li>
                                                                                             ))}
                                                                                         </ul>
                                                                                     </div>
                                                                                 )}
                                                                             </div>
-                                                                        ) : null}
-                                                                    </Td>
-                                                                </Tr>
-                                                            )}
-                                                        </React.Fragment>
-                                                    );
-                                                })}
-                                            </Tbody>
-                                        </Table>
-                                    </div>
+
+                                                                            {/* Search Keywords — GSC enriched when available */}
+                                                                            {(details.gscKeywords && details.gscKeywords.length > 0) ? (
+                                                                                <div className={styles.detail_section}>
+                                                                                    <h4 className={styles.detail_section__title}>
+                                                                                        Search Keywords
+                                                                                        <Badge tone="info" className={styles.gsc_badge}>Search Console</Badge>
+                                                                                    </h4>
+                                                                                    <Table className={styles.gsc_table}>
+                                                                                        <Thead>
+                                                                                            <Tr>
+                                                                                                <Th scope="col" className={styles.gsc_table__keyword}>Keyword</Th>
+                                                                                                <Th scope="col" className={styles.gsc_table__metric}>Clicks</Th>
+                                                                                                <Th scope="col" className={styles.gsc_table__metric}>Impr.</Th>
+                                                                                                <Th scope="col" className={styles.gsc_table__metric}>CTR</Th>
+                                                                                                <Th scope="col" className={styles.gsc_table__metric}>Pos.</Th>
+                                                                                            </Tr>
+                                                                                        </Thead>
+                                                                                        <Tbody>
+                                                                                            {details.gscKeywords.map(kw => (
+                                                                                                <Tr key={kw.keyword}>
+                                                                                                    <Td className={styles.gsc_table__keyword}>{kw.keyword}</Td>
+                                                                                                    <Td className={styles.gsc_table__metric}>{kw.clicks.toLocaleString()}</Td>
+                                                                                                    <Td className={styles.gsc_table__metric}>{kw.impressions.toLocaleString()}</Td>
+                                                                                                    <Td className={styles.gsc_table__metric}>{(kw.ctr * 100).toFixed(1)}%</Td>
+                                                                                                    <Td className={styles.gsc_table__metric}>{kw.position.toFixed(1)}</Td>
+                                                                                                </Tr>
+                                                                                            ))}
+                                                                                        </Tbody>
+                                                                                    </Table>
+                                                                                </div>
+                                                                            ) : details.searchKeywords.length > 0 ? (
+                                                                                <div className={styles.detail_section}>
+                                                                                    <h4 className={styles.detail_section__title}>Search Keywords</h4>
+                                                                                    <ul className={styles.detail_list}>
+                                                                                        {details.searchKeywords.map(kw => (
+                                                                                            <li key={kw.keyword} className={styles.detail_list__item}>
+                                                                                                <span className={styles.detail_list__label}>{kw.keyword}</span>
+                                                                                                <span className={styles.detail_list__value}>{kw.count}</span>
+                                                                                            </li>
+                                                                                        ))}
+                                                                                    </ul>
+                                                                                </div>
+                                                                            ) : null}
+
+                                                                            {/* UTM Campaigns (if any) */}
+                                                                            {details.utmCampaigns.length > 0 && (
+                                                                                <div className={styles.detail_section}>
+                                                                                    <h4 className={styles.detail_section__title}>UTM Campaigns</h4>
+                                                                                    <ul className={styles.detail_list}>
+                                                                                        {details.utmCampaigns.map(utm => (
+                                                                                            <li
+                                                                                                key={`${utm.source}|${utm.medium}|${utm.campaign}`}
+                                                                                                className={styles.detail_list__item}
+                                                                                            >
+                                                                                                <span className={styles.detail_list__label}>
+                                                                                                    {utm.source} / {utm.medium} / {utm.campaign}
+                                                                                                </span>
+                                                                                                <span className={styles.detail_list__value}>{utm.count}</span>
+                                                                                            </li>
+                                                                                        ))}
+                                                                                    </ul>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    ) : null}
+                                                                </Td>
+                                                            </Tr>
+                                                        )}
+                                                    </React.Fragment>
+                                                );
+                                            })}
+                                        </Tbody>
+                                    </Table>
                                 )}
                             </div>
                         </Card>
@@ -666,33 +662,31 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                                 {geoData.length === 0 ? (
                                     <div className={styles.empty_state}>No geographic data for this period</div>
                                 ) : (
-                                    <div className={styles.table_wrapper}>
-                                        <Table>
-                                            <Thead>
-                                                <Tr>
-                                                    <Th scope="col">Country</Th>
-                                                    <Th scope="col" className={styles.table__number}>Visitors</Th>
-                                                    <Th scope="col" className={styles.table__bar_cell}></Th>
-                                                    <Th scope="col" className={styles.table__number}>%</Th>
+                                    <Table flush>
+                                        <Thead>
+                                            <Tr>
+                                                <Th scope="col">Country</Th>
+                                                <Th scope="col" className={styles.table__number}>Visitors</Th>
+                                                <Th scope="col" className={styles.table__bar_cell}></Th>
+                                                <Th scope="col" className={styles.table__number}>%</Th>
+                                            </Tr>
+                                        </Thead>
+                                        <Tbody>
+                                            {geoData.map(g => (
+                                                <Tr key={g.country}>
+                                                    <Td>{g.country}</Td>
+                                                    <Td className={styles.table__number}>{g.count.toLocaleString()}</Td>
+                                                    <Td className={styles.table__bar_cell}>
+                                                        <div
+                                                            className={styles.table__bar}
+                                                            style={{ width: `${(g.count / maxGeoCount) * 100}%` }}
+                                                        />
+                                                    </Td>
+                                                    <Td className={styles.table__number}>{g.percentage}%</Td>
                                                 </Tr>
-                                            </Thead>
-                                            <Tbody>
-                                                {geoData.map(g => (
-                                                    <Tr key={g.country}>
-                                                        <Td>{g.country}</Td>
-                                                        <Td className={styles.table__number}>{g.count.toLocaleString()}</Td>
-                                                        <Td className={styles.table__bar_cell}>
-                                                            <div
-                                                                className={styles.table__bar}
-                                                                style={{ width: `${(g.count / maxGeoCount) * 100}%` }}
-                                                            />
-                                                        </Td>
-                                                        <Td className={styles.table__number}>{g.percentage}%</Td>
-                                                    </Tr>
-                                                ))}
-                                            </Tbody>
-                                        </Table>
-                                    </div>
+                                            ))}
+                                        </Tbody>
+                                    </Table>
                                 )}
                             </div>
                         </Card>
@@ -736,44 +730,42 @@ export function AnalyticsDashboard({ period, customRange, includeBots, refreshSi
                                 Campaign Performance (UTM)
                             </h3>
                             <div>
-                                <div className={styles.table_wrapper}>
-                                    <Table>
-                                        <Thead>
-                                            <Tr>
-                                                <Th scope="col">Source</Th>
-                                                <Th scope="col">Medium</Th>
-                                                <Th scope="col">Campaign</Th>
-                                                <Th scope="col" className={styles.table__number}>Visitors</Th>
-                                                <Th
-                                                    scope="col"
-                                                    className={styles.table__number}
-                                                    title="Visitors logged in at any point during the window — includes returning account holders, not only new signups"
-                                                >
-                                                    Logged In
-                                                </Th>
-                                                <Th
-                                                    scope="col"
-                                                    className={styles.table__number}
-                                                    title="Logged-in visitors / visitors"
-                                                >
-                                                    Login %
-                                                </Th>
+                                <Table flush>
+                                    <Thead>
+                                        <Tr>
+                                            <Th scope="col">Source</Th>
+                                            <Th scope="col">Medium</Th>
+                                            <Th scope="col">Campaign</Th>
+                                            <Th scope="col" className={styles.table__number}>Visitors</Th>
+                                            <Th
+                                                scope="col"
+                                                className={styles.table__number}
+                                                title="Visitors logged in at any point during the window — includes returning account holders, not only new signups"
+                                            >
+                                                Logged In
+                                            </Th>
+                                            <Th
+                                                scope="col"
+                                                className={styles.table__number}
+                                                title="Logged-in visitors / visitors"
+                                            >
+                                                Login %
+                                            </Th>
+                                        </Tr>
+                                    </Thead>
+                                    <Tbody>
+                                        {campaigns.map(c => (
+                                            <Tr key={`${c.source}|${c.medium}|${c.campaign}`}>
+                                                <Td>{c.source}</Td>
+                                                <Td>{c.medium}</Td>
+                                                <Td>{c.campaign}</Td>
+                                                <Td className={styles.table__number}>{c.visitors.toLocaleString()}</Td>
+                                                <Td className={styles.table__number}>{c.conversions}</Td>
+                                                <Td className={styles.table__number}>{c.conversionRate}%</Td>
                                             </Tr>
-                                        </Thead>
-                                        <Tbody>
-                                            {campaigns.map(c => (
-                                                <Tr key={`${c.source}|${c.medium}|${c.campaign}`}>
-                                                    <Td>{c.source}</Td>
-                                                    <Td>{c.medium}</Td>
-                                                    <Td>{c.campaign}</Td>
-                                                    <Td className={styles.table__number}>{c.visitors.toLocaleString()}</Td>
-                                                    <Td className={styles.table__number}>{c.conversions}</Td>
-                                                    <Td className={styles.table__number}>{c.conversionRate}%</Td>
-                                                </Tr>
-                                            ))}
-                                        </Tbody>
-                                    </Table>
-                                </div>
+                                        ))}
+                                    </Tbody>
+                                </Table>
                             </div>
                         </Card>
                     )}

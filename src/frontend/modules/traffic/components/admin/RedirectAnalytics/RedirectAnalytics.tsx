@@ -207,7 +207,7 @@ export function RedirectAnalytics() {
                 ) : !hasHits || !data || data.byPattern.length === 0 ? (
                     <p className={styles.panel_empty}>No redirects served in this window.</p>
                 ) : (
-                    <Table>
+                    <Table flush>
                         <Thead>
                             <Tr>
                                 <Th scope="col">Source</Th>

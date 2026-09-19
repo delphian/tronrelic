@@ -53,7 +53,7 @@ Source: [components/ui/](../../../src/frontend/components/ui/). Each folder expo
 | `<StatTile>` + `<StatGrid>` | One labelled figure — uppercase label, prominent value, optional note — and the auto-fitting grid that lays a row of them out. **Use for every KPI band, summary strip, and "at a glance" readout**; the pattern was rebuilt ~20 times locally before it became a primitive. `size` is density, not a second design (`md` page band, `sm` admin strip); `surface={false}` where tiles share one enclosing card. Values render as passed — format them yourself | Tile: `label`, `value`, `note`, `icon`, `tone="neutral\|primary\|success\|warning\|danger"`, `size="sm\|md"`, `surface`. Grid: `size`, `minColWidth` | [StatTile](../../../src/frontend/components/ui/StatTile/) |
 | `<SlideOver>` | Right-anchored portal panel for master-detail review; closes on Escape/backdrop, locks body scroll, manages focus restore. Distinct from `ModalProvider` — declarative and bound to the caller's current selection | `open`, `onClose`, `title`, `label`, `width="md\|lg"` | [SlideOver](../../../src/frontend/components/ui/SlideOver/) |
 | `<Switch>` | Icon-rendered on/off toggle for row-level boolean controls (enable flag, tool on/off). Color + icon are state-driven; `role="switch"` + `aria-checked` set automatically. | `on`, `onChange`, `size="xs\|sm\|md\|lg"`, required `aria-label` | [Switch](../../../src/frontend/components/ui/Switch/) |
-| `<Table>` + `Thead` / `Tbody` / `Tr` / `Th` / `Td` | Styled table primitives with `variant="default\|compact"`, `stickyHeader` (pins the header, bounds the wrapper to `--table-sticky-max-height`), `isExpanded`, `hasError` row states, `width="auto\|shrink\|expand"` cells, and `numeric` on `Th`/`Td` to right-align a column in tabular figures | | [Table](../../../src/frontend/components/ui/Table/) |
+| `<Table>` + `Thead` / `Tbody` / `Tr` / `Th` / `Td` | Styled table primitives with `variant="default\|compact"`, `stickyHeader` (pins the header, bounds the wrapper to `--table-sticky-max-height`), `flush` (**set it whenever the table is the last thing in a `<Card>` and fills the card's width** — see below), `isExpanded`, `hasError` row states, `width="auto\|shrink\|expand"` cells, and `numeric` on `Th`/`Td` to right-align a column in tabular figures | | [Table](../../../src/frontend/components/ui/Table/) |
 | `<Textarea>` | Themed multiline field matching the Input/Select tokens; `forwardRef` for imperative focus | `variant="default\|ghost"`, `size="xs\|sm\|md\|lg"`, `invalid` + all `TextareaHTMLAttributes` | [Textarea](../../../src/frontend/components/ui/Textarea/) |
 | `<Tooltip>` | Hover tooltip with `placement="top\|bottom"` | `content`, `placement` | [Tooltip](../../../src/frontend/components/ui/Tooltip/) |
 | `<TronAddress>` | **The canonical way to render a TRON wallet/contract address.** Compact monospace chip — truncated `first 4…last 4`, full value plus any address tags in the tooltip — carrying three slim affordances: copy, a "forward to a public tool" menu, and a Tronscan out-link. Renders synchronously from `address`, so it is SSR-safe; pass a pre-resolved `label` to show a name instead of the truncation (it resolves none itself). Never hand-truncate an address or hand-build a Tronscan anchor | `address`, `label`, `copy`, `tools`, `explorer` (affordances default on), `className` | [TronAddress](../../../src/frontend/components/ui/TronAddress/) |
@@ -61,6 +61,23 @@ Source: [components/ui/](../../../src/frontend/components/ui/). Each folder expo
 | `<IconPickerModal>` | Searchable Lucide icon picker rendered inside the ModalProvider | `onSelect`, `onClose`, `initialIcon` | [IconPickerModal](../../../src/frontend/components/ui/IconPickerModal/) |
 
 All primitives consume semantic tokens from [semantic-tokens.scss](../../../src/frontend/app/semantic-tokens.scss) and respond to theme changes automatically — see [ui-theme.md](./ui-theme.md).
+
+### A Table Inside a Card Runs to the Card's Edges
+
+When a `<Table>` fills the width of the `<Card>` holding it and is the last thing in that card, pass `flush`. Without it the table sits inside the card's padding and draws a border of its own, which puts two boundaries a few pixels apart and reads as a seam. The doubled gutter also costs width the columns need, and that shows up first on a narrow screen, where it decides whether a column fits or scrolls.
+
+`flush` cancels the card's padding on the left, right, and bottom, drops the table's own border and background, squares the top corners, and rounds the bottom pair to the card's corner. A heading above the table keeps its normal inset, so the card still reads as a titled panel with a full-width table under it.
+
+```tsx
+<Card padding="sm">
+    <Stack gap="sm">
+        <h2>Latest transfers</h2>
+        <Table variant="compact" flush>…</Table>
+    </Stack>
+</Card>
+```
+
+The table reads the gutter to cancel from `--card-padding-applied`, which each `<Card>` padding variant publishes, so changing the card's `padding` keeps the two aligned. Leave `flush` off when anything follows the table inside the same card, because the variant pulls itself down onto the card's bottom edge.
 
 ## Context Providers
 

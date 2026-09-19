@@ -307,7 +307,7 @@ export function CrawlerDashboard({ refreshSignal }: ICrawlerDashboardProps) {
                 ) : !paths || paths.length === 0 ? (
                     <p className={styles.panel_empty}>No events for this class in this window.</p>
                 ) : (
-                    <Table>
+                    <Table flush>
                         <Thead>
                             <Tr>
                                 <Th scope="col">path</Th>

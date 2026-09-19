@@ -64,6 +64,38 @@
     max-height: var(--table-sticky-max-height, 70vh);
 }
 
+/*
+ * Flush variant — the table runs out to the edges of the card holding it.
+ *
+ * The negative margins cancel the gutter the card applied. The card publishes
+ * that gutter as `--card-padding-applied`, so the table cancels the size the
+ * card was actually given rather than assuming one; a flush table used outside
+ * a card falls back to 0px and simply stays where it is. The wrapper drops its
+ * own background and border because the card already draws both, and layering a
+ * second translucent surface over the first visibly darkens the table.
+ *
+ * Only the bottom corners round, to the card's own corner one border width in.
+ * The top two stay square because a heading normally sits above them, and a
+ * curve there would leave two wedges of card background beside the header row.
+ */
+.table_wrapper_flush {
+    margin-inline: calc(-1 * var(--card-padding-applied, 0px));
+    margin-bottom: calc(-1 * var(--card-padding-applied, 0px));
+    background: transparent;
+    border: none;
+    border-radius: 0 0 var(--table-flush-border-radius) var(--table-flush-border-radius);
+}
+
+.table_wrapper_flush .tbody {
+    background: transparent;
+}
+
+/* The final row sits on the card's bottom edge, where its own rule would read
+ * as a line drawn just inside the card's border rather than as a row divider. */
+.table_wrapper_flush .tbody .tr:last-child .td {
+    border-bottom: none;
+}
+
 .table_wrapper_sticky .thead .th {
     position: sticky;
     top: 0;

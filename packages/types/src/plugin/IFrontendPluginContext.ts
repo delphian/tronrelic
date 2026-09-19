@@ -624,6 +624,20 @@ export interface IUIComponents {
          * its own column labels out of view.
          */
         stickyHeader?: boolean;
+        /**
+         * Run the table out to the edges of the `Card` holding it, instead of
+         * sitting inside the card's padding with a border of its own.
+         *
+         * Set this whenever the table is the last thing in a card and fills the
+         * card's width. The card already draws the boundary, so a second border
+         * a few pixels inside it reads as a seam, and the doubled gutter spends
+         * width the columns need on a narrow screen. A heading above the table
+         * keeps its own inset, so the card still reads as a titled panel.
+         *
+         * Leave it off when something follows the table in the same card, since
+         * the variant pulls itself down onto the card's bottom edge.
+         */
+        flush?: boolean;
         className?: string;
         style?: React.CSSProperties;
     }>;

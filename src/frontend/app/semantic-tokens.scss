@@ -1087,6 +1087,13 @@
     --icon-button-border-radius: var(--radius-md);
     --toast-item-border-radius: var(--radius-md);
     --table-border-radius: var(--radius-md);
+    /* The corner a <Table flush> rounds where it meets the bottom of the card
+       holding it. One border width inside the card's own corner, so the two
+       arcs sit concentric instead of the table's curve cutting across the
+       card's. Declared here rather than in the main block because
+       --card-border-radius is density-scaled, and a token is substituted where
+       it is DECLARED — on :root alone this would freeze at density 1. */
+    --table-flush-border-radius: calc(var(--card-border-radius) - var(--border-width-thin));
     --stat-tile-border-radius: var(--radius-md);
     --alert-border-radius: var(--radius-md);
     --card-border-radius: var(--radius-lg);

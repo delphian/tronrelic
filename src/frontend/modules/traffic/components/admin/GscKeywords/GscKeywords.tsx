@@ -300,7 +300,7 @@ export function GscKeywords() {
                         the current window immediately.
                     </p>
                 ) : (
-                    <Table>
+                    <Table flush>
                         <Thead>
                             <Tr>
                                 <Th scope="col">page</Th>
@@ -349,7 +349,7 @@ export function GscKeywords() {
                         table shows clicks. Check the fetch status above.
                     </p>
                 ) : (
-                    <Table>
+                    <Table flush>
                         <Thead>
                             <Tr>
                                 <Th scope="col">keyword</Th>

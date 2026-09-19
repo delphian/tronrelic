@@ -289,7 +289,7 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
                 </div>
                 <PanelBody loading={summaryLoading} error={summaryError} empty={summary?.buckets.length === 0}>
                     {summary && (
-                        <Table>
+                        <Table flush>
                             <Thead>
                                 <Tr>
                                     <Th scope="col">bot_class</Th>
@@ -328,7 +328,7 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
                 </p>
                 <PanelBody loading={botOtherLoading} error={botOtherError} empty={botOther?.buckets.length === 0}>
                     {botOther && (
-                        <Table>
+                        <Table flush>
                             <Thead>
                                 <Tr>
                                     <Th scope="col">user_agent</Th>
@@ -358,7 +358,7 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
                     </div>
                     <PanelBody loading={topPathsLoading} error={topPathsError} empty={topPaths?.buckets.length === 0}>
                         {topPaths && (
-                            <Table>
+                            <Table flush>
                                 <Thead>
                                     <Tr>
                                         <Th scope="col">path</Th>
@@ -385,7 +385,7 @@ export function TrafficDashboard({ refreshSignal }: ITrafficDashboardProps) {
                     </div>
                     <PanelBody loading={topCountriesLoading} error={topCountriesError} empty={topCountries?.buckets.length === 0}>
                         {topCountries && (
-                            <Table>
+                            <Table flush>
                                 <Thead>
                                     <Tr>
                                         <Th scope="col">country</Th>
