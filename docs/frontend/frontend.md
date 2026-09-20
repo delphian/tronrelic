@@ -86,7 +86,7 @@ import { WalletButton } from '../../../modules/user/components/WalletButton/Wall
 
 Every provider that cuts across the application — Redux, `ToastProvider`, `ModalProvider`, and `FrontendPluginContextProvider` — is composed in `src/frontend/app/providers.tsx`. Consume them through their hooks (`useToast`, `useModal`, `useDispatch`), and do not introduce a new global provider without adding it to that file.
 
-Order matters, because an outer provider has to be available to the ones inside it: Redux comes first so that every component can reach the store, then the toast and modal providers so that plugins can call their hooks. See [react.md](./react/react.md#provider-composition).
+Order matters, because an outer provider has to be available to the ones inside it: Redux comes first so that every component can reach the store, then `SessionProvider`, then the toast and modal providers so that plugins can call their hooks. The session provider has to stay above the toast and modal providers, because both render their content through a portal from their own place in the tree, so a component inside a toast or a modal reads the session only when the session provider is an ancestor of them. See [react.md](./react/react.md#provider-composition).
 
 ### Never Read `process.env.*` Directly
 

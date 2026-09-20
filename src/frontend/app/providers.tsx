@@ -37,23 +37,30 @@ export function Providers({ children, ssrSession }: ProvidersProps) {
 
     return (
         <Provider store={store}>
-            <ToastProvider>
-                <ModalProvider>
-                    <FrontendPluginContextProvider>
-                        <SocketBridge />
-                        <CoreToastHandler />
-                        {/* Per-user notification toasts (identity-room targeted),
-                            sibling to the global CoreToastHandler. Mounted before
-                            the session provider so the listener is always live. */}
-                        <NotificationHandler />
-                        <SessionProvider initialSession={ssrSession ?? null}>
+            {/* The session provider sits above the toast and modal providers
+                because both render their content through a React portal from
+                their own position in the tree. A toast or modal body is
+                therefore a child of the provider that owns it, not of the page
+                that opened it, so anything inside one that calls
+                `useAuthSession` — `TronAddress`, for example, which the whale
+                toast renders — only finds the context when the session
+                provider is an ancestor of the toast provider itself. */}
+            <SessionProvider initialSession={ssrSession ?? null}>
+                <ToastProvider>
+                    <ModalProvider>
+                        <FrontendPluginContextProvider>
+                            <SocketBridge />
+                            <CoreToastHandler />
+                            {/* Per-user notification toasts (identity-room targeted),
+                                sibling to the global CoreToastHandler. */}
+                            <NotificationHandler />
                             <PluginLoader />
                             <PageViewTracker />
                             {children}
-                        </SessionProvider>
-                    </FrontendPluginContextProvider>
-                </ModalProvider>
-            </ToastProvider>
+                        </FrontendPluginContextProvider>
+                    </ModalProvider>
+                </ToastProvider>
+            </SessionProvider>
         </Provider>
     );
 }

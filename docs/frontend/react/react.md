@@ -70,25 +70,27 @@ Exception: `SessionProvider` is seeded with the SSR-resolved Better Auth session
 
 ## Provider Composition
 
-All providers compose in `src/frontend/app/providers.tsx`. Outer providers must be available to inner ones — Redux first so every component reaches the store; toast/modal next so plugins can call `useToast`/`useModal`; plugin context before `PluginLoader` so plugins resolve their DI; the session provider before `PluginLoader` so plugins see a resolved auth session.
+All providers compose in `src/frontend/app/providers.tsx`. Outer providers must be available to inner ones — Redux first so every component reaches the store; the session provider next so `useAuthSession` resolves everywhere, including inside toasts and modals; toast/modal after it so plugins can call `useToast`/`useModal`; plugin context before `PluginLoader` so plugins resolve their DI.
 
 Actual order from `providers.tsx`:
 
 ```
 <Provider store={store}>            ← Redux (no SSR identity preload)
-  <ToastProvider>                   ← useToast()
-    <ModalProvider>                 ← useModal()
-      <FrontendPluginContextProvider>
-        <SocketBridge />            ← single Socket.IO client; resends subs on reconnect
-        <SessionProvider>           ← Better Auth session, SSR-seeded from ssrSession
+  <SessionProvider>                 ← Better Auth session, SSR-seeded from ssrSession
+    <ToastProvider>                 ← useToast()
+      <ModalProvider>               ← useModal()
+        <FrontendPluginContextProvider>
+          <SocketBridge />          ← single Socket.IO client; resends subs on reconnect
           <PluginLoader />          ← runs after the session is resolved
           {children}
-        </SessionProvider>
-      </FrontendPluginContextProvider>
-    </ModalProvider>
-  </ToastProvider>
+        </FrontendPluginContextProvider>
+      </ModalProvider>
+    </ToastProvider>
+  </SessionProvider>
 </Provider>
 ```
+
+**The session provider must stay above the toast and modal providers.** Both render their content through a React portal from their own position in the tree, so a toast body or a modal body is a child of the provider that owns it rather than of the page that opened it. When the session provider sat inside them, any component in a toast or modal that calls `useAuthSession` — `TronAddress` does, to read address tags — found no context and threw, which the global error boundary turned into a full-page "Something went wrong".
 
 All providers are `'use client'` — they manage runtime state.
 
