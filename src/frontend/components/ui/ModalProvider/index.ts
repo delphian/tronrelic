@@ -1,2 +1,2 @@
-export { ModalProvider, useModal } from './ModalProvider';
+export { ModalProvider, ModalViewport, useModal } from './ModalProvider';
 export type { ModalDescriptor, ModalSize } from './ModalProvider';
