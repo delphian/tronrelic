@@ -88,24 +88,30 @@ const ToastContext = createContext<ToastContextValue | null>(null);
  * durations, and action buttons for user interaction. Auto-dismissal timers are managed
  * internally and cleared on unmount to prevent memory leaks.
  *
+ * This component supplies the context only. The toasts themselves are drawn by
+ * `<ToastViewport />`, which `providers.tsx` mounts as a descendant of every
+ * global provider. Keeping the two apart is what lets a toast body use the
+ * other providers: a portal renders from the position of the component that
+ * calls it, so drawing the toasts here would place them above `ModalProvider`
+ * and a toast that renders `TronAddress` — which calls `useModal` — would throw.
+ *
  * @example
  * ```tsx
  * <ToastProvider>
  *   <App />
+ *   <ToastViewport />
  * </ToastProvider>
  * ```
  *
  * @param props.children - React children to wrap with toast context
- * @returns Provider component with toast context and portal-based rendering
+ * @returns Provider component supplying the toast context
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
-    const [mounted, setMounted] = useState(false);
     const [toasts, setToasts] = useState<ToastPayload[]>([]);
     const defaultId = useId();
     const timers = useRef<Record<string, number>>({});
 
     useEffect(() => {
-        setMounted(true);
         return () => {
             const { current } = timers;
             Object.values(current).forEach(timer => {
@@ -183,16 +189,46 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     return (
         <ToastContext.Provider value={value}>
             {children}
-            {mounted && createPortal(
-                <aside className={styles.viewport} role="status" aria-live="polite">
-                    {toasts.map(toast => (
-                        <ToastItem key={toast.id} toast={toast} onDismiss={() => dismiss(toast.id)} />
-                    ))}
-                </aside>,
-                document.body
-            )}
         </ToastContext.Provider>
     );
+}
+
+/**
+ * ToastViewport Component
+ *
+ * Draws the stack of open toasts into a portal on `document.body`. It is a
+ * separate component from the provider so that the markup can be mounted lower
+ * in the tree than the context it reads. A React portal renders its children
+ * from the tree position of the component that created it, not from the DOM
+ * node it targets, so a toast drawn by `ToastProvider` itself would only ever
+ * see the providers above `ToastProvider`. Mounting this component as the last
+ * child of the provider stack instead gives every toast body the same context
+ * an ordinary page component has, including `useModal` and `useAuthSession`.
+ *
+ * Rendering waits for the first effect because `document` does not exist during
+ * server-side rendering, and the server and the client must agree on the first
+ * paint or hydration fails.
+ *
+ * @returns The portal holding the current toasts, or null before mount
+ */
+export function ToastViewport() {
+    const { toasts, dismiss } = useToastContext();
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    return mounted
+        ? createPortal(
+            <aside className={styles.viewport} role="status" aria-live="polite">
+                {toasts.map(toast => (
+                    <ToastItem key={toast.id} toast={toast} onDismiss={() => dismiss(toast.id)} />
+                ))}
+            </aside>,
+            document.body
+        )
+        : null;
 }
 
 /**

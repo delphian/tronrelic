@@ -83,6 +83,8 @@ Actual order from `providers.tsx`:
           <SocketBridge />          ← single Socket.IO client; resends subs on reconnect
           <PluginLoader />          ← runs after the session is resolved
           {children}
+          <ToastViewport />         ← draws the toasts; must stay below every provider
+          <ModalViewport />         ← draws the dialogs; must stay below every provider
         </FrontendPluginContextProvider>
       </ModalProvider>
     </ToastProvider>
@@ -90,7 +92,7 @@ Actual order from `providers.tsx`:
 </Provider>
 ```
 
-**The session provider must stay above the toast and modal providers.** Both render their content through a React portal from their own position in the tree, so a toast body or a modal body is a child of the provider that owns it rather than of the page that opened it. When the session provider sat inside them, any component in a toast or modal that calls `useAuthSession` — `TronAddress` does, to read address tags — found no context and threw, which the global error boundary turned into a full-page "Something went wrong".
+**Toast and modal markup is emitted by the two viewport components, not by their providers.** A React portal renders its children from the tree position of the component that created it, not from the DOM node it targets. When `ToastProvider` drew its own toasts, a toast body could only reach the providers above `ToastProvider`, so the whale-alert toast — which renders `TronAddress`, and `TronAddress` calls `useModal` — found no modal context and threw. Swapping the two providers only moves the failure to modal bodies calling `useToast`. Splitting each provider into a context holder and a `<ToastViewport />` / `<ModalViewport />` pair mounted at the bottom of the stack gives a toast or dialog body the same context an ordinary page component has. Keep both viewports inside every provider, and keep the session provider above them for the same reason: `TronAddress` also calls `useAuthSession` to read address tags.
 
 All providers are `'use client'` — they manage runtime state.
 

@@ -6,8 +6,8 @@ import { createStore } from '../store';
 import { SocketBridge } from '../components/socket/SocketBridge';
 import { CoreToastHandler } from '../components/socket/CoreToastHandler';
 import { NotificationHandler } from '../components/socket/NotificationHandler';
-import { ToastProvider } from '../components/ui/ToastProvider';
-import { ModalProvider } from '../components/ui/ModalProvider';
+import { ToastProvider, ToastViewport } from '../components/ui/ToastProvider';
+import { ModalProvider, ModalViewport } from '../components/ui/ModalProvider';
 import { PluginLoader } from '../components/plugins/PluginLoader';
 import { FrontendPluginContextProvider } from '../lib/frontendPluginContext';
 // Direct imports avoid pulling component CSS via barrel exports
@@ -37,14 +37,20 @@ export function Providers({ children, ssrSession }: ProvidersProps) {
 
     return (
         <Provider store={store}>
-            {/* The session provider sits above the toast and modal providers
-                because both render their content through a React portal from
-                their own position in the tree. A toast or modal body is
-                therefore a child of the provider that owns it, not of the page
-                that opened it, so anything inside one that calls
-                `useAuthSession` — `TronAddress`, for example, which the whale
-                toast renders — only finds the context when the session
-                provider is an ancestor of the toast provider itself. */}
+            {/* A toast body and a modal body are drawn through a React portal,
+                and a portal renders from the tree position of the component
+                that created it rather than from the DOM node it targets. That
+                is why the toast and modal markup is not emitted by the
+                providers themselves: the two viewport components below sit at
+                the bottom of the stack, so a toast or a dialog can reach every
+                provider here. Before that split, a toast rendering
+                `TronAddress` — which the whale alert does — threw, because
+                `TronAddress` calls `useModal` and the toast markup came out
+                above `ModalProvider`.
+
+                Both viewports must stay inside every provider a toast or modal
+                body may use. Moving either one higher brings that failure back
+                for whichever context it is lifted above. */}
             <SessionProvider initialSession={ssrSession ?? null}>
                 <ToastProvider>
                     <ModalProvider>
@@ -57,6 +63,8 @@ export function Providers({ children, ssrSession }: ProvidersProps) {
                             <PluginLoader />
                             <PageViewTracker />
                             {children}
+                            <ToastViewport />
+                            <ModalViewport />
                         </FrontendPluginContextProvider>
                     </ModalProvider>
                 </ToastProvider>

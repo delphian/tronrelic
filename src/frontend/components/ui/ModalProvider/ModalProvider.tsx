@@ -68,25 +68,26 @@ const ModalContext = createContext<ModalContextValue | null>(null);
  * Modals are rendered client-side only to avoid hydration mismatches, and support
  * keyboard accessibility with proper ARIA attributes.
  *
+ * This component supplies the context only. The dialogs themselves are drawn by
+ * `<ModalViewport />`, which `providers.tsx` mounts as a descendant of every
+ * global provider, so a modal body can use `useToast` and the plugin context in
+ * the same way an ordinary page component can.
+ *
  * @example
  * ```tsx
  * <ModalProvider>
  *   <App />
+ *   <ModalViewport />
  * </ModalProvider>
  * ```
  *
  * @param props.children - React children to wrap with modal context
- * @returns Provider component with modal context and portal-based rendering
+ * @returns Provider component supplying the modal context
  */
 export function ModalProvider({ children }: { children: ReactNode }) {
-    const [mounted, setMounted] = useState(false);
     const [modals, setModals] = useState<ModalDescriptor[]>([]);
     const baseId = useId();
     const dispatch = useAppDispatch();
-
-    useEffect(() => {
-        setMounted(true);
-    }, []);
 
     /**
      * Closes a modal by ID and invokes its onClose callback.
@@ -159,16 +160,46 @@ export function ModalProvider({ children }: { children: ReactNode }) {
     return (
         <ModalContext.Provider value={value}>
             {children}
-            {mounted && createPortal(
-                <div className={cn(styles.layer, modals.length ? styles['layer--active'] : undefined)}>
-                    {modals.map(modal => (
-                        <ModalRenderer key={modal.id} descriptor={modal} onClose={() => close(modal.id)} />
-                    ))}
-                </div>,
-                document.body
-            )}
         </ModalContext.Provider>
     );
+}
+
+/**
+ * ModalViewport Component
+ *
+ * Draws the open dialogs into a portal on `document.body`. It is a separate
+ * component from the provider so that the markup can be mounted lower in the
+ * tree than the context it reads. A React portal renders its children from the
+ * tree position of the component that created it, not from the DOM node it
+ * targets, so a dialog drawn by `ModalProvider` itself would only ever see the
+ * providers above `ModalProvider`. Mounting this component as the last child of
+ * the provider stack instead gives every modal body the same context an
+ * ordinary page component has.
+ *
+ * Rendering waits for the first effect because `document` does not exist during
+ * server-side rendering, and the server and the client must agree on the first
+ * paint or hydration fails.
+ *
+ * @returns The portal holding the open dialogs, or null before mount
+ */
+export function ModalViewport() {
+    const { modals, close } = useModal();
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    return mounted
+        ? createPortal(
+            <div className={cn(styles.layer, modals.length ? styles['layer--active'] : undefined)}>
+                {modals.map(modal => (
+                    <ModalRenderer key={modal.id} descriptor={modal} onClose={() => close(modal.id)} />
+                ))}
+            </div>,
+            document.body
+        )
+        : null;
 }
 
 /**
