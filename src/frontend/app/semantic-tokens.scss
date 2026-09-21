@@ -849,6 +849,25 @@
     /* Secondary Color */
     --color-secondary: #3fd1ff;                   /* Link hover color */
 
+    /* Value Transfer
+     *
+     * The colour of the glyph that marks value moving from one address to
+     * another — the arrow drawn between a sender and a recipient in a transfer
+     * row. It exists because those rows put the arrow inside a strip of muted
+     * icon buttons (copy, tools menu, explorer link), and an arrow drawn in
+     * --color-text-muted reads as one more of those buttons instead of as the
+     * thing that says which way the value went.
+     *
+     * Deliberately not --color-primary: primary means "interactive" site-wide
+     * and the arrow is not clickable. Deliberately not success, warning, or
+     * danger either, because each of those states an outcome and a transfer has
+     * none — it is a direction, not a result. That leaves the secondary accent,
+     * which the BlockTicker already uses for chain-activity figures nobody can
+     * click. Named for the use case rather than aliased at the call site so a
+     * theme can retune the arrow on its own; remapping --color-secondary would
+     * move link hover with it. */
+    --color-value-transfer: var(--color-secondary);
+
     /* ========================================================================
      * GRADIENT TOKENS
      * ======================================================================== */
