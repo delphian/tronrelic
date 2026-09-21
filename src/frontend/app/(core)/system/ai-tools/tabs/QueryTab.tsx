@@ -294,7 +294,11 @@ function recordsToChatTurns(records: IAiQueryRecord[]): IChatTurn[] {
             id: generateUUID(),
             role: 'user',
             content: record.expandedPrompt ?? record.prompt,
-            ...(record.expandedPrompt ? { template: record.prompt } : {}),
+            // `!== undefined` rather than a truthiness test: a variable may
+            // resolve to an empty string, and that turn still needs its raw
+            // template kept, or the `{%name%}` it was written as becomes
+            // unreachable from the reopened conversation.
+            ...(record.expandedPrompt !== undefined ? { template: record.prompt } : {}),
             // The grant this turn ran with, so its chips and its bookmark show
             // what it was allowed to call rather than only what it did call.
             // An unrestricted run (`null`) and a record predating the field both
@@ -555,6 +559,15 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
      * a send during this window would run the test with no tools at all.
      */
     const [toolsLoading, setToolsLoading] = useState(true);
+    /**
+     * Whether the provider-hosted tool request is still in flight. Tracked apart
+     * from {@link toolsLoading} because the hosted names arrive from their own
+     * endpoint on their own schedule. A restore that means "every enabled tool"
+     * has to wait for both: resolving it against a hosted list that has not
+     * landed yet would write down a grant with no hosted entries in it, and the
+     * send path submits that list verbatim.
+     */
+    const [hostedToolsLoading, setHostedToolsLoading] = useState(true);
     /**
      * Tool names the next send is allowed to call. Defaults to none — a manual
      * query does nothing dangerous unless the operator grants a tool for that
@@ -962,6 +975,10 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
     useEffect(() => {
         const { providerId, model } = hostedToolContext;
         let cancelled = false;
+        // Re-flagged on every context change, not just the first load, so a
+        // restore that pins the conversation's own model waits for the hosted
+        // list belonging to that model rather than the default one.
+        setHostedToolsLoading(true);
         void (async () => {
             try {
                 const list = await listHostedTools(providerId ?? undefined, model ?? undefined);
@@ -971,6 +988,10 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
             } catch {
                 if (!cancelled) {
                     setHostedTools([]);
+                }
+            } finally {
+                if (!cancelled) {
+                    setHostedToolsLoading(false);
                 }
             }
         })();
@@ -1071,10 +1092,16 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
     }, [pendingModelId, providers]);
 
     // Put the reopened conversation's tool grant back in the composer. An exact
-    // list applies immediately; an unrestricted run has to wait for the registry,
-    // because "every enabled tool" cannot be written down until we know which
-    // tools are enabled. Sending before that resolved would submit `[]`, which
-    // the governor reads as an explicit deny.
+    // list applies immediately; an unrestricted run has to wait for both tool
+    // lists, because "every enabled tool" cannot be written down until we know
+    // which tools are enabled. Sending before that resolved would submit `[]`,
+    // which the governor reads as an explicit deny.
+    //
+    // Both lists rather than just the registry: the provider-hosted tools arrive
+    // from their own endpoint, and resolving while they are still in flight would
+    // freeze a list with no hosted entries. The send path submits that list
+    // verbatim, so the run would quietly lose web search — the opposite of
+    // restoring the unrestricted grant the conversation actually had.
     //
     // Restoring an unrestricted run does hand the composer a wider grant than
     // its own least-privilege default, and a scheduled run reopened here would
@@ -1091,12 +1118,12 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
             setPendingTools(null);
             return;
         }
-        if (toolsLoading) {
+        if (toolsLoading || hostedToolsLoading) {
             return;
         }
         setToolSelection(enabledToolNames);
         setPendingTools(null);
-    }, [pendingTools, toolsLoading, enabledToolNames]);
+    }, [pendingTools, toolsLoading, hostedToolsLoading, enabledToolNames]);
 
     /**
      * Whether the editor holds changes the stored prompt does not have yet,
@@ -1344,7 +1371,12 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
             // newer data — which would change the request prefix on every turn
             // and throw away the provider's prompt cache with it.
             const userTurnId = streamingUserTurnIdRef.current;
-            if (userTurnId && chunk.expandedPrompt) {
+            // `!== undefined` for the same reason the history reader uses it: an
+            // expansion that resolves to an empty string is still what the run
+            // was asked, and the backend does send it. Skipping it here would
+            // leave the live transcript showing the raw token while the reopened
+            // one showed the expansion.
+            if (userTurnId && chunk.expandedPrompt !== undefined) {
                 const expanded = chunk.expandedPrompt;
                 updateTurn(userTurnId, turn => ({
                     content: expanded,
