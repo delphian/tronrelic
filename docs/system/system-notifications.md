@@ -106,7 +106,7 @@ Users get a preferences panel at `/profile` (any logged-in user), mirrored as a 
 
 ### First consumer: cron AI prompt runs
 
-The concrete driver. The `ai-tools` module resolves `'notifications'` via the registry in `run()`, registers a category `ai-tools.scheduled-prompt-run` (audience `{ groups: ['admin'] }`, `channelDefaults: { toast: true }`, user-configurable) plus an `ai-tools:scheduled-prompt-run` content type whose `describe(ref)` echoes the run's title/body, and calls `notify({ category, typeId, ref })` after each run with the prompt outcome. Admins see a toast; any admin can silence it from their preferences panel; an admin can disable the whole category for everyone from `/system/notifications`.
+The concrete driver. The `ai-tools` module resolves `'notifications'` via the registry in `run()`, registers a category `ai-tools.scheduled-prompt-run` (audience `{ groups: ['admin'] }`, `channelDefaults: { toast: true }`, user-configurable) plus an `ai-tools:scheduled-prompt-run` content type whose `describe(ref)` echoes the run's title/body, and calls `notify({ category, typeId, ref })` when a run fails or finishes without a usable answer. A run that answered normally sends nothing, because a toast on every successful run was noise. Admins see a toast; any admin can silence it from their preferences panel; an admin can disable the whole category for everyone from `/system/notifications`.
 
 ## Further Reading
 

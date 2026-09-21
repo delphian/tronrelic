@@ -98,8 +98,9 @@ export const SCHEDULED_PROMPTS_JOB = 'ai-tools:run-scheduled-prompts';
 
 /**
  * Notification category id for scheduled-prompt run outcomes. Registered on the
- * `'notifications'` service in run(); every cron-prompt run fans a toast to
- * admins through it, and any admin can silence it from their preferences.
+ * `'notifications'` service in run(); a cron-prompt run that fails or produces
+ * no answer fans a toast to admins through it, and any admin can silence it
+ * from their preferences. A run that answered normally sends nothing.
  */
 const SCHEDULED_PROMPT_NOTIFY_CATEGORY = 'ai-tools.scheduled-prompt-run';
 
@@ -685,8 +686,9 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         // notifications service (published by the notifications module, which
         // runs before this one). Audience is the admin group, toast-only,
         // default-on, and user-silenceable — so every admin sees a toast when a
-        // cron prompt runs, but any admin can opt out, and an admin can disable
-        // the category for everyone from /system/notifications.
+        // cron prompt fails or produces no answer, but any admin can opt out,
+        // and an admin can disable the category for everyone from
+        // /system/notifications.
         const notifications = this.serviceRegistry.get<INotificationService>(NOTIFICATIONS_SERVICE);
         if (notifications) {
             // Register the content type the notification renders through, on the
@@ -707,7 +709,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             notifications.registerCategory({
                 id: SCHEDULED_PROMPT_NOTIFY_CATEGORY,
                 label: 'Scheduled AI prompt runs',
-                description: 'Fires when a cron-scheduled AI prompt finishes — success or failure.',
+                description: 'Fires when a cron-scheduled AI prompt fails or finishes without a usable answer.',
                 source: this.metadata.id,
                 defaultAudience: { groups: [ADMIN_GROUP_ID] },
                 channelDefaults: { toast: true },
@@ -719,15 +721,14 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             this.logger.warn('notifications service unavailable; scheduled-prompt notifications disabled');
         }
 
-        // Fans each scheduled-prompt run outcome to admins. Resolves the
-        // notifications service per call (it never unregisters at runtime, but a
-        // lazy lookup keeps this robust) and swallows dispatch errors so a
-        // notification fault never disturbs the cron loop.
+        // Fans scheduled-prompt run outcomes that need attention to admins.
+        // A run that answered normally sends nothing: a toast on every
+        // successful run was noise, and the run is still recorded in query
+        // history and the system log. Resolves the notifications service per
+        // call (it never unregisters at runtime, but a lazy lookup keeps this
+        // robust) and swallows dispatch errors so a notification fault never
+        // disturbs the cron loop.
         const notifyScheduledRun: ScheduledPromptNotifier = (run) => {
-            const svc = this.serviceRegistry.get<INotificationService>(NOTIFICATIONS_SERVICE);
-            if (!svc) {
-                return;
-            }
             const failed = run.status === 'error';
             // A run that returned but never produced an answer is neither a
             // success nor a failure, and reporting it as either was the reason
@@ -735,24 +736,24 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             // producing nothing. It gets its own title and a warning tone so it
             // reads as needing attention without claiming the query broke.
             const incomplete = !failed && run.outcome !== undefined && run.outcome !== 'answered';
+            const svc = this.serviceRegistry.get<INotificationService>(NOTIFICATIONS_SERVICE);
+            if (!svc || (!failed && !incomplete)) {
+                return;
+            }
             const title = failed
                 ? `Scheduled prompt failed: ${run.name}`
-                : incomplete
-                    ? `Scheduled prompt produced no answer: ${run.name}`
-                    : `Scheduled prompt ran: ${run.name}`;
+                : `Scheduled prompt produced no answer: ${run.name}`;
             const body = failed
                 ? (run.disabled
                     ? `${run.error ?? 'Unknown error'} — auto-paused after repeated failures`
                     : run.error)
-                : incomplete
-                    ? run.detail ?? `Ended as "${run.outcome}" without a usable answer.`
-                    : undefined;
+                : run.detail ?? `Ended as "${run.outcome}" without a usable answer.`;
             void svc
                 .notify({
                     category: SCHEDULED_PROMPT_NOTIFY_CATEGORY,
                     typeId: SCHEDULED_PROMPT_CONTENT_TYPE,
                     ref: { title, body },
-                    severity: failed ? 'error' : incomplete ? 'warning' : 'success',
+                    severity: failed ? 'error' : 'warning',
                     firedBy: run.promptId,
                     data: { promptId: run.promptId, disabled: run.disabled ?? false, outcome: run.outcome ?? null }
                 })
