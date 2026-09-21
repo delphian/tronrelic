@@ -1,41 +1,120 @@
-/* One card per parameter. */
-.schema_list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
+/*
+ * Styles for the AI tool parameter list.
+ *
+ * One row per parameter, separated by a hairline rather than drawn as a
+ * bordered card, so a long schema costs one short row per parameter instead of
+ * one padded box. The left column holds the name and type; the right column
+ * holds the description and any declared constraints. Rows use subgrid so every
+ * description starts at the same edge however long each parameter name is.
+ */
+
+@use '../../../../app/breakpoints' as *;
+
+.container {
+    container-type: inline-size;
+    container-name: ai-tool-schema;
 }
 
-.schema_param {
+.params {
+    display: grid;
+    /* The name column takes its content's width, capped so one very long
+     * parameter name cannot squeeze the descriptions into a sliver. */
+    grid-template-columns: fit-content(var(--max-width-xs)) minmax(0, 1fr);
+    column-gap: var(--gap-md);
+    margin: 0;
+}
+
+.param {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    row-gap: var(--gap-2xs);
+    padding-block: var(--padding-sm);
+    border-top: var(--border-width-thin) solid var(--color-border);
+}
+
+.param_term {
     display: flex;
     flex-direction: column;
     gap: var(--gap-2xs);
-    padding: var(--padding-sm);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface-muted);
+    min-width: 0;
 }
 
-.schema_param_head {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-sm);
-    flex-wrap: wrap;
+.param_name {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
 }
 
-.schema_param_name {
+.param_type {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    overflow-wrap: anywhere;
+}
+
+/* Written out rather than drawn as a badge: a pill beside every required
+ * name made the rows uneven, and the word alone is enough in a column the
+ * reader is already scanning. */
+.param_required {
+    font-family: var(--font-body);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
 }
 
-.schema_param_type {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-caption);
-    color: var(--color-text-muted);
-    word-break: break-word;
+.param_detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+    margin: 0;
 }
 
-.schema_param_desc {
+.param_desc {
     margin: 0;
     font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
     color: var(--color-text-muted);
+    max-width: var(--max-width-prose);
+}
+
+.param_facts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--gap-2xs);
+    margin: 0;
+}
+
+.param_fact_label {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+.value_chip {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text);
+    padding: var(--badge-padding-sm);
+    border: var(--border-width-thin) solid var(--color-border-strong);
+    border-radius: var(--radius-xs);
+    background: var(--color-surface-elevated);
+    overflow-wrap: anywhere;
+}
+
+/* In a narrow slideout or on a phone there is no room for two columns, so each
+ * parameter stacks: name and type share one line, the description sits below. */
+@container ai-tool-schema (max-width: #{$breakpoint-mobile-md}) {
+    .params {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .param_term {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: var(--gap-sm);
+    }
 }
