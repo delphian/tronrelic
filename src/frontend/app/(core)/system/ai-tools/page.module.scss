@@ -512,41 +512,6 @@
     max-width: var(--max-width-prose);
 }
 
-/* Schema tab: one card per parameter. */
-.schema_list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-sm);
-}
-
-.schema_param {
-    display: flex;
-    flex-direction: column;
-    gap: var(--gap-2xs);
-    padding: var(--padding-sm);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface-muted);
-}
-
-.schema_param_head {
-    display: flex;
-    align-items: center;
-    gap: var(--gap-sm);
-    flex-wrap: wrap;
-}
-
-.schema_param_name {
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
-}
-
-.schema_param_desc {
-    margin: 0;
-    font-size: var(--font-size-body-sm);
-    color: var(--color-text-muted);
-}
-
 /* ============================================================================
  * SHARED DETAIL SURFACES — invocation + approval slide-over bodies
  *
