@@ -24,9 +24,27 @@
  * - Past conversations sit in a collapsible rail beside the chat and open in
  *   place; the tab stays mounted across the dashboard's other tabs and keeps
  *   the open conversation in the URL, so neither a tab switch nor a refresh
- *   loses it.
+ *   loses it. Opening one also restores the composer's model and tool grant
+ *   from that conversation's opening turn, so the message bar continues the
+ *   thread on the terms it ran under.
  * - Enter sends and Shift+Enter inserts a newline; the composer grows with its
  *   text; per-message actions appear on hover.
+ * - A copy control in the chat header and on every rail row copies the whole
+ *   conversation, in one of three formats the operator picks from a menu. The
+ *   header copies the transcript on screen; a rail row fetches that
+ *   conversation's stored turns first, because the rail holds only each
+ *   conversation's opening prompt.
+ *
+ * A user turn shows the prompt with its `{%name%}` variables already resolved,
+ * because the raw token says nothing about what data the answer was drawn from.
+ * The backend does the resolving and sends the result on the terminal stream
+ * chunk (and stores it on the history record), so a live turn and a reopened one
+ * read the same. A `secret`-classified variable is the exception and stays as
+ * its token here — the model received the real value, but the stored copy this
+ * surface reads deliberately does not hold it. The turn keeps the original
+ * template alongside the expansion, which is what the bookmark saves — a saved
+ * prompt frozen to one run's values would answer a question about a moment that
+ * has passed.
  *
  * A per-run tool allowlist (a dropdown in the composer) narrows which tools the
  * next send may call. It defaults to no tools — least privilege — so a manual
@@ -95,12 +113,14 @@ import { useModal } from '../../../../../components/ui/ModalProvider';
 import { InvocationDetailPanel } from '../components/InvocationDetailPanel';
 import { InvocationTable } from '../components/InvocationTable';
 import { ToolAllowlistDropdown } from '../components/ToolAllowlistDropdown';
+import { ConversationCopyMenu } from '../components/ConversationCopyMenu';
 import { SavedPromptSelector } from '../components/SavedPromptSelector';
 import { PromptEditorBar } from './PromptEditorBar';
 import { PromptTriggersEditor } from './PromptTriggersEditor';
 import { ConversationRail } from './ConversationRail';
 import { TranscriptTurn } from './TranscriptTurn';
 import { formatUsd } from './formatUsd';
+import { formatConversation, type ConversationCopyFormat } from './formatConversation';
 import { writeAiToolsSearchParam } from './aiToolsUrl';
 import type { IChatTurn } from './IChatTurn';
 import type { IConversationGroup } from './IConversationGroup';
@@ -145,6 +165,13 @@ const PENDING_RUN_POLL_LIMIT_MS = 15 * 60_000;
 
 /** Tallest the composer grows on its own before it scrolls instead. */
 const COMPOSER_MAX_ROWS = 8;
+
+/**
+ * Key the header's copy control flashes under while the open chat has no
+ * conversation id yet — a brand-new chat mints one only on its first send. Any
+ * value that cannot collide with a UUID works; this one names what it is.
+ */
+const OPEN_CHAT_COPY_ID = 'open-chat';
 
 /**
  * Generate an RFC-4122 v4 UUID, preferring the native crypto implementation and
@@ -251,13 +278,30 @@ function selectUnlinkedRecords(turns: IChatTurn[], records: IToolInvocationRecor
  * stopped short, so a truncated or refused turn states why beside whatever
  * partial answer it did manage to produce.
  *
+ * A user turn shows `expandedPrompt` when the record carries one — the text the
+ * model was actually given, with its `{%name%}` variables resolved. Reading back
+ * a reopened conversation and seeing bare tokens leaves an operator unable to
+ * tell what data the answer was drawn from. The raw template is kept on the turn
+ * so the bookmark still saves a reusable prompt rather than a snapshot.
+ *
  * @param records - One conversation's turns, oldest first.
  * @returns Chat turns ready to render, two per stored record.
  */
 function recordsToChatTurns(records: IAiQueryRecord[]): IChatTurn[] {
     const rebuilt: IChatTurn[] = [];
     for (const record of records) {
-        rebuilt.push({ id: generateUUID(), role: 'user', content: record.prompt });
+        rebuilt.push({
+            id: generateUUID(),
+            role: 'user',
+            content: record.expandedPrompt ?? record.prompt,
+            ...(record.expandedPrompt ? { template: record.prompt } : {}),
+            // The grant this turn ran with, so its chips and its bookmark show
+            // what it was allowed to call rather than only what it did call.
+            // An unrestricted run (`null`) and a record predating the field both
+            // leave this unset, and the turn falls back to the tools its answer
+            // actually called.
+            ...(record.toolAllowlist ? { tools: record.toolAllowlist } : {})
+        });
         // A turn has a body when it left answer text OR a structured transcript
         // (a tool-only round can finish with no final text yet still have plenty
         // to show). Only a truly empty, non-failed record falls back to the note.
@@ -409,6 +453,49 @@ function nextTurnPromptName(existing: ISavedPrompt[]): string {
     return `${TURN_PROMPT_NAME_PREFIX} ${String(highest + 1).padStart(2, '0')}`;
 }
 
+/**
+ * Encode a bare model id as the composer picker's `providerId|model` value, by
+ * finding which registered provider lists that model.
+ *
+ * A history record stores only the model that answered, because that is all
+ * `IAiQueryResult` carries, while the picker is keyed by provider *and* model so
+ * a saved prompt can pin a model on a provider that is not the active one.
+ * Reopening a conversation therefore has to work the provider back out of the
+ * catalogs. The active provider is checked first, since an interactive send runs
+ * there and a model offered by two providers should resolve to the one that will
+ * actually answer.
+ *
+ * @param providers - Every registered provider with its model catalog.
+ * @param modelId - The model id recorded on the turn.
+ * @returns The encoded picker value, or null when no catalog lists that model —
+ *          a retired model, or a provider that has since been uninstalled — in
+ *          which case the caller leaves the picker on its default rather than
+ *          selecting something the run did not use.
+ */
+function findModelPin(providers: IAiProviderModels[], modelId: string): string | null {
+    const ordered = [...providers].sort((a, b) => Number(b.active) - Number(a.active));
+    for (const provider of ordered) {
+        if (provider.models.some(model => model.id === modelId)) {
+            return `${provider.id}|${modelId}`;
+        }
+    }
+    return null;
+}
+
+/**
+ * A tool grant a reopened conversation is waiting to put back into the composer.
+ *
+ * Wrapped in an object rather than held as a bare value because the grant's own
+ * `null` means "the run could reach every enabled tool", which is a different
+ * thing from having nothing to restore. The wrapper carries that distinction:
+ * the state is `null` when no restore is pending, and `{ names: null }` when one
+ * is pending and the run was unrestricted.
+ */
+interface IPendingToolRestore {
+    /** The recorded grant: `null` for unrestricted, otherwise the exact names. */
+    names: string[] | null;
+}
+
 /** Props for {@link QueryTab}. */
 export interface IQueryTabProps {
     /**
@@ -511,6 +598,21 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
      * progress and a poll watches for its history row.
      */
     const [awaitingRunId, setAwaitingRunId] = useState<string | null>(null);
+    /*
+     * ---- Composer restore ----------------------------------------------------
+     * Opening a past conversation puts the composer back the way the run had it,
+     * so continuing the thread continues it on the same terms rather than
+     * silently on the active provider's default model with no tools. Both
+     * settings name things that arrive on their own schedule — the provider
+     * catalogs and the tool registry are separate fetches — so the request is
+     * parked here and applied by the effects below once the list it names has
+     * landed. That also covers the `?conversation=` deep link, which opens a
+     * conversation on the very first paint, before either fetch has resolved.
+     */
+    /** Model id from the reopened conversation, awaiting the provider catalogs. */
+    const [pendingModelId, setPendingModelId] = useState<string | null>(null);
+    /** Tool grant from the reopened conversation; see {@link IPendingToolRestore}. */
+    const [pendingTools, setPendingTools] = useState<IPendingToolRestore | null>(null);
 
     /*
      * ---- Saved-prompt editor -------------------------------------------------
@@ -557,6 +659,12 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
     const activeQueryIdRef = useRef<string | null>(null);
     /** Id of the assistant turn currently receiving stream chunks. */
     const streamingTurnIdRef = useRef<string | null>(null);
+    /**
+     * Id of the user turn that started the in-flight stream. Held so the
+     * terminal `done` chunk can replace that turn's text with the expansion the
+     * backend performed, which the browser has no way to compute for itself.
+     */
+    const streamingUserTurnIdRef = useRef<string | null>(null);
     /** Stable id shared by every turn of this chat session; minted lazily on first send. */
     const conversationIdRef = useRef<string | null>(null);
     /** The scrolling transcript. */
@@ -651,9 +759,10 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
      * renders and the allowlist its bookmark saves, so what an operator sees
      * beside the bookmark is exactly what the bookmark persists.
      *
-     * The union is what makes a turn reopened from history saveable at all. The
-     * grant is not part of the stored query record, so `turn.tools` is undefined
-     * there and the transcript's calls are the only surviving evidence of what
+     * The union still matters for a turn reopened from history. A record now
+     * stores the grant, but one written before that field existed does not, and
+     * neither does a run that was unrestricted — in both cases `turn.tools` is
+     * unset and the transcript's calls are the only surviving evidence of what
      * that prompt was permitted to do.
      */
     const turnToolsByTurnId = useMemo(() => {
@@ -946,6 +1055,49 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
         ));
     }, [needsToolPrefill, enabledToolNames]);
 
+    // Put the reopened conversation's model back in the picker once the provider
+    // catalogs are available to resolve it against. The request is cleared
+    // whether or not the model was found, so a model no provider lists any more
+    // leaves the picker on its default instead of retrying every render.
+    useEffect(() => {
+        if (!pendingModelId || providers.length === 0) {
+            return;
+        }
+        const pin = findModelPin(providers, pendingModelId);
+        if (pin) {
+            setModelOverride(pin);
+        }
+        setPendingModelId(null);
+    }, [pendingModelId, providers]);
+
+    // Put the reopened conversation's tool grant back in the composer. An exact
+    // list applies immediately; an unrestricted run has to wait for the registry,
+    // because "every enabled tool" cannot be written down until we know which
+    // tools are enabled. Sending before that resolved would submit `[]`, which
+    // the governor reads as an explicit deny.
+    //
+    // Restoring an unrestricted run does hand the composer a wider grant than
+    // its own least-privilege default, and a scheduled run reopened here would
+    // continue on the interactive path, where the governor is more permissive.
+    // That is deliberate — it is the grant the conversation ran under — and it
+    // is not silent: every restored name shows as a chip under the composer and
+    // each one can be revoked from there before sending.
+    useEffect(() => {
+        if (!pendingTools) {
+            return;
+        }
+        if (pendingTools.names !== null) {
+            setToolSelection(pendingTools.names);
+            setPendingTools(null);
+            return;
+        }
+        if (toolsLoading) {
+            return;
+        }
+        setToolSelection(enabledToolNames);
+        setPendingTools(null);
+    }, [pendingTools, toolsLoading, enabledToolNames]);
+
     /**
      * Whether the editor holds changes the stored prompt does not have yet,
      * across every field the single Save writes. Drives the unsaved dot and
@@ -1185,6 +1337,21 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                 costUsd: chunk.costUsd ?? null,
                 ...(chunk.transcript && chunk.transcript.length > 0 ? { segments: chunk.transcript } : {})
             });
+            // What this turn was asked, when its prompt held variables.
+            // Swapping it in now means the live transcript reads exactly as the
+            // reopened one will, and the next send replays this same string as
+            // prior context rather than a template that would resolve against
+            // newer data — which would change the request prefix on every turn
+            // and throw away the provider's prompt cache with it.
+            const userTurnId = streamingUserTurnIdRef.current;
+            if (userTurnId && chunk.expandedPrompt) {
+                const expanded = chunk.expandedPrompt;
+                updateTurn(userTurnId, turn => ({
+                    content: expanded,
+                    template: turn.template ?? turn.content
+                }));
+            }
+            streamingUserTurnIdRef.current = null;
             streamingTurnIdRef.current = null;
             activeQueryIdRef.current = null;
             // The turn produced its audit records as it ran; pull them so the
@@ -1198,6 +1365,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
         } else if (chunk.type === 'error') {
             setStreaming(false);
             updateTurn(turnId, { pending: false, error: chunk.error || 'An unknown error occurred' });
+            streamingUserTurnIdRef.current = null;
             streamingTurnIdRef.current = null;
             activeQueryIdRef.current = null;
         }
@@ -1327,6 +1495,9 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
         const queryId = generateUUID();
         activeQueryIdRef.current = queryId;
         streamingTurnIdRef.current = assistantTurnId;
+        // Remembered so the terminal chunk can swap this turn's text for the
+        // backend's expansion of it.
+        streamingUserTurnIdRef.current = userTurn.id;
         setStreaming(true);
 
         try {
@@ -1354,6 +1525,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                 setToolSelection([]);
             }
         } catch (err) {
+            streamingUserTurnIdRef.current = null;
             streamingTurnIdRef.current = null;
             activeQueryIdRef.current = null;
             if (!isMountedRef.current) {
@@ -1380,7 +1552,11 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
      * @param turn - The user turn to persist; its `content` becomes the prompt body.
      */
     const handleSaveTurnAsPrompt = useCallback(async (turn: IChatTurn) => {
-        const prompt = turn.content.trim();
+        // The template when the turn had one, so a prompt built from a run that
+        // used `{%name%}` variables stays reusable. Saving the expanded text
+        // would freeze that run's data into the prompt and make every later
+        // firing answer a question about a moment that has passed.
+        const prompt = (turn.template ?? turn.content).trim();
         if (!prompt || savingTurnId) {
             return;
         }
@@ -1448,12 +1624,19 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
     const resetConversation = useCallback(() => {
         setMessages([]);
         setError(null);
+        streamingUserTurnIdRef.current = null;
         streamingTurnIdRef.current = null;
         activeQueryIdRef.current = null;
         setConversation(null);
         setAwaitingRunId(null);
         setConversationRecords([]);
         setSelectedRecord(null);
+        // Drop any restore still waiting on a catalog. Without this, starting a
+        // new chat while the provider list was still loading would land the
+        // abandoned conversation's model and tools in the fresh composer a
+        // moment later.
+        setPendingModelId(null);
+        setPendingTools(null);
     }, [setConversation]);
 
     /**
@@ -1741,9 +1924,9 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
 
     /**
      * Copy arbitrary text to the clipboard, flashing a check on whichever control
-     * triggered it. Shared by the transcript's per-turn copy and the rail's
-     * per-conversation copy so both get identical 2-second confirmation from one
-     * timer and one piece of "last copied" state.
+     * triggered it. Shared by the transcript's per-turn copy, the header's
+     * whole-conversation copy, and each rail row's, so all three get identical
+     * 2-second confirmation from one timer and one piece of "last copied" state.
      *
      * @param id - Id of the control to flash (a turn id or a conversation id).
      * @param text - The text to place on the clipboard.
@@ -1766,6 +1949,59 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
     }, []);
 
     /**
+     * Copy the conversation currently on screen, in the format the operator
+     * picked from the header's copy menu. No fetch is needed — the transcript
+     * already holds every turn, including one still streaming, which is the
+     * point of offering the control here as well as on the rail.
+     *
+     * Keyed on the open conversation's id (or a fixed key for a chat that has
+     * not been saved yet) so the checkmark lands on this control rather than on
+     * a rail row.
+     *
+     * @param format - Which clipboard shape to produce.
+     */
+    const handleCopyOpenConversation = useCallback((format: ConversationCopyFormat) => {
+        const text = formatConversation(messages, format);
+        if (!text) {
+            setError('There is nothing in this conversation to copy yet.');
+            return;
+        }
+        void handleCopy(activeConversationId ?? OPEN_CHAT_COPY_ID, text);
+    }, [messages, activeConversationId, handleCopy]);
+
+    /**
+     * Copy a past conversation from its row in the rail. The rail row holds only
+     * the opening prompt, so this fetches that conversation's stored turns and
+     * formats them the same way the open transcript is formatted — the two
+     * controls must produce identical text for the same conversation, or an
+     * operator would get a different result depending on which one they used.
+     *
+     * The fetch is why this lives here rather than in the rail: the rail is a
+     * presentation component and owns no data access.
+     *
+     * @param conversationId - The row's conversation id.
+     * @param format - Which clipboard shape to produce.
+     */
+    const handleCopyConversation = useCallback(async (conversationId: string, format: ConversationCopyFormat) => {
+        try {
+            const records = await getConversation(conversationId);
+            if (!isMountedRef.current) {
+                return;
+            }
+            const text = formatConversation(recordsToChatTurns(records), format);
+            if (!text) {
+                setError('That conversation has no turns to copy.');
+                return;
+            }
+            await handleCopy(conversationId, text);
+        } catch (err) {
+            if (isMountedRef.current) {
+                setError(err instanceof Error ? err.message : 'Failed to load that conversation to copy it');
+            }
+        }
+    }, [handleCopy]);
+
+    /**
      * Open a past conversation in the transcript. Fetches every turn
      * (oldest-first), rebuilds user/assistant bubbles, and records the
      * conversation id so continued turns extend the same thread. Any prompt
@@ -1773,6 +2009,14 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
      * next send would extend, so keeping the strip up would claim they are still
      * authoring a prompt while the surface below says otherwise. Callers clear
      * the discard guard first.
+     *
+     * The composer is then put back the way the conversation's opening turn had
+     * it — same model, same tool grant — because the message bar at the bottom
+     * is an invitation to continue this thread, and continuing it on the active
+     * provider's default model with no tools is not continuing the same thing.
+     * The opening turn is the one that matters rather than the latest: an
+     * interactive grant is one-shot and clears after each send, so a later turn
+     * in the same conversation usually records an empty one.
      *
      * @param conversationId - Id of the conversation to open.
      */
@@ -1784,6 +2028,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
         if (inFlightQueryId) {
             activeQueryIdRef.current = null;
             streamingTurnIdRef.current = null;
+            streamingUserTurnIdRef.current = null;
             setStreaming(false);
             try {
                 await cancelQuery(inFlightQueryId);
@@ -1803,10 +2048,25 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
             setStreaming(false);
             setError(null);
             streamingTurnIdRef.current = null;
+            streamingUserTurnIdRef.current = null;
             activeQueryIdRef.current = null;
             setConversation(conversationId);
             setMessages(recordsToChatTurns(records));
+            // Runs before the restore below, because it clears the tool
+            // selection as part of leaving prompt-editing mode.
             clearPromptEditor();
+            const opening = records[0];
+            // 'unknown' is what the builder records for a run that threw before
+            // any model answered, so it names nothing to select.
+            if (opening?.model && opening.model !== 'unknown') {
+                setPendingModelId(opening.model);
+            }
+            // Only when the turn actually recorded a grant. An absent field
+            // means the record predates it, and guessing from the tools the
+            // answer happened to call would hand back a grant nobody made.
+            setPendingTools(opening && opening.toolAllowlist !== undefined
+                ? { names: opening.toolAllowlist }
+                : null);
             // Drop the previous conversation's audit records up front so the
             // transcript's tool-detail lookup never shows the prior thread's
             // tools during this conversation's in-flight activity fetch.
@@ -1976,10 +2236,16 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
         return priced ? total : null;
     }, [messages]);
 
-    /** The conversation's name in the header: its opening prompt, or a placeholder. */
+    /**
+     * The conversation's name in the header: its opening prompt, or a
+     * placeholder. Prefers the template over the expanded text, because a
+     * variable can resolve to thousands of characters of chain data and a title
+     * built from that names nothing. The rail titles its rows from the stored
+     * template for the same reason, so the two agree.
+     */
     const conversationTitle = useMemo(() => {
         const first = messages.find(turn => turn.role === 'user');
-        return first ? first.content.trim().replace(/\s+/g, ' ') : 'New conversation';
+        return first ? (first.template ?? first.content).trim().replace(/\s+/g, ' ') : 'New conversation';
     }, [messages]);
 
     /** Feeds the measured page offset to the stylesheet, which sizes the pane from it. */
@@ -2014,7 +2280,7 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                         onOpen={handleOpenFromRail}
                         onLoadMore={() => { void loadMoreHistory(); }}
                         onRefresh={() => { void loadHistory(); }}
-                        onCopy={(id, text) => { void handleCopy(id, text); }}
+                        onCopy={(id, format) => { void handleCopyConversation(id, format); }}
                         copiedId={copiedId}
                     />
                 )}
@@ -2054,6 +2320,15 @@ export function QueryTab({ active, initialConversationId = null }: IQueryTabProp
                             </span>
                         )}
                         <div className={styles.chat_header_actions}>
+                            {/* Copies the transcript on screen, including a turn
+                                still streaming — the rail's copy can only reach
+                                what has been written to history. */}
+                            <ConversationCopyMenu
+                                onCopy={handleCopyOpenConversation}
+                                copied={copiedId === (activeConversationId ?? OPEN_CHAT_COPY_ID)}
+                                label="Copy this conversation to clipboard"
+                                size="sm"
+                            />
                             <Button
                                 variant="ghost"
                                 size="xs"

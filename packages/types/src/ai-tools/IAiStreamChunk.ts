@@ -74,4 +74,25 @@ export interface IAiStreamChunk {
      * a provider that does not report a structured transcript.
      */
     transcript?: IAiTranscriptSegment[];
+
+    /**
+     * Core's resolution of the prompt's `{%name%}` variables, present on the
+     * terminal 'done' chunk when the prompt held any. Sent so a live transcript
+     * shows the same expanded text a reopened one does — it is the identical
+     * string core persisted on the query record — and so the next turn replays
+     * that exact text as prior context rather than a template that would
+     * re-resolve against newer data.
+     *
+     * This is the stored copy, not the request, and differs from it in two
+     * ways. A `secret`-classified variable stays as its literal `{%name%}`
+     * token, because a kept copy of a secret is a different risk from a
+     * transmitted one (see `IAiQueryRecord.expandedPrompt`). And a
+     * clock-sensitive variable can differ by the milliseconds between core's
+     * resolution and the provider's own. Read it as what the record says the
+     * turn was asked, not as a byte-exact copy of what was sent.
+     *
+     * Omitted when the prompt held no variables, since it would repeat what the
+     * surface already has.
+     */
+    expandedPrompt?: string;
 }

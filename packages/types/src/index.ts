@@ -132,6 +132,7 @@ export type {
     IResolvedPromptVariable,
     IExpandedPromptVariable,
     PromptVariableKind,
+    IPromptExpansionOptions,
     IPromptVariableRegistry,
     IStaticPromptVariableInput,
     IStaticPromptVariableUpdate

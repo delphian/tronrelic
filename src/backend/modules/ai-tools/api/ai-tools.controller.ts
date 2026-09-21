@@ -813,8 +813,23 @@ export class AiToolsController {
             }
 
             const createdAt = new Date().toISOString();
+            /*
+             * The prompt after its `{%name%}` variables resolve. Core does the
+             * expansion itself (rather than leaving it to the provider) so the
+             * one string the model receives is also the one this turn records
+             * and the one a later turn replays as prior context. Starts as the
+             * raw prompt and is overwritten below, before the provider call, so
+             * the sink and both settle handlers all read the same value.
+             */
+            let expandedPrompt = prompt;
             const sink = (chunk: IAiStreamChunk): void => {
-                WebSocketService.getInstance().emitToSocket(socketId, QUERY_STREAM_EVENT, chunk);
+                // Attach the expansion to the terminal chunk so the live
+                // transcript shows the same text a reopened conversation does,
+                // without waiting for the history row to be read back.
+                const payload = chunk.type === 'done' && expandedPrompt !== prompt
+                    ? { ...chunk, expandedPrompt }
+                    : chunk;
+                WebSocketService.getInstance().emitToSocket(socketId, QUERY_STREAM_EVENT, payload);
             };
             // Open this run to core-side emitters for as long as it streams, so
             // the governor can show each tool call as it is dispatched instead of
@@ -842,16 +857,48 @@ export class AiToolsController {
             // process lifetime and the request answered by nothing at all.
             // Deferring the call turns any such throw into a rejection the
             // existing `.catch()`/`.finally()` already cover.
+            //
+            // Expanding inside the same chain is deliberate: the registry
+            // throws on an unknown `{%name%}` rather than splicing an error
+            // string into the prompt, and doing it here lets that throw land in
+            // the `.catch()` below — recorded as a failed run with the reason —
+            // instead of escaping an already-answered request.
+            //
+            // The provider is still handed the *raw* prompt and still runs its
+            // own expansion, for two reasons. Sending it the pre-expanded text
+            // would mean its pass re-scans a string that now contains variable
+            // data, so a `{%name%}` sitting inside a TRON memo or a log line
+            // would resolve — turning attacker-controlled content into a
+            // secret-variable read. And suppressing that pass with
+            // `expandVariables: false` would also stop the provider expanding
+            // its own configured system prompt, which the flag covers too. The
+            // cost is that the variables resolve twice per query; see the note
+            // in the module README.
+            //
+            // `skipSecret` because this pass feeds the history record, not the
+            // request. The model still receives every secret through the
+            // provider's own pass; the record keeps the `{%name%}` token in its
+            // place, so an operator can see where a secret went without the
+            // value being written to a collection that has no retention sweep
+            // and is readable from `/system/database` too.
             Promise.resolve()
-                .then(() =>
-                    provider.queryStream(
+                .then(async () => {
+                    expandedPrompt = await this.promptVariables.expandAll(prompt, { skipSecret: true });
+                    return provider.queryStream(
                         { prompt, queryId, model, messages, conversationId, mode: 'stream', endUser, injectedSystemPrompt, toolAllowlist },
                         sink
-                    )
-                )
+                    );
+                })
                 .then((result) => {
                     void this.history.append(
-                        buildAiQueryRecord('stream', prompt, conversationId, createdAt, queryId, result, null)
+                        buildAiQueryRecord('stream', prompt, conversationId, createdAt, queryId, result, null, undefined, {
+                            expandedPrompt,
+                            // `?? null` because undefined on the wire means the
+                            // run could reach every enabled tool, and the record
+                            // has to say so rather than stay silent — silence is
+                            // reserved for a path that did not know.
+                            toolAllowlist: toolAllowlist ?? null
+                        })
                     );
                 })
                 .catch((error: unknown) => {
@@ -881,7 +928,13 @@ export class AiToolsController {
                             queryId,
                             null,
                             error instanceof Error ? error.message : String(error),
-                            model
+                            model,
+                            {
+                                // Still the raw prompt when the expansion itself
+                                // is what threw, which the builder then drops.
+                                expandedPrompt,
+                                toolAllowlist: toolAllowlist ?? null
+                            }
                         )
                     );
                 })
@@ -895,10 +948,20 @@ export class AiToolsController {
 
         // Non-streaming path: await the result and surface it directly.
         const createdAt = new Date().toISOString();
+        // Same reasoning as the streaming branch: core resolves the variables to
+        // record what this turn was asked, skipping the secret ones because this
+        // copy is stored rather than sent, and the provider still receives the
+        // raw prompt and runs its own unrestricted pass. Declared outside the
+        // try so the catch below can record whatever had resolved.
+        let expandedPrompt = prompt;
         try {
+            expandedPrompt = await this.promptVariables.expandAll(prompt, { skipSecret: true });
             const result = await provider.query({ prompt, model, messages, conversationId, mode: 'programmatic', endUser, injectedSystemPrompt, toolAllowlist });
             await this.history.append(
-                buildAiQueryRecord('programmatic', prompt, conversationId, createdAt, randomUUID(), result, null)
+                buildAiQueryRecord('programmatic', prompt, conversationId, createdAt, randomUUID(), result, null, undefined, {
+                    expandedPrompt,
+                    toolAllowlist: toolAllowlist ?? null
+                })
             );
             res.json({ result });
         } catch (error: unknown) {
@@ -917,7 +980,8 @@ export class AiToolsController {
                     randomUUID(),
                     null,
                     error instanceof Error ? error.message : String(error),
-                    model
+                    model,
+                    { expandedPrompt, toolAllowlist: toolAllowlist ?? null }
                 )
             );
             res.status(502).json({ error: error instanceof Error ? error.message : 'AI query failed.' });

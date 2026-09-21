@@ -600,6 +600,13 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
             resolveEndUser: this.resolveEndUser,
             composeSystemPrompt: (principal?: Parameters<SystemPromptsService['compose']>[0]) =>
                 this.systemPrompts.compose(principal),
+            // `skipSecret` because the executor's expansion feeds the history
+            // record, never the request — the provider runs its own full pass
+            // for the model. An autonomous run is the case that most needs this:
+            // it fires unattended, often on a schedule, so a secret variable it
+            // splices would otherwise be written to history on every tick with
+            // nobody watching.
+            expandPrompt: (text: string) => this.promptVariables.expandAll(text, { skipSecret: true }),
             notify,
             recordQuery: (record: Parameters<AiQueryHistoryService['append']>[0]) =>
                 this.queryHistory.append(record)

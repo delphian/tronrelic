@@ -6,6 +6,13 @@
  * shadow rejection, expansion across both kinds, the secret-name surface the
  * trifecta detector consumes, and that a secret variable forms the private-data
  * leg in `detectTrifecta`.
+ *
+ * Also covers `skipSecret`, the option core sets on the pass that builds a
+ * stored copy of a prompt. The assertions there are deliberately about what does
+ * *not* happen — the resolver is never called and the value appears nowhere in
+ * the output — because a regression would be silent otherwise: the expanded text
+ * would still look plausible while quietly carrying a secret into a collection
+ * that is never pruned.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -146,6 +153,51 @@ describe('PromptVariableRegistry', () => {
 
             expect(registry.secretVariablesIn('{%pub%} and {%seed%}')).toEqual(['seed']);
             expect(registry.secretVariablesIn('only {%pub%}')).toEqual([]);
+        });
+
+        it('skipSecret leaves a secret variable as its token and still expands the rest', async () => {
+            registry.registerVariable({ name: 'pub', description: 'd', category: 'c', sensitivity: 'public', resolve: async () => 'PUBLIC' });
+            await registry.createStatic({ name: 'seed', description: 'd', category: 'c', content: 'SECRET', sensitivity: 'secret' });
+
+            // The default pass is what builds a request, so it must still splice
+            // the secret in — that is the whole purpose of a secret variable.
+            expect(await registry.expandAll('{%pub%} / {%seed%}')).toBe('PUBLIC / SECRET');
+
+            // The skipping pass is what builds a stored copy. The secret's token
+            // survives verbatim, so a reader can see where it went, and the
+            // value appears nowhere in the output.
+            const stored = await registry.expandAll('{%pub%} / {%seed%}', { skipSecret: true });
+            expect(stored).toBe('PUBLIC / {%seed%}');
+            expect(stored).not.toContain('SECRET');
+        });
+
+        it('skipSecret never resolves the skipped variable and omits it from the metadata', async () => {
+            const resolveSecret = vi.fn(async () => 'SECRET');
+            registry.registerVariable({ name: 'vault', description: 'd', category: 'c', sensitivity: 'secret', resolve: resolveSecret });
+            registry.registerVariable({ name: 'pub', description: 'd', category: 'c', sensitivity: 'public', resolve: async () => 'PUBLIC' });
+
+            const { expanded, variables } = await registry.expandWithMetadata('{%vault%} {%pub%}', { skipSecret: true });
+
+            expect(expanded).toBe('{%vault%} PUBLIC');
+            // Not resolved at all rather than resolved and masked: no copy of the
+            // value is produced, so nothing downstream can leak one by accident,
+            // and a resolver that reads a key store is not run for a pass whose
+            // output is only filed away.
+            expect(resolveSecret).not.toHaveBeenCalled();
+            // The metadata describes what the pass expanded, so a skipped
+            // variable is absent rather than listed with a zero size.
+            expect(variables.map(variable => variable.name)).toEqual(['pub']);
+        });
+
+        it('a variable reclassified below secret expands into the stored copy again', async () => {
+            // The per-variable escape hatch: an operator who wants a value
+            // recorded classifies it down, rather than switching the protection
+            // off globally.
+            await registry.createStatic({ name: 'note', description: 'd', category: 'c', content: 'VALUE', sensitivity: 'secret' });
+            expect(await registry.expandAll('{%note%}', { skipSecret: true })).toBe('{%note%}');
+
+            await registry.classify('note', 'internal');
+            expect(await registry.expandAll('{%note%}', { skipSecret: true })).toBe('VALUE');
         });
     });
 });

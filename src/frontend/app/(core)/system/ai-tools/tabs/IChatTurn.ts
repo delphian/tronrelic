@@ -47,9 +47,22 @@ export interface IChatTurn {
      * allowlist, captured at send time. Recorded on the user turn because the
      * grant belongs to the prompt, not the answer: it drives the per-turn tool
      * chips and is what "save this prompt with its tools" persists. A turn
-     * reopened from history has no value here, since the allowlist is not part
-     * of the stored query record; those turns show only the tools the assistant
-     * actually called, recovered from its transcript.
+     * reopened from history carries the grant stored on its query record. It is
+     * unset for a run that was unrestricted, and for a record written before the
+     * grant was stored at all; either way that turn shows only the tools the
+     * assistant actually called, recovered from its transcript.
      */
     tools?: string[];
+
+    /**
+     * For a user turn whose prompt held `{%name%}` variables: the prompt as it
+     * was typed, before those variables resolved. `content` carries the
+     * expanded text, because that is what the model was asked and what the
+     * reader needs to see, but a bookmark has to save the template — a saved
+     * prompt frozen to one run's values would answer the same question forever.
+     *
+     * Absent when the prompt used no variables, in which case `content` is
+     * already the template.
+     */
+    template?: string;
 }

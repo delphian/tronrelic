@@ -21,6 +21,33 @@ import { classifyAiQueryOutcome } from './classify-query-outcome.js';
 const COLLECTION = 'module_ai-tools_query_history';
 
 /**
+ * What a caller knows about how a run was set up, as opposed to what came back
+ * from it. Both fields describe the request, and neither can be recovered from
+ * the result object, so a path that does not supply them simply records less.
+ */
+export interface IAiQueryRecordContext {
+    /**
+     * The prompt after core resolved its `{%name%}` variables. Stored beside the
+     * raw template because the template alone does not say what the run was
+     * actually asked, and a variable reads live data that has moved on by the
+     * time anyone reads the record back. Pass the raw prompt, or omit this, when
+     * nothing was expanded — an identical string is dropped rather than stored
+     * twice.
+     */
+    expandedPrompt?: string;
+
+    /**
+     * The tools the run was permitted to call, in the same three states the run
+     * used: `null` for unrestricted, `[]` for none, a list for that subset.
+     * Recorded so reopening the conversation can put the composer back the way
+     * the run had it; a transcript only shows the tools the model chose to call,
+     * which is a subset of the grant. Omit it when the path genuinely does not
+     * know, so the record stays silent rather than claiming `null`.
+     */
+    toolAllowlist?: string[] | null;
+}
+
+/**
  * Build a query-history record from a settled query, shared by every code path
  * that records one — the interactive controller (stream / programmatic) and the
  * scheduled-prompts runner (scheduled). Centralised so the record shape stays
@@ -52,6 +79,12 @@ const COLLECTION = 'module_ai-tools_query_history';
  * @param result - The successful result, or null when the query failed.
  * @param errorMessage - The failure reason, or null on success.
  * @param fallbackModel - Model to record when there is no result to read it from.
+ * @param context - What the caller knows about how the run was set up, which
+ *        the result object does not carry. Grouped into one object rather than
+ *        added as further positional parameters, because these describe the
+ *        request while everything above describes the outcome, and a call site
+ *        passing a bare eighth and ninth value says nothing about which is
+ *        which.
  * @returns A fully-built {@link IAiQueryRecord} ready to hand to {@link AiQueryHistoryService.append}.
  */
 export function buildAiQueryRecord(
@@ -62,8 +95,10 @@ export function buildAiQueryRecord(
     id: string,
     result: IAiQueryResult | null,
     errorMessage: string | null,
-    fallbackModel?: string
+    fallbackModel?: string,
+    context: IAiQueryRecordContext = {}
 ): IAiQueryRecord {
+    const { expandedPrompt, toolAllowlist } = context;
     const assessment = classifyAiQueryOutcome(result, errorMessage);
 
     return {
@@ -85,6 +120,15 @@ export function buildAiQueryRecord(
         outcome: assessment.outcome,
         createdAt,
         completedAt: new Date().toISOString(),
+        // Only stored when expansion actually changed the text. A prompt with
+        // no variables would otherwise duplicate itself in every record, and a
+        // reader that sees the field present would wrongly conclude a variable
+        // was involved.
+        ...(expandedPrompt && expandedPrompt !== prompt ? { expandedPrompt } : {}),
+        // Stored whenever the caller stated one, `null` included — `null` means
+        // "ran unrestricted", which is a real answer and different from the
+        // field being absent because the path never knew.
+        ...(toolAllowlist !== undefined ? { toolAllowlist } : {}),
         // Absent when the query threw: there was no turn, so there is no stop
         // reason, and storing a default would invent a signal that never arrived.
         ...(result ? { stopReason: result.stopReason } : {}),

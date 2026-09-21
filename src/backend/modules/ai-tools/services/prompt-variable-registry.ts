@@ -26,6 +26,7 @@ import type {
     AiToolSensitivity,
     IDatabaseService,
     IExpandedPromptVariable,
+    IPromptExpansionOptions,
     IPromptVariableDefinition,
     IPromptVariableInfo,
     IPromptVariableRegistry,
@@ -185,19 +186,29 @@ export class PromptVariableRegistry implements IPromptVariableRegistry {
     }
 
     /** @inheritdoc */
-    async expandAll(text: string): Promise<string> {
-        const { expanded } = await this.expandWithMetadata(text);
+    async expandAll(text: string, options?: IPromptExpansionOptions): Promise<string> {
+        const { expanded } = await this.expandWithMetadata(text, options);
         return expanded;
     }
 
     /** @inheritdoc */
-    async expandWithMetadata(text: string): Promise<{ expanded: string; variables: IExpandedPromptVariable[] }> {
+    async expandWithMetadata(
+        text: string,
+        options: IPromptExpansionOptions = {}
+    ): Promise<{ expanded: string; variables: IExpandedPromptVariable[] }> {
         const matches = [...text.matchAll(VARIABLE_PATTERN)];
         if (matches.length === 0) {
             return { expanded: text, variables: [] };
         }
 
-        const uniqueNames = [...new Set(matches.map(match => match[1]))];
+        // Under `skipSecret` a secret variable is never resolved at all, rather
+        // than resolved and then masked. Nothing anywhere in this call holds the
+        // value, so there is no copy for a later change to leak by accident, and
+        // the resolver — which may read a vault or a key store — is not run for
+        // a pass whose output is only going to be filed away.
+        const skipped = options.skipSecret ? new Set(this.getSecretVariableNames()) : null;
+        const uniqueNames = [...new Set(matches.map(match => match[1]))]
+            .filter(name => !skipped?.has(name));
         const resolved = new Map<string, string>();
         await Promise.all(uniqueNames.map(async (name) => {
             resolved.set(name, await this.resolve(name));
@@ -209,6 +220,9 @@ export class PromptVariableRegistry implements IPromptVariableRegistry {
             sizeBytes: Buffer.byteLength(resolved.get(name) ?? '', 'utf-8')
         }));
 
+        // A skipped name is absent from `resolved`, so the `?? match` fallback
+        // already leaves its `{%name%}` token in place — the reader of the
+        // expanded text sees exactly where a secret went without seeing it.
         const expanded = text.replace(VARIABLE_PATTERN, (match, name) => resolved.get(name) ?? match);
         return { expanded, variables };
     }
