@@ -142,7 +142,7 @@ Core admin components for the tabs a plugin's admin page offers: Schedules, Data
 | `SystemLogsMonitor` | `service?`, `title?` |
 | `AiToolSchemaView` | `schema` — the `inputSchema` from an `IAiToolInfo` |
 
-`AiToolSchemaView` fetches nothing. It lists each input parameter of one AI tool — name, type, whether it is required, and its description — the same way the `/system/ai-tools` detail panel does, so a plugin that lists its own tools can show what a model may pass to each without keeping its own copy of that rendering.
+`AiToolSchemaView` fetches nothing. It lists each input parameter of one AI tool — name, type, whether it is required, its description, and any `enum` values, `default`, or `minimum`/`maximum` the schema declares — as one row of a two-column list, required parameters first, the same way the `/system/ai-tools` detail panel does, so a plugin that lists its own tools can show what a model may pass to each without keeping its own copy of that rendering.
 
 There is **no `token` prop** on any of them. Admin authority is the visitor's Better Auth session cookie, so a passed token is silently ignored and gates nothing.
 
