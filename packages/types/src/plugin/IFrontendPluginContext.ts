@@ -5,6 +5,7 @@ import type { ISkeletonProps } from '../ui/ISkeletonProps.js';
 import type { ICollectionBrowserProps } from '../ui/ICollectionBrowserProps.js';
 import type { IClickHouseTableBrowserProps } from '../ui/IClickHouseTableBrowserProps.js';
 import type { ISystemLogsMonitorProps } from '../ui/ISystemLogsMonitorProps.js';
+import type { IAiToolSchemaViewProps } from '../ui/IAiToolSchemaViewProps.js';
 
 /**
  * User state exposed to frontend plugins.
@@ -1087,6 +1088,22 @@ export interface ISystemComponents {
      * ```
      */
     SystemLogsMonitor: ComponentType<ISystemLogsMonitorProps>;
+
+    /**
+     * Read-only list of an AI tool's input parameters.
+     *
+     * Lets a plugin admin page that lists its own AI tools show what a model
+     * is allowed to pass to each one — name, type, whether it is required,
+     * and its description — rendered the same way the `/system/ai-tools`
+     * detail panel renders it. Pass the `inputSchema` from the `IAiToolInfo`
+     * the registry returned. Renders nothing interactive and fetches nothing.
+     *
+     * @example
+     * ```tsx
+     * <context.system.AiToolSchemaView schema={tool.inputSchema} />
+     * ```
+     */
+    AiToolSchemaView: ComponentType<IAiToolSchemaViewProps>;
 }
 
 /**

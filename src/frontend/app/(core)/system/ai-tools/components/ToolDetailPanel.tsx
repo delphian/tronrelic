@@ -18,10 +18,9 @@ import { useState } from 'react';
 import type { IAiToolInfo, IToolPolicy } from '@/types';
 import { cn } from '../../../../../lib/cn';
 import { Switch } from '../../../../../components/ui/Switch';
-import type { IPolicyResponse } from '../../../../../modules/ai-tools';
+import { AiToolSchemaView, type IPolicyResponse } from '../../../../../modules/ai-tools';
 import { CapabilityBadges } from './CapabilityBadges';
 import { ToolPolicyEditor } from './ToolPolicyEditor';
-import { ToolSchemaView } from './ToolSchemaView';
 import styles from '../page.module.scss';
 
 /** Usage tally shape from `GET /policy`. */
@@ -112,7 +111,7 @@ export function ToolDetailPanel({ tool, override, usage, defaults, busy, onToggl
                 />
             )}
             {tab === 'schema' && (
-                <ToolSchemaView schema={tool.inputSchema} />
+                <AiToolSchemaView schema={tool.inputSchema} />
             )}
         </div>
     );

@@ -14,7 +14,7 @@ interface IFrontendPluginContext {
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
     ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Select, Textarea, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, ConfirmDialog, AccountPicker, AddressSelector, Table family
     charts: IChartComponents;      // LineChart, BarChart
-    system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor (admin)
+    system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor, AiToolSchemaView (admin)
     api: IApiClient;               // get/post/put/patch/delete with runtime base URL
     websocket: IWebSocketClient;   // socket + auto-prefixed helpers
     useUser: () => IPluginUserState;
@@ -40,9 +40,9 @@ The `definePlugin({ pages: [{ path, component }] })` registration wires `context
 
 ## Admin Surfaces (`context.system`)
 
-Four core admin components are republished to plugins so a plugin's own admin
-page can offer Schedules, Database, and Logs tabs without sending the operator
-back to `/system`. Import them from the context — never by relative path across
+Five core admin components are republished to plugins so a plugin's own admin
+page can offer Schedules, Database, Logs, and AI Tools tabs without sending the
+operator back to `/system`. Import them from the context — never by relative path across
 the workspace.
 
 **A plugin that registers a scheduler job or owns storage must offer those
@@ -59,6 +59,13 @@ the `trp-onchain-typologies` workbench page is the reference implementation.
 | `CollectionBrowser` | MongoDB collections, documents, edit, delete | `prefix`, e.g. `plugin_<id>_` |
 | `ClickHouseTableBrowser` | ClickHouse tables and rows (read-only) | `pluginId` — your `manifest.id` |
 | `SystemLogsMonitor` | Log entries, level counts, live polling | `service` — `plugin:<manifest.id>` |
+| `AiToolSchemaView` | One AI tool's input parameters, read-only | None — pass `schema`, the tool's `inputSchema` |
+
+`AiToolSchemaView` is for a plugin that lists its own AI tools on its admin page.
+It renders the parameter list the `/system/ai-tools` detail panel shows, so an
+operator sees what a model may pass to each tool without leaving the plugin's
+page. It fetches nothing; take `inputSchema` from the `IAiToolInfo` your own
+admin route read from the AI tool registry.
 
 `SystemLogsMonitor` is optional rather than required, but it is the Logs tab to
 use when a plugin wants one. The plugin logger records every entry under the
@@ -105,6 +112,7 @@ const { system } = context;
 <system.CollectionBrowser prefix="plugin_my-plugin_" allowDelete={false} />
 <system.ClickHouseTableBrowser pluginId="my-plugin" hideWhenEmpty />
 <system.SystemLogsMonitor service="plugin:my-plugin" />
+<system.AiToolSchemaView schema={tool.inputSchema} />
 ```
 
 ## File Picker (`context.useFilePicker`)

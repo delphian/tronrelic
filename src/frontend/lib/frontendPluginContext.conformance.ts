@@ -69,6 +69,7 @@ import type { SchedulerMonitor as Impl_SchedulerMonitor } from '../modules/sched
 import type { CollectionBrowser as Impl_CollectionBrowser } from '../modules/database';
 import type { ClickHouseTableBrowser as Impl_ClickHouseTableBrowser } from '../modules/database';
 import type { SystemLogsMonitor as Impl_SystemLogsMonitor } from '../modules/logs';
+import type { AiToolSchemaView as Impl_AiToolSchemaView } from '../modules/ai-tools';
 
 /**
  * The props a declaration exposes to plugins that the implementation would
@@ -136,5 +137,6 @@ type _Conformance_SchedulerMonitor = AssertConformant<NoPhantomProps<ComponentPr
 type _Conformance_CollectionBrowser = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['CollectionBrowser']>, ComponentProps<typeof Impl_CollectionBrowser>>>;
 type _Conformance_ClickHouseTableBrowser = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['ClickHouseTableBrowser']>, ComponentProps<typeof Impl_ClickHouseTableBrowser>>>;
 type _Conformance_SystemLogsMonitor = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['SystemLogsMonitor']>, ComponentProps<typeof Impl_SystemLogsMonitor>>>;
+type _Conformance_AiToolSchemaView = AssertConformant<NoPhantomProps<ComponentProps<ISystemComponents['AiToolSchemaView']>, ComponentProps<typeof Impl_AiToolSchemaView>>>;
 
 export type {};

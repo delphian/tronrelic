@@ -16,7 +16,7 @@ interface IFrontendPluginContext {
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
     ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Field, Skeleton, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, Table family
     charts: IChartComponents;      // LineChart, BarChart
-    system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser (admin)
+    system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor, AiToolSchemaView (admin)
     api: IApiClient;               // get/post/put/patch/delete
     websocket: IWebSocketClient;   // socket + auto-prefixed helpers
     useUser: () => IPluginUserState;
@@ -132,13 +132,17 @@ Six related components matching the `/system/*` admin tables. Compose them to in
 
 ## System (`context.system`) — Admin Only
 
-Three core admin components, for the Schedules and Database tabs a plugin owes its admin page. Props are declared once in the types package — `ISchedulerMonitorProps`, `ICollectionBrowserProps`, `IClickHouseTableBrowserProps` — and `ISystemComponents` imports those declarations, so the table below describes them rather than restating them.
+Core admin components for the tabs a plugin's admin page offers: Schedules, Database, Logs, and the parameter list on an AI Tools tab. Props are declared once in the types package — `ISchedulerMonitorProps`, `ICollectionBrowserProps`, `IClickHouseTableBrowserProps`, `ISystemLogsMonitorProps`, `IAiToolSchemaViewProps` — and `ISystemComponents` imports those declarations, so the table below describes them rather than restating them.
 
 | Component | Props |
 |-----------|-------|
 | `SchedulerMonitor` | `jobFilter?: string[] \| (job) => boolean`, `title?`, `hideStats?` |
 | `CollectionBrowser` | `prefix?`, `title?`, `allowEdit?` (default true), `allowDelete?` (default true) |
 | `ClickHouseTableBrowser` | `pluginId?`, `title?`, `hideWhenEmpty?`, `prefix?` (deprecated) |
+| `SystemLogsMonitor` | `service?`, `title?` |
+| `AiToolSchemaView` | `schema` — the `inputSchema` from an `IAiToolInfo` |
+
+`AiToolSchemaView` fetches nothing. It lists each input parameter of one AI tool — name, type, whether it is required, and its description — the same way the `/system/ai-tools` detail panel does, so a plugin that lists its own tools can show what a model may pass to each without keeping its own copy of that rendering.
 
 There is **no `token` prop** on any of them. Admin authority is the visitor's Better Auth session cookie, so a passed token is silently ignored and gates nothing.
 

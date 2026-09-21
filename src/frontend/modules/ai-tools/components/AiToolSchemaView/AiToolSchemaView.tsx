@@ -1,18 +1,22 @@
 'use client';
 
 /**
- * @fileoverview Read-only view of a tool's input parameter schema for the
- * registry slide-over. An admin auditing a tool needs to see exactly what the
- * model is allowed to pass — each parameter's name, type, whether it's required,
- * and its description — without reading source. JSON Schema property values can
- * be booleans, so each is read defensively. Tools that take no parameters get a
+ * @fileoverview Read-only view of an AI tool's input parameter schema.
+ *
+ * An admin auditing a tool needs to see exactly what the model is allowed to
+ * pass — each parameter's name, type, whether it's required, and its
+ * description — without reading source. The `/system/ai-tools` detail panel
+ * renders it, and plugins receive the same component as
+ * `context.system.AiToolSchemaView` so a plugin admin page listing its own
+ * tools shows parameters identically. JSON Schema property values can be
+ * booleans, so each is read defensively. Tools that take no parameters get a
  * plain note rather than an empty list.
  */
 
-import type { IAiToolInputSchema } from '@/types';
-import { cn } from '../../../../../lib/cn';
-import { Badge } from '../../../../../components/ui/Badge';
-import styles from '../page.module.scss';
+import type { IAiToolSchemaViewProps } from '@/types';
+import { cn } from '../../../../lib/cn';
+import { Badge } from '../../../../components/ui/Badge';
+import styles from './AiToolSchemaView.module.scss';
 
 /** The fields surfaced for one parameter, read defensively from the schema. */
 interface IParamView {
@@ -43,12 +47,12 @@ function toParamView(name: string, definition: unknown, required: boolean): IPar
 }
 
 /**
- * The Schema tab body for one tool.
+ * Render a tool's input parameters as a list.
  *
  * @param props.schema - The tool's input schema (top-level object with properties).
  * @returns A parameter list, or a no-parameters note.
  */
-export function ToolSchemaView({ schema }: { schema: IAiToolInputSchema }) {
+export function AiToolSchemaView({ schema }: IAiToolSchemaViewProps) {
     const properties = schema?.properties ?? {};
     const requiredSet = new Set(schema?.required ?? []);
     const params = Object.entries(properties).map(([name, def]) => toParamView(name, def, requiredSet.has(name)));
@@ -61,7 +65,7 @@ export function ToolSchemaView({ schema }: { schema: IAiToolInputSchema }) {
                     <li key={param.name} className={styles.schema_param}>
                         <div className={styles.schema_param_head}>
                             <span className={styles.schema_param_name}>{param.name}</span>
-                            <span className={styles.mono}>{param.type}</span>
+                            <span className={styles.schema_param_type}>{param.type}</span>
                             {param.required && <Badge tone="info">required</Badge>}
                         </div>
                         {param.description && <p className={styles.schema_param_desc}>{param.description}</p>}
