@@ -134,7 +134,7 @@
 }
 
 .item__meta strong {
-    font-size: var(--font-size-base);
+    font-size: var(--toast-title-font-size);
 }
 
 /*
@@ -178,6 +178,7 @@
  */
 .item__description {
     margin: 0;
+    font-size: var(--toast-description-font-size);
     color: var(--color-text-subtle);
     display: flex;
     flex-wrap: wrap;
