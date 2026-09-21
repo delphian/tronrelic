@@ -91,12 +91,37 @@ export function formatToolPayload(value: unknown): string {
 }
 
 /**
+ * Put a tool payload in a code fence the payload itself cannot close early.
+ *
+ * A tool handler returns whatever it likes, so a payload that is not JSON is
+ * carried through as raw text and may contain a line of its own backticks. A
+ * fixed three-backtick fence ends at that line, and everything after it renders
+ * as Markdown in whatever ticket or document the transcript was pasted into,
+ * which both loses the block and lets payload text contribute headings, links,
+ * or images of its own. Markdown closes a fence only on a backtick run at least
+ * as long as the one that opened it, so open with a run longer than any run in
+ * the payload.
+ *
+ * @param payload - The formatted tool input or result to place in the block.
+ * @returns The payload wrapped in a fence long enough to contain it.
+ */
+function fenceJson(payload: string): string {
+    let longest = 0;
+    for (const run of payload.match(/`+/g) ?? []) {
+        longest = Math.max(longest, run.length);
+    }
+    const fence = '`'.repeat(Math.max(3, longest + 1));
+    return `${fence}json\n${payload}\n${fence}`;
+}
+
+/**
  * Render one assistant turn's structured transcript as Markdown — the thinking,
  * tool calls, tool results, and answer prose in the order they happened.
  *
  * Tool payloads go in fenced code blocks so a Markdown renderer does not try to
  * read JSON braces as formatting, and so a reader can tell machine output apart
- * from the model's prose at a glance.
+ * from the model's prose at a glance. The fence length comes from
+ * {@link fenceJson} so a payload carrying backticks cannot end the block early.
  *
  * @param segments - The turn's ordered segments.
  * @returns The rendered blocks, one string each, for the caller to join.
@@ -109,10 +134,10 @@ function renderSegments(segments: IAiTranscriptSegment[]): string[] {
         } else if (segment.type === 'tool_use') {
             const name = segment.name || 'tool';
             const where = segment.server ? ' (provider-hosted)' : '';
-            blocks.push(`**Tool call: ${name}**${where}\n\n\`\`\`json\n${formatToolPayload(segment.input)}\n\`\`\``);
+            blocks.push(`**Tool call: ${name}**${where}\n\n${fenceJson(formatToolPayload(segment.input))}`);
         } else if (segment.type === 'tool_result') {
             const heading = segment.isError ? 'Tool error' : 'Tool result';
-            blocks.push(`**${heading}**\n\n\`\`\`json\n${formatToolPayload(segment.content)}\n\`\`\``);
+            blocks.push(`**${heading}**\n\n${fenceJson(formatToolPayload(segment.content))}`);
         } else {
             blocks.push(segment.text);
         }

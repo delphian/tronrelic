@@ -124,7 +124,15 @@ export function buildAiQueryRecord(
         // no variables would otherwise duplicate itself in every record, and a
         // reader that sees the field present would wrongly conclude a variable
         // was involved.
-        ...(expandedPrompt && expandedPrompt !== prompt ? { expandedPrompt } : {}),
+        //
+        // The test is `!== undefined` rather than a truthiness check because a
+        // resolver may legitimately return an empty string. A prompt consisting
+        // only of such a variable expands to `''`, which is what the run was
+        // asked; dropping it would leave a reader falling back to `prompt` and
+        // seeing the raw `{%name%}` token as though that had been sent. Absent
+        // still means "this path did not expand", which is how the skipped-run
+        // and failed-run call sites report themselves.
+        ...(expandedPrompt !== undefined && expandedPrompt !== prompt ? { expandedPrompt } : {}),
         // Stored whenever the caller stated one, `null` included — `null` means
         // "ran unrestricted", which is a real answer and different from the
         // field being absent because the path never knew.
