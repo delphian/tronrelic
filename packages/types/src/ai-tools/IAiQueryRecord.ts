@@ -66,8 +66,59 @@ export interface IAiQueryRecord {
     /** Execution mode. */
     mode: AiQueryMode;
 
-    /** The user's prompt for this turn. */
+    /**
+     * The user's prompt for this turn, exactly as it was typed or stored, with
+     * its `{%name%}` tokens left alone. This stays the raw text because it is
+     * the reusable template: saving a past turn back into the prompt library has
+     * to capture the template, not one run's values.
+     */
     prompt: string;
+
+    /**
+     * The same prompt after core resolved its `{%name%}` variables — what the
+     * run was asked. Persisted rather than re-derived on demand, because a
+     * prompt variable reads live data (a reporting window, a health summary, a
+     * chain statistic), so expanding an old record again would show an operator
+     * today's values in place of the ones the run was answering about.
+     *
+     * **A `secret`-classified variable is deliberately left unresolved here**,
+     * as its literal `{%name%}` token. The model still receives the real value —
+     * the provider expands the request separately, and injecting private data is
+     * what a secret variable is for — but this copy is stored, and a stored copy
+     * is a different risk from a transmitted one: query history has no retention
+     * sweep, so it lives indefinitely, and it is readable both from the
+     * admin-session-only history routes and from the `/system/database`
+     * collection browser, which the shared service token reaches. Keeping the
+     * token in place tells a reader exactly where a secret went without writing
+     * the secret down. An operator who does want a particular variable's value
+     * recorded reclassifies it below `secret`.
+     *
+     * This closes the deterministic path only. If a prompt asks the model to
+     * repeat a secret back, the answer still lands in {@link responseText}.
+     *
+     * Absent when expansion changed nothing, and on records written before this
+     * field existed. A reader falls back to {@link prompt}.
+     */
+    expandedPrompt?: string;
+
+    /**
+     * The tools this turn was permitted to call, recorded so reopening a
+     * conversation can restore the composer to the state the run used. Nothing
+     * else preserves it: a transcript shows only the tools the model chose to
+     * call, which is a subset of the grant, so without this field an operator
+     * continuing an old thread silently starts with no tools at all.
+     *
+     * Carries the same three states the run itself used. `null` means the run
+     * was unrestricted and could reach every enabled tool. `[]` means it was
+     * granted none. A list of names means exactly that subset. The field is
+     * absent on records written before it existed, which is a fourth case — not
+     * "unrestricted" but "unknown" — so a reader must not treat an absent field
+     * as `null`.
+     *
+     * A provider-hosted tool appears here behind the `hosted:` prefix, the same
+     * way the run's own allowlist named it.
+     */
+    toolAllowlist?: string[] | null;
 
     /** The model's response text, or null when the query failed. */
     responseText: string | null;

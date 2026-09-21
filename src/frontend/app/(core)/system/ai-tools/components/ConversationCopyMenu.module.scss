@@ -1,0 +1,87 @@
+/**
+ * Styles for ConversationCopyMenu — the format picker behind a conversation's
+ * copy icon.
+ *
+ * The trigger itself is an `<IconButton>`, so nothing here styles it: a copy
+ * icon has to look identical to the other bare row actions beside it, and
+ * restyling it here would be the one control in the row that drifts.
+ *
+ * Everything below is the portaled panel, whose `top`/`left`/`width` arrive as
+ * inline style from the component because a `<body>` portal cannot be
+ * positioned in CSS. The panel borrows the same surface, border, radius, and
+ * shadow as the composer's tool dropdown, so the two floating panels on this
+ * page read as one pattern rather than as two separately-invented overlays.
+ *
+ * No container query here. The panel's width is set in JS from the viewport
+ * rather than inherited from a parent, so there is no container whose width it
+ * could respond to.
+ */
+
+.panel {
+    position: fixed;
+    z-index: var(--z-index-popover);
+    display: flex;
+    flex-direction: column;
+    padding: var(--padding-2xs);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-lg);
+
+    /*
+     * The panel takes focus itself when it opens — portaling puts it outside
+     * the tab order, so it has to. Ring its own border rather than drawing an
+     * outline outside the rounded corner, so "focus landed in here" reads as
+     * part of the panel instead of a stray rectangle around it. Keyboard-only:
+     * a mouse click that opens the menu leaves no ring behind.
+     */
+    &:focus-visible {
+        outline: none;
+        border-color: var(--input-border-focus);
+        box-shadow: var(--shadow-lg), var(--input-shadow-focus);
+    }
+}
+
+/*
+ * One menu row. Full-width and left-aligned so each label and its description
+ * stack as a single column, which is what lets an operator scan the three
+ * formats without reading every word of each one.
+ */
+.option {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    width: 100%;
+    padding: var(--padding-xs) var(--padding-sm);
+    border: none;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    text-align: left;
+    color: var(--color-text);
+    cursor: pointer;
+    transition: background-color var(--transition-base);
+
+    &:hover {
+        background: var(--color-surface-muted);
+    }
+
+    /* Keyboard-only ring, and a wash so the focused row is obvious inside a
+       panel whose own border is already showing the focus colour. */
+    &:focus-visible {
+        outline: none;
+        background: var(--color-surface-muted);
+        box-shadow: var(--input-shadow-focus);
+    }
+}
+
+.option_label {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-medium);
+}
+
+/* Muted and a step down, so the label stays the thing being chosen. */
+.option_description {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    line-height: var(--line-height-tight);
+}

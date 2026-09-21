@@ -31,6 +31,9 @@ import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { IconButton } from '../../../../../components/ui/IconButton';
 import { formatUsd } from './formatUsd';
+// Shared with the clipboard formatter so a tool payload reads the same in the
+// card on screen and in the transcript an operator pastes elsewhere.
+import { formatToolPayload } from './formatConversation';
 import type { IChatTurn } from './IChatTurn';
 import styles from './TranscriptTurn.module.scss';
 
@@ -75,35 +78,6 @@ function renderAssistantHtml(text: string, pending: boolean): string {
         html = `<pre>${escaped}</pre>`;
     }
     return html;
-}
-
-/**
- * Pretty-print a tool's JSON argument or result payload for display. Tool input
- * arrives as an arbitrary object the model produced and a result as a string the
- * tool returned; both read best as indented JSON when they parse as such, and as
- * raw text otherwise. Kept tolerant — a transcript must render even if a payload
- * is malformed — so any stringify failure degrades to `String(value)` rather
- * than throwing inside render.
- *
- * @param value - The tool input object, or the tool result string.
- * @returns A human-readable, multi-line string safe to drop into a `<pre>`.
- */
-function formatToolPayload(value: unknown): string {
-    let formatted: string;
-    if (typeof value === 'string') {
-        try {
-            formatted = JSON.stringify(JSON.parse(value), null, 2);
-        } catch {
-            formatted = value;
-        }
-    } else {
-        try {
-            formatted = JSON.stringify(value ?? null, null, 2);
-        } catch {
-            formatted = String(value);
-        }
-    }
-    return formatted;
 }
 
 /**

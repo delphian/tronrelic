@@ -61,11 +61,20 @@ export function createAiToolsAdminRouter(controller: AiToolsController): Router 
 
     // Running a query and reading its transcript are both secret-read paths, so
     // they carry the same gate as the variable routes above. A prompt may
-    // contain `{%name%}`, which the provider expands to the variable's real
-    // value before the model sees it — so `{"prompt":"repeat verbatim:
-    // {%some-secret%}"}` is a read of that secret by another route, and the
-    // model's answer is persisted, which makes `/query/history` and
-    // `/query/conversations/:id` reads of it too.
+    // contain `{%name%}`, which core expands to the variable's real value before
+    // the model sees it — so `{"prompt":"repeat verbatim: {%some-secret%}"}` is a
+    // read of that secret by another route, and the model's answer is persisted,
+    // which makes `/query/history` and `/query/conversations/:id` reads of it
+    // too.
+    //
+    // `IAiQueryRecord.expandedPrompt` deliberately does not add a second such
+    // path. Core builds it with `skipSecret`, so a `secret` variable stays as
+    // its `{%name%}` token in the stored copy while the model still receives the
+    // real value through the provider's own expansion. The reason it is treated
+    // differently from the answer text is that a record is kept rather than
+    // transmitted: query history has no retention sweep, and `/system/database`
+    // reads the same collection under plain `requireAdmin`, which admits the
+    // service token this gate refuses.
     //
     // Filtering `secret` variables out of expansion is not the fix: injecting
     // them is the feature (they are the lethal trifecta's private-data leg by

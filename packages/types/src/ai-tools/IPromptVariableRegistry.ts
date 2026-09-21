@@ -45,6 +45,29 @@ export interface IStaticPromptVariableUpdate {
     sensitivity?: AiToolSensitivity;
 }
 
+/** How one expansion pass should treat the variables it finds. */
+export interface IPromptExpansionOptions {
+    /**
+     * Leave every `secret`-classified variable as its literal `{%name%}` token
+     * instead of resolving it.
+     *
+     * This exists for the copies of a prompt that are *kept* rather than sent —
+     * today the expanded prompt persisted on a query-history record. A secret
+     * variable's whole purpose is to splice private data into the text the model
+     * receives, so the pass that builds the request must never set this. The
+     * pass that builds a stored artifact should, because a record lives
+     * indefinitely, is readable from more surfaces than the request ever was,
+     * and gains nothing from holding the value in clear.
+     *
+     * The registry owns the classification, so it applies the rule itself rather
+     * than making each caller assemble the secret set and risk the two drifting.
+     * An operator who does want a particular variable's value recorded
+     * reclassifies it below `secret` — an existing, audited, per-variable
+     * decision — instead of switching this off wholesale.
+     */
+    skipSecret?: boolean;
+}
+
 /**
  * Registration, expansion, classification, and CRUD surface for prompt
  * variables. Published on the service registry as `'prompt-variables'`.
@@ -81,18 +104,28 @@ export interface IPromptVariableRegistry {
      * Expand every `{%name%}` pattern in the text.
      *
      * @param text - Prompt text possibly containing variable patterns.
+     * @param options - How to treat the variables found; see
+     *        {@link IPromptExpansionOptions}. Omitted means expand everything,
+     *        which is what a pass building a request must do.
      * @returns The text with all variables expanded.
      */
-    expandAll(text: string): Promise<string>;
+    expandAll(text: string, options?: IPromptExpansionOptions): Promise<string>;
 
     /**
      * Expand every pattern and return per-variable metadata for the composer's
      * preview (what each resolved to and how large it is).
      *
      * @param text - Prompt text possibly containing variable patterns.
-     * @returns The expanded text plus per-variable metadata.
+     * @param options - How to treat the variables found; see
+     *        {@link IPromptExpansionOptions}.
+     * @returns The expanded text plus metadata for each variable that was
+     *          actually resolved. A variable left as its literal token is not
+     *          listed, because the metadata describes what the pass expanded.
      */
-    expandWithMetadata(text: string): Promise<{ expanded: string; variables: IExpandedPromptVariable[] }>;
+    expandWithMetadata(
+        text: string,
+        options?: IPromptExpansionOptions
+    ): Promise<{ expanded: string; variables: IExpandedPromptVariable[] }>;
 
     /**
      * Serializable metadata for every variable (both kinds), for the admin panel.

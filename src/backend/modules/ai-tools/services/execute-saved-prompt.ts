@@ -61,6 +61,24 @@ export type ScheduledPromptSystemComposer = (
 ) => Promise<string>;
 
 /**
+ * Resolves the `{%name%}` tokens in a prompt against the core prompt-variable
+ * registry. The module supplies `(text) => promptVariables.expandAll(text)`.
+ *
+ * Core resolves them alongside the provider's own pass so the history row can
+ * record what the run was asked. Without it, an operator reading an autonomous
+ * run back sees only the template and cannot tell what data the answer was
+ * drawn from. This does not replace the provider's expansion — see the call
+ * site for why both run.
+ *
+ * The module supplies an expander that skips `secret` variables, since the text
+ * this produces is stored rather than sent. That decision belongs to the module
+ * wiring rather than to this executor, which only needs "give me the text to
+ * record". Omitted in tests that do not exercise expansion, in which case no
+ * expanded text is recorded.
+ */
+export type ScheduledPromptVariableExpander = (text: string) => Promise<string>;
+
+/**
  * Outcome of one autonomous prompt run, handed to the optional notifier so the
  * module can fan a notification to admins. Carries only what a notification
  * needs — the prompt's identity, whether it succeeded, the error text on
@@ -125,6 +143,8 @@ export interface ISavedPromptExecutionDeps {
     resolveEndUser?: EndUserResolver;
     /** Composes the core-injected system prompt for the run's principal. */
     composeSystemPrompt?: ScheduledPromptSystemComposer;
+    /** Resolves `{%name%}` tokens in the prompt body before the provider sees it. */
+    expandPrompt?: ScheduledPromptVariableExpander;
     /** Optional admin-notification callback fired after the run settles. */
     notify?: ScheduledPromptNotifier;
     /** Optional query-history persister for the Query tab. */
@@ -186,7 +206,7 @@ export async function executeSavedPrompt(
     deps: ISavedPromptExecutionDeps,
     opts: ISavedPromptExecutionOptions
 ): Promise<void> {
-    const { savedPrompts, logger, resolveProvider, resolveEndUser, composeSystemPrompt, notify, recordQuery } = deps;
+    const { savedPrompts, logger, resolveProvider, resolveEndUser, composeSystemPrompt, expandPrompt, notify, recordQuery } = deps;
     const { triggerId, claimedAt } = opts;
 
     /**
@@ -218,7 +238,12 @@ export async function executeSavedPrompt(
         if (recordQuery) {
             try {
                 await recordQuery(
-                    buildAiQueryRecord('scheduled', p.prompt, opts.conversationId ?? randomUUID(), new Date().toISOString(), randomUUID(), null, reason, p.model)
+                    buildAiQueryRecord('scheduled', p.prompt, opts.conversationId ?? randomUUID(), new Date().toISOString(), randomUUID(), null, reason, p.model, {
+                        // The prompt's own grant, recorded even though nothing
+                        // ran: reopening a skipped run still puts the composer
+                        // where retrying it by hand needs to start from.
+                        toolAllowlist: p.toolAllowlist ?? null
+                    })
                 );
             } catch (historyErr) {
                 logger.warn({ err: historyErr, promptId: p.id, name: p.name }, 'Failed to record skipped saved-prompt query history');
@@ -344,6 +369,20 @@ export async function executeSavedPrompt(
         // autonomous run that did use tools. Mode stays 'programmatic' — the id is
         // for audit correlation only and never relaxes the governor's autonomous
         // default-deny.
+        // Resolve the registry's `{%name%}` tokens so the history row below can
+        // record what this run was actually asked. A prompt variable reads live
+        // data, so re-expanding the template when someone reads the record back
+        // would answer with today's values instead of the run's own. A throw
+        // from an unknown name is caught by this same try and recorded as a
+        // failed run. Without an expander injected there is simply no expanded
+        // text to record.
+        //
+        // The provider is still handed the raw prompt and still runs its own
+        // pass, exactly as before: handing it pre-expanded text would let its
+        // pass resolve a `{%name%}` that arrived inside variable *data*, and
+        // suppressing that pass would also stop the provider expanding its own
+        // configured system prompt.
+        const expandedPromptText = expandPrompt ? await expandPrompt(promptText) : promptText;
         const result = (await provider.query({ prompt: promptText, model: p.model, mode: 'programmatic', endUser, injectedSystemPrompt, toolAllowlist: p.toolAllowlist, conversationId: historyConversationId })) as IAiQueryResult;
         // A returned result means the transport worked, not that the model
         // answered. Classify before doing anything else with it, because
@@ -396,7 +435,10 @@ export async function executeSavedPrompt(
         if (recordQuery) {
             try {
                 await recordQuery(
-                    buildAiQueryRecord('scheduled', promptText, historyConversationId, queryStartedAt, historyId, result, null, p.model)
+                    buildAiQueryRecord('scheduled', promptText, historyConversationId, queryStartedAt, historyId, result, null, p.model, {
+                        expandedPrompt: expandedPromptText,
+                        toolAllowlist: p.toolAllowlist ?? null
+                    })
                 );
             } catch (historyErr) {
                 logger.warn(
@@ -475,7 +517,9 @@ export async function executeSavedPrompt(
         if (recordQuery) {
             try {
                 await recordQuery(
-                    buildAiQueryRecord('scheduled', promptText, historyConversationId, queryStartedAt, historyId, null, lastRunError, p.model)
+                    buildAiQueryRecord('scheduled', promptText, historyConversationId, queryStartedAt, historyId, null, lastRunError, p.model, {
+                        toolAllowlist: p.toolAllowlist ?? null
+                    })
                 );
             } catch (historyErr) {
                 logger.warn(

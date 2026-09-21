@@ -6,7 +6,9 @@
  * service (create and update), and that the interactive `query` handler
  * re-validates the selector and forwards a valid one to the active provider.
  * Also covers the streaming path's socket-ownership gate, which decides whether
- * a run may write to the socket its caller named.
+ * a run may write to the socket its caller named, and that the expansion core
+ * records skips `secret` variables while the provider still receives the raw
+ * prompt for its own full pass.
  *
  * The controller has twelve constructor dependencies; only `savedPrompts`,
  * `providers`, `history`, `systemPrompts`, and `resolveEndUser` are exercised
@@ -93,7 +95,15 @@ function makeController(overrides: Record<string, any> = {}) {
     const resolveEndUser = overrides.resolveEndUser ?? vi.fn(async () => null);
     const registry = overrides.registry ?? { listToolInfo: vi.fn(() => []) };
     const policy = overrides.policy ?? { isEgressGated: vi.fn(() => false) };
-    const promptVariables = overrides.promptVariables ?? { getSecretVariableNames: vi.fn(() => []) };
+    // `expandAll` is on the default mock because the query paths now resolve
+    // `{%name%}` in core before calling the provider; a mock without it would
+    // make every query test fail as a thrown run rather than exercising what it
+    // is actually asserting. Identity by default, so a prompt with no variables
+    // behaves exactly as it did.
+    const promptVariables = overrides.promptVariables ?? {
+        getSecretVariableNames: vi.fn(() => []),
+        expandAll: vi.fn(async (text: string) => text)
+    };
 
     const controller = new AiToolsController(
         registry as any,
@@ -229,6 +239,35 @@ describe('AiToolsController — toolAllowlist wiring', () => {
             expect(provider.query).toHaveBeenCalledTimes(1);
             expect(provider.query.mock.calls[0][0].toolAllowlist).toBeUndefined();
         });
+
+        it('records the expansion with skipSecret while the provider gets the raw prompt', async () => {
+            // Two separate passes with different rules, and the difference is the
+            // point: the provider's own expansion gives the model every variable,
+            // while core's expansion feeds the history record and must leave a
+            // secret variable as its token. Dropping the flag would silently
+            // start writing secret values into a collection nothing prunes, and
+            // the recorded text would still look correct.
+            const provider = { query: vi.fn(async (_opts: any) => ({ responseText: 'ok', model: 'm' })) };
+            const providers = { getActive: vi.fn(() => provider) };
+            const history = { append: vi.fn(async (_record: any) => {}) };
+            const promptVariables = {
+                getSecretVariableNames: vi.fn(() => ['seed']),
+                expandAll: vi.fn(async (text: string) => text.replace('{%pub%}', 'PUBLIC'))
+            };
+            const { controller } = makeController({ providers, history, promptVariables });
+            const res = createMockResponse();
+
+            await controller.query({ body: { prompt: 'x {%pub%} {%seed%}', stream: false } } as any, res);
+
+            expect(promptVariables.expandAll).toHaveBeenCalledWith('x {%pub%} {%seed%}', { skipSecret: true });
+            // The provider is handed the template untouched — it runs its own
+            // unrestricted pass, which is what reaches the model.
+            expect(provider.query.mock.calls[0][0].prompt).toBe('x {%pub%} {%seed%}');
+            expect(history.append.mock.calls[0][0]).toMatchObject({
+                prompt: 'x {%pub%} {%seed%}',
+                expandedPrompt: 'x PUBLIC {%seed%}'
+            });
+        });
     });
 
     describe('query (streaming) — socket ownership', () => {
@@ -264,7 +303,12 @@ describe('AiToolsController — toolAllowlist wiring', () => {
             await controller.query({ body: STREAM_BODY, userId: 'admin-1' } as any, res);
 
             expect(res._json).toMatchObject({ success: true, queryId: 'q-1' });
-            expect(provider.queryStream).toHaveBeenCalledTimes(1);
+            // The streaming branch answers the request before the run starts, and
+            // core's `skipSecret` expansion sits between the two, so the provider
+            // call lands a microtask after `query()` resolves. Poll for it rather
+            // than sampling once — a fixed number of ticks would break again the
+            // next time a step is added ahead of the provider call.
+            await vi.waitFor(() => expect(provider.queryStream).toHaveBeenCalledTimes(1));
         });
 
         it('refuses a socket signed in as somebody else', async () => {
@@ -347,7 +391,7 @@ describe('AiToolsController — toolAllowlist wiring', () => {
             return makeController({
                 registry: { listToolInfo: vi.fn(() => [SECRET, UNTRUSTED, EXTERNAL]) },
                 policy: { isEgressGated: vi.fn(() => false) }, // egress is open
-                promptVariables: { getSecretVariableNames: vi.fn(() => []) },
+                promptVariables: { getSecretVariableNames: vi.fn(() => []), expandAll: vi.fn(async (text: string) => text) },
                 providers: { getActive: vi.fn(() => null) }
             });
         }
@@ -413,7 +457,7 @@ describe('AiToolsController — toolAllowlist wiring', () => {
             return makeController({
                 registry: { listToolInfo: vi.fn(() => [SECRET]) },
                 policy: { isEgressGated: vi.fn(() => false) },
-                promptVariables: { getSecretVariableNames: vi.fn(() => []) },
+                promptVariables: { getSecretVariableNames: vi.fn(() => []), expandAll: vi.fn(async (text: string) => text) },
                 providers: {
                     getActive: vi.fn(() => ({ listActiveServerTools: vi.fn(async () => [HOSTED_FETCH]) }))
                 }
@@ -467,7 +511,7 @@ describe('AiToolsController — toolAllowlist wiring', () => {
             const { controller } = makeController({
                 registry: { listToolInfo: vi.fn(() => [SECRET]) },
                 policy: { isEgressGated: vi.fn(() => false) },
-                promptVariables: { getSecretVariableNames: vi.fn(() => []) },
+                promptVariables: { getSecretVariableNames: vi.fn(() => []), expandAll: vi.fn(async (text: string) => text) },
                 providers: { getProvider, getActive }
             });
             const res = createMockResponse();

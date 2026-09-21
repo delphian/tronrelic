@@ -40,6 +40,7 @@ export type {
     PromptVariableKind
 } from './IPromptVariable.js';
 export type {
+    IPromptExpansionOptions,
     IPromptVariableRegistry,
     IStaticPromptVariableInput,
     IStaticPromptVariableUpdate

@@ -1,6 +1,6 @@
 'use client';
 
-import type { ButtonHTMLAttributes, PropsWithChildren } from 'react';
+import { forwardRef, type ButtonHTMLAttributes, type PropsWithChildren } from 'react';
 import { cn } from '../../../lib/cn';
 import styles from './IconButton.module.scss';
 
@@ -47,24 +47,34 @@ const sizeClass: Record<IconButtonSize, string> = {
 };
 
 /**
+ * Forwards its ref to the underlying `<button>`, because a caller that anchors
+ * a floating panel to this control has to measure the real element and hand
+ * focus back to it when the panel closes. Without the forward, such a caller
+ * has to wrap the button in a positioning element and reach into the DOM for
+ * the button inside it.
+ *
  * @param props - IconButton props (variant, size, standard button attributes)
+ * @param ref - Forwarded to the rendered `<button>`.
  * @returns A borderless, transparent icon-only button.
  */
-export function IconButton({
-    children,
-    className,
-    variant = 'ghost',
-    size = 'md',
-    type = 'button',
-    ...props
-}: PropsWithChildren<IconButtonProps>) {
-    return (
-        <button
-            type={type}
-            className={cn(styles['icon-btn'], variantClass[variant], sizeClass[size], className)}
-            {...props}
-        >
-            {children}
-        </button>
-    );
-}
+export const IconButton = forwardRef<HTMLButtonElement, PropsWithChildren<IconButtonProps>>(
+    function IconButton({
+        children,
+        className,
+        variant = 'ghost',
+        size = 'md',
+        type = 'button',
+        ...props
+    }, ref) {
+        return (
+            <button
+                ref={ref}
+                type={type}
+                className={cn(styles['icon-btn'], variantClass[variant], sizeClass[size], className)}
+                {...props}
+            >
+                {children}
+            </button>
+        );
+    }
+);

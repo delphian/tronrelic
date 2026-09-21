@@ -8,9 +8,11 @@
  * of the page: a conversation is opened by clicking its row, in place, so the
  * operator never loses sight of the chat they are in to find another one.
  *
- * The rail is presentation only. The parent owns the records, the paging, and
- * the open action, because those are shared with the chat — a finished stream
- * refreshes the list, and opening a row replaces the transcript.
+ * The rail is presentation only. The parent owns the records, the paging, the
+ * open action, and the copy, because each of those is shared with the chat or
+ * needs data the rail does not hold — a finished stream refreshes the list,
+ * opening a row replaces the transcript, and copying a row means fetching that
+ * conversation's turns, since a row carries only its opening prompt.
  *
  * A client-only admin surface: the list arrives from the parent after mount,
  * so the day labels (computed with the browser's local date) are never
@@ -18,13 +20,15 @@
  */
 
 import { useMemo } from 'react';
-import { RefreshCw, Copy, CheckCircle, MessageSquare } from 'lucide-react';
+import { RefreshCw, MessageSquare } from 'lucide-react';
 import type { AiQueryOutcome } from '@/types';
 import { Button } from '../../../../../components/ui/Button';
 import { Badge } from '../../../../../components/ui/Badge';
 import { IconButton } from '../../../../../components/ui/IconButton';
 import { ClientTime } from '../../../../../components/ui/ClientTime';
+import { ConversationCopyMenu } from '../components/ConversationCopyMenu';
 import { formatUsd } from './formatUsd';
+import type { ConversationCopyFormat } from './formatConversation';
 import type { IConversationGroup } from './IConversationGroup';
 import styles from './ConversationRail.module.scss';
 
@@ -123,8 +127,13 @@ export interface IConversationRailProps {
     onLoadMore: () => void;
     /** Re-fetch the first page. */
     onRefresh: () => void;
-    /** Copy a conversation's opening prompt, flashing the control that asked. */
-    onCopy: (conversationId: string, text: string) => void;
+    /**
+     * Copy a whole conversation in the chosen format. The rail holds only each
+     * conversation's opening prompt, so the parent has to fetch that
+     * conversation's turns before it can format them — which is why this is the
+     * parent's job rather than the rail's.
+     */
+    onCopy: (conversationId: string, format: ConversationCopyFormat) => void;
     /** The row whose copy control was just used, so it shows a check. */
     copiedId: string | null;
 }
@@ -222,16 +231,12 @@ export function ConversationRail({
                                                 </span>
                                             </span>
                                         </button>
-                                        <IconButton
-                                            variant="ghost"
-                                            size="xs"
+                                        <ConversationCopyMenu
                                             className={styles.row_copy}
-                                            onClick={() => onCopy(group.conversationId, group.firstPrompt)}
-                                            aria-label="Copy the opening prompt to clipboard"
-                                            title="Copy opening prompt"
-                                        >
-                                            {copiedId === group.conversationId ? <CheckCircle size={14} /> : <Copy size={14} />}
-                                        </IconButton>
+                                            onCopy={(format) => onCopy(group.conversationId, format)}
+                                            copied={copiedId === group.conversationId}
+                                            label="Copy this conversation to clipboard"
+                                        />
                                     </li>
                                 );
                             })}
