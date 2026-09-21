@@ -3,7 +3,9 @@
 import { useEffect, useRef } from 'react';
 import type { Socket } from 'socket.io-client';
 import { getSocket, disconnectSocket, WEBSOCKET_DEFER_TIMEOUT_MS } from '../../lib/socketClient';
-import { useSession } from '../../modules/user/lib/auth-client';
+// Imported from the component file rather than the modules/user barrel, which
+// would pull component CSS into the layout bundle.
+import { useAuthSession } from '../../modules/user/components/SessionProvider';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { prependMemo } from '../../store/slices/memoSlice';
 import { blockReceived } from '../../features/blockchain/slice';
@@ -50,11 +52,18 @@ export function SocketBridge() {
   const connectionStatus = useAppSelector(state => state.realtime.connection.status);
   const commentThreads = useAppSelector(state => state.realtime.subscriptions.commentThreads);
 
-  // Better Auth identity, read straight from BA's client store. SocketBridge
-  // mounts as a sibling above SessionProvider, so it cannot use the
-  // SessionProvider context — but `useSession` is BA's own reactive hook and
-  // works anywhere under the providers.
-  const { data: sessionData } = useSession();
+  // Better Auth identity, read through the session provider rather than BA's
+  // raw `useSession`. SocketBridge renders inside SessionProvider (see the
+  // order in `app/providers.tsx`), so the context is available here; an
+  // earlier comment claiming otherwise predated the provider being moved up.
+  //
+  // Which hook this uses matters more than it looks. BA's raw hook reports
+  // `data: null` while it is refetching in the background, which is
+  // indistinguishable at this level from a sign-out — and the effect below
+  // responds to an identity change by tearing the socket down and building it
+  // again. The provider is the component that already knows the difference: it
+  // holds the value across a refetch and reports `isPending` separately.
+  const { session, isPending: isSessionPending } = useAuthSession();
 
   // The socket's identity rooms are `user:${id}` plus one `group:${id}` per
   // group, so both halves of the identity have to be watched — a change in
@@ -64,12 +73,11 @@ export function SocketBridge() {
   // handshook before the account was promoted, and nothing surfaces an error —
   // the page renders, it just silently stops updating.
   //
-  // `groups` is a Better Auth additional field, so it rides along on the
-  // session's user record; it is read defensively because BA's inferred client
-  // user type does not surface custom fields. Sorted before joining so a
-  // reordering on the server side does not read as a membership change.
-  const sessionUserId = sessionData?.user?.id ?? null;
-  const sessionGroups = (sessionData?.user as { groups?: string[] } | undefined)?.groups;
+  // `groups` is a Better Auth additional field that rides along on the
+  // session's user record. Sorted before joining so a reordering on the server
+  // side does not read as a membership change.
+  const sessionUserId = session?.user?.id ?? null;
+  const sessionGroups = session?.user?.groups;
   const identityKey = sessionUserId === null
     ? null
     : `${sessionUserId}|${[...(sessionGroups ?? [])].sort().join(',')}`;
@@ -106,6 +114,13 @@ export function SocketBridge() {
   // server-side session resolution failed, are not visible here; the server
   // retries a failed resolution during the handshake itself.
   useEffect(() => {
+    // A session still being fetched has no identity to speak of, and recording
+    // its absence as one would make the first real value look like a sign-in
+    // and re-handshake for nothing. Waiting for the value to settle means the
+    // identity first recorded below is a real answer rather than a placeholder.
+    if (isSessionPending) {
+      return;
+    }
     if (establishedIdentityRef.current === undefined) {
       establishedIdentityRef.current = identityKey;
       return;
@@ -120,7 +135,7 @@ export function SocketBridge() {
       socket.disconnect();
       socket.connect();
     }
-  }, [identityKey]);
+  }, [identityKey, isSessionPending]);
 
   useEffect(() => {
     const socket = getSocket();
