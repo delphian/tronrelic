@@ -128,7 +128,7 @@ The policy and audit indexes are created in `init()`. Categories and channels ar
 
 ## First Consumer
 
-The `ai-tools` module registers the `ai-tools.scheduled-prompt-run` category (audience: admin group, `channelDefaults: { toast: true }`, user-silenceable) plus an `ai-tools:scheduled-prompt-run` content type, and fires `notify({ category, typeId, ref })` after every cron-scheduled prompt run — so admins see a toast when a scheduled AI prompt runs, any admin can opt out at `/profile` or the My Preferences tab, and an admin can disable the whole category for everyone.
+The `ai-tools` module registers the `ai-tools.scheduled-prompt-run` category (audience: admin group, `channelDefaults: { toast: true }`, user-silenceable) plus an `ai-tools:scheduled-prompt-run` content type, and fires `notify({ category, typeId, ref })` when a cron-scheduled prompt run fails or finishes without a usable answer — so admins see a toast when a scheduled AI prompt needs attention (a run that answered normally sends nothing), any admin can opt out at `/profile` or the My Preferences tab, and an admin can disable the whole category for everyone.
 
 ## Related
 
