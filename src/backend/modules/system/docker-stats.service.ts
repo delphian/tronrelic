@@ -34,14 +34,41 @@ import { env } from '../../config/env.js';
 const REQUEST_TIMEOUT_MS = 8000;
 
 /**
- * Milliseconds a collected snapshot stays fresh.
+ * Milliseconds between background collections.
  *
- * A stats read costs roughly a second because Docker samples CPU twice to
- * produce a delta, and the console polls every ten seconds from every open
- * admin tab. Caching just below the poll interval keeps concurrent tabs from
- * multiplying that cost onto the daemon.
+ * Matched to the admin console's own ten-second poll, so a caller never reads a
+ * snapshot more than roughly one poll old. Because every caller reads whatever
+ * the last tick produced rather than starting a sweep of its own, the cost to
+ * the Docker daemon is one sweep per interval no matter how many admin tabs are
+ * open.
  */
-const CACHE_TTL_MS = 5000;
+const REFRESH_INTERVAL_MS = 10000;
+
+/**
+ * Milliseconds without a request before background collection stops.
+ *
+ * Without this, the first administrator to open the console would leave the
+ * process querying the Docker daemon every ten seconds for the rest of its
+ * life. A minute is long enough to cover a page reload or a tab switch without
+ * making the next request start from cold.
+ */
+const IDLE_TIMEOUT_MS = 60000;
+
+/**
+ * Milliseconds after which a snapshot is too old to serve.
+ *
+ * This is a backstop for the case where background collection was not running,
+ * such as the first request after the idle timeout stopped it. Without it, an
+ * administrator returning to the console an hour later would be shown the
+ * container readings from an hour ago as though they were current.
+ *
+ * It must stay longer than the refresh interval. A live timer keeps every
+ * snapshot younger than one interval, so this never fires while collection is
+ * running. Setting it below the interval would put back exactly the fault this
+ * whole arrangement removed: a freshness window that expires before the next
+ * reader arrives, making every request pay for a sweep.
+ */
+const MAX_SNAPSHOT_AGE_MS = REFRESH_INTERVAL_MS * 2;
 
 /**
  * Runtime metrics for one container, restricted to non-sensitive fields.
@@ -149,7 +176,7 @@ interface IDockerStatsEntry {
     };
 }
 
-/** A collected sweep plus the moment it was taken, backing the TTL cache. */
+/** A collected sweep plus the moment it was taken, recording its provenance. */
 interface ICachedStatus {
     status: DockerStatus;
     collectedAt: number;
@@ -168,6 +195,8 @@ export class DockerStatsService {
     private cached: ICachedStatus | null = null;
     private inFlight: Promise<DockerStatus> | null = null;
     private composeProject: string | null = null;
+    private refreshTimer: NodeJS.Timeout | null = null;
+    private lastRequestedAt = 0;
 
     /**
      * Resolve the configured Docker API location once, at construction.
@@ -198,11 +227,19 @@ export class DockerStatsService {
     }
 
     /**
-     * Collect metrics for every container in this deployment.
+     * Report the most recent container sweep without waiting for a new one.
      *
-     * Serves a cached sweep when one is fresh and collapses concurrent callers
-     * onto a single in-flight collection, so several admin tabs polling at once
-     * cost the daemon one sweep rather than one each.
+     * A sweep costs roughly two seconds, because Docker samples CPU twice to
+     * produce a delta and every container is measured. Paying that on the
+     * request is what made the console's Server section slow: the old snapshot
+     * expired five seconds before the ten-second poll arrived, so it never once
+     * served a request and every poll blocked for the full sweep. Collection
+     * now runs on a timer, and a caller reads whatever the last tick produced.
+     *
+     * The first caller after an idle period is the exception and does wait,
+     * because collection had stopped and whatever snapshot survives it is too
+     * old to present as current. An empty Server section is worse for the
+     * operator than a slow one.
      *
      * @returns Container metrics, or an unavailable status explaining why not.
      */
@@ -215,11 +252,36 @@ export class DockerStatsService {
                 error: this.configError ?? 'Docker API unavailable',
                 containers: []
             });
-        } else if (this.cached && Date.now() - this.cached.collectedAt < CACHE_TTL_MS) {
-            result = Promise.resolve(this.cached.status);
-        } else if (this.inFlight) {
-            result = this.inFlight;
         } else {
+            // Recording interest on every call is what lets collection stop
+            // itself once nobody is watching, rather than querying the daemon
+            // forever because an administrator opened the console once.
+            this.lastRequestedAt = Date.now();
+            this.startRefreshing();
+
+            const snapshot = this.cached;
+
+            result =
+                snapshot && Date.now() - snapshot.collectedAt < MAX_SNAPSHOT_AGE_MS
+                    ? Promise.resolve(snapshot.status)
+                    : this.collectOnce();
+        }
+
+        return result;
+    }
+
+    /**
+     * Run one collection, joining a sweep that is already under way.
+     *
+     * Several tabs opening at once would otherwise each start their own sweep
+     * against the daemon, so concurrent callers share a single promise. The
+     * background timer uses this for the same reason: a tick that lands while a
+     * first caller is still waiting must not start a second sweep.
+     *
+     * @returns The sweep result, shared with every caller that arrived during it.
+     */
+    private collectOnce(): Promise<DockerStatus> {
+        if (!this.inFlight) {
             this.inFlight = this.collect()
                 .then(status => {
                     this.cached = { status, collectedAt: Date.now() };
@@ -228,10 +290,46 @@ export class DockerStatsService {
                 .finally(() => {
                     this.inFlight = null;
                 });
-            result = this.inFlight;
         }
 
-        return result;
+        return this.inFlight;
+    }
+
+    /**
+     * Begin refreshing the snapshot in the background, unless already running.
+     *
+     * The timer is unreferenced so it can never by itself keep the Node process
+     * alive through a shutdown or the end of a test run. It also stops itself
+     * once no one has asked for a status recently, which keeps a deployment
+     * whose console nobody is watching from querying the daemon indefinitely.
+     */
+    private startRefreshing(): void {
+        if (!this.refreshTimer) {
+            this.refreshTimer = setInterval(() => {
+                if (Date.now() - this.lastRequestedAt > IDLE_TIMEOUT_MS) {
+                    this.stop();
+                } else {
+                    void this.collectOnce();
+                }
+            }, REFRESH_INTERVAL_MS);
+
+            this.refreshTimer.unref();
+        }
+    }
+
+    /**
+     * Halt background collection.
+     *
+     * Called when interest lapses, and exposed so a shutdown path or a test can
+     * make the service inert immediately instead of waiting out the idle
+     * timeout. Any snapshot already collected is kept, so a later caller still
+     * gets a reading while the next collection starts.
+     */
+    stop(): void {
+        if (this.refreshTimer) {
+            clearInterval(this.refreshTimer);
+            this.refreshTimer = null;
+        }
     }
 
     /**

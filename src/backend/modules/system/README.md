@@ -14,6 +14,20 @@
 
 `DOCKER_API_URL` unset disables container metrics; the probe returns `available: false` with a reason and every other reading is unaffected.
 
+### Collection runs on a timer, not on the request
+
+`getStatus()` returns the last snapshot immediately. It does not sweep the daemon while a request waits. A sweep costs roughly two seconds, because Docker samples CPU twice to produce a delta and every container is measured, and `/health/infrastructure` is polled continuously by the console's Server section.
+
+The service previously kept a five-second freshness window against a ten-second poll. The window expired before every poll, so it never once served a request and each poll blocked for the full sweep. That is the fault this arrangement removes, and it is why the timing constants relate the way they do.
+
+| Constant | Value | Role |
+|---|---|---|
+| `REFRESH_INTERVAL_MS` | 10s | How often the background timer collects. One sweep per interval regardless of how many admin tabs are open. |
+| `IDLE_TIMEOUT_MS` | 60s | How long without a request before collection stops, so an unwatched deployment stops querying the daemon. |
+| `MAX_SNAPSHOT_AGE_MS` | 20s | Backstop for when the timer was not running. **Must stay longer than the refresh interval** — setting it below restores the original fault. |
+
+The first caller after an idle period waits for a collection, because there is no usable snapshot and an empty Server section is worse than a slow one. The timer is unreferenced, so it cannot by itself hold the process open, and `stop()` halts it for a shutdown path or a test.
+
 **Two rules govern `docker-stats.service.ts`:**
 
 The backend must never hold the Docker socket. Unrestricted Docker API access is equivalent to root on the host, and this process terminates public traffic and runs plugin code. Production reaches an allowlisting proxy (`CONTAINERS=1`, `POST` disabled) over an `internal` compose network joined only by the proxy and the backend.

@@ -17,7 +17,7 @@
  * handling are covered as shipped.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import * as http from 'http';
 import * as os from 'os';
 import { DockerStatsService } from '../docker-stats.service.js';
@@ -275,6 +275,17 @@ describe('DockerStatsService degradation', () => {
     });
 });
 
+/**
+ * Restore the real clock after any case that moved it.
+ *
+ * Only `Date` is ever faked here, never the timer functions, because these
+ * cases drive a real HTTP stub and faking `setTimeout` would strand the
+ * sockets it depends on.
+ */
+afterEach(() => {
+    vi.useRealTimers();
+});
+
 describe('DockerStatsService caching', () => {
     it('serves a repeat call from cache instead of re-querying the daemon', async () => {
         const service = new DockerStatsService(baseUrl);
@@ -299,5 +310,62 @@ describe('DockerStatsService caching', () => {
         expect(a).toBe(b);
         expect(b).toBe(c);
         expect(requestLog.filter(url => url.startsWith('/containers/json'))).toHaveLength(1);
+    });
+
+    it('serves a caller arriving after the freshness window the service used to keep', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
+        const service = new DockerStatsService(baseUrl);
+        await service.getStatus();
+        const callsAfterFirst = requestLog.length;
+
+        // Eight seconds is past the five-second window the service once kept and
+        // still short of the console's ten-second poll. That gap is precisely
+        // what made every poll miss and pay for a full sweep, so a reader here
+        // must be served from the snapshot rather than sent to the daemon.
+        vi.setSystemTime(new Date('2026-01-01T00:00:08Z'));
+        const second = await service.getStatus();
+
+        expect(requestLog).toHaveLength(callsAfterFirst);
+        expect(second.available).toBe(true);
+
+        service.stop();
+    });
+
+    it('collects again rather than serving a snapshot stranded by an idle period', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
+        const service = new DockerStatsService(baseUrl);
+        await service.getStatus();
+        const callsAfterFirst = requestLog.length;
+
+        // Background collection stops itself once nobody has asked for a while,
+        // which leaves the last snapshot behind. An operator opening the console
+        // again five minutes later must not be shown that reading as current.
+        vi.setSystemTime(new Date('2026-01-01T00:05:00Z'));
+        const second = await service.getStatus();
+
+        expect(requestLog.length).toBeGreaterThan(callsAfterFirst);
+        expect(second.available).toBe(true);
+
+        service.stop();
+    });
+
+    it('survives repeated stops and keeps the snapshot it already holds', async () => {
+        const service = new DockerStatsService(baseUrl);
+        const first = await service.getStatus();
+        const callsAfterFirst = requestLog.length;
+
+        service.stop();
+        service.stop();
+
+        const second = await service.getStatus();
+
+        expect(second).toEqual(first);
+        expect(requestLog).toHaveLength(callsAfterFirst);
+
+        service.stop();
     });
 });
