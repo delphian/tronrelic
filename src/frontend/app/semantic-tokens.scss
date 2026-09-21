@@ -597,7 +597,11 @@
     --toast-viewport-position-right: var(--spacing-10);    /* 1.5rem */
     --toast-viewport-gap: var(--spacing-5);                /* 0.75rem */
     --toast-viewport-z-index: var(--z-index-toast);
-    --toast-viewport-max-width: min(420px, calc(100vw - 3rem));
+    /* 504px is 20% wider than the original 420px, giving a toast that carries
+       two address chips room to keep them on one line. The min() still caps it
+       at the screen width less the viewport's two side offsets, so a narrow
+       phone gets a toast that fits rather than one that runs off the edge. */
+    --toast-viewport-max-width: min(504px, calc(100vw - 3rem));
     /* Scroll cap applied when the deck fans open on hover/focus, so a burst of
        persistent toasts becomes a scrollable column instead of hiding its
        oldest cards. Mirrors the modal dialog's bounded-height pattern. */
@@ -610,6 +614,14 @@
     --toast-item-border-width: var(--border-width-thin);
     --toast-item-shadow: var(--shadow-lg);
     --toast-item-backdrop-filter: blur(18px);
+
+    /* Toast - Type
+       The title sits one step above the description so it reads as the
+       heading of the card. Before these tokens existed the title used the raw
+       15px step while the description set no size and inherited the browser's
+       16px, which left the body text larger than the title above it. */
+    --toast-title-font-size: var(--font-size-body-lg);       /* 1rem */
+    --toast-description-font-size: var(--font-size-body);    /* 0.9375rem */
 
     /* Toast - Tone Variants */
     --toast-success-border: rgba(87, 212, 140, 0.4);
