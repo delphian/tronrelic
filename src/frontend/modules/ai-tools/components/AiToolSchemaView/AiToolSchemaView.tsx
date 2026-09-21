@@ -107,7 +107,10 @@ function describeType(fragment: Record<string, unknown>): string {
 /**
  * Read one JSON Schema property fragment into the small shape the view renders.
  * A fragment may legally be a boolean (`true`/`false`) per JSON Schema, so guard
- * before reading fields.
+ * before reading fields. An array parameter usually restricts its elements
+ * through `items.enum` rather than a top-level `enum`, so when the fragment has
+ * no enum of its own, the enum on its object-form `items` schema is used.
+ * Without that, an array such as the logs tool's `levels` would show no allowed values.
  *
  * @param name - The parameter name (the property key).
  * @param definition - The raw JSON Schema property value (object or boolean).
@@ -117,7 +120,10 @@ function describeType(fragment: Record<string, unknown>): string {
 function toParamView(name: string, definition: unknown, required: boolean): IParamView {
     const fragment = (definition && typeof definition === 'object') ? definition as Record<string, unknown> : {};
     const description = typeof fragment.description === 'string' ? fragment.description : undefined;
-    const allowedValues = Array.isArray(fragment.enum) ? fragment.enum.map(formatLiteral) : [];
+    const items = fragment.items;
+    const itemFragment = (items && typeof items === 'object' && !Array.isArray(items)) ? items as Record<string, unknown> : {};
+    const enumSource = Array.isArray(fragment.enum) ? fragment.enum : itemFragment.enum;
+    const allowedValues = Array.isArray(enumSource) ? enumSource.map(formatLiteral) : [];
     const defaultValue = 'default' in fragment ? formatLiteral(fragment.default) : undefined;
 
     return {
