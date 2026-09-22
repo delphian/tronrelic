@@ -1,0 +1,108 @@
+/**
+ * Styles for one log entry inside the viewer's slide-over: the severity line,
+ * then the message, the context payload, and the identifying facts. Section
+ * titles are set small and in sentence case because the slide-over's own
+ * header already names the entry. Mirrors the curation decision record so the
+ * two System slide-overs read the same way.
+ */
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-lg);
+}
+
+.verdict {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.verdict_meta {
+    font-size: var(--font-size-body-xs);
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.section_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
+.section_title {
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-normal);
+    color: var(--color-text);
+}
+
+.message {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+    color: var(--color-text);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* The failure reason, set apart in the danger text colour because it is
+ * usually the line the operator opened the entry to read. */
+.error {
+    margin: 0;
+    padding: var(--padding-xs) var(--padding-sm);
+    border-left: var(--border-width-medium) solid var(--color-danger-alpha-50);
+    font-size: var(--font-size-body-xs);
+    color: var(--color-danger-text);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* The payload scrolls inside a taller cap than --code-block-max-height, because
+ * the slide-over exists to show it and a stack trace is the common case. */
+.context {
+    margin: 0;
+    max-height: calc(var(--code-block-max-height) * 2);
+    overflow: auto;
+    padding: var(--padding-sm);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-xs);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-muted);
+}
+
+.note {
+    margin: 0;
+    font-size: var(--font-size-body-xs);
+    color: var(--color-text-muted);
+}
+
+/* Labels hug their content; values take the rest and wrap long ids. */
+.kv {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--gap-2xs) var(--gap-md);
+    margin: 0;
+    font-size: var(--font-size-body-xs);
+}
+
+.kv dt {
+    color: var(--color-text-muted);
+}
+
+.kv dd {
+    margin: 0;
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}

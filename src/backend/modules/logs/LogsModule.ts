@@ -34,6 +34,7 @@ import { SystemLogService } from './services/system-log.service.js';
 import { SystemLogController } from './api/system-log.controller.js';
 import { createSystemLogRouter } from './api/system-log.router.js';
 import { registerLogAiTools } from './ai-tools.js';
+import { registerLogMonitorLevelsSetting } from './user-settings.js';
 import type { Router } from 'express';
 
 /**
@@ -154,6 +155,13 @@ export class LogsModule implements IModule<ILogsModuleDependencies> {
     private unwatchAiTools: ServiceWatchDisposer | null = null;
 
     /**
+     * Disposer for the `'user-settings'` service-registry watch created in
+     * run(), which registers the log viewer's severity preference. Held for
+     * the same symmetry reason as `unwatchAiTools`.
+     */
+    private unwatchUserSettings: ServiceWatchDisposer | null = null;
+
+    /**
      * Services created during init() phase.
      */
     private logService!: SystemLogService;
@@ -252,6 +260,12 @@ export class LogsModule implements IModule<ILogsModuleDependencies> {
         // boot-order race — the AI tools module publishes the registry in its
         // run() phase, after this module's run() sets up the watch.
         this.unwatchAiTools = registerLogAiTools(this.serviceRegistry, this.logService, this.logger);
+
+        // Register the log viewer's severity preference on the identity
+        // module's `'user-settings'` store, so the browser can save it through
+        // the self-service endpoint. Watched for the same boot-order reason:
+        // the identity module publishes the store after this run() starts.
+        this.unwatchUserSettings = registerLogMonitorLevelsSetting(this.serviceRegistry, this.logger);
 
         // Router is mounted by system router via: router.use('/logs', createSystemLogRouter())
         this.logger.info('Logs module running (routes available via system router)');

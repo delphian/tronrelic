@@ -8,7 +8,20 @@
  */
 
 import type { LogLevel } from '@/types';
+import { LOG_MONITOR_LEVELS_SETTING } from '@/types';
 import type { LogsResponse, LogStats } from '../types';
+
+/**
+ * One stored value as returned by `GET /api/user/settings`.
+ */
+interface IUserSettingValue {
+    /** Provider namespace the value lives under. */
+    namespace: string;
+    /** Setting key within the namespace. */
+    key: string;
+    /** The stored value, or the registered default when the user has none. */
+    value: unknown;
+}
 
 /**
  * Query parameters for fetching paginated logs.
@@ -121,4 +134,64 @@ export async function deleteAllLogs(): Promise<number> {
     }
 
     return data.deletedCount;
+}
+
+/**
+ * Reads the signed-in operator's saved log viewer severity levels.
+ *
+ * The preference lives in the per-user settings store so it follows the
+ * operator across browsers. The self-service endpoint returns every
+ * registered setting, so this picks out the log viewer's entry. A visitor
+ * without a Better Auth session gets a 401; that is reported as `null` rather
+ * than an error, because it only means there is no saved preference to apply.
+ *
+ * @returns The saved levels, the registered default when none are saved, or `null` when there is no session or no entry
+ * @throws Error if the request fails for any reason other than a missing session
+ */
+export async function getLogMonitorLevels(): Promise<LogLevel[] | null> {
+    let levels: LogLevel[] | null = null;
+    const response = await fetch('/api/user/settings');
+
+    if (response.status !== 401) {
+        if (!response.ok) {
+            throw new Error(`Failed to fetch user settings: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const entry = (data.values as IUserSettingValue[] | undefined)?.find(
+            value => value.namespace === LOG_MONITOR_LEVELS_SETTING.namespace
+                && value.key === LOG_MONITOR_LEVELS_SETTING.key
+        );
+        if (entry && Array.isArray(entry.value)) {
+            levels = entry.value as LogLevel[];
+        }
+    }
+
+    return levels;
+}
+
+/**
+ * Saves the signed-in operator's log viewer severity levels.
+ *
+ * Called each time the operator toggles a level, so the next visit to any
+ * Logs tab opens with the same selection. The backend validates the list
+ * against the known levels before storing it.
+ *
+ * @param levels - The levels the operator currently has selected; an empty list means every level
+ * @throws Error if the request fails, including when there is no session
+ */
+export async function saveLogMonitorLevels(levels: LogLevel[]): Promise<void> {
+    const response = await fetch('/api/user/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            namespace: LOG_MONITOR_LEVELS_SETTING.namespace,
+            key: LOG_MONITOR_LEVELS_SETTING.key,
+            value: levels
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Failed to save log viewer levels: ${response.status}`);
+    }
 }

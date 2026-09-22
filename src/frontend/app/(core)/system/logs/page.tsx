@@ -1,23 +1,31 @@
 'use client';
 
-import { Page, Stack } from '../../../../components/layout';
+import { Page, Section } from '../../../../components/layout';
 import { SystemLogsMonitor, LogSettings } from '../../../../modules/logs';
+import styles from './page.module.scss';
 
 /**
- * System logs monitoring page.
+ * System logs page: every saved log entry across the deployment, with the
+ * backend's recording level beneath it. Admin-gated by the /system layout.
  *
- * Displays paginated ERROR and WARN logs captured from the backend Pino logger.
- * Provides filtering by severity level, service/plugin, resolved status, and date range.
- * Includes live polling option for real-time log updates and bulk operations for
- * log management. Requires admin authentication.
+ * The viewer loads its data after mount, so the page itself has nothing to
+ * fetch on the server. Laid out like the curation admin page: a visually
+ * hidden heading, then one Section so the viewer and the settings row are
+ * spaced by a section gap rather than the much larger page gap.
+ *
+ * @returns The logs page.
  */
 export default function SystemLogsPage() {
     return (
         <Page>
-            <Stack gap="lg">
+            {/* The System layout supplies navigation but no heading, so this
+                names the page for screen readers without repeating the menu
+                entry on screen. */}
+            <h1 className={styles.sr_only}>System logs</h1>
+            <Section gap="md">
                 <SystemLogsMonitor />
                 <LogSettings />
-            </Stack>
+            </Section>
         </Page>
     );
 }

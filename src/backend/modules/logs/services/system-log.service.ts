@@ -57,6 +57,34 @@ export class SystemLogService implements ISystemLogService {
     private initializationPromise: Promise<void>;
     private resolveInitialization: (() => void) | null = null;
 
+    /**
+     * The logger this one was created from with `child()`, or null for the
+     * root singleton.
+     *
+     * A child reads its readiness, Pino instance, and level through this
+     * reference each time it logs instead of copying them when it is created.
+     * Modules build their child loggers in their constructors, which run before
+     * `LogsModule.init()` initializes the root; a copied "not initialized"
+     * state would stay false forever and the child would never persist to
+     * MongoDB.
+     */
+    private parent: SystemLogService | null = null;
+
+    /**
+     * The bindings this child added on top of its parent's, kept separately
+     * from the merged `bindings` because the Pino child is built from the
+     * parent's Pino logger, which already carries the parent's bindings.
+     */
+    private ownBindings: pino.Bindings = {};
+
+    /**
+     * The parent Pino logger that this child's cached `pino` was built from.
+     * Compared on each call so the cached Pino child is rebuilt if the parent's
+     * logger changes, such as when the root is initialized after this child
+     * was created.
+     */
+    private pinoSource: pino.Logger | null = null;
+
     /** In-memory cache for statistics to avoid repeated full collection scans. */
     private cachedStatistics: {
         total: number;
@@ -130,7 +158,7 @@ export class SystemLogService implements ISystemLogService {
      * @returns Current log level
      */
     public get level(): pino.LevelWithSilent | string {
-        return this.pino?.level ?? 'debug';
+        return this.resolvePino()?.level ?? 'debug';
     }
 
     /**
@@ -154,12 +182,66 @@ export class SystemLogService implements ISystemLogService {
      * logger.level = 'silent'; // Nothing appears in files or database
      * ```
      *
+     * The level is one setting for the whole process, held by the root logger.
+     * Setting it on a child logger forwards the change to the root, because
+     * every child takes its level from the root on each call and a level set
+     * only on the child would be overwritten by the next log call.
+     *
      * @param level - New log level (trace, debug, info, warn, error, fatal, silent)
      */
     public set level(level: pino.LevelWithSilent | string) {
-        if (this.pino) {
+        if (this.parent) {
+            this.parent.level = level;
+        } else if (this.pino) {
             this.pino.level = level;
         }
+    }
+
+    /**
+     * Report whether the root logger has been initialized, which is what
+     * decides whether log calls are persisted to MongoDB.
+     *
+     * A child asks its parent rather than reading its own flag, so a child
+     * created before initialization starts persisting as soon as the root is
+     * initialized.
+     *
+     * @returns True once the root logger has been initialized
+     */
+    private isInitialized(): boolean {
+        return this.parent ? this.parent.isInitialized() : this.initialized;
+    }
+
+    /**
+     * Find the Pino logger that file and console output should go through.
+     *
+     * The root returns its own Pino instance, which is null until
+     * `initialize()` runs. A child builds a Pino child from its parent's
+     * current Pino logger the first time one exists, caches it, and rebuilds
+     * it if the parent's logger changes. It also copies the parent's current
+     * level onto the cached Pino child on every call, because a Pino child
+     * keeps the level it was created with and would otherwise ignore level
+     * changes made at runtime from the admin interface.
+     *
+     * @returns The Pino logger to write to, or null when the root is not yet initialized and output falls back to the console
+     */
+    private resolvePino(): pino.Logger | null {
+        let output: pino.Logger | null = this.pino;
+        if (this.parent) {
+            const parentPino = this.parent.resolvePino();
+            if (!parentPino) {
+                output = null;
+            } else {
+                if (!this.pino || this.pinoSource !== parentPino) {
+                    this.pino = parentPino.child(this.ownBindings);
+                    this.pinoSource = parentPino;
+                }
+                if (this.pino.level !== parentPino.level) {
+                    this.pino.level = parentPino.level;
+                }
+                output = this.pino;
+            }
+        }
+        return output;
     }
 
     /**
@@ -274,20 +356,21 @@ export class SystemLogService implements ISystemLogService {
      */
     public info(objOrMessage: string | object, messageOrArgs?: string | any, ...args: any[]): void {
         // Save to MongoDB if level permits (only if initialized)
-        if (this.initialized && shouldLog('info', this.level)) {
+        if (this.isInitialized() && shouldLog('info', this.level)) {
             void this.saveLogFromArgs('info', [objOrMessage, messageOrArgs, ...args]);
         }
 
         // Delegate to Pino for file/console logging
-        if (!this.pino) {
+        const output = this.resolvePino();
+        if (!output) {
             console.log('[INFO]', objOrMessage, messageOrArgs, ...args);
             return;
         }
 
         if (typeof objOrMessage === 'string') {
-            this.pino.info(objOrMessage, messageOrArgs, ...args);
+            output.info(objOrMessage, messageOrArgs, ...args);
         } else {
-            this.pino.info(objOrMessage, messageOrArgs, ...args);
+            output.info(objOrMessage, messageOrArgs, ...args);
         }
     }
 
@@ -305,20 +388,21 @@ export class SystemLogService implements ISystemLogService {
      */
     public warn(objOrMessage: string | object, messageOrArgs?: string | any, ...args: any[]): void {
         // Save to MongoDB if level permits (only if initialized)
-        if (this.initialized && shouldLog('warn', this.level)) {
+        if (this.isInitialized() && shouldLog('warn', this.level)) {
             void this.saveLogFromArgs('warn', [objOrMessage, messageOrArgs, ...args]);
         }
 
         // Delegate to Pino for file/console logging
-        if (!this.pino) {
+        const output = this.resolvePino();
+        if (!output) {
             console.warn('[WARN]', objOrMessage, messageOrArgs, ...args);
             return;
         }
 
         if (typeof objOrMessage === 'string') {
-            this.pino.warn(objOrMessage, messageOrArgs, ...args);
+            output.warn(objOrMessage, messageOrArgs, ...args);
         } else {
-            this.pino.warn(objOrMessage, messageOrArgs, ...args);
+            output.warn(objOrMessage, messageOrArgs, ...args);
         }
     }
 
@@ -336,20 +420,21 @@ export class SystemLogService implements ISystemLogService {
      */
     public error(objOrMessage: string | object, messageOrArgs?: string | any, ...args: any[]): void {
         // Save to MongoDB if level permits (only if initialized)
-        if (this.initialized && shouldLog('error', this.level)) {
+        if (this.isInitialized() && shouldLog('error', this.level)) {
             void this.saveLogFromArgs('error', [objOrMessage, messageOrArgs, ...args]);
         }
 
         // Delegate to Pino for file/console logging
-        if (!this.pino) {
+        const output = this.resolvePino();
+        if (!output) {
             console.error('[ERROR]', objOrMessage, messageOrArgs, ...args);
             return;
         }
 
         if (typeof objOrMessage === 'string') {
-            this.pino.error(objOrMessage, messageOrArgs, ...args);
+            output.error(objOrMessage, messageOrArgs, ...args);
         } else {
-            this.pino.error(objOrMessage, messageOrArgs, ...args);
+            output.error(objOrMessage, messageOrArgs, ...args);
         }
     }
 
@@ -367,20 +452,21 @@ export class SystemLogService implements ISystemLogService {
      */
     public debug(objOrMessage: string | object, messageOrArgs?: string | any, ...args: any[]): void {
         // Save to MongoDB if level permits (only if initialized)
-        if (this.initialized && shouldLog('debug', this.level)) {
+        if (this.isInitialized() && shouldLog('debug', this.level)) {
             void this.saveLogFromArgs('debug', [objOrMessage, messageOrArgs, ...args]);
         }
 
         // Delegate to Pino for file/console logging
-        if (!this.pino) {
+        const output = this.resolvePino();
+        if (!output) {
             console.debug('[DEBUG]', objOrMessage, messageOrArgs, ...args);
             return;
         }
 
         if (typeof objOrMessage === 'string') {
-            this.pino.debug(objOrMessage, messageOrArgs, ...args);
+            output.debug(objOrMessage, messageOrArgs, ...args);
         } else {
-            this.pino.debug(objOrMessage, messageOrArgs, ...args);
+            output.debug(objOrMessage, messageOrArgs, ...args);
         }
     }
 
@@ -398,20 +484,21 @@ export class SystemLogService implements ISystemLogService {
      */
     public trace(objOrMessage: string | object, messageOrArgs?: string | any, ...args: any[]): void {
         // Save to MongoDB if level permits (only if initialized)
-        if (this.initialized && shouldLog('trace', this.level)) {
+        if (this.isInitialized() && shouldLog('trace', this.level)) {
             void this.saveLogFromArgs('trace', [objOrMessage, messageOrArgs, ...args]);
         }
 
         // Delegate to Pino for file/console logging
-        if (!this.pino) {
+        const output = this.resolvePino();
+        if (!output) {
             console.debug('[TRACE]', objOrMessage, messageOrArgs, ...args);
             return;
         }
 
         if (typeof objOrMessage === 'string') {
-            this.pino.trace(objOrMessage, messageOrArgs, ...args);
+            output.trace(objOrMessage, messageOrArgs, ...args);
         } else {
-            this.pino.trace(objOrMessage, messageOrArgs, ...args);
+            output.trace(objOrMessage, messageOrArgs, ...args);
         }
     }
 
@@ -430,20 +517,21 @@ export class SystemLogService implements ISystemLogService {
     public fatal(objOrMessage: string | object, messageOrArgs?: string | any, ...args: any[]): void {
         // Save to MongoDB if level permits (only if initialized)
         // Note: Fatal logs are saved with level 'fatal' (not 'error' as before)
-        if (this.initialized && shouldLog('fatal', this.level)) {
+        if (this.isInitialized() && shouldLog('fatal', this.level)) {
             void this.saveLogFromArgs('fatal', [objOrMessage, messageOrArgs, ...args]);
         }
 
         // Delegate to Pino for file/console logging
-        if (!this.pino) {
+        const output = this.resolvePino();
+        if (!output) {
             console.error('[FATAL]', objOrMessage, messageOrArgs, ...args);
             return;
         }
 
         if (typeof objOrMessage === 'string') {
-            this.pino.fatal(objOrMessage, messageOrArgs, ...args);
+            output.fatal(objOrMessage, messageOrArgs, ...args);
         } else {
-            this.pino.fatal(objOrMessage, messageOrArgs, ...args);
+            output.fatal(objOrMessage, messageOrArgs, ...args);
         }
     }
 
@@ -464,35 +552,23 @@ export class SystemLogService implements ISystemLogService {
      * These bindings are stored on the SystemLogService instance and used
      * when saving logs to MongoDB.
      *
+     * **Safe to call before initialization:**
+     *
+     * The child keeps a reference to its parent and resolves the parent's
+     * readiness, Pino instance, and level on every log call rather than
+     * copying them now. Modules create their child loggers in their
+     * constructors, before `LogsModule.init()` initializes the root, so a
+     * child created at that point must still start persisting to MongoDB and
+     * writing through Pino once the root is ready.
+     *
      * @param bindings - Metadata to include in all child logger messages
-     * @returns A new SystemLogService wrapping the Pino child logger
+     * @returns A new SystemLogService that logs through this one's Pino logger with the added bindings
      */
     public child(bindings: pino.Bindings): SystemLogService {
-        if (!this.pino) {
-            // Return a child that will also use console fallback
-            const childLogger = new SystemLogService();
-            childLogger.initialized = this.initialized;
-            childLogger.bindings = { ...this.bindings, ...bindings };
-            childLogger.initializationPromise = this.initialized
-                ? Promise.resolve()
-                : this.initializationPromise;
-            childLogger.resolveInitialization = this.initialized
-                ? null
-                : this.resolveInitialization;
-            return childLogger;
-        }
-
-        const pinoChild = this.pino.child(bindings);
         const childLogger = new SystemLogService();
-        childLogger.pino = pinoChild;
-        childLogger.initialized = this.initialized;
+        childLogger.parent = this;
+        childLogger.ownBindings = { ...bindings };
         childLogger.bindings = { ...this.bindings, ...bindings };
-        childLogger.initializationPromise = this.initialized
-            ? Promise.resolve()
-            : this.initializationPromise;
-        childLogger.resolveInitialization = this.initialized
-            ? null
-            : this.resolveInitialization;
         return childLogger;
     }
 
@@ -500,14 +576,15 @@ export class SystemLogService implements ISystemLogService {
      * Wait until the logger has completed initialization.
      *
      * Allows callers to ensure MongoDB persistence is ready before relying on
-     * the logger for critical logging operations.
+     * the logger for critical logging operations. A child waits on its parent,
+     * since only the root is ever initialized.
      */
     public async waitUntilInitialized(): Promise<void> {
-        if (this.initialized) {
-            return;
+        if (this.parent) {
+            await this.parent.waitUntilInitialized();
+        } else if (!this.initialized) {
+            await this.initializationPromise;
         }
-
-        await this.initializationPromise;
     }
 
     // ========================================================================

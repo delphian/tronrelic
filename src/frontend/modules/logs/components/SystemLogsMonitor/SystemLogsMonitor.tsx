@@ -1,31 +1,54 @@
 'use client';
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react';
+import { Trash2 } from 'lucide-react';
 import type { ISystemLogsMonitorProps, LogLevel } from '@/types';
+import { LOG_MONITOR_LEVELS_SETTING } from '@/types';
 import { Button } from '../../../../components/ui/Button';
 import { Select } from '../../../../components/ui/Select';
-import { StatTile, StatGrid } from '../../../../components/ui/StatTile';
+import { Badge } from '../../../../components/ui/Badge';
+import { Pagination } from '../../../../components/ui/Pagination';
+import { SlideOver } from '../../../../components/ui/SlideOver';
+import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { useModal } from '../../../../components/ui/ModalProvider';
 import { Stack } from '../../../../components/layout';
-import { getSystemLogs, getLogStats, deleteAllLogs } from '../../api';
+import { cn } from '../../../../lib/cn';
+import { getSystemLogs, getLogStats, deleteAllLogs, getLogMonitorLevels, saveLogMonitorLevels } from '../../api';
 import type { SystemLog, LogStats } from '../../types';
+import { LogLevelFilter } from '../LogLevelFilter';
+import { LogEntryDetail } from '../LogEntryDetail';
+import { contextErrorText, levelLabel, levelTone, splitLogTimestamp } from '../../lib/logPresentation';
 import styles from './SystemLogsMonitor.module.scss';
+
+/** Auto-refresh choices, in milliseconds; 0 turns refreshing off. */
+const REFRESH_OPTIONS: ReadonlyArray<{ value: number; label: string }> = [
+    { value: 0, label: 'Off' },
+    { value: 1000, label: 'Every 1s' },
+    { value: 10000, label: 'Every 10s' },
+    { value: 30000, label: 'Every 30s' },
+    { value: 60000, label: 'Every 60s' }
+];
+
+/** Page sizes the footer offers. */
+const PAGE_SIZES: readonly number[] = [10, 25, 50, 100];
 
 /**
  * SystemLogsMonitor Component
  *
- * Admin diagnostic tool for monitoring ERROR and WARN logs captured from the backend.
- * Displays paginated logs with filtering, live polling, and bulk operations.
+ * Admin diagnostic tool for reading the log entries the backend saved to
+ * MongoDB, used full-page on `/system/logs` and as the Logs tab of every module
+ * and plugin admin page.
  *
- * **Key Features:**
- * - Severity level filtering (ERROR, WARN, INFO, DEBUG)
- * - Service/plugin filtering via dropdown populated from log statistics
- * - Configurable live polling (None, 1s, 10s, 30s, 60s)
- * - Pagination with configurable page size
- * - Clear all logs functionality
- * - Expandable log details with context
+ * **Layout, top to bottom:**
+ * - One toolbar: severity chips that are both the level filter and the level
+ *   counts, then the service filter, auto-refresh, and "Clear all". The chip
+ *   selection is remembered per operator in the user-settings store and
+ *   shared by every instance of this component.
+ * - A compact table, one line per entry, with the error text from the entry's
+ *   context on a muted second line. Selecting a row opens the full record in a
+ *   slide-over rather than expanding the row, so the list never jumps.
+ * - A footer with the entry count, page controls, and page size.
  *
  * **Data Sources:**
  * - `/admin/system/logs` - Paginated logs with filtering
@@ -38,9 +61,10 @@ import styles from './SystemLogsMonitor.module.scss';
  * **Scoped mode:**
  * Plugins embed this component through `context.system` with `service` set,
  * for a Logs tab on their own admin page. The list and the level counts are
- * then filtered to that service on the server, the service selector is
- * hidden, and "Clear All Logs" is removed, because it deletes every
- * service's logs rather than the scoped ones.
+ * then filtered to that service on the server, the service selector and the
+ * Service column are hidden because every row would repeat the same value,
+ * and "Clear all" is removed, because it deletes every service's logs rather
+ * than the scoped ones.
  *
  * @param props Optional `service` scope and `title` heading; both omitted on `/system/logs`.
  * @returns The log viewer.
@@ -52,12 +76,13 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
     const [page, setPage] = useState(1);
     const [limit, setLimit] = useState(10);
     const [total, setTotal] = useState(0);
-    const [totalPages, setTotalPages] = useState(0);
-    const [hasNextPage, setHasNextPage] = useState(false);
-    const [hasPrevPage, setHasPrevPage] = useState(false);
 
-    // Filters
-    const [selectedLevels, setSelectedLevels] = useState<LogLevel[]>(['error']);
+    // Filters. The levels start at the shared default and are replaced by the
+    // operator's saved preference once it loads; the first log fetch waits for
+    // that so the list is not fetched twice.
+    const [selectedLevels, setSelectedLevels] = useState<LogLevel[]>([...LOG_MONITOR_LEVELS_SETTING.defaultValue]);
+    const [preferenceLoaded, setPreferenceLoaded] = useState(false);
+    const levelsChangedByUserRef = useRef(false);
     const [serviceFilter, setServiceFilter] = useState('');
 
     // A fixed scope from the embedding page wins over the selector.
@@ -66,8 +91,10 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
     // Live polling (interval in milliseconds, 0 means disabled)
     const [pollingInterval, setPollingInterval] = useState(10000);
 
-    // Expandable log details
-    const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+    // The entry open in the slide-over. Held as the entry itself rather than
+    // its id, so an auto-refresh that pushes it off the current page does not
+    // close the panel the operator is reading.
+    const [selectedLog, setSelectedLog] = useState<SystemLog | null>(null);
 
     // Track new logs for flash animation
     const [newLogIds, setNewLogIds] = useState<Set<string>>(new Set());
@@ -91,6 +118,19 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
         isInitialLoadRef.current = next;
         setIsInitialLoad(next);
     }, []);
+
+    /**
+     * Treats the next fetch as a fresh list after a filter, page, or page-size
+     * change, so rows already on screen are not flashed as if they had just
+     * arrived. Every control that changes which entries are shown calls this.
+     *
+     * @param nextPage - The page to show next; filter changes go back to the first page
+     */
+    const restartList = useCallback((nextPage: number) => {
+        setPage(nextPage);
+        setInitialLoadState(true);
+        flashedLogsRef.current.clear();
+    }, [setInitialLoadState]);
 
     /**
      * Fetches logs from the admin API with current filters and pagination.
@@ -138,9 +178,6 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
                 setLogs(data.logs);
                 logsRef.current = data.logs;
                 setTotal(data.total);
-                setTotalPages(data.totalPages);
-                setHasNextPage(data.hasNextPage);
-                setHasPrevPage(data.hasPrevPage);
                 setInitialLoadState(false);
             }
         } catch (error) {
@@ -202,10 +239,10 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
         const modalId = 'confirm-clear-logs';
         open({
             id: modalId,
-            title: 'Clear All Logs',
+            title: 'Clear all logs',
             content: (
                 <Stack gap="md">
-                    <p>Are you sure you want to delete all logs? This action cannot be undone.</p>
+                    <p>This deletes every saved log entry from every service, not only the ones shown. It cannot be undone.</p>
                     <Stack direction="horizontal" gap="sm">
                         <Button
                             variant="danger"
@@ -216,7 +253,7 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
                                 void executeClearLogs();
                             }}
                         >
-                            Delete All
+                            Delete all entries
                         </Button>
                         <Button variant="secondary" size="sm" onClick={() => close(modalId)}>
                             Cancel
@@ -229,24 +266,40 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
     }, [open, close, executeClearLogs]);
 
     /**
+     * Saves the operator's level selection so every Logs tab opens with it next time.
+     *
+     * Runs in the background after each toggle. A failed save leaves the
+     * filter working for this page view, so the operator only gets a warning
+     * toast telling them the choice will not be remembered.
+     *
+     * @param levels - The selection to remember
+     */
+    const persistLevels = useCallback(async (levels: LogLevel[]) => {
+        try {
+            await saveLogMonitorLevels(levels);
+        } catch (error) {
+            console.error('Failed to save log viewer levels:', error);
+            push({ tone: 'warning', title: 'Filter not saved', description: 'Your severity selection will reset on the next visit.' });
+        }
+    }, [push]);
+
+    /**
      * Toggles a severity level in the filter.
      *
-     * Adds or removes the level from selectedLevels array and resets pagination.
-     * Clears flash history so logs can flash again after filter changes.
+     * Adds or removes the level from selectedLevels array, resets pagination,
+     * and saves the new selection as the operator's preference. Clears flash
+     * history so logs can flash again after filter changes.
      *
      * @param level - Log level to toggle
      */
     const handleToggleLevel = (level: LogLevel) => {
-        setSelectedLevels(prev => {
-            if (prev.includes(level)) {
-                return prev.filter(l => l !== level);
-            } else {
-                return [...prev, level];
-            }
-        });
-        setPage(1);
-        setInitialLoadState(true);
-        flashedLogsRef.current.clear();
+        const next = selectedLevels.includes(level)
+            ? selectedLevels.filter(l => l !== level)
+            : [...selectedLevels, level];
+        levelsChangedByUserRef.current = true;
+        setSelectedLevels(next);
+        restartList(1);
+        void persistLevels(next);
     };
 
     useEffect(() => {
@@ -257,15 +310,51 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
         isInitialLoadRef.current = isInitialLoad;
     }, [isInitialLoad]);
 
-    // Initial fetch
+    // Load the operator's saved levels once, before the first log fetch
     useEffect(() => {
+        let cancelled = false;
+
+        /**
+         * Applies the saved severity selection, if any, then releases the
+         * first log fetch.
+         *
+         * A missing session or a failed read keeps the default levels, since
+         * the viewer still works without the preference. A selection the
+         * operator already made on this page wins over the saved one, so a
+         * quick click before the read returns is not overwritten.
+         */
+        const loadPreference = async () => {
+            try {
+                const saved = await getLogMonitorLevels();
+                if (!cancelled && saved && !levelsChangedByUserRef.current) {
+                    setSelectedLevels(saved);
+                }
+            } catch (error) {
+                console.error('Failed to load log viewer levels:', error);
+            } finally {
+                if (!cancelled) {
+                    setPreferenceLoaded(true);
+                }
+            }
+        };
+
+        void loadPreference();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    // Initial fetch, once the saved levels are known
+    useEffect(() => {
+        if (!preferenceLoaded) return;
         void fetchLogs();
         void fetchStats();
-    }, [fetchLogs, fetchStats]);
+    }, [fetchLogs, fetchStats, preferenceLoaded]);
 
     // Live polling interval
     useEffect(() => {
-        if (pollingInterval === 0) return;
+        if (pollingInterval === 0 || !preferenceLoaded) return;
 
         const interval = setInterval(() => {
             void fetchLogs();
@@ -273,7 +362,7 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
         }, pollingInterval);
 
         return () => clearInterval(interval);
-    }, [fetchLogs, fetchStats, pollingInterval]);
+    }, [fetchLogs, fetchStats, pollingInterval, preferenceLoaded]);
 
     // Apply flash animation AFTER logs are rendered (two-phase commit)
     useEffect(() => {
@@ -309,305 +398,180 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
         };
     }, []);
 
-    /**
-     * Formats timestamp to compact military time format.
-     *
-     * Uses manual formatting rather than ClientTime because this is a client-only
-     * component (data fetched after mount, no SSR hydration risk) and the compact
-     * "MM/DD/YY HH:mm:ss" format with seconds precision is essential for log analysis.
-     * ClientTime does not offer a format with seconds.
-     *
-     * @param timestamp - ISO 8601 timestamp string
-     * @returns Formatted date/time string (MM/DD/YY HH:mm:ss)
-     */
-    const formatTimestamp = (timestamp: string) => {
-        const date = new Date(timestamp);
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const year = String(date.getFullYear()).slice(-2);
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        const seconds = String(date.getSeconds()).padStart(2, '0');
-        return `${month}/${day}/${year} ${hours}:${minutes}:${seconds}`;
-    };
+    /** Close the entry slide-over. */
+    const closeEntry = useCallback(() => { setSelectedLog(null); }, []);
 
-    /**
-     * Returns CSS class for log level badge.
-     *
-     * @param level - Log severity level
-     * @returns CSS class name
-     */
-    const getLevelClass = (level: LogLevel) => {
-        switch (level) {
-            case 'trace':
-                return styles.level_trace;
-            case 'error':
-                return styles.level_error;
-            case 'warn':
-                return styles.level_warn;
-            case 'info':
-                return styles.level_info;
-            case 'debug':
-                return styles.level_debug;
-            case 'fatal':
-                return styles.level_fatal;
-            default:
-                return '';
-        }
-    };
+    const showServiceColumn = !service;
+    const firstShown = total === 0 ? 0 : (page - 1) * limit + 1;
+    const lastShown = Math.min(page * limit, total);
 
-    if (loading) {
-        return <div className={styles.container}>Loading logs...</div>;
+    // An empty list explains itself in terms of what the operator can change:
+    // a narrow level filter, a chosen service, or genuinely nothing logged.
+    let emptyText = 'Nothing has been logged yet.';
+    if (selectedLevels.length > 0) {
+        const levels = selectedLevels.map(level => levelLabel(level).toLowerCase()).join(', ');
+        emptyText = `No ${levels} entries${effectiveService ? ` from ${effectiveService}` : ''}. Select more levels above to widen the list.`;
+    } else if (effectiveService) {
+        emptyText = `Nothing has been logged by ${effectiveService} yet.`;
+    }
+
+    let body: ReactNode;
+    if (loading && logs.length === 0) {
+        body = <p className={styles.placeholder}>Loading log entries…</p>;
+    } else if (logs.length === 0) {
+        body = <p className={styles.placeholder}>{emptyText}</p>;
+    } else {
+        body = (
+            <div className={`table-scroll ${styles.table_wrap}`}>
+                <Table>
+                    <Thead>
+                        <Tr>
+                            <Th width="shrink">Time</Th>
+                            <Th width="shrink">Level</Th>
+                            {showServiceColumn && <Th width="shrink">Service</Th>}
+                            <Th>Message</Th>
+                        </Tr>
+                    </Thead>
+                    <Tbody>
+                        {logs.map(log => {
+                            const { date, time } = splitLogTimestamp(log.timestamp);
+                            const errorText = contextErrorText(log);
+                            return (
+                                <Tr
+                                    key={log._id}
+                                    className={cn(styles.row, newLogIds.has(log._id) && 'table-row--flash')}
+                                    onClick={() => setSelectedLog(log)}
+                                >
+                                    <Td data-label="Time" className={styles.col_time}>
+                                        <span className={styles.time}>{time}</span>
+                                        <span className={styles.date}>{date}</span>
+                                    </Td>
+                                    <Td data-label="Level">
+                                        <Badge tone={levelTone(log.level)} size="xs">{levelLabel(log.level)}</Badge>
+                                    </Td>
+                                    {showServiceColumn && (
+                                        <Td data-label="Service" className={styles.col_service}>{log.service}</Td>
+                                    )}
+                                    <Td data-label="Message">
+                                        <div className={styles.entry}>
+                                            {/* The button makes the row reachable by keyboard; the
+                                                row's own click handler covers the pointer. It stops
+                                                propagation so one click opens the entry once,
+                                                matching the curation History table. */}
+                                            <button
+                                                type="button"
+                                                className={styles.message}
+                                                title={log.message}
+                                                onClick={(event) => { event.stopPropagation(); setSelectedLog(log); }}
+                                            >
+                                                {log.message}
+                                            </button>
+                                            {errorText && <span className={styles.error_text}>{errorText}</span>}
+                                        </div>
+                                    </Td>
+                                </Tr>
+                            );
+                        })}
+                    </Tbody>
+                </Table>
+            </div>
+        );
     }
 
     return (
-        <div className={styles.container}>
+        <section className={styles.monitor} aria-label={title ?? 'System logs'}>
             {title && <h2 className={styles.title}>{title}</h2>}
 
-            {/* Statistics */}
-            {/*
-              * Dense seven-up level breakdown, so the compact tile density.
-              * The grid auto-fits rather than forcing seven fixed columns,
-              * which squeezed the counts on a narrow console.
-              */}
-            {stats && (
-                <StatGrid size="sm">
-                    <StatTile size="sm" label="Total Logs" value={stats.total.toLocaleString()} />
-                    <StatTile size="sm" label="Fatal" value={stats.byLevel.fatal?.toLocaleString() ?? '0'} />
-                    <StatTile size="sm" label="Errors" value={stats.byLevel.error.toLocaleString()} />
-                    <StatTile size="sm" label="Warnings" value={stats.byLevel.warn.toLocaleString()} />
-                    <StatTile size="sm" label="Info" value={stats.byLevel.info.toLocaleString()} />
-                    <StatTile size="sm" label="Debug" value={stats.byLevel.debug.toLocaleString()} />
-                    <StatTile size="sm" label="Trace" value={stats.byLevel.trace?.toLocaleString() ?? '0'} />
-                </StatGrid>
-            )}
+            <div className={styles.toolbar}>
+                <LogLevelFilter selected={selectedLevels} counts={stats?.byLevel} onToggle={handleToggleLevel} />
 
-            {/* Filters */}
-            <div className={styles.filters}>
-                <fieldset className={styles.filter_group}>
-                    <legend className={styles.filter_label}>Severity Levels:</legend>
-                    <div className={styles.checkbox_group} role="group" aria-label="Filter by severity level">
-                        {(['fatal', 'error', 'warn', 'info', 'debug', 'trace'] as LogLevel[]).map(level => (
-                            <label key={level} className={styles.checkbox_label}>
-                                <input
-                                    type="checkbox"
-                                    checked={selectedLevels.includes(level)}
-                                    onChange={() => handleToggleLevel(level)}
-                                />
-                                <span className={styles.checkbox_text}>{level.toUpperCase()}</span>
-                            </label>
-                        ))}
+                <div className={styles.controls}>
+                    {!service && (
+                        <Select
+                            size="sm"
+                            aria-label="Service"
+                            className={styles.service_select}
+                            value={serviceFilter}
+                            onChange={e => {
+                                setServiceFilter(e.target.value);
+                                restartList(1);
+                            }}
+                        >
+                            <option value="">All services</option>
+                            {stats?.byService && Object.keys(stats.byService).sort().map(name => (
+                                <option key={name} value={name}>
+                                    {name} ({stats.byService[name].toLocaleString()})
+                                </option>
+                            ))}
+                        </Select>
+                    )}
+
+                    <div className={styles.refresh}>
+                        {/* A steady dot while the list refreshes itself, so an
+                            operator can tell a quiet log from a stopped one. */}
+                        <span
+                            className={cn(styles.refresh_dot, pollingInterval > 0 && styles.refresh_dot_on)}
+                            aria-hidden="true"
+                        />
+                        <Select
+                            size="sm"
+                            aria-label="Auto-refresh"
+                            value={pollingInterval}
+                            onChange={e => setPollingInterval(Number(e.target.value))}
+                        >
+                            {REFRESH_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                        </Select>
                     </div>
-                </fieldset>
 
-                {!service && <div className={styles.filter_group}>
-                    <label className={styles.filter_label} htmlFor="service-filter">
-                        Service Filter:
-                    </label>
-                    <Select
-                        id="service-filter"
-                        className={styles.filter_input}
-                        value={serviceFilter}
-                        onChange={e => {
-                            setServiceFilter(e.target.value);
-                            setPage(1);
-                            setInitialLoadState(true);
-                            flashedLogsRef.current.clear();
-                        }}
-                    >
-                        <option value="">All Services</option>
-                        {stats?.byService && Object.keys(stats.byService).sort().map(service => (
-                            <option key={service} value={service}>
-                                {service} ({stats.byService[service].toLocaleString()})
-                            </option>
-                        ))}
-                    </Select>
-                </div>}
+                    {!service && (
+                        <Button variant="ghost" size="xs" icon={<Trash2 size={14} />} onClick={handleClearLogs}>
+                            Clear all
+                        </Button>
+                    )}
+                </div>
+            </div>
 
-                <div className={styles.filter_group}>
-                    <label className={styles.filter_label} htmlFor="limit-filter">
-                        Per Page:
-                    </label>
+            {body}
+
+            {total > 0 && (
+                <div className={styles.footer}>
+                    <span className={styles.range}>
+                        {firstShown.toLocaleString()}–{lastShown.toLocaleString()} of {total.toLocaleString()}
+                    </span>
+                    {total > limit && (
+                        <Pagination
+                            total={total}
+                            pageSize={limit}
+                            currentPage={page}
+                            onPageChange={restartList}
+                        />
+                    )}
                     <Select
-                        id="limit-filter"
-                        className={styles.filter_select}
+                        size="xs"
+                        aria-label="Entries per page"
                         value={limit}
                         onChange={e => {
                             setLimit(Number(e.target.value));
-                            setPage(1);
-                            setInitialLoadState(true);
-                            flashedLogsRef.current.clear();
+                            restartList(1);
                         }}
                     >
-                        <option value="10">10</option>
-                        <option value="25">25</option>
-                        <option value="50">50</option>
-                        <option value="100">100</option>
+                        {PAGE_SIZES.map(size => (
+                            <option key={size} value={size}>{size} per page</option>
+                        ))}
                     </Select>
                 </div>
-
-                <div className={styles.filter_group}>
-                    <label className={styles.filter_label} htmlFor="polling-filter">
-                        Polling:
-                    </label>
-                    <Select
-                        id="polling-filter"
-                        className={styles.filter_select}
-                        value={pollingInterval}
-                        onChange={e => setPollingInterval(Number(e.target.value))}
-                    >
-                        <option value="0">None</option>
-                        <option value="1000">1s</option>
-                        <option value="10000">10s</option>
-                        <option value="30000">30s</option>
-                        <option value="60000">60s</option>
-                    </Select>
-                </div>
-
-                {!service && (
-                    <div className={styles.filter_group_right}>
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            icon={<Trash2 size={14} />}
-                            onClick={handleClearLogs}
-                        >
-                            Clear All Logs
-                        </Button>
-                    </div>
-                )}
-            </div>
-
-            {/* Logs Table */}
-            <div className={styles.table_container}>
-                {logs.length === 0 ? (
-                    <div className={styles.empty_state}>
-                        No logs found matching the current filters.
-                    </div>
-                ) : (
-                    <table className={styles.table}>
-                        <thead>
-                            <tr>
-                                <th>Timestamp</th>
-                                <th>Level</th>
-                                <th>Service</th>
-                                <th>Message</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {logs.map(log => (
-                                <React.Fragment key={log._id}>
-                                    <tr
-                                        className={`${styles.log_row} ${newLogIds.has(log._id) ? styles.log_row_new : ''}`}
-                                    >
-                                        <td className={styles.timestamp}>{formatTimestamp(log.timestamp)}</td>
-                                        <td>
-                                            <span className={`${styles.level_badge} ${getLevelClass(log.level)}`}>
-                                                {log.level.toUpperCase()}
-                                            </span>
-                                        </td>
-                                        <td className={styles.service}>{log.service}</td>
-                                        <td className={styles.message}>{log.message}</td>
-                                        <td className={styles.actions}>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                icon={expandedLogId === log._id
-                                                    ? <ChevronUp size={14} />
-                                                    : <ChevronDown size={14} />}
-                                                aria-label={expandedLogId === log._id ? 'Hide log details' : 'Show log details'}
-                                                onClick={() => setExpandedLogId(expandedLogId === log._id ? null : log._id)}
-                                            >
-                                                {expandedLogId === log._id ? 'Hide' : 'Details'}
-                                            </Button>
-                                        </td>
-                                    </tr>
-                                    {expandedLogId === log._id && (
-                                        <tr className={styles.detail_row}>
-                                            <td colSpan={5}>
-                                                <div className={styles.detail_content}>
-                                                    <div className={styles.detail_section}>
-                                                        <strong>Context:</strong>
-                                                        <pre className={styles.context_json}>
-                                                            {JSON.stringify(log.context, null, 2)}
-                                                        </pre>
-                                                    </div>
-                                                    {log.resolved && log.resolvedAt && (
-                                                        <div className={styles.detail_section}>
-                                                            <strong>Resolved:</strong> {formatTimestamp(log.resolvedAt)}
-                                                            {log.resolvedBy && ` by ${log.resolvedBy}`}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    )}
-                                </React.Fragment>
-                            ))}
-                        </tbody>
-                    </table>
-                )}
-            </div>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-                <nav className={styles.pagination} aria-label="Log pagination">
-                    <div className={styles.pagination_controls}>
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => {
-                                setPage(1);
-                                setInitialLoadState(true);
-                                flashedLogsRef.current.clear();
-                            }}
-                            disabled={!hasPrevPage}
-                        >
-                            First
-                        </Button>
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => {
-                                setPage(p => p - 1);
-                                setInitialLoadState(true);
-                                flashedLogsRef.current.clear();
-                            }}
-                            disabled={!hasPrevPage}
-                        >
-                            Previous
-                        </Button>
-                        <div className={styles.pagination_info}>
-                            Page {page} of {totalPages} ({total.toLocaleString()} total logs)
-                        </div>
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => {
-                                setPage(p => p + 1);
-                                setInitialLoadState(true);
-                                flashedLogsRef.current.clear();
-                            }}
-                            disabled={!hasNextPage}
-                        >
-                            Next
-                        </Button>
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => {
-                                setPage(totalPages);
-                                setInitialLoadState(true);
-                                flashedLogsRef.current.clear();
-                            }}
-                            disabled={!hasNextPage}
-                        >
-                            Last
-                        </Button>
-                    </div>
-                </nav>
             )}
-        </div>
+
+            <SlideOver
+                open={selectedLog !== null}
+                onClose={closeEntry}
+                label={selectedLog ? `Log entry: ${selectedLog.message}` : undefined}
+                title={selectedLog ? <span className={styles.entry_title}>{selectedLog.message}</span> : null}
+            >
+                {selectedLog && <LogEntryDetail log={selectedLog} />}
+            </SlideOver>
+        </section>
     );
 }
