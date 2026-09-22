@@ -20,9 +20,12 @@ export interface IPriceVendorFailure {
  * shared HTTP client and never says which vendor sent it, so an operator
  * reading `HTTP 401: Unauthorized` in the logs could not tell which vendor's
  * key to fix. This error puts the vendor id in front of each message. It also
- * keeps a failure from being read as "no price exists": the service treats a
- * throw as a failed tick and retries with the cursor untouched, where an empty
- * answer would park the asset under the unpriced backoff.
+ * keeps a failure from being read as "no price exists": the service treats
+ * this error as a failed tick and holds the asset on the shorter failure
+ * backoff with its day bounds untouched, where an empty answer would park the
+ * asset under the unpriced backoff. The service tells a vendor failure apart
+ * from a storage failure by this type, so the router must raise it for every
+ * fetch that failed because of the vendors.
  */
 export class PriceVendorsFailedError extends Error {
     /** Every vendor that threw, in the order they were tried. */
