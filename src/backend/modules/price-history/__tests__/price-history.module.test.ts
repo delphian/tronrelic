@@ -22,7 +22,15 @@ import { COINGECKO_DESCRIPTOR, GECKOTERMINAL_DESCRIPTOR, TRONSCAN_DESCRIPTOR } f
 import { PRICE_TABLE, PROGRESS_COLLECTION, DEFAULT_SETTINGS } from '../database/index.js';
 import { migration as unparkMigration } from '../migrations/002_unpark_empty_token_cursors.js';
 import { toUtcDay, previousUtcDay, shiftUtcDay, diffUtcDays } from '../lib/price-day.js';
-import { retryDelayMs, isRetryAtCeiling, RETRY_BASE_DELAY_MS, RETRY_MAX_DELAY_MS } from '../lib/retry-backoff.js';
+import {
+    retryDelayMs,
+    isRetryAtCeiling,
+    failureRetryDelayMs,
+    RETRY_BASE_DELAY_MS,
+    RETRY_MAX_DELAY_MS,
+    FAILURE_RETRY_BASE_DELAY_MS,
+    FAILURE_RETRY_MAX_DELAY_MS
+} from '../lib/retry-backoff.js';
 import type { IPriceHistoryRouter } from '../providers/IPriceHistoryRouter.js';
 import type { IPriceRangeOutcome, PriceRangeVerdict } from '../providers/IPriceRangeOutcome.js';
 
@@ -203,6 +211,9 @@ class FakeProvider implements IPriceHistoryRouter {
     /** Per-asset verdicts a test forces the next fetches to report, in place of the synthetic series. */
     public verdicts = new Map<PriceAsset, PriceRangeVerdict>();
 
+    /** Assets whose fetches throw, as the router does when every vendor asked returned an error. */
+    public failing = new Set<PriceAsset>();
+
     /**
      * @param listingDay - Days strictly older than this return nothing.
      * @param unpriceable - Assets the source never prices.
@@ -215,6 +226,9 @@ class FakeProvider implements IPriceHistoryRouter {
 
     async fetchRange(asset: PriceAsset, fromDay: string, toDay: string): Promise<IPriceRangeOutcome> {
         this.calls.push({ asset, fromDay, toDay });
+        if (this.failing.has(asset)) {
+            throw new Error(`fake: HTTP 503: Service Unavailable for ${asset}`);
+        }
         const forced = this.verdicts.get(asset);
         if (forced) {
             return { verdict: forced, points: [], asked: forced === 'unavailable' ? [] : [this.id], skipped: forced === 'priced' ? [] : ['other'], failed: [] };
@@ -306,6 +320,14 @@ describe('retry-backoff', () => {
         expect(retryDelayMs(6)).toBe(RETRY_MAX_DELAY_MS);
         expect(retryDelayMs(500)).toBe(RETRY_MAX_DELAY_MS);
         expect(retryDelayMs(0)).toBe(RETRY_BASE_DELAY_MS);
+    });
+
+    it('backs off failed fetches from 15 minutes and stops at 6 hours', () => {
+        expect(failureRetryDelayMs(1)).toBe(FAILURE_RETRY_BASE_DELAY_MS);
+        expect(failureRetryDelayMs(2)).toBe(FAILURE_RETRY_BASE_DELAY_MS * 2);
+        expect(failureRetryDelayMs(5)).toBe(FAILURE_RETRY_BASE_DELAY_MS * 16);
+        expect(failureRetryDelayMs(6)).toBe(FAILURE_RETRY_MAX_DELAY_MS);
+        expect(failureRetryDelayMs(500)).toBe(FAILURE_RETRY_MAX_DELAY_MS);
     });
 
     it('reports the ceiling only once the delay is a full day', () => {
@@ -585,6 +607,57 @@ describe('PriceHistoryService', () => {
         expect(trx?.nextAttemptAt).toBeNull();
         expect(trx!.oldestDay! < seeded!.oldestDay!).toBe(true);
     }, 15_000);
+
+    it('holds a failing deep chunk on the failure backoff so the walk moves to another asset', async () => {
+        await service.ensureAssetsTracked(['TOTHER']);
+        await service.runBackfillTick(); // seeds TRX and the token; no deep chunk this tick
+
+        provider.failing.add('TRX');
+        await expect(service.runBackfillTick()).rejects.toThrow(/TRX/); // TRX is least recently advanced and fails
+        let trx = (await service.getStats()).assets.find((asset) => asset.asset === 'TRX');
+        expect(trx?.failedAttempts).toBe(1);
+        expect(trx?.unpricedAttempts).toBe(0);
+        const waitMs = new Date(trx!.nextAttemptAt!).getTime() - Date.now();
+        expect(waitMs).toBeGreaterThan(failureRetryDelayMs(1) - 5000);
+        expect(stubLogger.error).toHaveBeenCalledWith(expect.objectContaining({ asset: 'TRX', phase: 'backfill', attempts: 1 }), expect.any(String));
+
+        // The next tick leaves the held asset alone and walks the other one.
+        const trxCalls = provider.calls.filter((call) => call.asset === 'TRX').length;
+        await service.runBackfillTick();
+        expect(provider.calls.filter((call) => call.asset === 'TRX').length).toBe(trxCalls);
+        expect(provider.calls[provider.calls.length - 1].asset).toBe('TOTHER');
+
+        // A second failure doubles the wait; recovery clears the count.
+        expireBackoff(database, 'TRX');
+        await expect(service.runBackfillTick()).rejects.toThrow(/TRX/);
+        trx = (await service.getStats()).assets.find((asset) => asset.asset === 'TRX');
+        expect(trx?.failedAttempts).toBe(2);
+        expect(new Date(trx!.nextAttemptAt!).getTime() - Date.now()).toBeGreaterThan(failureRetryDelayMs(2) - 5000);
+
+        // Once due again, TRX is walked within two ticks: the deep walk takes
+        // whichever asset was advanced least recently, which may be the token.
+        provider.failing.delete('TRX');
+        expireBackoff(database, 'TRX');
+        await service.runBackfillTick();
+        await service.runBackfillTick();
+        trx = (await service.getStats()).assets.find((asset) => asset.asset === 'TRX');
+        expect(trx?.failedAttempts).toBe(0);
+        expect(trx?.nextAttemptAt).toBeNull();
+    }, 15_000);
+
+    it('holds a token whose seed fails instead of retrying it every tick', async () => {
+        await service.ensureAssetsTracked(['TFAILING']);
+        provider.failing.add('TFAILING');
+        await expect(service.runBackfillTick()).rejects.toThrow(/TFAILING/);
+        const token = (await service.getStats()).assets.find((asset) => asset.asset === 'TFAILING');
+        expect(token?.recentSeeded).toBe(false);
+        expect(token?.failedAttempts).toBe(1);
+        expect(token?.nextAttemptAt).not.toBeNull();
+
+        const calls = provider.calls.filter((call) => call.asset === 'TFAILING').length;
+        await service.runBackfillTick();
+        expect(provider.calls.filter((call) => call.asset === 'TFAILING').length).toBe(calls);
+    });
 
     it('skips a class no vendor can be asked for without counting an attempt, and warns once', async () => {
         provider.verdicts.set('TUNAVAIL', 'unavailable');

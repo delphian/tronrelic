@@ -63,6 +63,12 @@ export const DEFAULT_SETTINGS: IPriceHistorySettings = {
  * Both reset to nothing once a fetch returns prices. This is what lets a
  * vendor added or enabled later pick the asset up without an operator having
  * to find and clear the cursor by hand.
+ *
+ * A fetch that fails outright, with every vendor asked returning an error,
+ * leaves the day bounds alone but is counted in `failedAttempts` and holds the
+ * asset through `nextAttemptAt` on the shorter failure schedule. Without that,
+ * the failing asset stayed due and least-recently-updated, so every tick asked
+ * the same vendors again and no other asset's deep walk could advance.
  */
 export interface IPriceAssetProgressDoc {
     /** {@link import('@/types').PriceAsset} — `'TRX'` or a TRC20 contract address. */
@@ -81,7 +87,9 @@ export interface IPriceAssetProgressDoc {
     sourceRef: string | null;
     /** Consecutive seed or deep-walk attempts that found no prices; 0 once a fetch returns some. */
     unpricedAttempts: number;
-    /** Earliest time the asset may be fetched again after an unpriced attempt, or null when not parked. */
+    /** Consecutive seed or deep-walk fetches that failed with vendor errors; 0 once a fetch gets any answer. */
+    failedAttempts: number;
+    /** Earliest time the asset may be fetched again after an unpriced or failed attempt, or null when not held. */
     nextAttemptAt: Date | null;
     /** Last cursor mutation, for least-recently-advanced selection. */
     updatedAt: Date;

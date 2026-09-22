@@ -49,7 +49,7 @@ import {
     type IPriceHistoryRow
 } from '../database/index.js';
 import { todayUtcDay, shiftUtcDay, diffUtcDays, previousUtcDay } from '../lib/price-day.js';
-import { retryDelayMs, isRetryAtCeiling } from '../lib/retry-backoff.js';
+import { retryDelayMs, isRetryAtCeiling, failureRetryDelayMs } from '../lib/retry-backoff.js';
 
 /**
  * Width of the dense window seeded in the first ranged call for an asset. Kept
@@ -263,6 +263,7 @@ export class PriceHistoryService implements IPriceHistoryService {
             source: null,
             sourceRef: null,
             unpricedAttempts: 0,
+            failedAttempts: 0,
             nextAttemptAt: null,
             updatedAt: new Date()
         };
@@ -321,6 +322,7 @@ export class PriceHistoryService implements IPriceHistoryService {
             source: doc.source ?? null,
             sourceRef: doc.sourceRef ?? null,
             unpricedAttempts: typeof doc.unpricedAttempts === 'number' ? doc.unpricedAttempts : 0,
+            failedAttempts: typeof doc.failedAttempts === 'number' ? doc.failedAttempts : 0,
             nextAttemptAt: doc.nextAttemptAt ? new Date(doc.nextAttemptAt) : null
         }));
     }
@@ -368,7 +370,8 @@ export class PriceHistoryService implements IPriceHistoryService {
         await collection.updateOne(
             { asset: doc.asset },
             {
-                $set: { nextAttemptAt, updatedAt: new Date() },
+                // The vendors answered, so any run of outright failures has ended.
+                $set: { nextAttemptAt, failedAttempts: 0, updatedAt: new Date() },
                 $inc: { unpricedAttempts: 1 }
             }
         );
@@ -388,6 +391,35 @@ export class PriceHistoryService implements IPriceHistoryService {
         } else {
             this.logger.info(detail, 'No price returned; asset parked for retry');
         }
+    }
+
+    /**
+     * Hold an asset back after a fetch that failed outright, in either phase,
+     * so the next tick neither asks the same failing vendors again nor stalls
+     * the deep walk behind this one asset. The day bounds are left as they
+     * were, so the asset resumes exactly where it stopped once a fetch
+     * succeeds. The failure count grows the wait from 15 minutes to 6 hours
+     * and is incremented atomically, for the same overlapping-run reason as
+     * {@link parkAsset}. `updatedAt` is stamped too, which moves the asset to
+     * the back of the least-recently-advanced order.
+     *
+     * @param doc - The asset's cursor as the tick read it.
+     * @param phase - Which fetch failed, for the log entry.
+     * @param error - What the fetch threw, for the log entry.
+     */
+    private async holdAfterFailure(doc: IPriceAssetProgressDoc, phase: 'seed' | 'backfill', error: unknown): Promise<void> {
+        const attempts = doc.failedAttempts + 1;
+        const nextAttemptAt = new Date(Date.now() + failureRetryDelayMs(attempts));
+        const collection = this.database.getCollection<IPriceAssetProgressDoc>(PROGRESS_COLLECTION);
+        await collection.updateOne(
+            { asset: doc.asset },
+            {
+                $set: { nextAttemptAt, updatedAt: new Date() },
+                $inc: { failedAttempts: 1 }
+            }
+        );
+        const message = phase === 'seed' ? 'Seeding recent price window failed' : 'Deep price backfill chunk failed';
+        this.logger.error({ error, asset: doc.asset, phase, attempts, nextAttemptAt }, `${message}; asset held for retry`);
     }
 
     /**
@@ -686,6 +718,7 @@ export class PriceHistoryService implements IPriceHistoryService {
                 source: doc.source,
                 sourceRef: doc.sourceRef,
                 unpricedAttempts: doc.unpricedAttempts,
+                failedAttempts: doc.failedAttempts,
                 nextAttemptAt: doc.nextAttemptAt ? doc.nextAttemptAt.toISOString() : null
             };
         });
@@ -727,7 +760,8 @@ export class PriceHistoryService implements IPriceHistoryService {
      * the seed budget is not spent re-asking every tick. When no vendor could
      * be asked at all the cursor is left exactly as it was: nothing was
      * learned, so nothing is counted against the asset. A vendor failure
-     * throws through, leaving the cursor untouched for the next tick.
+     * throws through with the day bounds untouched; the tick then holds the
+     * asset on the failure backoff.
      *
      * The oldest bound is the oldest day actually returned, not the window
      * start. The winning vendor may only cover the tail of the window (an
@@ -760,6 +794,7 @@ export class PriceHistoryService implements IPriceHistoryService {
                 source: points[0].source,
                 sourceRef: points[0].sourceRef ?? null,
                 unpricedAttempts: 0,
+                failedAttempts: 0,
                 nextAttemptAt: null
             });
             this.logger.info({ asset: doc.asset, seeded: points.length, source: points[0].source }, 'Seeded recent price window');
@@ -802,7 +837,7 @@ export class PriceHistoryService implements IPriceHistoryService {
         const toDay = previousUtcDay(doc.oldestDayFetched as string);
         let result: ChunkResult;
         if (diffUtcDays(floorDay, toDay) < 0) {
-            await this.patchAssetProgress(doc.asset, { backfillComplete: true, unpricedAttempts: 0, nextAttemptAt: null });
+            await this.patchAssetProgress(doc.asset, { backfillComplete: true, unpricedAttempts: 0, failedAttempts: 0, nextAttemptAt: null });
             this.logger.info({ asset: doc.asset, floorDay }, 'Backfill reached lookback floor');
             result = 'complete';
         } else {
@@ -815,7 +850,7 @@ export class PriceHistoryService implements IPriceHistoryService {
                 await this.parkAsset(doc, 'backfill', outcome, fromDay, toDay);
                 result = 'parked';
             } else if (outcome.verdict === 'empty') {
-                await this.patchAssetProgress(doc.asset, { backfillComplete: true, unpricedAttempts: 0, nextAttemptAt: null });
+                await this.patchAssetProgress(doc.asset, { backfillComplete: true, unpricedAttempts: 0, failedAttempts: 0, nextAttemptAt: null });
                 this.logger.info({ asset: doc.asset, fromDay, toDay, asked: outcome.asked }, 'Backfill reached asset listing (no earlier price)');
                 result = 'complete';
             } else {
@@ -826,6 +861,7 @@ export class PriceHistoryService implements IPriceHistoryService {
                     source: points[0].source,
                     sourceRef: points[0].sourceRef ?? null,
                     unpricedAttempts: 0,
+                    failedAttempts: 0,
                     nextAttemptAt: null
                 });
                 this.logger.info({ asset: doc.asset, fromDay, toDay, oldestDay: points[0].day, points: points.length, source: points[0].source }, 'Backfilled price chunk');
@@ -847,6 +883,10 @@ export class PriceHistoryService implements IPriceHistoryService {
      * attempt against any of them: every asset in the class shares the vendor
      * list, so asking again would only repeat the answer. One warning names
      * the skipped assets so the operator can see the class is switched off.
+     *
+     * An asset whose fetch fails outright is held on the failure backoff, so
+     * it drops out of the due set until its wait ends and the next tick's
+     * deep chunk goes to another asset rather than to the same failing one.
      */
     async runBackfillTick(): Promise<void> {
         const settings = await this.getSettings();
@@ -877,9 +917,10 @@ export class PriceHistoryService implements IPriceHistoryService {
             }
             // One asset's failure (a vendor outage) must not stop the other
             // assets from seeding or block the deep walk behind it every tick.
-            // The cursor is untouched on a throw, so the asset is retried next
-            // tick either way. A parked asset does not count as seeded: it did
-            // no ingestion work, so it must not hold the deep walk back.
+            // A throw leaves the day bounds untouched and holds the asset on
+            // the failure backoff, so it is retried once that wait ends. A
+            // parked asset does not count as seeded: it did no ingestion work,
+            // so it must not hold the deep walk back.
             try {
                 const result = await this.seedRecentWindow(doc);
                 if (result === 'seeded') {
@@ -890,7 +931,7 @@ export class PriceHistoryService implements IPriceHistoryService {
                 }
             } catch (error) {
                 failures.push({ asset: doc.asset, error });
-                this.logger.error({ error, asset: doc.asset }, 'Seeding recent price window failed');
+                await this.holdAfterFailure(doc, 'seed', error);
             }
         }
 
@@ -903,8 +944,9 @@ export class PriceHistoryService implements IPriceHistoryService {
             // no vendor to ask so a switched-off token class cannot block TRX.
             // A throw is collected like a seed failure rather than escaping
             // here, so the seed failures gathered above still reach the
-            // scheduler's record and the admin page still gets its nudge. The
-            // cursor is untouched on a throw, so the chunk is retried next tick.
+            // scheduler's record and the admin page still gets its nudge. A
+            // throw leaves the day bounds untouched and holds the asset on the
+            // failure backoff, so later ticks walk the other assets meanwhile.
             for (const doc of incomplete) {
                 const assetClass = PriceHistoryService.assetClass(doc.asset);
                 if (unavailableClasses.has(assetClass)) {
@@ -916,7 +958,7 @@ export class PriceHistoryService implements IPriceHistoryService {
                     result = await this.backfillDeepHistory(doc, settings.chunkDays);
                 } catch (error) {
                     failures.push({ asset: doc.asset, error });
-                    this.logger.error({ error, asset: doc.asset }, 'Deep price backfill chunk failed');
+                    await this.holdAfterFailure(doc, 'backfill', error);
                     break;
                 }
                 if (result !== 'unavailable') {

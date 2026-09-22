@@ -1,6 +1,6 @@
 /**
- * @fileoverview Progressive retry delay for an asset the vendors could not
- * price on an attempt.
+ * @fileoverview Progressive retry delays for an asset the vendors could not
+ * price on an attempt, and for an asset whose fetch failed outright.
  *
  * Why progressive rather than a fixed wait: retrying every tick spends the
  * vendors' rate budget re-asking a question nothing has changed the answer to,
@@ -9,6 +9,14 @@
  * liquidity). Doubling from an hour up to a day gives a quick second look and
  * then settles at the series' own daily granularity: a token that gains a
  * listing today has no history worth fetching until the next daily close.
+ *
+ * A failed fetch, where every vendor asked returned an error, gets its own
+ * shorter schedule. An error such as a rate limit or an outage usually clears
+ * within minutes, so the first retry comes sooner than for an unpriced answer.
+ * But retrying on every five-minute tick, as the job did before it had this
+ * schedule, kept up the request load on a vendor that was already refusing,
+ * and left the failing asset at the head of the deep walk so no other asset
+ * advanced behind it.
  */
 
 /** Wait after the first attempt that found no prices. */
@@ -21,11 +29,29 @@ export const RETRY_BASE_DELAY_MS = 60 * 60 * 1000;
  */
 export const RETRY_MAX_DELAY_MS = 24 * 60 * 60 * 1000;
 
+/** Wait after the first fetch in a row that failed with vendor errors. */
+export const FAILURE_RETRY_BASE_DELAY_MS = 15 * 60 * 1000;
+
+/** Longest wait between attempts while an asset's fetches keep failing. */
+export const FAILURE_RETRY_MAX_DELAY_MS = 6 * 60 * 60 * 1000;
+
 /**
- * Doublings needed to go from the base delay to the ceiling. Used to cap the
- * exponent so a cursor with thousands of attempts cannot overflow the maths.
+ * Double a base delay once per attempt after the first, up to a ceiling. Both
+ * schedules in this file share it so they cannot drift apart in how they grow.
+ *
+ * @param attempts - Consecutive attempts in the streak, counting the one just
+ *   made, so the smallest meaningful value is 1.
+ * @param baseMs - The wait after the first attempt.
+ * @param maxMs - The longest wait the schedule allows.
+ * @returns Milliseconds to wait before the next attempt.
  */
-const DOUBLINGS_TO_CEILING = Math.ceil(Math.log2(RETRY_MAX_DELAY_MS / RETRY_BASE_DELAY_MS));
+function progressiveDelayMs(attempts: number, baseMs: number, maxMs: number): number {
+    // Capping the exponent keeps a cursor with thousands of attempts from
+    // overflowing the maths before the ceiling applies.
+    const doublingsToCeiling = Math.ceil(Math.log2(maxMs / baseMs));
+    const exponent = Math.min(Math.max(attempts - 1, 0), doublingsToCeiling);
+    return Math.min(baseMs * 2 ** exponent, maxMs);
+}
 
 /**
  * How long to wait before retrying an asset, given how many consecutive
@@ -37,8 +63,20 @@ const DOUBLINGS_TO_CEILING = Math.ceil(Math.log2(RETRY_MAX_DELAY_MS / RETRY_BASE
  * @returns Milliseconds to wait before the next attempt.
  */
 export function retryDelayMs(attempts: number): number {
-    const exponent = Math.min(Math.max(attempts - 1, 0), DOUBLINGS_TO_CEILING);
-    return Math.min(RETRY_BASE_DELAY_MS * 2 ** exponent, RETRY_MAX_DELAY_MS);
+    return progressiveDelayMs(attempts, RETRY_BASE_DELAY_MS, RETRY_MAX_DELAY_MS);
+}
+
+/**
+ * How long to wait before retrying an asset whose fetches keep failing with
+ * vendor errors. The first failure waits 15 minutes, and each further one
+ * doubles that until the six-hour ceiling.
+ *
+ * @param attempts - Consecutive failed fetches, counting the one just made, so
+ *   the smallest meaningful value is 1.
+ * @returns Milliseconds to wait before the next attempt.
+ */
+export function failureRetryDelayMs(attempts: number): number {
+    return progressiveDelayMs(attempts, FAILURE_RETRY_BASE_DELAY_MS, FAILURE_RETRY_MAX_DELAY_MS);
 }
 
 /**
