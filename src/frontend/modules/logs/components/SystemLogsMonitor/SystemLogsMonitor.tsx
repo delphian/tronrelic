@@ -266,21 +266,41 @@ export function SystemLogsMonitor({ service, title }: ISystemLogsMonitorProps) {
     }, [open, close, executeClearLogs]);
 
     /**
+     * Queue for the background preference writes. The user-settings store keeps
+     * whichever write lands last, so two quick toggles sent at once could finish
+     * out of order and leave the earlier selection saved. Each save waits on this
+     * promise, which keeps the requests in the order the operator made them.
+     */
+    const persistChainRef = useRef<Promise<void>>(Promise.resolve());
+
+    /**
      * Saves the operator's level selection so every Logs tab opens with it next time.
      *
-     * Runs in the background after each toggle. A failed save leaves the
-     * filter working for this page view, so the operator only gets a warning
-     * toast telling them the choice will not be remembered.
+     * Runs in the background after each toggle, queued behind any save still in
+     * flight so the last selection the operator made is also the last one written.
+     * A failed save leaves the filter working for this page view, so the operator
+     * only gets a warning toast telling them the choice will not be remembered.
      *
      * @param levels - The selection to remember
      */
     const persistLevels = useCallback(async (levels: LogLevel[]) => {
-        try {
-            await saveLogMonitorLevels(levels);
-        } catch (error) {
-            console.error('Failed to save log viewer levels:', error);
-            push({ tone: 'warning', title: 'Filter not saved', description: 'Your severity selection will reset on the next visit.' });
-        }
+        /**
+         * Sends this one save once the save before it has settled.
+         *
+         * Reports and swallows its own failure rather than rejecting, because a
+         * rejected link would poison the queue and drop every later toggle.
+         */
+        const runSave = async (): Promise<void> => {
+            try {
+                await saveLogMonitorLevels(levels);
+            } catch (error) {
+                console.error('Failed to save log viewer levels:', error);
+                push({ tone: 'warning', title: 'Filter not saved', description: 'Your severity selection will reset on the next visit.' });
+            }
+        };
+
+        persistChainRef.current = persistChainRef.current.then(runSave);
+        await persistChainRef.current;
     }, [push]);
 
     /**
