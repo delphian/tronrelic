@@ -33,6 +33,7 @@ import {
 } from '../lib/retry-backoff.js';
 import type { IPriceHistoryRouter } from '../providers/IPriceHistoryRouter.js';
 import type { IPriceRangeOutcome, PriceRangeVerdict } from '../providers/IPriceRangeOutcome.js';
+import { PriceVendorsFailedError } from '../providers/PriceVendorsFailedError.js';
 
 /**
  * Minimal in-memory Mongo collection supporting only the operations the module
@@ -159,7 +160,13 @@ class FakeDatabase {
 class FakeClickhouse {
     public rows: Array<{ asset: string; day: string; price_usd: number; source: string }> = [];
 
+    /** When true every insert throws, standing in for a ClickHouse outage. */
+    public failInserts = false;
+
     async insert<T extends Record<string, unknown>>(table: string, rows: T[]): Promise<void> {
+        if (this.failInserts) {
+            throw new Error('clickhouse: connection refused');
+        }
         if (table === PRICE_TABLE) {
             for (const row of rows) {
                 this.rows.push({ asset: String(row.asset), day: String(row.day), price_usd: Number(row.price_usd), source: String(row.source) });
@@ -227,7 +234,7 @@ class FakeProvider implements IPriceHistoryRouter {
     async fetchRange(asset: PriceAsset, fromDay: string, toDay: string): Promise<IPriceRangeOutcome> {
         this.calls.push({ asset, fromDay, toDay });
         if (this.failing.has(asset)) {
-            throw new Error(`fake: HTTP 503: Service Unavailable for ${asset}`);
+            throw new PriceVendorsFailedError([{ vendor: this.id, message: `HTTP 503: Service Unavailable for ${asset}` }]);
         }
         const forced = this.verdicts.get(asset);
         if (forced) {
@@ -260,6 +267,22 @@ function expireBackoff(database: FakeDatabase, asset: PriceAsset): void {
     const doc = database.getCollection(PROGRESS_COLLECTION).docs.find((candidate) => candidate.asset === asset);
     if (doc) {
         doc.nextAttemptAt = new Date(0);
+    }
+}
+
+/**
+ * Make an asset the least recently advanced, so the deep walk picks it next.
+ * Ticks in a test run milliseconds apart, and two cursors stamped in the same
+ * millisecond tie, leaving the choice to insertion order; setting the time
+ * explicitly keeps a test that depends on which asset is walked deterministic.
+ *
+ * @param database - The fake database holding the cursor.
+ * @param asset - The asset to put at the front of the deep walk.
+ */
+function makeLeastRecentlyAdvanced(database: FakeDatabase, asset: PriceAsset): void {
+    const doc = database.getCollection(PROGRESS_COLLECTION).docs.find((candidate) => candidate.asset === asset);
+    if (doc) {
+        doc.updatedAt = new Date(0);
     }
 }
 
@@ -613,6 +636,7 @@ describe('PriceHistoryService', () => {
         await service.runBackfillTick(); // seeds TRX and the token; no deep chunk this tick
 
         provider.failing.add('TRX');
+        makeLeastRecentlyAdvanced(database, 'TRX');
         await expect(service.runBackfillTick()).rejects.toThrow(/TRX/); // TRX is least recently advanced and fails
         let trx = (await service.getStats()).assets.find((asset) => asset.asset === 'TRX');
         expect(trx?.failedAttempts).toBe(1);
@@ -629,16 +653,15 @@ describe('PriceHistoryService', () => {
 
         // A second failure doubles the wait; recovery clears the count.
         expireBackoff(database, 'TRX');
+        makeLeastRecentlyAdvanced(database, 'TRX');
         await expect(service.runBackfillTick()).rejects.toThrow(/TRX/);
         trx = (await service.getStats()).assets.find((asset) => asset.asset === 'TRX');
         expect(trx?.failedAttempts).toBe(2);
         expect(new Date(trx!.nextAttemptAt!).getTime() - Date.now()).toBeGreaterThan(failureRetryDelayMs(2) - 5000);
 
-        // Once due again, TRX is walked within two ticks: the deep walk takes
-        // whichever asset was advanced least recently, which may be the token.
         provider.failing.delete('TRX');
         expireBackoff(database, 'TRX');
-        await service.runBackfillTick();
+        makeLeastRecentlyAdvanced(database, 'TRX');
         await service.runBackfillTick();
         trx = (await service.getStats()).assets.find((asset) => asset.asset === 'TRX');
         expect(trx?.failedAttempts).toBe(0);
@@ -657,6 +680,23 @@ describe('PriceHistoryService', () => {
         const calls = provider.calls.filter((call) => call.asset === 'TFAILING').length;
         await service.runBackfillTick();
         expect(provider.calls.filter((call) => call.asset === 'TFAILING').length).toBe(calls);
+    });
+
+    it('fails the tick without holding the asset when storage rejects the write', async () => {
+        clickhouse.failInserts = true;
+        await expect(service.runBackfillTick()).rejects.toThrow(/TRX/);
+        let trx = (await service.getStats()).assets.find((asset) => asset.asset === 'TRX');
+        expect(trx?.recentSeeded).toBe(false);
+        expect(trx?.failedAttempts).toBe(0);
+        expect(trx?.nextAttemptAt).toBeNull();
+        expect(stubLogger.error).toHaveBeenCalledWith(expect.objectContaining({ asset: 'TRX', phase: 'seed' }), 'Seeding recent price window failed');
+
+        // Storage is back, so the asset is due again on the very next tick
+        // rather than sitting out a vendor backoff it never earned.
+        clickhouse.failInserts = false;
+        await service.runBackfillTick();
+        trx = (await service.getStats()).assets.find((asset) => asset.asset === 'TRX');
+        expect(trx?.recentSeeded).toBe(true);
     });
 
     it('skips a class no vendor can be asked for without counting an attempt, and warns once', async () => {

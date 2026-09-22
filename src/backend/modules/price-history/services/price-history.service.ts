@@ -37,6 +37,7 @@ import { PRICE_ASSET_TRX } from '@/types';
 import type { IProviderRegistry, ISourcedPricePoint } from '../../providers/index.js';
 import type { IPriceHistoryRouter } from '../providers/IPriceHistoryRouter.js';
 import type { IPriceRangeOutcome } from '../providers/IPriceRangeOutcome.js';
+import { PriceVendorsFailedError } from '../providers/PriceVendorsFailedError.js';
 import {
     SETTINGS_COLLECTION,
     PROGRESS_COLLECTION,
@@ -394,32 +395,46 @@ export class PriceHistoryService implements IPriceHistoryService {
     }
 
     /**
-     * Hold an asset back after a fetch that failed outright, in either phase,
-     * so the next tick neither asks the same failing vendors again nor stalls
-     * the deep walk behind this one asset. The day bounds are left as they
-     * were, so the asset resumes exactly where it stopped once a fetch
-     * succeeds. The failure count grows the wait from 15 minutes to 6 hours
-     * and is incremented atomically, for the same overlapping-run reason as
+     * Record a seed or deep chunk that threw, and hold the asset back when the
+     * vendors are the cause.
+     *
+     * A vendor failure, raised by the router as {@link PriceVendorsFailedError},
+     * holds the asset so the next tick neither asks the same failing vendors
+     * again nor stalls the deep walk behind this one asset. The day bounds are
+     * left as they were, so the asset resumes exactly where it stopped. The
+     * failure count grows the wait from 15 minutes to 6 hours and is
+     * incremented atomically, for the same overlapping-run reason as
      * {@link parkAsset}. `updatedAt` is stamped too, which moves the asset to
      * the back of the least-recently-advanced order.
      *
+     * Any other error, such as ClickHouse or MongoDB refusing a write, says
+     * nothing about the vendors. It is logged, and the cursor and retry time
+     * are left untouched, so the asset is tried again on the next tick rather
+     * than sitting out a hold of up to six hours after storage has recovered.
+     *
      * @param doc - The asset's cursor as the tick read it.
      * @param phase - Which fetch failed, for the log entry.
-     * @param error - What the fetch threw, for the log entry.
+     * @param error - What the seed or chunk threw; its type decides whether the asset is held.
      */
-    private async holdAfterFailure(doc: IPriceAssetProgressDoc, phase: 'seed' | 'backfill', error: unknown): Promise<void> {
-        const attempts = doc.failedAttempts + 1;
-        const nextAttemptAt = new Date(Date.now() + failureRetryDelayMs(attempts));
-        const collection = this.database.getCollection<IPriceAssetProgressDoc>(PROGRESS_COLLECTION);
-        await collection.updateOne(
-            { asset: doc.asset },
-            {
-                $set: { nextAttemptAt, updatedAt: new Date() },
-                $inc: { failedAttempts: 1 }
-            }
-        );
+    private async recordFetchFailure(doc: IPriceAssetProgressDoc, phase: 'seed' | 'backfill', error: unknown): Promise<void> {
         const message = phase === 'seed' ? 'Seeding recent price window failed' : 'Deep price backfill chunk failed';
-        this.logger.error({ error, asset: doc.asset, phase, attempts, nextAttemptAt }, `${message}; asset held for retry`);
+        if (error instanceof PriceVendorsFailedError) {
+            const attempts = doc.failedAttempts + 1;
+            const nextAttemptAt = new Date(Date.now() + failureRetryDelayMs(attempts));
+            const collection = this.database.getCollection<IPriceAssetProgressDoc>(PROGRESS_COLLECTION);
+            await collection.updateOne(
+                { asset: doc.asset },
+                {
+                    // A failure returned no prices, so any unpriced streak stands;
+                    // only a priced fetch clears it.
+                    $set: { nextAttemptAt, updatedAt: new Date() },
+                    $inc: { failedAttempts: 1 }
+                }
+            );
+            this.logger.error({ error, asset: doc.asset, phase, attempts, nextAttemptAt }, `${message}; asset held for retry`);
+        } else {
+            this.logger.error({ error, asset: doc.asset, phase }, message);
+        }
     }
 
     /**
@@ -884,9 +899,12 @@ export class PriceHistoryService implements IPriceHistoryService {
      * list, so asking again would only repeat the answer. One warning names
      * the skipped assets so the operator can see the class is switched off.
      *
-     * An asset whose fetch fails outright is held on the failure backoff, so
-     * it drops out of the due set until its wait ends and the next tick's
-     * deep chunk goes to another asset rather than to the same failing one.
+     * An asset whose vendors all fail is held on the failure backoff, so it
+     * drops out of the due set until its wait ends and the next tick's deep
+     * chunk goes to another asset rather than to the same failing one. A
+     * failure to store what a vendor returned is not a vendor failure: it
+     * fails the tick with the cursor and retry time untouched, so the asset
+     * is tried again on the next tick.
      */
     async runBackfillTick(): Promise<void> {
         const settings = await this.getSettings();
@@ -931,7 +949,7 @@ export class PriceHistoryService implements IPriceHistoryService {
                 }
             } catch (error) {
                 failures.push({ asset: doc.asset, error });
-                await this.holdAfterFailure(doc, 'seed', error);
+                await this.recordFetchFailure(doc, 'seed', error);
             }
         }
 
@@ -958,7 +976,7 @@ export class PriceHistoryService implements IPriceHistoryService {
                     result = await this.backfillDeepHistory(doc, settings.chunkDays);
                 } catch (error) {
                     failures.push({ asset: doc.asset, error });
-                    await this.holdAfterFailure(doc, 'backfill', error);
+                    await this.recordFetchFailure(doc, 'backfill', error);
                     break;
                 }
                 if (result !== 'unavailable') {
