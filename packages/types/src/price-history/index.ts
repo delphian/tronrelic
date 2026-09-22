@@ -13,6 +13,7 @@ export type {
     PriceAsset,
     IPricePoint,
     IPriceHistorySettings,
+    IPriceSourceInfo,
     IPriceAssetCoverage,
     IPriceHistoryStats,
     IPriceCoverageDiagnostics,

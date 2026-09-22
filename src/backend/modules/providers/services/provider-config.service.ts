@@ -3,14 +3,20 @@
  *
  * Why a service (not env): a provider's API key and pacing must be editable by an
  * operator at runtime from the admin UI, survive restarts, and never appear in
- * source or process env. This singleton owns the read/write of each provider's
- * config blob in the KV store (TronScan, TronGrid), plus the secret-masking
- * projection the admin API returns so a key is never sent back to the browser in
- * the clear.
+ * source or process env. This singleton owns the read/write of each vendor's
+ * config blob in the KV store, plus the secret-masking projection the admin API
+ * returns so a key is never sent back to the browser in the clear.
  *
- * It is the single source of truth both the provider clients (which read raw
- * keys per request) and the admin controller (which reads the masked view)
- * depend on, so each key has exactly one home.
+ * The generic `getConfig` / `getMaskedConfig` / `saveConfig` trio works from a
+ * vendor's descriptor: any field the descriptor marks `secret` is masked on the
+ * way out and dropped when cleared on the way in. The typed `getXxxConfig`
+ * readers are conveniences for the vendor clients, which want a full typed
+ * object per request. TronGrid keeps its own write path because its rotating
+ * key pool is not a single secret field.
+ *
+ * It is the single source of truth both the vendor clients (which read raw keys
+ * per request) and the admin controller (which reads the masked view) depend on,
+ * so each key has exactly one home.
  *
  * The TronGrid blob is staged ahead of its switchover: it is written and read
  * here and by the connectivity test only — the live TronGrid client still takes
@@ -19,13 +25,20 @@
 
 import type { IDatabaseService, ISystemLogService } from '@/types';
 import {
-    TRONSCAN_CONFIG_KEY,
+    providerConfigKey,
+    TRONSCAN_DESCRIPTOR,
     DEFAULT_TRONSCAN_CONFIG,
+    COINGECKO_DESCRIPTOR,
+    DEFAULT_COINGECKO_CONFIG,
+    GECKOTERMINAL_DESCRIPTOR,
+    DEFAULT_GECKOTERMINAL_CONFIG,
     TRONGRID_CONFIG_KEY,
     DEFAULT_TRONGRID_CONFIG,
     MAX_TRONGRID_API_KEYS,
+    type IProviderDescriptor,
     type ITronScanProviderConfig,
-    type ITronScanProviderConfigMasked,
+    type ICoinGeckoProviderConfig,
+    type IGeckoTerminalProviderConfig,
     type ITronGridProviderConfig,
     type ITronGridProviderConfigMasked
 } from '../database/index.js';
@@ -100,64 +113,118 @@ export class ProviderConfigService {
     }
 
     /**
-     * Read the full TronScan config, merged over defaults so callers always get a
-     * complete object even before anything has been saved. Returns the raw key —
-     * for backend use (the client) only, never the admin API.
+     * Read a vendor's full config, merged over its defaults so callers always get
+     * a complete object even before anything has been saved. Returns raw secrets —
+     * for backend use (the vendor clients) only, never the admin API.
      *
-     * @returns The effective TronScan config.
+     * @param vendorId - The vendor whose blob to read.
+     * @param defaults - The vendor's complete default config, merged underneath.
+     * @returns The effective config.
+     */
+    public async getConfig<T extends object>(vendorId: string, defaults: T): Promise<T> {
+        const stored = await this.database.get<Partial<T>>(providerConfigKey(vendorId));
+        return { ...defaults, ...(stored ?? {}) };
+    }
+
+    /**
+     * The admin-safe view of a vendor's config: every field the descriptor marks
+     * `secret` is reduced to `****` plus its last four characters and paired with
+     * a `<key>Configured` boolean, so the UI can render "configured" without the
+     * secret crossing the wire. Only descriptor fields are returned, so a stored
+     * value the descriptor does not declare (such as a key pool) never leaks
+     * through the generic path.
+     *
+     * @param descriptor - The vendor's descriptor, which names the fields and marks the secrets.
+     * @param defaults - The vendor's complete default config.
+     * @returns The masked config keyed by field.
+     */
+    public async getMaskedConfig(
+        descriptor: IProviderDescriptor,
+        defaults: object
+    ): Promise<Record<string, unknown>> {
+        const config = (await this.getConfig(descriptor.id, defaults)) as Record<string, unknown>;
+        const masked: Record<string, unknown> = {};
+        for (const field of descriptor.fields) {
+            const value = config[field.key];
+            if (field.kind === 'secret') {
+                const secret = typeof value === 'string' ? value : '';
+                masked[field.key] = ProviderConfigService.maskKey(secret);
+                masked[`${field.key}Configured`] = secret.length > 0;
+            } else {
+                masked[field.key] = value;
+            }
+        }
+        return masked;
+    }
+
+    /**
+     * Merge a validated partial update over a vendor's stored config and persist
+     * it. The controller is responsible for validating each field against the
+     * descriptor, stripping a re-echoed mask, and resolving the clear sentinel
+     * before calling this, so a secret is trusted as received: a string sets it,
+     * `''` clears it, `undefined` leaves it.
+     *
+     * @param descriptor - The vendor's descriptor.
+     * @param defaults - The vendor's complete default config.
+     * @param updates - Fields to change; omitted fields are preserved.
+     * @returns The new masked config (never a raw secret).
+     */
+    public async saveConfig(
+        descriptor: IProviderDescriptor,
+        defaults: object,
+        updates: Record<string, unknown>
+    ): Promise<Record<string, unknown>> {
+        const current = (await this.getConfig(descriptor.id, defaults)) as Record<string, unknown>;
+        const merged: Record<string, unknown> = { ...current, ...updates };
+        const summary: Record<string, unknown> = {};
+        for (const field of descriptor.fields) {
+            if (field.kind === 'secret') {
+                // An empty secret means "clear"; drop the field so a meaningless
+                // empty string is never persisted as if it were a credential.
+                if (!merged[field.key]) {
+                    delete merged[field.key];
+                }
+                summary[`${field.key}Configured`] = !!merged[field.key];
+            } else {
+                summary[field.key] = merged[field.key];
+            }
+        }
+        await this.database.set(providerConfigKey(descriptor.id), merged);
+        this.logger.info({ vendor: descriptor.id, ...summary }, 'Provider config saved');
+        return this.getMaskedConfig(descriptor, defaults);
+    }
+
+    /**
+     * Typed TronScan config for its client.
+     *
+     * @returns The effective TronScan config, raw key included.
      */
     public async getTronScanConfig(): Promise<ITronScanProviderConfig> {
-        const stored = await this.database.get<Partial<ITronScanProviderConfig>>(TRONSCAN_CONFIG_KEY);
-        return { ...DEFAULT_TRONSCAN_CONFIG, ...(stored ?? {}) };
+        return this.getConfig(TRONSCAN_DESCRIPTOR.id, DEFAULT_TRONSCAN_CONFIG);
     }
 
     /**
-     * The admin-safe view: the key reduced to `****` plus its last four chars and a
-     * boolean flag, so the UI can render "configured" without the secret crossing
-     * the wire.
+     * Typed CoinGecko config for its client.
      *
-     * @returns The masked TronScan config.
+     * @returns The effective CoinGecko config, raw key included.
      */
-    public async getMaskedTronScanConfig(): Promise<ITronScanProviderConfigMasked> {
-        const config = await this.getTronScanConfig();
-        const key = config.apiKey ?? '';
-        return {
-            apiKey: ProviderConfigService.maskKey(key),
-            apiKeyConfigured: key.length > 0,
-            baseUrl: config.baseUrl,
-            priceSource: config.priceSource,
-            enabled: config.enabled
-        };
+    public async getCoinGeckoConfig(): Promise<ICoinGeckoProviderConfig> {
+        return this.getConfig(COINGECKO_DESCRIPTOR.id, DEFAULT_COINGECKO_CONFIG);
     }
 
     /**
-     * Merge a partial update over the stored config and persist it. The caller
-     * (controller) is responsible for stripping a re-echoed mask and resolving the
-     * clear-sentinel before passing `apiKey` here, so this method trusts the
-     * `apiKey` it receives: a string sets it, `''` clears it, `undefined` leaves it.
+     * Typed GeckoTerminal config for its client. The reserve floor is pinned to a
+     * finite number because a hand-edited blob carrying a string would otherwise
+     * make every pool comparison false and silently leave every token unpriced.
      *
-     * @param updates - Fields to change; omitted fields are preserved.
-     * @returns The new masked config (never the raw key).
+     * @returns The effective GeckoTerminal config.
      */
-    public async saveTronScanConfig(
-        updates: Partial<ITronScanProviderConfig>
-    ): Promise<ITronScanProviderConfigMasked> {
-        const current = await this.getTronScanConfig();
-        const merged: ITronScanProviderConfig = {
-            ...current,
-            ...updates
-        };
-        // An empty-string apiKey means "clear"; drop the field so we don't persist
-        // a meaningless empty secret.
-        if (!merged.apiKey) {
-            delete merged.apiKey;
+    public async getGeckoTerminalConfig(): Promise<IGeckoTerminalProviderConfig> {
+        const config = await this.getConfig(GECKOTERMINAL_DESCRIPTOR.id, DEFAULT_GECKOTERMINAL_CONFIG);
+        if (typeof config.minPoolReserveUsd !== 'number' || !Number.isFinite(config.minPoolReserveUsd)) {
+            config.minPoolReserveUsd = DEFAULT_GECKOTERMINAL_CONFIG.minPoolReserveUsd;
         }
-        await this.database.set(TRONSCAN_CONFIG_KEY, merged);
-        this.logger.info(
-            { enabled: merged.enabled, priceSource: merged.priceSource, apiKeyConfigured: !!merged.apiKey },
-            'TronScan provider config saved'
-        );
-        return this.getMaskedTronScanConfig();
+        return config;
     }
 
     /**

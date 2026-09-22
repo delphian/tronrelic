@@ -1,23 +1,29 @@
 /**
  * @fileoverview Admin HTTP handlers for external-provider configuration.
  *
- * Why these guards matter: the TronScan API key is a secret. GET returns only the
+ * Why these guards matter: a vendor's API key is a secret. GET returns only the
  * masked view, and the save handler refuses to persist a re-echoed mask (so a
  * round-trip of the masked value can never overwrite the real key with `****…`),
  * while honouring an explicit clear sentinel. The test handler exercises a live
- * TronScan call so an operator can confirm a pasted key works before relying on
- * it for ingestion.
+ * vendor call so an operator can confirm a pasted key works before relying on it
+ * for ingestion.
+ *
+ * The generic handlers work from a vendor's descriptor: each field's kind
+ * carries its own validation rule, so a vendor declared in the registry gets a
+ * list entry, a read, a guarded save, and a test with no handler written for
+ * it. TronGrid keeps bespoke handlers because its rotating key pool is not a
+ * single secret field.
  */
 
 import type { Request, Response } from 'express';
 import type { ISystemLogService } from '@/types';
 import { ProviderConfigService, ProviderConfigValidationError } from '../services/provider-config.service.js';
-import { TronScanClient } from '../clients/tron-scan.client.js';
+import type { IProviderRegistry, IProviderVendor } from '../services/provider-registry.service.js';
 import { TronGridProviderClient } from '../clients/tron-grid.client.js';
 import {
     CLEAR_SENTINEL,
     TRONGRID_LIMITS,
-    type ITronScanProviderConfig,
+    type IProviderFieldDescriptor,
     type ITronGridProviderConfig
 } from '../database/index.js';
 
@@ -104,108 +110,258 @@ function normalizeBaseUrl(raw: string): string | null {
 const INVALID_BASE_URL_MESSAGE = 'baseUrl must be an absolute http:// or https:// URL, for example https://api.trongrid.io';
 
 /**
+ * Outcome of validating one field of a generic save: either a value to write,
+ * an instruction to leave the field alone, or a reason the value was refused.
+ */
+type FieldValidation =
+    | { status: 'set'; value: unknown }
+    | { status: 'skip' }
+    | { status: 'reject'; reason: string };
+
+/**
+ * Validate one body value against its field descriptor. Absent is "leave it";
+ * present-but-unusable is an operator error worth reporting, never silently
+ * dropped, because a 200 that ignored a field would leave the form showing a
+ * value the backend never agreed to.
+ *
+ * A secret has one extra rule: a value beginning `****` is the masked echo the
+ * form loaded, so it is ignored rather than written back over the real key, and
+ * the clear sentinel empties the key.
+ *
+ * @param field - The field's descriptor.
+ * @param value - The raw body value.
+ * @returns What to do with the field.
+ */
+function validateField(field: IProviderFieldDescriptor, value: unknown): FieldValidation {
+    if (value === undefined) {
+        return { status: 'skip' };
+    }
+    let result: FieldValidation;
+    switch (field.kind) {
+        case 'boolean':
+            result = typeof value === 'boolean'
+                ? { status: 'set', value }
+                : { status: 'reject', reason: `${field.key} must be true or false` };
+            break;
+        case 'integer': {
+            const bounds = { min: field.min ?? Number.MIN_SAFE_INTEGER, max: field.max ?? Number.MAX_SAFE_INTEGER };
+            const numeric = readBoundedInteger(value, bounds);
+            result = numeric === undefined
+                ? { status: 'reject', reason: `${field.key} must be a whole number between ${bounds.min} and ${bounds.max}` }
+                : { status: 'set', value: numeric };
+            break;
+        }
+        case 'select': {
+            const allowed = (field.options ?? []).map((option) => option.value);
+            result = typeof value === 'string' && allowed.includes(value)
+                ? { status: 'set', value }
+                : { status: 'reject', reason: `${field.key} must be one of: ${allowed.join(', ')}` };
+            break;
+        }
+        case 'url': {
+            if (typeof value !== 'string') {
+                result = { status: 'reject', reason: `${field.key} must be a string` };
+                break;
+            }
+            // An empty string is the form's "leave it" for a URL, not a clear.
+            if (!value.trim()) {
+                result = { status: 'skip' };
+                break;
+            }
+            const normalized = normalizeBaseUrl(value);
+            result = normalized
+                ? { status: 'set', value: normalized }
+                : { status: 'reject', reason: INVALID_BASE_URL_MESSAGE.replace('baseUrl', field.key) };
+            break;
+        }
+        case 'secret': {
+            if (typeof value !== 'string') {
+                result = { status: 'reject', reason: `${field.key} must be a string` };
+                break;
+            }
+            const trimmed = value.trim();
+            if (trimmed === CLEAR_SENTINEL) {
+                result = { status: 'set', value: '' };
+            } else if (trimmed && !trimmed.startsWith('****')) {
+                result = { status: 'set', value: trimmed };
+            } else {
+                result = { status: 'skip' };
+            }
+            break;
+        }
+        case 'text':
+        default:
+            result = typeof value === 'string'
+                ? { status: 'set', value: value.trim() }
+                : { status: 'reject', reason: `${field.key} must be a string` };
+            break;
+    }
+    return result;
+}
+
+/**
  * Controller for `/api/admin/system/providers/*`. Stateless beyond its injected
  * collaborators; one instance is mounted by the module.
  */
 export class ProvidersController {
     private readonly configService: ProviderConfigService;
-    private readonly tronScanClient: TronScanClient;
+    private readonly registry: IProviderRegistry;
     private readonly tronGridClient: TronGridProviderClient;
     private readonly logger: ISystemLogService;
 
     /**
      * @param configService - DB-backed provider config (masked reads, guarded writes).
-     * @param tronScanClient - TronScan transport, used by the connectivity test.
+     * @param registry - The vendor registry the generic handlers resolve a vendor from.
      * @param tronGridClient - TronGrid transport for the staged config's connectivity test.
      * @param logger - Child logger for request diagnostics.
      */
     constructor(
         configService: ProviderConfigService,
-        tronScanClient: TronScanClient,
+        registry: IProviderRegistry,
         tronGridClient: TronGridProviderClient,
         logger: ISystemLogService
     ) {
         this.configService = configService;
-        this.tronScanClient = tronScanClient;
+        this.registry = registry;
         this.tronGridClient = tronGridClient;
         this.logger = logger;
     }
 
     /**
-     * GET /tronscan — return the masked TronScan config for the admin form.
+     * Resolve the vendor named in the route, answering 404 when none is
+     * registered so a typo in the id is distinguishable from a storage failure.
+     *
+     * @param req - Route param `id`.
+     * @param res - Written to only on failure.
+     * @returns The vendor, or null after a 404 has been sent.
+     */
+    private resolveVendor(req: Request, res: Response): IProviderVendor | null {
+        const vendor = this.registry.getVendor(String(req.params.id ?? ''));
+        if (!vendor) {
+            res.status(404).json({ success: false, error: 'Unknown provider' });
+            return null;
+        }
+        return vendor;
+    }
+
+    /**
+     * The masked config for a vendor, taking the bespoke path for TronGrid whose
+     * key pool the generic masker does not know about.
+     *
+     * @param vendor - The vendor to read.
+     * @returns The masked config.
+     */
+    private async maskedConfigFor(vendor: IProviderVendor): Promise<Record<string, unknown>> {
+        if (vendor.descriptor.id === 'trongrid') {
+            return (await this.configService.getMaskedTronGridConfig()) as unknown as Record<string, unknown>;
+        }
+        return this.configService.getMaskedConfig(vendor.descriptor, vendor.defaults);
+    }
+
+    /**
+     * GET / — every registered vendor with its descriptor and masked config, in
+     * registration order, so the admin surface renders one card per vendor
+     * without knowing any vendor by name.
      *
      * @param _req - Unused.
-     * @param res - JSON `{ success, config }` with the key masked.
+     * @param res - JSON `{ success, providers: [{ ...descriptor, config }] }`.
      */
-    getTronScanConfig = async (_req: Request, res: Response): Promise<void> => {
+    listProviders = async (_req: Request, res: Response): Promise<void> => {
         try {
-            const config = await this.configService.getMaskedTronScanConfig();
-            res.json({ success: true, config });
+            const providers = await Promise.all(
+                this.registry.listVendors().map(async (vendor) => ({
+                    ...vendor.descriptor,
+                    config: await this.maskedConfigFor(vendor)
+                }))
+            );
+            res.json({ success: true, providers });
         } catch (error) {
-            this.logger.error({ error }, 'Failed to read TronScan provider config');
+            this.logger.error({ error }, 'Failed to list providers');
+            res.status(500).json({ success: false, error: 'Failed to list providers' });
+        }
+    };
+
+    /**
+     * GET /:id — one vendor's masked config for its admin card.
+     *
+     * @param req - Route param `id`.
+     * @param res - JSON `{ success, config }` with secrets masked, or 404.
+     */
+    getProviderConfig = async (req: Request, res: Response): Promise<void> => {
+        const vendor = this.resolveVendor(req, res);
+        if (!vendor) {
+            return;
+        }
+        try {
+            res.json({ success: true, config: await this.maskedConfigFor(vendor) });
+        } catch (error) {
+            this.logger.error({ error, vendor: vendor.descriptor.id }, 'Failed to read provider config');
             res.status(500).json({ success: false, error: 'Failed to read provider config' });
         }
     };
 
     /**
-     * PUT /tronscan — persist a partial config update. The `apiKey` field is
-     * sanitised here: a masked echo (`****…`) is ignored, the clear sentinel empties
-     * the key, and any other non-empty string sets a new key.
+     * PUT /:id — persist a partial config update validated field by field
+     * against the vendor's descriptor. Any refused field fails the whole save
+     * with a 400 listing every reason, so the operator fixes them in one pass.
+     * TronGrid is refused here and directed to its own route, because its save
+     * rules involve a key pool this handler must never touch.
      *
-     * @param req - Body with optional `apiKey`, `baseUrl`, `priceSource`, `enabled`.
-     * @param res - JSON `{ success, config }` with the new masked config, or 400 when the base URL is malformed.
+     * @param req - Route param `id`; body carries descriptor fields.
+     * @param res - JSON `{ success, config }` with the new masked config, 400 with the reasons, or 404.
      */
-    updateTronScanConfig = async (req: Request, res: Response): Promise<void> => {
+    updateProviderConfig = async (req: Request, res: Response): Promise<void> => {
+        const vendor = this.resolveVendor(req, res);
+        if (!vendor) {
+            return;
+        }
+        if (vendor.descriptor.custom) {
+            res.status(400).json({ success: false, error: 'This provider is edited through its own routes' });
+            return;
+        }
         try {
             const body = (req.body ?? {}) as Record<string, unknown>;
-            const updates: Partial<ITronScanProviderConfig> = {};
-
-            if (typeof body.baseUrl === 'string' && body.baseUrl.trim()) {
-                const normalizedBaseUrl = normalizeBaseUrl(body.baseUrl);
-                if (!normalizedBaseUrl) {
-                    res.status(400).json({ success: false, error: INVALID_BASE_URL_MESSAGE });
-                    return;
+            const updates: Record<string, unknown> = {};
+            const rejected: string[] = [];
+            for (const field of vendor.descriptor.fields) {
+                const outcome = validateField(field, body[field.key]);
+                if (outcome.status === 'set') {
+                    updates[field.key] = outcome.value;
+                } else if (outcome.status === 'reject') {
+                    rejected.push(outcome.reason);
                 }
-                updates.baseUrl = normalizedBaseUrl;
             }
-            if (body.priceSource === 'coinmarketcap' || body.priceSource === 'coingecko') {
-                updates.priceSource = body.priceSource;
+            if (rejected.length > 0) {
+                res.status(400).json({ success: false, error: rejected.join('; ') });
+                return;
             }
-            if (typeof body.enabled === 'boolean') {
-                updates.enabled = body.enabled;
-            }
-            if (typeof body.apiKey === 'string') {
-                const trimmed = body.apiKey.trim();
-                if (trimmed === CLEAR_SENTINEL) {
-                    updates.apiKey = '';
-                } else if (trimmed && !trimmed.startsWith('****')) {
-                    updates.apiKey = trimmed;
-                }
-                // A masked echo or empty string leaves the stored key untouched.
-            }
-
-            const config = await this.configService.saveTronScanConfig(updates);
+            const config = await this.configService.saveConfig(vendor.descriptor, vendor.defaults, updates);
             res.json({ success: true, config });
         } catch (error) {
-            this.logger.error({ error }, 'Failed to update TronScan provider config');
+            this.logger.error({ error, vendor: vendor.descriptor.id }, 'Failed to update provider config');
             res.status(500).json({ success: false, error: 'Failed to update provider config' });
         }
     };
 
     /**
-     * POST /tronscan/test — run a live connectivity/credential check and return the
-     * structured outcome. Never 500s on an upstream failure: a failed test is a
-     * `200` with `result.ok === false` so the form can render the reason inline.
+     * POST /:id/test — run the vendor's live connectivity/credential check and
+     * return the structured outcome. Never 500s on an upstream failure: a failed
+     * test is a `200` with `result.ok === false` so the form can render the
+     * reason inline.
      *
-     * @param _req - Unused.
-     * @param res - JSON `{ success, result }` where `result` carries ok/message/latency.
+     * @param req - Route param `id`.
+     * @param res - JSON `{ success, result }` where `result` carries ok/message/latency, or 404.
      */
-    testTronScan = async (_req: Request, res: Response): Promise<void> => {
+    testProvider = async (req: Request, res: Response): Promise<void> => {
+        const vendor = this.resolveVendor(req, res);
+        if (!vendor) {
+            return;
+        }
         try {
-            const result = await this.tronScanClient.testConnection();
+            const result = await vendor.testConnection();
             res.json({ success: result.ok, result });
         } catch (error) {
-            this.logger.error({ error }, 'TronScan provider test threw unexpectedly');
+            this.logger.error({ error, vendor: vendor.descriptor.id }, 'Provider test threw unexpectedly');
             res.status(500).json({ success: false, error: 'Provider test failed' });
         }
     };

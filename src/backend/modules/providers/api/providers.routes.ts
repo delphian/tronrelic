@@ -1,10 +1,12 @@
 /**
  * @fileoverview Router for the external-providers admin API.
  *
- * Mounts the per-provider config endpoints under `/api/admin/system/providers`:
- * read/write/test for TronScan, and read/write/test plus the two key-pool
- * operations for TronGrid. The module applies the admin rate limiter and
- * `requireAdmin` at mount time, so this factory only wires paths to handlers.
+ * Mounts the vendor endpoints under `/api/admin/system/providers`: a list of
+ * every registered vendor, then generic read/write/test by vendor id, plus the
+ * bespoke TronGrid routes for its rotating key pool. The TronGrid routes are
+ * declared before the `/:id` routes so Express matches them first. The module
+ * applies the admin rate limiter and `requireAdmin` at mount time, so this
+ * factory only wires paths to handlers.
  */
 
 import { Router } from 'express';
@@ -19,15 +21,10 @@ import type { ProvidersController } from './providers.controller.js';
 export function createProvidersRouter(controller: ProvidersController): Router {
     const router = Router();
 
-    // GET /tronscan - masked config for the admin form
-    router.get('/tronscan', controller.getTronScanConfig);
+    // GET / - every registered vendor: descriptor plus masked config
+    router.get('/', controller.listProviders);
 
-    // PUT /tronscan - persist config changes (key sanitised in the controller)
-    router.put('/tronscan', controller.updateTronScanConfig);
-
-    // POST /tronscan/test - live connectivity/credential check
-    router.post('/tronscan/test', controller.testTronScan);
-
+    // TronGrid keeps bespoke handlers for its key pool; declared ahead of /:id.
     // GET /trongrid - masked config for the admin form (staged, not yet consumed)
     router.get('/trongrid', controller.getTronGridConfig);
 
@@ -42,6 +39,15 @@ export function createProvidersRouter(controller: ProvidersController): Router {
 
     // POST /trongrid/test - probe the stored config, one call per stored key
     router.post('/trongrid/test', controller.testTronGrid);
+
+    // GET /:id - one vendor's masked config
+    router.get('/:id', controller.getProviderConfig);
+
+    // PUT /:id - persist config changes validated against the vendor's descriptor
+    router.put('/:id', controller.updateProviderConfig);
+
+    // POST /:id/test - the vendor's live connectivity/credential check
+    router.post('/:id/test', controller.testProvider);
 
     return router;
 }

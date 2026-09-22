@@ -7,6 +7,11 @@
  * core, non-toggleable infrastructure. The module owns two scheduler jobs (a
  * bounded backward backfill and a cheap daily forward append) and publishes the
  * `'price-history'` service every valuation read routes through.
+ *
+ * Vendors are declared by the providers module. This module owns the
+ * price-history capability, so it builds the per-vendor adapters, attaches them
+ * to the registry, and hands the service one routing provider that tries the
+ * operator's ordered vendors per asset class.
  */
 
 import type { Express, Router } from 'express';
@@ -25,8 +30,12 @@ import { WebSocketService } from '../../services/websocket.service.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import { createAdminRateLimiter } from '../../api/middleware/rate-limit.js';
+import type { IProviderRegistry } from '../providers/index.js';
 import { PriceHistoryService } from './services/price-history.service.js';
 import { TronScanPriceHistoryProvider } from './providers/tronscan-price-history.provider.js';
+import { CoinGeckoPriceHistoryProvider } from './providers/coingecko-price-history.provider.js';
+import { GeckoTerminalPriceHistoryProvider } from './providers/geckoterminal-price-history.provider.js';
+import { RoutingPriceHistoryProvider } from './providers/routing-price-history.provider.js';
 import { PriceHistoryAdminController } from './api/price-history.admin.controller.js';
 import { createPriceHistoryAdminRouter } from './api/price-history.admin.routes.js';
 import { SETTINGS_COLLECTION, PROGRESS_COLLECTION } from './database/index.js';
@@ -41,7 +50,7 @@ const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; or
     { label: 'Settings', tab: 'settings', icon: 'Settings', order: 2 }
 ];
 
-/** Backward-backfill job: seed recent windows and walk deep history in slices. */
+/** Backward-backfill job: seed recent windows and walk deep history in chunks. */
 const BACKFILL_JOB = 'price-history:backfill';
 /** Run the backfill often; each tick is bounded, so frequency only speeds catch-up. */
 const BACKFILL_CRON = '*/5 * * * *';
@@ -60,6 +69,8 @@ export interface IPriceHistoryModuleDependencies {
     scheduler: ISchedulerService | null;
     /** Registry to publish `'price-history'` for valuation consumers. */
     serviceRegistry: IServiceRegistry;
+    /** The vendor registry the per-vendor price adapters attach to and the router reads from. */
+    providerRegistry: IProviderRegistry;
     /** Express app the module mounts its admin router onto. */
     app: Express;
     /** Menu service for the System-container item and the submenu tab nodes. */
@@ -67,15 +78,15 @@ export interface IPriceHistoryModuleDependencies {
 }
 
 /**
- * Two-phase module: `init()` builds the service and its indexes, `run()` wires the
- * jobs and publishes the service.
+ * Two-phase module: `init()` builds the adapters and the service and ensures its
+ * indexes, `run()` wires the jobs and publishes the service.
  */
 export class PriceHistoryModule implements IModule<IPriceHistoryModuleDependencies> {
     readonly metadata: IModuleMetadata = {
         id: 'price-history',
         name: 'Price History',
-        version: '1.0.0',
-        description: 'Scheduled local daily USD price series (TronScan-backed, TRX) for portfolio valuation.'
+        version: '1.1.0',
+        description: 'Scheduled local daily USD price series for TRX and TRC20 tokens, routed across the configured price vendors, for portfolio valuation.'
     };
 
     private scheduler: ISchedulerService | null = null;
@@ -87,8 +98,9 @@ export class PriceHistoryModule implements IModule<IPriceHistoryModuleDependenci
     private readonly logger = logger.child({ module: 'price-history' });
 
     /**
-     * Phase 1: construct the provider and service, and ensure the Mongo control
-     * indexes exist. No jobs, no registry publication yet.
+     * Phase 1: build one price adapter per vendor and attach each to the
+     * registry, construct the routing provider and the service, and ensure the
+     * Mongo control indexes exist. No jobs, no registry publication yet.
      *
      * @param deps - Injected collaborators.
      */
@@ -98,11 +110,25 @@ export class PriceHistoryModule implements IModule<IPriceHistoryModuleDependenci
         this.app = deps.app;
         this.menuService = deps.menuService;
 
-        const provider = new TronScanPriceHistoryProvider(this.logger.child({ provider: 'tronscan' }));
+        const adapters = [
+            new TronScanPriceHistoryProvider(this.logger.child({ provider: 'tronscan' })),
+            new CoinGeckoPriceHistoryProvider(this.logger.child({ provider: 'coingecko' })),
+            new GeckoTerminalPriceHistoryProvider(this.logger.child({ provider: 'geckoterminal' }))
+        ];
+        for (const adapter of adapters) {
+            deps.providerRegistry.attachPriceHistoryProvider(adapter.id, adapter);
+        }
+
+        const routing = new RoutingPriceHistoryProvider(
+            deps.providerRegistry,
+            () => this.service.getSettings(),
+            this.logger.child({ provider: 'routing' })
+        );
         PriceHistoryService.setDependencies({
             database: deps.database,
             clickhouse: deps.clickhouse,
-            provider,
+            provider: routing,
+            registry: deps.providerRegistry,
             emitter: PriceHistoryModule.resolveEmitter(),
             logger: this.logger
         });
@@ -112,7 +138,7 @@ export class PriceHistoryModule implements IModule<IPriceHistoryModuleDependenci
         await deps.database.createIndex(PROGRESS_COLLECTION, { asset: 1 }, { unique: true });
         await deps.database.createIndex(SETTINGS_COLLECTION, { key: 1 }, { unique: true });
 
-        this.logger.info('Price-history module initialized');
+        this.logger.info({ vendors: adapters.map((adapter) => adapter.id) }, 'Price-history module initialized');
     }
 
     /**
@@ -141,7 +167,7 @@ export class PriceHistoryModule implements IModule<IPriceHistoryModuleDependenci
         await this.menuService.create({
             namespace: 'main',
             label: 'Price History',
-            description: 'Local daily USD price series for portfolio valuation: coverage, pacing, and manual backfill.',
+            description: 'Local daily USD price series for portfolio valuation: coverage, source routing, pacing, and manual backfill.',
             url: '/system/price-history',
             icon: 'LineChart',
             order: 28,

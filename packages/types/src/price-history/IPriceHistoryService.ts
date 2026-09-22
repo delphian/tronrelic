@@ -10,8 +10,8 @@
  * trivial daily append, mirroring the account-history ingestion discipline.
  *
  * This file is the *published* surface only. The data-source seam
- * (`IPriceHistoryProvider`, CoinGecko v1) lives inside the module, never here,
- * so the types package stays source-independent.
+ * (`IPriceHistoryProvider`, implemented per vendor) lives in the backend
+ * providers module, never here, so the types package stays source-independent.
  */
 
 /**
@@ -46,18 +46,52 @@ export interface IPricePoint {
 }
 
 /**
- * Pacing dials for the backfill, throttle-down only — they bound work per tick
- * so a deep historical backfill or a burst of newly-discovered tokens cannot
- * exceed CoinGecko's rate budget (a separate budget from the TronGrid limiter
- * that protects block sync). Mirrors `IAccountHistorySettings`.
+ * Pacing and routing settings for the backfill. The pacing dials are
+ * throttle-down only — they bound work per tick so a deep historical backfill or
+ * a burst of newly-discovered tokens cannot exceed an external source's rate
+ * budget (a separate budget from the TronGrid limiter that protects block sync).
+ * The two source lists are the routing policy: which configured price vendors
+ * serve which asset class, in the order they are tried.
  */
 export interface IPriceHistorySettings {
     /** Master switch; false parks all price ingestion without losing cursors. */
     ingestionEnabled: boolean;
-    /** Max per-day deep-backfill fetches per tick (the variable cost). */
-    daysPerTick: number;
-    /** Max distinct token assets advanced per tick. */
+    /**
+     * Width, in days, of one deep-backfill range request. Each tick advances a
+     * single asset by one chunk, so this is the variable cost per tick: a wider
+     * chunk finishes a backfill in fewer ticks but asks the source for more per
+     * call. It is also the widest gap a source may show inside its history before
+     * the walk treats the empty chunk as the asset's listing date.
+     */
+    chunkDays: number;
+    /** Max distinct token assets seeded per tick. */
     tokensPerTick: number;
+    /**
+     * Ordered vendor ids tried for the native TRX price. The first enabled
+     * vendor that returns prices for a range wins; a vendor that is disabled or
+     * has nothing for the asset is skipped.
+     */
+    trxSources: string[];
+    /** Ordered vendor ids tried for TRC20 token prices; same semantics as `trxSources`. */
+    tokenSources: string[];
+}
+
+/**
+ * One price vendor as the routing settings see it: enough for an operator to
+ * order the sources per asset class without leaving the price-history page.
+ * Credentials and base URLs stay on the providers configuration surface.
+ */
+export interface IPriceSourceInfo {
+    /** Stable vendor id, the value stored in `trxSources` / `tokenSources`. */
+    id: string;
+    /** Display name for the settings form. */
+    label: string;
+    /** Whether the vendor can serve the native TRX price. */
+    supportsTrx: boolean;
+    /** Whether the vendor can serve TRC20 token prices by contract address. */
+    supportsTokens: boolean;
+    /** Whether the operator has the vendor switched on in its configuration. */
+    enabled: boolean;
 }
 
 /**
@@ -81,10 +115,30 @@ export interface IPriceAssetCoverage {
     /**
      * Days the deep backfill still has to walk before reaching the lookback
      * floor — derived from the cursor, so an operator can estimate completion
-     * (divide by `daysPerTick` × tick cadence). 0 once complete; null before the
+     * (divide by `chunkDays` × tick cadence). 0 once complete; null before the
      * recent window is seeded (no cursor to measure from).
      */
     estimatedDaysRemaining: number | null;
+    /** Vendor id that served the asset's most recent successful fetch, or null before any. */
+    source: string | null;
+    /**
+     * Vendor-specific handle behind that fetch — a liquidity pool address for a
+     * DEX source, a coin id for an aggregator — so an operator can check what a
+     * price is actually being read from. Null when the vendor has no such handle.
+     */
+    sourceRef: string | null;
+    /**
+     * Consecutive fetches, in either the seed or the deep walk, that came back
+     * without prices. The count drives a progressive retry backoff, and resets
+     * to zero as soon as a fetch returns prices. A non-zero value means the
+     * asset is waiting out that backoff rather than being worked on: with
+     * `recentSeeded` false no source could price its recent window, and with
+     * `recentSeeded` true a deep chunk was left unanswered while a source the
+     * routing order names was switched off.
+     */
+    unpricedAttempts: number;
+    /** ISO timestamp of the earliest moment the asset will be fetched again, or null when it is not parked. */
+    nextAttemptAt: string | null;
 }
 
 /**
@@ -195,25 +249,45 @@ export interface IPriceHistoryService {
      */
     ensureAssetsTracked(assets: PriceAsset[]): Promise<void>;
 
-    /** Read current pacing settings, seeded with defaults on first read. */
+    /** Read current pacing and routing settings, seeded with defaults on first read. */
     getSettings(): Promise<IPriceHistorySettings>;
 
     /**
-     * Merge pacing settings; only supplied fields change.
+     * Merge settings; only supplied fields change.
      *
      * @param patch - Partial settings to merge.
      * @returns The settings after the merge.
      */
     updateSettings(patch: Partial<IPriceHistorySettings>): Promise<IPriceHistorySettings>;
 
+    /**
+     * List the price vendors the routing settings can choose from, with what
+     * each can serve and whether it is currently switched on, so the settings
+     * form offers only real options.
+     */
+    getPriceSources(): Promise<IPriceSourceInfo[]>;
+
     /** Build the coverage snapshot for the admin page and live broadcasts. */
     getStats(): Promise<IPriceHistoryStats>;
 
     /**
+     * Clear one asset's backfill cursor so the next tick seeds it again from
+     * scratch. Stored prices are kept (a re-fetch overwrites in place), so this is
+     * safe to use after adding or re-ordering a price source, or when an asset
+     * was recorded as unpriceable before a source that covers it existed.
+     *
+     * @param asset - The asset whose cursor to clear; must already be tracked.
+     * @throws When the asset has no cursor, so a mistyped asset cannot be
+     *   created as a tracked one.
+     */
+    resetAsset(asset: PriceAsset): Promise<void>;
+
+    /**
      * Advance the backward backfill one bounded slice: seed any un-seeded asset's
-     * dense recent window, then walk older days via the per-day source up to
-     * `daysPerTick`, persisting the cursor after each clean write so a failed tick
-     * resumes without re-fetching. Invoked by the scheduler and by a manual run.
+     * dense recent window, then fetch one `chunkDays`-wide range of older days
+     * for the least-recently-advanced asset, persisting the cursor after each
+     * clean write so a failed tick resumes without re-fetching. Invoked by the
+     * scheduler and by a manual run.
      */
     runBackfillTick(): Promise<void>;
 

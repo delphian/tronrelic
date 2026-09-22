@@ -440,13 +440,22 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // Receives the scheduler service (for its bounded ingestion job) and clickhouse
     // (its store); no-ops ingestion when clickhouse is absent. Independent of block sync.
     await accountHistoryModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
-    // Price-history: scheduled local daily USD price series (CoinGecko-backed) into
-    // ClickHouse, the data layer portfolio valuation reads from. No-ops ingestion
-    // when clickhouse is absent. Inits before the valuation engine that consumes it.
-    // Providers must init before price-history: it wires the ProviderConfigService
-    // and TronScanClient singletons the price-history TronScan provider reads from.
+    // Price-history: scheduled local daily USD price series into ClickHouse, the
+    // data layer portfolio valuation reads from, routed across the configured
+    // price vendors. No-ops ingestion when clickhouse is absent. Inits before the
+    // valuation engine that consumes it. Providers must init before price-history:
+    // it declares the vendors in the registry and wires the config service and
+    // vendor client singletons the price adapters read from.
     await providersModule.init({ database: coreDatabase, app });
-    await priceHistoryModule.init({ database: coreDatabase, clickhouse, scheduler: schedulerService, serviceRegistry, app, menuService });
+    await priceHistoryModule.init({
+        database: coreDatabase,
+        clickhouse,
+        scheduler: schedulerService,
+        serviceRegistry,
+        providerRegistry: providersModule.getRegistry(),
+        app,
+        menuService
+    });
     // Valuation: joins account-history, price-history, and the caller's wallet set
     // into portfolio summaries. Owns no storage; resolves its data services lazily
     // from the registry, so it only needs the registry at init.
