@@ -137,7 +137,15 @@ export interface IPriceAssetCoverage {
      * routing order names was switched off.
      */
     unpricedAttempts: number;
-    /** ISO timestamp of the earliest moment the asset will be fetched again, or null when it is not parked. */
+    /**
+     * Consecutive fetches, in either the seed or the deep walk, that failed
+     * because every vendor asked returned an error. The count drives a shorter
+     * retry backoff, 15 minutes doubling to 6 hours, and resets to zero as soon
+     * as a fetch gets any answer. A non-zero value means the asset is waiting
+     * out that backoff with its day bounds unchanged.
+     */
+    failedAttempts: number;
+    /** ISO timestamp of the earliest moment the asset will be fetched again, or null when it is not held back. */
     nextAttemptAt: string | null;
 }
 

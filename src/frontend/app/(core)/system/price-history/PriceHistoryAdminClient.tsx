@@ -20,7 +20,7 @@
  * `/system/scheduler`, `/system/database`, and `/system/logs` use.
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, type ReactNode } from 'react';
 import { RefreshCw, ArrowUpToLine, Save, RotateCcw, ArrowUp, ArrowDown } from 'lucide-react';
 import type { MenuNodeSerialized } from '@/shared';
 import type { IPriceHistoryStats, IPriceHistorySettings, IPriceCoverageDiagnostics, IPriceSourceInfo, IPriceAssetCoverage } from '@/types';
@@ -295,43 +295,51 @@ function SourceOrderEditor({ label, eligible, value, disabled, onChange }: ISour
 }
 
 /**
- * Render the status badge for one asset's coverage row. A parked asset shows
- * when it will next be tried, in both phases: an unseeded asset no source could
- * price, and a seeded asset whose deep walk was left unanswered while a source
- * in its routing order was switched off. Without the second case an operator
- * would read a paused walk as a running one and wonder why coverage stopped.
+ * Show a status badge followed by when the asset will next be tried, which is
+ * what every held-back status needs so an operator can tell a waiting asset
+ * from a stuck one.
+ *
+ * @param badge - The status badge to lead with.
+ * @param nextAttemptAt - When the asset becomes due again, or null when unknown.
+ * @returns The badge with its retry time, if there is one.
+ */
+function withRetryTime(badge: ReactNode, nextAttemptAt: string | null) {
+    return (
+        <span>
+            {badge}{' '}
+            {nextAttemptAt && (
+                <span className="text-muted">retry after <ClientTime date={nextAttemptAt} format="short" /></span>
+            )}
+        </span>
+    );
+}
+
+/**
+ * Render the status badge for one asset's coverage row. A held-back asset
+ * shows when it will next be tried. An asset whose last fetch failed with
+ * vendor errors reads as failing in either phase, because the operator's next
+ * step there is the vendor, not the asset. A parked asset reads by phase: an
+ * unseeded asset no source could price, and a seeded asset whose deep walk
+ * was left unanswered while a source in its routing order was switched off.
+ * Without that second case an operator would read a paused walk as a running
+ * one and wonder why coverage stopped.
  *
  * @param asset - The coverage row.
- * @returns The badge, with a retry time for a parked asset.
+ * @returns The badge, with a retry time for a held-back asset.
  */
 function statusBadge(asset: IPriceAssetCoverage) {
+    let badge: ReactNode;
     if (asset.backfillComplete) {
-        return <Badge tone="success">Complete</Badge>;
+        badge = <Badge tone="success">Complete</Badge>;
+    } else if (asset.failedAttempts > 0) {
+        badge = withRetryTime(<Badge tone="danger">Vendor errors</Badge>, asset.nextAttemptAt);
+    } else if (asset.unpricedAttempts > 0) {
+        const label = asset.recentSeeded ? 'Backfill paused' : 'Unpriced';
+        badge = withRetryTime(<Badge tone="warning">{label}</Badge>, asset.nextAttemptAt);
+    } else {
+        badge = asset.recentSeeded ? <Badge tone="info">Backfilling</Badge> : <Badge tone="neutral">Queued</Badge>;
     }
-    const parked = asset.unpricedAttempts > 0;
-    if (asset.recentSeeded) {
-        return parked
-            ? (
-                <span>
-                    <Badge tone="warning">Backfill paused</Badge>{' '}
-                    {asset.nextAttemptAt && (
-                        <span className="text-muted">retry after <ClientTime date={asset.nextAttemptAt} format="short" /></span>
-                    )}
-                </span>
-            )
-            : <Badge tone="info">Backfilling</Badge>;
-    }
-    if (parked) {
-        return (
-            <span>
-                <Badge tone="warning">Unpriced</Badge>{' '}
-                {asset.nextAttemptAt && (
-                    <span className="text-muted">retry after <ClientTime date={asset.nextAttemptAt} format="short" /></span>
-                )}
-            </span>
-        );
-    }
-    return <Badge tone="neutral">Queued</Badge>;
+    return badge;
 }
 
 /**
