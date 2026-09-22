@@ -46,6 +46,13 @@ const FAILURE_BACKOFF_BASE_MS = 30_000;
 const FAILURE_BACKOFF_MAX_MS = 10 * 60_000;
 
 /**
+ * How often to re-read the configuration while CoinGecko is switched off. The
+ * check is a local read rather than a vendor request, so it stays at a fixed
+ * short interval, and a card the operator switches back on is used within this time.
+ */
+const DISABLED_RECHECK_MS = 30_000;
+
+/**
  * Oldest last-known price served while fetches are failing. TRX moves little in
  * a quarter of an hour, so an older price is better than none for stamping
  * transactions; past this age the service returns null rather than a price that
@@ -158,9 +165,12 @@ export class PriceService {
 
     /**
      * Ask the vendor for the price. On success the price is cached and the
-     * backoff cleared. On failure the next attempt is pushed out, doubling
-     * from 30 seconds to 10 minutes, or to the server's `Retry-After` when that
-     * is longer, and the stale fallback is served meanwhile.
+     * backoff cleared. On a vendor failure the next attempt is pushed out,
+     * doubling from 30 seconds to 10 minutes, or to the server's `Retry-After`
+     * when that is longer, and the stale fallback is served meanwhile. When the
+     * vendor is switched off, the configuration is re-read every
+     * {@link DISABLED_RECHECK_MS} without growing the backoff, so switching it
+     * back on takes effect quickly.
      *
      * @param now - The refresh's timestamp, used to schedule the next attempt.
      * @returns The fetched price, or the stale fallback after a failure.
@@ -178,8 +188,14 @@ export class PriceService {
                 logger.warn({ error }, 'Failed to persist TRX price to redis');
             }
         } catch (error) {
-            this.consecutiveFailures += 1;
-            const backoffMs = Math.min(FAILURE_BACKOFF_BASE_MS * 2 ** (this.consecutiveFailures - 1), FAILURE_BACKOFF_MAX_MS);
+            // A disabled vendor made no request, so it does not climb the vendor
+            // backoff; letting it climb would ignore a card the operator just
+            // switched back on for up to ten minutes.
+            const disabled = error instanceof ProviderDisabledError;
+            this.consecutiveFailures = disabled ? 0 : this.consecutiveFailures + 1;
+            const backoffMs = disabled
+                ? DISABLED_RECHECK_MS
+                : Math.min(FAILURE_BACKOFF_BASE_MS * 2 ** (this.consecutiveFailures - 1), FAILURE_BACKOFF_MAX_MS);
             const retryInMs = Math.max(backoffMs, retryAfterMs(error) ?? 0);
             this.nextAttemptAt = now + retryInMs;
             price = this.staleFallback(now);

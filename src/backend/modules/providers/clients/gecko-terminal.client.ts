@@ -30,11 +30,22 @@ const REQUEST_TIMEOUT_MS = 12_000;
 
 /**
  * Status GeckoTerminal's public API returns for candles older than it serves to
- * keyless callers (180 days, "You can only access data from the past 180 days
- * with Public API"). The API takes no key, so a 401 cannot mean a rejected
- * credential and always means that history wall.
+ * keyless callers (180 days). The status alone does not identify the wall: the
+ * base URL is operator-configurable, so a proxy or a mis-set endpoint can answer
+ * 401 for an authorization failure instead, and that must not be read as "this
+ * vendor holds no older prices".
  */
 const HISTORY_WALL_STATUS = 401;
+
+/**
+ * Wording GeckoTerminal puts in the 401 body when the requested range predates
+ * the 180 days it serves keyless callers ("You can only access data from the
+ * past 180 days with Public API"). That body carries no numeric code, unlike
+ * CoinGecko's, so the message is the only thing separating the wall from any
+ * other 401. If the vendor rewords it, the client throws and the backfill
+ * retries later, which is recoverable, instead of marking the asset finished.
+ */
+const HISTORY_WALL_MESSAGE = /180 days/i;
 
 /** Most daily candles one OHLCV call returns. */
 export const MAX_CANDLES_PER_CALL = 1000;
@@ -81,6 +92,11 @@ interface IGeckoTerminalOhlcvResponse {
             ohlcv_list?: Array<[number, number, number, number, number, number]>;
         };
     };
+}
+
+/** Error envelope GeckoTerminal returns with a refused request. Only consumed fields are typed. */
+interface IGeckoTerminalErrorBody {
+    errors?: Array<{ status?: string; title?: string }>;
 }
 
 /** Envelope of the token-info endpoint consumed by the connectivity test. */
@@ -173,6 +189,23 @@ export class GeckoTerminalClient {
      */
     private static statusOf(error: unknown): number | undefined {
         return (error as { response?: { status?: number } })?.response?.status;
+    }
+
+    /**
+     * Decide whether a failed OHLCV request is the keyless history wall rather
+     * than some other refusal. Reading every 401 as the wall would turn a proxy
+     * or endpoint authorization failure into an empty range, and the deep
+     * backfill reads an empty range as the asset's listing date and marks the
+     * asset complete. The wall is the only 401 whose body states the 180-day
+     * limit, so that text decides rather than the status on its own.
+     *
+     * @param error - The thrown axios error.
+     * @returns True only for the 401 that names the 180-day limit.
+     */
+    private static isHistoryWall(error: unknown): boolean {
+        const body = (error as { response?: { data?: IGeckoTerminalErrorBody } })?.response?.data;
+        const statesWall = (body?.errors ?? []).some((entry) => HISTORY_WALL_MESSAGE.test(entry?.title ?? ''));
+        return GeckoTerminalClient.statusOf(error) === HISTORY_WALL_STATUS && statesWall;
     }
 
     /**
@@ -273,6 +306,7 @@ export class GeckoTerminalClient {
      * @param limit - Max candles to request.
      * @returns Candles with a finite positive close, newest first; empty past the history wall.
      * @throws ProviderDisabledError When the operator has the vendor switched off.
+     * @throws When the vendor refuses for any reason other than the history wall.
      */
     public async getDailyCandles(
         pool: IGeckoTerminalPoolSelection,
@@ -310,7 +344,7 @@ export class GeckoTerminalClient {
                 }
             );
         } catch (error) {
-            if (GeckoTerminalClient.statusOf(error) !== HISTORY_WALL_STATUS) {
+            if (!GeckoTerminalClient.isHistoryWall(error)) {
                 throw error;
             }
             this.logger.info(

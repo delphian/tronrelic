@@ -69,7 +69,7 @@ Block fetches use exponential backoff through `src/backend/lib/retry.ts`: `retri
 
 ### TRX Price
 
-Step 2 of preparing a block reads the TRX/USD price from `src/backend/services/price.service.ts`. That service calls CoinGecko through the providers module's `CoinGeckoClient`, so it uses the key and base URL saved on the CoinGecko card. It caches a price for 60 seconds, and blocks prepared together share one request. After a failed request it backs off, starting at 30 seconds and doubling up to 10 minutes, or longer if CoinGecko sent `Retry-After`. While it backs off, it serves the last known price if that price is under 15 minutes old. Otherwise the block is stamped with a null price. Without that backoff, a single rate-limit response turned into one request per block, and the flood kept CoinGecko's limit in force.
+Step 2 of preparing a block reads the TRX/USD price from `src/backend/services/price.service.ts`. That service calls CoinGecko through the providers module's `CoinGeckoClient`, so it uses the key and base URL saved on the CoinGecko card. It caches a price for 60 seconds, and blocks prepared together share one request. After a failed request it backs off, starting at 30 seconds and doubling up to 10 minutes, or longer if CoinGecko sent `Retry-After`. A disabled CoinGecko card is not a failed request: the service re-reads the card every 30 seconds, so switching it back on takes effect quickly. While it backs off, it serves the last known price if that price is under 15 minutes old. Otherwise the block is stamped with a null price. Without that backoff, a single rate-limit response turned into one request per block, and the flood kept CoinGecko's limit in force.
 
 ### An Unreachable Chain Head Does Not Abort the Tick
 
