@@ -1,366 +1,222 @@
 /**
- * SystemLogsMonitor Component Styles
+ * SystemLogsMonitor styles: one toolbar, a compact entry table, and a footer.
  *
- * Provides scoped styling for the system logs monitoring table with filtering,
- * pagination, and real-time updates. Uses design tokens exclusively.
+ * The component carries no outer padding or surface of its own. It is embedded
+ * in `/system/logs` and in the Logs tab of every module and plugin admin page,
+ * and each of those already supplies the spacing around it; padding here used
+ * to double up with theirs. The table uses the shared Table primitive at the
+ * same density as the curation History tab, and narrow containers turn each
+ * row into a stacked card the same way.
  */
+
 @use '../../../../app/breakpoints' as *;
 
-.container {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-10);
-    padding: var(--spacing-7);
-    max-width: 100%;
-    overflow-x: hidden;
+.monitor {
     container-type: inline-size;
     container-name: system-logs-monitor;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+    min-width: 0;
 }
 
-/* Optional heading set by an embedding page (the scoped plugin Logs tab). */
+/* Optional heading set by an embedding page. */
 .title {
-    margin: 0;
     font-size: var(--font-size-heading-sm);
 }
 
-/* Statistics */
-/* Filters */
-.filters {
+/* Chips on the left, the other controls pushed to the right; wraps onto a
+ * second line rather than squeezing either group. */
+.toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--spacing-7);
-    align-items: flex-start;
-    padding: var(--spacing-7);
-    background: var(--color-surface);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
 }
 
-/* Apply equal spacing on wide containers when filters fit on one line */
-@container system-logs-monitor (min-width: #{$breakpoint-desktop}) {
-    .filters {
-        justify-content: space-between;
-        gap: var(--spacing-4);
-    }
-}
-
-/* Reset fieldset browser defaults when used as a filter group */
-.filter_group,
-fieldset.filter_group {
+.controls {
     display: flex;
-    flex-direction: column;
-    gap: var(--spacing-4);
-    border: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-sm);
+}
+
+.service_select {
+    max-width: var(--max-width-xs);
+}
+
+.refresh {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+}
+
+.refresh_dot {
+    width: var(--badge-live-indicator-size);
+    height: var(--badge-live-indicator-size);
+    border-radius: var(--radius-full);
+    background: var(--color-text-subtle);
+}
+
+.refresh_dot_on {
+    background: var(--color-success);
+}
+
+.placeholder {
     margin: 0;
-    padding: 0;
-    min-inline-size: 0;
-}
-
-.filter_group_right {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-4);
-}
-
-.filter_label {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
+    padding: var(--padding-lg);
+    text-align: center;
+    font-size: var(--font-size-body-xs);
     color: var(--color-text-muted);
-    line-height: var(--line-height-relaxed);
 }
 
-.checkbox_group {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-7);
-    min-height: var(--button-height-md);
+/* One step below the shared Table's default cell size, through the table's own
+ * `--table-font-size` hook, matching the curation History table. */
+.table_wrap {
+    --table-font-size: var(--font-size-body-sm);
 }
 
-.checkbox_label {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
-    font-size: var(--font-size-sm);
+/* The whole row opens the entry. */
+.row {
     cursor: pointer;
 }
 
-.checkbox_text {
-    user-select: none;
+/* Time first and prominent, date quiet beside it: an operator scanning recent
+ * entries reads the time. Tabular figures keep the column edges straight. */
+.col_time {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }
 
-/* Width modifiers forwarded to the shared <Select> wrapper; appearance, focus,
- * and disabled styling are owned by the Select component. */
-.filter_input {
-    width: 100%;
-    max-width: 300px;
-}
-
-.filter_select {
-    width: 100%;
-    max-width: 150px;
-}
-
-.polling_indicator {
-    color: var(--color-success);
-    animation: pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse {
-    0%, 100% {
-        opacity: var(--opacity-100);
-    }
-    50% {
-        opacity: var(--opacity-50);
-    }
-}
-
-/* Table */
-.table_container {
-    background: var(--color-surface);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
-    overflow-x: auto;
-    width: 100%;
-}
-
-.table {
-    width: 100%;
-    min-width: 800px;
-    border-collapse: collapse;
-    table-layout: fixed;
-}
-
-/* Column width allocation */
-.table th:nth-child(1), .table td:nth-child(1) { /* Timestamp */
-    width: 155px;
-}
-
-.table th:nth-child(2), .table td:nth-child(2) { /* Level */
-    width: 85px;
-}
-
-.table th:nth-child(3), .table td:nth-child(3) { /* Service */
-    width: 160px;
-}
-
-.table th:nth-child(4), .table td:nth-child(4) { /* Message */
-    width: auto; /* Takes remaining space */
-}
-
-.table th:nth-child(5), .table td:nth-child(5) { /* Actions */
-    width: 95px;
-}
-
-.table thead {
-    background: var(--table-header-background);
-    border-bottom: var(--border-width-medium) solid var(--color-border);
-}
-
-.table th {
-    padding: var(--table-cell-padding);
-    text-align: left;
-    font-size: var(--table-header-font-size);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-muted);
-    text-transform: uppercase;
-    letter-spacing: var(--table-header-letter-spacing);
-}
-
-.table tbody tr {
-    border-bottom: var(--border-width-thin) solid var(--color-border);
-}
-
-.table tbody tr:hover {
-    background: var(--table-row-background-hover);
-}
-
-.table td {
-    padding: var(--table-cell-padding);
-    font-size: var(--font-size-sm);
+.time {
     color: var(--color-text);
 }
 
-.log_row {
-    cursor: pointer;
-}
-
-/* Animation for new log entries */
-@keyframes flash-in {
-    0% {
-        background-color: var(--color-primary-alpha-15);
-    }
-    100% {
-        background-color: transparent;
-    }
-}
-
-.log_row_new {
-    animation: flash-in 2s ease-out;
-}
-
-.timestamp {
-    white-space: nowrap;
-    color: var(--color-text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-}
-
-.service {
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text-muted);
-}
-
-.message {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.level_badge {
-    display: inline-block;
-    padding: var(--badge-padding);
-    border-radius: var(--badge-border-radius);
-    font-size: var(--badge-font-size);
-    font-weight: var(--font-weight-semibold);
-    text-transform: uppercase;
-    letter-spacing: var(--badge-letter-spacing);
-}
-
-.level_fatal {
-    background: var(--badge-danger-background);
-    color: var(--badge-danger-color);
-    outline: var(--border-width-medium) solid var(--color-danger);
-}
-
-.level_error {
-    background: var(--badge-danger-background);
-    color: var(--badge-danger-color);
-}
-
-.level_warn {
-    background: var(--badge-warning-background);
-    color: var(--badge-warning-color);
-}
-
-.level_info {
-    background: var(--badge-neutral-background);
-    color: var(--badge-neutral-color);
-}
-
-.level_debug {
-    background: var(--color-primary-alpha-10);
-    color: var(--color-text-muted);
-}
-
-.level_trace {
-    background: var(--color-surface-elevated);
+.date {
+    margin-left: var(--gap-xs);
+    font-size: var(--font-size-caption);
     color: var(--color-text-subtle);
 }
 
-.status_resolved {
-    color: var(--color-success);
-    font-weight: var(--font-weight-medium);
+.col_service {
+    white-space: nowrap;
+    font-size: var(--font-size-body-xs);
+    color: var(--color-text-muted);
 }
 
-.status_unresolved {
-    color: var(--color-warning);
-    font-weight: var(--font-weight-medium);
-}
-
-.actions {
-    display: flex;
-    gap: var(--spacing-4);
-}
-
-/* Detail Row */
-.detail_row {
-    background: var(--table-row-background-hover);
-}
-
-.detail_content {
-    padding: var(--spacing-7);
+/* The prose-width cap is what bounds the one-line message and error text;
+ * without a limit their nowrap text would widen the table instead of
+ * truncating. */
+.entry {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-7);
+    gap: var(--gap-2xs);
+    min-width: 0;
+    max-width: var(--max-width-lg);
 }
 
-.detail_section {
+.message {
+    display: block;
+    max-width: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: var(--color-text);
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+
+    &:hover {
+        color: var(--color-primary);
+    }
+}
+
+.error_text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-body-xs);
+    color: var(--color-danger-text);
+}
+
+.footer {
     display: flex;
-    flex-direction: column;
-    gap: var(--spacing-4);
-}
-
-.context_json {
-    background: var(--color-background);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-sm);
-    padding: var(--spacing-5);
-    overflow-x: auto;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    color: var(--color-text-muted);
-    max-height: 300px;
-    overflow-y: auto;
-}
-
-/* Pagination */
-.pagination {
-    display: flex;
-    justify-content: center;
+    flex-wrap: wrap;
     align-items: center;
-    padding: var(--spacing-7);
-    background: var(--color-surface);
-    border: var(--border-width-thin) solid var(--color-border);
-    border-radius: var(--radius-md);
+    justify-content: space-between;
+    gap: var(--gap-sm);
 }
 
-.pagination_info {
-    font-size: var(--font-size-sm);
+.range {
+    font-size: var(--font-size-body-xs);
+    font-variant-numeric: tabular-nums;
     color: var(--color-text-muted);
 }
 
-.pagination_controls {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-5);
+.entry_title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
 }
 
-/* Empty State */
-.empty_state {
-    padding: var(--spacing-14);
-    text-align: center;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-md);
-}
-
-/* Responsive */
-@container system-logs-monitor (max-width: #{$breakpoint-mobile-lg}) {
-    .stats {
-        grid-template-columns: repeat(2, 1fr);
+/* Narrow: the columns do not fit, so each row becomes a stacked card. The
+ * shared Table declares `container-name: table`, so this reacts to the table's
+ * own width — correct in a slide-over or a plugin tab, not only the full
+ * window. Headers are dropped and each cell shows its label from `data-label`,
+ * except the message, which needs no label. */
+@container table (max-width: #{$breakpoint-mobile-lg}) {
+    .table_wrap thead {
+        display: none;
     }
 
-    .filters {
-        flex-direction: column;
-        align-items: stretch;
+    .table_wrap tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--gap-2xs) var(--gap-sm);
+        padding: var(--padding-sm);
+        border-bottom: var(--border-width-thin) solid var(--color-border);
     }
 
-    .filter_group,
-    .filter_group_right {
-        width: 100%;
+    .table_wrap td {
+        display: block;
+        padding: 0;
+        border-bottom: none;
     }
 
-    .filter_input,
-    .filter_select {
-        width: 100%;
+    /* The message takes its own full-width line under the time, level, and
+     * service, and may wrap to two lines instead of truncating to one. */
+    .table_wrap td:last-child {
+        flex-basis: 100%;
+    }
+
+    .table_wrap .entry {
         max-width: none;
     }
 
-    .pagination {
-        flex-direction: column;
-        gap: var(--spacing-7);
+    .table_wrap .message {
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+}
+
+@container system-logs-monitor (max-width: #{$breakpoint-mobile-md}) {
+    .controls {
+        width: 100%;
     }
 
-    .message {
-        max-width: 200px;
+    .service_select {
+        flex: 1 1 auto;
+        max-width: none;
     }
 }

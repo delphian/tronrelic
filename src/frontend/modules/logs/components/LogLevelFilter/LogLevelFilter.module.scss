@@ -1,0 +1,101 @@
+/**
+ * Severity chips. Each chip carries its level's tone in three custom
+ * properties — a tint, an edge, and a solid dot colour — set by the tone class,
+ * so the base chip, the pressed state, and the empty state are written once
+ * and read whichever tone applies.
+ */
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-2xs);
+}
+
+.chip {
+    --chip-tint: var(--color-primary-alpha-10);
+    --chip-edge: var(--color-border-strong);
+    --chip-dot: var(--color-text-subtle);
+
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    padding: var(--padding-2xs) var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--chip-border-radius);
+    background: transparent;
+    color: var(--color-text-muted);
+    font: inherit;
+    font-size: var(--font-size-body-xs);
+    line-height: var(--line-height-tight);
+    cursor: pointer;
+    transition: var(--chip-transition);
+
+    &:hover {
+        border-color: var(--chip-edge);
+        color: var(--color-text);
+    }
+}
+
+/* Selected: the level's own tint fills the chip and its edge outlines it, so
+ * the active filter reads at a glance in the level's colour. */
+.chip_on {
+    border-color: var(--chip-edge);
+    background: var(--chip-tint);
+    color: var(--color-text);
+}
+
+/* Not selected and nothing logged at this level: stays clickable, just recedes. */
+.chip_empty {
+    opacity: var(--opacity-50);
+}
+
+.dot {
+    width: var(--badge-live-indicator-size);
+    height: var(--badge-live-indicator-size);
+    flex-shrink: 0;
+    border-radius: var(--radius-full);
+    background: var(--chip-dot);
+}
+
+.label {
+    font-weight: var(--font-weight-medium);
+}
+
+.count {
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-subtle);
+}
+
+.chip_on .count {
+    color: var(--color-text-muted);
+}
+
+.tone_danger {
+    --chip-tint: var(--color-danger-alpha-18);
+    --chip-edge: var(--color-danger-alpha-50);
+    --chip-dot: var(--color-danger);
+}
+
+.tone_warning {
+    --chip-tint: var(--color-warning-alpha-15);
+    --chip-edge: var(--color-warning-alpha-40);
+    --chip-dot: var(--color-warning);
+}
+
+.tone_info {
+    --chip-tint: var(--badge-info-background);
+    --chip-edge: var(--badge-info-border);
+    --chip-dot: var(--color-primary);
+}
+
+.tone_neutral {
+    --chip-tint: var(--badge-neutral-background);
+    --chip-edge: var(--badge-neutral-border);
+    --chip-dot: var(--color-text-subtle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .chip {
+        transition: none;
+    }
+}

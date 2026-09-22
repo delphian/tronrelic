@@ -280,6 +280,128 @@ describe('SystemLogService - Core Logging Methods', () => {
     });
 });
 
+describe('SystemLogService - Child Loggers Created Before Initialization', () => {
+    let service: SystemLogService;
+    let mockPino: MockPinoLogger;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+
+        // Leave the root uninitialized so each test can create a child first,
+        // the way module constructors do before LogsModule.init() runs.
+        (SystemLogService as any).instance = undefined;
+        service = SystemLogService.getInstance();
+        mockPino = new MockPinoLogger();
+    });
+
+    /**
+     * Test: A child created before initialization persists once the root is initialized.
+     *
+     * Guards against the child copying the root's "not initialized" state at
+     * creation time, which left every module's Logs tab empty.
+     */
+    it('should persist to MongoDB after the root is initialized', async () => {
+        const childLogger = service.child({ module: 'price-history' });
+        await service.initialize(mockPino as any);
+
+        childLogger.error('Scheduled job failed');
+
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        expect(mockCreate).toHaveBeenCalled();
+        const savedLog = mockCreate.mock.calls[mockCreate.mock.calls.length - 1][0];
+        expect(savedLog.message).toBe('Scheduled job failed');
+        expect(savedLog.service).toBe('tronrelic:price-history');
+    });
+
+    /**
+     * Test: A child created before initialization writes through Pino once the root is initialized.
+     *
+     * Verifies the child builds its Pino child from the root's logger with only
+     * its own bindings, instead of falling back to the console forever.
+     */
+    it('should write through a Pino child after the root is initialized', async () => {
+        const childLogger = service.child({ module: 'price-history' });
+        await service.initialize(mockPino as any);
+
+        childLogger.warn('Vendor failed');
+
+        expect(mockPino.child).toHaveBeenCalledWith({ module: 'price-history' });
+        const pinoChild = mockPino.child.mock.results[0].value as MockPinoLogger;
+        expect(pinoChild.warn).toHaveBeenCalledWith('Vendor failed', undefined);
+    });
+
+    /**
+     * Test: A child does not persist while the root is still uninitialized.
+     *
+     * Verifies the pre-initialization behaviour is unchanged: output goes to
+     * the console and nothing is written to MongoDB.
+     */
+    it('should not persist before the root is initialized', async () => {
+        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const childLogger = service.child({ module: 'price-history' });
+
+        childLogger.error('Too early');
+
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        expect(mockCreate).not.toHaveBeenCalled();
+        expect(consoleSpy).toHaveBeenCalled();
+        consoleSpy.mockRestore();
+    });
+
+    /**
+     * Test: A child follows log level changes made on the root after it was created.
+     *
+     * A Pino child keeps the level it was created with, so without syncing, a
+     * level change from the admin interface would not reach existing children.
+     */
+    it('should follow runtime level changes on the root', async () => {
+        await service.initialize(mockPino as any);
+        const childLogger = service.child({ module: 'price-history' });
+        childLogger.info('Build the Pino child at info level');
+
+        service.level = 'warn';
+        childLogger.info('Suppressed info message');
+
+        await new Promise(resolve => setTimeout(resolve, 10));
+
+        expect(childLogger.level).toBe('warn');
+        const messages = mockCreate.mock.calls.map(call => call[0].message);
+        expect(messages).not.toContain('Suppressed info message');
+    });
+
+    /**
+     * Test: Setting the level on a child changes the process-wide level on the root.
+     *
+     * Verifies the level stays one setting for the whole process instead of
+     * a child-only value that the next log call would overwrite.
+     */
+    it('should forward a level set on a child to the root', async () => {
+        await service.initialize(mockPino as any);
+        const childLogger = service.child({ module: 'price-history' });
+
+        childLogger.level = 'error';
+
+        expect(service.level).toBe('error');
+        expect(childLogger.level).toBe('error');
+    });
+
+    /**
+     * Test: waitUntilInitialized() on a child resolves when the root is initialized.
+     *
+     * Verifies a child waits on its parent, since only the root is ever initialized.
+     */
+    it('should resolve waitUntilInitialized on a child once the root is initialized', async () => {
+        const childLogger = service.child({ module: 'price-history' });
+        const waiting = childLogger.waitUntilInitialized();
+
+        await service.initialize(mockPino as any);
+
+        await expect(waiting).resolves.toBeUndefined();
+    });
+});
+
 describe('SystemLogService - Metadata Sanitization', () => {
     let service: SystemLogService;
     let mockPino: MockPinoLogger;

@@ -1,114 +1,60 @@
 /**
- * LogSettings Component Styles
- *
- * Provides scoped styling for the log level configuration card.
- * Uses design tokens from semantic-tokens.css for consistency.
+ * LogSettings styles: one compact row — the setting's name and what the
+ * selected level keeps on the left, the dropdown and Save on the right — on a
+ * muted surface so it reads as a quiet deployment setting beneath the log
+ * list rather than a second panel competing with it. Stacks when narrow.
  */
 
-.container {
+@use '../../../../app/breakpoints' as *;
+
+.settings {
     container-type: inline-size;
     container-name: log-settings;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm) var(--gap-md);
+    padding: var(--card-padding-xs) var(--card-padding-sm);
+    background: var(--color-surface-muted);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
 }
 
 .title {
-    margin: 0 0 var(--spacing-4) 0;
-    font-size: var(--font-size-lg);
+    font-size: var(--font-size-heading-xs);
     font-weight: var(--font-weight-semibold);
-    color: var(--color-text);
+    letter-spacing: var(--letter-spacing-normal);
 }
 
-.description {
-    margin: 0 0 var(--spacing-7) 0;
-    font-size: var(--font-size-sm);
+.help {
+    margin: 0;
+    max-width: var(--max-width-prose);
+    font-size: var(--font-size-body-xs);
     color: var(--color-text-muted);
-    line-height: var(--line-height-relaxed);
-}
-
-.error {
-    padding: var(--spacing-4) var(--spacing-7);
-    margin-bottom: var(--spacing-7);
-    background-color: var(--alert-danger-background);
-    border: var(--border-width-thin) solid var(--alert-danger-border);
-    border-radius: var(--radius-sm);
-    color: var(--alert-danger-color);
-    font-size: var(--font-size-sm);
-}
-
-.success {
-    padding: var(--spacing-4) var(--spacing-7);
-    margin-bottom: var(--spacing-7);
-    background-color: var(--alert-success-background);
-    border: var(--border-width-thin) solid var(--alert-success-border);
-    border-radius: var(--radius-sm);
-    color: var(--alert-success-color);
-    font-size: var(--font-size-sm);
 }
 
 .form {
     display: flex;
-    flex-direction: column;
-    gap: var(--spacing-7);
-}
-
-.field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-2);
-}
-
-.label {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-}
-
-/* Layout modifier forwarded to the shared <Select> wrapper (see the responsive
- * block below); appearance, focus, and disabled styling are owned by Select. */
-
-.help_text {
-    margin: 0;
-    font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
-    line-height: var(--line-height-normal);
-}
-
-.actions {
-    display: flex;
     align-items: center;
-    gap: var(--spacing-7);
-    padding-top: var(--spacing-4);
+    gap: var(--gap-sm);
 }
 
-.unsaved_indicator {
-    font-size: var(--font-size-sm);
-    color: var(--color-warning);
-    font-style: italic;
+/* The alert takes its own full-width line under the row. */
+.error {
+    flex-basis: 100%;
+    font-size: var(--font-size-body-xs);
 }
 
-/**
- * Container queries for responsive behavior.
- *
- * On wider containers, display form fields horizontally.
- */
-@container log-settings (min-width: 600px) {
-    .field {
-        flex-direction: row;
-        align-items: flex-start;
-        gap: var(--spacing-7);
-    }
-
-    .label {
-        min-width: 120px;
-        padding-top: var(--spacing-4);
-    }
-
-    .select {
-        flex: 1;
-        max-width: 400px;
-    }
-
-    .help_text {
-        flex: 1;
-        max-width: 400px;
+@container log-settings (max-width: #{$breakpoint-mobile-md}) {
+    .form {
+        width: 100%;
     }
 }

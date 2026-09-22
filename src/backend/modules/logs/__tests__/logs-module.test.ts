@@ -3,6 +3,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LogsModule } from '../LogsModule.js';
 import { AI_TOOL_NAMES } from '../ai-tools.js';
+import { isValidMonitorLevels } from '../user-settings.js';
+import { LOG_MONITOR_LEVELS_SETTING } from '@/types';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../../menu/index.js';
 import type { Express } from 'express';
 import type { IServiceRegistry } from '@/types';
@@ -309,6 +311,79 @@ describe('LogsModule', () => {
             });
 
             await expect(module.run()).resolves.not.toThrow();
+        });
+    });
+
+    describe('Log viewer severity preference', () => {
+        /**
+         * Build a fake `'user-settings'` store with a spied registerDefinition.
+         */
+        function createMockUserSettings() {
+            return { registerDefinition: vi.fn() };
+        }
+
+        /**
+         * Test: the preference registers when `'user-settings'` appears after run().
+         *
+         * Verifies the watch covers the boot order where the identity module
+         * publishes the store after this module's run() sets up the watch.
+         */
+        it('should register the preference when the user-settings store becomes available', async () => {
+            await module.init({
+                pinoLogger: mockPino as any,
+                database: mockDatabase as any,
+                app: mockApp as any,
+                serviceRegistry: mockServiceRegistry
+            });
+            await module.run();
+
+            const settings = createMockUserSettings();
+            mockServiceRegistry.register('user-settings', settings);
+
+            expect(settings.registerDefinition).toHaveBeenCalledTimes(1);
+            const definition = settings.registerDefinition.mock.calls[0][0];
+            expect(definition.namespace).toBe(LOG_MONITOR_LEVELS_SETTING.namespace);
+            expect(definition.key).toBe(LOG_MONITOR_LEVELS_SETTING.key);
+            expect(definition.userWritable).toBe(true);
+            expect(definition.defaultValue).toEqual(['error']);
+        });
+
+        /**
+         * Test: run() survives a failing preference registration.
+         *
+         * Verifies a display preference can never take the logs module down.
+         */
+        it('should not throw when preference registration fails', async () => {
+            const settings = createMockUserSettings();
+            settings.registerDefinition.mockImplementation(() => {
+                throw new Error('store unavailable');
+            });
+            mockServiceRegistry.register('user-settings', settings);
+
+            await module.init({
+                pinoLogger: mockPino as any,
+                database: mockDatabase as any,
+                app: mockApp as any,
+                serviceRegistry: mockServiceRegistry
+            });
+
+            await expect(module.run()).resolves.not.toThrow();
+        });
+
+        /**
+         * Test: the validator accepts only distinct, known severity levels.
+         *
+         * The value comes from an untrusted request body, so anything other than
+         * a short list of real levels must be rejected before it is stored.
+         */
+        it('should accept only lists of distinct known levels', () => {
+            expect(isValidMonitorLevels(['error', 'warn'])).toBe(true);
+            expect(isValidMonitorLevels([])).toBe(true);
+            expect(isValidMonitorLevels(['error', 'error'])).toBe(false);
+            expect(isValidMonitorLevels(['silent'])).toBe(false);
+            expect(isValidMonitorLevels('error')).toBe(false);
+            expect(isValidMonitorLevels([{ level: 'error' }])).toBe(false);
+            expect(isValidMonitorLevels(null)).toBe(false);
         });
     });
 

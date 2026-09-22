@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import type { LogLevelName } from '@/types';
 import { Button } from '../../../../components/ui/Button';
 import { Select } from '../../../../components/ui/Select';
+import { useToast } from '../../../../components/ui/ToastProvider';
 import styles from './LogSettings.module.scss';
 
 /**
@@ -19,30 +20,34 @@ interface SystemConfig {
     updatedBy?: string;
 }
 
+/** Recording levels in the order the dropdown lists them, with what each one keeps. */
+const LEVEL_OPTIONS: ReadonlyArray<{ value: LogLevelName; label: string; help: string }> = [
+    { value: 'trace', label: 'Trace', help: 'Records everything, including internal traces. Use briefly; volume is very high.' },
+    { value: 'debug', label: 'Debug', help: 'Records debugging detail and above. Useful while troubleshooting.' },
+    { value: 'info', label: 'Info', help: 'Records normal operational messages and above. Recommended for production.' },
+    { value: 'warn', label: 'Warning', help: 'Records warnings, errors, and fatal failures only.' },
+    { value: 'error', label: 'Error', help: 'Records errors and fatal failures only.' },
+    { value: 'fatal', label: 'Fatal', help: 'Records fatal failures only.' },
+    { value: 'silent', label: 'Silent', help: 'Records nothing, in the log files or in the database.' }
+];
+
 /**
  * LogSettings Component
  *
- * Admin configuration panel for controlling SystemLogService logging behavior.
- * Allows runtime adjustment of log verbosity without requiring backend restarts.
+ * The recording level for the whole backend: entries below it are neither
+ * written to the log files nor saved to the database, so they never reach
+ * any log viewer. It is a deployment setting rather than a view filter, which
+ * is why it sits apart from the viewer's severity chips — those only choose
+ * which saved entries to show.
  *
- * **Key Features:**
- * - Dropdown selection for log level (trace through silent)
- * - Save button with loading state and error feedback
- * - Real-time application of changes to backend logger
- * - Displays current log level from SystemConfig database
+ * Laid out as one compact row (name and what the selected level keeps on the
+ * left, the dropdown and Save on the right) because an operator changes it
+ * rarely and it should not compete with the entries above it. A successful
+ * save confirms with a toast; a failed read or save shows an inline alert.
  *
- * **Log Level Impacts:**
- * - Changes affect file/console output only (not MongoDB persistence)
- * - error/warn/fatal always save to database regardless of level
- * - Higher verbosity (trace/debug) useful for debugging production issues
- * - Lower verbosity (warn/error) reduces log file noise
- *
- * **Data Flow:**
- * 1. Component fetches current config on mount
- * 2. User selects new log level from dropdown
- * 3. Save button sends PATCH /admin/system/config/system
- * 4. Backend updates SystemConfig and applies level to SystemLogService
- * 5. Component shows success/error feedback
+ * **Data flow:** reads `GET /api/admin/system/config/system` on mount, and
+ * `PATCH`es `logLevel` on save. The backend applies the new level to the
+ * running logger immediately, without a restart.
  *
  * **Security:**
  * Authorization rides the same-origin Better Auth session cookie;
@@ -54,15 +59,16 @@ export function LogSettings() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    const headingId = useId();
+    const { push } = useToast();
 
     /**
      * Fetches current system configuration from the backend.
      *
      * Retrieves SystemConfig including the current logLevel setting.
-     * If the fetch fails, displays an error message and keeps the form disabled.
+     * If the fetch fails, shows the reason and keeps the control disabled.
      */
-    const fetchConfig = async () => {
+    const fetchConfig = useCallback(async () => {
         setLoading(true);
         setError(null);
 
@@ -73,7 +79,7 @@ export function LogSettings() {
             });
 
             if (!response.ok) {
-                throw new Error(`Failed to fetch config: ${response.statusText}`);
+                throw new Error(`Could not read the recording level (${response.status}).`);
             }
 
             const data = await response.json();
@@ -82,28 +88,26 @@ export function LogSettings() {
                 setConfig(data.config);
                 setSelectedLevel(data.config.logLevel || 'info');
             } else {
-                throw new Error('Invalid response format');
+                throw new Error('The server returned an unexpected response.');
             }
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to fetch configuration');
+            setError(err instanceof Error ? err.message : 'Could not read the recording level.');
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     /**
-     * Saves the selected log level to SystemConfig and applies it to the logger.
+     * Saves the selected recording level to SystemConfig.
      *
-     * Sends PATCH request to update SystemConfig.logLevel. The backend controller
-     * automatically applies the new level to SystemLogService after saving, ensuring
-     * the change takes effect immediately without requiring a restart.
+     * The backend controller applies the new level to the running logger after
+     * saving, so the change takes effect immediately without a restart.
      */
     const handleSave = async () => {
         if (!config) return;
 
         setSaving(true);
         setError(null);
-        setSuccessMessage(null);
 
         try {
             const response = await fetch(`/api/admin/system/config/system`, {
@@ -114,22 +118,20 @@ export function LogSettings() {
 
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.error || `Failed to update config: ${response.statusText}`);
+                throw new Error(errorData.error || `Could not save the recording level (${response.status}).`);
             }
 
             const data = await response.json();
 
             if (data.success && data.config) {
                 setConfig(data.config);
-                setSuccessMessage(`Log level updated to "${selectedLevel}"`);
-
-                // Clear success message after 3 seconds
-                setTimeout(() => setSuccessMessage(null), 3000);
+                const label = LEVEL_OPTIONS.find(option => option.value === selectedLevel)?.label ?? selectedLevel;
+                push({ tone: 'success', title: `Recording level set to ${label}` });
             } else {
-                throw new Error('Invalid response format');
+                throw new Error('The server returned an unexpected response.');
             }
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to save configuration');
+            setError(err instanceof Error ? err.message : 'Could not save the recording level.');
         } finally {
             setSaving(false);
         }
@@ -138,78 +140,42 @@ export function LogSettings() {
     // Fetch config on mount
     useEffect(() => {
         void fetchConfig();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [fetchConfig]);
 
-    // Check if current selection differs from saved config
-    const hasChanges = config && selectedLevel !== config.logLevel;
+    const hasChanges = config !== null && selectedLevel !== config.logLevel;
+    const help = LEVEL_OPTIONS.find(option => option.value === selectedLevel)?.help;
 
     return (
-        <div className={`surface surface--padding-md ${styles.container}`}>
-            <h3 className={styles.title}>Log Settings</h3>
-            <p className={styles.description}>
-                Control the minimum log level for file and console output. Changes apply immediately without requiring a restart.
-            </p>
-
-            {error && (
-                <div className={styles.error}>
-                    <strong>Error:</strong> {error}
-                </div>
-            )}
-
-            {successMessage && (
-                <div className={styles.success}>
-                    <strong>Success:</strong> {successMessage}
-                </div>
-            )}
+        <section className={styles.settings} aria-labelledby={headingId}>
+            <div className={styles.text}>
+                <h2 id={headingId} className={styles.title}>Recording level</h2>
+                <p className={styles.help}>{help}</p>
+            </div>
 
             <div className={styles.form}>
-                <div className={styles.field}>
-                    <label htmlFor="log-level" className={styles.label}>
-                        Log Level:
-                    </label>
-                    <Select
-                        id="log-level"
-                        className={styles.select}
-                        value={selectedLevel}
-                        onChange={e => setSelectedLevel(e.target.value as LogLevelName)}
-                        disabled={loading || saving}
-                    >
-                        <option value="trace">Trace (Most Verbose)</option>
-                        <option value="debug">Debug</option>
-                        <option value="info">Info (Default)</option>
-                        <option value="warn">Warn</option>
-                        <option value="error">Error</option>
-                        <option value="fatal">Fatal</option>
-                        <option value="silent">Silent (Suppresses All Output)</option>
-                    </Select>
-                    <p className={styles.help_text}>
-                        {selectedLevel === 'trace' && 'Most verbose level. Includes all internal debug traces.'}
-                        {selectedLevel === 'debug' && 'Development debugging information. Useful for troubleshooting.'}
-                        {selectedLevel === 'info' && 'Normal operational messages. Recommended for production.'}
-                        {selectedLevel === 'warn' && 'Warning conditions that need attention. Reduces log noise.'}
-                        {selectedLevel === 'error' && 'Only error conditions. Minimal logging.'}
-                        {selectedLevel === 'fatal' && 'Only critical failures. Extremely minimal logging.'}
-                        {selectedLevel === 'silent' && 'Suppresses all file/console output. MongoDB logging still works.'}
-                    </p>
-                </div>
-
-                <div className={styles.actions}>
-                    <Button
-                        variant="primary"
-                        size="md"
-                        onClick={handleSave}
-                        disabled={loading || saving || !hasChanges}
-                    >
-                        {saving ? 'Saving...' : 'Save Changes'}
-                    </Button>
-                    {hasChanges && (
-                        <span className={styles.unsaved_indicator}>
-                            Unsaved changes
-                        </span>
-                    )}
-                </div>
+                <Select
+                    size="sm"
+                    aria-labelledby={headingId}
+                    value={selectedLevel}
+                    onChange={e => setSelectedLevel(e.target.value as LogLevelName)}
+                    disabled={loading || saving || config === null}
+                >
+                    {LEVEL_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                </Select>
+                <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleSave}
+                    loading={saving}
+                    disabled={loading || !hasChanges}
+                >
+                    Save
+                </Button>
             </div>
-        </div>
+
+            {error && <div className={`alert ${styles.error}`} role="alert">{error}</div>}
+        </section>
     );
 }

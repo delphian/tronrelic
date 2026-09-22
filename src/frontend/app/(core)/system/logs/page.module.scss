@@ -1,0 +1,20 @@
+/**
+ * Styles for the /system/logs shell. The viewer and the settings row bring
+ * their own modules; this holds only the accessible page heading.
+ */
+
+/* Accessible-name-only page heading, so the document still has an <h1> without
+ * a visible title. Standard screen-reader-only pattern, kept scoped to this
+ * page for the same reason the curation and widgets admin pages keep their own
+ * copy: `.text-muted` is the project's one general global utility. */
+.sr_only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}

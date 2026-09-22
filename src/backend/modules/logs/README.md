@@ -26,6 +26,7 @@ Every backend service and plugin logs through `SystemLogService.getInstance()`. 
 |------|---------|
 | `LogsModule.ts` | IModule implementation, two-phase lifecycle, menu + route registration, ai-assistant watch |
 | `ai-tools.ts` | Read-only AI tool definitions + service-registry watch registration |
+| `user-settings.ts` | Registers the log viewer severity preference (`LOG_MONITOR_LEVELS_SETTING`) on `'user-settings'` via watch; `isValidMonitorLevels` guards the untrusted value |
 | `services/system-log.service.ts` | Singleton logger + MongoDB storage, sanitization, child loggers, stats |
 | `database/SystemLog.ts` | Mongoose schema, compound indexes, `ISystemLogDocument` interface |
 | `api/system-log.controller.ts` | Express handlers for all 6 endpoints |
@@ -36,8 +37,11 @@ Every backend service and plugin logs through `SystemLogService.getInstance()`. 
 
 | File | Purpose |
 |------|---------|
-| `modules/logs/components/SystemLogsMonitor/SystemLogsMonitor.tsx` | Live dashboard with polling, filtering, pagination, flash animations |
-| `modules/logs/components/LogSettings/LogSettings.tsx` | Runtime log level control without restart |
+| `modules/logs/components/SystemLogsMonitor/SystemLogsMonitor.tsx` | The viewer: toolbar, compact entry table, footer, entry slide-over; polling and new-row flash |
+| `modules/logs/components/LogLevelFilter/LogLevelFilter.tsx` | Severity toggle chips that double as per-level counts |
+| `modules/logs/components/LogEntryDetail/LogEntryDetail.tsx` | Full record of one entry (message, error text, context with copy, ids) for the slide-over |
+| `modules/logs/lib/logPresentation.ts` | Shared level order, labels, badge tones, timestamp split, context error extraction |
+| `modules/logs/components/LogSettings/LogSettings.tsx` | Compact recording-level row; runtime log level control without restart |
 | `modules/logs/api/client.ts` | Typed fetch wrappers for all log endpoints |
 | `modules/logs/types/logs.types.ts` | `SystemLog`, `LogsResponse`, `LogStats` interfaces |
 
@@ -91,7 +95,7 @@ All under `/api/admin/system/logs`, all require `X-Admin-Token` header.
 
 **Singleton access** — `SystemLogService.getInstance()` everywhere. Never instantiate directly.
 
-**Child loggers** — `logger.child({ module: 'blockchain' })` merges bindings into every subsequent log call. Service name extracted from `pluginId`, `pluginTitle`, or `module` bindings.
+**Child loggers** — `logger.child({ module: 'blockchain' })` merges bindings into every subsequent log call. Service name extracted from `pluginId`, `pluginTitle`, or `module` bindings. A child holds a reference to its parent and resolves readiness, the Pino instance, and the level on every call, so it is safe to create before `LogsModule.init()` — module constructors do exactly that. Never copy the parent's state into the child at creation: a copied "not initialized" flag never flips, and the child silently logs to the console only, never to MongoDB. The level is process-wide; setting it on a child forwards to the root, and every child picks up a root level change on its next call.
 
 **Log level filtering** — `shouldLog(messageLevel, configuredLevel)` checks numeric thresholds before MongoDB write. Level changeable at runtime via `LogSettings` component, persists to SystemConfig.
 
@@ -103,14 +107,16 @@ All under `/api/admin/system/logs`, all require `X-Admin-Token` header.
 
 ## Frontend Notes
 
-- `SystemLogsMonitor` is republished to plugins as `context.system.SystemLogsMonitor` (props `ISystemLogsMonitorProps`). With `service` set (e.g. `plugin:whale-alerts`), entries and stats are scoped server-side, the service selector is hidden, and "Clear All Logs" is removed because it deletes every service's logs
-- `SystemLogsMonitor` defaults to error-level filter, configurable via checkboxes
-- Polling intervals: None, 1s, 10s, 30s, 60s via dropdown
-- New log detection compares IDs against previous fetch, flashes new rows for 2s
+- `SystemLogsMonitor` is republished to plugins as `context.system.SystemLogsMonitor` (props `ISystemLogsMonitorProps`). With `service` set (e.g. `plugin:whale-alerts`), entries and stats are scoped server-side, the service selector and the Service column are hidden, and "Clear all" is removed because it deletes every service's logs
+- Layout mirrors the curation History tab: no outer padding or surface (the embedding page supplies them); one toolbar (`LogLevelFilter` chips, service select, auto-refresh with a status dot, "Clear all"); the shared `Table` at `--table-font-size: body-sm`, one line per entry with the context's `error` text on a muted second line; a footer with the entry range, shared `Pagination`, and page size. Rows stack into cards under the `table` container at `$breakpoint-mobile-lg`
+- Selecting a row opens `LogEntryDetail` in a `SlideOver`. The selected entry object is held, not its id, so an auto-refresh that pushes it off the page does not close the panel. The legacy `resolved` fields are not shown
+- `SystemLogsMonitor` severity chips are remembered per operator: one shared preference (`LOG_MONITOR_LEVELS_SETTING` from `@/types`, namespace `logs`, key `monitorLevels`, default `['error']`) stored in the identity module's `'user-settings'` store, read and written through `/api/user/settings`. Every instance — `/system/logs` and every scoped Logs tab — reads the same value. The first log fetch waits for the preference to load; a toggle saves it in the background and shows a warning toast if the save fails. Without a Better Auth session (401) the viewer uses the default and saving fails with that toast
+- `run()` registers the preference definition by watching `'user-settings'`, because the identity module publishes the store after this module's `run()`; registration failure is logged and swallowed
+- Auto-refresh: Off, 1s, 10s (default), 30s, 60s
+- New log detection compares IDs against previous fetch and flashes new rows with the global `.table-row--flash`
 - Flash suppressed on initial load to avoid flood animation
-- Flash history clears on filter/pagination change
-- Expandable rows show raw context JSON and resolution metadata
-- `LogSettings` fetches SystemConfig on mount, PATCH to update, 3s auto-clear success message
+- Flash history clears on filter/pagination change (`restartList`)
+- `LogSettings` fetches SystemConfig on mount, PATCH to update, success toast, inline alert on failure. The level gates both file output and MongoDB persistence (`shouldLog` in every log method), so `silent` records nothing anywhere
 - All state is local (no Redux)
 
 ## Config
