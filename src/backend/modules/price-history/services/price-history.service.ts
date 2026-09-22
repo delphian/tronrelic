@@ -842,8 +842,13 @@ export class PriceHistoryService implements IPriceHistoryService {
         const now = Date.now();
         const progress = await this.listAssetProgress();
         const unseeded = progress.filter((doc) => !doc.recentSeeded && PriceHistoryService.isDue(doc, now));
-        unseeded.sort((a, b) => (a.asset === PRICE_ASSET_TRX ? -1 : b.asset === PRICE_ASSET_TRX ? 1 : 0));
-        const seedBudget = unseeded.slice(0, settings.tokensPerTick + 1);
+        // TRX is seeded whenever it is due and never counts against the token
+        // budget; the token slice is bounded by `tokensPerTick` on its own, so
+        // the setting means what it says whether or not TRX is already seeded.
+        const seedBudget = [
+            ...unseeded.filter((doc) => doc.asset === PRICE_ASSET_TRX),
+            ...unseeded.filter((doc) => doc.asset !== PRICE_ASSET_TRX).slice(0, settings.tokensPerTick)
+        ];
         const failures: Array<{ asset: PriceAsset; error: unknown }> = [];
         const unavailableClasses = new Set<AssetClass>();
         const skippedUnavailable: PriceAsset[] = [];
@@ -880,13 +885,24 @@ export class PriceHistoryService implements IPriceHistoryService {
             // One chunk per tick: stop at the first asset that could be asked,
             // whatever it answered, and only move past assets whose class has
             // no vendor to ask so a switched-off token class cannot block TRX.
+            // A throw is collected like a seed failure rather than escaping
+            // here, so the seed failures gathered above still reach the
+            // scheduler's record and the admin page still gets its nudge. The
+            // cursor is untouched on a throw, so the chunk is retried next tick.
             for (const doc of incomplete) {
                 const assetClass = PriceHistoryService.assetClass(doc.asset);
                 if (unavailableClasses.has(assetClass)) {
                     skippedUnavailable.push(doc.asset);
                     continue;
                 }
-                const result = await this.backfillDeepHistory(doc, settings.chunkDays);
+                let result: ChunkResult;
+                try {
+                    result = await this.backfillDeepHistory(doc, settings.chunkDays);
+                } catch (error) {
+                    failures.push({ asset: doc.asset, error });
+                    this.logger.error({ error, asset: doc.asset }, 'Deep price backfill chunk failed');
+                    break;
+                }
                 if (result !== 'unavailable') {
                     break;
                 }

@@ -247,13 +247,18 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
     const [busy, setBusy] = useState<string | null>(null);
 
     /**
-     * Refetch the coverage snapshot and seed the settings draft from it.
+     * Refetch the coverage snapshot, and seed the settings draft from it only
+     * while no draft exists yet. This runs on every `price-history:stats`
+     * nudge, which each five-minute ingestion tick emits, so overwriting an
+     * existing draft here would throw away the operator's unsaved edits on the
+     * Settings tab mid-edit. The Settings tab refreshes the draft itself when
+     * it opens, and a save replaces it with what the server stored.
      */
     const loadStats = useCallback(async (): Promise<void> => {
         try {
             const next = await getStats();
             setStats(next);
-            setDraft(next.settings);
+            setDraft((current) => current ?? next.settings);
         } catch (error) {
             push({ tone: 'danger', title: error instanceof Error ? error.message : 'Failed to load stats' });
         }
