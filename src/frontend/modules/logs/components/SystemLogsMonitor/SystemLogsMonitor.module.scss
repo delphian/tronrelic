@@ -105,15 +105,18 @@
     color: var(--color-text-muted);
 }
 
-/* The prose-width cap is what bounds the one-line message and error text;
- * without a limit their nowrap text would widen the table instead of
- * truncating. */
+/* The message column fills whatever width the other columns leave, and the
+ * one-line message and error text truncate at its edge. A table sizes each
+ * column from its content first, so nowrap text would otherwise set the
+ * table's minimum width and push it past its container into a horizontal
+ * scroll. `width: 0` takes the text out of that measurement, and
+ * `min-width: 100%` then stretches the entry back to the full cell width. */
 .entry {
     display: flex;
     flex-direction: column;
     gap: var(--gap-2xs);
-    min-width: 0;
-    max-width: var(--max-width-lg);
+    width: 0;
+    min-width: 100%;
 }
 
 .message {
@@ -196,10 +199,6 @@
      * service, and may wrap to two lines instead of truncating to one. */
     .table_wrap td:last-child {
         flex-basis: 100%;
-    }
-
-    .table_wrap .entry {
-        max-width: none;
     }
 
     .table_wrap .message {
