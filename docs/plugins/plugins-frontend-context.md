@@ -46,8 +46,9 @@ operator back to `/system`. Import them from the context — never by relative p
 the workspace.
 
 **A plugin that registers a scheduler job or owns storage must offer those
-tabs.** That is a platform rule rather than a suggestion, and it applies to
-every plugin with an admin page: without them an operator diagnosing the plugin
+tabs, and every plugin with an admin page must offer a Logs tab.** That is a
+platform rule rather than a suggestion, and it applies to every plugin with an
+admin page: without them an operator diagnosing the plugin
 loses the page they were on and has to pick the plugin's rows back out of the
 whole deployment's inventory. The rule and its module-side equivalent are in
 [frontend.md](../frontend/frontend.md#a-component-that-owns-schedules-or-storage-surfaces-them);
@@ -67,8 +68,7 @@ operator sees what a model may pass to each tool without leaving the plugin's
 page. It fetches nothing; take `inputSchema` from the `IAiToolInfo` your own
 admin route read from the AI tool registry.
 
-`SystemLogsMonitor` is optional rather than required, but it is the Logs tab to
-use when a plugin wants one. The plugin logger records every entry under the
+`SystemLogsMonitor` is the required Logs tab. The plugin logger records every entry under the
 service name `plugin:<manifest.id>`, so pass that. A child logger that sets its
 own `service` binding records under that name instead and falls outside the
 scope. In scoped mode both the entries and the level counts are filtered on the

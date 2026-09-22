@@ -376,6 +376,37 @@ describe('PriceHistoryModule lifecycle', () => {
         expect(app.use).toHaveBeenCalledWith('/api/admin/system/price-history', expect.anything(), expect.anything(), expect.any(Function));
         expect(menuService.create).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'main', label: 'Price History' }));
     });
+
+    it('names every job with the prefix the Schedules tab filters on', async () => {
+        const module = new PriceHistoryModule();
+        await initModule(module);
+        await module.run();
+        const jobs: string[] = scheduler.register.mock.calls.map((call) => call[0]);
+        expect(jobs.length).toBeGreaterThan(0);
+        expect(jobs.every((name) => name.startsWith('price-history:'))).toBe(true);
+    });
+
+    it('keeps the ClickHouse table name the Database tab scopes to', () => {
+        // The admin page repeats this literal because frontend code cannot
+        // import backend constants; renaming the table must update both.
+        expect(PRICE_TABLE).toBe('price_history');
+    });
+
+    it('registers the mandated Schedules, Database, and Logs tabs in the page namespace', async () => {
+        const module = new PriceHistoryModule();
+        await initModule(module);
+        await module.run();
+        const tabUrls = menuService.create.mock.calls
+            .map((call) => call[0] as { namespace: string; url: string; requiresAdmin?: boolean })
+            .filter((node) => node.namespace === 'price-history');
+        const urls = tabUrls.map((node) => node.url);
+        expect(urls).toEqual(expect.arrayContaining([
+            '/system/price-history?tab=schedules',
+            '/system/price-history?tab=database',
+            '/system/price-history?tab=logs'
+        ]));
+        expect(tabUrls.every((node) => node.requiresAdmin === true)).toBe(true);
+    });
 });
 
 describe('PriceHistoryService', () => {

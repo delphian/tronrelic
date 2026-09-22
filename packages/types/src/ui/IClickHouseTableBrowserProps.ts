@@ -35,13 +35,28 @@ export interface IClickHouseTableBrowserProps {
     pluginId?: string;
 
     /**
+     * Scopes the browser to exactly these table names. This is how a core
+     * module scopes its Database tab: module tables such as `price_history`
+     * or `account_transactions` follow no shared naming prefix the way plugin
+     * tables do, so the module names its own tables, normally from the table
+     * constants in its `database/index.ts`.
+     *
+     * Filtered in SQL by exact name, so a table added later by another
+     * component can never appear here by sharing the opening of a name. An
+     * empty list is a caller mistake and is reported rather than treated as
+     * "no filter", which would list the whole deployment. `pluginId` wins
+     * when both are supplied.
+     */
+    tables?: string[];
+
+    /**
      * Restricts the browser to tables whose name starts with this string.
      * Filtered in SQL, so an unscoped inventory never leaves the server. Omit
      * for the whole-database view.
      *
-     * @deprecated Pass `pluginId` instead and let the component derive the
-     * prefix. Retained so existing callers keep working while they migrate;
-     * `pluginId` wins when both are supplied.
+     * @deprecated Pass `pluginId` for a plugin or `tables` for a module.
+     * Retained so existing callers keep working while they migrate; either of
+     * those wins when supplied alongside it.
      */
     prefix?: string;
 

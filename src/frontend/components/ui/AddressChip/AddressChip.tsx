@@ -1,0 +1,498 @@
+/**
+ * @fileoverview Shared address chip behind TronAddress and TronContractAddress.
+ *
+ * A wallet address and a smart contract address are the same base58 string, so
+ * they share one chip: the truncated display, the tag underline and warning
+ * marker, the copy icon, the portaled tools menu with its tag editor, and the
+ * explorer out-link. What differs between them is configuration — which
+ * Tronscan page the out-link opens, which tool pages the menu offers, and the
+ * wording read to a screen reader. Each public component passes an
+ * {@link IAddressChipKind} describing that, so a fix to the chip lands in both
+ * at once instead of drifting between two copies.
+ *
+ * The chip renders synchronously from its `address` prop (no async, no data
+ * fetch), so it is SSR-first by construction: the truncated text is in the
+ * server HTML and only the copy, tools, and explorer affordances are
+ * user-triggered after hydration. All three render as bare icons — the copy
+ * control is a `<TrCopyIcon>` rather than a `<CopyButton>` so it carries no
+ * more visual weight than the wrench and out-link beside it. It is a
+ * `'use client'` component purely because those affordances need event handlers
+ * and a click-outside listener.
+ *
+ * The tools menu renders in a `<body>` portal with viewport-fixed coordinates.
+ * An earlier revision anchored it absolutely and only flipped it upward near the
+ * viewport bottom, which left it clipped inside any scrolling ancestor — the
+ * shared `Table` wrapper sets `overflow-x: auto`, and CSS turns the other axis
+ * into `auto` too, so a menu opening below a row was cut at the table's edge
+ * regardless of the space beyond it.
+ *
+ * This component is internal to `components/ui/`. Callers render
+ * `<TronAddress>` or `<TronContractAddress>`, never the chip directly.
+ */
+'use client';
+
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { AlertTriangle, ExternalLink, Wrench } from 'lucide-react';
+import { TrCopyIcon } from '../TrCopyIcon';
+import { IconButton } from '../IconButton';
+import { Tooltip } from '../Tooltip';
+import { useModal } from '../ModalProvider';
+// Deep imports rather than the module barrels: the address-tags barrel re-exports
+// its editor, which imports core UI primitives, so pulling the barrel in here
+// would close an import cycle through this file. The user barrel is skipped for
+// the established reason that it drags component CSS into every bundle.
+import { useAddressTags } from '../../../modules/address-tags/hooks/useAddressTags';
+import { getAddressTagWarnings } from '../../../modules/address-tags/lib/tagSeverity';
+import { AddressTagsEditor } from '../../../modules/address-tags/components/AddressTagsEditor/AddressTagsEditor';
+import { useAuthSession } from '../../../modules/user/components/SessionProvider';
+import { buildToolForwardUrl, type IForwardableTool } from './forwardableTools';
+import styles from './AddressChip.module.scss';
+
+/**
+ * Group whose members may change tags. Address-tag reads are open to any
+ * logged-in visitor, but every mutation route is `requireAdmin`, so the edit
+ * affordance is gated on the same membership the backend enforces — offering it
+ * more widely would only produce a 403 after the operator typed.
+ */
+const TAG_EDIT_GROUP = 'admin';
+
+/**
+ * Characters kept from each end when truncating. Four leading characters keep
+ * the `T` prefix plus enough entropy to disambiguate at a glance; four
+ * trailing characters mirror it. Addresses shorter than the combined length
+ * render whole (nothing to hide).
+ */
+const HEAD_CHARS = 4;
+const TAIL_CHARS = 4;
+
+/**
+ * Minimum gap (px) to keep between the open tools menu and both its trigger and
+ * the viewport edge. The menu flips above its trigger only when the space below
+ * cannot fit the menu plus this breathing room.
+ */
+const MENU_VIEWPORT_GAP_PX = 8;
+
+/**
+ * Viewport-fixed coordinates for the portaled tools menu, resolved from the
+ * trigger's live bounding rect. Held in state (rather than derived in render)
+ * because measuring requires the DOM, and `null` marks "not yet measured" so
+ * the menu stays invisible instead of flashing at the origin.
+ */
+interface IMenuPosition {
+    top: number;
+    left: number;
+}
+
+/**
+ * What distinguishes one kind of address chip from another. Each public chip
+ * component declares one of these as a module constant, so the shared chip
+ * never branches on "is this a wallet" itself.
+ */
+export interface IAddressChipKind {
+    /** Explorer URL the address is appended to, such as Tronscan's `/#/address/`. */
+    explorerBaseUrl: string;
+    /** Screen-reader label for the explorer out-link. */
+    explorerLabel: string;
+    /** Screen-reader label for the copy icon. */
+    copyLabel: string;
+    /** Screen-reader confirmation announced after a copy. */
+    copiedLabel: string;
+    /** Screen-reader label for the wrench that opens the tools menu. */
+    toolsLabel: string;
+    /** Tool pages the menu offers, in menu order. May be empty. */
+    forwardTools: readonly IForwardableTool[];
+}
+
+/**
+ * Display and affordance props every address chip accepts. The public
+ * components expose exactly these.
+ */
+export interface IAddressChipDisplayProps {
+    /** Full base58check TRON address (`T…`). The value copied and linked. */
+    address: string;
+    /**
+     * Pre-resolved human label. When supplied it displays in place of the
+     * truncated address (the full address still shows in the tooltip), matching
+     * the label-first convention. The chip does not look labels up itself —
+     * callers pass one already resolved (e.g. from an SSR data fetcher).
+     */
+    label?: string;
+    /** Show the copy-to-clipboard affordance. @default true */
+    copy?: boolean;
+    /** Show the tools menu (tool forwarding and, for admins, the tag editor). @default true */
+    tools?: boolean;
+    /** Show the external Tronscan link. @default true */
+    explorer?: boolean;
+    /** Extra class on the root wrapper for spacing in a host layout. */
+    className?: string;
+}
+
+/**
+ * Props for {@link AddressChip}: the display props plus the kind that
+ * configures its explorer link, tools, and labels.
+ */
+interface IAddressChipProps extends IAddressChipDisplayProps {
+    /** The chip kind supplied by the public component wrapping this one. */
+    kind: IAddressChipKind;
+}
+
+/**
+ * Shorten a full address to `head…tail`, why: a full 34-char base58 address
+ * dominates dense tables and buries the surrounding data. Short inputs pass
+ * through untouched so we never render a `…` that hides nothing.
+ *
+ * @param address - Full address to shorten; supplied by the caller's data row.
+ * @returns The truncated display string, or the input unchanged when it is
+ *          already at or below the combined head+tail length.
+ */
+function truncateAddress(address: string): string {
+    let result = address;
+    if (address.length > HEAD_CHARS + TAIL_CHARS + 1) {
+        result = `${address.slice(0, HEAD_CHARS)}…${address.slice(-TAIL_CHARS)}`;
+    }
+    return result;
+}
+
+/**
+ * Render an address as a compact, monospace chip with copy, tools, and
+ * explorer affordances configured by `kind`. See the file overview for why the
+ * wallet and contract chips share this one implementation.
+ *
+ * @param props - {@link IAddressChipProps}; the affordance booleans default on
+ *        so the common case needs only the address, and `kind` comes from the
+ *        public component rather than the caller.
+ * @returns The address chip element.
+ */
+export function AddressChip({
+    address,
+    label,
+    copy = true,
+    tools = true,
+    explorer = true,
+    className,
+    kind
+}: IAddressChipProps) {
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [menuPosition, setMenuPosition] = useState<IMenuPosition | null>(null);
+    const menuRef = useRef<HTMLDivElement | null>(null);
+    const menuListRef = useRef<HTMLDivElement | null>(null);
+    const tags = useAddressTags(address);
+    const { session } = useAuthSession();
+    const modal = useModal();
+    const canEditTags = session?.user?.groups?.includes(TAG_EDIT_GROUP) ?? false;
+    // The wrench only appears when its menu would hold something. A contract
+    // chip offers few tools, and for a visitor who cannot edit tags a menu with
+    // no entries would open onto nothing.
+    const hasMenuItems = kind.forwardTools.length > 0 || canEditTags;
+
+    /**
+     * Close the tools popover on any click outside it and on Escape, why: an
+     * anchored menu that only dismisses via its own toggle is a well-known
+     * usability trap. The listeners attach only while the menu is open, so
+     * they are a no-op in the common closed state. Mirrors the Tooltip
+     * primitive's outside-pointer handling. The menu itself is portaled to
+     * `<body>`, so it is not a descendant of the anchor — both nodes are
+     * checked or clicking a tool link would dismiss before it navigates.
+     */
+    useEffect(() => {
+        if (!menuOpen) return undefined;
+        /**
+         * Dismiss the menu when a pointer lands outside both the trigger and
+         * the portaled menu.
+         *
+         * @param event - The document-level pointer event being tested.
+         */
+        function handlePointerDown(event: globalThis.PointerEvent): void {
+            const anchor = menuRef.current;
+            const menu = menuListRef.current;
+            const target = event.target as Node;
+            const inside = Boolean(anchor?.contains(target)) || Boolean(menu?.contains(target));
+            if (!inside) {
+                setMenuOpen(false);
+            }
+        }
+        /**
+         * Dismiss the menu on Escape so keyboard users are never trapped in it.
+         *
+         * @param event - The document-level key event being tested.
+         */
+        function handleKeyDown(event: globalThis.KeyboardEvent): void {
+            if (event.key === 'Escape') setMenuOpen(false);
+        }
+        document.addEventListener('pointerdown', handlePointerDown);
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('pointerdown', handlePointerDown);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [menuOpen]);
+
+    /**
+     * Toggle the tools popover. Extracted so the toggle and the outside-click
+     * effect share one piece of state and the button stays a pure view.
+     */
+    const toggleMenu = useCallback((): void => {
+        setMenuOpen(prev => !prev);
+    }, []);
+
+    /**
+     * Resolve the open menu's viewport-fixed coordinates from its trigger, why:
+     * an absolutely-positioned menu cannot escape an ancestor's overflow box, and
+     * the chip's most common home is a scroll container — the shared `Table`
+     * wrapper sets `overflow-x: auto`, which per CSS also clips vertically, so a
+     * menu opening below a row was cut off at the table's edge no matter how much
+     * viewport space remained. The menu therefore renders in a `<body>` portal and
+     * is placed here: below the trigger when the viewport has room, flipped above
+     * it when not, and clamped so it never runs off the right edge.
+     *
+     * Runs in a layout effect so the position is set before paint (no flash at the
+     * origin), and re-measures on scroll and resize because a fixed menu does not
+     * follow its trigger the way an anchored one does. Scroll is captured so
+     * scrolling the *table* — not just the window — repositions too. Measuring
+     * needs the menu mounted, so this depends on `menuOpen`.
+     */
+    useLayoutEffect(() => {
+        if (!menuOpen) {
+            setMenuPosition(null);
+            return undefined;
+        }
+        /**
+         * Measure the trigger and the menu, then place the menu below or above
+         * the trigger and inside the viewport.
+         */
+        function updatePosition(): void {
+            const anchor = menuRef.current;
+            const menu = menuListRef.current;
+            if (!anchor || !menu) return;
+            const anchorRect = anchor.getBoundingClientRect();
+            const menuRect = menu.getBoundingClientRect();
+            const viewportHeight = document.documentElement.clientHeight;
+            const viewportWidth = document.documentElement.clientWidth;
+            const spaceBelow = viewportHeight - anchorRect.bottom;
+            const spaceAbove = anchorRect.top;
+            const fitsBelow = spaceBelow >= menuRect.height + MENU_VIEWPORT_GAP_PX;
+            const openAbove = !fitsBelow && spaceAbove > spaceBelow;
+            const top = openAbove
+                ? anchorRect.top - menuRect.height - MENU_VIEWPORT_GAP_PX
+                : anchorRect.bottom + MENU_VIEWPORT_GAP_PX;
+            const maxLeft = viewportWidth - menuRect.width - MENU_VIEWPORT_GAP_PX;
+            const left = Math.max(MENU_VIEWPORT_GAP_PX, Math.min(anchorRect.left, maxLeft));
+            setMenuPosition({ top, left });
+        }
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
+    }, [menuOpen]);
+
+    /**
+     * Open the freeform tag editor for this address in the shared core modal.
+     *
+     * The editor lives in the address-tags module and is handed the tags already
+     * resolved for the chip, so it opens seeded rather than fetching again. The
+     * modal is closed by id from inside the editor, which also invalidates the
+     * shared read cache so every chip on the page picks the change up. Tags are
+     * keyed by address alone, so a wallet chip and a contract chip for the same
+     * string edit the same tags.
+     */
+    const openTagEditor = useCallback((): void => {
+        setMenuOpen(false);
+        const id = `address-tags:${address}`;
+        modal.open({
+            id,
+            title: 'Edit tags',
+            size: 'sm',
+            content: (
+                <AddressTagsEditor
+                    address={address}
+                    initialTags={tags}
+                    onClose={() => modal.close(id)}
+                />
+            )
+        });
+    }, [address, modal, tags]);
+
+    const display = label ?? truncateAddress(address);
+    const isTagged = tags.length > 0;
+    // Which of this address's tags are sanctions or freeze assertions. Memoized
+    // on the resolved tag array rather than recomputed each render: the chip
+    // re-renders on menu opens and tooltip hovers, none of which change the tags.
+    const warnings = useMemo(() => getAddressTagWarnings(tags), [tags]);
+    // Tags ride in the tooltip rather than beside the chip: they are context for
+    // "which address is this", and a chip that grew inline chips would reflow
+    // every dense table it sits in. A tagged address instead advertises itself
+    // with a dotted underline (`styles.tagged`) so it is distinguishable at a
+    // glance rather than only on hover. A text decoration costs no layout, so it
+    // can appear when the tags resolve after hydration without shifting a single
+    // row of the table around it.
+    const tooltip = isTagged ? `${address} (${tags.join(', ')})` : address;
+    // The warning icon's own tooltip and its screen-reader label are the same
+    // string. Each entry's label is a plain phrase rather than the raw tag text,
+    // because `usdt:frozen` tells a reader who already knows the vocabulary
+    // nothing they could not guess and everyone else nothing at all. Joined with
+    // a semicolon so an address carrying both a sanctions listing and a freeze
+    // reads as two separate statements.
+    const warningText = warnings.map(warning => warning.label).join('; ');
+    const displayClassName = [label ? styles.label : styles.address, isTagged ? styles.tagged : null]
+        .filter(Boolean)
+        .join(' ');
+
+    return (
+        <span className={[styles.root, className].filter(Boolean).join(' ')}>
+            {warnings.length > 0 && (
+                // A sanctioned or frozen address is the one case where a tag has
+                // to be readable before the operator hovers, and before they
+                // decide to act on the address. The dotted underline below says
+                // only "this address carries tags"; it cannot say which, and a
+                // tag that means "do not transact" has to be distinguishable
+                // from a tag that means "exchange hot wallet".
+                //
+                // This accepts a layout shift that the underline was chosen to
+                // avoid. Tags resolve client-side after hydration, so an icon
+                // appearing widens the chip a beat after the row painted. The
+                // alternative — reserving the icon's width on every chip — taxes
+                // every address on the site to spare the rare one, and warnings
+                // are rare by construction: only three tags classify, and all
+                // three come from sanctions or freeze feeds. A shift confined to
+                // rows holding a flagged address is the cheaper of the two.
+                //
+                // The icon is not the only signal. Its shape, its danger colour,
+                // and its label all carry the same meaning, so the warning
+                // survives a monochrome display and a screen reader alike.
+                <Tooltip content={warningText}>
+                    <span className={styles.warning} role="img" aria-label={warningText}>
+                        <AlertTriangle size={14} aria-hidden="true" />
+                    </span>
+                </Tooltip>
+            )}
+
+            <Tooltip content={tooltip}>
+                <span
+                    className={displayClassName}
+                    data-testid="tron-address-display"
+                    // Undefined rather than `false` so the attribute is absent
+                    // entirely on an untagged address, letting tests and styles
+                    // select on its presence.
+                    data-tagged={isTagged || undefined}
+                >
+                    {display}
+                </span>
+            </Tooltip>
+
+            {copy && (
+                // Icon-only, matching the wrench and out-link beside it: a
+                // bordered button here made copy read as the chip's primary
+                // action rather than one of three equal affordances.
+                <TrCopyIcon
+                    value={address}
+                    size="xs"
+                    aria-label={kind.copyLabel}
+                    copiedLabel={kind.copiedLabel}
+                    className={styles.action}
+                />
+            )}
+
+            {tools && hasMenuItems && (
+                // Stop tool clicks from bubbling to an enclosing clickable row
+                // (`<Tr onClick>`), which would navigate or unmount the chip
+                // before the menu is usable. Mirrors CopyButton, which stops
+                // propagation for the same reason. preventDefault is not called,
+                // so the tool links still navigate. The portaled menu is not a
+                // descendant of this wrapper, so it stops propagation itself —
+                // its own DOM position is under `<body>`, but React still
+                // bubbles its events through this tree.
+                <div
+                    className={styles.menu_anchor}
+                    ref={menuRef}
+                    onClick={event => event.stopPropagation()}
+                >
+                    <IconButton
+                        variant="primary"
+                        size="xs"
+                        aria-label={kind.toolsLabel}
+                        aria-haspopup="menu"
+                        aria-expanded={menuOpen}
+                        onClick={toggleMenu}
+                        className={styles.action}
+                    >
+                        <Wrench size={14} />
+                    </IconButton>
+                    {menuOpen && createPortal(
+                        <div
+                            ref={menuListRef}
+                            className={styles.menu}
+                            role="menu"
+                            // Hidden until measured so the first paint never
+                            // shows the menu parked at the viewport origin.
+                            style={
+                                menuPosition
+                                    ? { top: menuPosition.top, left: menuPosition.left }
+                                    : { top: 0, left: 0, visibility: 'hidden' }
+                            }
+                            onClick={event => event.stopPropagation()}
+                        >
+                            {/*
+                              * Forwarding opens a new tab, why: the chip is an
+                              * aside on whatever the user is actually reading —
+                              * a transaction feed, a ladder, an admin table —
+                              * and sending a tool off in place destroys that
+                              * context (and any in-page state, filters, or live
+                              * stream behind it) for a lookup the user means to
+                              * glance at. A new tab also makes the forward work
+                              * when the target tool *is* the current page: same
+                              * -route client navigation would not remount the
+                              * tool, leaving its mount-only `?address=` pre-fill
+                              * stale and the menu entry looking inert.
+                              * `rel="noopener"` is mandatory with `_blank` —
+                              * without it the opened page gets `window.opener`.
+                              */}
+                            {kind.forwardTools.map(tool => (
+                                <a
+                                    key={tool.slug}
+                                    role="menuitem"
+                                    className={styles.menu_item}
+                                    href={buildToolForwardUrl(tool.slug, address)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={() => setMenuOpen(false)}
+                                >
+                                    {tool.label}
+                                </a>
+                            ))}
+                            {canEditTags && (
+                                // A button, not a link: it opens a modal in place
+                                // rather than navigating, so the tool-forward
+                                // links above stay the only anchors here.
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    className={styles.menu_item}
+                                    onClick={openTagEditor}
+                                >
+                                    Edit tags
+                                </button>
+                            )}
+                        </div>,
+                        document.body
+                    )}
+                </div>
+            )}
+
+            {explorer && (
+                <a
+                    className={styles.action_link}
+                    href={`${kind.explorerBaseUrl}${address}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={kind.explorerLabel}
+                >
+                    <ExternalLink size={14} />
+                </a>
+            )}
+        </span>
+    );
+}

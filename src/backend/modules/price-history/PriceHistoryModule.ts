@@ -43,19 +43,34 @@ import { SETTINGS_COLLECTION, PROGRESS_COLLECTION } from './database/index.js';
 /** Submenu namespace for the in-page tab row (the menu Submenu Pattern). */
 const SUBMENU_NAMESPACE = 'price-history';
 
-/** In-page tabs for `/system/price-history`, registered as memory-only menu nodes. */
+/**
+ * In-page tabs for `/system/price-history`, registered as memory-only menu nodes.
+ * Schedules, Database, and Logs are the core components scoped to this module,
+ * which every component with an admin page owes its operator. Settings sits last
+ * because the tabs before it report state and Settings changes it.
+ */
 const SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
     { label: 'Coverage', tab: 'coverage', icon: 'Table', order: 0 },
     { label: 'Diagnostics', tab: 'diagnostics', icon: 'AlertTriangle', order: 1 },
-    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 2 }
+    { label: 'Schedules', tab: 'schedules', icon: 'Clock', order: 2 },
+    { label: 'Database', tab: 'database', icon: 'Database', order: 3 },
+    { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 4 },
+    { label: 'Settings', tab: 'settings', icon: 'Settings', order: 5 }
 ];
 
+/**
+ * Name prefix shared by every scheduler job the module registers. The admin
+ * page's Schedules tab filters on this prefix, so every job name must start
+ * with it, and the lifecycle test asserts that.
+ */
+const JOB_PREFIX = 'price-history:';
+
 /** Backward-backfill job: seed recent windows and walk deep history in chunks. */
-const BACKFILL_JOB = 'price-history:backfill';
+const BACKFILL_JOB = `${JOB_PREFIX}backfill`;
 /** Run the backfill often; each tick is bounded, so frequency only speeds catch-up. */
 const BACKFILL_CRON = '*/5 * * * *';
 /** Forward-append job: pull the days that closed since the last run. */
-const FORWARD_JOB = 'price-history:forward-sync';
+const FORWARD_JOB = `${JOB_PREFIX}forward-sync`;
 /** Daily at 01:00 UTC — yesterday's close is final by then. */
 const FORWARD_CRON = '0 1 * * *';
 

@@ -464,7 +464,8 @@ export interface IUIComponents {
     }>;
 
     /**
-     * TronAddress — the canonical way to render a TRON wallet/contract address.
+     * TronAddress — the canonical way to render a TRON wallet address. For a
+     * smart contract address use `TronContractAddress`.
      *
      * Shows the address as a compact monospace chip (`first 4 … last 4`, full
      * value in a tooltip) with three slim affordances: copy-to-clipboard, a
@@ -489,6 +490,36 @@ export interface IUIComponents {
         /** Show the "forward to a tool" dropdown. @default true */
         tools?: boolean;
         /** Show the external Tronscan link. @default true */
+        explorer?: boolean;
+        className?: string;
+    }>;
+
+    /**
+     * TronContractAddress — the canonical way to render a smart contract
+     * address, as `TronAddress` is for a wallet.
+     *
+     * The same chip as `TronAddress`, with the same props: truncated monospace
+     * address, tag underline and warning marker, copy, and a tools menu that
+     * holds the tag editor for admins. It differs where a contract differs
+     * from a wallet. The out-link opens Tronscan's contract page, which shows
+     * the code and calls, and the tools menu offers only tool pages that accept
+     * a contract, leaving out wallet-only tools such as the Signature Verifier.
+     *
+     * Use it for a token contract, a DEX router, or any other contract, such as
+     * an observer's `contract_address`. Renders synchronously from `address`,
+     * so it is SSR-safe; pass a pre-resolved `label`, such as a token symbol,
+     * to show a name instead of the truncation.
+     */
+    TronContractAddress: ComponentType<{
+        /** Full base58check contract address (`T…`); the value copied and linked. */
+        address: string;
+        /** Pre-resolved human label, such as a token symbol, shown in place of the truncation. */
+        label?: string;
+        /** Show the copy-to-clipboard affordance. @default true */
+        copy?: boolean;
+        /** Show the tools menu (contract tools and, for admins, the tag editor). @default true */
+        tools?: boolean;
+        /** Show the external Tronscan contract link. @default true */
         explorer?: boolean;
         className?: string;
     }>;
@@ -1655,7 +1686,7 @@ export interface IFrontendPluginContext {
     /** Plugin identifier used for namespacing events and API routes */
     pluginId: string;
 
-    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, SegmentedControl, Input, Select, Textarea, Field, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronTransactionId, AddressSelector, IconPickerModal, ConfirmDialog, Table family) */
+    /** UI component library (Card, Badge, Button, CopyButton, IconButton, Switch, SegmentedControl, Input, Select, Textarea, Field, Skeleton, StatTile, StatGrid, ClientTime, Tooltip, TronAddress, TronContractAddress, TronTransactionId, AddressSelector, IconPickerModal, ConfirmDialog, Table family) */
     ui: IUIComponents;
 
     /** Layout component library (Page, PageHeader, Stack, Grid, Section, SubMenu) */

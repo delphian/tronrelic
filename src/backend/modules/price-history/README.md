@@ -9,7 +9,8 @@ Maintains a **local** daily USD price series (TRX + tracked TRC20 tokens) in Cli
 | Module id | `price-history` |
 | Module class | `src/backend/modules/price-history/PriceHistoryModule.ts` |
 | Service registry name | `'price-history'` → `IPriceHistoryService` |
-| Admin page | `/system/price-history` — System-container item `Price History` (order 28); in-page tabs (Coverage, Diagnostics, Settings) in the `price-history` menu namespace (Submenu Pattern), rendered with `MenuNavClient` |
+| Admin page | `/system/price-history` — System-container item `Price History` (order 28); in-page tabs (Coverage, Diagnostics, Schedules, Database, Logs, Settings) in the `price-history` menu namespace (Submenu Pattern), rendered with `MenuNavClient`. Schedules is core `SchedulerMonitor` filtered to the `price-history:` job prefix, Database is core `CollectionBrowser` scoped to `module_price-history_` plus core `ClickHouseTableBrowser` scoped with `tables={['price_history']}`, and Logs is core `SystemLogsMonitor` scoped to the `tronrelic:price-history` service name |
+| Log service name | `tronrelic:price-history`, derived by the logs module from the `module: 'price-history'` binding on the module's child logger. Do not set a `service` binding on a child logger here, or its entries fall outside the Logs tab |
 | Mounted routes | `/api/admin/system/price-history/*` (`createAdminRateLimiter` + `requireAdmin`): `GET /stats`, `GET /diagnostics`, `GET`/`PATCH /settings`, `GET /sources`, `POST /assets/:asset/reset`, `POST /backfill/run`, `POST /forward/run` |
 | WebSocket event | `price-history:stats` (global admin-refetch nudge after each tick and each reset; has a case in `WebSocketService.emit()`) |
 | Scheduler jobs | `price-history:backfill` (`*/5 * * * *`); `price-history:forward-sync` (`0 1 * * *`) |

@@ -132,8 +132,11 @@ interface IPaginatedRows {
  * prefix written out by hand drifts when an identifier changes and the
  * mistake does not announce itself — the filter matches nothing and the
  * browser renders empty instead of reporting an error.
- * @param prefix - Deprecated literal prefix, honoured only when `pluginId` is
- * absent so existing callers keep working while they migrate.
+ * @param tables - Scope to exactly these table names. A core module's tables
+ * share no naming prefix, so a module names its own; honoured when `pluginId`
+ * is absent.
+ * @param prefix - Deprecated literal prefix, honoured only when `pluginId` and
+ * `tables` are both absent so existing callers keep working while they migrate.
  * @param title - Heading above the list. Omitted by default because the
  * embedding page — the system console included — usually supplies its own, and
  * a built-in heading would read as a duplicate.
@@ -141,7 +144,7 @@ interface IPaginatedRows {
  * empty panel that reads as missing data.
  */
 export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
-    const { pluginId, prefix, title, hideWhenEmpty = false } = props;
+    const { pluginId, tables, prefix, title, hideWhenEmpty = false } = props;
 
     /**
      * Whether the caller asked for plugin scoping at all, as opposed to what
@@ -155,6 +158,20 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
      * through to the unscoped view that lists the whole deployment.
      */
     const scopesByPluginId = 'pluginId' in props;
+    /**
+     * Whether the caller asked for exact-name scoping, tested by key for the
+     * same reason as `pluginId`: a `tables` prop that arrived undefined or
+     * empty must be reported, not read as a request for the unscoped view.
+     */
+    const scopesByTables = 'tables' in props;
+    /**
+     * The requested table names joined into one string, used as the memo
+     * dependency instead of the array itself. A caller passing an array
+     * literal hands over a new array on every render, and depending on that
+     * identity would rebuild the scope and refetch the stats each time.
+     * Table names cannot contain a newline, so it is a safe separator.
+     */
+    const tablesKey = Array.isArray(tables) ? tables.join('\n') : '';
     /**
      * The prefix used for filtering and for the empty-state message, plus the
      * reason it could not be derived when the caller supplied an unusable id.
@@ -171,20 +188,27 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
      * `pluginPrefix()` throws and throwing here would take down the whole
      * admin page instead of this one panel.
      */
-    const scope = useMemo<{ prefix?: string; error?: string }>(() => {
-        if (!scopesByPluginId) {
-            return { prefix };
+    const scope = useMemo<{ prefix?: string; tables?: string[]; error?: string }>(() => {
+        let result: { prefix?: string; tables?: string[]; error?: string };
+        if (scopesByPluginId) {
+            try {
+                // Typed optional, but the key is present, so an undefined value is
+                // a caller mistake rather than a request for the unscoped view.
+                // pluginPrefix() rejects it, which is what should happen.
+                result = { prefix: pluginPrefix(pluginId as string) };
+            } catch (err) {
+                result = { error: err instanceof Error ? err.message : 'Invalid plugin id' };
+            }
+        } else if (scopesByTables) {
+            const names = tablesKey.split('\n').filter((name) => name.length > 0);
+            result = names.length > 0
+                ? { tables: names }
+                : { error: 'ClickHouseTableBrowser requires at least one table name in tables' };
+        } else {
+            result = { prefix };
         }
-
-        try {
-            // Typed optional, but the key is present, so an undefined value is
-            // a caller mistake rather than a request for the unscoped view.
-            // pluginPrefix() rejects it, which is what should happen.
-            return { prefix: pluginPrefix(pluginId as string) };
-        } catch (err) {
-            return { error: err instanceof Error ? err.message : 'Invalid plugin id' };
-        }
-    }, [scopesByPluginId, pluginId, prefix]);
+        return result;
+    }, [scopesByPluginId, pluginId, scopesByTables, tablesKey, prefix]);
     const [stats, setStats] = useState<IClickHouseStats | null>(null);
     const [sort, setSort] = useState<ITableSort>(DEFAULT_SORT);
     const [loading, setLoading] = useState(true);
@@ -207,11 +231,14 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
 
         try {
             setLoading(true);
-            // The prefix travels as a query parameter so the server filters in
+            // The scope travels as query parameters so the server filters in
             // SQL — an embedded caller never receives the wider table list.
-            const query = typeof scope.prefix === 'string' && scope.prefix.length > 0
-                ? `?prefix=${encodeURIComponent(scope.prefix)}`
-                : '';
+            let query = '';
+            if (scope.tables) {
+                query = `?${scope.tables.map((name) => `tables=${encodeURIComponent(name)}`).join('&')}`;
+            } else if (typeof scope.prefix === 'string' && scope.prefix.length > 0) {
+                query = `?prefix=${encodeURIComponent(scope.prefix)}`;
+            }
             const response = await fetch(`/api/admin/clickhouse/stats${query}`, {
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -356,9 +383,11 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
 
             {sortedTables.length === 0 ? (
                 <p className={styles.empty}>
-                    {typeof scope.prefix === 'string' && scope.prefix.length > 0
-                        ? `No tables found for ${scope.prefix}`
-                        : 'No tables found'}
+                    {scope.tables
+                        ? `No tables found for ${scope.tables.join(', ')}`
+                        : typeof scope.prefix === 'string' && scope.prefix.length > 0
+                            ? `No tables found for ${scope.prefix}`
+                            : 'No tables found'}
                 </p>
             ) : (
                 <Table variant="compact">

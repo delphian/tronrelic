@@ -42,17 +42,20 @@ Register each tab as a node in that page's own menu namespace, held in memory ra
 
 ### A Component That Owns Schedules or Storage Surfaces Them
 
-A module or plugin that registers a scheduler job, owns a MongoDB collection, or owns a ClickHouse table must surface each of those on its own admin page, as a **Schedules** tab, a **Database** tab, or both. This applies to every component that has an admin page at all. Without those tabs an operator diagnosing the component has to leave for `/system/scheduler` or `/system/database`, lose the page they were on, and pick the component's own rows back out of the whole deployment's inventory.
+A module or plugin that registers a scheduler job, owns a MongoDB collection, or owns a ClickHouse table must surface each of those on its own admin page, as a **Schedules** tab, a **Database** tab, or both. Every module or plugin with an admin page must also offer a **Logs** tab, because every component writes log entries whether or not it owns jobs or storage. These rules apply to every component that has an admin page at all. Without those tabs an operator diagnosing the component has to leave for `/system/scheduler`, `/system/database`, or `/system/logs`, lose the page they were on, and pick the component's own rows back out of the whole deployment's inventory.
 
-Do not write a panel for this. Three core components already do the work, and each takes a scoping prop the backend applies server-side, so a scoped page never receives another component's rows.
+Do not write a panel for this. Four core components already do the work, and each takes a scoping prop the backend applies server-side, so a scoped page never receives another component's rows.
 
 | Tab | Component | Scope it with |
 |-----|-----------|---------------|
 | Schedules | `SchedulerMonitor` | `jobFilter` — a predicate testing your job-name prefix rather than a fixed list of names, so a job registered later appears with no UI change |
 | Database, MongoDB | `CollectionBrowser` | `prefix` — `module_<id>_` for a module, `plugin_<id>_` for a plugin |
-| Database, ClickHouse | `ClickHouseTableBrowser` | `pluginId` — read-only by design; set `hideWhenEmpty` when the component may store nothing there |
+| Database, ClickHouse | `ClickHouseTableBrowser` | `pluginId` for a plugin; `tables`, the exact table names, for a module, because module tables share no naming prefix. Read-only by design; set `hideWhenEmpty` when the component may store nothing there |
+| Logs | `SystemLogsMonitor` | `service` — `tronrelic:<id>` for a module, `plugin:<id>` for a plugin |
 
-Core and module pages import these from `modules/scheduler` and `modules/database`. A plugin cannot import core components and takes the same three from `context.system` instead. Either way, reusing them means the authority behind the tab is the one `/system` uses, so a schedule edited on the component's page and a schedule edited on `/system/scheduler` cannot disagree. Register the tabs as nodes in the page's menu namespace like any other tab, following the rule above.
+The log service name comes from the logger's bindings. A module that logs through `logger.child({ module: '<id>' })` records its entries under `tronrelic:<id>`, and a plugin's injected logger records under `plugin:<id>`. A child logger that sets its own `service` binding records under that name instead and falls outside the Logs tab, so do not set one in a component that has a Logs tab.
+
+Core and module pages import these from `modules/scheduler`, `modules/database`, and `modules/logs`. A plugin cannot import core components and takes the same four from `context.system` instead. Either way, reusing them means the authority behind the tab is the one `/system` uses, so a schedule edited on the component's page and a schedule edited on `/system/scheduler` cannot disagree. Register the tabs as nodes in the page's menu namespace like any other tab, following the rule above.
 
 One thing the scoping deliberately leaves out: a component's key-value configuration lives in the shared `_kv` collection, which every component writes to, so it falls outside any single component's prefix and stays reachable only from `/system/database`.
 
@@ -111,7 +114,7 @@ Before committing a UI component or a plugin page:
 - [ ] Timestamps render through `<ClientTime>`, and no `window`, `document`, or `localStorage` access happens in the render body — only inside `useEffect`
 - [ ] Backend URLs come from `getServerConfig()` on the server or `getRuntimeConfig()` in the browser, never from `process.env.*` or a `NEXT_PUBLIC_*` variable
 - [ ] Admin tab rows use the menu Submenu Pattern with `MenuNavClient` and a menu namespace, not a hand-rolled strip
-- [ ] A component owning scheduler jobs or storage has Schedules and Database tabs on its admin page, built from the core browsers scoped to it
+- [ ] A component owning scheduler jobs or storage has Schedules and Database tabs on its admin page, and every component with an admin page has a Logs tab, each built from the core components scoped to it
 - [ ] Tested as a full page, in a slideout, in a modal, and at mobile container width
 
 ## Further Reading

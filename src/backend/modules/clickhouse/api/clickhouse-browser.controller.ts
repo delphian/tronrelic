@@ -55,6 +55,11 @@ export class ClickHouseBrowserController {
      * Returns one row per table in the current database (name, row count,
      * size, engine) plus aggregate database size. Sorted by size descending
      * so the heaviest tables appear first, matching the MongoDB browser.
+     * Accepts either `?prefix=` or repeated `?tables=` to scope the list;
+     * `tables` wins when both are sent, and an empty `tables` is a 400.
+     *
+     * @param req - The request carrying the optional scope parameters.
+     * @param res - The response the stats or an error is written to.
      */
     getStats = async (req: Request, res: Response): Promise<void> => {
         try {
@@ -68,6 +73,20 @@ export class ClickHouseBrowserController {
             const prefix = typeof prefixParam === 'string' && prefixParam.length > 0
                 ? prefixParam
                 : null;
+            // Optional repeated `?tables=` narrows the response to exact table
+            // names. Core modules use it because their tables share no naming
+            // prefix. When present it replaces the prefix filter, and the
+            // names are bound as an array parameter for the same reason the
+            // prefix is: they arrive from the request.
+            const tableFilter = ClickHouseBrowserController.readTableNames(req.query.tables);
+            if (tableFilter !== null && tableFilter.length === 0) {
+                res.status(400).json({
+                    success: false,
+                    error: 'Invalid tables filter',
+                    message: 'tables must name at least one table'
+                });
+                return;
+            }
 
             const rawTables = await this.clickhouse.query<{
                 name: string;
@@ -75,14 +94,22 @@ export class ClickHouseBrowserController {
                 total_bytes: string | null;
                 engine: string;
             }>(
-                `
+                tableFilter !== null
+                    ? `
+                SELECT name, total_rows, total_bytes, engine
+                FROM system.tables
+                WHERE database = currentDatabase()
+                  AND has({tables:Array(String)}, name)
+                ORDER BY name
+            `
+                    : `
                 SELECT name, total_rows, total_bytes, engine
                 FROM system.tables
                 WHERE database = currentDatabase()
                   AND ({prefix:String} = '' OR startsWith(name, {prefix:String}))
                 ORDER BY name
             `,
-                { prefix: prefix ?? '' }
+                tableFilter !== null ? { tables: tableFilter } : { prefix: prefix ?? '' }
             );
 
             const dbInfo = await this.clickhouse.query<{ dbName: string }>(
@@ -111,6 +138,30 @@ export class ClickHouseBrowserController {
             });
         }
     };
+
+    /**
+     * Read the `tables` query parameter into a list of names, so the stats
+     * query can tell "no filter asked for" apart from "a filter naming
+     * nothing". The second must be rejected rather than read as the first,
+     * because an unfiltered query hands a scoped caller the whole
+     * deployment's inventory.
+     *
+     * Express parses `?tables=a&tables=b` as an array and `?tables=a` as a
+     * string, so both shapes are accepted. Blank entries are dropped.
+     *
+     * @param raw - The raw `req.query.tables` value.
+     * @returns `null` when the parameter is absent, otherwise the non-blank
+     * names it carried, which may be empty.
+     */
+    private static readTableNames(raw: unknown): string[] | null {
+        let names: string[] | null = null;
+        if (typeof raw === 'string') {
+            names = [raw];
+        } else if (Array.isArray(raw)) {
+            names = raw.filter((value): value is string => typeof value === 'string');
+        }
+        return names === null ? null : names.filter((name) => name.length > 0);
+    }
 
     /**
      * GET /api/admin/clickhouse/tables/:name/rows?page=&limit=

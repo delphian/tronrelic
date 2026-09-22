@@ -12,6 +12,12 @@
  * module's Submenu Pattern (a namespaced menu rendered with `MenuNavClient`),
  * fed SSR-first by `page.tsx`. Stats refetch on mount, after each action, and
  * on the `price-history:stats` nudge each ingestion tick emits.
+ *
+ * The Schedules, Database, and Logs panels are core components scoped to this
+ * module rather than anything written for this page. Every component with an
+ * admin page surfaces its own jobs, storage, and log entries there, and reusing
+ * the core components means the authority behind each tab is the one
+ * `/system/scheduler`, `/system/database`, and `/system/logs` use.
  */
 
 import { useEffect, useState, useCallback } from 'react';
@@ -24,11 +30,16 @@ import { Button } from '../../../../components/ui/Button';
 import { IconButton } from '../../../../components/ui/IconButton';
 import { Badge } from '../../../../components/ui/Badge';
 import { ClientTime } from '../../../../components/ui/ClientTime';
+import { TronContractAddress } from '../../../../components/ui/TronContractAddress';
+import { isValidTronAddress } from '../../../../lib/tronAddress';
 import { StatTile, StatGrid } from '../../../../components/ui/StatTile';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../../../../components/ui/Table';
 import { useToast } from '../../../../components/ui/ToastProvider';
 import { MenuNavClient } from '../../../../components/layout/MenuNav/MenuNavClient';
 import { getSocket } from '../../../../lib/socketClient';
+import { CollectionBrowser, ClickHouseTableBrowser } from '../../../../modules/database';
+import { SchedulerMonitor, type SchedulerJob } from '../../../../modules/scheduler';
+import { SystemLogsMonitor } from '../../../../modules/logs';
 import {
     getStats,
     getDiagnostics,
@@ -41,10 +52,73 @@ import {
 } from '../../../../modules/price-history';
 
 /** The page's tab ids; the `?tab=` value carried by each submenu node. */
-type TabId = 'coverage' | 'diagnostics' | 'settings';
+type TabId = 'coverage' | 'diagnostics' | 'schedules' | 'database' | 'logs' | 'settings';
 
 /** The menu namespace the module registers the tab nodes under. */
 const SUBMENU_NAMESPACE = 'price-history';
+
+/**
+ * Name prefix shared by every scheduler job the module registers.
+ *
+ * The Schedules tab filters on the prefix rather than listing job names, so a
+ * job the module adds later appears here without a matching edit to this file.
+ * The literal is repeated from `PriceHistoryModule.ts` because frontend code
+ * cannot import backend code; the module's lifecycle test asserts every
+ * registered job name starts with it, which keeps the two copies in step.
+ */
+const JOB_PREFIX = 'price-history:';
+
+/**
+ * Physical MongoDB collection prefix covering the module's settings and
+ * per-asset cursor collections. Scoping the browser to it keeps the panel on
+ * this module's storage instead of the whole deployment's inventory.
+ */
+const COLLECTION_PREFIX = 'module_price-history_';
+
+/**
+ * The ClickHouse tables this module owns, holding the price series itself.
+ * Module tables share no naming prefix, so the browser is scoped by exact
+ * name. The literal is repeated from `PRICE_TABLE` in the module's
+ * `database/index.ts` because frontend code cannot import backend code; the
+ * module's lifecycle test pins that constant to this value.
+ */
+const CLICKHOUSE_TABLES = ['price_history'];
+
+/**
+ * The service name this module's log entries are stored under. The logs module
+ * derives it from the `module: 'price-history'` binding on the module's child
+ * logger, producing `tronrelic:<module id>`, so scoping the viewer to it shows
+ * every entry the module and its vendor adapters write.
+ */
+const LOG_SERVICE = 'tronrelic:price-history';
+
+/**
+ * Type guard narrowing an arbitrary `?tab=` string to a known TabId, so the
+ * deep-link seeding and click routing share one list of valid tabs.
+ *
+ * @param tab - The raw `?tab=` value.
+ * @returns True when the value names a real tab.
+ */
+function isTabId(tab: string | undefined): tab is TabId {
+    return tab === 'coverage'
+        || tab === 'diagnostics'
+        || tab === 'schedules'
+        || tab === 'database'
+        || tab === 'logs'
+        || tab === 'settings';
+}
+
+/**
+ * Select this module's scheduler jobs for the Schedules tab. A predicate
+ * rather than a fixed list of names, so the tab keeps showing every job the
+ * module owns when another one is added.
+ *
+ * @param job - A job row supplied by the scheduler monitor.
+ * @returns True when the job belongs to this module.
+ */
+function isPriceHistoryJob(job: SchedulerJob): boolean {
+    return job.name.startsWith(JOB_PREFIX);
+}
 
 /**
  * Props for the client shell.
@@ -59,30 +133,59 @@ interface IPriceHistoryAdminClientProps {
 }
 
 /**
- * Resolve a tab id from a submenu node URL's `?tab=` param.
+ * Resolve a submenu node's `?tab=` value to a known TabId, defaulting to
+ * `coverage` for an unrecognized or missing value so a malformed node can never
+ * leave the page on a blank panel.
  *
- * @param url - The node URL.
- * @returns The tab id, defaulting to `coverage`.
+ * @param url - The clicked node's URL, such as `/system/price-history?tab=logs`.
+ * @returns The matching tab id.
  */
-function tabFromUrl(url: string): TabId {
-    if (url.includes('tab=settings')) {
-        return 'settings';
-    }
-    if (url.includes('tab=diagnostics')) {
-        return 'diagnostics';
-    }
-    return 'coverage';
+function tabFromUrl(url: string | undefined): TabId {
+    const tab = url?.match(/[?&]tab=([^&]+)/)?.[1];
+    return isTabId(tab) ? tab : 'coverage';
 }
 
 /**
- * Shorten a vendor handle (a pool or contract address) for a table cell so the
- * row stays readable; the full value is in the cell's title.
+ * Shorten a vendor handle that is not an address, such as CoinGecko's
+ * `tron/contract/<address>` path, so the row stays readable; the full value is
+ * in the cell's title. A handle that is an address renders through
+ * `TronContractAddress` instead and never reaches this.
  *
  * @param ref - The handle.
  * @returns The shortened handle.
  */
 function shortRef(ref: string): string {
     return ref.length > 14 ? `${ref.slice(0, 6)}…${ref.slice(-4)}` : ref;
+}
+
+/**
+ * Render a price asset's identifier. A token asset is its TRC20 contract
+ * address, so it gets the standard contract chip, with copy, the Tronscan
+ * contract link, and the admin tag editor. TRX is the native coin and has no
+ * contract, so it stays plain text. The checksum test decides which is which
+ * instead of comparing against `'TRX'`, so a malformed stored value never
+ * renders as a contract link that leads nowhere.
+ *
+ * @param asset - The stored asset id: `'TRX'` or a token contract address.
+ * @returns The contract chip for a token, or the plain id otherwise.
+ */
+function renderAsset(asset: string) {
+    return isValidTronAddress(asset) ? <TronContractAddress address={asset} /> : asset;
+}
+
+/**
+ * Render the vendor handle behind an asset's latest fetch. GeckoTerminal's
+ * handle is the SunSwap pool the price came from, which is itself a contract,
+ * so it gets the contract chip. Any other handle is a vendor lookup key, not
+ * an address, and is shown shortened and muted.
+ *
+ * @param ref - The `sourceRef` stored on the asset's cursor.
+ * @returns The contract chip for a pool address, or the shortened key otherwise.
+ */
+function renderSourceRef(ref: string) {
+    return isValidTronAddress(ref)
+        ? <TronContractAddress address={ref} />
+        : <span className="text-muted" title={ref}>{shortRef(ref)}</span>;
 }
 
 /** Props for one ordered source list in the settings form. */
@@ -239,7 +342,7 @@ function statusBadge(asset: IPriceAssetCoverage) {
  */
 export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initialTab }: IPriceHistoryAdminClientProps) {
     const { push } = useToast();
-    const [activeTab, setActiveTab] = useState<TabId>(tabFromUrl(`tab=${initialTab ?? ''}`));
+    const [activeTab, setActiveTab] = useState<TabId>(isTabId(initialTab) ? initialTab : 'coverage');
     const [stats, setStats] = useState<IPriceHistoryStats | null>(null);
     const [diagnostics, setDiagnostics] = useState<IPriceCoverageDiagnostics | null>(null);
     const [sources, setSources] = useState<IPriceSourceInfo[] | null>(null);
@@ -312,7 +415,7 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
      * @param item - The selected submenu node.
      */
     const handleTabSelect = useCallback((item: MenuNodeSerialized): void => {
-        const tab = tabFromUrl(item.url ?? '');
+        const tab = tabFromUrl(item.url);
         setActiveTab(tab);
         window.history.replaceState(null, '', `/system/price-history?tab=${tab}`);
     }, []);
@@ -433,11 +536,11 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
                                 ) : (
                                     stats.assets.map((asset) => (
                                         <Tr key={asset.asset}>
-                                            <Td>{asset.asset}</Td>
+                                            <Td>{renderAsset(asset.asset)}</Td>
                                             <Td>
                                                 {asset.source ?? '—'}
                                                 {asset.sourceRef && (
-                                                    <span className="text-muted" title={asset.sourceRef}>{' '}{shortRef(asset.sourceRef)}</span>
+                                                    <>{' '}{renderSourceRef(asset.sourceRef)}</>
                                                 )}
                                             </Td>
                                             <Td numeric>{asset.dayCount.toLocaleString()}</Td>
@@ -494,13 +597,44 @@ export function PriceHistoryAdminClient({ submenuTree, submenuGeneratedAt, initi
                                 </Thead>
                                 <Tbody>
                                     {diagnostics.unpricedTokens.map((asset) => (
-                                        <Tr key={asset}><Td>{asset}</Td></Tr>
+                                        <Tr key={asset}><Td>{renderAsset(asset)}</Td></Tr>
                                     ))}
                                 </Tbody>
                             </Table>
                         )}
                     </Card>
                 </Stack>
+            )}
+
+            {activeTab === 'schedules' && (
+                <SchedulerMonitor
+                    jobFilter={isPriceHistoryJob}
+                    title="Price History Schedules"
+                    hideStats
+                />
+            )}
+
+            {/* Editing and deletion stay enabled on the MongoDB browser, as on
+              * every Database tab. Prefer the Coverage tab's per-asset reset
+              * for re-queuing an asset, because it goes through the service;
+              * treat this browser as the escape hatch for a cursor or settings
+              * document that surface cannot reach. The ClickHouse browser is
+              * read-only by design. */}
+            {activeTab === 'database' && (
+                <Stack gap="lg">
+                    <CollectionBrowser
+                        prefix={COLLECTION_PREFIX}
+                        title="Price History Collections"
+                    />
+                    <ClickHouseTableBrowser
+                        tables={CLICKHOUSE_TABLES}
+                        title="Price History Tables"
+                    />
+                </Stack>
+            )}
+
+            {activeTab === 'logs' && (
+                <SystemLogsMonitor service={LOG_SERVICE} />
             )}
 
             {activeTab === 'settings' && (
