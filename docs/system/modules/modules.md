@@ -28,9 +28,9 @@ When a module needs frontend code, put it in `src/frontend/modules/<module-name>
 
 See [frontend-architecture-modules.md](../../frontend/frontend-architecture-modules.md) for the directory layout, import conventions, and guidance on deciding where a piece of frontend code belongs.
 
-## Surfacing a Module's Schedules and Storage
+## Surfacing a Module's Schedules, Storage, and Logs
 
-A module that registers a scheduler job or owns a collection must surface each of those on its own admin page, as a Schedules tab, a Database tab, or both, so an operator diagnosing the module does not have to leave for `/system/scheduler` or `/system/database` and find its rows among every other component's. Build the tabs from the core `SchedulerMonitor`, `CollectionBrowser`, and `ClickHouseTableBrowser` components, scoped to the module by job-name prefix and by the `module_<id>_` collection prefix, rather than writing a panel for the page.
+A module that registers a scheduler job or owns a collection must surface each of those on its own admin page, as a Schedules tab, a Database tab, or both, so an operator diagnosing the module does not have to leave for `/system/scheduler` or `/system/database` and find its rows among every other component's. A module with an admin page must also have a Logs tab, for the same reason. Build the tabs from the core `SchedulerMonitor`, `CollectionBrowser`, `ClickHouseTableBrowser`, and `SystemLogsMonitor` components, scoped to the module by job-name prefix, by the `module_<id>_` collection prefix, by the exact names of its ClickHouse tables (the `tables` prop, since module tables share no prefix), and by the `tronrelic:<id>` log service name that `logger.child({ module: '<id>' })` records under, rather than writing a panel for the page.
 
 `/system/address-tags` is the reference implementation. The full rule, including the props each component scopes on, is in [frontend.md](../../frontend/frontend.md#a-component-that-owns-schedules-or-storage-surfaces-them).
 

@@ -4,7 +4,7 @@
 
 ## Canonical documentation
 
-No dedicated detail doc exists yet; [system.md](../../../../docs/system/system.md) and [system-database.md](../../../../docs/system/system-database.md) cover MongoDB access patterns that ClickHouse complements for time-series and aggregation workloads. This module is optional: it skips initialization entirely when `CLICKHOUSE_HOST` is unset, and `getClickHouseService()` returns `undefined` in that case — callers must check before use. `ClickHouseBrowserController` (`api/clickhouse-browser.controller.ts`) exposes an admin browser over ClickHouse tables, gated by `requireAdmin`.
+No dedicated detail doc exists yet; [system.md](../../../../docs/system/system.md) and [system-database.md](../../../../docs/system/system-database.md) cover MongoDB access patterns that ClickHouse complements for time-series and aggregation workloads. This module is optional: it skips initialization entirely when `CLICKHOUSE_HOST` is unset, and `getClickHouseService()` returns `undefined` in that case — callers must check before use. `ClickHouseBrowserController` (`api/clickhouse-browser.controller.ts`) exposes an admin browser over ClickHouse tables, gated by `requireAdmin`. Its `GET /stats` endpoint scopes the table list server-side by either `?prefix=` (plugins, through `pluginPrefix()`) or repeated `?tables=` exact names (core modules, whose tables share no prefix); `tables` wins when both are sent, and an empty `tables` returns 400 rather than the whole inventory.
 
 ## Plugin-scoped access
 

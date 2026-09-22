@@ -1,11 +1,16 @@
 /**
- * @fileoverview Forward targets for the TronAddress tools dropdown.
+ * @fileoverview Forward targets for the address chip's tools dropdown.
  *
  * The address chip lets a user hand an address off to a public tool page that
  * can act on it. Only tools that actually consume a single address belong here
  * (converting it, checking its approvals, tracing its origin, verifying a
  * signature by it) — calculators and the timestamp converter take no address
  * and are deliberately excluded, so the menu never offers a dead end.
+ *
+ * Wallets and contracts get separate lists because most of those tools only
+ * make sense for a wallet. A contract never signs a message, holds no token
+ * approvals of its own worth auditing, and is created by a deployment rather
+ * than an activating transfer, so Address Origins has no chain to climb.
  *
  * The list is co-located with the component rather than pulled from the tools
  * module because a `components/ui/` primitive must not depend upward on a
@@ -34,14 +39,25 @@ export interface IForwardableTool {
 }
 
 /**
- * Address-consuming public tool pages, in menu order. Kept small and explicit
- * on purpose — see the file overview for why calculators are excluded.
+ * Address-consuming public tool pages offered for a wallet, in menu order.
+ * Kept small and explicit on purpose — see the file overview for why
+ * calculators are excluded.
  */
 export const FORWARDABLE_TOOLS: readonly IForwardableTool[] = [
     { slug: 'address-converter', label: 'Address Converter' },
     { slug: 'address-origins', label: 'Address Origins' },
     { slug: 'approval-checker', label: 'Approval Checker' },
     { slug: 'signature-verifier', label: 'Signature Verifier' }
+] as const;
+
+/**
+ * Tool pages offered for a smart contract address. Only the converter applies;
+ * the file overview explains why the other wallet tools are left out. Add a
+ * row here when a tool page gains contract support, such as a contract
+ * inspector.
+ */
+export const CONTRACT_FORWARDABLE_TOOLS: readonly IForwardableTool[] = [
+    { slug: 'address-converter', label: 'Address Converter' }
 ] as const;
 
 /**

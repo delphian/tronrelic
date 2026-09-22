@@ -28,6 +28,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { ClientTime } from '../components/ui/ClientTime';
 import { Tooltip } from '../components/ui/Tooltip';
 import { TronAddress } from '../components/ui/TronAddress';
+import { TronContractAddress } from '../components/ui/TronContractAddress';
 import { TronTransactionId } from '../components/ui/TronTransactionId';
 import { LazyIconPickerModal as IconPickerModal } from '../components/ui/IconPickerModal';
 import { AccountPicker } from '../components/ui/AccountPicker';
@@ -368,6 +369,7 @@ export function FrontendPluginContextProvider({ children }: { children: React.Re
             ClientTime,
             Tooltip,
             TronAddress,
+            TronContractAddress,
             TronTransactionId,
             IconPickerModal,
             ConfirmDialog,
@@ -489,6 +491,7 @@ export function createPluginContext(pluginId: string): IFrontendPluginContext {
         ClientTime,
         Tooltip,
         TronAddress,
+        TronContractAddress,
         TronTransactionId,
         IconPickerModal,
         ConfirmDialog,

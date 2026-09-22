@@ -14,7 +14,7 @@ Layout components carry typed props — `<layout.Stack gap="md">` fails compilat
 interface IFrontendPluginContext {
     pluginId: string;              // Used internally for namespacing events and API routes
     layout: ILayoutComponents;     // Page, PageHeader, Stack, Grid, Section, SubMenu
-    ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Field, Skeleton, ClientTime, Tooltip, TronAddress, TronTransactionId, IconPickerModal, Table family
+    ui: IUIComponents;             // Card, Badge, Button, CopyButton, IconButton, Switch, Input, Field, Skeleton, ClientTime, Tooltip, TronAddress, TronContractAddress, TronTransactionId, IconPickerModal, Table family
     charts: IChartComponents;      // LineChart, BarChart
     system: ISystemComponents;     // SchedulerMonitor, CollectionBrowser, ClickHouseTableBrowser, SystemLogsMonitor, AiToolSchemaView (admin)
     api: IApiClient;               // get/post/put/patch/delete
@@ -87,6 +87,7 @@ const [tab, setTab] = useState('query');
 | `ClientTime` | `date: Date \| string \| null \| undefined`, `format?: 'time'\|'datetime'\|'date'\|'relative'\|'short'`, `fallback?` |
 | `Tooltip` | `content: string`, `children: ReactNode`, `placement?: 'top'\|'bottom'` |
 | `TronAddress` | `address: string` (required), `label?`, `copy?`, `tools?`, `explorer?`, `className?` |
+| `TronContractAddress` | `address: string` (required), `label?`, `copy?`, `tools?`, `explorer?`, `className?` |
 | `TronTransactionId` | `txId: string` (required), `copy?`, `explorer?`, `className?` |
 | `IconPickerModal` | `selectedIcon?`, `onSelect: (iconName) => void`, `onClose: () => void` |
 
@@ -101,6 +102,8 @@ const [tab, setTab] = useState('query');
 `Field` is how a plugin attaches a label and a validation message to a control. Wrap the control in it and pass `error` — a string, or an array to list every fault so a value with two problems is fixed in one edit — and `Field` renders the message and clones the control to add `aria-describedby` pointing at it. That association is the part a hand-rolled message block reliably leaves out, which is how an explanation ends up visible on screen and never announced. `hint` carries standing guidance and is hidden while an error stands, so only one line ever applies. Set `invalid` on the control itself for the danger border and `aria-invalid`; the two are separate because a field can carry a message about something other than that control's own value.
 
 `TronAddress` and `TronTransactionId` are the canonical renderers for the two identifiers every TRON surface shows. Both are compact monospace chips that truncate, put the full value in a tooltip, and carry copy plus a Tronscan out-link; the address chip adds a "forward to a public tool" menu and displays a pre-resolved `label` in place of the truncation, neither of which a transaction has an equivalent for. Use them instead of hand-truncating a value or hand-building an explorer anchor — that is how the codebase ended up with a dozen private copies of the Tronscan URL and out-arrow links that showed the reader no identifier at all. Both render synchronously from their prop, so they are SSR-safe; trim affordances off with the booleans in a dense read-only table.
+
+`TronContractAddress` is `TronAddress` for a smart contract, with the same props. Use it for a token contract, a DEX router, or an observer's `contract_address`. Its out-link opens Tronscan's contract page instead of the address page, and its tools menu offers only the tool pages that accept a contract, so a reader is never sent to the Signature Verifier or Address Origins for an address those tools cannot answer about. The tag editor is still in the menu for admins, and tags are shared with `TronAddress` because both are keyed by the address string.
 
 `ClientTime` is the canonical fix for SSR/client timezone hydration mismatches — never call `new Date().toLocaleString()` directly. Prefer `format="relative"` ("2m ago") for a column of closely-spaced events, where repeating the same absolute date down every row spends the widest column on its least useful value; `format="short"` is the compact absolute form.
 
@@ -138,7 +141,7 @@ Core admin components for the tabs a plugin's admin page offers: Schedules, Data
 |-----------|-------|
 | `SchedulerMonitor` | `jobFilter?: string[] \| (job) => boolean`, `title?`, `hideStats?` |
 | `CollectionBrowser` | `prefix?`, `title?`, `allowEdit?` (default true), `allowDelete?` (default true) |
-| `ClickHouseTableBrowser` | `pluginId?`, `title?`, `hideWhenEmpty?`, `prefix?` (deprecated) |
+| `ClickHouseTableBrowser` | `pluginId?`, `tables?` (exact names, for core modules; a plugin uses `pluginId`), `title?`, `hideWhenEmpty?`, `prefix?` (deprecated) |
 | `SystemLogsMonitor` | `service?`, `title?` |
 | `AiToolSchemaView` | `schema` — the `inputSchema` from an `IAiToolInfo` |
 
