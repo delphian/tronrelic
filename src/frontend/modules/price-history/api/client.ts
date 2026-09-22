@@ -6,7 +6,7 @@
  * account-history admin client.
  */
 
-import type { IPriceHistoryStats, IPriceHistorySettings, IPriceCoverageDiagnostics } from '@/types';
+import type { IPriceHistoryStats, IPriceHistorySettings, IPriceCoverageDiagnostics, IPriceSourceInfo } from '@/types';
 
 /** Base path for every price-history admin endpoint. */
 const BASE = '/api/admin/system/price-history';
@@ -71,6 +71,26 @@ export async function updateSettings(patch: Partial<IPriceHistorySettings>): Pro
         }),
         'update settings'
     );
+}
+
+/**
+ * Load the price vendors the routing settings may name, with what each serves
+ * and whether it is enabled.
+ *
+ * @returns One entry per vendor.
+ */
+export async function getSources(): Promise<IPriceSourceInfo[]> {
+    return parse<IPriceSourceInfo[]>(await fetch(`${BASE}/sources`), 'load price sources');
+}
+
+/**
+ * Clear one asset's backfill cursor so the next tick seeds it again through the
+ * current routing. Stored prices are kept.
+ *
+ * @param asset - The asset to reset.
+ */
+export async function resetAsset(asset: string): Promise<void> {
+    await parse(await fetch(`${BASE}/assets/${encodeURIComponent(asset)}/reset`, { method: 'POST' }), 'reset asset');
 }
 
 /**

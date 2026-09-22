@@ -16,8 +16,16 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Request, Response } from 'express';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { ProviderConfigService } from '../services/provider-config.service.js';
+import { ProviderRegistry } from '../services/provider-registry.service.js';
 import { ProvidersController } from '../api/providers.controller.js';
-import { DEFAULT_TRONGRID_CONFIG, DEFAULT_TRONSCAN_CONFIG } from '../database/index.js';
+import {
+    DEFAULT_TRONGRID_CONFIG,
+    DEFAULT_TRONSCAN_CONFIG,
+    DEFAULT_COINGECKO_CONFIG,
+    TRONSCAN_DESCRIPTOR,
+    TRONGRID_DESCRIPTOR,
+    COINGECKO_DESCRIPTOR
+} from '../database/index.js';
 
 /**
  * Minimal ISystemLogService stand-in — these tests assert on stored state and
@@ -55,10 +63,11 @@ function createResponseSpy() {
  * Shape a plain body into the sliver of `Request` the handlers read.
  *
  * @param body - JSON body the request carries.
+ * @param id - Route param `id` for the generic vendor routes.
  * @returns A request double.
  */
-function requestWith(body: unknown): Request {
-    return { body } as Request;
+function requestWith(body: unknown, id?: string): Request {
+    return { body, params: id ? { id } : {} } as unknown as Request;
 }
 
 describe('ProvidersController — input guards', () => {
@@ -69,9 +78,15 @@ describe('ProvidersController — input guards', () => {
         mockDb = createMockDatabaseService();
         ProviderConfigService.resetInstance();
         ProviderConfigService.setDependencies(mockDb, createSilentLogger());
+        ProviderRegistry.resetInstance();
+        const registry = ProviderRegistry.getInstance();
+        const test = async () => ({ ok: true, message: 'ok' });
+        registry.registerVendor({ descriptor: TRONSCAN_DESCRIPTOR, defaults: DEFAULT_TRONSCAN_CONFIG, testConnection: test, isEnabled: async () => true });
+        registry.registerVendor({ descriptor: TRONGRID_DESCRIPTOR, defaults: DEFAULT_TRONGRID_CONFIG, testConnection: test, isEnabled: async () => false });
+        registry.registerVendor({ descriptor: COINGECKO_DESCRIPTOR, defaults: DEFAULT_COINGECKO_CONFIG, testConnection: test, isEnabled: async () => true });
         controller = new ProvidersController(
             ProviderConfigService.getInstance(),
-            {} as never,
+            registry,
             {} as never,
             createSilentLogger()
         );
@@ -80,7 +95,64 @@ describe('ProvidersController — input guards', () => {
     afterEach(() => {
         mockDb.clear();
         ProviderConfigService.resetInstance();
+        ProviderRegistry.resetInstance();
         vi.restoreAllMocks();
+    });
+
+    describe('generic vendor routes', () => {
+        it('lists every registered vendor with its descriptor and masked config', async () => {
+            const { res, captured } = createResponseSpy();
+
+            await controller.listProviders(requestWith({}), res);
+
+            expect(captured.status).toBe(200);
+            const providers = (captured.body as { providers: Array<{ id: string; config: Record<string, unknown> }> }).providers;
+            expect(providers.map((provider) => provider.id)).toEqual(['tronscan', 'trongrid', 'coingecko']);
+            expect(providers[0].config).toMatchObject({ apiKey: '', apiKeyConfigured: false, enabled: true });
+            expect(providers[1].config).toMatchObject({ apiKeys: [], apiKeyCount: 0 });
+        });
+
+        it('answers 404 for an unknown vendor', async () => {
+            const { res, captured } = createResponseSpy();
+            await controller.getProviderConfig(requestWith({}, 'nope'), res);
+            expect(captured.status).toBe(404);
+        });
+
+        it('stores a new secret, masks it on read, ignores a masked echo, and clears on the sentinel', async () => {
+            const first = createResponseSpy();
+            await controller.updateProviderConfig(requestWith({ apiKey: 'cg-secret-key-1234' }, 'coingecko'), first.res);
+            expect(first.captured.status).toBe(200);
+            expect((first.captured.body as { config: Record<string, unknown> }).config).toMatchObject({ apiKey: '****1234', apiKeyConfigured: true });
+            expect((await ProviderConfigService.getInstance().getCoinGeckoConfig()).apiKey).toBe('cg-secret-key-1234');
+
+            await controller.updateProviderConfig(requestWith({ apiKey: '****1234', enabled: false }, 'coingecko'), createResponseSpy().res);
+            const afterEcho = await ProviderConfigService.getInstance().getCoinGeckoConfig();
+            expect(afterEcho.apiKey).toBe('cg-secret-key-1234');
+            expect(afterEcho.enabled).toBe(false);
+
+            await controller.updateProviderConfig(requestWith({ apiKey: '__clear__' }, 'coingecko'), createResponseSpy().res);
+            expect((await ProviderConfigService.getInstance().getCoinGeckoConfig()).apiKey).toBeUndefined();
+        });
+
+        it('rejects a value outside a select field\'s options and a non-boolean switch, naming the field', async () => {
+            const select = createResponseSpy();
+            await controller.updateProviderConfig(requestWith({ keyTier: 'platinum' }, 'coingecko'), select.res);
+            expect(select.captured.status).toBe(400);
+            expect((select.captured.body as { error: string }).error).toContain('keyTier');
+
+            const bool = createResponseSpy();
+            await controller.updateProviderConfig(requestWith({ enabled: 'yes' }, 'tronscan'), bool.res);
+            expect(bool.captured.status).toBe(400);
+            expect((bool.captured.body as { error: string }).error).toContain('enabled');
+            expect((await ProviderConfigService.getInstance().getTronScanConfig()).enabled).toBe(true);
+        });
+
+        it('refuses to save a custom vendor through the generic route', async () => {
+            const { res, captured } = createResponseSpy();
+            await controller.updateProviderConfig(requestWith({ enabled: true }, 'trongrid'), res);
+            expect(captured.status).toBe(400);
+            expect((await ProviderConfigService.getInstance().getTronGridConfig()).enabled).toBe(false);
+        });
     });
 
     describe('TronGrid numeric fields', () => {
@@ -142,12 +214,13 @@ describe('ProvidersController — input guards', () => {
                 .toBe(DEFAULT_TRONGRID_CONFIG.baseUrl);
         });
 
-        it('refuses the same input on the TronScan config', async () => {
+        it('refuses the same input on the TronScan config through the generic route', async () => {
             const { res, captured } = createResponseSpy();
 
-            await controller.updateTronScanConfig(requestWith({ baseUrl: 'ftp://apilist.tronscanapi.com' }), res);
+            await controller.updateProviderConfig(requestWith({ baseUrl: 'ftp://apilist.tronscanapi.com' }, 'tronscan'), res);
 
             expect(captured.status).toBe(400);
+            expect((captured.body as { error: string }).error).toContain('baseUrl');
             expect((await ProviderConfigService.getInstance().getTronScanConfig()).baseUrl)
                 .toBe(DEFAULT_TRONSCAN_CONFIG.baseUrl);
         });

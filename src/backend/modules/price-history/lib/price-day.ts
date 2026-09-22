@@ -63,8 +63,8 @@ export function previousUtcDay(day: string): string {
 }
 
 /**
- * The UTC-midnight epoch-second of a day — the `from` bound CoinGecko's ranged
- * endpoint expects.
+ * The UTC-midnight epoch-second of a day — the `from` bound the vendors' ranged
+ * endpoints expect.
  *
  * @param day - UTC `YYYY-MM-DD`.
  * @returns Epoch seconds at the day's UTC start.
@@ -82,18 +82,6 @@ export function utcDayStartSeconds(day: string): number {
  */
 export function utcDayEndSeconds(day: string): number {
     return utcDayStartSeconds(day) + 86_400 - 1;
-}
-
-/**
- * Convert a day to CoinGecko's `/history` date format. That endpoint is the only
- * deep-history path on the free tier and it expects `DD-MM-YYYY`, not ISO.
- *
- * @param day - UTC `YYYY-MM-DD`.
- * @returns The same day as `DD-MM-YYYY`.
- */
-export function toCoinGeckoHistoryDate(day: string): string {
-    const [year, month, date] = day.split('-');
-    return `${date}-${month}-${year}`;
 }
 
 /**

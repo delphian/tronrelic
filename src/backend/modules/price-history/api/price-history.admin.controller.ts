@@ -3,9 +3,10 @@
  *
  * The price series is otherwise invisible — no user-facing page reads it — so
  * operators need a surface to confirm coverage (is TRX fully backfilled, are held
- * tokens priced or stuck), tune pacing if CoinGecko rate-limits, and force a
- * backfill after a new token is tracked. Thin handlers delegating to the service;
- * `requireAdmin` is applied at mount.
+ * tokens priced or stuck), order the price vendors per asset class, tune pacing
+ * if a vendor rate-limits, reset an asset, and force a backfill after a new
+ * token is tracked. Thin handlers delegating to the service; `requireAdmin` is
+ * applied at mount.
  */
 
 import type { Request, Response } from 'express';
@@ -73,6 +74,38 @@ export class PriceHistoryAdminController {
             res.json(await this.service.updateSettings(req.body ?? {}));
         } catch (error) {
             this.fail(res, 400, 'Failed to update price-history settings', error);
+        }
+    };
+
+    /**
+     * GET /sources — the price vendors the routing settings may name, with what
+     * each serves and whether it is enabled, so the settings form offers real
+     * options and shows why a listed source is being skipped.
+     *
+     * @param _req - Unused.
+     * @param res - Emits an `IPriceSourceInfo[]`.
+     */
+    getSources = async (_req: Request, res: Response): Promise<void> => {
+        try {
+            res.json(await this.service.getPriceSources());
+        } catch (error) {
+            this.fail(res, 500, 'Failed to list price sources', error);
+        }
+    };
+
+    /**
+     * POST /assets/:asset/reset — clear one asset's cursor so the next tick
+     * seeds it again through the current routing. Stored prices are kept.
+     *
+     * @param req - Route param `asset`.
+     * @param res - 202 with `{ reset: true }`.
+     */
+    resetAsset = async (req: Request, res: Response): Promise<void> => {
+        try {
+            await this.service.resetAsset(String(req.params.asset ?? ''));
+            res.status(202).json({ reset: true });
+        } catch (error) {
+            this.fail(res, 400, 'Failed to reset price-history asset', error);
         }
     };
 

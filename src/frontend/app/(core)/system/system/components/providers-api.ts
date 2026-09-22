@@ -4,43 +4,57 @@
  * Same-origin admin calls (cookie-authenticated via the /system layout gate), so
  * these are thin wrappers over `fetch` mirroring SystemConfigSection's pattern —
  * no client library, no token handling. No API key is ever received in the clear:
- * GET returns keys masked, TronScan saves send a real key only when the operator
- * types a new one, and TronGrid keys are added and removed one at a time so a
- * masked value never travels back as a write.
+ * GET returns secrets masked, a generic save sends a real key only when the
+ * operator types a new one, and TronGrid keys are added and removed one at a
+ * time so a masked value never travels back as a write.
+ *
+ * The generic functions work for any vendor the backend registry lists; the
+ * card renders from the vendor's field descriptors, so a vendor added on the
+ * backend appears here with no frontend change. TronGrid keeps its own
+ * functions for the rotating key pool.
  */
 
-/** Price source the TronScan endpoint reports from. */
-export type TronScanPriceSource = 'coinmarketcap' | 'coingecko';
+/**
+ * Kinds of field the generic card renders. Mirrors `ProviderFieldKind` on the
+ * backend; duplicated because the frontend cannot import backend modules.
+ */
+export type ProviderFieldKind = 'secret' | 'text' | 'url' | 'boolean' | 'select' | 'integer';
 
-/** Masked TronScan config as returned by GET — the key is never sent in the clear. */
-export interface ITronScanConfigView {
-    /** Masked key (`****abcd`) or empty when none is set. */
-    apiKey: string;
-    /** Whether a key is stored, for the "configured" UI state. */
-    apiKeyConfigured: boolean;
-    baseUrl: string;
-    priceSource: TronScanPriceSource;
-    enabled: boolean;
+/** One editable field on a vendor's card, as the list endpoint describes it. */
+export interface IProviderFieldView {
+    key: string;
+    label: string;
+    kind: ProviderFieldKind;
+    hint?: string;
+    placeholder?: string;
+    options?: Array<{ value: string; label: string }>;
+    min?: number;
+    max?: number;
 }
 
-/** Fields an operator can change. `apiKey` omitted = leave as-is. */
-export interface ITronScanConfigUpdate {
-    apiKey?: string;
-    baseUrl?: string;
-    priceSource?: TronScanPriceSource;
-    enabled?: boolean;
+/** A vendor as the list endpoint returns it: descriptor plus masked config. */
+export interface IProviderView {
+    id: string;
+    label: string;
+    description: string;
+    docsUrl?: string;
+    capabilities: string[];
+    fields: IProviderFieldView[];
+    /** True for a vendor with a bespoke card (TronGrid); the generic card skips it. */
+    custom?: boolean;
+    /** Masked config keyed by field; each secret also has a `<key>Configured` boolean. */
+    config: Record<string, unknown>;
 }
 
-/** Structured result of a connectivity/credential test. */
-export interface ITronScanTestResult {
+/** Structured result of a vendor's connectivity/credential test. */
+export interface IProviderTestResult {
     ok: boolean;
     message: string;
-    sampleClose?: number;
     latencyMs?: number;
     usingKey?: boolean;
 }
 
-/** Sentinel a save sends to explicitly clear a stored key. */
+/** Sentinel a save sends in a secret field to explicitly clear a stored key. */
 export const CLEAR_SENTINEL = '__clear__';
 
 /**
@@ -111,22 +125,22 @@ export interface ITronGridTestResult {
     keyResults: ITronGridKeyTestResult[];
 }
 
-const BASE = '/api/admin/system/providers/tronscan';
+const BASE = '/api/admin/system/providers';
 
-const TRONGRID_BASE = '/api/admin/system/providers/trongrid';
+const TRONGRID_BASE = `${BASE}/trongrid`;
 
 /**
  * Read a JSON response, raising the server's own error message when it sent one.
  *
- * The TronGrid endpoints answer 400 with a specific reason — duplicate key, pool
- * full, value out of range — and those reasons are what the operator needs to
- * see; a bare status code would strand them.
+ * The endpoints answer 400 with a specific reason — duplicate key, pool full,
+ * value out of range, a refused field — and those reasons are what the
+ * operator needs to see; a bare status code would strand them.
  *
  * @param response - The fetch response to interpret.
  * @returns The parsed body.
  * @throws Error carrying the server's message, or the status when it sent none.
  */
-async function readJsonOrThrow(response: Response): Promise<{ config?: unknown; result?: unknown }> {
+async function readJsonOrThrow(response: Response): Promise<{ config?: unknown; result?: unknown; providers?: unknown }> {
     const data = await response.json().catch(() => null);
     if (!response.ok) {
         const message = data && typeof data === 'object' && 'error' in data
@@ -137,58 +151,58 @@ async function readJsonOrThrow(response: Response): Promise<{ config?: unknown; 
     if (!data) {
         throw new Error('Server returned an unreadable response.');
     }
-    return data as { config?: unknown; result?: unknown };
+    return data as { config?: unknown; result?: unknown; providers?: unknown };
 }
 
 /**
- * Read the masked TronScan provider config.
+ * List every registered vendor with its descriptor and masked config.
  *
- * @returns The masked config for the admin form.
+ * @returns The vendors in registration order.
  * @throws Error if the request fails.
  */
-export async function getTronScanConfig(): Promise<ITronScanConfigView> {
-    const response = await fetch(BASE);
-    if (!response.ok) {
-        throw new Error(`Failed to load provider config: ${response.status}`);
-    }
-    const data = await response.json();
-    return data.config as ITronScanConfigView;
+export async function listProviders(): Promise<IProviderView[]> {
+    const data = await readJsonOrThrow(await fetch(BASE));
+    return (data.providers ?? []) as IProviderView[];
 }
 
 /**
- * Persist a partial config change and return the new masked config.
+ * Persist a partial change to a vendor's config and return the new masked
+ * config. A secret is sent only when the operator typed a new one or asked to
+ * clear it.
  *
- * @param updates - Fields to change.
+ * @param vendorId - The vendor to update.
+ * @param updates - Fields to change, keyed by descriptor field.
  * @returns The updated masked config.
- * @throws Error if the request fails.
+ * @throws Error carrying the server's reason when a field is refused.
  */
-export async function updateTronScanConfig(updates: ITronScanConfigUpdate): Promise<ITronScanConfigView> {
-    const response = await fetch(BASE, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
-    });
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(err.error || `Server returned ${response.status}`);
-    }
-    const data = await response.json();
-    return data.config as ITronScanConfigView;
+export async function updateProviderConfig(vendorId: string, updates: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const data = await readJsonOrThrow(
+        await fetch(`${BASE}/${encodeURIComponent(vendorId)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+        })
+    );
+    return data.config as Record<string, unknown>;
 }
 
 /**
- * Run a live connectivity/credential test against TronScan with the saved config.
+ * Run a vendor's live connectivity/credential test with its saved config.
  *
+ * @param vendorId - The vendor to probe.
  * @returns The structured test result (a failed test resolves, it does not throw).
  * @throws Error only on an unexpected transport/server error.
  */
-export async function testTronScan(): Promise<ITronScanTestResult> {
-    const response = await fetch(`${BASE}/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+export async function testProvider(vendorId: string): Promise<IProviderTestResult> {
+    const response = await fetch(`${BASE}/${encodeURIComponent(vendorId)}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    });
     const data = await response.json().catch(() => null);
     if (!data || !data.result) {
         throw new Error(`Provider test failed: ${response.status}`);
     }
-    return data.result as ITronScanTestResult;
+    return data.result as IProviderTestResult;
 }
 
 /**

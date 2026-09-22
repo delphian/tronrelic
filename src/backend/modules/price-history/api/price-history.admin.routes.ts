@@ -13,7 +13,7 @@ import type { PriceHistoryAdminController } from './price-history.admin.controll
  * Build the `/api/admin/system/price-history` router.
  *
  * @param controller - The admin controller.
- * @returns A router with the stats, settings, and manual-run routes.
+ * @returns A router with the stats, settings, sources, reset, and manual-run routes.
  */
 export function createPriceHistoryAdminRouter(controller: PriceHistoryAdminController): Router {
     const router = Router();
@@ -21,6 +21,8 @@ export function createPriceHistoryAdminRouter(controller: PriceHistoryAdminContr
     router.get('/diagnostics', controller.getDiagnostics);
     router.get('/settings', controller.getSettings);
     router.patch('/settings', controller.updateSettings);
+    router.get('/sources', controller.getSources);
+    router.post('/assets/:asset/reset', controller.resetAsset);
     router.post('/backfill/run', controller.runBackfill);
     router.post('/forward/run', controller.runForward);
     return router;
