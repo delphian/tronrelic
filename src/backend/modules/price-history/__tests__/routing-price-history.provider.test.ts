@@ -5,7 +5,8 @@
  * operator's order for the asset's class, a vendor that cannot serve the asset
  * is never asked, a disabled vendor is skipped and recorded, an empty answer
  * falls through to the next vendor, the first non-empty answer wins, a
- * transport failure fails the call so the tick retries, and the verdict tells
+ * failing vendor is passed over for the next one but fails the call when no
+ * vendor priced the asset (so the tick retries), and the verdict tells
  * a final empty answer apart from one a skipped vendor might have changed and
  * from a call where no vendor could be asked at all.
  */
@@ -21,6 +22,7 @@ import {
 import { COINGECKO_DESCRIPTOR, GECKOTERMINAL_DESCRIPTOR, TRONSCAN_DESCRIPTOR } from '../../providers/database/index.js';
 import { DEFAULT_SETTINGS } from '../database/index.js';
 import { RoutingPriceHistoryProvider } from '../providers/routing-price-history.provider.js';
+import { PriceVendorsFailedError } from '../providers/PriceVendorsFailedError.js';
 
 /** Stub logger matching the ISystemLogService shape the provider touches. */
 const stubLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child: () => stubLogger };
@@ -154,14 +156,35 @@ describe('RoutingPriceHistoryProvider', () => {
         expect(outcome.skipped).toEqual(['geckoterminal']);
     });
 
-    it('propagates a transport failure instead of trying the next vendor', async () => {
+    it('falls through a failing vendor to the next one and reports the failure', async () => {
         const geckoterminal = new ScriptedProvider('geckoterminal', 'tokens', [point('geckoterminal')]);
         const router = routerWith(
             { coingecko: new ScriptedProvider('coingecko', 'all', 'error'), geckoterminal },
             { tokenSources: ['coingecko', 'geckoterminal'] }
         );
-        await expect(router.fetchRange('TTOKEN', '2024-01-01', '2024-01-01')).rejects.toThrow('timeout');
-        expect(geckoterminal.calls).toBe(0);
+
+        const outcome = await router.fetchRange('TTOKEN', '2024-01-01', '2024-01-01');
+
+        expect(outcome.verdict).toBe('priced');
+        expect(outcome.points[0].source).toBe('geckoterminal');
+        expect(outcome.failed).toEqual([{ vendor: 'coingecko', message: 'timeout' }]);
+        expect(stubLogger.warn).toHaveBeenCalledWith(
+            expect.objectContaining({ vendor: 'coingecko', error: 'timeout' }),
+            'Price vendor failed; trying the next vendor'
+        );
+    });
+
+    it('throws an error naming the failed vendor when no vendor priced the asset', async () => {
+        const router = routerWith(
+            { coingecko: new ScriptedProvider('coingecko', 'all', 'error'), geckoterminal: new ScriptedProvider('geckoterminal', 'tokens', []) },
+            { tokenSources: ['coingecko', 'geckoterminal'] }
+        );
+
+        // A failed vendor has not said the range is empty, so the call must fail
+        // rather than return `empty` and let the service park the asset.
+        const attempt = router.fetchRange('TTOKEN', '2024-01-01', '2024-01-01');
+        await expect(attempt).rejects.toBeInstanceOf(PriceVendorsFailedError);
+        await expect(attempt).rejects.toThrow('coingecko: timeout');
     });
 
     it('reports unavailable when no vendor could be asked, so the tick learns nothing about the asset', async () => {

@@ -12,6 +12,7 @@
  */
 
 import type { ISourcedPricePoint } from '../../providers/index.js';
+import type { IPriceVendorFailure } from './PriceVendorsFailedError.js';
 
 /**
  * How a ranged fetch ended once every vendor in the routing order had been
@@ -42,4 +43,12 @@ export interface IPriceRangeOutcome {
     asked: string[];
     /** Vendor ids that were skipped because the operator has them disabled. */
     skipped: string[];
+    /**
+     * Vendors that threw before a later vendor priced the asset. Only a
+     * `priced` outcome can carry entries: when nothing priced the asset and a
+     * vendor threw, the router throws `PriceVendorsFailedError` instead of
+     * returning. Kept so the service can count the call as having hit an error
+     * even though it succeeded.
+     */
+    failed: IPriceVendorFailure[];
 }

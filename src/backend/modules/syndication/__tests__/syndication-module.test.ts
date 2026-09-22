@@ -67,7 +67,12 @@ describe('SyndicationModule', () => {
         await mod.init(deps);
         await mod.run();
 
-        expect(scheduler.register).toHaveBeenCalledWith(SYNDICATION_RELAY_JOB, expect.any(String), expect.any(Function));
+        expect(scheduler.register).toHaveBeenCalledWith(
+            SYNDICATION_RELAY_JOB,
+            expect.any(String),
+            expect.any(Function),
+            expect.objectContaining({ logger: expect.anything() })
+        );
         expect(app.use).toHaveBeenCalledWith('/api/admin/system/syndication', expect.any(Function), expect.any(Function));
         expect(serviceRegistry.get('syndication')).toBe(mod.getSyndication());
     });

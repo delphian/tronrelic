@@ -8,7 +8,7 @@
  * @module modules/scheduler/services/scheduler.service
  */
 
-import type { ICronHandle, ICronTrigger, IDatabaseService } from '@/types';
+import type { ICronHandle, ICronTrigger, IDatabaseService, ISchedulerJobOptions, ISystemLogService } from '@/types';
 import { logger } from '../../../lib/logger.js';
 import { SchedulerConfigModel, type SchedulerConfigDoc } from '../database/scheduler-config.model.js';
 import { SchedulerExecutionModel, type SchedulerExecutionDoc } from '../database/scheduler-execution.model.js';
@@ -28,6 +28,11 @@ export type CronJobHandler = () => Promise<void> | void;
  *                        slot this job has already handled. A slot at or before
  *                        it is a duplicate and never starts a run. Zero until
  *                        the first slot arrives.
+ * @property logger - Logger for this job's lifecycle and run outcomes. The
+ *                    owner's logger when one was passed to `register()`, so a
+ *                    failure is filed under the owning module or plugin rather
+ *                    than the core `tronrelic` service; the scheduler's own
+ *                    logger otherwise.
  */
 interface RegisteredJob {
     name: string;
@@ -37,6 +42,7 @@ interface RegisteredJob {
     handler: CronJobHandler;
     task?: ICronHandle;
     lastSlotMs: number;
+    logger: ISystemLogService;
 }
 
 /**
@@ -148,9 +154,12 @@ export class SchedulerService {
      * @param name - Unique job identifier (e.g., "markets:refresh")
      * @param defaultSchedule - Default cron expression (e.g., "0 0 * * *" for daily)
      * @param handler - Async function to execute on schedule
+     * @param options - Optional per-job settings. `logger` is the owner's logger,
+     *                  so this job's start, skip, success, and failure entries
+     *                  land on the owner's Logs tab instead of under `tronrelic`.
      * @throws Error if job name is already registered
      */
-    register(name: string, defaultSchedule: string, handler: CronJobHandler): void {
+    register(name: string, defaultSchedule: string, handler: CronJobHandler, options?: ISchedulerJobOptions): void {
         if (this.jobs.has(name)) {
             throw new Error(`Job ${name} already registered`);
         }
@@ -161,7 +170,8 @@ export class SchedulerService {
             enabled: true,
             handler,
             task: undefined,
-            lastSlotMs: 0
+            lastSlotMs: 0,
+            logger: options?.logger ?? logger
         });
 
         if (this.started) {
@@ -225,7 +235,7 @@ export class SchedulerService {
             await configModel.deleteOne({ jobName: name });
         }
 
-        logger.info({ jobName: name, deletedFromDb: deleteFromDatabase }, 'Job unregistered from scheduler');
+        job.logger.info({ jobName: name, deletedFromDb: deleteFromDatabase }, 'Job unregistered from scheduler');
     }
 
     /**
@@ -312,7 +322,7 @@ export class SchedulerService {
                 updatedAt: new Date()
             });
             createdConfigId = config._id;
-            logger.info(
+            job.logger.info(
                 { jobName: name, schedule: job.defaultSchedule },
                 'Created default scheduler config'
             );
@@ -345,12 +355,12 @@ export class SchedulerService {
 
         if (job.enabled) {
             this.scheduleJob(job);
-            logger.info(
+            job.logger.info(
                 { jobName: name, schedule: job.currentSchedule },
                 `Scheduler job started: ${name}`
             );
         } else {
-            logger.info({ jobName: name }, 'Scheduler job disabled (skipped)');
+            job.logger.info({ jobName: name }, 'Scheduler job disabled (skipped)');
         }
     }
 
@@ -376,7 +386,7 @@ export class SchedulerService {
         const gone = this.jobs.get(name) !== job;
 
         if (gone) {
-            logger.info({ jobName: name }, 'Scheduler job unregistered before it could start');
+            job.logger.info({ jobName: name }, 'Scheduler job unregistered before it could start');
         }
 
         return gone;
@@ -464,18 +474,18 @@ export class SchedulerService {
         }
 
         if (isDuplicate) {
-            logger.debug(
+            job.logger.debug(
                 { jobName: job.name, slot: new Date(slotMs).toISOString(), kind },
                 `Scheduled Job Slot Ignored: ${job.name} - slot already handled`
             );
         } else if (coveredByRunningExecution) {
-            logger.debug(
+            job.logger.debug(
                 { jobName: job.name, slot: new Date(slotMs).toISOString() },
                 `Scheduled Job Missed Slot Dropped: ${job.name} - a run is already in progress`
             );
         } else {
             if (kind === 'missed') {
-                logger.info(
+                job.logger.info(
                     { jobName: job.name, slot: new Date(slotMs).toISOString() },
                     `Scheduled Job Recovering Missed Slot: ${job.name}`
                 );
@@ -505,7 +515,7 @@ export class SchedulerService {
      */
     private async executeJob(job: RegisteredJob): Promise<void> {
         if (this.runningJobs.has(job.name)) {
-            logger.warn(
+            job.logger.warn(
                 { jobName: job.name },
                 `Scheduled Job Skipped: ${job.name} - previous execution still running`
             );
@@ -514,7 +524,7 @@ export class SchedulerService {
 
         this.runningJobs.add(job.name);
         const started = Date.now();
-        logger.debug({ job: job.name }, `Scheduled Job Start: ${job.name}`);
+        job.logger.debug({ job: job.name }, `Scheduled Job Start: ${job.name}`);
 
         // Held as a nullable outer binding so the catch can tell whether the row was
         // ever created (creation itself may throw); the success path uses the
@@ -541,7 +551,7 @@ export class SchedulerService {
                 status: 'success'
             });
 
-            logger.info(
+            job.logger.info(
                 {
                     job: job.name,
                     durationMs: duration,
@@ -567,14 +577,14 @@ export class SchedulerService {
                         error: errorMessage
                     });
                 } catch (updateError) {
-                    logger.error(
+                    job.logger.error(
                         { job: job.name, error: updateError },
                         `Failed to persist failure status for job: ${job.name}`
                     );
                 }
             }
 
-            logger.error(
+            job.logger.error(
                 {
                     job: job.name,
                     durationMs: duration,
@@ -671,24 +681,24 @@ export class SchedulerService {
             if (job.task) {
                 job.task.stop();
                 job.task = undefined;
-                logger.info({ jobName }, 'Stopped existing scheduler task');
+                job.logger.info({ jobName }, 'Stopped existing scheduler task');
             }
 
             if (job.enabled) {
                 this.scheduleJob(job);
                 if (enabledChanged) {
-                    logger.warn({ jobName, schedule: job.currentSchedule }, `Scheduler job enabled: ${jobName}`);
+                    job.logger.warn({ jobName, schedule: job.currentSchedule }, `Scheduler job enabled: ${jobName}`);
                 } else {
-                    logger.info(
+                    job.logger.info(
                         { jobName, schedule: job.currentSchedule },
                         'Rescheduled job with new configuration'
                     );
                 }
             } else {
                 if (enabledChanged) {
-                    logger.warn({ jobName }, `Scheduler job disabled: ${jobName}`);
+                    job.logger.warn({ jobName }, `Scheduler job disabled: ${jobName}`);
                 } else {
-                    logger.info({ jobName }, 'Job disabled, not scheduling');
+                    job.logger.info({ jobName }, 'Job disabled, not scheduling');
                 }
             }
         }

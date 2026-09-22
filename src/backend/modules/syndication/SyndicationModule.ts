@@ -137,7 +137,7 @@ export class SyndicationModule implements IModule<ISyndicationModuleDependencies
         if (this.scheduler) {
             this.scheduler.register(SYNDICATION_RELAY_JOB, SYNDICATION_RELAY_SCHEDULE, async () => {
                 await this.service.runRelayOnce();
-            });
+            }, { logger: this.logger });
         } else {
             this.logger.warn('scheduler unavailable; syndication relay not registered — enqueued legs will not deliver until it is enabled');
         }

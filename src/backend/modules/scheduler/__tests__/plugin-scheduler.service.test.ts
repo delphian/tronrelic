@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { ISystemLogService } from '@/types';
+import type { ISchedulerJobOptions, ISystemLogService } from '@/types';
 import { PluginSchedulerService, type IPluginSchedulerHost } from '../services/plugin-scheduler.service.js';
 
 /**
@@ -59,17 +59,24 @@ class MockSchedulerHost implements IPluginSchedulerHost {
     /** Every unregister call, so tests can assert the delete flag that was passed. */
     public readonly unregisterCalls: Array<{ name: string; deleteFromDatabase: boolean }> = [];
 
+    /** Options passed with each registration, so tests can see which logger the facade supplied. */
+    public readonly registerOptions = new Map<string, ISchedulerJobOptions | undefined>();
+
     /**
      * Register a job, rejecting a duplicate the way the real scheduler does.
      *
      * @param name - Job identifier.
+     * @param _defaultSchedule - Cron expression; unused by this stand-in.
+     * @param _handler - Job body; unused by this stand-in.
+     * @param options - Per-job options, recorded so a test can check the logger.
      */
-    public register(name: string): void {
+    public register(name: string, _defaultSchedule?: string, _handler?: unknown, options?: ISchedulerJobOptions): void {
         if (this.registered.has(name)) {
             throw new Error(`Job ${name} already registered`);
         }
         this.registered.add(name);
         this.configs.add(name);
+        this.registerOptions.set(name, options);
     }
 
     /**
@@ -148,6 +155,19 @@ describe('PluginSchedulerService', () => {
             facade.register('demo:refresh', '*/5 * * * *', handler);
 
             expect(host.registered.has('demo:refresh')).toBe(true);
+        });
+
+        it('supplies the plugin logger so job outcomes land on the plugin Logs tab', () => {
+            facade.register('demo:refresh', '*/5 * * * *', vi.fn());
+
+            expect(host.registerOptions.get('demo:refresh')?.logger).toBe(logger);
+        });
+
+        it('keeps a logger the plugin passed itself', () => {
+            const own = new MockLogger();
+            facade.register('demo:refresh', '*/5 * * * *', vi.fn(), { logger: own });
+
+            expect(host.registerOptions.get('demo:refresh')?.logger).toBe(own);
         });
 
         it('does not track a registration the shared scheduler rejected', async () => {

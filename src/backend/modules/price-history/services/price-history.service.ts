@@ -138,7 +138,12 @@ export class PriceHistoryService implements IPriceHistoryService {
      */
     private providerCalls = 0;
 
-    /** Provider fetch calls that failed since process start (see {@link providerCalls}). */
+    /**
+     * Provider fetch calls that hit a vendor error since process start (see
+     * {@link providerCalls}). A call counts once whether it failed outright or
+     * a later vendor in the order rescued it, because either way a vendor is
+     * unhealthy and the operator needs to see it.
+     */
     private providerErrors = 0;
 
     /**
@@ -211,23 +216,34 @@ export class PriceHistoryService implements IPriceHistoryService {
     }
 
     /**
-     * Run one provider fetch through the rolling health counters: every call
-     * increments the attempt count, a throw increments the error count and
-     * rethrows unchanged so the caller's failure handling (cursor persistence,
+     * Run one routed fetch through the rolling health counters: every call
+     * increments the attempt count, and a call increments the error count when
+     * it throws or when a vendor failed before a later one priced the asset.
+     * The second case matters because the router now falls through a failing
+     * vendor, so without it a vendor with a rejected key would disappear from
+     * the error count as long as the next vendor kept answering. A throw is
+     * rethrown unchanged so the caller's failure handling (cursor persistence,
      * scheduler failure record) is untouched. Wrapping here keeps the counting
-     * in one place instead of at each provider call site.
+     * in one place instead of at each call site.
      *
-     * @param fetch - The provider call to run.
-     * @returns Whatever the provider call resolves to.
+     * @param asset - The asset to price.
+     * @param fromDay - Inclusive start UTC `YYYY-MM-DD`.
+     * @param toDay - Inclusive end UTC `YYYY-MM-DD`.
+     * @returns The router's outcome for the range.
      */
-    private async countProviderCall<T>(fetch: () => Promise<T>): Promise<T> {
+    private async fetchRangeCounted(asset: PriceAsset, fromDay: string, toDay: string): Promise<IPriceRangeOutcome> {
         this.providerCalls += 1;
+        let outcome: IPriceRangeOutcome;
         try {
-            return await fetch();
+            outcome = await this.provider.fetchRange(asset, fromDay, toDay);
         } catch (error) {
             this.providerErrors += 1;
             throw error;
         }
+        if (outcome.failed.length > 0) {
+            this.providerErrors += 1;
+        }
+        return outcome;
     }
 
     /**
@@ -727,7 +743,7 @@ export class PriceHistoryService implements IPriceHistoryService {
     private async seedRecentWindow(doc: IPriceAssetProgressDoc): Promise<SeedResult> {
         const today = todayUtcDay();
         const fromDay = shiftUtcDay(today, -RECENT_WINDOW_DAYS);
-        const outcome = await this.countProviderCall(() => this.provider.fetchRange(doc.asset, fromDay, today));
+        const outcome = await this.fetchRangeCounted(doc.asset, fromDay, today);
         let result: SeedResult;
         if (outcome.verdict === 'unavailable') {
             result = 'unavailable';
@@ -792,7 +808,7 @@ export class PriceHistoryService implements IPriceHistoryService {
         } else {
             const chunkStart = shiftUtcDay(toDay, -(chunkDays - 1));
             const fromDay = diffUtcDays(floorDay, chunkStart) < 0 ? floorDay : chunkStart;
-            const outcome = await this.countProviderCall(() => this.provider.fetchRange(doc.asset, fromDay, toDay));
+            const outcome = await this.fetchRangeCounted(doc.asset, fromDay, toDay);
             if (outcome.verdict === 'unavailable') {
                 result = 'unavailable';
             } else if (outcome.verdict === 'inconclusive') {
@@ -969,7 +985,7 @@ export class PriceHistoryService implements IPriceHistoryService {
             // Isolate each asset so one vendor failure does not leave every
             // asset after it a day behind; the failed asset is retried tomorrow.
             try {
-                const outcome = await this.countProviderCall(() => this.provider.fetchRange(doc.asset, newestDayFetched, today));
+                const outcome = await this.fetchRangeCounted(doc.asset, newestDayFetched, today);
                 if (outcome.verdict === 'unavailable') {
                     unavailableClasses.add(assetClass);
                     skippedUnavailable.push(doc.asset);

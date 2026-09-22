@@ -246,7 +246,12 @@ describe('AiToolsModule', () => {
             await scheduledModule.run();
 
             const register = scheduler.register as ReturnType<typeof vi.fn>;
-            expect(register).toHaveBeenCalledWith(AUDIT_PRUNE_JOB, expect.any(String), expect.any(Function));
+            expect(register).toHaveBeenCalledWith(
+                AUDIT_PRUNE_JOB,
+                expect.any(String),
+                expect.any(Function),
+                expect.objectContaining({ logger: expect.anything() })
+            );
             // The handler must run the retention sweep without throwing.
             const handler = register.mock.calls.find(c => c[0] === AUDIT_PRUNE_JOB)?.[2] as () => Promise<void>;
             await expect(handler()).resolves.toBeUndefined();

@@ -281,7 +281,7 @@ export class TrafficModule implements IModule<ITrafficModuleDependencies> {
                 if (await this.gscService.isConfigured()) {
                     await this.gscService.fetchAndStore();
                 }
-            });
+            }, { logger: this.logger });
             this.logger.info('GSC fetch job registered');
         } else {
             this.logger.info('Scheduler disabled — GSC fetch job not registered');

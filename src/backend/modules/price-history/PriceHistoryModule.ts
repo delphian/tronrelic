@@ -162,12 +162,15 @@ export class PriceHistoryModule implements IModule<IPriceHistoryModuleDependenci
      */
     async run(): Promise<void> {
         if (this.scheduler) {
+            // The module's logger goes with each job so the scheduler's own
+            // failure entry lands on this module's Logs tab.
+            const jobOptions = { logger: this.logger };
             this.scheduler.register(BACKFILL_JOB, BACKFILL_CRON, async () => {
                 await this.service.runBackfillTick();
-            });
+            }, jobOptions);
             this.scheduler.register(FORWARD_JOB, FORWARD_CRON, async () => {
                 await this.service.runForwardTick();
-            });
+            }, jobOptions);
         }
         this.serviceRegistry.register('price-history', this.service);
 
