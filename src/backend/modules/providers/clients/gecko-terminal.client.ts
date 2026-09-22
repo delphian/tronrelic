@@ -28,6 +28,14 @@ const NETWORK = 'tron';
 /** Per-request timeout. */
 const REQUEST_TIMEOUT_MS = 12_000;
 
+/**
+ * Status GeckoTerminal's public API returns for candles older than it serves to
+ * keyless callers (180 days, "You can only access data from the past 180 days
+ * with Public API"). The API takes no key, so a 401 cannot mean a rejected
+ * credential and always means that history wall.
+ */
+const HISTORY_WALL_STATUS = 401;
+
 /** Most daily candles one OHLCV call returns. */
 export const MAX_CANDLES_PER_CALL = 1000;
 
@@ -197,12 +205,8 @@ export class GeckoTerminalClient {
                     retries: 2,
                     delayMs: 2000,
                     factor: 2,
-                    onRetry: (attempt, error) => {
-                        if (GeckoTerminalClient.statusOf(error) === 404) {
-                            throw error;
-                        }
-                        this.logger.warn({ attempt, tokenAddress }, 'Retrying GeckoTerminal token pools');
-                    }
+                    // The default filter already stops on a 404, which is final here.
+                    onRetry: (attempt) => this.logger.warn({ attempt, tokenAddress }, 'Retrying GeckoTerminal token pools')
                 }
             );
         } catch (error) {
@@ -260,11 +264,14 @@ export class GeckoTerminalClient {
      * API returns them, ending at or before `beforeSeconds`. One call returns at
      * most {@link MAX_CANDLES_PER_CALL} candles and only the days the pool
      * traded, so a caller asking for a wide range gets gaps rather than zeros.
+     * A range beyond the keyless history wall answers empty rather than
+     * throwing, so the deep backfill reads it as the end of what this vendor
+     * holds instead of failing and retrying the same range every tick.
      *
      * @param pool - The pool and side chosen by {@link selectPool}.
      * @param beforeSeconds - Exclusive upper bound, epoch seconds.
      * @param limit - Max candles to request.
-     * @returns Candles with a finite positive close, newest first.
+     * @returns Candles with a finite positive close, newest first; empty past the history wall.
      * @throws ProviderDisabledError When the operator has the vendor switched off.
      */
     public async getDailyCandles(
@@ -276,30 +283,41 @@ export class GeckoTerminalClient {
         if (!config.enabled) {
             throw new ProviderDisabledError(GECKOTERMINAL_DESCRIPTOR.id);
         }
-        const rows = await retry(
-            async () => {
-                const response = await httpClient.get<IGeckoTerminalOhlcvResponse>(
-                    `${config.baseUrl}/networks/${NETWORK}/pools/${pool.poolAddress}/ohlcv/day`,
-                    {
-                        params: {
-                            aggregate: 1,
-                            before_timestamp: beforeSeconds,
-                            limit: Math.min(Math.max(1, limit), MAX_CANDLES_PER_CALL),
-                            currency: 'usd',
-                            token: pool.side
-                        },
-                        timeout: REQUEST_TIMEOUT_MS
-                    }
-                );
-                return response.data?.data?.attributes?.ohlcv_list ?? [];
-            },
-            {
-                retries: 2,
-                delayMs: 2000,
-                factor: 2,
-                onRetry: (attempt) => this.logger.warn({ attempt, pool: pool.poolAddress }, 'Retrying GeckoTerminal OHLCV')
+        let rows: Array<[number, number, number, number, number, number]> = [];
+        try {
+            rows = await retry(
+                async () => {
+                    const response = await httpClient.get<IGeckoTerminalOhlcvResponse>(
+                        `${config.baseUrl}/networks/${NETWORK}/pools/${pool.poolAddress}/ohlcv/day`,
+                        {
+                            params: {
+                                aggregate: 1,
+                                before_timestamp: beforeSeconds,
+                                limit: Math.min(Math.max(1, limit), MAX_CANDLES_PER_CALL),
+                                currency: 'usd',
+                                token: pool.side
+                            },
+                            timeout: REQUEST_TIMEOUT_MS
+                        }
+                    );
+                    return response.data?.data?.attributes?.ohlcv_list ?? [];
+                },
+                {
+                    retries: 2,
+                    delayMs: 2000,
+                    factor: 2,
+                    onRetry: (attempt) => this.logger.warn({ attempt, pool: pool.poolAddress }, 'Retrying GeckoTerminal OHLCV')
+                }
+            );
+        } catch (error) {
+            if (GeckoTerminalClient.statusOf(error) !== HISTORY_WALL_STATUS) {
+                throw error;
             }
-        );
+            this.logger.info(
+                { pool: pool.poolAddress, beforeSeconds },
+                'GeckoTerminal: range beyond the keyless history wall; treating as unavailable'
+            );
+        }
         const candles: IGeckoTerminalDailyCandle[] = [];
         for (const row of rows) {
             const timestamp = Number(row?.[0]);

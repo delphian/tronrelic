@@ -19,7 +19,7 @@ import { httpClient } from '../../../lib/http-client.js';
 import { retry } from '../../../lib/retry.js';
 import { ProviderConfigService } from '../services/provider-config.service.js';
 import { ProviderDisabledError } from '../capabilities/ProviderDisabledError.js';
-import { COINGECKO_DESCRIPTOR } from '../database/index.js';
+import { COINGECKO_DESCRIPTOR, type ICoinGeckoProviderConfig } from '../database/index.js';
 import type { IProviderTestResult } from '../services/provider-registry.service.js';
 
 /** The CoinGecko coin id for the native TRON coin. */
@@ -33,6 +33,12 @@ const PRO_KEY_HEADER = 'x-cg-pro-api-key';
 
 /** Per-request timeout; CoinGecko occasionally stalls and we would rather retry. */
 const REQUEST_TIMEOUT_MS = 10_000;
+
+/**
+ * Timeout for the spot-price read. Block sync waits on this call, so a stalled
+ * CoinGecko must not hold a block for the full ranged-read timeout.
+ */
+const SPOT_PRICE_TIMEOUT_MS = 5_000;
 
 /**
  * CoinGecko's own error code for "this range is older than a public caller may
@@ -51,10 +57,21 @@ interface ICoinGeckoSimplePriceResponse {
     tron?: { usd?: number };
 }
 
-/** The error envelope CoinGecko attaches to a refused request. */
+/** CoinGecko's status block, carrying its own error code alongside the HTTP status. */
+interface ICoinGeckoErrorStatus {
+    error_code?: number;
+    error_message?: string;
+}
+
+/**
+ * The error envelope CoinGecko attaches to a refused request. The history-wall
+ * refusal nests the status under `error` (`{ error: { status: { error_code } } }`),
+ * while other refusals put it at the top level or send `error` as a plain string,
+ * so both places are read.
+ */
 interface ICoinGeckoErrorBody {
-    status?: { error_code?: number; error_message?: string };
-    error?: string;
+    status?: ICoinGeckoErrorStatus;
+    error?: string | { status?: ICoinGeckoErrorStatus };
 }
 
 /**
@@ -130,14 +147,58 @@ export class CoinGeckoClient {
     }
 
     /**
-     * Read the HTTP status and CoinGecko error code off a failed request.
+     * Read the HTTP status and CoinGecko error code off a failed request. The
+     * code is what separates the keyless history wall from a rejected key, since
+     * both arrive as HTTP 401, so it is read from wherever CoinGecko put it.
      *
      * @param error - The thrown axios error.
      * @returns The status and body code, either possibly undefined.
      */
     private static classify(error: unknown): { status?: number; code?: number } {
         const response = (error as { response?: { status?: number; data?: ICoinGeckoErrorBody } })?.response;
-        return { status: response?.status, code: response?.data?.status?.error_code };
+        const body = response?.data;
+        const nested = typeof body?.error === 'object' ? body.error.status?.error_code : undefined;
+        return { status: response?.status, code: nested ?? body?.status?.error_code };
+    }
+
+    /**
+     * Read the current TRX price from `simple/price` with the saved base URL and
+     * key. Shared by the spot-price read and the connectivity test so both send
+     * the same request.
+     *
+     * @param config - The CoinGecko config resolved for this call.
+     * @param timeoutMs - How long to wait for CoinGecko before giving up.
+     * @returns The price in USD, or null when CoinGecko answered without a usable number.
+     */
+    private static async fetchSimpleTrxPrice(config: ICoinGeckoProviderConfig, timeoutMs: number): Promise<number | null> {
+        const response = await httpClient.get<ICoinGeckoSimplePriceResponse>(`${config.baseUrl}/simple/price`, {
+            params: { ids: TRON_COIN_ID, vs_currencies: 'usd' },
+            headers: CoinGeckoClient.buildHeaders(config.apiKey, config.keyTier),
+            timeout: timeoutMs
+        });
+        const price = response.data?.tron?.usd;
+        return typeof price === 'number' && Number.isFinite(price) ? price : null;
+    }
+
+    /**
+     * Read the current TRX price in USD for block sync, which stamps it on each
+     * block's transactions. It makes one attempt with no inline retry, because
+     * sync waits on it; the caller caches the answer and backs off after a failure.
+     *
+     * @returns The price in USD.
+     * @throws ProviderDisabledError When the operator has the vendor switched off.
+     * @throws When the request fails or CoinGecko returns no usable price.
+     */
+    public async getSpotTrxPriceUsd(): Promise<number> {
+        const config = await ProviderConfigService.getInstance().getCoinGeckoConfig();
+        if (!config.enabled) {
+            throw new ProviderDisabledError(COINGECKO_DESCRIPTOR.id);
+        }
+        const price = await CoinGeckoClient.fetchSimpleTrxPrice(config, SPOT_PRICE_TIMEOUT_MS);
+        if (price === null) {
+            throw new Error('CoinGecko simple/price returned no usable TRX price');
+        }
+        return price;
     }
 
     /**
@@ -180,14 +241,11 @@ export class CoinGeckoClient {
                     retries: 2,
                     delayMs: 1500,
                     factor: 2,
+                    // The default filter already stops on 404 and 401, which are
+                    // final answers here; only rate limits, server errors, and
+                    // network failures are retried.
                     onRetry: (attempt, error) => {
-                        const { status, code } = CoinGeckoClient.classify(error);
-                        // A 404 and the history wall are final answers; retrying
-                        // them only spends rate budget on the same response.
-                        if (status === 404 || (status === 401 && code === HISTORY_WALL_ERROR_CODE)) {
-                            throw error;
-                        }
-                        this.logger.warn({ attempt, status, asset }, 'Retrying CoinGecko market_chart/range');
+                        this.logger.warn({ attempt, status: CoinGeckoClient.classify(error).status, asset }, 'Retrying CoinGecko market_chart/range');
                     }
                 }
             );
@@ -216,14 +274,9 @@ export class CoinGeckoClient {
         const startedAt = Date.now();
         let result: IProviderTestResult;
         try {
-            const response = await httpClient.get<ICoinGeckoSimplePriceResponse>(`${config.baseUrl}/simple/price`, {
-                params: { ids: TRON_COIN_ID, vs_currencies: 'usd' },
-                headers: CoinGeckoClient.buildHeaders(config.apiKey, config.keyTier),
-                timeout: REQUEST_TIMEOUT_MS
-            });
+            const price = await CoinGeckoClient.fetchSimpleTrxPrice(config, REQUEST_TIMEOUT_MS);
             const latencyMs = Date.now() - startedAt;
-            const price = response.data?.tron?.usd;
-            if (typeof price !== 'number' || !Number.isFinite(price)) {
+            if (price === null) {
                 result = { ok: false, message: 'CoinGecko responded but returned no usable price data.', latencyMs, usingKey: !!config.apiKey };
             } else {
                 result = {

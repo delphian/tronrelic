@@ -32,8 +32,8 @@ Vendor credentials, the registry, and the transports are core, always-on infrast
 | `capabilities/IPriceHistoryProvider.ts` | The `price-history` capability contract: `supportsAsset`, `fetchRange` returning `ISourcedPricePoint[]`, optional `forgetAsset` |
 | `capabilities/ProviderDisabledError.ts` | Thrown by an implementation whose vendor is switched off; routing code skips the vendor on it |
 | `clients/tron-scan.client.ts` | `TronScanClient` — `/api/trx/volume` transport + `testConnection()` |
-| `clients/coin-gecko.client.ts` | `CoinGeckoClient` — `market_chart/range` by coin id or contract, tier-aware key header, 404 and history-wall handling, `testConnection()` |
-| `clients/gecko-terminal.client.ts` | `GeckoTerminalClient` — pool selection by reserve and preferred quote, daily OHLCV, `testConnection()` |
+| `clients/coin-gecko.client.ts` | `CoinGeckoClient` — `market_chart/range` by coin id or contract, tier-aware key header, 404 and history-wall handling, `getSpotTrxPriceUsd()` (one attempt, 5 s timeout) for block sync's `PriceService`, `testConnection()` |
+| `clients/gecko-terminal.client.ts` | `GeckoTerminalClient` — pool selection by reserve and preferred quote, daily OHLCV with history-wall handling, `testConnection()` |
 | `clients/tron-grid.client.ts` | `TronGridProviderClient` — staged transport; only `testConnection()` exists, probing every stored key |
 | `api/providers.controller.ts` | Generic list/read/save/test by vendor id, validated field-by-field from the descriptor; bespoke TronGrid handlers |
 | `api/providers.routes.ts` | Router factory (guards applied at mount); TronGrid routes declared before `/:id` |
@@ -70,7 +70,9 @@ No key is ever returned in the clear. On a generic save, a secret beginning `***
 | GeckoTerminal | `provider:geckoterminal` | `{ enabled, baseUrl, minPoolReserveUsd }` — a token whose deepest pool holds less than the floor is left unpriced | enabled, `https://api.geckoterminal.com/api/v2`, 10,000 |
 | TronGrid | `provider:trongrid` | `{ enabled, fetchBlockReceipts, baseUrl, apiKeys[], requestThrottleMs, maxQueueSize, requestTimeoutMs }` | see below |
 
-Keyless CoinGecko reaches back 365 days; the client recognises the wall (HTTP 401, body code 10012) and answers empty so the router falls through to the next vendor. GeckoTerminal picks the deepest pool quoted in USDT, USDC, USDD, or wrapped TRX, falling back to the deepest pool of any kind, and remembers the choice per process.
+Keyless CoinGecko reaches back 365 days. The client recognises the wall (HTTP 401, body code 10012) and answers empty so the router falls through to the next vendor. CoinGecko nests that code as `error.status.error_code`, and other refusals put it at `status.error_code`, so the client reads both. A 401 without the code is a rejected key and is thrown. GeckoTerminal's public API reaches back 180 days and refuses older candles with HTTP 401. It takes no key, so the client treats any 401 on OHLCV as that wall and answers empty. GeckoTerminal picks the deepest pool quoted in USDT, USDC, USDD, or wrapped TRX, falling back to the deepest pool of any kind, and remembers the choice per process.
+
+Every client retries through `src/backend/lib/retry.ts`, which retries only network failures, 408, 425, 429, and 5xx responses, randomizes each backoff wait, and honours `Retry-After`. A 404 or a history-wall 401 is therefore answered after one request.
 
 ## TronGrid Config (connection settings staged; `fetchBlockReceipts` is live)
 

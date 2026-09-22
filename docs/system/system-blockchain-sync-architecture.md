@@ -65,7 +65,11 @@ The TronGrid HTTP client (`tron-grid.client.ts`) enforces a **200ms minimum gap 
 
 ### Retry
 
-Block fetches use exponential backoff: `retries: 3, delayMs: 750, factor: 2`. Transient TronGrid 5xx or network errors retry at 750ms → 1500ms → 3000ms before failing the block (which lands it in the backfill queue for the next tick).
+Block fetches use exponential backoff through `src/backend/lib/retry.ts`: `retries: 3, delayMs: 750, factor: 2`. Transient TronGrid 5xx or network errors retry after roughly 750ms, 1500ms, and 3000ms before failing the block, which lands it in the backfill queue for the next tick. Each wait is randomized to between half and all of that value (jitter), so concurrent callers do not retry at the same instant, and no single wait exceeds 30 seconds. When a response carries a `Retry-After` header, the helper waits at least that long, and it gives up instead if the server asks for more than a minute. An HTTP 4xx other than 408, 425, or 429 is not retried, because repeating it gets the same refusal.
+
+### TRX Price
+
+Step 2 of preparing a block reads the TRX/USD price from `src/backend/services/price.service.ts`. That service calls CoinGecko through the providers module's `CoinGeckoClient`, so it uses the key and base URL saved on the CoinGecko card. It caches a price for 60 seconds, and blocks prepared together share one request. After a failed request it backs off, starting at 30 seconds and doubling up to 10 minutes, or longer if CoinGecko sent `Retry-After`. While it backs off, it serves the last known price if that price is under 15 minutes old. Otherwise the block is stamped with a null price. Without that backoff, a single rate-limit response turned into one request per block, and the flood kept CoinGecko's limit in force.
 
 ### An Unreachable Chain Head Does Not Abort the Tick
 
