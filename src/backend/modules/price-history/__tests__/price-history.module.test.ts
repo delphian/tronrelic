@@ -217,10 +217,10 @@ class FakeProvider implements IPriceHistoryRouter {
         this.calls.push({ asset, fromDay, toDay });
         const forced = this.verdicts.get(asset);
         if (forced) {
-            return { verdict: forced, points: [], asked: forced === 'unavailable' ? [] : [this.id], skipped: forced === 'priced' ? [] : ['other'] };
+            return { verdict: forced, points: [], asked: forced === 'unavailable' ? [] : [this.id], skipped: forced === 'priced' ? [] : ['other'], failed: [] };
         }
         if (this.unpriceable.includes(asset)) {
-            return { verdict: 'empty', points: [], asked: [this.id], skipped: [] };
+            return { verdict: 'empty', points: [], asked: [this.id], skipped: [], failed: [] };
         }
         const points: ISourcedPricePoint[] = [];
         const span = diffUtcDays(fromDay, toDay);
@@ -230,7 +230,7 @@ class FakeProvider implements IPriceHistoryRouter {
                 points.push({ asset, day, priceUsd: 1 + offset / 100, source: this.id, sourceRef: 'ref' });
             }
         }
-        return { verdict: points.length > 0 ? 'priced' : 'empty', points, asked: [this.id], skipped: [] };
+        return { verdict: points.length > 0 ? 'priced' : 'empty', points, asked: [this.id], skipped: [], failed: [] };
     }
 }
 

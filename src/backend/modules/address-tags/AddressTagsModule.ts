@@ -233,21 +233,24 @@ export class AddressTagsModule implements IModule<IAddressTagsModuleDependencies
         // switch at run time, because that switch is runtime-editable config
         // and a job registered at boot must honour the current value.
         if (this.scheduler) {
+            // The module's logger goes with each job so the scheduler's own
+            // failure entry lands on this module's Logs tab.
+            const jobOptions = { logger: this.logger };
             this.scheduler.register(OFAC_JOB, '0 0 6 * * *', async () => {
                 if (await this.ingestion.isSourceEnabled(OFAC_SOURCE_ID)) {
                     await this.ingestion.runSource(OFAC_SOURCE_ID);
                 }
-            });
+            }, jobOptions);
             this.scheduler.register(USDT_JOB, '0 */5 * * * *', async () => {
                 if (await this.ingestion.isSourceEnabled(USDT_SOURCE_ID)) {
                     await this.ingestion.runSource(USDT_SOURCE_ID);
                 }
-            });
+            }, jobOptions);
             this.scheduler.register(VERIFY_JOB, VERIFY_CRON, async () => {
                 if (await this.ingestion.isSourceEnabled(USDT_SOURCE_ID)) {
                     await this.ingestion.verifyHeld(USDT_SOURCE_ID);
                 }
-            });
+            }, jobOptions);
         }
 
         this.logger.info('Address-tags module running; routers mounted');

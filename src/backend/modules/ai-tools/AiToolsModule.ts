@@ -767,7 +767,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
         if (this.scheduler) {
             this.scheduler.register(AUDIT_PRUNE_JOB, AUDIT_PRUNE_SCHEDULE, async () => {
                 await this.audit.pruneExpired();
-            });
+            }, { logger: this.logger });
             this.logger.info({ job: AUDIT_PRUNE_JOB }, 'AI tool audit retention job registered');
 
             // Cron-scheduled saved prompts. Every prompt with a cron evaluates on
@@ -817,7 +817,7 @@ export class AiToolsModule implements IModule<IAiToolsModuleDependencies> {
                 } finally {
                     promptTickInFlight = false;
                 }
-            });
+            }, { logger: this.logger });
             this.logger.info({ job: SCHEDULED_PROMPTS_JOB }, 'AI tool scheduled-prompts job registered');
         } else {
             this.logger.info('Scheduler disabled — AI tool audit retention and scheduled-prompts jobs not registered');

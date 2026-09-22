@@ -240,15 +240,18 @@ export class AccountHistoryModule implements IModule<IAccountHistoryModuleDepend
         this.logger.info('Account-history user router mounted at /api/account-history');
 
         if (this.scheduler) {
+            // The module's logger goes with each job so the scheduler's own
+            // failure entry lands on this module's Logs tab.
+            const jobOptions = { logger: this.logger };
             this.scheduler.register(INGESTION_JOB, INGESTION_CRON, async () => {
                 await this.service.runIngestionTick();
-            });
+            }, jobOptions);
             this.scheduler.register(FORWARD_SYNC_JOB, FORWARD_SYNC_CRON, async () => {
                 await this.service.runForwardSyncTick();
-            });
+            }, jobOptions);
             this.scheduler.register(SNAPSHOT_JOB, SNAPSHOT_CRON, async () => {
                 await this.service.runSnapshotTick();
-            });
+            }, jobOptions);
             this.logger.info('Account-history ingestion, forward-sync, and snapshot jobs registered');
         } else {
             this.logger.info('Scheduler disabled — account-history ingestion and forward-sync jobs not registered');

@@ -132,8 +132,9 @@ describe('AccountHistoryModule', () => {
             expect.anything(),
             expect.any(Function)
         );
-        expect(scheduler.register).toHaveBeenCalledWith('account-history:ingest', expect.any(String), expect.any(Function));
-        expect(scheduler.register).toHaveBeenCalledWith('account-history:forward-sync', expect.any(String), expect.any(Function));
+        const withModuleLogger = expect.objectContaining({ logger: expect.anything() });
+        expect(scheduler.register).toHaveBeenCalledWith('account-history:ingest', expect.any(String), expect.any(Function), withModuleLogger);
+        expect(scheduler.register).toHaveBeenCalledWith('account-history:forward-sync', expect.any(String), expect.any(Function), withModuleLogger);
         expect(serviceRegistry.has('account-history')).toBe(true);
 
         // The System-container entry plus the four in-page tab nodes (the

@@ -20,7 +20,7 @@
  * @module modules/scheduler/services/plugin-scheduler.service
  */
 
-import type { ISchedulerService, ISystemLogService } from '@/types';
+import type { ISchedulerJobOptions, ISchedulerService, ISystemLogService } from '@/types';
 import type { CronJobHandler } from './scheduler.service.js';
 
 /**
@@ -112,10 +112,14 @@ export class PluginSchedulerService implements ISchedulerService {
      * @param defaultSchedule - Cron expression used until an operator overrides
      *                          it from the admin interface.
      * @param handler - The work to run on each tick.
+     * @param options - Optional per-job settings. When the plugin passes no
+     *                  logger, the plugin's own logger is supplied so the job's
+     *                  run outcomes record under `plugin:<id>` and appear on the
+     *                  plugin's Logs tab rather than under the core service name.
      */
-    public register(name: string, defaultSchedule: string, handler: CronJobHandler): void {
+    public register(name: string, defaultSchedule: string, handler: CronJobHandler, options?: ISchedulerJobOptions): void {
         this.assertOpen(`register('${name}')`);
-        this.host.register(name, defaultSchedule, handler);
+        this.host.register(name, defaultSchedule, handler, { ...options, logger: options?.logger ?? this.logger });
         this.active.add(name);
         this.owned.add(name);
     }

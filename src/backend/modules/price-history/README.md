@@ -10,7 +10,7 @@ Maintains a **local** daily USD price series (TRX + tracked TRC20 tokens) in Cli
 | Module class | `src/backend/modules/price-history/PriceHistoryModule.ts` |
 | Service registry name | `'price-history'` → `IPriceHistoryService` |
 | Admin page | `/system/price-history` — System-container item `Price History` (order 28); in-page tabs (Coverage, Diagnostics, Schedules, Database, Logs, Settings) in the `price-history` menu namespace (Submenu Pattern), rendered with `MenuNavClient`. Schedules is core `SchedulerMonitor` filtered to the `price-history:` job prefix, Database is core `CollectionBrowser` scoped to `module_price-history_` plus core `ClickHouseTableBrowser` scoped with `tables={['price_history']}`, and Logs is core `SystemLogsMonitor` scoped to the `tronrelic:price-history` service name |
-| Log service name | `tronrelic:price-history`, derived by the logs module from the `module: 'price-history'` binding on the module's child logger. Do not set a `service` binding on a child logger here, or its entries fall outside the Logs tab |
+| Log service name | `tronrelic:price-history`, derived by the logs module from the `module: 'price-history'` binding on the module's child logger. Do not set a `service` binding on a child logger here, or its entries fall outside the Logs tab. Both jobs register with `{ logger }`, so the scheduler's own start, success, and failure entries for them land here too |
 | Mounted routes | `/api/admin/system/price-history/*` (`createAdminRateLimiter` + `requireAdmin`): `GET /stats`, `GET /diagnostics`, `GET`/`PATCH /settings`, `GET /sources`, `POST /assets/:asset/reset`, `POST /backfill/run`, `POST /forward/run` |
 | WebSocket event | `price-history:stats` (global admin-refetch nudge after each tick and each reset; has a case in `WebSocketService.emit()`) |
 | Scheduler jobs | `price-history:backfill` (`*/5 * * * *`); `price-history:forward-sync` (`0 1 * * *`) |
@@ -31,7 +31,8 @@ Valuation depends on a local price series existing, ingested on a schedule regar
 | `PriceHistoryModule.ts` | Lifecycle; builds the per-vendor adapters and attaches them to the registry, creates the routing provider and the service, registers the two jobs, publishes `'price-history'` |
 | `services/price-history.service.ts` | `PriceHistoryService` singleton — settings, cursors, seed and chunked deep walk, forward append, reset, ClickHouse reads |
 | `providers/IPriceHistoryRouter.ts` | `IPriceHistoryRouter` — the routed contract the service depends on: `fetchRange` returning an `IPriceRangeOutcome`, `forgetAsset` |
-| `providers/IPriceRangeOutcome.ts` | `IPriceRangeOutcome` and `PriceRangeVerdict` — how a routed fetch ended (`priced`, `empty`, `inconclusive`, `unavailable`) and which vendors were asked or skipped |
+| `providers/IPriceRangeOutcome.ts` | `IPriceRangeOutcome` and `PriceRangeVerdict` — how a routed fetch ended (`priced`, `empty`, `inconclusive`, `unavailable`) and which vendors were asked, skipped, or failed |
+| `providers/PriceVendorsFailedError.ts` | `PriceVendorsFailedError` — thrown when nothing priced the asset and a vendor threw; names each failed vendor |
 | `providers/routing-price-history.provider.ts` | `RoutingPriceHistoryProvider` — the one source the service sees; tries the ordered vendors for the asset's class and reports the verdict |
 | `providers/tronscan-price-history.provider.ts` | TRX via TronScan `/api/trx/volume`; tokens unsupported |
 | `providers/coingecko-price-history.provider.ts` | TRX by coin id and listed tokens by contract via CoinGecko `market_chart/range` |
@@ -59,7 +60,7 @@ Valuation depends on a local price series existing, ingested on a schedule regar
 
 ## Routing
 
-`trxSources` and `tokenSources` name vendor ids in the order they are tried; defaults are `['tronscan', 'coingecko']` and `['coingecko', 'geckoterminal']`. For a fetch, the routing provider walks the list for the asset's class, never asks a vendor whose adapter does not support the asset, skips one that throws `ProviderDisabledError`, falls through on an empty answer, and stops at the first non-empty one. Any other throw fails the call so the tick retries with the cursor untouched.
+`trxSources` and `tokenSources` name vendor ids in the order they are tried; defaults are `['tronscan', 'coingecko']` and `['coingecko', 'geckoterminal']`. For a fetch, the routing provider walks the list for the asset's class, never asks a vendor whose adapter does not support the asset, skips one that throws `ProviderDisabledError`, falls through on an empty answer, and stops at the first non-empty one. A vendor that throws anything else is logged at `warn` with its vendor id and the walk moves on, so one vendor's outage or rejected key does not stop the next vendor from pricing the asset; the outcome's `failed` list records it, and the call still counts toward `providerErrors`. When no vendor prices the asset and any vendor threw, the call throws `PriceVendorsFailedError`, whose message puts the vendor id in front of each error (`coingecko: HTTP 401: Unauthorized`), so the tick retries with the cursor untouched rather than parking the asset as unpriced.
 
 The router does not return a bare array. It returns an `IPriceRangeOutcome` whose `verdict` says how the walk ended, because an empty answer means different things depending on who was asked:
 

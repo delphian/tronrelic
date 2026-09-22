@@ -1,3 +1,5 @@
+import type { ISchedulerJobOptions } from './ISchedulerJobOptions.js';
+
 /**
  * Cron job handler function signature.
  *
@@ -118,6 +120,10 @@ export interface ISchedulerService {
      * @param name - Unique job identifier (prefix with plugin-id to avoid collisions)
      * @param defaultSchedule - Cron expression (e.g., "0 *\/10 * * * *" for every 10 minutes)
      * @param handler - Async function to execute on schedule
+     * @param options - Optional per-job settings. A module passes its child
+     *                  logger here so the job's failures appear on the module's
+     *                  own Logs tab; a plugin can omit it, because the plugin
+     *                  facade supplies the plugin's logger.
      *
      * @throws {Error} If job name already registered by another plugin
      * @throws {Error} If cron expression is invalid
@@ -143,7 +149,7 @@ export interface ISchedulerService {
      * );
      * ```
      */
-    register(name: string, defaultSchedule: string, handler: CronJobHandler): void;
+    register(name: string, defaultSchedule: string, handler: CronJobHandler, options?: ISchedulerJobOptions): void;
 
     /**
      * Disable a scheduled job without removing it.

@@ -23,6 +23,7 @@ import {
 } from '../../providers/index.js';
 import type { IPriceHistoryRouter } from './IPriceHistoryRouter.js';
 import type { IPriceRangeOutcome } from './IPriceRangeOutcome.js';
+import { PriceVendorsFailedError, type IPriceVendorFailure } from './PriceVendorsFailedError.js';
 
 /**
  * Tries vendors in the configured order for an asset's class.
@@ -86,20 +87,27 @@ export class RoutingPriceHistoryProvider implements IPriceHistoryRouter {
      * empty answer that follows a skip is not final: the skipped vendor may
      * hold the range, so the verdict is `inconclusive` rather than `empty`.
      * When no vendor could be asked at all the verdict is `unavailable`, and
-     * nothing about the asset has been learned. A vendor that throws anything
-     * other than disabled fails the call, because a transport failure must
-     * make the tick retry rather than let a later vendor's empty answer be
-     * recorded against the asset.
+     * nothing about the asset has been learned.
+     *
+     * A vendor that throws anything other than disabled is logged with its id
+     * and the next vendor is tried, so one vendor's outage or bad credentials
+     * does not stop a later vendor from pricing the asset. If no vendor prices
+     * it and any vendor threw, the call throws `PriceVendorsFailedError`
+     * naming each failed vendor. It does not return `empty`, because a vendor
+     * that failed has not said the range holds no price, and the service must
+     * retry the tick rather than park the asset as unpriced.
      *
      * @param asset - The asset to price.
      * @param fromDay - Inclusive start UTC `YYYY-MM-DD`.
      * @param toDay - Inclusive end UTC `YYYY-MM-DD`.
-     * @returns The verdict, the winning vendor's points, and which vendors were asked or skipped.
+     * @returns The verdict, the winning vendor's points, and which vendors were asked, skipped, or failed.
+     * @throws PriceVendorsFailedError when nothing priced the asset and at least one vendor threw.
      */
     async fetchRange(asset: PriceAsset, fromDay: string, toDay: string): Promise<IPriceRangeOutcome> {
         const candidates = await this.candidatesFor(asset);
         const asked: string[] = [];
         const skipped: string[] = [];
+        const failed: IPriceVendorFailure[] = [];
         let points: ISourcedPricePoint[] = [];
         for (const provider of candidates) {
             let answer: ISourcedPricePoint[];
@@ -109,15 +117,21 @@ export class RoutingPriceHistoryProvider implements IPriceHistoryRouter {
                 if (error instanceof ProviderDisabledError) {
                     this.logger.debug({ asset, vendor: provider.id }, 'Price vendor disabled; skipping');
                     skipped.push(provider.id);
-                    continue;
+                } else {
+                    const message = error instanceof Error ? error.message : String(error);
+                    this.logger.warn({ asset, vendor: provider.id, fromDay, toDay, error: message }, 'Price vendor failed; trying the next vendor');
+                    failed.push({ vendor: provider.id, message });
                 }
-                throw error;
+                continue;
             }
             asked.push(provider.id);
             if (answer.length > 0) {
                 points = answer;
                 break;
             }
+        }
+        if (points.length === 0 && failed.length > 0) {
+            throw new PriceVendorsFailedError(failed);
         }
         let verdict: IPriceRangeOutcome['verdict'];
         if (points.length > 0) {
@@ -129,6 +143,6 @@ export class RoutingPriceHistoryProvider implements IPriceHistoryRouter {
         } else {
             verdict = 'empty';
         }
-        return { verdict, points, asked, skipped };
+        return { verdict, points, asked, skipped, failed };
     }
 }

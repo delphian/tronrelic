@@ -14,6 +14,7 @@ export { PriceHistoryService } from './services/price-history.service.js';
 export type { IPriceHistoryServiceDependencies } from './services/price-history.service.js';
 export type { IPriceHistoryRouter } from './providers/IPriceHistoryRouter.js';
 export type { IPriceRangeOutcome, PriceRangeVerdict } from './providers/IPriceRangeOutcome.js';
+export { PriceVendorsFailedError, type IPriceVendorFailure } from './providers/PriceVendorsFailedError.js';
 export { TronScanPriceHistoryProvider } from './providers/tronscan-price-history.provider.js';
 export { CoinGeckoPriceHistoryProvider } from './providers/coingecko-price-history.provider.js';
 export { GeckoTerminalPriceHistoryProvider } from './providers/geckoterminal-price-history.provider.js';

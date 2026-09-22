@@ -184,6 +184,50 @@ describe('SchedulerService', () => {
         });
     });
 
+    describe('owner logger', () => {
+        /**
+         * Build a logger stand-in whose methods are spies, standing in for a
+         * module's child logger so a test can see which logger an entry went to.
+         *
+         * @returns An object shaped like the logger the scheduler calls.
+         */
+        function createOwnerLogger(): { info: Mock; warn: Mock; error: Mock; debug: Mock } {
+            return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+        }
+
+        it('logs a job failure through the logger passed at registration', async () => {
+            const ownerLogger = createOwnerLogger();
+            const scheduler = SchedulerService.getInstance();
+            scheduler.register('owner:flaky', '* * * * *', async () => {
+                throw new Error('HTTP 401: Unauthorized');
+            }, { logger: ownerLogger as never });
+
+            await scheduler.runNow('owner:flaky');
+            await flush();
+
+            // The failure entry has to reach the owner's logger, because that is what
+            // files it under the owner's service name and onto its Logs tab.
+            expect(ownerLogger.error).toHaveBeenCalledWith(
+                expect.objectContaining({ job: 'owner:flaky', status: 'failed', error: 'HTTP 401: Unauthorized' }),
+                'Scheduled Job Failed: owner:flaky'
+            );
+        });
+
+        it('logs a job success through the logger passed at registration', async () => {
+            const ownerLogger = createOwnerLogger();
+            const scheduler = SchedulerService.getInstance();
+            scheduler.register('owner:ok', '* * * * *', async () => {}, { logger: ownerLogger as never });
+
+            await scheduler.runNow('owner:ok');
+            await flush();
+
+            expect(ownerLogger.info).toHaveBeenCalledWith(
+                expect.objectContaining({ job: 'owner:ok', status: 'success' }),
+                'Scheduled Job Complete: owner:ok'
+            );
+        });
+    });
+
     describe('scheduled slots', () => {
         it('schedules each enabled job through the injected trigger', async () => {
             const scheduler = SchedulerService.getInstance();
