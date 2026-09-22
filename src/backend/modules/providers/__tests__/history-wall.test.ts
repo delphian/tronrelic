@@ -74,4 +74,11 @@ describe('vendor history walls', () => {
         await expect(GeckoTerminalClient.getInstance().getDailyCandles(pool, 1_600_000_000, 30)).resolves.toEqual([]);
         expect(get).toHaveBeenCalledTimes(1);
     });
+
+    it('GeckoTerminal still throws a 401 that is not the wall, after one request', async () => {
+        const get = vi.spyOn(httpClient, 'get').mockRejectedValue(httpError(401, { message: 'proxy authorization required' }));
+        const pool = { poolAddress: 'TPOOL', name: 'X / USDT', side: 'base' as const, reserveUsd: 1_000_000 };
+        await expect(GeckoTerminalClient.getInstance().getDailyCandles(pool, 1_600_000_000, 30)).rejects.toThrow('HTTP 401');
+        expect(get).toHaveBeenCalledTimes(1);
+    });
 });

@@ -19,6 +19,7 @@ vi.mock('../../loaders/redis.js', () => ({
 }));
 
 import { PriceService } from '../price.service.js';
+import { ProviderDisabledError } from '../../modules/providers/capabilities/ProviderDisabledError.js';
 
 /**
  * Build an in-memory stand-in for the Redis calls the service makes.
@@ -77,6 +78,17 @@ describe('PriceService', () => {
         vi.advanceTimersByTime(119_000);
         await service.getTrxPriceUsd();
         expect(fetchSpotPrice).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-checks a disabled vendor every 30 seconds instead of growing the backoff', async () => {
+        const fetchSpotPrice = vi.fn().mockRejectedValue(new ProviderDisabledError('coingecko'));
+        const service = new PriceService({ redis: fakeRedis() as never, fetchSpotPrice });
+        for (let attempt = 1; attempt <= 4; attempt += 1) {
+            await service.getTrxPriceUsd();
+            vi.advanceTimersByTime(30_000);
+        }
+        // Four checks 30s apart; a growing backoff would have allowed only three in that time.
+        expect(fetchSpotPrice).toHaveBeenCalledTimes(4);
     });
 
     it('serves the last-known price while failing, until it is too old', async () => {
