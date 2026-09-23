@@ -4,6 +4,7 @@ import type { IWebSocketService } from './IWebSocketService.js';
 import type { IBaseObserver } from './IBaseObserver.js';
 import type { IBaseBatchObserver } from './IBaseBatchObserver.js';
 import type { IBaseBlockObserver } from './IBaseBlockObserver.js';
+import type { IBaseEventObserver } from './IBaseEventObserver.js';
 import type { IDatabaseService } from '../database/IDatabaseService.js';
 import type { IPluginClickHouseService } from '../clickhouse/IPluginClickHouseService.js';
 import type { IPluginWebSocketManager } from './IPluginWebSocketManager.js';
@@ -63,6 +64,16 @@ export interface IPluginContext {
      * completes, enabling cross-transaction analysis and block-level metrics calculation.
      */
     BaseBlockObserver: abstract new (logger: ISystemLogService) => IBaseBlockObserver;
+
+    /**
+     * Base event observer class constructor for plugins to extend.
+     *
+     * Event observers subscribe to contract events by signature and emitting
+     * contract through `observerRegistry.subscribeEventsBatch`, and receive
+     * each block's matching events as one batch. Use it to follow token
+     * movements, including the ones made inside another contract's call.
+     */
+    BaseEventObserver: abstract new (logger: ISystemLogService) => IBaseEventObserver;
 
     /** Plugin-scoped database access with automatic collection prefixing */
     database: IDatabaseService;

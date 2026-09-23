@@ -13,8 +13,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type {
     IBaseBatchObserver,
     IBaseBlockObserver,
+    IBaseEventObserver,
     IBaseObserver,
     IBlockData,
+    IContractEventBatch,
     IObserverStats,
     ISystemLogService,
     ITransaction,
@@ -256,6 +258,32 @@ describe('PluginObserverRegistry', () => {
             await service.notifyBlock(createBlock());
 
             expect(observer.received).toHaveLength(1);
+        });
+
+        it('stops delivering contract events after disposal', async () => {
+            // Event subscriptions are the fourth kind the facade tracks. Without
+            // it, a disabled plugin following token transfers would keep
+            // receiving every block's events.
+            const received: IContractEventBatch[] = [];
+            const stop = vi.fn();
+            const observer: IBaseEventObserver = {
+                enqueueEvents: async batch => { received.push(batch); },
+                enqueue: async () => {},
+                getName: () => 'events',
+                getStats: () => emptyStats('events'),
+                stop
+            };
+            facade.subscribeEventsBatch({ topic0: 'ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' }, observer);
+
+            // A block without receipts reaches every event observer as a gap marker.
+            const gapBlock = { ...createBlock(), receiptsFetched: false } as IBlockData;
+            await service.notifyBlockEvents(gapBlock);
+            facade.closeAndDisposeAll();
+            await service.notifyBlockEvents(gapBlock);
+
+            expect(received).toHaveLength(1);
+            expect(stop).toHaveBeenCalledTimes(1);
+            expect(service.getEventSubscriptionStats()).toEqual({});
         });
 
         it('stops each disposed observer so queued work is discarded', () => {

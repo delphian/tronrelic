@@ -153,22 +153,20 @@ Shutdown deliberately **discards** the buffer rather than flushing it, which rev
 
 ### Reading It on `/system`
 
-The Blockchain console reports the two loops separately, because since ingestion stopped pacing itself they say different things.
+The Pipeline tab reports the two loops separately, because since ingestion stopped pacing itself they say different things. Both lags are measured from the block's own header timestamp, so reading them needs no call to TronGrid, and their tones come from `pipeline-health.ts` on the backend.
 
 | Figure | Meaning |
 |---|---|
-| **Index Lag** | Cursor versus chain head. Near zero almost always, and says nothing about whether the feed is healthy. |
-| **Feed Lag** | Last broadcast block versus chain head. The delay a viewer actually experiences. Sits near `targetDepth` by design. |
-| **Buffer** | Current depth against target, with the underrun count and how many blocks those underruns covered. |
+| **Ingest lag** | Age of the newest *fetched* block. The figure that says whether ingestion keeps up. Amber once it exceeds the buffer's lead, which the buffer can then no longer hide; red at `backfillEntryBlocks`. |
+| **Feed lag** | Age of the newest *committed* block. The delay a viewer actually experiences. Sits near `targetDepth` by design; amber at twice that. |
+| **Buffer** | Current depth against target, the release rule in use, and the underrun count with the time of the latest. |
 | **Commit queue** | Blocks given a slot and still being written. Above zero for more than a moment means writing is slower than the release clock. |
-
-Both lag figures turn amber at `backfillEntryBlocks`, read from the status payload rather than assumed, offset by whatever that deployment holds back on purpose — the buffer target for feed lag, the live tip reserve for index lag.
 
 **Underruns are the number that matters.** A deployment holding a real lead never drains to zero, so any increase means the feed was exposed to an upstream gap and `targetDepth` is too small for what this deployment's provider actually does. Depth dipping below target on its own is normal; it refills.
 
 Read the two underrun figures together, because either alone misleads. The first counts *episodes*: an episode opens when a release empties the buffer and closes only once depth is back at target, so a provider that stays slow for ten minutes reads as one incident rather than one per block. The second counts the *blocks released while exposed*, which is how long those episodes lasted. Three underruns covering four blocks is a provider that hiccups and a slightly larger `targetDepth` would absorb it; three covering nine hundred is a provider that cannot keep up, and no lead is large enough to fix that.
 
-**Index Lag now sits near the buffer target by design.** It measures the written cursor against the chain head, and the cursor is deliberately a buffer's depth behind. It is no longer the figure that says whether ingestion is keeping up — a rising `commitQueueDepth`, or the fetch height falling behind the head, is.
+**The written cursor sits near the buffer target by design,** so the `lag` field of `/blockchain/status`, which measures it against the chain head, does not say whether ingestion is keeping up. Ingest lag and the commit queue do.
 
 ### The Frontend Does Not Buffer
 
@@ -189,7 +187,7 @@ The eleven numbered stages are gone, and so is the single `processBlock`. Work i
 | 1 | Fetch block from TronGrid (`getblockbynum`) |
 | 2 | Get cached TRX/USD price |
 | 3 | Fetch the block's transaction receipts (`gettransactioninfobyblocknum`) — **skipped unless an operator has switched it on**; see below |
-| 4 | Parse transactions into records and assemble the `IBlockData` observers will receive |
+| 4 | Parse transactions into records, decode event logs and token transfers ([system-blockchain-contract-events.md](./system-blockchain-contract-events.md)), and assemble the `IBlockData` observers will receive |
 | 5 | Calculate block statistics and build the `block:new` payload |
 | 6 | Hand the prepared block to `BlockEmitter`, then advance `meta.lastFetchedBlock` |
 
@@ -200,7 +198,7 @@ The eleven numbered stages are gone, and so is the single `processBlock`. Work i
 | 1 | Bulk-write transactions to Mongo (`bulkWrite` unordered) |
 | 2 | Upsert the block document |
 | 3 | Advance the sync cursor (`$max`) and clear the backfill entry (`$pull`) |
-| 4 | Notify per-transaction, batch, and block observers |
+| 4 | Notify per-transaction, batch, block, and event observers |
 | 5 | Broadcast `block:new` |
 | 6 | Ingest alerts |
 | 7 | Write the timing breakdown back to sync state |
@@ -215,13 +213,14 @@ Observers used to be notified during ingestion, before the bulk-write, and this 
 
 Within one commit the order after the write is observers, then the `block:new` broadcast, then alert ingestion. Observers go first because a client that receives `block:new` and immediately queries an API for a plugin's derived data races that plugin's observer. It costs nothing measurable, because notifying an observer only pushes onto an in-memory queue.
 
-### Three Observer Types
+### Four Observer Types
 
 | Base class | Receives | Queue cap | Overflow behavior |
 |---|---|---|---|
 | `BaseObserver` | Single enriched transaction | 1000 | Logs error and **clears the entire queue** |
 | `BaseBatchObserver` | Accumulated batch (one call per block) | 100 batches | Drops the **incoming** batch, logs |
 | `BaseBlockObserver` | Whole `IBlockData` (one call per block) | 50 blocks | Drops the **incoming** block, logs |
+| `BaseEventObserver` | Matching contract events (one call per block, or an empty gap batch when receipts are missing); see [system-blockchain-contract-events.md](./system-blockchain-contract-events.md) | 100 batches | Drops the **incoming** batch, logs |
 
 Each observer runs its own async queue. The blockchain service does not await the queue drain; it awaits only `enqueue()`, which is fast.
 
@@ -263,7 +262,7 @@ Nothing is backfilled. Blocks indexed while the switch was off keep their zeros,
 
 Because the switch can be toggled and nothing is backfilled, a stored `totalEnergyCost` of `0` is ambiguous on its own: it means either a block that genuinely burned nothing, or a block indexed while receipts were off. Every block therefore carries a `receiptsFetched` boolean saying which.
 
-**Reading any receipt-derived figure without checking that flag is a bug**, because structural zeros will be read as measurements. The four figures it qualifies are `stats.totalEnergyUsed`, `stats.totalEnergyCost`, `stats.totalBandwidthUsed`, and `stats.internalTransactions`, along with each transaction's own `energy`, `bandwidth`, and `internalTransactions`.
+**Reading any receipt-derived figure without checking that flag is a bug**, because structural zeros will be read as measurements. The four figures it qualifies are `stats.totalEnergyUsed`, `stats.totalEnergyCost`, `stats.totalBandwidthUsed`, and `stats.internalTransactions`, along with each transaction's own `energy`, `bandwidth`, `internalTransactions`, `events`, and `internalTransfers`, and whether its `tokenTransfers` came from logs or call data.
 
 It is true only when the data is complete. A block holding no transactions is `true`, since there was nothing to retrieve and zero is the correct answer. A failed or partial fetch is `false`, because an undercount is not a measurement. A missing value means the block was indexed before the field existed and should be read as `false`.
 
@@ -285,7 +284,8 @@ Sync metrics — current block, network block, lag, processing rate, per-stage t
 
 ## Further Reading
 
-- [plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) — building observers (`BaseObserver`, `BaseBatchObserver`, `BaseBlockObserver`)
+- [plugins-blockchain-observers.md](../plugins/plugins-blockchain-observers.md) — building observers (`BaseObserver`, `BaseBatchObserver`, `BaseBlockObserver`, `BaseEventObserver`)
+- [system-blockchain-contract-events.md](./system-blockchain-contract-events.md) — decoded event logs, token transfers, the log versus call-data source rule, and event subscriptions
 - [system-scheduler-operations.md](./system-scheduler-operations.md) — how `blockchain:sync` is scheduled and toggled
 - [tron-chain-parameters.md](../tron/tron-chain-parameters.md) — chain parameter fetch and caching
 - [environment.md](../environment.md) — `ENABLE_SCHEDULER`, `TRONGRID_API_KEY*`, `BLOCK_SYNC_*` env vars

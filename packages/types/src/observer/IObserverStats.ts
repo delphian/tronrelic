@@ -42,12 +42,41 @@ export interface IObserverStats {
     /** Current error rate (errors / total processed) */
     errorRate: number;
 
-    // Optional batch observer metrics (only present for batch observers)
-    /** Total number of batches processed (batch observers only) */
+    /**
+     * Most items the observer's queue holds before it starts dropping work:
+     * transactions for a transaction observer, batches for a batch or event
+     * observer, blocks for a block observer. Set by the base classes so the
+     * console can judge `queueDepth` against the observer's own limit rather
+     * than one fixed number for every kind.
+     */
+    queueCapacity?: number;
+
+    /**
+     * How the observer is subscribed, filled in by the observer registry rather
+     * than the observer itself. `'transaction'` receives one transaction at a
+     * time, `'batch'` a block's transactions grouped by type, `'block'` whole
+     * blocks, and `'event'` matching contract events. Tells a reader what
+     * `totalProcessed` counts.
+     */
+    kind?: 'transaction' | 'batch' | 'block' | 'event';
+
+    /**
+     * What the observer is subscribed to, as short labels filled in by the
+     * registry: contract types for transaction and batch observers, `'every
+     * block'` for block observers, and signature hashes (with the contract
+     * count when filtered) for event observers.
+     */
+    subscriptions?: string[];
+
+    // Optional batch observer metrics (only present for batch and event observers)
+    /** Total number of batches processed (batch and event observers only) */
     batchesProcessed?: number;
-    /** Average number of transactions per batch (batch observers only) */
+    /**
+     * Average batch size: transactions per batch for a batch observer, events
+     * per batch for an event observer.
+     */
     avgBatchSize?: number;
-    /** Maximum batch size observed (batch observers only) */
+    /** Maximum batch size observed, in the same unit as `avgBatchSize` */
     maxBatchSize?: number;
 
     // Optional block observer metrics (only present for block observers)

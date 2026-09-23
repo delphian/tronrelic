@@ -324,6 +324,7 @@ export abstract class BaseObserver implements IBaseObserver {
             lastProcessedAt: this.lastProcessedAt?.toISOString() ?? null,
             lastErrorAt: this.lastErrorAt?.toISOString() ?? null,
             errorRate: this.calculateErrorRate(),
+            queueCapacity: BaseObserver.MAX_QUEUE_SIZE,
             blocksProcessed: this.blocksSeen
         };
     }

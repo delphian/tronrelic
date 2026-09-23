@@ -1,18 +1,13 @@
 'use client';
 
 /**
- * @fileoverview Refresh heartbeat for the system Overview tab.
- *
- * Replaces the telemetry strip that used to sit above the Overview consoles.
- * The strip's tiles restated status the section cards below already render in
- * full, so only its refresh readout survives — the one thing no section
- * publishes on its own.
+ * @fileoverview Refresh heartbeat for the system Server tab.
  *
  * The readout answers "is this screen still live, and how stale is what I am
  * looking at?" without an operator having to watch a figure change. It carries
- * no probe and no clock of its own: the Server and Blockchain consoles each own
- * their fetch loop and report the outcome of every cycle, and this renders those
- * reports. That is the point — a timestamp advancing on an independent timer
+ * no probe and no clock of its own: each console on the tab owns its fetch loop
+ * and reports the outcome of every cycle, and this renders those reports. (The
+ * Pipeline tab states its own freshness in its status banner.) That is the point — a timestamp advancing on an independent timer
  * would keep insisting the screen is current while the fetches behind it fail,
  * which is precisely when an operator is relying on it to say otherwise.
  */

@@ -16,12 +16,14 @@ import { TronGridClient, INTERNAL_ACTIVATION_CONTRACT_TYPE, type TronGridBlock, 
 import { normalizeContractType, resolveOwnerAddress, resolveRecipient, resolveAmounts, describeContract } from './transaction-parse.js';
 import { toTransactionWriteFields } from './transaction-write.js';
 import { decodeTokenTransfer } from './token-transfer.js';
+import { resolveTransactionEvents } from './contract-events.js';
 import { resolveCaughtUpMode } from './sync-mode.js';
 import { resolveBlockAgeInBlocks } from './block-pacer.js';
 import { BlockEmitter, type IBlockNewPayload, type IPreparedBlock } from './block-emitter.js';
 import { BlockCommitter, type IBlockCommitMetrics } from './block-committer.js';
+import { PipelineTelemetry, resolveReceiptOutcome } from './pipeline-telemetry.js';
 import { WebSocketService } from '../../services/websocket.service.js';
-import { logger } from '../../lib/logger.js';
+import { logger } from './logger.js';
 import { env } from '../../config/env.js';
 import { getRedisClient } from '../../loaders/redis.js';
 import { AlertService } from '../../services/alert.service.js';
@@ -124,6 +126,12 @@ interface ContractActivityAccumulator {
 interface TransactionBuildContext {
     priceUSD: number | null;
     blockTime: Date;
+    /**
+     * Whether every transaction in the block got a receipt. Decides, for the
+     * whole block at once, whether token transfers are read from event logs or
+     * from call data, so a consumer never sees the two mixed within a block.
+     */
+    receiptsFetched: boolean;
 }
 
 
@@ -188,6 +196,13 @@ export class BlockchainService implements IBlockchainService {
     private readonly committer: BlockCommitter;
 
     /**
+     * Rolling history of prepared blocks, receipt outcomes, errors, and ticks
+     * for the `/system` Pipeline tab. Written at the moment each fact becomes
+     * known and never read back by sync, so it cannot change what sync does.
+     */
+    private readonly telemetry = PipelineTelemetry.getInstance();
+
+    /**
      * The pacing mode of the most recently processed block, kept separate from
      * `wasCaughtUp` because the two answer different questions. `wasCaughtUp`
      * is the scheduler's view once per tick; this is the worker's view per
@@ -217,7 +232,8 @@ export class BlockchainService implements IBlockchainService {
             persist: prepared => this.persistPreparedBlock(prepared),
             observers: this.observerService,
             alerts: this.alerts,
-            broadcast: payload => WebSocketService.getInstance().emit({ event: 'block:new', payload })
+            broadcast: payload => WebSocketService.getInstance().emit({ event: 'block:new', payload }),
+            telemetry: this.telemetry
         });
         BlockEmitter.setCommitSink(this.committer);
 
@@ -1482,6 +1498,26 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
+     * Report whether the worker is treating blocks as live work, for `/system`.
+     *
+     * Taken from the per-block decision rather than the scheduler's per-tick
+     * flag, because the per-block decision is the one that actually routes a
+     * block through the buffer or straight to the database.
+     *
+     * @returns `'live'` while blocks are buffered, `'catch-up'` while they are
+     *          committed at once, or `'unknown'` before the first block.
+     */
+    public getSyncMode(): 'live' | 'catch-up' | 'unknown' {
+        let mode: 'live' | 'catch-up' | 'unknown' = 'unknown';
+
+        if (this.blockPacingCaughtUp !== null) {
+            mode = this.blockPacingCaughtUp ? 'live' : 'catch-up';
+        }
+
+        return mode;
+    }
+
+    /**
      * Schedule new blocks for processing by comparing local state against the latest network height.
      *
      * This method runs periodically (via scheduler) to queue blocks that need ingestion. It prioritizes missing blocks from
@@ -1559,6 +1595,13 @@ export class BlockchainService implements IBlockchainService {
                     { $set: idleUpdate },
                     { upsert: true }
                 );
+                this.telemetry.recordTick({
+                    at: new Date(),
+                    headBlockNumber: latestNetworkBlock,
+                    fromCache: chainHead.fromCache,
+                    batchSize: 0,
+                    caughtUp: null
+                });
                 return;
             }
 
@@ -1638,6 +1681,13 @@ export class BlockchainService implements IBlockchainService {
             }
 
             await syncModel.updateOne({ key: 'blockchain:last-block' }, scheduleUpdate, { upsert: true });
+            this.telemetry.recordTick({
+                at: new Date(),
+                headBlockNumber: latestNetworkBlock,
+                fromCache: chainHead.fromCache,
+                batchSize: targets.length,
+                caughtUp: isCaughtUp
+            });
 
             // Skipped on a cached height, because the figure would be measured
             // against a ceiling that stopped moving. Lag looks better the longer
@@ -1668,6 +1718,13 @@ export class BlockchainService implements IBlockchainService {
                 } else if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ETIMEDOUT')) {
                     userFriendlyMessage = `Network connection failed. ${errorMessage}`;
                 }
+
+                this.telemetry.recordError({
+                    blockNumber: null,
+                    stage: 'schedule',
+                    errorClass: errorMessage.includes('429') ? 'HTTP 429' : 'error',
+                    message: userFriendlyMessage
+                });
 
                 // Store error state for monitoring (store as string for simplicity in sync errors)
                 const errorSyncModel = BlockchainService.getDatabase().getModel<SyncStateDoc>(BlockchainService.SYNC_STATE_COLLECTION);
@@ -2013,11 +2070,6 @@ export class BlockchainService implements IBlockchainService {
             const priceUSD = await this.priceService.getTrxPriceUsd();
             timings.getTrxPrice = Date.now() - stageStart;
 
-            const buildContext: TransactionBuildContext = {
-                priceUSD,
-                blockTime
-            };
-
             // Stage 3: Transaction receipts, only when an operator has switched
             // them on at /system/system?tab=config.
             //
@@ -2046,18 +2098,21 @@ export class BlockchainService implements IBlockchainService {
             // measurement.
             const receiptsFetched = transactions.length === 0 || (receiptsEnabled && receipts.size === transactions.length);
 
+            const buildContext: TransactionBuildContext = {
+                priceUSD,
+                blockTime,
+                receiptsFetched
+            };
+
             // Stage 4: Process transactions loop.
             //
-            // Observers are no longer notified here. They are notified when the
-            // block is announced, on the emitter's clock, because notifying them
-            // at ingestion speed pushed a whole tick's worth of blocks through
-            // them in a burst and put any plugin broadcasting from inside an
-            // observer ahead of the block feed by the buffer's lead. Parsing and
-            // persistence stay here at full speed, so the sync cursor and every
-            // lag figure derived from it keep their current meaning.
+            // Observers are not notified here. They are notified when the block
+            // is committed, on the emitter's clock, because notifying them at
+            // ingestion speed pushed a whole tick's worth of blocks through them
+            // in a burst. Nothing is written here either; the write operations
+            // are built in `persistPreparedBlock` when the block's slot arrives.
             stageStart = Date.now();
             const processed: ProcessedTransaction[] = [];
-            const operations: AnyBulkWriteOperation<TransactionDoc>[] = [];
 
             // The index comes from TronGrid's array rather than from `processed`,
             // so a transaction skipped below still occupies its position and the
@@ -2076,21 +2131,6 @@ export class BlockchainService implements IBlockchainService {
                     }
 
                     processed.push(result);
-                    operations.push({
-                        updateOne: {
-                            filter: { txId: result.payload.txId },
-                            // ITransactionPersistencePayload deliberately widens `type` to string;
-                            // the driver's $set typing requires TransactionDoc's TronTransactionType
-                            // union, so narrow only that field and keep the rest compiler-checked.
-                            update: {
-                                $set: {
-                                    ...result.payload,
-                                    type: result.payload.type as TransactionDoc['type']
-                                }
-                            },
-                            upsert: true
-                        }
-                    });
                 } catch (transactionError) {
                     logger.warn({ blockNumber, txId: transaction?.txID, transactionError }, 'Failed to process transaction - skipping');
                 }
@@ -2146,7 +2186,22 @@ export class BlockchainService implements IBlockchainService {
                 timings
             };
 
-            if (this.resolveBlockPacing(blockTime, isCaughtUp)) {
+            const buffered = this.resolveBlockPacing(blockTime, isCaughtUp);
+
+            // Recorded before the hand-off, because a block that is not
+            // buffered is committed at once and its commit must find this entry.
+            this.telemetry.recordPrepared({
+                blockNumber,
+                blockTimestamp: blockTime,
+                transactionCount: transactions.length,
+                receiptOutcome: resolveReceiptOutcome(transactions.length, receiptsEnabled, receipts.size),
+                eventCount: processed.reduce((sum, item) => sum + (item.payload.events?.length ?? 0), 0),
+                tokenTransferCount: processed.reduce((sum, item) => sum + (item.payload.tokenTransfers?.length ?? 0), 0),
+                buffered,
+                timings
+            });
+
+            if (buffered) {
                 this.emitter.enqueue(prepared);
             } else {
                 this.emitter.emitNow(prepared);
@@ -2207,6 +2262,13 @@ export class BlockchainService implements IBlockchainService {
             if (rootCause) {
                 userMessage += ` (${rootCause})`;
             }
+
+            this.telemetry.recordError({
+                blockNumber,
+                stage: 'fetch',
+                errorClass: rootCause ?? 'error',
+                message: userMessage
+            });
 
             // Mark block for 5-minute cooldown before retry
             await this.markBlockFailed(blockNumber);
@@ -2350,6 +2412,25 @@ export class BlockchainService implements IBlockchainService {
                 ownerAddress,
                 typeof value.data === 'string' ? value.data : undefined
             );
+        }
+
+        // Event logs, the token transfers decoded from them (or from call data
+        // when the block's receipts are incomplete), and contract-made TRX and
+        // TRC10 movements. Observer-only, like `tokenTransfer`:
+        // toTransactionWriteFields() leaves all three out of the stored document.
+        const { events, tokenTransfers, internalTransfers } = resolveTransactionEvents({
+            txId: transaction.txID,
+            status,
+            info,
+            receiptsFetched: context.receiptsFetched,
+            calldataTransfer: payload.tokenTransfer
+        });
+        payload.tokenTransfers = tokenTransfers;
+        if (events) {
+            payload.events = events;
+        }
+        if (internalTransfers) {
+            payload.internalTransfers = internalTransfers;
         }
 
         const snapshot = this.toSnapshot(payload);

@@ -30,7 +30,7 @@ import {
     CORE_NETWORK_ACTIVITY_ROLLUPS_COLLECTION,
     type CoreNetworkActivityRollupFields
 } from '../../database/models/core-network-activity-rollup-model.js';
-import { logger } from '../../lib/logger.js';
+import { logger } from './logger.js';
 
 /** Core blocks collection — mirrors `BlockchainService.BLOCKS_COLLECTION`. */
 const BLOCKS_COLLECTION = 'blocks';

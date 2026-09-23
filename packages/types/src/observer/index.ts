@@ -8,6 +8,10 @@
 export type { IBaseObserver } from './IBaseObserver.js';
 export type { IBaseBatchObserver, TransactionBatches } from './IBaseBatchObserver.js';
 export type { IBaseBlockObserver } from './IBaseBlockObserver.js';
+export type { IBaseEventObserver } from './IBaseEventObserver.js';
+export type { IContractEventFilter } from './IContractEventFilter.js';
+export type { IContractEventBatch } from './IContractEventBatch.js';
+export type { IObservedContractEvent } from './IObservedContractEvent.js';
 export type { IBlockData } from './IBlockData.js';
 export type { IBlockchainObserverService } from './IBlockchainObserverService.js';
 export type { IWebSocketService } from './IWebSocketService.js';

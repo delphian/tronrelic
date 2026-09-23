@@ -1,6 +1,7 @@
 import type { ITransaction } from './ITransaction.js';
 import type { ITransactionPersistencePayload } from './ITransactionPersistencePayload.js';
 import type { ITransactionCategoryFlags } from './ITransactionCategoryFlags.js';
+import type { ITransactionReceipt } from './ITransactionReceipt.js';
 
 /**
  * Enriched transaction model with category detection methods.
@@ -22,8 +23,8 @@ export class ProcessedTransaction implements ITransaction {
     categories: ITransactionCategoryFlags;
     /** Original contract parameter values from TronGrid API */
     rawValue: Record<string, unknown>;
-    /** Transaction receipt with energy/bandwidth execution details (may be null) */
-    info: any;
+    /** The raw transaction receipt, or null when receipts were not fetched */
+    info: ITransactionReceipt | null;
 
     constructor(data: ITransaction) {
         this.payload = data.payload;

@@ -55,11 +55,13 @@ Plugins type the parameter as `ITransaction` from `@/types`. The runtime instanc
 - **payload** — the full persistable transaction: tx id, block, timestamp, type (`TransferContract`, `TriggerSmartContract`, etc.), Base58 from/to addresses with enriched metadata (exchange vs wallet, known names), amounts in TRX/USD, energy/bandwidth, contract details, analysis data
 - **snapshot** — Socket.IO-ready representation for real-time emission
 - **rawValue** — original contract parameter values from TronGrid
-- **info** — transaction receipt with energy/bandwidth (may be null)
+- **info** — the raw transaction receipt (`ITransactionReceipt`), or null when receipts were not fetched
 
 To relate two transactions from the same block, use `payload.transactionIndex`, the transaction's position in its block. The chain executes a block in that order, while every transaction in the block shares one timestamp and a batch observer receives the block grouped by transaction type, so neither the timestamp nor arrival order can tell you which ran first. The field is present on transactions delivered by sync and absent on documents read back from the database. See [system-blockchain-sync-architecture.md](../system/system-blockchain-sync-architecture.md#order-within-a-block).
 
-For a TRC20 token transfer, use `payload.tokenTransfer` (`ITokenTransfer`). On a `TriggerSmartContract` the payload's own `to` is the token contract and its TRX amount is the call value, usually zero, so the real recipient and token amount exist only in the call data. Sync decodes standard `transfer` and `transferFrom` calls once into `{ contractAddress, method, from, to, rawAmount }`, where `rawAmount` is a decimal string in the token's smallest units. Do not write your own calldata decoder. The field records the transfer the call requested, not proof that tokens moved. Check `payload.status === 'SUCCESS'` first, because a reverted transfer is still decoded. That check rules out reverts only: a non-standard token that returns `false` instead of reverting also ends as `'SUCCESS'` with nothing moved, and sync cannot detect that without block receipts, which are off by default. To turn `rawAmount` into whole tokens, get the token's decimals once from `context.tronGrid.getTrc20TokenInfo()` (`ITronGridService`). Like `transactionIndex`, the field is observer-only and absent on documents read back from the database.
+For token movements, use `payload.tokenTransfers` (`ITokenTransferEvent[]`). When the block's receipts were fetched, it lists every TRC20 and TRC721 `Transfer` event the transaction emitted, including transfers made inside a swap, bridge, or batch payout that the signer never called directly, and each entry has `source: 'log'`. When they were not, it falls back to decoding a direct `transfer` or `transferFrom` call and marks the entry `source: 'calldata'`. The two are never mixed within a block. Key anything you store on `eventId`, never on `txId` alone, because one transaction can emit several transfers. `payload.events` carries every raw event log for contract-specific events core does not decode, and `payload.internalTransfers` carries TRX and TRC10 moved by contracts. All three are observer-only. See [system-blockchain-contract-events.md](../system/system-blockchain-contract-events.md) for the source rule and what to check.
+
+`payload.tokenTransfer` (`ITokenTransfer`) is the older, single call-data decode and keeps its meaning for existing consumers. It records what a direct call requested, not proof that tokens moved: check `payload.status === 'SUCCESS'` first, and note that a non-standard token returning `false` instead of reverting still ends as `'SUCCESS'`. To turn a `rawAmount` into whole tokens, get the token's decimals once from `context.tronGrid.getTrc20TokenInfo()` (`ITronGridService`).
 
 Addresses arrive Base58, amounts in both SUN and TRX, USD already converted. Observers receive model objects, never raw TronGrid responses — that abstraction enables future provider changes.
 
@@ -123,6 +125,31 @@ Successful registration logs:
 ```
 {"pluginId":"my-plugin","pluginTitle":"My Plugin","msg":"✓ Initialized plugin"}
 ```
+
+## Following Token Movements With an Event Observer
+
+To follow a token across the whole chain, subscribe to its events instead of to `TriggerSmartContract`. Extend the injected `context.BaseEventObserver` and subscribe with `observerRegistry.subscribeEventsBatch`. Core indexes each block's events once and hands your observer only the matches, one batch per block.
+
+```typescript
+class UsdtTransferObserver extends BaseEventObserver {
+    protected readonly name = 'UsdtTransferObserver';
+    constructor() {
+        super(logger);
+        observerRegistry.subscribeEventsBatch({ topic0: TRANSFER_TOPIC, contractAddresses: [USDT] }, this);
+    }
+    protected async processEvents(batch: IContractEventBatch): Promise<void> {
+        if (!batch.receiptsFetched) {
+            // Receipts were missing for this block: record the gap, do not read it as "no transfers".
+            return;
+        }
+        for (const { tokenTransfer, transaction } of batch.events) {
+            // tokenTransfer is the decoded TRC20/TRC721 transfer; key storage on tokenTransfer.eventId.
+        }
+    }
+}
+```
+
+Call `subscribeEventsBatch` again to add another signature, such as USDT `Issue`; the observer still receives one batch per block. When a block has no receipts, the observer receives an empty batch with `receiptsFetched: false` so it can tell a coverage gap from a quiet block.
 
 ## WebSocket Emission
 
@@ -195,4 +222,5 @@ Reference implementation: `src/plugins/trp-whale-alerts/src/backend/`.
 - [plugins-system-architecture.md](./plugins-system-architecture.md) — Manifest, package layout, runtime flow
 - [plugins-websocket-subscriptions.md](./plugins-websocket-subscriptions.md) — Namespaced rooms and subscription handlers
 - [system-blockchain-sync-architecture.md](../system/system-blockchain-sync-architecture.md) — Block retrieval, enrichment pipeline
+- [system-blockchain-contract-events.md](../system/system-blockchain-contract-events.md) — Decoded event logs, token transfers, and event subscriptions
 - [system-logging.md](../system/system-logging.md) — Pino, MongoDB persistence, log queries

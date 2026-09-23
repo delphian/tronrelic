@@ -7,6 +7,9 @@
  * database implementation details while providing all necessary transaction context.
  */
 import type { ITokenTransfer } from './ITokenTransfer.js';
+import type { IContractEvent } from './IContractEvent.js';
+import type { ITokenTransferEvent } from './ITokenTransferEvent.js';
+import type { IInternalTransfer } from './IInternalTransfer.js';
 
 export interface ITransactionPersistencePayload {
     /** Unique transaction identifier from the blockchain */
@@ -96,11 +99,48 @@ export interface ITransactionPersistencePayload {
      * It is not proof that tokens moved. A call that reverted is still
      * decoded, so check `status === 'SUCCESS'` first, but that check rules
      * out reverts only: a non-standard token that returns `false` instead of
-     * reverting also ends as `'SUCCESS'` with nothing moved. Sync cannot tell
-     * the two apart, because the return value and `Transfer` log are only in
-     * block receipts, which are off by default.
+     * reverting also ends as `'SUCCESS'` with nothing moved.
+     *
+     * It also sees only a direct call to the token. For every token movement
+     * the transaction caused, including ones inside another contract's call,
+     * read `tokenTransfers` instead. This field keeps its call-data meaning so
+     * existing consumers do not change behaviour without their knowledge.
      */
     tokenTransfer?: ITokenTransfer;
+    /**
+     * Every event log the transaction emitted, normalised with base58
+     * addresses and a stable `eventId`, in emission order.
+     *
+     * Set only when the block's receipts were fetched in full
+     * (`IBlockData.receiptsFetched`). A reverted transaction emits nothing and
+     * gets an empty list. Absent when receipts were not fetched, which means
+     * "unknown", not "no events".
+     *
+     * Delivered to observers only and not written to the transactions
+     * collection.
+     */
+    events?: IContractEvent[];
+    /**
+     * Token movements the transaction caused, decoded from standard
+     * `Transfer` events, or from call data when receipts were not fetched.
+     * Check each entry's `source` to tell the two apart; the list never mixes
+     * them. See `ITokenTransferEvent`.
+     *
+     * Always set on transactions delivered by block sync, possibly empty.
+     * Delivered to observers only and not written to the transactions
+     * collection.
+     */
+    tokenTransfers?: ITokenTransferEvent[];
+    /**
+     * Value-bearing TRX and TRC10 movements made by contracts during the
+     * transaction, decoded from the receipt's internal transactions.
+     *
+     * Set only when the block's receipts were fetched in full, possibly empty.
+     * Absent otherwise. Delivered to observers only and not written to the
+     * transactions collection; the raw list is stored as
+     * `internalTransactions`.
+     */
+    internalTransfers?: IInternalTransfer[];
     /** Optional transaction memo or note */
     memo?: string | null;
     /**

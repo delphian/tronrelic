@@ -29,7 +29,8 @@
 
 import type { IBlockData, IBlockchainObserverService, ITransactionPersistencePayload } from '@/types';
 import type { IBlockCommitSink, IBlockNewPayload, IPreparedBlock } from './block-emitter.js';
-import { logger } from '../../lib/logger.js';
+import type { PipelineTelemetry } from './pipeline-telemetry.js';
+import { logger } from './logger.js';
 
 /**
  * The one thing the committer needs from the alert system.
@@ -75,6 +76,12 @@ export interface IBlockCommitterDependencies {
      * test assert on exactly what was broadcast without a running server.
      */
     broadcast: (payload: IBlockNewPayload) => void;
+    /**
+     * Where the committer reports each write and each failure for the
+     * `/system` Pipeline tab. Narrowed to the two methods it calls so a test
+     * can pass a spy instead of the shared recorder.
+     */
+    telemetry: Pick<PipelineTelemetry, 'recordCommitted' | 'recordError'>;
 }
 
 /** What the committer reports to `/system` about its own health. */
@@ -183,12 +190,19 @@ export class BlockCommitter implements IBlockCommitSink {
         try {
             await this.deps.persist(prepared);
             this.lastCommittedBlockNumber = prepared.blockNumber;
+            this.deps.telemetry.recordCommitted(prepared.blockNumber, prepared.timings);
 
             this.dispatchToObservers(prepared.blockData);
             this.broadcast(prepared);
             this.ingestAlerts(prepared.blockData);
         } catch (error) {
             this.failures += 1;
+            this.deps.telemetry.recordError({
+                blockNumber: prepared.blockNumber,
+                stage: 'commit',
+                errorClass: 'commit',
+                message: error instanceof Error ? error.message : String(error)
+            });
             logger.error(
                 { error, blockNumber: prepared.blockNumber },
                 'Failed to commit a released block; nothing durable was written, so the gap scan or the next startup will pick it up'
@@ -200,7 +214,7 @@ export class BlockCommitter implements IBlockCommitSink {
 
     /**
      * Hand a block's transactions to the per-transaction, batch, and block
-     * observers.
+     * observers, and its contract events to the event observers.
      *
      * Deliberately written without a single `await`. The observer service keeps
      * one batch accumulator that is cleared at the start of a block and flushed
@@ -240,6 +254,13 @@ export class BlockCommitter implements IBlockCommitSink {
                 logger.error(
                     { error, blockNumber: blockData.blockNumber },
                     'Failed to notify block observers for a committed block'
+                );
+            });
+
+            void this.deps.observers.notifyBlockEvents(blockData).catch(error => {
+                logger.error(
+                    { error, blockNumber: blockData.blockNumber },
+                    'Failed to notify event observers for a committed block'
                 );
             });
         } catch (error) {

@@ -9,7 +9,7 @@
  */
 
 // Components
-// BlockchainMonitor folded into app/(core)/system/system/components/BlockchainSection
+// BlockchainMonitor replaced by the Pipeline tab in app/(core)/system/system/components/pipeline
 export { MarketMonitor } from './components/MarketMonitor';
 // SchedulerMonitor moved to modules/scheduler
 // SystemLogsMonitor and LogSettings moved to modules/logs

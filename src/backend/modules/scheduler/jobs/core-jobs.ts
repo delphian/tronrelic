@@ -23,6 +23,7 @@ import {
     CORE_NETWORK_ACTIVITY_ROLLUPS_COLLECTION
 } from '../../../database/models/core-network-activity-rollup-model.js';
 import { runOverviewRollup } from '../../blockchain/overview-rollup.job.js';
+import { logger as blockchainLogger } from '../../blockchain/logger.js';
 import { SchedulerService } from '../services/scheduler.service.js';
 
 /**
@@ -95,9 +96,12 @@ export async function registerCoreJobs(
     // `scheduler_configs`, written when the job was first registered and read
     // back on every boot. Deployments created before this change keep the
     // one-minute schedule until an operator edits it at `/system/scheduler`.
+    // The blockchain jobs pass the blockchain module's logger so the scheduler's
+    // own entries for them land under `tronrelic:blockchain`, which is what the
+    // Logs tab on /system/system filters by.
     scheduler.register('blockchain:sync', '*/15 * * * * *', async () => {
         await blockchainService.syncLatestBlocks();
-    });
+    }, { logger: blockchainLogger });
 
     // Blockchain pruning: every hour. Transactions: removes 2 hours of the oldest
     // rows older than 4 days — coupled to TARGET_HOURLY_BUCKETS (96) in
@@ -108,7 +112,7 @@ export async function registerCoreJobs(
     scheduler.register('blockchain:prune', '0 * * * *', async () => {
         await blockchainService.pruneOldTransactions(24 * 4, 2);
         await blockchainService.pruneOldBlocks();
-    });
+    }, { logger: blockchainLogger });
 
     // Network-activity rollup: every 5 minutes. Pre-aggregates the
     // transactions/transfers/volume buckets backing the core:network-activity
@@ -117,7 +121,7 @@ export async function registerCoreJobs(
     // one chunk of history, so it never scans the full window in a single pass.
     scheduler.register('network-activity:rollup', '*/5 * * * *', async () => {
         await runOverviewRollup(database);
-    });
+    }, { logger: blockchainLogger });
 
     // Kick one rollup now (fire-and-forget) so the widget has data without
     // waiting for the first cron tick. The scheduled run lets failures throw so

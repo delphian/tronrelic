@@ -75,16 +75,18 @@ function createCommitter(overrides: Partial<IBlockCommitterDependencies> = {}) {
         accumulateForBatch: vi.fn((transaction: ITransaction) => { calls.push(`accumulate:${transaction.payload.txId}`); }),
         notifyTransaction: vi.fn(async (transaction: ITransaction) => { calls.push(`notify:${transaction.payload.txId}`); }),
         flushBatches: vi.fn(async () => { calls.push('flush'); }),
-        notifyBlock: vi.fn(async () => { calls.push('notifyBlock'); })
+        notifyBlock: vi.fn(async () => { calls.push('notifyBlock'); }),
+        notifyBlockEvents: vi.fn(async () => { calls.push('notifyBlockEvents'); })
     } as unknown as IBlockchainObserverService;
 
     const persist = vi.fn(async (prepared: IPreparedBlock) => { calls.push(`persist:${prepared.blockNumber}`); });
     const alerts = { ingestTransactions: vi.fn(async () => { calls.push('alerts'); }) };
     const broadcast = vi.fn(() => { calls.push('broadcast'); });
+    const telemetry = { recordCommitted: vi.fn(), recordError: vi.fn() };
 
-    const deps: IBlockCommitterDependencies = { persist, observers, alerts, broadcast, ...overrides };
+    const deps: IBlockCommitterDependencies = { persist, observers, alerts, broadcast, telemetry, ...overrides };
 
-    return { committer: new BlockCommitter(deps), persist, observers, alerts, broadcast, calls };
+    return { committer: new BlockCommitter(deps), persist, observers, alerts, broadcast, telemetry, calls };
 }
 
 /**
@@ -127,8 +129,37 @@ describe('BlockCommitter', () => {
 
         expect(observers.notifyTransaction).toHaveBeenCalledTimes(2);
         expect(observers.notifyBlock).toHaveBeenCalledTimes(1);
+        expect(observers.notifyBlockEvents).toHaveBeenCalledTimes(1);
         expect(broadcast).toHaveBeenCalledTimes(1);
         expect(alerts.ingestTransactions).toHaveBeenCalledWith([transactions[0].payload, transactions[1].payload]);
+    });
+
+    it('reports each write and each failed commit to the pipeline telemetry', async () => {
+        // The /system Pipeline tab reads commit history from telemetry, so a
+        // commit that is not reported there is invisible to an operator.
+        const { committer, telemetry } = createCommitter();
+        committer.submit(buildPrepared(100, []));
+        await settle();
+        expect(telemetry.recordCommitted).toHaveBeenCalledWith(100, expect.any(Object));
+
+        const failing = createCommitter({ persist: vi.fn(async () => { throw new Error('write failed'); }) });
+        failing.committer.submit(buildPrepared(101, []));
+        await settle();
+        expect(failing.telemetry.recordError).toHaveBeenCalledWith(
+            expect.objectContaining({ blockNumber: 101, stage: 'commit', message: 'write failed' })
+        );
+    });
+
+    it('delivers contract events after the write, alongside the other observers', async () => {
+        // Event observers read the same committed block as every other
+        // observer, so they must not hear about it before it exists.
+        const { committer, calls } = createCommitter();
+
+        committer.submit(buildPrepared(100, [buildTransaction('tx-1')]));
+        await settle();
+
+        expect(calls.indexOf('persist:100')).toBeLessThan(calls.indexOf('notifyBlockEvents'));
+        expect(calls.indexOf('notifyBlockEvents')).toBeLessThan(calls.indexOf('broadcast'));
     });
 
     it('commits one block at a time even when several are released together', async () => {

@@ -19,23 +19,29 @@
 import type {
     IBaseBatchObserver,
     IBaseBlockObserver,
+    IBaseEventObserver,
     IBaseObserver,
     IBlockData,
     IBlockchainObserverService,
+    IContractEventFilter,
     IObserverStats,
     ISystemLogService,
     ITransaction
 } from '@/types';
 
+/** Any observer kind a plugin can subscribe. */
+type AnyObserver = IBaseObserver | IBaseBatchObserver | IBaseBlockObserver | IBaseEventObserver;
+
 /**
  * One tracked subscription, retained so it can be revoked on teardown.
  *
- * `transactionType` is present only for per-type subscriptions; batch and block
- * registrations cover the observer as a whole and carry no per-type handle.
+ * `transactionType` is present only for per-type subscriptions; batch, block,
+ * and event registrations cover the observer as a whole and carry no per-type
+ * handle.
  */
 interface ITrackedSubscription {
-    kind: 'transaction-type' | 'batch' | 'block';
-    observer: IBaseObserver | IBaseBatchObserver | IBaseBlockObserver;
+    kind: 'transaction-type' | 'batch' | 'block' | 'events';
+    observer: AnyObserver;
     transactionType?: string;
 }
 
@@ -103,6 +109,22 @@ export class PluginObserverRegistry implements IBlockchainObserverService {
     }
 
     /**
+     * Subscribe an event observer to contract events and record it for teardown.
+     *
+     * An observer adding several filters is recorded once per call; revoking
+     * any one entry removes all of that observer's filters, and the others
+     * become harmless no-ops.
+     *
+     * @param filter - Event signatures and, optionally, emitting contracts to match.
+     * @param observer - The event observer to notify with each block's matches.
+     */
+    public subscribeEventsBatch(filter: IContractEventFilter, observer: IBaseEventObserver): void {
+        this.assertOpen('subscribeEventsBatch');
+        this.service.subscribeEventsBatch(filter, observer);
+        this.subscriptions.push({ kind: 'events', observer });
+    }
+
+    /**
      * Revoke every subscription this plugin made and stop the observers behind them.
      *
      * Called by the plugin manager on `disable()` and `uninstall()`. Unsubscribing alone would
@@ -116,7 +138,7 @@ export class PluginObserverRegistry implements IBlockchainObserverService {
         this.open = false;
 
         const snapshot = this.subscriptions.splice(0, this.subscriptions.length);
-        const stopped = new Set<IBaseObserver | IBaseBatchObserver | IBaseBlockObserver>();
+        const stopped = new Set<AnyObserver>();
 
         for (const subscription of snapshot) {
             try {
@@ -191,12 +213,24 @@ export class PluginObserverRegistry implements IBlockchainObserverService {
     }
 
     /**
+     * Unsubscribe an event observer from all of its filters.
+     *
+     * @param observer - The event observer to remove.
+     * @returns True when the observer was subscribed and has been removed.
+     */
+    public unsubscribeEventsBatch(observer: IBaseEventObserver): boolean {
+        this.forget(sub => sub.kind === 'events' && sub.observer === observer);
+
+        return this.service.unsubscribeEventsBatch(observer);
+    }
+
+    /**
      * Remove an observer from every subscription it holds.
      *
      * @param observer - The observer to remove from all subscriber collections.
      * @returns Count of subscriptions removed.
      */
-    public unsubscribeObserver(observer: IBaseObserver | IBaseBatchObserver | IBaseBlockObserver): number {
+    public unsubscribeObserver(observer: AnyObserver): number {
         this.forget(sub => sub.observer === observer);
 
         return this.service.unsubscribeObserver(observer);
@@ -237,6 +271,20 @@ export class PluginObserverRegistry implements IBlockchainObserverService {
      */
     public async notifyBlock(blockData: IBlockData): Promise<void> {
         return this.service.notifyBlock(blockData);
+    }
+
+    /**
+     * Deliver a committed block's contract events to event subscribers.
+     *
+     * @param blockData - Block metadata and its enriched transactions.
+     */
+    public async notifyBlockEvents(blockData: IBlockData): Promise<void> {
+        return this.service.notifyBlockEvents(blockData);
+    }
+
+    /** @returns Per-signature event subscriber counts across the whole process. */
+    public getEventSubscriptionStats(): Record<string, number> {
+        return this.service.getEventSubscriptionStats();
     }
 
     /** @returns Per-type subscriber counts across the whole process. */
@@ -303,6 +351,12 @@ export class PluginObserverRegistry implements IBlockchainObserverService {
 
         if (subscription.kind === 'batch') {
             this.service.unsubscribeTransactionTypesBatch(subscription.observer as IBaseBatchObserver);
+
+            return;
+        }
+
+        if (subscription.kind === 'events') {
+            this.service.unsubscribeEventsBatch(subscription.observer as IBaseEventObserver);
 
             return;
         }

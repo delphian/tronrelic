@@ -296,6 +296,7 @@ export abstract class BaseBatchObserver implements IBaseBatchObserver {
             lastProcessedAt: this.lastProcessedAt?.toISOString() ?? null,
             lastErrorAt: this.lastErrorAt?.toISOString() ?? null,
             errorRate: this.calculateErrorRate(),
+            queueCapacity: BaseBatchObserver.MAX_QUEUE_SIZE,
             // Batch-specific metrics
             batchesProcessed: this.batchesProcessed,
             avgBatchSize,

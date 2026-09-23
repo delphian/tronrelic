@@ -13,7 +13,7 @@
  * for `IXxxService` implementations.
  */
 import type { IDatabaseService, IBlockTransaction, IResourceUsage, ITransactionDetailService } from '@/types';
-import { logger } from '../../lib/logger.js';
+import { logger } from './logger.js';
 import { TronGridClient, type TronGridTransaction, type TronGridTransactionInfo } from './tron-grid.client.js';
 import { normalizeContractType, resolveOwnerAddress, resolveRecipient, resolveAmounts, describeContract } from './transaction-parse.js';
 

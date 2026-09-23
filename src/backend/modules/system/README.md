@@ -9,6 +9,11 @@
 | `system-monitor.service.ts` | Mongo/Redis/ClickHouse probes, process metrics, host metrics, blockchain snapshots |
 | `docker-stats.service.ts` | Docker Engine API client — per-container CPU, memory, health, restarts |
 | `system-monitor.controller.ts` | HTTP handlers; routes mounted by `api/routes/system.router.ts` |
+| `pipeline-health.ts` | Pure rules behind `GET /blockchain/pipeline`: the ingest-lag, feed-lag, and receipt-coverage tones, and `resolvePipelineHealth()`, which returns `healthy`, `degraded`, or `stalled` with plain-English reasons. Thresholds derive from the deployment's buffer target and backfill entry lag |
+
+## Pipeline status
+
+`SystemMonitorService.getPipelineStatus()` builds the `/system` Pipeline tab's payload (`IPipelineStatus`) from the blockchain module's `PipelineTelemetry`, the running emitter and committer, the `blockchain:sync` job's own scheduler state, the TronGrid receipts switch, and the sync state document. **It never calls TronGrid.** `getBlockchainSyncStatus()` asks TronGrid for the chain head on every request through the queue block sync shares, so a console polling it competed with sync and slowed down most when TronGrid was struggling. Lags here are measured from each block's own header timestamp instead, the same way sync classifies a block as live work. Payload reference: [system-api-blockchain.md](../../../../docs/system/system-api-blockchain.md#get-blockchainpipeline--pipeline-payload).
 
 ## Container metrics contract
 
