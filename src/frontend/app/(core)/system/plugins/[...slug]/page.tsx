@@ -1,4 +1,6 @@
 import { PluginPageWithZones } from '../../../../../components/PluginPageWithZones';
+import { runPluginServerDataFetcher } from '../../../../../lib/runPluginServerDataFetcher';
+import { getEnabledPluginPageConfig } from '../../../../../lib/serverPluginRegistry';
 
 /**
  * Dynamic route params for plugin admin pages.
@@ -29,9 +31,14 @@ interface IPageParams {
  * Architecture:
  * 1. User navigates to /system/plugins/telegram-bot/settings
  * 2. Next.js matches this catch-all route (within system layout)
- * 3. PluginPageWithZones fetches widgets and wraps with widget zones
- * 4. PluginPageHandler checks plugin registry for matching page
- * 5. Plugin component renders with system navigation and widget zones visible
+ * 3. The page's serverDataFetcher, if it declares one, runs here so the
+ *    component receives `initialData`, exactly as a public plugin page does
+ * 4. PluginPageWithZones fetches widgets and wraps with widget zones
+ * 5. PluginPageHandler checks plugin registry for matching page
+ * 6. Plugin component renders with system navigation and widget zones visible
+ *
+ * Without step 3 an admin page that relies on server-fetched data, such as
+ * the whale-alerts settings form, would always start empty.
  *
  * @param params - Next.js route params containing slug array
  * @returns Plugin page component wrapped in system layout
@@ -41,5 +48,8 @@ export default async function PluginAdminPage({ params }: { params: Promise<IPag
     const { slug } = await params;
     const fullSlug = '/system/plugins/' + slug.join('/');
 
-    return <PluginPageWithZones slug={fullSlug} />;
+    const pageConfig = await getEnabledPluginPageConfig(fullSlug);
+    const initialData = pageConfig ? await runPluginServerDataFetcher(pageConfig, fullSlug) : undefined;
+
+    return <PluginPageWithZones slug={fullSlug} initialData={initialData} />;
 }
