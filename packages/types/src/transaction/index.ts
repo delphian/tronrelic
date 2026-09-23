@@ -8,5 +8,9 @@
 export type { ITransaction } from './ITransaction.js';
 export type { ITransactionPersistencePayload } from './ITransactionPersistencePayload.js';
 export type { ITokenTransfer } from './ITokenTransfer.js';
+export type { IContractEvent } from './IContractEvent.js';
+export type { ITokenTransferEvent } from './ITokenTransferEvent.js';
+export type { IInternalTransfer } from './IInternalTransfer.js';
+export type { ITransactionReceipt } from './ITransactionReceipt.js';
 export type { ITransactionCategoryFlags } from './ITransactionCategoryFlags.js';
 export { ProcessedTransaction } from './ProcessedTransaction.js';

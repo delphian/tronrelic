@@ -1,6 +1,8 @@
 import type { IBaseObserver } from './IBaseObserver.js';
 import type { IBaseBatchObserver } from './IBaseBatchObserver.js';
 import type { IBaseBlockObserver } from './IBaseBlockObserver.js';
+import type { IBaseEventObserver } from './IBaseEventObserver.js';
+import type { IContractEventFilter } from './IContractEventFilter.js';
 import type { IBlockData } from './IBlockData.js';
 import type { IObserverStats } from './IObserverStats.js';
 import type { ITransaction } from '../transaction/ITransaction.js';
@@ -152,6 +154,47 @@ export interface IBlockchainObserverService {
      */
     getBlockSubscriptionStats(): { subscriberCount: number };
 
+    // Event subscription methods
+
+    /**
+     * Subscribe an event observer to contract events matching a filter.
+     *
+     * The observer receives one `IContractEventBatch` per block holding every
+     * event that matched any of its filters, in chain order and without
+     * duplicates. Calling this again for the same observer adds another filter
+     * rather than replacing the first, so one observer can follow, for example,
+     * USDT `Transfer`, `Issue`, and `Redeem` and still get one batch per block.
+     *
+     * Events exist only for blocks whose receipts were fetched in full. For any
+     * other block the observer receives an empty batch with
+     * `receiptsFetched: false`, so it can tell a coverage gap from a block in
+     * which nothing matched.
+     *
+     * @param filter - Event signatures and, optionally, emitting contracts to match
+     * @param observer - The event observer to notify with each block's matches
+     */
+    subscribeEventsBatch(filter: IContractEventFilter, observer: IBaseEventObserver): void;
+
+    /**
+     * Deliver a committed block's contract events to event subscribers.
+     *
+     * Called once per block after the block is written, alongside the other
+     * notify methods. Indexes the block's events once by signature and hands
+     * each event observer only the events matching its filters, using
+     * fire-and-forget semantics.
+     *
+     * @param blockData - Block metadata and all enriched transactions
+     */
+    notifyBlockEvents(blockData: IBlockData): Promise<void>;
+
+    /**
+     * Get event subscription statistics.
+     *
+     * Returns, for each subscribed event signature (`topics[0]`), how many
+     * event observers follow it.
+     */
+    getEventSubscriptionStats(): Record<string, number>;
+
     // Unsubscription methods
 
     /**
@@ -189,14 +232,22 @@ export interface IBlockchainObserverService {
     unsubscribeBlock(observer: IBaseBlockObserver): boolean;
 
     /**
+     * Unsubscribe an event observer from every filter it registered.
+     *
+     * @param observer - The event observer instance to remove
+     * @returns True if the observer was subscribed and has been removed, false if it was not
+     */
+    unsubscribeEventsBatch(observer: IBaseEventObserver): boolean;
+
+    /**
      * Remove an observer from every subscription it holds, whatever its kind.
      *
      * The platform disables plugins without knowing how each of their observers registered, so
-     * this sweeps all three collections (per-type, batch, block) in one call. Prefer it on
+     * this sweeps all four collections (per-type, batch, block, event) in one call. Prefer it on
      * lifecycle teardown paths; use the targeted variants when revoking one known subscription.
      *
      * @param observer - The observer instance to remove from all subscriber collections
      * @returns Count of subscriptions removed — 0 means the observer held none
      */
-    unsubscribeObserver(observer: IBaseObserver | IBaseBatchObserver | IBaseBlockObserver): number;
+    unsubscribeObserver(observer: IBaseObserver | IBaseBatchObserver | IBaseBlockObserver | IBaseEventObserver): number;
 }

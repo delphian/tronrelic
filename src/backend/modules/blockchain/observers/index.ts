@@ -7,3 +7,4 @@
 export { BaseObserver } from './BaseObserver.js';
 export { BaseBatchObserver } from './BaseBatchObserver.js';
 export { BaseBlockObserver } from './BaseBlockObserver.js';
+export { BaseEventObserver } from './BaseEventObserver.js';

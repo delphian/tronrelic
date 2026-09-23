@@ -3,14 +3,44 @@ import type {
     IBaseObserver,
     IBaseBatchObserver,
     IBaseBlockObserver,
+    IBaseEventObserver,
     IBlockData,
+    IContractEventBatch,
+    IContractEventFilter,
+    IObservedContractEvent,
     IObserverStats,
     ISystemLogService,
+    ITokenTransferEvent,
     ITransaction,
     TransactionBatches
 } from '@/types';
 
 type TransactionType = ITransaction['payload']['type'];
+
+/**
+ * An event observer's filter after normalisation, ready for matching.
+ *
+ * `contracts` is null when the filter accepts any emitting contract, which is
+ * cheaper to test than an empty set standing for "everything".
+ */
+interface INormalizedEventFilter {
+    topics: Set<string>;
+    contracts: Set<string> | null;
+}
+
+/**
+ * One event in a block's index, with its position in the block.
+ *
+ * The position lets an observer whose filters overlap receive each event once
+ * and still in chain order after the matches from several filters are merged.
+ */
+interface IIndexedEvent {
+    sequence: number;
+    observed: IObservedContractEvent;
+}
+
+/** A 32-byte event signature hash as normalised hex. */
+const TOPIC_PATTERN = /^[0-9a-f]{64}$/;
 
 /**
  * Blockchain Observer Service
@@ -53,6 +83,9 @@ export class BlockchainObserverService implements IBlockchainObserverService {
 
     // Batch accumulator - collects transactions by type during block processing
     private batchAccumulator = new Map<TransactionType, ITransaction[]>();
+
+    // Event subscribers - each observer's filters, matched against every block's events
+    private eventObserverFilters = new Map<IBaseEventObserver, INormalizedEventFilter[]>();
 
     /**
      * Initialize the blockchain observer service.
@@ -508,7 +541,255 @@ export class BlockchainObserverService implements IBlockchainObserverService {
     }
 
     // =========================================================================
-    // Enhanced Statistics (includes batch and block observers)
+    // Event Subscription Methods
+    // =========================================================================
+
+    /**
+     * Subscribe an event observer to contract events matching a filter.
+     *
+     * Repeated calls for one observer add filters rather than replacing them,
+     * and the observer still receives one batch per block. The filter is
+     * normalised here, once, so matching a block is a set lookup.
+     *
+     * A malformed signature hash throws. Subscriptions happen during plugin
+     * init, so the author sees the mistake immediately; accepting it would
+     * leave an observer that silently never receives anything.
+     *
+     * @param filter - Event signatures and, optionally, emitting contracts to match
+     * @param observer - The event observer to notify with each block's matches
+     */
+    public subscribeEventsBatch(filter: IContractEventFilter, observer: IBaseEventObserver): void {
+        const normalized = this.normalizeEventFilter(filter, observer.getName());
+        const filters = this.eventObserverFilters.get(observer) ?? [];
+        filters.push(normalized);
+        this.eventObserverFilters.set(observer, filters);
+
+        this.logger.info(
+            {
+                observerName: observer.getName(),
+                topics: Array.from(normalized.topics),
+                contractAddresses: normalized.contracts ? Array.from(normalized.contracts) : 'any',
+                totalFilters: filters.length
+            },
+            'Event observer subscribed to contract events'
+        );
+    }
+
+    /**
+     * Deliver a committed block's contract events to event subscribers.
+     *
+     * The block's events are indexed once by signature, and each observer
+     * receives only the events matching its filters, so adding a subscriber
+     * adds no per-transaction work. A block whose receipts are incomplete has
+     * no events; every event observer then receives an empty batch flagged
+     * `receiptsFetched: false` so it can record the gap instead of reading
+     * silence as "nothing moved".
+     *
+     * Fire-and-forget like the other notify methods. Nothing here awaits, so
+     * the caller's shared batch accumulator cannot be interleaved with another
+     * block's.
+     *
+     * @param blockData - Block metadata and all enriched transactions
+     */
+    public async notifyBlockEvents(blockData: IBlockData): Promise<void> {
+        if (this.eventObserverFilters.size === 0) {
+            return;
+        }
+
+        const receiptsFetched = blockData.receiptsFetched === true;
+        const index = receiptsFetched ? this.indexBlockEvents(blockData) : new Map<string, IIndexedEvent[]>();
+        const notifications: Promise<void>[] = [];
+
+        for (const [observer, filters] of this.eventObserverFilters.entries()) {
+            const events = this.collectMatchingEvents(index, filters);
+
+            // A complete block with no matches is not worth a queue slot; an
+            // incomplete one is, because it tells the observer about a gap.
+            if (receiptsFetched && events.length === 0) {
+                continue;
+            }
+
+            const batch: IContractEventBatch = {
+                blockNumber: blockData.blockNumber,
+                blockTimestamp: blockData.timestamp,
+                receiptsFetched,
+                events
+            };
+
+            notifications.push((async () => {
+                try {
+                    await observer.enqueueEvents(batch);
+                } catch (error) {
+                    this.logger.error(
+                        {
+                            observer: observer.getName(),
+                            blockNumber: blockData.blockNumber,
+                            eventCount: events.length,
+                            error
+                        },
+                        'Failed to enqueue events to observer'
+                    );
+                }
+            })());
+        }
+
+        void Promise.all(notifications);
+    }
+
+    /**
+     * Get event subscription statistics.
+     *
+     * @returns For each subscribed event signature, the number of event
+     *          observers following it. An observer with two filters naming the
+     *          same signature is counted once.
+     */
+    public getEventSubscriptionStats(): Record<string, number> {
+        const stats: Record<string, number> = {};
+
+        for (const filters of this.eventObserverFilters.values()) {
+            const topics = new Set<string>();
+            for (const filter of filters) {
+                for (const topic of filter.topics) {
+                    topics.add(topic);
+                }
+            }
+            for (const topic of topics) {
+                stats[topic] = (stats[topic] ?? 0) + 1;
+            }
+        }
+
+        return stats;
+    }
+
+    /**
+     * Unsubscribe an event observer from every filter it registered.
+     *
+     * @param observer - The event observer to remove
+     * @returns True when the observer was subscribed and has been removed
+     */
+    public unsubscribeEventsBatch(observer: IBaseEventObserver): boolean {
+        const removed = this.eventObserverFilters.delete(observer);
+
+        if (removed) {
+            this.logger.info(
+                {
+                    observerName: observer.getName(),
+                    remainingEventObservers: this.eventObserverFilters.size
+                },
+                'Event observer unsubscribed'
+            );
+        }
+
+        return removed;
+    }
+
+    /**
+     * Turn a caller's filter into the form matching uses.
+     *
+     * Signature hashes are lowercased and stripped of `0x`, so a plugin that
+     * copies a hash from an explorer in either form still matches.
+     *
+     * @param filter - The filter as the plugin wrote it
+     * @param observerName - Used in the error message when the filter is invalid
+     * @returns The normalised filter
+     * @throws Error when no signature is given or one is not a 32-byte hex hash
+     */
+    private normalizeEventFilter(filter: IContractEventFilter, observerName: string): INormalizedEventFilter {
+        const rawTopics = Array.isArray(filter.topic0) ? filter.topic0 : [filter.topic0];
+        const topics = new Set(rawTopics.map(topic => String(topic).replace(/^0x/i, '').toLowerCase()));
+
+        if (topics.size === 0 || Array.from(topics).some(topic => !TOPIC_PATTERN.test(topic))) {
+            throw new Error(
+                `Observer '${observerName}' passed an invalid event filter: topic0 must be one or more ` +
+                `32-byte hex signature hashes, got ${JSON.stringify(filter.topic0)}`
+            );
+        }
+
+        const contracts = filter.contractAddresses && filter.contractAddresses.length > 0
+            ? new Set(filter.contractAddresses)
+            : null;
+
+        return { topics, contracts };
+    }
+
+    /**
+     * Index a block's events by signature, in chain order.
+     *
+     * Built once per block and shared by every event observer. Each entry
+     * carries the decoded token transfer when core recognised the event, so an
+     * observer does not look it up again. Events without topics cannot match a
+     * signature filter and are left out.
+     *
+     * @param blockData - The committed block
+     * @returns Events grouped by `topics[0]`, each list in chain order
+     */
+    private indexBlockEvents(blockData: IBlockData): Map<string, IIndexedEvent[]> {
+        const index = new Map<string, IIndexedEvent[]>();
+        let sequence = 0;
+
+        for (const transaction of blockData.transactions) {
+            const events = transaction.payload.events ?? [];
+            if (events.length === 0) {
+                continue;
+            }
+
+            const transfers = new Map<string, ITokenTransferEvent>();
+            for (const transfer of transaction.payload.tokenTransfers ?? []) {
+                transfers.set(transfer.eventId, transfer);
+            }
+
+            for (const event of events) {
+                const topic0 = event.topics[0];
+                if (!topic0) {
+                    continue;
+                }
+
+                const observed: IObservedContractEvent = { event, transaction };
+                const tokenTransfer = transfers.get(event.eventId);
+                if (tokenTransfer) {
+                    observed.tokenTransfer = tokenTransfer;
+                }
+
+                const entries = index.get(topic0) ?? [];
+                entries.push({ sequence, observed });
+                index.set(topic0, entries);
+                sequence += 1;
+            }
+        }
+
+        return index;
+    }
+
+    /**
+     * Collect the events one observer's filters match, once each, in chain order.
+     *
+     * @param index - The block's events grouped by signature
+     * @param filters - The observer's normalised filters
+     * @returns The matching events
+     */
+    private collectMatchingEvents(
+        index: Map<string, IIndexedEvent[]>,
+        filters: INormalizedEventFilter[]
+    ): IObservedContractEvent[] {
+        const matched = new Map<number, IObservedContractEvent>();
+
+        for (const filter of filters) {
+            for (const topic of filter.topics) {
+                for (const entry of index.get(topic) ?? []) {
+                    if (!filter.contracts || filter.contracts.has(entry.observed.event.contractAddress)) {
+                        matched.set(entry.sequence, entry.observed);
+                    }
+                }
+            }
+        }
+
+        return Array.from(matched.entries())
+            .sort(([left], [right]) => left - right)
+            .map(([, observed]) => observed);
+    }
+
+    // =========================================================================
+    // Enhanced Statistics (includes batch, block, and event observers)
     // =========================================================================
 
     /**
@@ -536,7 +817,61 @@ export class BlockchainObserverService implements IBlockchainObserverService {
             allObservers.add(observer);
         }
 
-        return Array.from(allObservers).map(observer => observer.getStats());
+        // Collect event observers
+        for (const observer of this.eventObserverFilters.keys()) {
+            allObservers.add(observer);
+        }
+
+        return Array.from(allObservers).map(observer => this.describeObserver(observer));
+    }
+
+    /**
+     * Combine an observer's own statistics with how it is subscribed.
+     *
+     * An observer reports its queue and timing figures but does not know how it
+     * was registered, and without that an operator reading `totalProcessed`
+     * cannot tell whether it counts transactions, blocks, or events. The
+     * registry holds the subscriptions, so it adds the kind and a short label
+     * for each subscription here.
+     *
+     * @param observer - A registered observer of any kind
+     * @returns The observer's statistics with `kind` and `subscriptions` filled in
+     */
+    private describeObserver(observer: IBaseObserver): IObserverStats {
+        const subscriptions: string[] = [];
+        let kind: IObserverStats['kind'] = 'transaction';
+
+        for (const [type, subscribers] of this.transactionTypeSubscribers.entries()) {
+            if (subscribers.has(observer)) {
+                subscriptions.push(type);
+            }
+        }
+
+        const batchTypes = this.batchObserverTypes.get(observer as IBaseBatchObserver);
+        if (batchTypes) {
+            kind = 'batch';
+            subscriptions.push(...batchTypes);
+        }
+
+        if (this.blockSubscribers.has(observer as IBaseBlockObserver)) {
+            kind = 'block';
+            subscriptions.push('every block');
+        }
+
+        const eventFilters = this.eventObserverFilters.get(observer as IBaseEventObserver);
+        if (eventFilters) {
+            kind = 'event';
+            for (const filter of eventFilters) {
+                const scope = filter.contracts
+                    ? ` (${filter.contracts.size} contract${filter.contracts.size === 1 ? '' : 's'})`
+                    : ' (any contract)';
+                for (const topic of filter.topics) {
+                    subscriptions.push(`${topic.slice(0, 8)}…${scope}`);
+                }
+            }
+        }
+
+        return { ...observer.getStats(), kind, subscriptions: Array.from(new Set(subscriptions)) };
     }
 
     // =========================================================================
@@ -634,14 +969,14 @@ export class BlockchainObserverService implements IBlockchainObserverService {
      *
      * The plugin lifecycle tears down observers without knowing how each one registered, and a
      * single observer may legitimately hold more than one kind of subscription. Sweeping all
-     * three collections in one call keeps the teardown path from having to reconstruct that
+     * four collections in one call keeps the teardown path from having to reconstruct that
      * knowledge, which is exactly the bookkeeping that went missing and let disabled plugins
      * keep processing.
      *
      * @param observer - The observer to remove from all subscriber collections
      * @returns Count of subscriptions removed; 0 means it held none
      */
-    public unsubscribeObserver(observer: IBaseObserver | IBaseBatchObserver | IBaseBlockObserver): number {
+    public unsubscribeObserver(observer: IBaseObserver | IBaseBatchObserver | IBaseBlockObserver | IBaseEventObserver): number {
         let removed = 0;
 
         for (const transactionType of Array.from(this.transactionTypeSubscribers.keys())) {
@@ -655,6 +990,10 @@ export class BlockchainObserverService implements IBlockchainObserverService {
         }
 
         if (this.blockSubscribers.delete(observer as IBaseBlockObserver)) {
+            removed += 1;
+        }
+
+        if (this.eventObserverFilters.delete(observer as IBaseEventObserver)) {
             removed += 1;
         }
 
@@ -686,6 +1025,7 @@ export class BlockchainObserverService implements IBlockchainObserverService {
             BlockchainObserverService.instance.batchObserverTypes.clear();
             BlockchainObserverService.instance.blockSubscribers.clear();
             BlockchainObserverService.instance.batchAccumulator.clear();
+            BlockchainObserverService.instance.eventObserverFilters.clear();
             BlockchainObserverService.instance = null;
         }
     }

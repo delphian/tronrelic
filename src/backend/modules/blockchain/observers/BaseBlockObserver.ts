@@ -280,6 +280,7 @@ export abstract class BaseBlockObserver implements IBaseBlockObserver {
             lastProcessedAt: this.lastProcessedAt?.toISOString() ?? null,
             lastErrorAt: this.lastErrorAt?.toISOString() ?? null,
             errorRate: this.calculateErrorRate(),
+            queueCapacity: BaseBlockObserver.MAX_QUEUE_SIZE,
             // Block-specific metrics
             blocksProcessed: this.blocksProcessed,
             avgTransactionsPerBlock,

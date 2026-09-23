@@ -1,5 +1,6 @@
 import type { ITransactionPersistencePayload } from './ITransactionPersistencePayload.js';
 import type { ITransactionCategoryFlags } from './ITransactionCategoryFlags.js';
+import type { ITransactionReceipt } from './ITransactionReceipt.js';
 
 /**
  * Enriched transaction ready for observer processing.
@@ -24,6 +25,10 @@ export interface ITransaction {
     categories: ITransactionCategoryFlags;
     /** Original contract parameter values from TronGrid API */
     rawValue: Record<string, unknown>;
-    /** Transaction receipt with energy/bandwidth execution details (may be null, format varies by blockchain provider) */
-    info: any;
+    /**
+     * The raw transaction receipt, or null when receipts were not fetched for
+     * this transaction. Prefer the decoded payload fields where they cover
+     * what you need; see `ITransactionReceipt`.
+     */
+    info: ITransactionReceipt | null;
 }

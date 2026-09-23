@@ -20,6 +20,7 @@
  *
  * @module backend/modules/blockchain/block-emit-buffer
  */
+import type { PipelineReleaseMode } from '@/types';
 
 /**
  * The depths and intervals that shape the emitter's release clock.
@@ -121,6 +122,41 @@ export function resolveReleaseInterval(depth: number, thresholds: IReleaseInterv
     }
 
     return intervalMs;
+}
+
+/**
+ * Name the rule `resolveReleaseInterval` applies at a given depth.
+ *
+ * The `/system` console reports which rule the buffer is following, because
+ * that says more than the depth figure alone: a buffer in `'refill'` is
+ * rebuilding a lead it spent, one in `'catch-up'` just received a burst. The
+ * branches mirror `resolveReleaseInterval` exactly, and are decided from depth
+ * rather than from the chosen interval, because two intervals can be configured
+ * to the same value and would then be impossible to tell apart.
+ *
+ * @param depth - Blocks held, counted before the release, as for `resolveReleaseInterval`.
+ * @param thresholds - The deployment's depths, the same object the interval was chosen from.
+ * @returns The rule's name.
+ */
+export function resolveReleaseMode(
+    depth: number,
+    thresholds: Pick<IReleaseIntervalThresholds, 'targetDepth' | 'catchupDepth' | 'maxDepth'>
+): Exclude<PipelineReleaseMode, 'seeding' | 'idle'> {
+    let mode: Exclude<PipelineReleaseMode, 'seeding' | 'idle'>;
+
+    if (depth >= thresholds.maxDepth) {
+        mode = 'burst';
+    } else if (depth >= thresholds.catchupDepth) {
+        mode = 'catch-up';
+    } else if (depth > thresholds.targetDepth) {
+        mode = 'drain';
+    } else if (depth === thresholds.targetDepth) {
+        mode = 'steady';
+    } else {
+        mode = 'refill';
+    }
+
+    return mode;
 }
 
 /**

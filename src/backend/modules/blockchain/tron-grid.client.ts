@@ -3,8 +3,8 @@ import { httpClient } from '../../lib/http-client.js';
 import { env } from '../../config/env.js';
 import { blockchainConfig } from '../../config/blockchain.js';
 import { retry } from '../../lib/retry.js';
-import { logger } from '../../lib/logger.js';
-import type { ITrc10, ITrc20TokenInfo, IActivatingTransaction } from '@/types';
+import { logger } from './logger.js';
+import type { ITrc10, ITrc20TokenInfo, IActivatingTransaction, ITransactionReceipt } from '@/types';
 import { decodeAbiDecimals, decodeAbiString } from './trc20-metadata.js';
 
 /**
@@ -157,7 +157,7 @@ export interface TronGridTransactionInfo {
         result?: string;
     };
     contractResult?: string[];
-    log?: Array<Record<string, unknown>>;
+    log?: ITransactionReceipt['log'];
     internal_transactions?: Array<Record<string, unknown>>;
     assetIssueID?: string;
     result?: string;

@@ -14,17 +14,14 @@ export function systemRouter(database: IDatabaseService) {
 
   // One rate-limit bucket per endpoint group rather than a single bucket for
   // the whole router. The /system/system dashboard polls this router from one
-  // IP continuously — the telemetry strip alone issues 7 requests every 15s,
-  // and the Blockchain and Server consoles add 6 more every 10s — well past
-  // the 60-per-minute admin allowance for a shared bucket. Bursts align every
+  // IP continuously — the Pipeline tab calls /blockchain/pipeline every 5s
+  // (12/min), and the Server tab polls three health probes every 10s. An
+  // earlier layout issued 13 requests every 10-15s, well past the
+  // 60-per-minute admin allowance for a shared bucket. Bursts aligned every
   // 30s, so that bucket intermittently exhausted and answered 429 to whichever
-  // requests arrived last, usually the blockchain trio. Splitting holds
-  // blockchain near 26/min and health near 34/min, each against its own
-  // 60/min ceiling. Health carries the larger share because ServerSection
-  // polls three probes rather than two — `/health/infrastructure` joined
-  // redis and server when the console started reporting droplet and
-  // per-container metrics. `/config` and anything added later fall through to
-  // the `system-monitor` default.
+  // requests arrived last. Splitting holds blockchain near 12/min and health
+  // near 18/min, each against its own 60/min ceiling. `/config` and anything
+  // added later fall through to the `system-monitor` default.
   router.use(createGroupedAdminRateLimiter(
     {
       blockchain: 'system-blockchain',
@@ -38,6 +35,7 @@ export function systemRouter(database: IDatabaseService) {
 
   // Blockchain endpoints
   router.get('/blockchain/status', controller.getBlockchainStatus);
+  router.get('/blockchain/pipeline', controller.getPipelineStatus);
   router.get('/blockchain/transactions', controller.getTransactionStats);
   router.get('/blockchain/metrics', controller.getBlockProcessingMetrics);
   router.get('/blockchain/observers', controller.getObserverStats);

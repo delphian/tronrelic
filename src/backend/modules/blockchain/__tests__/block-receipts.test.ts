@@ -217,6 +217,48 @@ describe('what block sync actually persists', () => {
         expect(written.txId).toBe('tx-b');
     });
 
+    it('stores no decoded events, token transfers, or internal transfers', () => {
+        // A busy block carries hundreds of event logs. They reach observers
+        // only; writing them onto every transaction document would grow the
+        // largest collection by the volume the plan keeps out of MongoDB.
+        const payload = {
+            txId: 'tx-c',
+            blockNumber: BLOCK_NUMBER,
+            timestamp: new Date(1_787_931_852_000),
+            type: 'TriggerSmartContract',
+            from: { address: 'TFrom' },
+            to: { address: 'TRouter' },
+            events: [{ eventId: 'tx-c:0', txId: 'tx-c', logIndex: 0, contractAddress: 'TToken', topics: [], data: '' }],
+            tokenTransfers: [{
+                eventId: 'tx-c:0',
+                txId: 'tx-c',
+                logIndex: 0,
+                source: 'log' as const,
+                standard: 'trc20' as const,
+                contractAddress: 'TToken',
+                from: 'TPool',
+                to: 'TUser',
+                rawAmount: '5'
+            }],
+            internalTransfers: [{
+                txId: 'tx-c',
+                internalIndex: 0,
+                from: 'TPool',
+                to: 'TUser',
+                rawAmount: '1',
+                note: 'call',
+                rejected: false
+            }]
+        };
+
+        const written = persistedFields(TransactionModel, toTransactionWriteFields(payload));
+
+        expect(written).not.toHaveProperty('events');
+        expect(written).not.toHaveProperty('tokenTransfers');
+        expect(written).not.toHaveProperty('internalTransfers');
+        expect(written.txId).toBe('tx-c');
+    });
+
     it('stores receiptsFetched on the block document in both states', () => {
         // The flag separates a measured zero from an unmeasured one, so it has to
         // survive as a real boolean rather than being dropped as an unknown path

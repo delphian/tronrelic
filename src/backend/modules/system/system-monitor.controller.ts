@@ -120,6 +120,21 @@ export class SystemMonitorController {
     res.json({ success: true, status });
   };
 
+  /**
+   * GET /blockchain/pipeline — everything the `/system` Pipeline tab shows.
+   *
+   * One request replaces the four the old console made per poll, and it never
+   * calls TronGrid, so the console can poll faster without competing with
+   * block sync for the shared request queue.
+   *
+   * @param _req - Unused; the endpoint takes no parameters.
+   * @param res - Responds with `{ success: true, pipeline }`.
+   */
+  getPipelineStatus = async (_req: Request, res: Response) => {
+    const pipeline = await this.service.getPipelineStatus();
+    res.json({ success: true, pipeline });
+  };
+
   getTransactionStats = async (_req: Request, res: Response) => {
     const stats = await this.service.getTransactionStats();
     res.json({ success: true, stats });

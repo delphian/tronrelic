@@ -6,7 +6,7 @@ import { PluginHooks } from '../hooks/index.js';
 import { PluginObserverRegistry } from '../observers/plugin-observer-registry.js';
 import { logger } from '../lib/logger.js';
 import { BlockchainObserverService } from '../services/blockchain-observer/index.js';
-import { BaseObserver, BaseBatchObserver, BaseBlockObserver } from '../modules/blockchain/observers/index.js';
+import { BaseObserver, BaseBatchObserver, BaseBlockObserver, BaseEventObserver } from '../modules/blockchain/observers/index.js';
 import { WebSocketService } from '../services/websocket.service.js';
 import { PluginDatabaseService } from '../modules/database/index.js';
 import { PluginClickHouseService } from '../modules/clickhouse/index.js';
@@ -222,6 +222,7 @@ export async function loadPlugins(
                 BaseObserver,
                 BaseBatchObserver,
                 BaseBlockObserver,
+                BaseEventObserver,
                 database,
                 clickhouse,
                 cache: cacheService,

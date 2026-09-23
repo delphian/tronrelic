@@ -1,0 +1,16 @@
+/**
+ * Server tab styles.
+ *
+ * The card heading keeps the console treatment — uppercase, letter-spaced,
+ * body-sm — which reads as a section label rather than page-level type. The
+ * class overrides the global bare-h3 rule on specificity.
+ */
+
+.section_title {
+    margin: 0 0 var(--gap-sm);
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    color: var(--color-text);
+}

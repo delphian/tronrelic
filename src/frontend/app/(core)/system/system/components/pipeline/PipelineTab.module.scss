@@ -1,0 +1,56 @@
+/**
+ * Pipeline tab layout and the shared card header used by its table cards.
+ *
+ * The four stage cards sit two across when the tab is wide and one per row
+ * when it is not. The switch is a container query on the tab's own wrapper,
+ * because the tab can be shown at any width inside the admin shell.
+ */
+@use '../../../../../breakpoints' as *;
+
+.tab {
+    container-type: inline-size;
+    container-name: pipeline-tab;
+}
+
+.stages {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--grid-gap-sm);
+}
+
+@container pipeline-tab (min-width: #{$breakpoint-tablet}) {
+    .stages {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.card_header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
+.card_title {
+    font-size: var(--font-size-body-sm);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+}
+
+.card_note {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.row_meta {
+    display: block;
+    font-size: var(--font-size-caption);
+    color: var(--color-text-subtle);
+}
+
+.refresh {
+    display: flex;
+    justify-content: flex-end;
+}

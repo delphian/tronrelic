@@ -15,7 +15,7 @@
  * first, so a quiet chain cannot leave the feed holding its first block forever.
  */
 import { describe, it, expect } from 'vitest';
-import { resolveReleaseInterval, resolveSeedComplete, insertPendingBlock } from '../block-emit-buffer.js';
+import { resolveReleaseInterval, resolveReleaseMode, resolveSeedComplete, insertPendingBlock } from '../block-emit-buffer.js';
 
 /**
  * The shipped defaults, from `EMIT_BUFFER_DEFAULTS` plus one TRON block time.
@@ -133,6 +133,36 @@ function simulateSteadyState(startDepth: number): number {
 
     return depth;
 }
+
+describe('resolveReleaseMode', () => {
+    it.each([
+        [0, 'refill'],
+        [7, 'refill'],
+        [8, 'steady'],
+        [9, 'drain'],
+        [13, 'catch-up'],
+        [40, 'burst']
+    ] as const)('names the rule used at depth %i as %s, matching resolveReleaseInterval', (depth, mode) => {
+        // The /system Buffer card shows this name, so it must describe the
+        // interval the emitter actually chose at the same depth.
+        expect(resolveReleaseMode(depth, THRESHOLDS)).toBe(mode);
+    });
+
+    it('names each depth band the same way resolveReleaseInterval spaces it', () => {
+        const byMode = new Map<string, number>();
+        for (let depth = 0; depth <= 45; depth += 1) {
+            byMode.set(resolveReleaseMode(depth, THRESHOLDS), resolveReleaseInterval(depth, THRESHOLDS));
+        }
+
+        expect(Object.fromEntries(byMode)).toEqual({
+            refill: THRESHOLDS.refillIntervalMs,
+            steady: THRESHOLDS.intervalMs,
+            drain: THRESHOLDS.drainIntervalMs,
+            'catch-up': THRESHOLDS.catchupIntervalMs,
+            burst: 0
+        });
+    });
+});
 
 describe('resolveSeedComplete', () => {
     it('completes as soon as the buffer holds the target lead', () => {

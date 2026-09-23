@@ -1,0 +1,103 @@
+/**
+ * Pipeline heights flow.
+ *
+ * Four nodes joined by labelled arrows, laid out in a row when there is room
+ * and stacked when there is not. The breakpoint is a container query on the
+ * flow itself, because this panel sits in a card whose width depends on where
+ * the console is shown, not on the window.
+ */
+@use '../../../../../breakpoints' as *;
+
+.heights {
+    container-type: inline-size;
+    container-name: pipeline-heights;
+}
+
+.flow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--gap-xs);
+}
+
+.node {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    min-width: 0;
+    padding: var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border);
+    border-left: var(--border-width-medium) solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+}
+
+.node_success {
+    border-left-color: var(--color-success-alpha-45);
+}
+
+.node_warning {
+    border-left-color: var(--color-warning-alpha-40);
+    background: var(--color-warning-alpha-15);
+}
+
+.node_danger {
+    border-left-color: var(--color-danger-alpha-50);
+    background: var(--color-danger-alpha-18);
+}
+
+.node_label {
+    font-size: var(--font-size-caption);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--letter-spacing-wide);
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+.node_value {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}
+
+.node_detail {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--gap-2xs);
+    color: var(--color-text-subtle);
+    font-size: var(--font-size-caption);
+
+    svg {
+        transform: rotate(90deg);
+    }
+}
+
+.connector_gap {
+    white-space: nowrap;
+}
+
+@container pipeline-heights (min-width: #{$breakpoint-mobile-lg}) {
+    .flow {
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+        align-items: stretch;
+    }
+
+    .connector {
+        flex-direction: column;
+
+        svg {
+            transform: none;
+        }
+    }
+}

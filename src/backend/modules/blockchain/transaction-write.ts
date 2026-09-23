@@ -27,14 +27,31 @@ import type { ITransactionPersistencePayload } from '@/types';
  * decoded from the call data, which `contract.parameters.rawData` already
  * stores, so writing it would duplicate bytes on every TRC20 transfer.
  *
+ * `events`, `tokenTransfers`, and `internalTransfers` are left out because of
+ * their volume. A busy block carries hundreds of event logs, and MongoDB is the
+ * wrong store for data at that scale. If a consumer ever needs event history,
+ * it belongs in a dedicated ClickHouse table keyed on the event identity, not
+ * on every transaction document. The raw internal transactions are still
+ * stored as `internalTransactions`.
+ *
  * @param payload - The transaction as block sync prepared it, including the
  *                  fields only observers read.
- * @returns The same fields minus `transactionIndex` and `tokenTransfer`, ready
- *          to spread into `$set`.
+ * @returns The same fields minus the observer-only ones, ready to spread into
+ *          `$set`.
  */
 export function toTransactionWriteFields(
     payload: ITransactionPersistencePayload
-): Omit<ITransactionPersistencePayload, 'transactionIndex' | 'tokenTransfer'> {
-    const { transactionIndex: _observerOnly, tokenTransfer: _decodedOnly, ...fields } = payload;
+): Omit<ITransactionPersistencePayload, ObserverOnlyField> {
+    const {
+        transactionIndex: _observerOnly,
+        tokenTransfer: _decodedOnly,
+        events: _eventsOnly,
+        tokenTransfers: _transfersOnly,
+        internalTransfers: _internalOnly,
+        ...fields
+    } = payload;
     return fields;
 }
+
+/** Payload fields delivered to observers and never written to MongoDB. */
+type ObserverOnlyField = 'transactionIndex' | 'tokenTransfer' | 'events' | 'tokenTransfers' | 'internalTransfers';

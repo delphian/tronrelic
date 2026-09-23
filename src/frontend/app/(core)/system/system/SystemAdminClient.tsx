@@ -10,56 +10,60 @@
  * navigating, and `activeUrl` highlights the active tab since the route is
  * identical across them.
  *
- * "Overview" carries the Server and Blockchain consoles.
- * Configuration, WebSockets, MongoDB, and ClickHouse each own a tab; every
- * section on this page renders expanded, and a panel mounts only while its tab
- * is active, so its fetches fire on arrival rather than on page load.
- * External-provider config (TronScan) lives on the Configuration tab, alongside
- * the other settings an operator edits at runtime.
+ * "Pipeline" is the default tab, because block ingestion is what operators come
+ * to this page to check. Its payload is fetched on the server so the tab renders
+ * with real figures on first paint. "Server" holds the droplet, container,
+ * Redis, and process readings that used to sit above the blockchain console on
+ * the old Overview tab. "Schedules" and "Logs" are scoped to the blockchain
+ * jobs and to the `tronrelic:blockchain` log service, so an operator diagnosing
+ * sync stays on this page. Configuration, WebSockets, MongoDB, and ClickHouse
+ * each own a tab; a panel mounts only while its tab is active, so its fetches
+ * fire on arrival rather than on page load.
  *
  * The tab row and the active panel are siblings inside ONE `Stack`, which is
  * what keeps the page's vertical rhythm coherent. `Page` is a grid whose gap is
  * `--page-gap` (3rem) — the right distance between page-level sections, and far
  * too much between a tab row and the panel it controls. Giving `Page` a single
- * child confines that 3rem to the page edge and lets the stack own the interior:
- * `--stack-gap-lg` (1.5rem) from tabs to panel, and the same 1.5rem between
- * cards inside each panel's own `Stack gap="lg"`. The result steps down 3rem ->
- * 1.5rem and then holds, so every tab breathes at one interior spacing rather
- * than jumping between unrelated scales.
+ * child confines that 3rem to the page edge and lets the stack own the interior.
  *
  * This page renders no `PageHeader` on purpose. The tab row already names the
- * surface, a title would push the first console another 3rem down the screen,
- * and an operator arrives here to read telemetry above the fold. The other
- * console-style admin pages (`ai-tools`, `logs`, `menu`, `plugins`) are
- * headerless for the same reason.
+ * surface, and an operator arrives here to read telemetry above the fold.
  */
 
 import { useState, useCallback } from 'react';
 import type { MenuNodeSerialized } from '@/shared';
+import type { IPipelineStatus } from '@/types';
 import { Page, Stack } from '../../../../components/layout';
 import { MenuNavClient } from '../../../../components/layout/MenuNav/MenuNavClient';
-import { OverviewTab } from './components/OverviewTab';
+import { Card } from '../../../../components/ui/Card';
+import { SchedulerMonitor, type SchedulerJob } from '../../../../modules/scheduler';
+import { SystemLogsMonitor } from '../../../../modules/logs';
+import { PipelineTab } from './components/pipeline/PipelineTab';
+import { ServerTab } from './components/ServerTab';
 import { SectionPanel } from './components/SectionPanel';
 import { ConfigurationTab } from './components/ConfigurationTab';
 import { WebSocketsSection } from './components/WebSocketsSection';
 import { MongoSection } from './components/MongoSection';
 import { ClickHouseSection } from './components/ClickHouseSection';
-
-/** The page's tab ids; the `?tab=` value carried by each submenu node. */
-type TabId = 'overview' | 'config' | 'websockets' | 'mongo' | 'clickhouse';
+import { toTabId, type SystemTabId } from './system-tabs';
 
 /** The menu namespace the tab nodes are registered under. */
 const SUBMENU_NAMESPACE = 'system';
 
-/** Default panel for an absent or unrecognized `?tab=` value. */
-const DEFAULT_TAB: TabId = 'overview';
+/** Service name the blockchain module's log entries are stored under. */
+const BLOCKCHAIN_LOG_SERVICE = 'tronrelic:blockchain';
 
 /**
- * Every valid tab id, used to validate the `?tab=` value from a URL before it
- * reaches state. Kept as a Set so an unknown value falls back to Overview rather
- * than rendering a blank panel — the `?tab=` values are user-editable.
+ * Select the scheduler jobs that belong to the block pipeline.
+ *
+ * Matches by prefix rather than a fixed list, so a pipeline job added later
+ * appears on the Schedules tab with no change here.
+ *
+ * @param job - One scheduler job.
+ * @returns True for `blockchain:*` and `network-activity:*` jobs.
  */
-const TAB_IDS = new Set<string>(['overview', 'config', 'websockets', 'mongo', 'clickhouse']);
+const isPipelineJob = (job: SchedulerJob): boolean =>
+    job.name.startsWith('blockchain:') || job.name.startsWith('network-activity:');
 
 /**
  * Props for the client shell.
@@ -69,38 +73,34 @@ interface ISystemAdminClientProps {
     submenuTree: MenuNodeSerialized[];
     /** Snapshot timestamp of the submenu tree, seeded onto the menu Redux slice. */
     submenuGeneratedAt: string;
-    /** The `?tab=` value from the request URL; unknown/absent resolves to `overview`. */
+    /** The `?tab=` value from the request URL; unknown/absent resolves to `pipeline`. */
     initialTab?: string;
+    /**
+     * The Pipeline tab's payload, fetched on the server so the default tab
+     * renders with real figures on first paint, or null when the fetch failed.
+     */
+    initialPipeline: IPipelineStatus | null;
 }
 
 /**
- * Resolve a `?tab=` value to a known TabId, defaulting to `overview`.
- *
- * @param tab - A raw `?tab=` value from a URL or submenu node.
- * @returns The matching tab id, or `overview` when unrecognized.
- */
-function toTabId(tab: string | undefined): TabId {
-    return tab && TAB_IDS.has(tab) ? (tab as TabId) : DEFAULT_TAB;
-}
-
-/**
- * Resolve a submenu node's url to a known TabId.
+ * Resolve a submenu node's url to a known tab id.
  *
  * @param url - The clicked node's url (e.g. `/system/system?tab=mongo`).
  * @returns The matching tab id.
  */
-function tabFromUrl(url: string | undefined): TabId {
+function tabFromUrl(url: string | undefined): SystemTabId {
     return toTabId(url?.match(/[?&]tab=([^&]+)/)?.[1]);
 }
 
 /**
  * System admin client shell.
  *
- * @param props - SSR submenu tree, its timestamp, and the deep-linked initial tab.
+ * @param props - SSR submenu tree, its timestamp, the deep-linked initial tab,
+ *                and the server-fetched pipeline payload.
  * @returns The page.
  */
-export function SystemAdminClient({ submenuTree, submenuGeneratedAt, initialTab }: ISystemAdminClientProps) {
-    const [activeTab, setActiveTab] = useState<TabId>(toTabId(initialTab));
+export function SystemAdminClient({ submenuTree, submenuGeneratedAt, initialTab, initialPipeline }: ISystemAdminClientProps) {
+    const [activeTab, setActiveTab] = useState<SystemTabId>(toTabId(initialTab));
 
     /**
      * Activate a tab and keep its URL a real deep link.
@@ -112,7 +112,7 @@ export function SystemAdminClient({ submenuTree, submenuGeneratedAt, initialTab 
      *
      * @param tab - The tab to activate.
      */
-    const activateTab = useCallback((tab: TabId) => {
+    const activateTab = useCallback((tab: SystemTabId) => {
         setActiveTab(tab);
         window.history.replaceState(null, '', `/system/system?tab=${tab}`);
     }, []);
@@ -124,6 +124,14 @@ export function SystemAdminClient({ submenuTree, submenuGeneratedAt, initialTab 
      */
     const handleTabSelect = useCallback((item: MenuNodeSerialized) => {
         activateTab(tabFromUrl(item.url));
+    }, [activateTab]);
+
+    /**
+     * Open the Configuration tab from a control on another tab, such as the
+     * Buffer stage card's settings button.
+     */
+    const openSettings = useCallback(() => {
+        activateTab('config');
     }, [activateTab]);
 
     return (
@@ -138,11 +146,22 @@ export function SystemAdminClient({ submenuTree, submenuGeneratedAt, initialTab 
                     onItemSelect={handleTabSelect}
                 />
 
-                {activeTab === 'overview' && <OverviewTab />}
+                {activeTab === 'pipeline' && <PipelineTab initialPipeline={initialPipeline} onOpenSettings={openSettings} />}
+                {activeTab === 'server' && <ServerTab />}
                 {/* Configuration supplies its own cards — the site URL panel and each
                   * provider section are independent surfaces with independent save
                   * controls, so they sit as siblings rather than in one shared panel. */}
                 {activeTab === 'config' && <ConfigurationTab />}
+                {activeTab === 'schedules' && (
+                    <Card padding="sm" noBackgroundImage>
+                        <SchedulerMonitor jobFilter={isPipelineJob} title="Block Pipeline Schedules" hideStats />
+                    </Card>
+                )}
+                {activeTab === 'logs' && (
+                    <Card padding="sm" noBackgroundImage>
+                        <SystemLogsMonitor service={BLOCKCHAIN_LOG_SERVICE} title="Block Pipeline Logs" />
+                    </Card>
+                )}
                 {activeTab === 'websockets' && <SectionPanel><WebSocketsSection /></SectionPanel>}
                 {/* MongoDB supplies its own cards — health, browser, and migrations are
                   * independent surfaces, so they sit as siblings rather than inside the

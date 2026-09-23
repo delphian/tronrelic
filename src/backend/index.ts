@@ -781,20 +781,24 @@ async function registerTemporaryMenuItems(menuService: IMenuService): Promise<vo
     // System container, so each node sets requiresAdmin itself. Registered here
     // for now since the page is not yet a module.
     //
-    // 'Overview' keeps the always-on telemetry strip plus the Server and
-    // Blockchain consoles. Configuration, WebSockets, MongoDB, and ClickHouse
-    // each own a tab: they were the deepest consoles on the overview, and a
-    // dedicated panel lets each render expanded rather than collapsed behind a
-    // disclosure row. Because a panel only mounts while its tab is active, its
-    // fetches still fire on arrival rather than on page load.
-    // External-provider config (TronScan) lives on the Configuration tab rather
-    // than a tab of its own — it is one more runtime setting, not a subsystem.
+    // 'Pipeline' is the default tab: block ingestion is what operators come to
+    // this page to check, so its health banner and heights sit above the fold
+    // instead of below the Server console. 'Server' holds the droplet,
+    // container, Redis, and process readings. 'Schedules' and 'Logs' are scoped
+    // to the blockchain jobs and the `tronrelic:blockchain` log service, so an
+    // operator diagnosing sync does not have to leave the page.
+    // Configuration, WebSockets, MongoDB, and ClickHouse each own a tab. Because
+    // a panel only mounts while its tab is active, its fetches fire on arrival
+    // rather than on page load.
     const systemTabs = [
-        { label: 'Overview', tab: 'overview', icon: 'SlidersHorizontal', order: 0 },
-        { label: 'Configuration', tab: 'config', icon: 'Settings', order: 1 },
-        { label: 'WebSockets', tab: 'websockets', icon: 'Radio', order: 2 },
-        { label: 'MongoDB', tab: 'mongo', icon: 'Database', order: 3 },
-        { label: 'ClickHouse', tab: 'clickhouse', icon: 'Table2', order: 4 }
+        { label: 'Pipeline', tab: 'pipeline', icon: 'Activity', order: 0 },
+        { label: 'Server', tab: 'server', icon: 'Server', order: 1 },
+        { label: 'Configuration', tab: 'config', icon: 'Settings', order: 2 },
+        { label: 'Schedules', tab: 'schedules', icon: 'CalendarClock', order: 3 },
+        { label: 'Logs', tab: 'logs', icon: 'ScrollText', order: 4 },
+        { label: 'WebSockets', tab: 'websockets', icon: 'Radio', order: 5 },
+        { label: 'MongoDB', tab: 'mongo', icon: 'Database', order: 6 },
+        { label: 'ClickHouse', tab: 'clickhouse', icon: 'Table2', order: 7 }
     ];
     for (const tab of systemTabs) {
         await menuService.create({

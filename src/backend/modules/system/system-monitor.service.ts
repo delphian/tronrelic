@@ -1,5 +1,5 @@
 import type { Redis as RedisClient } from 'ioredis';
-import type { IDatabaseService } from '@/types';
+import type { IDatabaseService, IPipelineStatus } from '@/types';
 import * as os from 'os';
 import { statfs } from 'fs/promises';
 import mongoose from 'mongoose';
@@ -10,6 +10,12 @@ import { TransactionModel, type TransactionDoc } from '../../database/models/tra
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
 import { BlockEmitter } from '../blockchain/block-emitter.js';
 import { BlockchainService } from '../blockchain/blockchain.service.js';
+import { PipelineTelemetry } from '../blockchain/pipeline-telemetry.js';
+import { resolveBlockAgeInBlocks } from '../blockchain/block-pacer.js';
+import { BlockchainObserverService } from '../../services/blockchain-observer/index.js';
+import { ProviderConfigService } from '../providers/services/provider-config.service.js';
+import { SchedulerService } from '../scheduler/services/scheduler.service.js';
+import { resolveCoverageTone, resolveFeedLagTone, resolveIngestLagTone, resolvePipelineHealth } from './pipeline-health.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
 import { blockchainConfig } from '../../config/blockchain.js';
@@ -799,6 +805,184 @@ export class SystemMonitorService {
       liveTipReserveBlocks: blockchainConfig.network.liveTipReserveBlocks,
       blockIntervalSeconds: blockchainConfig.network.blockIntervalSeconds
     };
+  }
+
+  /**
+   * Build everything the `/system` Pipeline tab shows, in one payload.
+   *
+   * Reads only in-memory state and the sync state document. It deliberately
+   * does not ask TronGrid for the chain head the way `getBlockchainSyncStatus`
+   * does: that request shares the rate-limited queue block sync uses, so a
+   * console polling every few seconds competed with the very pipeline it was
+   * watching, and slowed down most when TronGrid was struggling. Lags are
+   * measured instead from each block's own header timestamp, which is how sync
+   * itself decides whether a block is live work.
+   *
+   * @returns The pipeline status, with health judged by `resolvePipelineHealth`.
+   */
+  async getPipelineStatus(): Promise<IPipelineStatus> {
+    const now = Date.now();
+    const state = await this.getSyncStateModel().findOne({ key: 'blockchain:last-block' }).lean() as SyncStateFields | null;
+    const meta = (state?.meta || {}) as Record<string, unknown>;
+    const telemetry = PipelineTelemetry.getInstance().getSnapshot();
+    const emitter = BlockEmitter.getInstance().getMetrics();
+    const blockchain = BlockchainService.getInstance();
+    const commitMetrics = blockchain.getCommitMetrics();
+    const network = blockchainConfig.network;
+    const intervalMs = network.blockIntervalSeconds * 1000;
+
+    const config: IPipelineStatus['config'] = {
+      blockIntervalSeconds: network.blockIntervalSeconds,
+      backfillEntryBlocks: network.backfillEntryBlocks,
+      liveChainThrottleBlocks: network.liveChainThrottleBlocks,
+      emitBufferTargetDepth: emitter.targetDepth,
+      emitBufferCatchupDepth: emitter.catchupDepth,
+      emitBufferMaxDepth: emitter.maxDepth
+    };
+
+    const cursor = typeof state?.cursor === 'object' && state?.cursor !== null && typeof (state.cursor as any).blockNumber === 'number'
+      ? (state.cursor as any).blockNumber as number
+      : null;
+    const storedFetched = typeof meta.lastFetchedBlock === 'number' ? meta.lastFetchedBlock : null;
+    const fetchedLag = telemetry.lastFetched ? resolveBlockAgeInBlocks(telemetry.lastFetched.blockTimestamp, now, intervalMs) : null;
+    const committedLag = telemetry.lastCommitted ? resolveBlockAgeInBlocks(telemetry.lastCommitted.blockTimestamp, now, intervalMs) : null;
+
+    const heights: IPipelineStatus['heights'] = {
+      head: telemetry.lastTick
+        ? { blockNumber: telemetry.lastTick.headBlockNumber, observedAt: telemetry.lastTick.at.toISOString(), fromCache: telemetry.lastTick.fromCache }
+        : {
+          blockNumber: typeof meta.lastNetworkHeight === 'number' ? meta.lastNetworkHeight : null,
+          observedAt: safeToISOString(meta.lastScheduledAt),
+          fromCache: false
+        },
+      fetched: {
+        blockNumber: telemetry.lastFetched?.blockNumber ?? storedFetched,
+        blockTimestamp: telemetry.lastFetched?.blockTimestamp.toISOString() ?? null,
+        lagBlocks: fetchedLag,
+        lagTone: resolveIngestLagTone(fetchedLag, config)
+      },
+      buffered: emitter.depth,
+      committed: {
+        blockNumber: telemetry.lastCommitted?.blockNumber ?? commitMetrics.lastCommittedBlockNumber ?? cursor,
+        blockTimestamp: telemetry.lastCommitted?.blockTimestamp.toISOString() ?? null,
+        lagBlocks: committedLag,
+        lagTone: resolveFeedLagTone(committedLag, config)
+      },
+      cursor
+    };
+
+    const syncJob = this.readSyncJob();
+    const standingError = typeof meta.lastError === 'string'
+      ? meta.lastError
+      : meta.lastError && typeof meta.lastError === 'object'
+        ? String((meta.lastError as Record<string, unknown>).message ?? '')
+        : null;
+
+    const sync: IPipelineStatus['sync'] = {
+      mode: blockchain.getSyncMode(),
+      job: syncJob,
+      lastTickAt: telemetry.lastTick?.at.toISOString() ?? safeToISOString(meta.lastScheduledAt),
+      lastBatchSize: telemetry.lastTick?.batchSize ?? (typeof meta.lastBatchSize === 'number' ? meta.lastBatchSize : null),
+      ingestBlocksPerMinute: telemetry.ingestBlocksPerMinute,
+      networkBlocksPerMinute: network.blocksPerMinute,
+      standingError: standingError || null
+    };
+
+    const receiptsEnabled = await this.readReceiptsEnabled();
+    const covered = telemetry.receipts.complete + telemetry.receipts.empty;
+    const coveragePercent = telemetry.receipts.window > 0
+      ? Number(((covered / telemetry.receipts.window) * 100).toFixed(1))
+      : null;
+
+    const backfillQueue = (Array.isArray(meta.backfillQueue) ? meta.backfillQueue : [])
+      .map(value => Number(value))
+      .filter(value => Number.isFinite(value) && value > 0)
+      .sort((left, right) => left - right);
+
+    const partial: Omit<IPipelineStatus, 'health'> = {
+      generatedAt: new Date(now).toISOString(),
+      config,
+      heights,
+      sync,
+      buffer: {
+        depth: emitter.depth,
+        targetDepth: emitter.targetDepth,
+        seeded: emitter.seeded,
+        releaseMode: emitter.releaseMode,
+        lastIntervalMs: emitter.lastIntervalMs,
+        underruns: emitter.underruns,
+        underrunBlocks: emitter.underrunBlocks,
+        lastUnderrunAt: emitter.lastUnderrunAt,
+        flushes: emitter.flushes
+      },
+      commit: {
+        queued: commitMetrics.queued,
+        failures: commitMetrics.failures,
+        commitBlocksPerMinute: telemetry.commitBlocksPerMinute
+      },
+      receipts: {
+        enabled: receiptsEnabled,
+        ...telemetry.receipts,
+        coveragePercent,
+        coverageTone: resolveCoverageTone(receiptsEnabled, coveragePercent)
+      },
+      stages: telemetry.stages,
+      backfill: {
+        size: backfillQueue.length,
+        oldest: backfillQueue[0] ?? null,
+        newest: backfillQueue[backfillQueue.length - 1] ?? null,
+        sample: backfillQueue.slice(0, 10)
+      },
+      errors: telemetry.errors,
+      recentBlocks: telemetry.recentBlocks,
+      observers: BlockchainObserverService.getInstance().getAllObserverStats()
+    };
+
+    return { ...partial, health: resolvePipelineHealth(partial, now) };
+  }
+
+  /**
+   * Read the `blockchain:sync` job's registration from the scheduler.
+   *
+   * The old console decided whether sync was automatic from the
+   * `ENABLE_SCHEDULER` environment variable, so it kept claiming the scheduler
+   * was running the job after an operator had disabled that one job. The
+   * job's own state is what matters.
+   *
+   * @returns Whether the job is registered and enabled, and its schedule. A
+   *          scheduler that was never started reads as not registered.
+   */
+  private readSyncJob(): IPipelineStatus['sync']['job'] {
+    let job: IPipelineStatus['sync']['job'] = { registered: false, enabled: false, schedule: null };
+
+    try {
+      const config = SchedulerService.getInstance().getAllJobConfigs().find(item => item.name === 'blockchain:sync');
+      if (config) {
+        job = { registered: true, enabled: config.enabled, schedule: config.schedule };
+      }
+    } catch (error) {
+      logger.debug({ error }, 'Scheduler unavailable while reading the blockchain:sync job');
+    }
+
+    return job;
+  }
+
+  /**
+   * Read whether the `fetchBlockReceipts` switch is on.
+   *
+   * @returns The stored switch, or false when the provider configuration
+   *          cannot be read, which is also what block sync assumes.
+   */
+  private async readReceiptsEnabled(): Promise<boolean> {
+    let enabled = false;
+
+    try {
+      enabled = (await ProviderConfigService.getInstance().getTronGridConfig()).fetchBlockReceipts;
+    } catch (error) {
+      logger.debug({ error }, 'TronGrid provider config unavailable while reading the receipts switch');
+    }
+
+    return enabled;
   }
 
   async getTransactionStats(): Promise<TransactionStats> {

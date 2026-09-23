@@ -10,7 +10,7 @@
  *
  * They were environment variables until it became clear the loop for tuning
  * them did not close. The only reliable evidence that a lead is too small is
- * the underrun count on the Blockchain tab, which is a reading taken from a
+ * the underrun count on the Pipeline tab, which is a reading taken from a
  * running deployment — and acting on it meant editing a `.env` file and
  * recreating the container. Saving here applies the values to the live feed
  * immediately, so an operator can watch that same counter respond.
@@ -255,7 +255,7 @@ export function EmitBufferSection() {
                     The backend holds a lead of finished blocks and broadcasts them on its own clock, so a slow
                     upstream response or a late sync tick is covered rather than shown as a gap. Saving applies these
                     values to the live feed straight away, with no restart. Judge them from the underrun count on the{' '}
-                    <strong>Blockchain</strong> tab: a deployment holding a real lead never drains to zero, so any
+                    <strong>Pipeline</strong> tab&apos;s Buffer card: a deployment holding a real lead never drains to zero, so any
                     increase means the target depth is too small for what this deployment&apos;s upstream access
                     actually does.
                 </p>
@@ -274,8 +274,8 @@ export function EmitBufferSection() {
                     />
                     <span className={styles.hint}>
                         Blocks held back before broadcasting. This is the lead a hiccup draws on, and each block of it
-                        costs one block time of feed latency. Eight covers a fully missed sync tick plus a skipped
-                        chain slot. <strong>Zero switches buffering off</strong>, which is a supported setting for a
+                        costs one block time of feed latency. The default of twenty covers three fully missed
+                        15-second sync ticks plus a skipped chain slot. <strong>Zero switches buffering off</strong>, which is a supported setting for a
                         staged rollout rather than a broken one.
                     </span>
                 </div>

@@ -20,26 +20,25 @@ Admin authority comes from `admin` group membership, not a JS-readable token. Th
 
 `/system/system` splits its sections across an in-page tab row. The row is a menu, not a hand-rolled control: the tabs are nodes in the `system` menu namespace rendered with `MenuNavClient` (the menu module's [Submenu Pattern](../../src/backend/modules/menu/README.md#submenu-pattern-namespaced-tab-rows)), so they inherit per-user gating, ordering, and live `menu:update` refresh. Each tab carries a `?tab=` deep link the server entry reads SSR-first.
 
-Every section still fetches its own admin endpoint and renders independently — there is no aggregating `/overview` API; the page joins probe results client-side. A tab's panel mounts only while that tab is active, so a section's fetch fires when the operator arrives rather than on page load.
+A tab's panel mounts only while that tab is active, so its fetches fire when the operator arrives rather than on page load. The Pipeline tab is the exception in one respect: it is the default, so its payload is fetched on the server and the tab renders with real figures on first paint.
 
 | Tab | Section | Component | Fetches | Purpose |
 |---|---|---|---|---|
-| Overview | Refresh readout | `RefreshIndicator` | none | Reports the cadence the Overview consoles poll at, when one last succeeded, and which (if any) has stopped answering |
-| Overview | Server | `ServerSection` | `/health/redis`, `/health/server`, `/health/infrastructure` | Droplet CPU/load/memory/disk; per-container CPU, memory, health, restarts; Redis ping, key count, evictions; process uptime and heap |
-| Overview | Blockchain | `BlockchainSection` | `/blockchain/status`, `/metrics`, `/observers`, `/scheduler/health` | Sync lag, throughput, observer queues, **Trigger Sync Now** button |
+| Pipeline (default) | Whole tab | `PipelineTab` | `/blockchain/pipeline` every 5 s | Block ingestion, top to bottom in the order an operator asks: a Healthy/Degraded/Stalled banner with reasons; the heights flow (chain head → fetched → buffered → committed, with the gap on each connector); one card each for Fetch, Enrich, Buffer, and Commit with their figures, p50/p95 timings, and control (Run sync now, the receipts switch, a link to the buffer settings); error history and backfill; recent blocks with receipt outcome and decoded events; and the observer table |
+| Server | Refresh readout, Server | `ServerTab`, `ServerSection` | `/health/redis`, `/health/server`, `/health/infrastructure` | Droplet CPU/load/memory/disk; per-container CPU, memory, health, restarts; Redis ping, key count, evictions; process uptime and heap |
 | Configuration | System Config | `SystemConfigSection` | GET/PATCH `/config/system` | Edit `siteUrl` from the UI |
-| Configuration | Sign-in button image | `AuthButtonImageSection` | GET/PATCH `/config/system` | Choose an image with the file picker to replace the header's sign-in button; the header reads it per request from the public `GET /api/config/branding`. A save refreshes the administrator's own header straight away, and other visitors see it on their next page load. Choosing needs an enabled files provider (`trp-files` by default) |
+| Configuration | Sign-in button image | `AuthButtonImageSection` | GET/PATCH `/config/system` | Choose an image with the file picker to replace the header's sign-in button; the header reads it per request from the public `GET /api/config/branding`. Choosing needs an enabled files provider (`trp-files` by default) |
 | Configuration | Block feed buffer | `EmitBufferSection` | GET/PATCH `/config/system` | Tune the feed's playout buffer; saving applies to the running feed with no restart |
-| Configuration | TronScan | `TronScanProviderSection` | GET/PATCH provider config | Runtime configuration for external data providers |
+| Configuration | Providers, TronGrid | `ProviderVendorSections`, `TronGridProviderSection` | Provider config endpoints | Runtime configuration for external data providers, including the block receipts switch |
+| Schedules | Block pipeline jobs | `SchedulerMonitor` | `/scheduler/status` | `blockchain:*` and `network-activity:*` jobs, scoped by name prefix |
+| Logs | Block pipeline logs | `SystemLogsMonitor` | `/logs` | Entries under the `tronrelic:blockchain` service, which the blockchain module and its scheduler jobs log to |
 | WebSockets | WebSockets | `WebSocketsSection` | `/websockets/stats`, `/websockets/aggregate` | Per-plugin and aggregate WS metrics |
 | MongoDB | MongoDB | `MongoSection` | `/health/database`, `/migrations/status`, `/migrations/history` | Connection state, db size, migration runs |
 | ClickHouse | ClickHouse | `ClickHouseSection` | `/health/clickhouse` | Connection state, table count, db size |
 
-Every section renders expanded — nothing on this page hides behind a disclosure row. Server and Blockchain each occupy their own card on the Overview tab; the other four each fill a tab of their own, where selecting the tab already expresses the intent.
+The Pipeline tab replaced the Blockchain card that used to sit below the Server console on an Overview tab. Admins found that card hard to use for monitoring ingestion: it showed two lag figures that meant nearly the same thing, never showed how far fetching had got, dropped figures the backend already computed (commit queue, backfill size, receipt timing), turned a single failed request into "No observers registered," and kept only one error, which the next healthy tick erased. The Pipeline tab's health verdict and tones are computed on the backend, so the banner, the figures, and a script reading the endpoint agree. The old `?tab=overview` link opens the Pipeline tab.
 
-The Overview tab previously opened with a telemetry strip — six tiles summarizing every subsystem, each linking to its card or tab. It was removed because the two subsystems still on that tab report the same state below in full, and the strip re-probed all seven endpoints every 15 seconds to say less. Only its refresh readout remains, since nothing else on the page reports when the consoles last updated.
-
-Because a section mounts with its tab (or, on Overview, with the page), its polling runs only while an operator is actually looking at it. That load is what the split rate-limit buckets on `/api/admin/system` are sized against — see the 429 note in [system-api.md](./system-api.md#troubleshooting).
+Because a panel mounts with its tab, its polling runs only while an operator is actually looking at it. That load is what the split rate-limit buckets on `/api/admin/system` are sized against — see the 429 note in [system-api.md](./system-api.md#troubleshooting).
 
 Tab nodes are registered memory-only in `registerTemporaryMenuItems` (`src/backend/index.ts`), so the row rebuilds on every boot. Section sources: `src/frontend/app/(core)/system/system/components/`. For payload details and the cross-link to runtime config restart semantics, see [system-api-overview.md](./system-api-overview.md).
 
@@ -66,15 +65,17 @@ The System page is the triage map. Identify *which* subsystem is degraded, then 
 
 | Symptom | Where to look | Action |
 |---|---|---|
-| Frontend transactions stale, observers silent | Overview → Blockchain — verify `lag` and `lastError`; check observers for rising `queueDepth` or `totalDropped` | Click **Trigger Sync Now**; for persistent backlog see [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) |
-| Scheduler not advancing | Overview → Overview Bar `scheduler.uptime` — non-zero means scheduler running | Open `/system/scheduler` to toggle/reschedule a specific job |
-| Droplet CPU or memory climbing | Overview → Server → Droplet, then the Containers table to attribute it | Resize the droplet, or restart the container carrying the growth once identified |
-| Backend memory climbing | Overview → Server → Backend Process — heap/RSS trend | Restart the container if growth doesn't plateau; correlate with observer queue depth |
-| A container crash-looping | Overview → Server → Containers — non-zero **Restarts**, or a state other than `running` | Tail that container's logs; the row's health column distinguishes a failing healthcheck from a stopped process |
-| Disk filling | Overview → Server → Droplet — `Disk /` and `Disk clickhouse:*` cells turn amber at 75%, red at 90% | ClickHouse `traffic_events` is the usual cause; see the storage notes in [operations-server-info.md](../../../docs/operations/operations-server-info.md) |
-| Redis evictions > 0 | Overview → Server (Redis Cache block) | Memory pressure; investigate caching keys or raise Redis maxmemory |
+| Frontend transactions stale, observers silent | Pipeline → the banner's reasons, then the heights flow: the connector whose gap is growing names the stuck stage | Fetch stalled: check the Fetch card's job badge and last tick, then **Run sync now**. Commit backed up: the Commit card and the error history. See [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) |
+| Token transfers or energy figures missing for recent blocks | Pipeline → Enrich card — receipts switch, coverage, and missed count; Recent blocks table for per-block outcome | Turn receipts on from the card, or investigate partial/failed receipt fetches in the error history |
+| An observer falling behind | Pipeline → Observers table; rows needing attention sort first, queues are shown against each observer's capacity | Inspect that plugin's logs; a queue near capacity will start dropping work |
+| Scheduler not advancing | Pipeline → Fetch card job badge and last tick; Schedules tab for the pipeline jobs | Toggle or reschedule the job on the Schedules tab or `/system/scheduler` |
+| Droplet CPU or memory climbing | Server → Droplet, then the Containers table to attribute it | Resize the droplet, or restart the container carrying the growth once identified |
+| Backend memory climbing | Server → Backend Process — heap/RSS trend | Restart the container if growth doesn't plateau; correlate with observer queue depth |
+| A container crash-looping | Server → Containers — non-zero **Restarts**, or a state other than `running` | Tail that container's logs; the row's health column distinguishes a failing healthcheck from a stopped process |
+| Disk filling | Server → Droplet — `Disk /` and `Disk clickhouse:*` cells turn amber at 75%, red at 90% | ClickHouse `traffic_events` is the usual cause; see the storage notes in [operations-server-info.md](../../../docs/operations/operations-server-info.md) |
+| Redis evictions > 0 | Server (Redis Cache block) | Memory pressure; investigate caching keys or raise Redis maxmemory |
 | WebSocket spikes | WebSockets tab — find offending plugin via `mostActiveEmitter` | Inspect that plugin's logs at `/system/logs` filtered by `service` |
-| Feed stutters; emit buffer underruns climbing | Overview → Blockchain — the Buffer readout and its underrun count | Raise the target depth on Configuration → Block feed buffer. It applies to the running feed immediately, so watch the same counter to judge the new value (see [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md#buffer-settings)) |
+| Feed stutters; emit buffer underruns climbing | Pipeline → Buffer card — underrun count and when the last one happened | Use the card's **Buffer settings** button to raise the target depth. It applies to the running feed immediately, so watch the same card to judge the new value (see [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md#buffer-settings)) |
 | Site URL needs updating | Configuration tab | Edit inline; **restart the frontend container** for SSR cache to refresh (see [system-runtime-config.md](./system-runtime-config.md#runtime-reconfiguration)) |
 | Log level or retention needs updating | Logs page (`/system/logs`) | Moved off this page — edit there (see [system-logging.md](./system-logging.md)) |
 | Need to inspect a specific error | Logs page (`/system/logs`) | Filter by level/service; resolve to clear from unresolved counts |
@@ -96,7 +97,7 @@ The System page is the triage map. Identify *which* subsystem is degraded, then 
 
 ### Dashboard Shows "No Data" or Empty Metrics
 
-Fresh install before scheduler has run, or scheduler globally disabled. Confirm `ENABLE_SCHEDULER=true`, wait one tick (1 minute) for `blockchain:sync`, or trigger manually from the Blockchain section.
+Fresh install before the scheduler has run, a backend that just restarted (pipeline telemetry is in memory and starts empty), or the scheduler globally disabled. Confirm `ENABLE_SCHEDULER=true`, wait one `blockchain:sync` tick (15 seconds by default), or use **Run sync now** on the Pipeline tab's Fetch card.
 
 ### Section Reports Disconnected (Mongo / Redis / ClickHouse)
 

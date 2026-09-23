@@ -30,6 +30,14 @@ Every ending is reported as `stopReason`: `'unresolved'`, `'depth-cap'`, `'cycle
 
 `token-transfer.ts` decodes a `TriggerSmartContract` call to `transfer(address,uint256)` or `transferFrom(address,address,uint256)` into `ITokenTransfer`. Block sync attaches it as `payload.tokenTransfer` so observers read the real recipient and token amount instead of decoding call data themselves. `rawAmount` is a decimal string because a uint256 does not fit a JavaScript number. The field is observer-only: `toTransactionWriteFields()` leaves it out of the stored document, since the call data it comes from is already stored.
 
+## Contract events and token transfers
+
+When a block's receipts are complete, `contract-events.ts` turns each receipt's `log` into `payload.events` (`IContractEvent[]`, base58 emitter, `eventId` = `${txId}:${logIndex}`) and decodes standard `Transfer` events into `payload.tokenTransfers` (`ITokenTransferEvent[]`, TRC20 by three topics, TRC721 by four). `internal-transfers.ts` decodes the receipt's value-bearing `internal_transactions` into `payload.internalTransfers`. When receipts are incomplete, `resolveTransactionEvents` leaves `events` and `internalTransfers` absent and fills `tokenTransfers` from `decodeTokenTransfer` for a successful call, marked `source: 'calldata'`. The choice is made per block from `receiptsFetched`, so the two sources never mix. All three fields are observer-only; `toTransactionWriteFields()` strips them.
+
+`BlockCommitter` delivers events to event observers through `notifyBlockEvents`, which indexes a block's events once by `topics[0]` and hands each `BaseEventObserver` its matches, or an empty gap batch when receipts are missing. Pinned by `__tests__/contract-events.test.ts` and the observer service's `blockchain-observer-events.test.ts`. Full contract: [system-blockchain-contract-events.md](../../../../docs/system/system-blockchain-contract-events.md).
+
+## Token metadata
+
 `TronGridClient.getTrc20TokenInfo()` (published on `ITronGridService`, so plugins call it as `context.tronGrid.getTrc20TokenInfo()`, beside `getTrc10()`) reads a token's `decimals()`, `symbol()`, and `name()` through `callConstantContract()`, which runs `/wallet/triggerconstantcontract` on the shared queue with the all-zero address (`ZERO_ADDRESS`) as the owner, since a view call signs nothing. `trc20-metadata.ts` decodes the answers, accepting both ABI `string` and legacy `bytes32` returns. A hit is cached in memory for the life of the process because deployed decimals never change; a miss (no `decimals()` answer) is not cached. Call it when a token is configured, never per transaction.
 
 A sibling transport, `TronScanClient`, lives in the [providers module](../providers/README.md) — a distinct provider with its own base URL, key, and rate budget, currently backing the local TRX price series. Reach for TronGrid for chain and account data; use TronScan only where no TronGrid path exists.
@@ -54,6 +62,8 @@ And the buffer holds **unwritten** blocks. A block does not exist at any height 
 | `block-pacer.ts` | `resolveEmitPacing()` — the carried-forward deadline the emitter releases against; `resolveBlockAgeInBlocks()` — a block's age in blocks, from its own header |
 | `sync-mode.ts` | Whether sync treats itself as caught up, using a hysteresis pair so a lag hovering on one boundary cannot flip the mode every block |
 | `chain-head.ts` | `resolveCursorBlock()` — read a stored cursor, including the string form older drivers wrote; `resolveCachedHead()` — whether a height recorded by an earlier tick may stand in for a failed head lookup |
+| `pipeline-telemetry.ts` | `PipelineTelemetry` — an in-memory rolling history for the `/system` Pipeline tab: the last 300 prepared blocks with receipt outcome, decoded event counts, and stage timings; the last 50 errors; and the latest scheduler tick. Sync writes to it at the moment each fact is known and never reads it back. It resets on restart |
+| `logger.ts` | The module's child logger, `module: 'blockchain'`, so its entries are stored under `tronrelic:blockchain` and appear on the Pipeline tab's Logs tab. The `blockchain:*` and `network-activity:rollup` jobs register with it too |
 
 Four properties are easy to lose in a rewrite. **Releasing below target must be slower than the chain produces** (`refillIntervalMs` > one block time), or a lead spent on one gap never comes back. **Releasing above target must be faster** (`drainIntervalMs` < one block time, derived by mirroring the refill interval), or every depth between the target and the catch-up depth is an equilibrium and the bursty arrival pattern parks the buffer at the top of that band for good. **The deadline carries forward** rather than resetting per release; a per-release stopwatch can only add delay, so the average drifts above the block time and accumulates until the syncer abandons the cadence and dumps a burst. But **a deadline that has fallen into the past is discarded when a block arrives at an empty buffer**, because slots missed for want of arrivals are not debt, and repaying them keeps the buffer empty through the whole recovery.
 
@@ -83,3 +93,4 @@ Full rationale, settings table, and how to read the two lag figures on `/system`
 
 - [system-blockchain-sync-architecture.md](../../../../docs/system/system-blockchain-sync-architecture.md) — block retrieval, enrichment pipeline, observer dispatch
 - [plugins-blockchain-observers.md](../../../../docs/plugins/plugins-blockchain-observers.md) — building observers that react to transactions this module notifies
+- [system-blockchain-contract-events.md](../../../../docs/system/system-blockchain-contract-events.md) — decoded event logs, token transfers, and event subscriptions

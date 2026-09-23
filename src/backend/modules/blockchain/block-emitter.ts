@@ -50,13 +50,14 @@
  */
 
 import type { BlockStats } from '../../database/models/block-model.js';
-import type { IBlockData, ISystemConfig } from '@/types';
+import type { IBlockData, ISystemConfig, PipelineReleaseMode } from '@/types';
 import { blockchainConfig } from '../../config/blockchain.js';
 import { EMIT_BUFFER_DEFAULTS } from '../../config/emit-buffer.js';
-import { logger } from '../../lib/logger.js';
+import { logger } from './logger.js';
 import { resolveEmitPacing } from './block-pacer.js';
 import {
     resolveReleaseInterval,
+    resolveReleaseMode,
     resolveSeedComplete,
     insertPendingBlock,
     type IReleaseIntervalThresholds
@@ -190,6 +191,24 @@ export interface IBlockEmitBufferMetrics {
     underrunBlocks: number;
     /** How many times a catch-up run flushed the buffer, bypassing the clock. */
     flushes: number;
+    /** Depth at or above which the buffer drains at the catch-up interval. */
+    catchupDepth: number;
+    /** Depth at or above which blocks are released with no wait. */
+    maxDepth: number;
+    /**
+     * Which release rule the buffer is following: seeding its initial lead,
+     * idle before its first release, or the rule chosen for the latest
+     * release. Reported because the rule says more than depth alone — a buffer
+     * in `'refill'` is rebuilding a lead it spent.
+     */
+    releaseMode: PipelineReleaseMode;
+    /**
+     * When the most recent underrun episode began, as an ISO string, or null
+     * if the buffer has never run dry. The underrun count is cumulative since
+     * the process started, so without a time an operator cannot tell a fresh
+     * problem from one hours old.
+     */
+    lastUnderrunAt: string | null;
 }
 
 /**
@@ -255,6 +274,8 @@ export class BlockEmitter {
     private underruns = 0;
     private underrunBlocks = 0;
     private flushes = 0;
+    private lastReleaseMode: PipelineReleaseMode | null = null;
+    private lastUnderrunAt: Date | null = null;
 
     /**
      * True while the buffer is inside an underrun episode — the lead is gone and
@@ -598,7 +619,11 @@ export class BlockEmitter {
             lastIntervalMs: this.lastIntervalMs,
             underruns: this.underruns,
             underrunBlocks: this.underrunBlocks,
-            flushes: this.flushes
+            flushes: this.flushes,
+            catchupDepth: this.thresholds.catchupDepth,
+            maxDepth: this.thresholds.maxDepth,
+            releaseMode: this.seeded ? (this.lastReleaseMode ?? 'idle') : 'seeding',
+            lastUnderrunAt: this.lastUnderrunAt?.toISOString() ?? null
         };
 
         return metrics;
@@ -682,6 +707,7 @@ export class BlockEmitter {
         }
 
         this.lastIntervalMs = intervalMs;
+        this.lastReleaseMode = resolveReleaseMode(this.pending.length, this.thresholds);
         this.setTimer(() => this.releaseOne(), delayMs, false);
     }
 
@@ -742,6 +768,7 @@ export class BlockEmitter {
             if (this.thresholds.targetDepth > 0 && !this.exposed) {
                 this.underruns += 1;
                 this.exposed = true;
+                this.lastUnderrunAt = new Date();
             }
         }
 

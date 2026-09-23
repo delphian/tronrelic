@@ -4,13 +4,14 @@ Status, throughput, transaction counts, observer stats, and manual sync trigger 
 
 ## Why This Matters
 
-Sync lag is the single most important production signal — every observer and downstream feature depends on the sync staying near the chain tip. `/status` answers "are we caught up", `/metrics` answers "fast enough?", `/observers` answers "is any subscriber dropping data?", and `POST /sync` lets operators poke the job after a degraded TronGrid window without waiting for the next cron tick.
+Sync lag is the single most important production signal — every observer and downstream feature depends on the sync staying near the chain tip. `/pipeline` answers "is ingestion healthy, and where is it stuck?" in one payload, and is what the `/system` Pipeline tab renders. The older endpoints remain for scripts: `/status` answers "are we caught up", `/metrics` answers "fast enough?", `/observers` answers "is any subscriber dropping data?", and `POST /sync` lets operators poke the job after a degraded TronGrid window without waiting for the next cron tick.
 
 ## Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/admin/system/blockchain/status` | Current vs network height, lag, backfill, last error, last per-stage timings |
+| GET | `/admin/system/blockchain/pipeline` | Health verdict with reasons, the four heights, per-stage figures and p50/p95 timings, receipt coverage, error history, recent blocks, and observers. Never calls TronGrid |
+| GET | `/admin/system/blockchain/status` | Current vs network height, lag, backfill, last error, last per-stage timings. Calls TronGrid for the head on every request |
 | GET | `/admin/system/blockchain/transactions` | Index counts (lifetime + stub fields) |
 | GET | `/admin/system/blockchain/metrics` | Throughput, success rate, recent errors, catch-up projection |
 | GET | `/admin/system/blockchain/observers` | Per-observer queue depth, processed/errors/dropped counts, processing-time stats |
@@ -18,13 +19,33 @@ Sync lag is the single most important production signal — every observer and d
 
 ## Response Reference
 
+### `GET /blockchain/pipeline` — `pipeline` payload
+
+The full shape is `IPipelineStatus` in `packages/types/src/pipeline/`, documented field by field there. It is built from in-memory telemetry (`PipelineTelemetry` in the blockchain module), the running emitter and committer, and the sync state document. It deliberately makes no TronGrid request, because that request shares the rate-limited queue block sync uses, so polling it cannot slow sync down. Telemetry resets when the backend restarts.
+
+| Field | What it answers |
+|---|---|
+| `health` | `level` is `healthy`, `degraded`, or `stalled`; `reasons` lists each finding with its stage and a plain-English message. Rules live in `src/backend/modules/system/pipeline-health.ts` |
+| `heights` | Chain head as the last tick saw it, the newest **fetched** block with its ingest lag, blocks **buffered**, and the newest **committed** block with its feed lag. Lags are measured from each block's own header timestamp and carry a tone |
+| `sync` | Live or catch-up mode, the `blockchain:sync` job's own enabled state and schedule, last tick, ingest rate, and any standing error |
+| `buffer` | Depth, target, release rule (`refill`, `steady`, `drain`, `catch-up`, `burst`), underruns with the time of the latest, and flushes |
+| `commit` | Commit queue, failures since boot, and commit rate |
+| `receipts` | Whether `fetchBlockReceipts` is on, and outcome counts and coverage over recent blocks |
+| `stages` | Median, 95th percentile, and max per stage over recent blocks |
+| `backfill`, `errors`, `recentBlocks`, `observers` | Backfill queue size and sample, recent failures newest first, recent blocks with receipt outcome and decoded event counts, and observer statistics |
+
+```bash
+curl -s -H "X-Admin-Token: $TOKEN" http://localhost:4000/api/admin/system/blockchain/pipeline \
+    | jq '.pipeline.health'
+```
+
 ### `GET /blockchain/status` — `status` payload
 
 | Field | Type | Notes |
 |---|---|---|
 | `currentBlock` | number | Last processed |
 | `networkBlock` | number | Network tip (or last known if TronGrid unreachable) |
-| `lag` | number | Blocks the *index* is behind (`max(0, network - current)`). Near zero almost always, since ingestion no longer paces itself — use `feedLag` to judge the live feed |
+| `lag` | number | Blocks the written cursor is behind the network head (`max(0, network - current)`). Sits near the buffer target by design, because the cursor advances only when a buffered block is committed. It does not measure whether *ingestion* keeps up; `/pipeline`'s `heights.fetched.lagBlocks` does |
 | `backfillQueueSize` | number | Failed blocks awaiting retry |
 | `lastProcessedAt` | string \| null | ISO timestamp of most recent block |
 | `lastProcessedBlockId` | string \| null | Block hash |
@@ -85,7 +106,7 @@ Some fields overlap with `/status` (notably `backfillQueueSize`, `networkBlocksP
 
 ### `GET /blockchain/observers` — `observers` array
 
-One entry per registered observer (transaction, batch, and block observers all share the same shape):
+One entry per registered observer (transaction, batch, block, and event observers all share the same shape). The registry adds `kind` (`transaction`, `batch`, `block`, or `event`) and `subscriptions` (short labels for what it follows), and each base class reports `queueCapacity`, so a queue depth can be judged against that observer's own limit:
 
 | Field | Type | Notes |
 |---|---|---|
@@ -93,7 +114,7 @@ One entry per registered observer (transaction, batch, and block observers all s
 | `queueDepth` | number | Items waiting to process; rising = falling behind |
 | `totalProcessed` | number | Lifetime |
 | `totalErrors` | number | Lifetime |
-| `totalDropped` | number | Items dropped on overflow (see queue caps in [sync architecture](./system-blockchain-sync-architecture.md#three-observer-types)) |
+| `totalDropped` | number | Items dropped on overflow (see queue caps in [sync architecture](./system-blockchain-sync-architecture.md#four-observer-types)) |
 | `avgProcessingTimeMs` | number | Mean wall-clock per item |
 | `minProcessingTimeMs` | number | |
 | `maxProcessingTimeMs` | number | |
