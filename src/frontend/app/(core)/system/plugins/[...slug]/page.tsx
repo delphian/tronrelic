@@ -37,8 +37,10 @@ interface IPageParams {
  * 5. PluginPageHandler checks plugin registry for matching page
  * 6. Plugin component renders with system navigation and widget zones visible
  *
- * Without step 3 an admin page that relies on server-fetched data, such as
- * the whale-alerts settings form, would always start empty.
+ * The fetcher runs without the visitor's cookies, so it can only use data
+ * that is public anyway. An admin page that shows plugin configuration or
+ * other admin-only data loads it in the browser from the plugin's
+ * `/api/plugins/<id>/system/**` routes after mount instead.
  *
  * @param params - Next.js route params containing slug array
  * @returns Plugin page component wrapped in system layout
