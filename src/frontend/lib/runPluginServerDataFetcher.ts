@@ -28,9 +28,10 @@ import { getServerConfig } from './serverConfig';
  * round-trip cannot handle (a circular reference or a BigInt), is logged and
  * yields undefined, so the page renders without initialData instead of failing.
  *
- * The fetcher runs without the visitor's cookies, so it can only reach public
- * endpoints. That is what makes it safe to run for admin pages before the
- * system layout has checked the visitor's credentials.
+ * The fetcher runs without the visitor's cookies, so any admin-gated backend
+ * route it calls answers 401. That is what makes it safe to run for admin pages
+ * before the system layout has checked the visitor's credentials: it has no
+ * more reach than an anonymous caller.
  *
  * @param pageConfig Resolved plugin page whose fetcher should run.
  * @param slug Requested URL path, passed to the fetcher as `ctx.path` so a wildcard page knows which resource was asked for.
