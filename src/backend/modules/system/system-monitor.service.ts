@@ -889,9 +889,14 @@ export class SystemMonitorService {
     };
 
     const receiptsEnabled = await this.readReceiptsEnabled();
+    // Blocks recorded while the switch was off were never asked for receipts, so
+    // counting them against coverage reports a warning for the whole 300-block
+    // window after an operator turns receipts on. Judge only the blocks receipts
+    // were actually requested for.
+    const attempted = telemetry.receipts.window - telemetry.receipts.disabled;
     const covered = telemetry.receipts.complete + telemetry.receipts.empty;
-    const coveragePercent = telemetry.receipts.window > 0
-      ? Number(((covered / telemetry.receipts.window) * 100).toFixed(1))
+    const coveragePercent = attempted > 0
+      ? Number(((covered / attempted) * 100).toFixed(1))
       : null;
 
     const backfillQueue = (Array.isArray(meta.backfillQueue) ? meta.backfillQueue : [])
@@ -938,7 +943,9 @@ export class SystemMonitorService {
       observers: BlockchainObserverService.getInstance().getAllObserverStats()
     };
 
-    return { ...partial, health: resolvePipelineHealth(partial, now) };
+    // Uptime is read here rather than in `pipeline-health`, which takes every
+    // input including its clock, so the rules stay testable without a process.
+    return { ...partial, health: resolvePipelineHealth(partial, now, process.uptime() * 1000) };
   }
 
   /**

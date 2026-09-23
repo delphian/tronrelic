@@ -125,7 +125,7 @@ export function EnrichStage({ pipeline, onChanged }: IEnrichStageProps) {
                     {
                         label: 'Coverage',
                         value: receipts.coveragePercent !== null ? `${receipts.coveragePercent}%` : '—',
-                        detail: `Last ${formatNumber(receipts.window)} blocks`,
+                        detail: `Last ${formatNumber(receipts.window - receipts.disabled)} blocks with receipts on`,
                         tone: receipts.coverageTone
                     },
                     {
