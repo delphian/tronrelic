@@ -140,7 +140,7 @@ export interface IPipelineStatus {
         failed: number;
         disabled: number;
         empty: number;
-        /** Complete or empty blocks as a share of the window, or null with no blocks yet. */
+        /** Complete or empty blocks as a share of the blocks receipts were requested for, so `disabled` blocks are excluded; null when receipts were requested for none. */
         coveragePercent: number | null;
         coverageTone: PipelineTone;
     };

@@ -24,6 +24,17 @@ export const RECENT_WINDOW_MS = 10 * 60 * 1000;
 /** A scheduler tick older than this means sync has stopped ticking. */
 export const TICK_STALE_MS = 60 * 1000;
 
+/**
+ * How long this process must have been running before a sync that has never
+ * ticked at all counts against health.
+ *
+ * Comfortably longer than the stock fifteen-second sync schedule, so an
+ * ordinary startup that simply has not reached its first tick yet is not
+ * reported as an outage, while a job that is registered and enabled but never
+ * actually runs stops being reported as healthy.
+ */
+export const TICK_MISSING_GRACE_MS = 2 * 60 * 1000;
+
 /** Receipt coverage below this, with receipts switched on, is degraded. */
 export const RECEIPT_COVERAGE_WARNING_PERCENT = 99;
 
@@ -115,9 +126,14 @@ export function resolveCoverageTone(enabled: boolean, coveragePercent: number | 
  *
  * @param status - Every other part of the pipeline payload, already assembled.
  * @param now - Current time in milliseconds, passed in so tests can fix it.
+ * @param uptimeMs - How long this process has been running, passed in rather
+ *                   than read here so the module stays pure. It decides only
+ *                   whether a sync that has never ticked has had long enough to
+ *                   start; the default of zero means a caller that does not
+ *                   know the uptime never trips that rule.
  * @returns The overall level and its reasons, most severe first.
  */
-export function resolvePipelineHealth(status: Omit<IPipelineStatus, 'health'>, now: number): IPipelineHealth {
+export function resolvePipelineHealth(status: Omit<IPipelineStatus, 'health'>, now: number, uptimeMs: number = 0): IPipelineHealth {
     const reasons: IPipelineHealthReason[] = [];
     const { heights, sync, buffer, commit, receipts, backfill, errors, observers, config } = status;
 
@@ -138,7 +154,22 @@ export function resolvePipelineHealth(status: Omit<IPipelineStatus, 'health'>, n
                 ? 'The blockchain:sync job is disabled, so no new blocks are being fetched.'
                 : 'The blockchain:sync job is not registered; the scheduler may be switched off (ENABLE_SCHEDULER=false).'
         });
-    } else if (sync.lastTickAt !== null && now - Date.parse(sync.lastTickAt) > TICK_STALE_MS) {
+    } else if (sync.lastTickAt === null) {
+        // No tick has ever been recorded, and none is stored from an earlier run
+        // either: `meta.lastScheduledAt` is written to the sync state document on
+        // every tick and outlives a restart, so a null here means no instance of
+        // this deployment has ever scheduled a block. Left unjudged, that reads
+        // as healthy forever, because a pipeline with no telemetry also has no
+        // lag figures to judge. The grace period keeps an ordinary startup, which
+        // has not reached its first tick yet, quiet.
+        if (uptimeMs > TICK_MISSING_GRACE_MS) {
+            reasons.push({
+                level: 'danger',
+                stage: 'fetch',
+                message: 'The blockchain:sync job is registered and enabled but has never run; no blocks have been fetched.'
+            });
+        }
+    } else if (now - Date.parse(sync.lastTickAt) > TICK_STALE_MS) {
         const seconds = Math.round((now - Date.parse(sync.lastTickAt)) / 1000);
         reasons.push({ level: 'danger', stage: 'fetch', message: `The last sync tick finished ${seconds}s ago; sync is not ticking.` });
     }
@@ -176,7 +207,7 @@ export function resolvePipelineHealth(status: Omit<IPipelineStatus, 'health'>, n
         reasons.push({
             level: 'warning',
             stage: 'enrich',
-            message: `Receipts are on but only ${receipts.coveragePercent}% of the last ${receipts.window} blocks got them all; those blocks carry no decoded events.`
+            message: `Receipts are on but only ${receipts.coveragePercent}% of the ${receipts.window - receipts.disabled} recent blocks they were requested for got them all; those blocks carry no decoded events.`
         });
     }
 

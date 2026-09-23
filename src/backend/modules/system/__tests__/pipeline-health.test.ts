@@ -115,6 +115,19 @@ describe('resolvePipelineHealth', () => {
         expect(resolvePipelineHealth(status, NOW).level).toBe('stalled');
     });
 
+    it('calls the pipeline stalled when sync has never ticked, but only once the startup grace has passed', () => {
+        const status = healthyStatus();
+        status.sync.lastTickAt = null;
+        status.heights.fetched = { blockNumber: null, blockTimestamp: null, lagBlocks: null, lagTone: 'neutral' };
+        status.heights.committed = { blockNumber: null, blockTimestamp: null, lagBlocks: null, lagTone: 'neutral' };
+
+        expect(resolvePipelineHealth(status, NOW, 30_000).level).toBe('healthy');
+
+        const health = resolvePipelineHealth(status, NOW, 5 * 60_000);
+        expect(health.level).toBe('stalled');
+        expect(health.reasons[0]).toMatchObject({ level: 'danger', stage: 'fetch' });
+    });
+
     it('degrades on a recent underrun but ignores an old one', () => {
         const recent = healthyStatus();
         recent.buffer.lastUnderrunAt = new Date(NOW - 60_000).toISOString();
