@@ -30,6 +30,7 @@
 import type { IBlockData, IBlockchainObserverService, ITransactionPersistencePayload } from '@/types';
 import type { IBlockCommitSink, IBlockNewPayload, IPreparedBlock } from './block-emitter.js';
 import type { PipelineTelemetry } from './pipeline-telemetry.js';
+import type { IChainDataSink } from './chain-data/ChainDataWriter.js';
 import { logger } from './logger.js';
 
 /**
@@ -64,8 +65,13 @@ export interface IBlockCommitterDependencies {
      * of a commit without also owning its storage layout.
      *
      * @param prepared - The block to write.
+     * @returns True when this is the first commit of the block to finish every
+     *          durable write, false when an earlier commit already did. The
+     *          committer announces a block only when this is true, so a block
+     *          fetched twice reaches observers once, and a block whose earlier
+     *          commit stopped partway reaches them when it is fetched again.
      */
-    persist: (prepared: IPreparedBlock) => Promise<void>;
+    persist: (prepared: IPreparedBlock) => Promise<boolean>;
     /** Registry that knows which observers subscribed to which contract types. */
     observers: IBlockchainObserverService;
     /** Alert rule matching, called once per block with that block's payloads. */
@@ -82,6 +88,12 @@ export interface IBlockCommitterDependencies {
      * can pass a spy instead of the shared recorder.
      */
     telemetry: Pick<PipelineTelemetry, 'recordCommitted' | 'recordError'>;
+    /**
+     * Where each committed block's rows for the ClickHouse `tron` tables go.
+     * Optional because ClickHouse is: a deployment without it has no sink, and
+     * commits behave exactly as they did before chain data existed.
+     */
+    chainData?: IChainDataSink;
 }
 
 /** What the committer reports to `/system` about its own health. */
@@ -144,6 +156,25 @@ export class BlockCommitter implements IBlockCommitSink {
     }
 
     /**
+     * Wait until every block already submitted has finished committing.
+     *
+     * Shutdown needs this before it waits on the chain data writer. A block
+     * whose MongoDB write is still in flight hands its chain data rows over
+     * only when that write finishes, so draining the writer first would find
+     * it idle and let the process exit before the rows ever arrived.
+     *
+     * @returns Resolves once the commit chain has settled. Never rejects,
+     *          because each commit catches its own failure.
+     */
+    public async drain(): Promise<void> {
+        let observed: Promise<void> | null = null;
+        while (observed !== this.tail) {
+            observed = this.tail;
+            await observed;
+        }
+    }
+
+    /**
      * Report the commit backlog for the `/system` blockchain console.
      *
      * @returns A snapshot an operator can read to tell a healthy pipeline from
@@ -184,17 +215,47 @@ export class BlockCommitter implements IBlockCommitSink {
      * to reject — a durable block with a failed commit would be invisible to
      * both.
      *
+     * A block whose earlier commit already finished is written again, so the
+     * cursor and the backfill queue catch up, but it is not announced a second
+     * time to the observers, the alert rules, or connected clients, because
+     * doing that twice would show up as duplicate alerts and duplicate plugin
+     * records. `persist` decides this from a stamp its last durable write
+     * sets, not from whether the block document already existed, so a block
+     * whose earlier commit stopped before that write is announced when it is
+     * fetched again.
+     *
+     * Its chain data is still handed to ClickHouse, and its commit is still
+     * recorded in telemetry. A finished MongoDB commit does not prove the
+     * hand-off happened: a process that stopped between the two (a crash, or
+     * a shutdown whose drain timed out) leaves the block committed in MongoDB
+     * but missing from ClickHouse, and the refetch is the only chance to write
+     * it there. Writing it twice is harmless, because every chain data table
+     * is a `ReplacingMergeTree` keyed on the row's identity.
+     *
      * @param prepared - The block to write and announce.
      */
     private async commit(prepared: IPreparedBlock): Promise<void> {
         try {
-            await this.deps.persist(prepared);
+            const isFirstCommit = await this.deps.persist(prepared);
             this.lastCommittedBlockNumber = prepared.blockNumber;
+
+            // Handed over straight after the write, before anything else can
+            // throw, and for a repeat as well as a new block. A later step
+            // failing here would otherwise leave the block missing from
+            // ClickHouse with no gap recorded.
+            this.recordChainData(prepared);
             this.deps.telemetry.recordCommitted(prepared.blockNumber, prepared.timings);
 
-            this.dispatchToObservers(prepared.blockData);
-            this.broadcast(prepared);
-            this.ingestAlerts(prepared.blockData);
+            if (isFirstCommit) {
+                this.dispatchToObservers(prepared.blockData);
+                this.broadcast(prepared);
+                this.ingestAlerts(prepared.blockData);
+            } else {
+                logger.info(
+                    { blockNumber: prepared.blockNumber },
+                    'Block was already committed; wrote it again without announcing it a second time'
+                );
+            }
         } catch (error) {
             this.failures += 1;
             this.deps.telemetry.recordError({
@@ -307,5 +368,25 @@ export class BlockCommitter implements IBlockCommitSink {
                 'Failed to ingest alerts for a committed block'
             );
         });
+    }
+
+    /**
+     * Hand the block's chain data rows to the ClickHouse writer.
+     *
+     * Runs after the MongoDB write for the same reason the announcements do: the
+     * chain data must describe blocks that were actually committed, so its height
+     * matches every other surface. The sink returns at once and does its own
+     * writing, so ClickHouse being slow or down cannot hold up the next block.
+     *
+     * @param prepared - The committed block, read only for its chain data rows.
+     */
+    private recordChainData(prepared: IPreparedBlock): void {
+        if (this.deps.chainData && prepared.chainData) {
+            try {
+                this.deps.chainData.submit(prepared.chainData);
+            } catch (error) {
+                logger.error({ error, blockNumber: prepared.blockNumber }, 'Failed to hand a committed block to the chain data writer');
+            }
+        }
     }
 }

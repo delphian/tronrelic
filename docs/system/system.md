@@ -65,6 +65,7 @@ These documents are not owned by any single component row above.
 | [system-api-logs.md](./system-api-logs.md) | Querying, resolving, and deleting system log entries |
 | [system-api-websockets.md](./system-api-websockets.md) | WebSocket metrics for administrators, and the catalog of real-time events |
 | [system-block-provider-migration.md](./system-block-provider-migration.md) | The proposal to decouple from TronGrid: the `IBlockProvider` design, research into alternative providers, and the migration plan |
+| [system-chain-data-clickhouse.md](./system-chain-data-clickhouse.md) | The short-term copy of every committed block in ClickHouse's `tron` database, laid out after java-tron's protobuf messages: tables, naming rules, write path, and gaps |
 | [system-domain-types.md](./system-domain-types.md) | Why the types package must not depend on any one data source, the test for admitting a type, `IBlockTransaction`, and the known exceptions |
 
 ## Related

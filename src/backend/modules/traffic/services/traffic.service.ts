@@ -47,6 +47,8 @@ import { classifyChannel, refererDomainFromUrl, type TrafficChannel } from './ch
 import { UUID_V4_REGEX } from '../api/traffic-cookies.js';
 import { SystemConfigService } from '../../../services/system-config/system-config.service.js';
 import { env } from '../../../config/env.js';
+import { formatClickHouseDateTime64Utc } from '../../../lib/formatClickHouseDateTime64Utc.js';
+import { parseClickHouseDateTime64Utc } from '../../../lib/parseClickHouseDateTime64Utc.js';
 
 /**
  * Categorical event types written to `traffic_events.event_type`.
@@ -3271,48 +3273,6 @@ function parseSecChUaMobile(value: string | undefined): number | null {
  */
 interface TrafficEventRow extends Omit<ITrafficEvent, 'timestamp'> {
     timestamp: string;
-}
-
-function pad(value: number, length: number): string {
-    return String(value).padStart(length, '0');
-}
-
-/**
- * Render a `Date` in ClickHouse's native `DateTime64(3)` form, in UTC.
- *
- * The default `date_time_input_format=basic` rejects `toISOString()`
- * output (the `T...Z` form) — inserts would fail in production. The
- * column is declared `DateTime64(3, 'UTC')` so emitting in UTC keeps
- * the wire format and the column tz aligned regardless of which
- * ClickHouse node the row lands on.
- */
-function formatClickHouseDateTime64Utc(date: Date): string {
-    return (
-        `${pad(date.getUTCFullYear(), 4)}-${pad(date.getUTCMonth() + 1, 2)}-${pad(date.getUTCDate(), 2)} ` +
-        `${pad(date.getUTCHours(), 2)}:${pad(date.getUTCMinutes(), 2)}:${pad(date.getUTCSeconds(), 2)}.${pad(date.getUTCMilliseconds(), 3)}`
-    );
-}
-
-/**
- * Inverse of `formatClickHouseDateTime64Utc`. Falls back to `new Date(value)`
- * for any unrecognized form so a future ClickHouse driver upgrade that
- * normalizes timestamps to ISO doesn't break us silently.
- */
-function parseClickHouseDateTime64Utc(value: string): Date {
-    const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z?$/.exec(value);
-    if (!match) {
-        return new Date(value);
-    }
-    const [, year, month, day, hour, minute, second, milliseconds = '0'] = match;
-    return new Date(Date.UTC(
-        Number(year),
-        Number(month) - 1,
-        Number(day),
-        Number(hour),
-        Number(minute),
-        Number(second),
-        Number(milliseconds.padEnd(3, '0'))
-    ));
 }
 
 /**

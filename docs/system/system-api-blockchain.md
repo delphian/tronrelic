@@ -46,7 +46,7 @@ curl -s -H "X-Admin-Token: $TOKEN" http://localhost:4000/api/admin/system/blockc
 | `currentBlock` | number | Last processed |
 | `networkBlock` | number | Network tip (or last known if TronGrid unreachable) |
 | `lag` | number | Blocks the written cursor is behind the network head (`max(0, network - current)`). Sits near the buffer target by design, because the cursor advances only when a buffered block is committed. It does not measure whether *ingestion* keeps up; `/pipeline`'s `heights.fetched.lagBlocks` does |
-| `backfillQueueSize` | number | Failed blocks awaiting retry |
+| `backfillQueueSize` | number | Missing or failed blocks not yet saved. A block stays counted while it is being fetched and leaves only when it is committed |
 | `lastProcessedAt` | string \| null | ISO timestamp of most recent block |
 | `lastProcessedBlockId` | string \| null | Block hash |
 | `lastProcessedBlockNumber` | number \| null | |

@@ -67,7 +67,7 @@ import { UsdtParametersService } from './modules/usdt-parameters/usdt-parameters
 import { createApiRouter } from './api/routes/index.js';
 import { PluginManagerService } from './services/plugin-manager.service.js';
 import type { Express } from 'express';
-import type { IDatabaseService, IMenuService, IMenuNode, IPluginManifest, IServiceRegistry, IHookRegistry, IContentRegistry, IContentRouter } from '@/types';
+import type { IDatabaseService, IMenuService, IMenuNode, IPluginManifest, IServiceRegistry, IHookRegistry, IContentRegistry, IContentRouter, IClickHouseService } from '@/types';
 import axios from 'axios';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -203,11 +203,11 @@ async function bootstrap(): Promise<void> {
         const shutdown = async (signal: string) => {
             logger.info({ signal }, 'Received shutdown signal');
             ctx.modules.scheduler.stop();
-            // Release whatever the broadcast buffer is still holding before the
-            // socket server goes away. Those blocks are already fetched and
-            // written, so dropping them would deny connected clients data the
-            // backend already has, for no gain.
-            BlockEmitter.getInstance().stop();
+            // Stops the block buffer so no new block can be committed, then
+            // waits a bounded time for blocks already committed to MongoDB to
+            // finish their ClickHouse chain data write. The order of those steps
+            // lives inside the service that owns the pipeline.
+            await BlockchainService.getInstance().shutdown(5000);
             ctx.server.close();
             await disconnectRedis();
             process.exit(0);
@@ -333,7 +333,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // module init; the resolver runs per request, after bootstrap completes.
     app.use('/api', createApiRouter(coreDatabase, hookRegistry, () => PageService.getInstance().listSitemapPages()));
 
-    await initializeCoreServices(coreDatabase);
+    await initializeCoreServices(coreDatabase, clickhouse);
 
     // Register shared infrastructure on the service registry so modules and
     // plugins can discover them via late-binding DI instead of importing
@@ -645,10 +645,13 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
  * proper modules with separate init() and run() phases.
  *
  * @param coreDatabase - Database service instance for services that need persistence
+ * @param clickhouse - The ClickHouse service, or undefined when the deployment has
+ *                     none. Handed to block sync so it can keep the chain data copy
+ *                     in ClickHouse; without it sync runs exactly as before.
  * @throws If chain parameters or USDT parameters fail to initialize
  * @todo Migrate these services to the two-phase lifecycle pattern
  */
-async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<void> {
+async function initializeCoreServices(coreDatabase: IDatabaseService, clickhouse?: IClickHouseService): Promise<void> {
     BlockchainObserverService.initialize(logger.child({ module: 'blockchain-observer' }));
     SystemConfigService.initialize(logger.child({ module: 'system-config' }), coreDatabase);
     await applyStoredEmitBufferSettings();
@@ -660,7 +663,7 @@ async function initializeCoreServices(coreDatabase: IDatabaseService): Promise<v
     // getDatabase() immediately, so without this the first getInstance() throws and
     // the app never boots. setDependencies is idempotent (registerModel is a
     // Map.set), so the later calls remain harmless.
-    BlockchainService.setDependencies(coreDatabase);
+    BlockchainService.setDependencies(coreDatabase, { clickhouse });
     await realignFetchHeight();
 
     // Chain parameters: inject database, fetch from TronGrid first (populates DB), then warm cache

@@ -42,7 +42,7 @@ Your observer receives a block roughly the buffer depth behind the chain head, a
 
 The block **already exists in the database** when your observer runs. Anything your observer writes lands at the same height every other surface reports, so a page that reads a core transaction and your plugin's data for it cannot find one without the other.
 
-An observer may be notified about the same block twice. The backfill queue re-processes blocks routinely, so an observer keeping a running total should be idempotent per block. A restart is *not* one of those cases: the buffer holds unwritten blocks, so a lost buffer means those blocks were never committed and never announced, and the next tick fetches them fresh.
+Each block is announced once. Sync can occasionally fetch a block twice, but the commit writes it again without notifying observers when an earlier commit of that block already finished, so a repeat never reaches your observer. A restart does not cause a repeat either: the buffer holds unwritten blocks, so a lost buffer means those blocks were never committed and never announced, and they are fetched fresh. A crash after the block was written but before the sync cursor moved past it does not lose the announcement either: the block is fetched again, and that commit is the first to finish, so it notifies observers. The remaining gap is a crash in the short window after the cursor moves past the block and before observers are notified, which leaves that block stored and never announced.
 
 Observer failures still cannot affect database writes or block sync. See [system-blockchain-sync-architecture.md](../system/system-blockchain-sync-architecture.md#commit-buffering).
 
@@ -64,6 +64,8 @@ For token movements, use `payload.tokenTransfers` (`ITokenTransferEvent[]`). Whe
 `payload.tokenTransfer` (`ITokenTransfer`) is the older, single call-data decode and keeps its meaning for existing consumers. It records what a direct call requested, not proof that tokens moved: check `payload.status === 'SUCCESS'` first, and note that a non-standard token returning `false` instead of reverting still ends as `'SUCCESS'`. To turn a `rawAmount` into whole tokens, get the token's decimals once from `context.tronGrid.getTrc20TokenInfo()` (`ITronGridService`).
 
 Addresses arrive Base58, amounts in both SUN and TRX, USD already converted. Observers receive model objects, never raw TronGrid responses — that abstraction enables future provider changes.
+
+In `payload.contract.parameters`, every field copied from the contract that is a protobuf integer, such as `amount`, `total_supply`, or `votes[].vote_count`, is a decimal string at every size. TRON's int64 fields can pass 2^53, beyond which a JavaScript number is no longer exact, so convert with `BigInt(value)` before doing arithmetic, or with `Number(value)` only when the field cannot grow that large. Amounts core derives, such as `amountTRX` and `balanceTRX`, are decimal numbers. `rawValue` is the provider's bag as received, where an integer is a number when it fits and a string when it does not.
 
 ## Creating an Observer
 

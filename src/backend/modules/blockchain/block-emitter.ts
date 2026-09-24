@@ -51,6 +51,7 @@
 
 import type { BlockStats } from '../../database/models/block-model.js';
 import type { IBlockData, ISystemConfig, PipelineReleaseMode } from '@/types';
+import type { IChainDataRows } from './chain-data/buildChainDataRows.js';
 import { blockchainConfig } from '../../config/blockchain.js';
 import { EMIT_BUFFER_DEFAULTS } from '../../config/emit-buffer.js';
 import { logger } from './logger.js';
@@ -127,6 +128,12 @@ export interface IPreparedBlock {
     rawTransactionCount: number;
     /** Per-stage timings accumulated while preparing, extended during the commit. */
     timings: Record<string, number>;
+    /**
+     * The block's rows for the ClickHouse `tron` tables, built while preparing so
+     * the rows written at commit describe exactly the committed block. Absent
+     * when ClickHouse is not configured, since nothing would write them.
+     */
+    chainData?: IChainDataRows;
 }
 
 /**
@@ -287,6 +294,18 @@ export class BlockEmitter {
      * is a new incident or the twentieth block of one that started a minute ago.
      */
     private exposed = false;
+
+    /**
+     * True once {@link stop} has run. From then on the emitter accepts no block.
+     *
+     * Stopping the scheduler does not stop the block-sync queue worker, so a
+     * block can finish preparing after shutdown has begun and still arrive here.
+     * Without this flag that block would be committed after the committer had
+     * drained, which means it lands in MongoDB with no ClickHouse row and no
+     * gap row. Closing the emitter is enough to prevent that, because every
+     * commit starts from a release here.
+     */
+    private stopped = false;
 
     /**
      * Build an emitter around a release function and a set of thresholds.
@@ -522,9 +541,29 @@ export class BlockEmitter {
      * {@link emitNow}, because holding a backfill block for a live slot spends
      * that slot on data nobody is waiting for.
      *
+     * A block that arrives after {@link stop} is discarded; see
+     * {@link discardAfterStop}.
+     *
      * @param item - The block number and the event to broadcast for it.
      */
     public enqueue(item: IPreparedBlock): void {
+        if (this.stopped) {
+            this.discardAfterStop(item);
+        } else {
+            this.holdForSlot(item);
+        }
+    }
+
+    /**
+     * Put a block into the buffer and set the timer for its release.
+     *
+     * Kept apart from {@link enqueue} so that method only decides between
+     * discarding a block that arrived after {@link stop} and buffering it,
+     * with a single exit point.
+     *
+     * @param item - The block number and the event to broadcast for it.
+     */
+    private holdForSlot(item: IPreparedBlock): void {
         const wasEmpty = this.pending.length === 0;
         const now = Date.now();
 
@@ -588,13 +627,18 @@ export class BlockEmitter {
      * would stall the feed for a full lead's worth of time every time the syncer
      * recovered, which is exactly when a viewer is already waiting.
      *
+     * A block that arrives after {@link stop} is discarded rather than
+     * committed; see {@link discardAfterStop}.
+     *
      * @param item - The prepared block to commit now, whether it is a catch-up
      *               block ahead of the buffer or a backfill block behind it.
      */
     public emitNow(item: IPreparedBlock): void {
         const highestHeld = this.pending.at(-1)?.blockNumber ?? null;
 
-        if (highestHeld === null || item.blockNumber > highestHeld) {
+        if (this.stopped) {
+            this.discardAfterStop(item);
+        } else if (highestHeld === null || item.blockNumber > highestHeld) {
             this.clearTimer();
             this.flushPending();
             this.emit(item);
@@ -640,8 +684,13 @@ export class BlockEmitter {
      * anyone: the sync cursor never advanced past them and the next process
      * fetches them again. Rushing a batch of writes into the seconds before
      * `process.exit` would only risk tearing one of them partway through.
+     *
+     * Stopping is permanent. Blocks that arrive afterwards are discarded too,
+     * which is what lets shutdown drain the committer knowing nothing new can
+     * reach it.
      */
     public stop(): void {
+        this.stopped = true;
         this.clearTimer();
 
         if (this.pending.length > 0) {
@@ -651,6 +700,25 @@ export class BlockEmitter {
             );
             this.pending.length = 0;
         }
+    }
+
+    /**
+     * Drop a block that arrived after shutdown began.
+     *
+     * Dropping it is safe because the block was never written. A block above
+     * the cursor is fetched again once `resetFetchHeightToCursor()` lowers the
+     * fetch height at the next startup. A backfill block below the cursor is
+     * fetched again because it is still on the backfill queue, which only a
+     * commit removes it from. Committing it instead would race the shutdown
+     * drain and could leave it in MongoDB with no ClickHouse copy.
+     *
+     * @param item - The block that arrived too late to be committed.
+     */
+    private discardAfterStop(item: IPreparedBlock): void {
+        logger.info(
+            { blockNumber: item.blockNumber },
+            'Discarding a block prepared after shutdown began; the next process will fetch it again'
+        );
     }
 
     /**

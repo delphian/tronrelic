@@ -14,7 +14,7 @@
  * is that each plugin receives a different instance.
  */
 
-import type { IClickHouseService, IPluginClickHouseService } from '@/types';
+import type { IClickHouseInsertOptions, IClickHouseService, IPluginClickHouseService } from '@/types';
 import { pluginPrefix } from '@/types';
 
 /**
@@ -135,11 +135,13 @@ export class PluginClickHouseService implements IPluginClickHouseService {
      * @param options - Per-call overrides. `waitForCommit: true` waits for the
      *                  async-insert flush to commit, for a caller that cannot
      *                  tolerate a failure surfacing later in another log.
+     *                  `synchronous: true` skips the async buffer for a batch
+     *                  the plugin has already assembled.
      */
     async insert<T extends Record<string, unknown>>(
         logicalTable: string,
         rows: T[],
-        options?: { waitForCommit?: boolean }
+        options?: IClickHouseInsertOptions
     ): Promise<void> {
         await this.inner.insert(this.table(logicalTable), rows, options);
 

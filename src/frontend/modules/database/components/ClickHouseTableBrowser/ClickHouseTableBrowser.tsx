@@ -15,6 +15,12 @@
  * compares across tables — which one is eating disk, which one explains a slow
  * query — and a column of right-aligned figures answers that by scanning, where
  * badges scattered along each row do not.
+ *
+ * Unscoped, this is the universal browser and lists every database except
+ * ClickHouse's own, so a table outside the application database — the `tron`
+ * chain data, for one — is named with its database (`tron.block`) while the
+ * application's own tables keep their bare names. Scoped by plugin or by table
+ * names, the server keeps the list inside the application database.
  */
 
 import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
@@ -40,10 +46,42 @@ import {
 import styles from './ClickHouseTableBrowser.module.scss';
 
 interface ITableStat {
+    database: string;
     name: string;
     rowCount: number;
     sizeBytes: number;
     engine: string;
+}
+
+/**
+ * The identity of a table across databases.
+ *
+ * Two databases may each hold a table of the same name, so the bare name
+ * cannot key expansion state or React list items once the listing spans
+ * databases. A dot cannot appear in an unquoted database name, so the key is
+ * unambiguous.
+ *
+ * @param table - The table to identify.
+ * @returns `database.name`.
+ */
+function tableKey(table: ITableStat): string {
+    return `${table.database}.${table.name}`;
+}
+
+/**
+ * The name an operator reads for a table.
+ *
+ * A table in the application database keeps its bare name, so the list looks
+ * as it always has for the tables most operators come here for; a table in any
+ * other database carries its database in front, so `tron.block` cannot be
+ * mistaken for an application table.
+ *
+ * @param table - The table to label.
+ * @param applicationDatabase - The database the server reports as current.
+ * @returns The bare name, or `database.name` for another database.
+ */
+function tableLabel(table: ITableStat, applicationDatabase: string): string {
+    return table.database === applicationDatabase ? table.name : tableKey(table);
 }
 
 /** A column the table inventory can be ranked by. */
@@ -91,9 +129,10 @@ const DEFAULT_SORT: ITableSort = { key: 'name', direction: 'asc' };
  *
  * Names and engines compare with `localeCompare` so the alphabetical view
  * matches what a reader expects of mixed-case, prefixed identifiers; every
- * other column is a plain number. Direction is applied by negating the
- * comparison, so one comparator serves both directions instead of two
- * near-identical ones.
+ * other column is a plain number. Names compare with their database in front,
+ * so each database's tables stay together in the alphabetical view. Direction
+ * is applied by negating the comparison, so one comparator serves both
+ * directions instead of two near-identical ones.
  *
  * @param a - Left-hand table.
  * @param b - Right-hand table.
@@ -101,9 +140,14 @@ const DEFAULT_SORT: ITableSort = { key: 'name', direction: 'asc' };
  * @returns Negative, zero, or positive per the `Array.prototype.sort` contract.
  */
 function compareTables(a: ITableStat, b: ITableStat, sort: ITableSort): number {
-    const ordering = sort.key === 'name' || sort.key === 'engine'
-        ? a[sort.key].localeCompare(b[sort.key])
-        : a[sort.key] - b[sort.key];
+    let ordering: number;
+    if (sort.key === 'name') {
+        ordering = tableKey(a).localeCompare(tableKey(b));
+    } else if (sort.key === 'engine') {
+        ordering = a.engine.localeCompare(b.engine);
+    } else {
+        ordering = a[sort.key] - b[sort.key];
+    }
 
     return sort.direction === 'asc' ? ordering : -ordering;
 }
@@ -257,11 +301,22 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
         }
     }, [scope]);
 
-    const fetchRows = useCallback(async (tableName: string, page: number = 1) => {
+    /**
+     * Load one page of a table's rows.
+     *
+     * The table's database travels with the request because the universal
+     * listing spans databases, and a bare name would be read against the
+     * application database only.
+     *
+     * @param table - The table whose rows to load.
+     * @param page - The page to load, counted from 1.
+     */
+    const fetchRows = useCallback(async (table: ITableStat, page: number = 1) => {
         try {
             setLoadingRows(true);
             const response = await fetch(
-                `/api/admin/clickhouse/tables/${encodeURIComponent(tableName)}/rows?page=${page}&limit=10`,
+                `/api/admin/clickhouse/tables/${encodeURIComponent(table.name)}/rows` +
+                    `?page=${page}&limit=10&database=${encodeURIComponent(table.database)}`,
                 {
                     headers: { 'Content-Type': 'application/json' }
                 }
@@ -291,16 +346,17 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
      * expansion is keyed by position within a page and that key means something
      * different in a different table.
      *
-     * @param tableName - The table the operator clicked.
+     * @param table - The table the operator clicked.
      */
-    const toggleTable = (tableName: string) => {
+    const toggleTable = (table: ITableStat) => {
+        const key = tableKey(table);
         setExpandedRowKey(null);
-        if (expandedTable === tableName) {
+        if (expandedTable === key) {
             setExpandedTable(null);
             setRows(null);
         } else {
-            setExpandedTable(tableName);
-            void fetchRows(tableName);
+            setExpandedTable(key);
+            void fetchRows(table);
         }
     };
 
@@ -316,7 +372,7 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
     /**
      * Rank a column, or flip it if it is already the ranked one.
      *
-     * Table expansion is keyed by name rather than position, so an open table
+     * Table expansion is keyed by database and name rather than position, so an open table
      * stays open across a re-sort and the operator does not lose the rows they
      * were reading.
      *
@@ -337,6 +393,20 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
         () => [...(stats?.tables ?? [])].sort((a, b) => compareTables(a, b, sort)),
         [stats?.tables, sort]
     );
+
+    /**
+     * Every database the listing covers, for the overview line. A scoped
+     * listing covers only the application database; the universal one names
+     * each database it found, so an operator can see the chain data is there
+     * without scrolling for it.
+     */
+    const databaseNames = useMemo(() => {
+        const names = new Set((stats?.tables ?? []).map((table) => table.database));
+        if (stats?.dbName) {
+            names.add(stats.dbName);
+        }
+        return [...names].sort((a, b) => a.localeCompare(b));
+    }, [stats?.tables, stats?.dbName]);
 
     if (loading) {
         return <p className={styles.empty}>Loading ClickHouse statistics…</p>;
@@ -374,7 +444,7 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
         <div className={styles.browser}>
             {title !== undefined && <h3 className={styles.section_title}>{title}</h3>}
             <p className={styles.overview}>
-                <code className={styles.db_name}>{stats.dbName}</code>
+                <code className={styles.db_name}>{databaseNames.join(', ')}</code>
                 <span className={styles.overview_meta}>
                     {stats.tables.length} {stats.tables.length === 1 ? 'table' : 'tables'} ·{' '}
                     {formatBytes(stats.totalSize)} total
@@ -432,13 +502,15 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
                     </Thead>
                     <Tbody>
                         {sortedTables.map((table) => {
-                            const isTableOpen = expandedTable === table.name;
+                            const key = tableKey(table);
+                            const label = tableLabel(table, stats.dbName);
+                            const isTableOpen = expandedTable === key;
                             return (
-                                <Fragment key={table.name}>
+                                <Fragment key={key}>
                                     <Tr
                                         isExpanded={isTableOpen}
                                         className={styles.table_row}
-                                        onClick={() => toggleTable(table.name)}
+                                        onClick={() => toggleTable(table)}
                                     >
                                         <Td muted>
                                             {/* The row itself is clickable for pointer users; this button is
@@ -448,17 +520,17 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
                                                 type="button"
                                                 className={styles.expand_button}
                                                 aria-expanded={isTableOpen}
-                                                aria-label={`${isTableOpen ? 'Collapse' : 'Expand'} ${table.name}`}
+                                                aria-label={`${isTableOpen ? 'Collapse' : 'Expand'} ${label}`}
                                                 onClick={(event) => {
                                                     event.stopPropagation();
-                                                    toggleTable(table.name);
+                                                    toggleTable(table);
                                                 }}
                                             >
                                                 {isTableOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                                             </button>
                                         </Td>
                                         <Td>
-                                            <code className={styles.table_name}>{table.name}</code>
+                                            <code className={styles.table_name}>{label}</code>
                                         </Td>
                                         <Td muted numeric>{table.rowCount.toLocaleString()}</Td>
                                         <Td muted numeric className={styles.size_cell}>{formatBytes(table.sizeBytes)}</Td>
@@ -482,7 +554,7 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
                                                                         variant="ghost"
                                                                         size="xs"
                                                                         disabled={!rows.hasPrevPage}
-                                                                        onClick={() => void fetchRows(table.name, rows.page - 1)}
+                                                                        onClick={() => void fetchRows(table, rows.page - 1)}
                                                                     >
                                                                         Previous
                                                                     </Button>
@@ -493,7 +565,7 @@ export function ClickHouseTableBrowser(props: IClickHouseTableBrowserProps) {
                                                                         variant="ghost"
                                                                         size="xs"
                                                                         disabled={!rows.hasNextPage}
-                                                                        onClick={() => void fetchRows(table.name, rows.page + 1)}
+                                                                        onClick={() => void fetchRows(table, rows.page + 1)}
                                                                     >
                                                                         Next
                                                                     </Button>

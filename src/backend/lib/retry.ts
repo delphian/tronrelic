@@ -27,8 +27,17 @@ export interface IRetryOptions {
     maxRetryAfterMs?: number;
     /** Decides whether an error is worth another attempt. Defaults to {@link isRetryableError}. */
     shouldRetry?: (error: unknown) => boolean;
-    /** Called before each wait, for logging. Throwing from it ends the retries with that error. */
-    onRetry?: (attempt: number, error: unknown) => void;
+    /**
+     * Called before each wait, for logging. Receives the number of the attempt
+     * that just failed, its error, and how long the helper is about to wait.
+     * Throwing from it ends the retries with that error.
+     */
+    onRetry?: (attempt: number, error: unknown, delayMs: number) => void;
+    /**
+     * How the helper waits between attempts. Defaults to a real timer. Supplied
+     * by tests that exercise every retry and must not sit through real delays.
+     */
+    sleep?: (ms: number) => Promise<void>;
 }
 
 /** Default ceiling on one backoff wait. */
@@ -44,12 +53,12 @@ const DEFAULT_MAX_RETRY_AFTER_MS = 60_000;
 const RETRYABLE_CLIENT_STATUSES: ReadonlySet<number> = new Set([408, 425, 429]);
 
 /**
- * Pause between attempts.
+ * Pause between attempts, the default when the caller supplies no `sleep`.
  *
  * @param ms - How long to wait.
  * @returns A promise that resolves once the time has passed.
  */
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const sleepFor = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Read the HTTP status off a failed request, so retry decisions and callers can
@@ -143,7 +152,8 @@ export async function retry<T>(fn: () => Promise<T>, options: IRetryOptions = {}
         maxDelayMs = DEFAULT_MAX_DELAY_MS,
         maxRetryAfterMs = DEFAULT_MAX_RETRY_AFTER_MS,
         shouldRetry = isRetryableError,
-        onRetry
+        onRetry,
+        sleep = sleepFor
     } = options;
 
     let attempt = 0;
@@ -161,7 +171,7 @@ export async function retry<T>(fn: () => Promise<T>, options: IRetryOptions = {}
                 outcome = { ok: false, error };
             } else {
                 attempt += 1;
-                onRetry?.(attempt, error);
+                onRetry?.(attempt, error, wait);
                 await sleep(wait);
                 backoff *= factor;
             }

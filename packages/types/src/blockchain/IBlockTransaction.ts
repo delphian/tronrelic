@@ -53,6 +53,12 @@ export interface IBlockTransactionContract {
      * shape varies per contract method — and any provider decoding the same
      * call yields the same map, so it remains source-independent. Distinct
      * from an un-modeled provider envelope, which this type forbids.
+     *
+     * A field copied from java-tron that is a protobuf integer is a decimal
+     * string at every size, because an int64 can exceed 2^53, where a
+     * JavaScript number stops being exact. Convert with `BigInt(value)` before
+     * doing arithmetic. Amounts the platform derives, such as `callValueTRX`,
+     * are decimal numbers.
      */
     parameters?: Record<string, unknown>;
 }

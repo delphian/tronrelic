@@ -11,6 +11,7 @@
  * database, the network, or instance state.
  */
 import type { TronTransactionType, ContractDetails } from '@/shared';
+import { stringifyIntegers } from '../../lib/stringifyIntegers.js';
 import { TronGridClient } from './tron-grid.client.js';
 
 /**
@@ -178,6 +179,14 @@ export function resolveAmounts(contractType: TronTransactionType, value: Record<
  * need transaction-specific parsing. For `TriggerSmartContract` the method is
  * the 4-byte selector decoded from calldata.
  *
+ * Every field copied from java-tron that is a protobuf integer arrives in
+ * `parameters` as a decimal string, whatever its size, including every integer
+ * in the raw bag the default case passes through. An int64 can exceed 2^53,
+ * where a JavaScript number stops being exact, and a field that was a number
+ * when small and a string when large would break arithmetic only on the rare
+ * large value. Fields this function derives itself, such as `amountTRX`, are
+ * decimal amounts rather than protobuf integers and stay numbers.
+ *
  * @param contractType - Normalized transaction type.
  * @param value - Contract `parameter.value` bag.
  * @returns Normalized contract details.
@@ -205,12 +214,18 @@ export function describeContract(contractType: TronTransactionType, value: Recor
             };
         }
         case 'DelegateResourceContract':
+            // `lock` and `lock_period` keep java-tron's names because the
+            // observers and analytics that read them already use those names.
+            // java-tron omits both at their defaults, so an unlocked delegation
+            // arrives with `lock` false and no `lock_period`.
             return {
                 address: TronGridClient.toBase58Address(value.receiver_address as string) ?? 'unknown',
                 method: 'delegateResource',
                 parameters: {
                     resource: value.resource,
-                    balanceTRX: resolveAmounts(contractType, value).amountTRX
+                    balanceTRX: resolveAmounts(contractType, value).amountTRX,
+                    lock: value.lock === true,
+                    lock_period: stringifyIntegers(value.lock_period)
                 }
             };
         case 'UnDelegateResourceContract':
@@ -229,7 +244,7 @@ export function describeContract(contractType: TronTransactionType, value: Recor
                 method: 'freezeBalance',
                 parameters: {
                     resource: value.resource,
-                    duration: value.frozen_duration,
+                    duration: stringifyIntegers(value.frozen_duration),
                     balanceTRX: resolveAmounts(contractType, value).amountTRX
                 }
             };
@@ -248,14 +263,14 @@ export function describeContract(contractType: TronTransactionType, value: Recor
                 parameters: {
                     name: value.name,
                     abbr: value.abbr,
-                    totalSupply: value.total_supply
+                    totalSupply: stringifyIntegers(value.total_supply)
                 }
             };
         default:
             return {
                 address: TronGridClient.toBase58Address(value.contract_address as string) ?? 'unknown',
                 method: contractType,
-                parameters: value
+                parameters: stringifyIntegers(value) as Record<string, unknown>
             };
     }
 }

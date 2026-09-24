@@ -1,14 +1,15 @@
 /**
  * Unit tests for writing a released block and telling everything about it.
  *
- * Four properties matter here, and each fails silently in production if it
+ * Five properties matter here, and each fails silently in production if it
  * regresses. The write must happen before anything is told about the block, or a
  * client that hears about a height and queries for it finds nothing. Commits
  * must be serialized, because they advance a shared cursor and drive a batch
  * accumulator shared across blocks. A failed write must not announce the block,
- * since the cursor did not advance and the next tick will fetch it again. And
- * nothing may throw, because a commit starts inside the emitter's timer callback
- * where an escaping error kills the release clock.
+ * since the cursor did not advance and the next tick will fetch it again. A
+ * block whose earlier commit already finished must not be announced twice. And nothing may
+ * throw, because a commit starts inside the emitter's timer callback where an
+ * escaping error kills the release clock.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { IBlockData, IBlockchainObserverService, ITransaction } from '@/types';
@@ -79,7 +80,10 @@ function createCommitter(overrides: Partial<IBlockCommitterDependencies> = {}) {
         notifyBlockEvents: vi.fn(async () => { calls.push('notifyBlockEvents'); })
     } as unknown as IBlockchainObserverService;
 
-    const persist = vi.fn(async (prepared: IPreparedBlock) => { calls.push(`persist:${prepared.blockNumber}`); });
+    const persist = vi.fn(async (prepared: IPreparedBlock) => {
+        calls.push(`persist:${prepared.blockNumber}`);
+        return true;
+    });
     const alerts = { ingestTransactions: vi.fn(async () => { calls.push('alerts'); }) };
     const broadcast = vi.fn(() => { calls.push('broadcast'); });
     const telemetry = { recordCommitted: vi.fn(), recordError: vi.fn() };
@@ -210,6 +214,37 @@ describe('BlockCommitter', () => {
         expect(committer.getMetrics().failures).toBe(1);
     });
 
+    it('writes a block whose earlier commit finished but does not announce it again', async () => {
+        // The same block can be fetched twice when a tick enqueues it after its
+        // first job finished but before its commit. The write still runs so the
+        // cursor and backfill queue catch up, but a second announcement would
+        // fire duplicate alerts and duplicate plugin records. The chain data is
+        // still handed over, because a finished MongoDB commit does not prove
+        // the block reached ClickHouse (the process may have stopped between
+        // the two), and a repeated row collapses in ClickHouse.
+        const persist = vi.fn(async () => false);
+        const submit = vi.fn();
+        const { committer, observers, broadcast, alerts, telemetry } = createCommitter({
+            persist,
+            chainData: { submit }
+        });
+        const prepared = buildPrepared(100, [buildTransaction('tx-1')]);
+        prepared.chainData = { blockNumber: 100, blockTimestamp: '', tables: {} };
+
+        committer.submit(prepared);
+        await settle();
+
+        expect(persist).toHaveBeenCalledTimes(1);
+        expect(observers.notifyTransaction).not.toHaveBeenCalled();
+        expect(observers.notifyBlock).not.toHaveBeenCalled();
+        expect(broadcast).not.toHaveBeenCalled();
+        expect(alerts.ingestTransactions).not.toHaveBeenCalled();
+        expect(submit).toHaveBeenCalledTimes(1);
+        expect(telemetry.recordCommitted).toHaveBeenCalledWith(100, prepared.timings);
+        expect(committer.getMetrics().lastCommittedBlockNumber).toBe(100);
+        expect(committer.getMetrics().failures).toBe(0);
+    });
+
     it('keeps committing later blocks after one fails', async () => {
         // A single bad block must not wedge the chain behind it, or one failure
         // stops the pipeline permanently.
@@ -219,7 +254,7 @@ describe('BlockCommitter', () => {
             if (attempt === 1) {
                 throw new Error('transient');
             }
-            return undefined;
+            return true;
         });
         const { committer } = createCommitter({ persist });
 
@@ -241,6 +276,52 @@ describe('BlockCommitter', () => {
         await settle();
 
         expect(observers.notifyBlock).toHaveBeenCalledTimes(1);
+        expect(committer.getMetrics().lastCommittedBlockNumber).toBe(100);
+        expect(committer.getMetrics().failures).toBe(0);
+    });
+
+    it('hands chain data to its sink after the write, never before', async () => {
+        // The ClickHouse copy must describe committed blocks only, so its
+        // height matches every other surface.
+        const { committer, calls } = createCommitter({
+            chainData: { submit: vi.fn(() => { calls.push('chainData'); }) }
+        });
+        const prepared = buildPrepared(100, []);
+        prepared.chainData = { blockNumber: 100, blockTimestamp: '', tables: {} };
+
+        committer.submit(prepared);
+        await settle();
+
+        expect(calls.indexOf('persist:100')).toBeLessThan(calls.indexOf('chainData'));
+    });
+
+    it('hands no chain data on when the write fails', async () => {
+        const submit = vi.fn();
+        const { committer } = createCommitter({
+            persist: vi.fn(async () => { throw new Error('mongo gone'); }),
+            chainData: { submit }
+        });
+        const prepared = buildPrepared(100, []);
+        prepared.chainData = { blockNumber: 100, blockTimestamp: '', tables: {} };
+
+        committer.submit(prepared);
+        await settle();
+
+        expect(submit).not.toHaveBeenCalled();
+    });
+
+    it('still commits when the chain data sink throws', async () => {
+        // ClickHouse is a copy; a fault there must not make a written block
+        // look uncommitted.
+        const { committer } = createCommitter({
+            chainData: { submit: vi.fn(() => { throw new Error('sink broken'); }) }
+        });
+        const prepared = buildPrepared(100, []);
+        prepared.chainData = { blockNumber: 100, blockTimestamp: '', tables: {} };
+
+        committer.submit(prepared);
+        await settle();
+
         expect(committer.getMetrics().lastCommittedBlockNumber).toBe(100);
         expect(committer.getMetrics().failures).toBe(0);
     });
