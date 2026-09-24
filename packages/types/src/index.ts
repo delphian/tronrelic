@@ -49,7 +49,7 @@ export type { ISystemLogsMonitorProps } from './ui/ISystemLogsMonitorProps.js';
 export type { IAiToolSchemaViewProps } from './ui/IAiToolSchemaViewProps.js';
 export type { IDatabaseService } from './database/IDatabaseService.js';
 export type { IMigration, IMigrationContext, MigrationTarget } from './database/IMigration.js';
-export type { IClickHouseService, IPluginClickHouseService } from './clickhouse/index.js';
+export type { IClickHouseInsertOptions, IClickHouseService, IPluginClickHouseService } from './clickhouse/index.js';
 export type { IPage, IPageContent, IPageSettings, IPageService, IMarkdownService, IFrontmatterData, IParsedMarkdown } from './pages/index.js';
 export type { IStorageProvider, IStorageObjectStat, IFileService, IFileRecord, IFileSource, IFileUploadOptions, IFileListFilter, IVariantOptions, IVariantFit, IFileVariant, ICropRegion, ICropOptions, IFilesSettings, IFilesSettingsService } from './files/index.js';
 export { FILE_SOURCE_KINDS, FileValidationError, FileSizeExceededError } from './files/index.js';

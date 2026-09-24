@@ -23,10 +23,10 @@ interface IRawCallValue {
 /**
  * Read a raw amount as a decimal string.
  *
- * TronGrid sends `callValue` as a JSON number. A value above 2^53 has already
- * lost precision in `JSON.parse`, and nothing here can recover it, but
- * converting through `BigInt` at least avoids the exponent notation
- * `String()` produces for very large numbers.
+ * Block sync parses receipts with exact integers, so a `callValue` beyond 2^53
+ * arrives as its exact decimal string and is kept as-is. A smaller value
+ * arrives as a number, and converting it through `BigInt` avoids the exponent
+ * notation `String()` produces for very large numbers.
  *
  * @param value - The raw `callValue`.
  * @returns The amount as a decimal string, or null when it is not a positive

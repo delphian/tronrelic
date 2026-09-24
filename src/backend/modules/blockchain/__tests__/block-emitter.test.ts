@@ -425,6 +425,22 @@ describe('BlockEmitter', () => {
         expect(emitter.getMetrics().depth).toBe(0);
     });
 
+    it('refuses blocks that arrive after it has stopped', () => {
+        // The block-sync queue worker keeps running after shutdown begins, so a
+        // block can finish preparing once the committer has already drained.
+        // Releasing it would commit it to MongoDB with nothing left waiting for
+        // its ClickHouse write. Neither entry point may let it through.
+        const { emitter, released } = createEmitter();
+
+        emitter.stop();
+        emitter.enqueue(pending(100));
+        emitter.emitNow(pending(101));
+        vi.advanceTimersByTime(SEED_WINDOW_MS * 2);
+
+        expect(released).toEqual([]);
+        expect(emitter.getMetrics().depth).toBe(0);
+    });
+
     describe('applyThresholds', () => {
         it('takes effect during the wait it interrupts, not after it', () => {
             // The reason the pending timer is cancelled. An operator who saves a

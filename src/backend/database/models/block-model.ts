@@ -48,6 +48,22 @@ export interface BlockFields {
    */
   receiptsFetched?: boolean;
   processedAt: Date;
+  /**
+   * When a commit of this block finished every durable write, including the
+   * sync cursor and the backfill queue.
+   *
+   * The block document is written partway through a commit, so its existence
+   * does not prove the commit finished. A process that stopped between the
+   * block write and the cursor write leaves a document behind for a block that
+   * observers never heard about. This field is written last and only once, and
+   * the commit that writes it is the one that announces the block. A refetch
+   * of a block without it is therefore announced, and a refetch of a block
+   * with it is not.
+   *
+   * Optional because it is absent until that last write lands, and on blocks
+   * committed before the field existed.
+   */
+  committedAt?: Date;
 }
 
 /**
@@ -84,7 +100,13 @@ const BlockSchema = new Schema<BlockDoc>({
   receiptsFetched: Boolean,
   // Indexed: SystemMonitorService samples the most recent blocks sorted by
   // processedAt; without this index that query collection-scans every block.
-  processedAt: { type: Date, default: Date.now, index: true }
+  processedAt: { type: Date, default: Date.now, index: true },
+  // No default and no index. A default would mark a block committed the moment
+  // its document is created, which is exactly the moment this field exists to
+  // tell apart from a finished commit. The only query on it also filters on
+  // the unique `blockNumber`, so an index would cost a write per block and
+  // serve no read.
+  committedAt: Date
 }, { versionKey: false, timestamps: false });
 
 // No compound secondary indexes. `witnessAddress_1_timestamp_-1` was removed

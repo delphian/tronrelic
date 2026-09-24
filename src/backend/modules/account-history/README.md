@@ -35,7 +35,6 @@ By the module-vs-plugin matrix this feature is plugin-shaped (the app runs witho
 | `api/account-history.controller.ts` | Thin HTTP handlers delegating to the service |
 | `api/account-history.routes.ts` | Router factory (guards applied at mount) |
 | `database/index.ts` | Collection/table constants, Mongo doc shapes, ClickHouse row shape, TronGrid item shape |
-| `lib/clickhouse-datetime.ts` | `DateTime64(3)` (de)serialization helpers |
 | `migrations/001_create_account_transactions_table.ts` | ClickHouse `account_transactions` table DDL (`target: 'clickhouse'`) |
 | `migrations/004_create_account_value_transfers_table.ts` | ClickHouse `account_value_transfers` ledger DDL (`target: 'clickhouse'`) |
 

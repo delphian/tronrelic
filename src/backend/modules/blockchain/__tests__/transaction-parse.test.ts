@@ -89,4 +89,60 @@ describe('describeContract', () => {
         });
         expect(contract.method).toBe('0xa9059cbb');
     });
+
+    it('passes every integer in a raw contract bag through as a decimal string, nested ones included', () => {
+        // One type per field at every size. A field that was a number when
+        // small and a string when large would break arithmetic only on the
+        // rare large value.
+        const contract = describeContract('VoteWitnessContract', {
+            owner_address: HEX_ADDRESS,
+            votes: [{ vote_address: HEX_ADDRESS, vote_count: 12 }],
+            support: true
+        });
+        expect(contract.parameters).toEqual({
+            owner_address: HEX_ADDRESS,
+            votes: [{ vote_address: HEX_ADDRESS, vote_count: '12' }],
+            support: true
+        });
+    });
+
+    it('keeps a large integer the exact parser already returned as text', () => {
+        const contract = describeContract('TransferAssetContract', {
+            asset_name: '31303032303030',
+            amount: '9223372036854775807'
+        });
+        expect(contract.parameters?.amount).toBe('9223372036854775807');
+    });
+
+    it('gives a TRC-10 total supply and a freeze duration as text', () => {
+        expect(describeContract('AssetIssueContract', { total_supply: 1_000_000 }).parameters?.totalSupply).toBe('1000000');
+        expect(describeContract('FreezeBalanceContract', { frozen_duration: 3 }).parameters?.duration).toBe('3');
+    });
+
+    it('passes a delegation\'s lock and lock period through to observers', () => {
+        // Rental trackers read these to tell a locked rental from an open
+        // delegation. Dropping them recorded every delegation as unlocked.
+        const locked = describeContract('DelegateResourceContract', {
+            receiver_address: HEX_ADDRESS,
+            resource: 'ENERGY',
+            balance: 1_000_000,
+            lock: true,
+            lock_period: 28_800
+        });
+        expect(locked.parameters).toEqual({
+            resource: 'ENERGY',
+            balanceTRX: 1,
+            lock: true,
+            lock_period: '28800'
+        });
+
+        const open = describeContract('DelegateResourceContract', { receiver_address: HEX_ADDRESS, balance: 1_000_000 });
+        expect(open.parameters?.lock).toBe(false);
+        expect(open.parameters?.lock_period).toBeUndefined();
+    });
+
+    it('keeps amounts it derives as decimal numbers', () => {
+        const contract = describeContract('TransferContract', { to_address: HEX_ADDRESS, amount: 1_500_000 });
+        expect(contract.parameters).toEqual({ amountTRX: 1.5 });
+    });
 });

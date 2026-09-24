@@ -4,8 +4,9 @@
  * The helper decides how often every vendor client calls an external API after
  * a failure, so these tests lock the pacing rules: only errors a later attempt
  * can fix are retried, each wait is jittered and capped, a server's
- * `Retry-After` is honoured, and a `Retry-After` longer than the caller will
- * wait ends the retries instead of stalling.
+ * `Retry-After` is honoured, a `Retry-After` longer than the caller will wait
+ * ends the retries instead of stalling, and a caller can replace the wait and
+ * learn each wait's length.
  */
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
@@ -99,6 +100,20 @@ describe('retry', () => {
         expect(fn).toHaveBeenCalledTimes(1);
         await vi.advanceTimersByTimeAsync(1);
         await expect(pending).resolves.toBe('ok');
+    });
+
+    it('waits through an injected sleep and reports each wait to onRetry', async () => {
+        // A caller testing every retry must not sit through real delays, and a
+        // caller logging retries needs to say how long the next wait is.
+        vi.spyOn(Math, 'random').mockReturnValue(0);
+        const sleep = vi.fn(async (_ms: number) => {});
+        const onRetry = vi.fn();
+        const fn = vi.fn().mockRejectedValue(new Error('down'));
+
+        await expect(retry(fn, { retries: 2, delayMs: 500, sleep, onRetry })).rejects.toThrow('down');
+
+        expect(sleep.mock.calls.map(call => call[0])).toEqual([250, 500]);
+        expect(onRetry.mock.calls.map(call => [call[0], call[2]])).toEqual([[1, 250], [2, 500]]);
     });
 
     it('gives up rather than wait out a Retry-After longer than the ceiling', async () => {

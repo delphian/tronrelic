@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { AnyBulkWriteOperation } from 'mongoose';
 import type { Redis as RedisClient } from 'ioredis';
 import type { TronTransactionDocument } from '@/shared';
-import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IDatabaseService, IBlockchainService, IActivatingTransaction, IActivationAncestry, ActivationClimbStopReason, IActivationClimbOptions, IBlockData } from '@/types';
+import type { ITransaction, ITransactionPersistencePayload, ITransactionCategoryFlags, IDatabaseService, IBlockchainService, IActivatingTransaction, IActivationAncestry, ActivationClimbStopReason, IActivationClimbOptions, IBlockData, IClickHouseService } from '@/types';
 import { ProcessedTransaction } from '@/types';
 import { TransactionModel, type TransactionDoc, type TransactionFields } from '../../database/models/transaction-model.js';
 import { SyncStateModel, type SyncStateDoc, type SyncStateFields } from '../../database/models/sync-state-model.js';
@@ -22,6 +22,8 @@ import { resolveBlockAgeInBlocks } from './block-pacer.js';
 import { BlockEmitter, type IBlockNewPayload, type IPreparedBlock } from './block-emitter.js';
 import { BlockCommitter, type IBlockCommitMetrics } from './block-committer.js';
 import { PipelineTelemetry, resolveReceiptOutcome } from './pipeline-telemetry.js';
+import { ChainDataWriter } from './chain-data/ChainDataWriter.js';
+import { buildChainDataRows, type IChainDataRows } from './chain-data/buildChainDataRows.js';
 import { WebSocketService } from '../../services/websocket.service.js';
 import { logger } from './logger.js';
 import { env } from '../../config/env.js';
@@ -156,6 +158,13 @@ export class BlockchainService implements IBlockchainService {
     private static instance: BlockchainService | null = null;
     private static database: IDatabaseService | null = null;
 
+    /**
+     * The ClickHouse service chain data is written through, or null when the
+     * deployment has no ClickHouse. Held beside the database because both are
+     * handed over in `setDependencies`, before the constructor that uses them.
+     */
+    private static clickhouse: IClickHouseService | null = null;
+
     // Collection names for database operations
     private static readonly TRANSACTIONS_COLLECTION = 'transactions';
     private static readonly SYNC_STATE_COLLECTION = 'sync_states';
@@ -203,6 +212,16 @@ export class BlockchainService implements IBlockchainService {
     private readonly telemetry = PipelineTelemetry.getInstance();
 
     /**
+     * Writes each committed block into the ClickHouse `tron` tables, or null when
+     * the deployment has no ClickHouse. Also what decides whether a block's chain
+     * data rows are built at all, so a deployment without ClickHouse pays nothing
+     * for them. Not readonly, because ClickHouse can reach `setDependencies`
+     * after the instance was built; see {@link attachChainData}. See `chain-data/`
+     * and `docs/system/system-chain-data-clickhouse.md`.
+     */
+    private chainData: ChainDataWriter | null = null;
+
+    /**
      * The pacing mode of the most recently processed block, kept separate from
      * `wasCaughtUp` because the two answer different questions. `wasCaughtUp`
      * is the scheduler's view once per tick; this is the worker's view per
@@ -227,13 +246,20 @@ export class BlockchainService implements IBlockchainService {
         const database = BlockchainService.getDatabase();
         this.redis = getRedisClient();
         this.alerts = new AlertService(database, this.tronClient);
+        if (BlockchainService.clickhouse) {
+            this.attachChainData(BlockchainService.clickhouse);
+        }
 
+        // The sink reads `this.chainData` on every submit instead of capturing
+        // the writer here, so a writer attached after construction still
+        // receives every block committed from then on.
         this.committer = new BlockCommitter({
             persist: prepared => this.persistPreparedBlock(prepared),
             observers: this.observerService,
             alerts: this.alerts,
             broadcast: payload => WebSocketService.getInstance().emit({ event: 'block:new', payload }),
-            telemetry: this.telemetry
+            telemetry: this.telemetry,
+            chainData: { submit: rows => this.chainData?.submit(rows) }
         });
         BlockEmitter.setCommitSink(this.committer);
 
@@ -265,10 +291,23 @@ export class BlockchainService implements IBlockchainService {
      * Must be called before getInstance() to inject the database service.
      * Typically called during application bootstrap in index.ts.
      *
+     * Several call sites exist and only bootstrap knows about ClickHouse, so a
+     * call that omits `clickhouse` leaves an earlier one in place rather than
+     * clearing it.
+     *
      * @param database - Database service for MongoDB operations
+     * @param options - Optional extras. `clickhouse` turns on the chain data
+     *                  copy. It may arrive before or after the first
+     *                  getInstance(): an instance that already exists attaches
+     *                  the writer on the spot, so the order in which bootstrap
+     *                  code runs cannot leave the copy switched off.
      */
-    public static setDependencies(database: IDatabaseService): void {
+    public static setDependencies(database: IDatabaseService, options: { clickhouse?: IClickHouseService } = {}): void {
         BlockchainService.database = database;
+        if (options.clickhouse) {
+            BlockchainService.clickhouse = options.clickhouse;
+            BlockchainService.instance?.attachChainData(options.clickhouse);
+        }
 
         // Register Mongoose models for schema validation and query building
         database.registerModel(BlockchainService.TRANSACTIONS_COLLECTION, TransactionModel);
@@ -285,6 +324,87 @@ export class BlockchainService implements IBlockchainService {
             BlockchainService.instance = new BlockchainService();
         }
         return BlockchainService.instance;
+    }
+
+    /**
+     * Stop the block pipeline and wait for the blocks already committed to
+     * finish writing.
+     *
+     * A block committed to MongoDB is never fetched again, so a shutdown that
+     * exits while its chain data is still queued or in flight leaves it missing
+     * from ClickHouse with no `_ingest_gap` row. The steps run in a fixed order,
+     * and each one depends on the one before it:
+     *
+     * 1. The emitter is stopped. It discards the blocks it holds, which are
+     *    unwritten and will be fetched again, and refuses any block that
+     *    arrives later. The block-sync queue worker keeps running until the
+     *    process exits, so without this a block it finishes preparing could be
+     *    committed after the drains below had already returned.
+     * 2. The writer stops retrying, so a failing write becomes a gap row at once
+     *    instead of spending the timeout in retry delays. This happens before
+     *    the committer drains because the writer may already be retrying an
+     *    earlier batch.
+     * 3. The committer drains, because a block whose MongoDB write is still in
+     *    flight only reaches the writer once that write finishes.
+     * 4. The writer drains.
+     *
+     * Steps 3 and 4 are bounded by the timeout so a stalled MongoDB or ClickHouse
+     * cannot hold the process open. When the timeout wins, blocks still waiting
+     * in the committer or the writer are neither written nor recorded as gaps,
+     * so that outcome is logged at `fatal` for an operator to act on, since
+     * `_ingest_gap` will not show those blocks.
+     *
+     * @param timeoutMs - The longest the caller is willing to wait before
+     *                    exiting anyway, so shutdown stays prompt.
+     * @returns Resolves once the committer and the writer are idle or the
+     *          timeout has passed.
+     */
+    public async shutdown(timeoutMs: number): Promise<void> {
+        this.emitter.stop();
+
+        const chainData = this.chainData;
+        chainData?.stopRetrying();
+
+        let timer: NodeJS.Timeout | undefined;
+        const timeout = new Promise<boolean>(resolve => {
+            timer = setTimeout(() => resolve(false), timeoutMs);
+        });
+        try {
+            const drained = await Promise.race([
+                this.committer.drain()
+                    .then(() => chainData?.drain({ shuttingDown: true }))
+                    .then(() => true),
+                timeout
+            ]);
+            if (!drained && chainData) {
+                logger.fatal(
+                    { timeoutMs, commitMetrics: this.committer.getMetrics() },
+                    'Shutdown timed out before the chain data writer finished; blocks still queued are missing from ClickHouse and from _ingest_gap'
+                );
+            }
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    /**
+     * Start the ClickHouse chain data writer, unless one is already running.
+     *
+     * Called from the constructor when ClickHouse was handed over first, and
+     * from `setDependencies` when it arrives after the instance was built.
+     * Accepting both orders means a change to the bootstrap sequence cannot
+     * silently leave the chain data copy off for the life of the process. A
+     * second call keeps the existing writer, because replacing it would drop
+     * the blocks it is holding.
+     *
+     * @param clickhouse - The ClickHouse service the writer creates its tables
+     *                     and writes blocks through.
+     */
+    private attachChainData(clickhouse: IClickHouseService): void {
+        if (this.chainData === null) {
+            this.chainData = new ChainDataWriter(clickhouse, { provider: 'trongrid' });
+            logger.info('ClickHouse chain data copy is on');
+        }
     }
 
 
@@ -1234,9 +1354,12 @@ export class BlockchainService implements IBlockchainService {
      * than anywhere earlier.
      *
      * The durable writes are ordered transactions, then the block document, then
-     * the cursor. The cursor goes last on purpose: it is the marker that says
-     * everything below it is complete, so advancing it before the other two
-     * would let a crash leave a gap that nothing looks for again.
+     * the cursor, then the block's `committedAt` stamp. The cursor comes after
+     * the data on purpose: it is the marker that says everything below it is
+     * complete, so advancing it before the other two would let a crash leave a
+     * gap that nothing looks for again. The stamp comes after the cursor
+     * because it records that this block's commit finished, which is only
+     * true once the cursor has moved.
      *
      * One more write follows the cursor, and it is telemetry rather than data.
      * It is deliberately wrapped so it cannot fail the commit: by that point the
@@ -1244,10 +1367,34 @@ export class BlockchainService implements IBlockchainService {
      * of here would make `BlockCommitter` skip the fan-out for a block nothing
      * will ever revisit.
      *
+     * The same block can occasionally arrive here twice, for example when a
+     * scheduler tick enqueues it again after its first fetch finished but
+     * before its commit. Every write below is an upsert, so writing it again
+     * is harmless. The fan-out is not: observers, alerts, and the broadcast
+     * would fire a second time. So after the cursor write, the block document
+     * is stamped with `committedAt`, but only if it does not already carry
+     * one, and the committer runs the fan-out only for the call that set it.
+     * The cursor and backfill queue writes still run on a repeat, because a
+     * repeat is exactly the case where a leftover backfill entry needs
+     * clearing.
+     *
+     * The stamp is what decides, not whether the block document was created,
+     * because the document is written before the cursor. A process that
+     * stopped between the two leaves a document for a block no observer heard
+     * about. When that block is fetched again, the document already exists but
+     * the stamp does not, so this commit announces it. Checking whether the
+     * cursor or backfill queue write changed anything would not work either: a
+     * scheduler tick can put a block that was committed while it ran back on
+     * the backfill queue, and removing that entry again would read as a first
+     * commit.
+     *
      * @param prepared - The block to write, carrying its parsed transactions,
      *                   aggregates, and the timings accumulated while preparing.
+     * @returns True when this call is the first to finish committing the block,
+     *          false when an earlier commit already finished. The committer
+     *          uses it to announce each block exactly once.
      */
-    private async persistPreparedBlock(prepared: IPreparedBlock): Promise<void> {
+    private async persistPreparedBlock(prepared: IPreparedBlock): Promise<boolean> {
         const { blockNumber, blockData, stats, rawTransactionCount, timings } = prepared;
         const commitStart = Date.now();
         const txModel = BlockchainService.getDatabase().getModel<TransactionDoc>(BlockchainService.TRANSACTIONS_COLLECTION);
@@ -1306,6 +1453,9 @@ export class BlockchainService implements IBlockchainService {
             { upsert: true }
         );
 
+        // This is the only place a block leaves the backfill queue. Scheduling
+        // it does not remove it, because a scheduled block can still be thrown
+        // away before it is saved, and the queue is what brings it back.
         await syncModel.updateOne(
             { key: 'blockchain:last-block' },
             {
@@ -1313,6 +1463,16 @@ export class BlockchainService implements IBlockchainService {
                 $pull: { 'meta.backfillQueue': blockNumber }
             }
         );
+
+        // The last durable write, and conditional, so exactly one commit of a
+        // block ever sets it. Only that commit announces the block. It is
+        // counted in the sync state stage because it closes the same step:
+        // recording that the block is done.
+        const commitMark = await blockModel.updateOne(
+            { blockNumber, committedAt: { $exists: false } },
+            { $set: { committedAt: new Date() } }
+        );
+        const isFirstCommit = commitMark.modifiedCount > 0;
         timings.updateSyncState = Date.now() - stageStart;
 
         // Work time, not wall-clock time. The gap between preparing a block and
@@ -1352,6 +1512,8 @@ export class BlockchainService implements IBlockchainService {
                 'Failed to record commit telemetry for a block that was written successfully'
             );
         }
+
+        return isFirstCommit;
     }
 
     /**
@@ -1561,7 +1723,7 @@ export class BlockchainService implements IBlockchainService {
             // no longer does.
             const liveTip = latestNetworkBlock - Math.max(0, blockchainConfig.network.liveTipReserveBlocks);
 
-            const { targets, remainingBackfill } = await this.computeBlockTargets({
+            const { targets, backfillAdditions } = await this.computeBlockTargets({
                 lastProcessed,
                 lastFetched,
                 latestNetworkBlock,
@@ -1581,8 +1743,7 @@ export class BlockchainService implements IBlockchainService {
                 // what stops that from reading as an idle, healthy sync.
                 const idleUpdate: Record<string, unknown> = {
                     'meta.lastNetworkHeight': latestNetworkBlock,
-                    'meta.lastScheduledAt': new Date(),
-                    'meta.backfillQueue': remainingBackfill
+                    'meta.lastScheduledAt': new Date()
                 };
 
                 if (chainHead.fromCache) {
@@ -1592,7 +1753,10 @@ export class BlockchainService implements IBlockchainService {
 
                 await syncModel.updateOne(
                     { key: 'blockchain:last-block' },
-                    { $set: idleUpdate },
+                    {
+                        $set: idleUpdate,
+                        $addToSet: { 'meta.backfillQueue': { $each: backfillAdditions } }
+                    },
                     { upsert: true }
                 );
                 this.telemetry.recordTick({
@@ -1640,12 +1804,38 @@ export class BlockchainService implements IBlockchainService {
             }
             this.wasCaughtUp = isCaughtUp;
 
+            // Queued before any job is enqueued, not with the schedule update
+            // after the loop. A newly missing block is also a target this tick,
+            // and the worker can fetch and commit it while the loop is still
+            // enqueueing. Its commit's `$pull` would then run before an
+            // `$addToSet` written after the loop, which would put the block
+            // back on the queue and fetch it a second time next tick.
+            if (backfillAdditions.length > 0) {
+                await syncModel.updateOne(
+                    { key: 'blockchain:last-block' },
+                    {
+                        $setOnInsert: { cursor: { blockNumber: lastProcessed } },
+                        $addToSet: { 'meta.backfillQueue': { $each: backfillAdditions } }
+                    },
+                    { upsert: true }
+                );
+            }
+
+            // Deduplicated rather than given a fixed `jobId`. BullMQ refuses a
+            // fixed id for as long as it keeps any job under it, including the
+            // last 1,000 finished ones, which survive a restart. A block whose
+            // job finished but whose prepared result was discarded at shutdown
+            // could then not be fetched again for roughly 50 minutes. A
+            // deduplication id without a TTL blocks a second job only while the
+            // first is waiting or running, and BullMQ releases it the moment
+            // that job completes or fails. A repeat that slips through after
+            // that is caught at commit, which announces each block only once.
             for (const blockNumber of eligibleTargets) {
                 await this.queue.enqueue(
                     'sync-block',
                     { blockNumber, isCaughtUp },
                     {
-                        jobId: `block-${blockNumber}`
+                        deduplication: { id: `block-${blockNumber}` }
                         // No attempts/backoff config - use queue defaults (single attempt, TronGrid handles retries)
                     }
                 );
@@ -1660,7 +1850,6 @@ export class BlockchainService implements IBlockchainService {
             const scheduleUpdate: Record<string, unknown> = {
                 $setOnInsert: { cursor: { blockNumber: lastProcessed } },
                 $set: {
-                    'meta.backfillQueue': remainingBackfill,
                     'meta.lastNetworkHeight': latestNetworkBlock,
                     'meta.lastScheduledAt': new Date(),
                     'meta.lastBatchSize': targets.length
@@ -1896,7 +2085,11 @@ export class BlockchainService implements IBlockchainService {
      *                         the tip is.
      * @param params.parityTarget - An operator-set height to align with an external system, or null when none is configured.
      * @param params.existingBackfill - Block numbers already queued for backfill from previous runs.
-     * @returns The blocks to enqueue now, and the backfill entries left over for the next run so none are silently dropped.
+     * @returns The blocks to enqueue now, and the block numbers to add to the backfill queue. Scheduling a backfill block
+     *          does not take it off the queue. Only the commit does, in `persistPreparedBlock`, because a scheduled block can
+     *          still be thrown away before it is saved (for example by a shutdown), and one taken off early is never fetched
+     *          again once it falls outside the window `identifyMissingBlocks` scans. The caller adds these entries with
+     *          `$addToSet` rather than overwriting the whole queue, so a block committed while this tick runs is not put back.
      */
     private async computeBlockTargets(params: {
         lastProcessed: number;
@@ -1905,12 +2098,18 @@ export class BlockchainService implements IBlockchainService {
         liveTip: number;
         parityTarget: number | null;
         existingBackfill: number[];
-    }): Promise<{ targets: number[]; remainingBackfill: number[] }> {
+    }): Promise<{ targets: number[]; backfillAdditions: number[] }> {
         const { lastProcessed, lastFetched, latestNetworkBlock, liveTip, parityTarget, existingBackfill } = params;
         const backfillSet = new Set<number>(existingBackfill);
+        const additions = new Set<number>();
 
         const newlyMissing = await this.identifyMissingBlocks(lastProcessed);
-        newlyMissing.forEach(num => backfillSet.add(num));
+        newlyMissing.forEach(num => {
+            if (!backfillSet.has(num)) {
+                additions.add(num);
+            }
+            backfillSet.add(num);
+        });
 
         const sortedBackfill = Array.from(backfillSet)
             .filter(num => num > 0 && num <= latestNetworkBlock)
@@ -1927,7 +2126,6 @@ export class BlockchainService implements IBlockchainService {
             if (!selected.has(blockNumber)) {
                 selected.add(blockNumber);
                 targets.push(blockNumber);
-                backfillSet.delete(blockNumber);
             }
         }
 
@@ -1951,8 +2149,8 @@ export class BlockchainService implements IBlockchainService {
                     if (selected.size < maxBatch) {
                         selected.add(parityBlock);
                         targets.push(parityBlock);
-                    } else {
-                        backfillSet.add(parityBlock);
+                    } else if (!backfillSet.has(parityBlock)) {
+                        additions.add(parityBlock);
                     }
                 }
                 parityBlock += 1;
@@ -1960,11 +2158,11 @@ export class BlockchainService implements IBlockchainService {
         }
 
         targets.sort((a, b) => a - b);
-        const remainingBackfill = Array.from(backfillSet)
-            .filter(num => num > 0 && num <= latestNetworkBlock && !selected.has(num))
+        const backfillAdditions = Array.from(additions)
+            .filter(num => num > 0 && num <= latestNetworkBlock)
             .sort((a, b) => a - b);
 
-        return { targets, remainingBackfill };
+        return { targets, backfillAdditions };
     }
 
     /**
@@ -2157,6 +2355,17 @@ export class BlockchainService implements IBlockchainService {
             stageStart = Date.now();
             const stats = this.calculateBlockStats(processed);
             timings.calculateStats = Date.now() - stageStart;
+
+            // Stage 6b: The block's rows for the ClickHouse chain data, built from
+            // the untouched TronGrid block and receipts rather than from the
+            // enriched transactions, because the chain data is java-tron's shape
+            // and must not depend on what sync chose to keep.
+            let chainData: IChainDataRows | undefined;
+            if (this.chainData) {
+                stageStart = Date.now();
+                chainData = this.buildChainData(blockNumber, block, [...receipts.values()], blockTime, receiptsFetched);
+                timings.buildChainData = Date.now() - stageStart;
+            }
             timings.prepare = Date.now() - startTotal;
 
             // Stage 7: Hand the prepared block to the emitter and return. Nothing
@@ -2183,7 +2392,8 @@ export class BlockchainService implements IBlockchainService {
                 blockData,
                 stats,
                 rawTransactionCount: transactions.length,
-                timings
+                timings,
+                ...(chainData ? { chainData } : {})
             };
 
             const buffered = this.resolveBlockPacing(blockTime, isCaughtUp);
@@ -2500,6 +2710,49 @@ export class BlockchainService implements IBlockchainService {
         }
 
         return enabled;
+    }
+
+    /**
+     * Build a block's rows for the ClickHouse chain data without letting a
+     * mapping bug cost the block itself.
+     *
+     * The chain data is a copy, so a block whose rows fail to build is still
+     * committed to MongoDB and still reaches observers. The failure travels with
+     * the block instead, so the writer records it as a gap rather than leaving a
+     * hole that looks like a quiet block.
+     *
+     * @param blockNumber - The height sync requested and will commit, used for
+     *                      every row and for the failure marker, so the gap and
+     *                      progress rows name the block that was actually
+     *                      committed even when the response's own header is
+     *                      missing or wrong.
+     * @param block - The block exactly as TronGrid returned it.
+     * @param receipts - The block's receipts; empty when none were fetched.
+     * @param blockTime - The block's normalized time.
+     * @param receiptsFetched - Whether every transaction got a receipt.
+     * @returns The rows, or a failure marker naming why they could not be built.
+     */
+    private buildChainData(
+        blockNumber: number,
+        block: TronGridBlock,
+        receipts: TronGridTransactionInfo[],
+        blockTime: Date,
+        receiptsFetched: boolean
+    ): IChainDataRows {
+        let rows: IChainDataRows;
+        try {
+            rows = buildChainDataRows({ blockNumber, block, receipts, blockTime, receiptsFetched });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            logger.error({ error, blockNumber }, 'Failed to build chain data rows for a block');
+            rows = {
+                blockNumber,
+                blockTimestamp: '',
+                tables: {},
+                failure: message
+            };
+        }
+        return rows;
     }
 
     /**

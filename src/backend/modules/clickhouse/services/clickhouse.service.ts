@@ -16,7 +16,7 @@
  */
 
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
-import type { IClickHouseService, ISystemLogService } from '@/types';
+import type { IClickHouseInsertOptions, IClickHouseService, ISystemLogService } from '@/types';
 
 /**
  * ClickHouse service singleton implementation.
@@ -193,38 +193,71 @@ export class ClickHouseService implements IClickHouseService {
      *   to be the authoritative "this did not persist" signal — primarily
      *   one-shot migrations whose downstream Mongo deletes must not run
      *   ahead of a CH flush failure surfacing in the error poller.
+     *   When `options.synchronous` is true the call turns async insert off
+     *   (`async_insert: 0`), so the rows are stored directly and the call
+     *   resolves once they are, without holding a pooled socket while the
+     *   server's async buffer waits to be written. Used by callers that
+     *   already batch their rows, such as the chain data writer.
      */
     async insert<T extends Record<string, unknown>>(
         table: string,
         rows: T[],
-        options?: { waitForCommit?: boolean }
+        options?: IClickHouseInsertOptions
     ): Promise<void> {
         if (!this.connected) {
             throw new Error('ClickHouse not connected. Call connect() first.');
         }
 
-        if (rows.length === 0) {
-            return;
-        }
-
-        try {
-            await this.client.insert({
-                table,
-                values: rows,
-                format: 'JSONEachRow',
-                clickhouse_settings: options?.waitForCommit
-                    ? { wait_for_async_insert: 1 }
-                    : undefined
-            });
-            this.logger.debug({ table, count: rows.length }, 'Inserted rows into ClickHouse');
-        } catch (error) {
-            this.logger.error({ error, table, count: rows.length }, 'ClickHouse insert failed');
-            throw error;
+        if (rows.length > 0) {
+            try {
+                await this.client.insert({
+                    table,
+                    values: rows,
+                    format: 'JSONEachRow',
+                    clickhouse_settings: ClickHouseService.resolveInsertSettings(options)
+                });
+                this.logger.debug({ table, count: rows.length }, 'Inserted rows into ClickHouse');
+            } catch (error) {
+                this.logger.error({ error, table, count: rows.length }, 'ClickHouse insert failed');
+                throw error;
+            }
         }
     }
 
     /**
+     * Turn a caller's insert options into the per-call ClickHouse settings
+     * that override the connection-wide async insert defaults.
+     *
+     * Kept in one place so the rule that `synchronous` wins over
+     * `waitForCommit` is stated once. A synchronous insert has no buffer to
+     * wait for, so `wait_for_async_insert` would mean nothing alongside it.
+     *
+     * @param options - What the caller asked for, or undefined for the
+     *                  connection defaults.
+     * @returns The settings to send with the insert, or undefined to keep
+     *          the connection defaults.
+     */
+    private static resolveInsertSettings(
+        options?: IClickHouseInsertOptions
+    ): { async_insert: 0 } | { wait_for_async_insert: 1 } | undefined {
+        let settings: { async_insert: 0 } | { wait_for_async_insert: 1 } | undefined;
+        if (options?.synchronous) {
+            settings = { async_insert: 0 };
+        } else if (options?.waitForCommit) {
+            settings = { wait_for_async_insert: 1 };
+        }
+        return settings;
+    }
+
+    /**
      * Execute DDL or command statements.
+     *
+     * Uses the client's `command()` rather than `exec()`. `exec()` hands back a
+     * response stream that the caller must read, and the pooled socket stays
+     * taken until it is read or times out. Nothing here reads it, so a burst of
+     * statements, such as the chain data writer creating its tables, would use
+     * up the pool of ten sockets and stall every other ClickHouse call.
+     * `command()` reads and discards the empty response, which frees the socket.
      *
      * @param sql - DDL statement to execute
      */
@@ -234,7 +267,7 @@ export class ClickHouseService implements IClickHouseService {
         }
 
         try {
-            await this.client.exec({ query: sql });
+            await this.client.command({ query: sql });
             this.logger.debug({ sql: sql.substring(0, 100) }, 'Executed ClickHouse command');
         } catch (error) {
             this.logger.error({ error, sql: sql.substring(0, 200) }, 'ClickHouse exec failed');

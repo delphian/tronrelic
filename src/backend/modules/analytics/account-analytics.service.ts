@@ -357,14 +357,23 @@ export class AccountAnalyticsService {
     };
   }
 
+  /**
+   * Read a delegation's lock period, in blocks, from its contract parameters.
+   *
+   * Block sync delivers `lock_period` as a decimal string, like every protobuf
+   * integer in `contract.parameters`, while older documents may hold a number
+   * or use `lockPeriod`. All three forms are accepted so the analytics read the
+   * same value across the stored history. A lock period is a block count far
+   * below 2^53, so `Number` is exact here.
+   *
+   * @param params - The delegation's `contract.parameters`.
+   * @returns The lock period in blocks, or 0 when the delegation has none or
+   *          the value cannot be read.
+   */
   private resolveLockPeriod(params: Record<string, unknown>): number {
-    if (typeof params.lock_period === 'number') {
-      return params.lock_period;
-    }
-    if (typeof params.lockPeriod === 'number') {
-      return params.lockPeriod;
-    }
-    return 0;
+    const raw = params.lock_period ?? params.lockPeriod;
+    const parsed = typeof raw === 'number' || typeof raw === 'string' ? Number(raw) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }
 
   private resolvePool(params: Record<string, unknown>): string | null {

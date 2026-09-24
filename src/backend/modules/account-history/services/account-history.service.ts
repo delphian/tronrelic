@@ -68,7 +68,8 @@ import {
 } from '../database/index.js';
 import type { IAccountHistoryProvider } from '../providers/IAccountHistoryProvider.js';
 import { toAccountTransactionRow, toValueTransfers, toValueTransferRow } from '../providers/trongrid-account-history.provider.js';
-import { formatClickHouseDateTime64Utc, parseClickHouseDateTime64Utc } from '../lib/clickhouse-datetime.js';
+import { formatClickHouseDateTime64Utc } from '../../../lib/formatClickHouseDateTime64Utc.js';
+import { parseClickHouseDateTime64Utc } from '../../../lib/parseClickHouseDateTime64Utc.js';
 
 /** Default pacing applied on first read; gentle enough to share the TronGrid budget. */
 const DEFAULT_SETTINGS: IAccountHistorySettings = {

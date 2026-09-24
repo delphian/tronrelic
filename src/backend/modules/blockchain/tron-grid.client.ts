@@ -3,6 +3,7 @@ import { httpClient } from '../../lib/http-client.js';
 import { env } from '../../config/env.js';
 import { blockchainConfig } from '../../config/blockchain.js';
 import { retry } from '../../lib/retry.js';
+import { parseJsonExactIntegers } from '../../lib/parseJsonExactIntegers.js';
 import { logger } from './logger.js';
 import type { ITrc10, ITrc20TokenInfo, IActivatingTransaction, ITransactionReceipt } from '@/types';
 import { decodeAbiDecimals, decodeAbiString } from './trc20-metadata.js';
@@ -16,6 +17,53 @@ import { decodeAbiDecimals, decodeAbiString } from './trc20-metadata.js';
  * call cannot act for a real account.
  */
 const ZERO_ADDRESS = 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb';
+
+/**
+ * Parse a TronGrid response body with exact integers.
+ *
+ * Replaces axios's own JSON step for the endpoints whose int64 fields can pass
+ * 2^53. An empty body is passed through unchanged, as axios does. A successful
+ * response whose body is not JSON throws, which the request's retry treats as
+ * a failed call.
+ *
+ * Axios runs this step on error responses too. A 429 or a 5xx from TronGrid's
+ * edge often carries a plain-text or HTML body, and throwing there would
+ * replace the axios error with a bare `SyntaxError` that has no `response`.
+ * That would hide the HTTP status from `post()`'s rate-limit handling, from
+ * the retry filter, and from the sync error report. So an error response whose
+ * body is not JSON keeps its raw text instead.
+ *
+ * @param data - The raw response body, which is text because the request asks for `responseType: 'text'`.
+ * @param _headers - The response headers axios passes to every transform; not needed here.
+ * @param status - The HTTP status, used to tell a successful response that
+ *                 must parse from an error response that may not.
+ * @returns The parsed body, with integers beyond 2^53 as decimal strings, or
+ *          the raw text of an error response that is not JSON.
+ */
+function parseExactResponseBody(data: unknown, _headers?: unknown, status?: number): unknown {
+    let parsed: unknown = data;
+    if (typeof data === 'string' && data.trim() !== '') {
+        const isSuccess = status === undefined || (status >= 200 && status < 300);
+        try {
+            parsed = parseJsonExactIntegers(data);
+        } catch (error) {
+            if (isSuccess) {
+                throw error;
+            }
+        }
+    }
+    return parsed;
+}
+
+/**
+ * Axios request options that swap the default JSON parse for
+ * {@link parseExactResponseBody}. Asking for text is what hands the parser the
+ * body before any number has been rounded.
+ */
+const EXACT_INTEGER_RESPONSE = {
+    responseType: 'text' as const,
+    transformResponse: [parseExactResponseBody]
+};
 
 /**
  * Raw TRC10 asset-issue record as TronGrid returns it from
@@ -114,8 +162,17 @@ if (availableKeys.length > 0) {
     logger.warn('No TronGrid API keys configured - requests may be rate limited');
 }
 
+/**
+ * A java-tron int64 field as the block endpoints deliver it: a number, or its
+ * exact decimal text when the value is beyond 2^53. See
+ * {@link parseJsonExactIntegers}. Only fields that can realistically pass 2^53
+ * — amounts, and times or limits the signer chooses — are typed this way.
+ */
+export type TronGridInt64 = number | string;
+
 export interface TronGridContract {
     parameter: {
+        /** Contract fields; an int64 amount in here can be a decimal string (see {@link TronGridInt64}). */
         value: Record<string, unknown>;
         type_url?: string;
     };
@@ -127,12 +184,17 @@ export interface TronGridContract {
 export interface TronGridTransaction {
     txID: string;
     raw_data: {
-        timestamp: number;
+        /** Chosen by the signer and not checked by java-tron, so it can be any int64. */
+        timestamp: TronGridInt64;
         ref_block_hash: string;
         ref_block_bytes: string;
+        /** Rarely set; java-tron omits it at its default of zero. */
+        ref_block_num?: TronGridInt64;
+        /** When the transaction stops being acceptable, in epoch milliseconds. */
+        expiration?: TronGridInt64;
         contract: TronGridContract[];
         data?: string;
-        fee_limit?: number;
+        fee_limit?: TronGridInt64;
     };
     raw_data_hex?: string;
     /**
@@ -150,18 +212,35 @@ export interface TronGridTransactionInfo {
     blockNumber: number;
     blockTimeStamp: number;
     receipt?: {
+        energy_usage?: number;
         energy_usage_total?: number;
         energy_fee?: number;
+        origin_energy_usage?: number;
+        energy_penalty_total?: number;
         net_usage?: number;
         net_fee?: number;
         result?: string;
     };
     contractResult?: string[];
+    contract_address?: string;
     log?: ITransactionReceipt['log'];
     internal_transactions?: Array<Record<string, unknown>>;
     assetIssueID?: string;
     result?: string;
     resMessage?: string;
+    withdraw_amount?: TronGridInt64;
+    unfreeze_amount?: TronGridInt64;
+    withdraw_expire_amount?: TronGridInt64;
+    packingFee?: number;
+    /** java-tron's JSON renders this protobuf map as `{ key, value }` pairs. */
+    cancel_unfreezeV2_amount?: Array<{ key: string; value: TronGridInt64 }>;
+    exchange_received_amount?: TronGridInt64;
+    exchange_inject_another_amount?: TronGridInt64;
+    exchange_withdraw_another_amount?: TronGridInt64;
+    exchange_id?: number;
+    shielded_transaction_fee?: number;
+    orderId?: string;
+    orderDetails?: unknown[];
 }
 
 export interface TronGridBlock {
@@ -175,6 +254,11 @@ export interface TronGridBlock {
             witness_signature?: string;
             account_state_root?: string;
             transactions_root?: string;
+            /** java-tron's field names for the header's roots and version, as `getblockbynum` returns them. */
+            txTrieRoot?: string;
+            accountStateRoot?: string;
+            version?: number;
+            witness_id?: number;
         };
         witness_signature: string;
     };
@@ -624,8 +708,19 @@ export class TronGridClient {
         return this.fetchTransactionEvents(txId);
     }
 
+    /**
+     * Fetch one block, with every transaction in it, via `/wallet/getblockbynum`.
+     *
+     * Block sync's main input. The response is parsed with exact integers,
+     * because contract amounts such as a TRC-10 transfer's `amount` can pass
+     * 2^53, and a plain parse would round them before sync or the ClickHouse
+     * chain-data copy sees them. Such a field arrives as a decimal string.
+     *
+     * @param blockNumber - The height to fetch.
+     * @returns The block exactly as java-tron renders it.
+     */
     async getBlockByNumber(blockNumber: number): Promise<TronGridBlock> {
-        return retry(() => this.post<TronGridBlock>('/wallet/getblockbynum', { num: blockNumber }), {
+        return retry(() => this.post<TronGridBlock>('/wallet/getblockbynum', { num: blockNumber }, { exactIntegers: true }), {
             retries: 6,
             delayMs: 1000,
             factor: 2,
@@ -685,14 +780,16 @@ export class TronGridClient {
      *                      results the block payload omits.
      * @returns One entry per transaction, each carrying the `id` a caller joins
      *          back to the block's transactions on. Empty when the block has no
-     *          transactions or the request failed.
+     *          transactions or the request failed. Parsed with exact integers,
+     *          like {@link getBlockByNumber}, so an amount beyond 2^53 arrives
+     *          as a decimal string rather than a rounded number.
      */
     async getTransactionInfoByBlockNum(blockNumber: number): Promise<TronGridTransactionInfo[]> {
         let infos: TronGridTransactionInfo[] = [];
 
         try {
             const response = await retry(
-                () => this.post<TronGridTransactionInfo[]>('/wallet/gettransactioninfobyblocknum', { num: blockNumber }),
+                () => this.post<TronGridTransactionInfo[]>('/wallet/gettransactioninfobyblocknum', { num: blockNumber }, { exactIntegers: true }),
                 {
                     ...blockchainConfig.retry,
                     onRetry: (attempt, error) =>
@@ -1502,11 +1599,26 @@ export class TronGridClient {
         return this.post<T>('/wallet/triggerconstantcontract', payload);
     }
 
-    private async post<T>(path: string, payload: Record<string, unknown>): Promise<T> {
+    /**
+     * Send one POST to TronGrid through the shared, throttled request queue.
+     *
+     * Every TronGrid call goes through here so the 200ms gap and the key
+     * rotation apply to all of them, and so API failures are rewritten into
+     * errors that say what went wrong.
+     *
+     * @param path - The endpoint path, such as `/wallet/getblockbynum`.
+     * @param payload - The request body TronGrid expects for that endpoint.
+     * @param options - Set `exactIntegers` for a response whose int64 fields can
+     *                  pass 2^53, so they arrive as exact decimal strings instead
+     *                  of rounded numbers. See {@link parseJsonExactIntegers}.
+     * @returns The parsed response body.
+     */
+    private async post<T>(path: string, payload: Record<string, unknown>, options: { exactIntegers?: boolean } = {}): Promise<T> {
         return enqueueRequest(async () => {
             try {
                 const response = await httpClient.post<T>(`${BASE_URL}${path}`, payload, {
-                    headers: buildHeaders()
+                    headers: buildHeaders(),
+                    ...(options.exactIntegers ? EXACT_INTEGER_RESPONSE : {})
                 });
                 return response.data;
             } catch (error: unknown) {

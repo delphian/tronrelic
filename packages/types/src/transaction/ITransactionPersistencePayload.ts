@@ -84,6 +84,14 @@ export interface ITransactionPersistencePayload {
     contract?: {
         address: string;
         method?: string;
+        /**
+         * The contract's fields. Every field copied from java-tron that is a
+         * protobuf integer, such as `amount`, `total_supply`, or
+         * `votes[].vote_count`, is a decimal string at every size, because an
+         * int64 can exceed 2^53, where a JavaScript number stops being exact.
+         * Convert with `BigInt(value)` before doing arithmetic. Amounts the
+         * platform derives, such as `amountTRX`, are decimal numbers.
+         */
         parameters?: Record<string, unknown>;
     };
     /**

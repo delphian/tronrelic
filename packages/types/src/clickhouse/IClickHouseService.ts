@@ -19,6 +19,8 @@
  * - **Decoupling** - Consumers depend on interface, not @clickhouse/client directly
  * - **Optional adoption** - Plugins check for undefined before using ClickHouse
  */
+import type { IClickHouseInsertOptions } from './IClickHouseInsertOptions.js';
+
 export interface IClickHouseService {
     /**
      * Execute a SELECT query and return typed results.
@@ -67,7 +69,10 @@ export interface IClickHouseService {
      * for code paths that need true durable-commit semantics, such as
      * one-shot data migrations whose downstream side-effects (e.g. deleting
      * the source row) cannot tolerate a flush failure surfacing 30 seconds
-     * later in a different log stream.
+     * later in a different log stream. Pass `{ synchronous: true }` for rows
+     * the caller has already batched: the insert skips the async buffer, is
+     * stored straight away, and does not hold a pooled connection while the
+     * buffer waits to be written.
      *
      * @param table - The physical table name, passed through to ClickHouse
      *   exactly as given. Nothing prefixes it, so a plugin supplies its own
@@ -78,7 +83,9 @@ export interface IClickHouseService {
      * @param options - Optional per-call overrides. `waitForCommit: true`
      *   forces the call to wait for the async-insert flush to commit
      *   (`wait_for_async_insert: 1`) so a thrown error is the authoritative
-     *   "this row did not persist" signal.
+     *   "this row did not persist" signal. `synchronous: true` turns async
+     *   insert off for the call (`async_insert: 0`); see
+     *   {@link IClickHouseInsertOptions}.
      *
      * @example
      * ```typescript
@@ -99,7 +106,7 @@ export interface IClickHouseService {
     insert<T extends Record<string, unknown>>(
         table: string,
         rows: T[],
-        options?: { waitForCommit?: boolean }
+        options?: IClickHouseInsertOptions
     ): Promise<void>;
 
     /**

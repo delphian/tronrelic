@@ -29,6 +29,12 @@ export interface ResourceCost {
 export interface ContractDetails {
   address: string;
   method?: string;
+  /**
+   * The contract's fields. Every field copied from java-tron that is a
+   * protobuf integer is a decimal string at every size, because an int64 can
+   * exceed 2^53, where a JavaScript number stops being exact. Amounts the
+   * platform derives, such as `amountTRX`, are decimal numbers.
+   */
   parameters?: Record<string, unknown>;
 }
 

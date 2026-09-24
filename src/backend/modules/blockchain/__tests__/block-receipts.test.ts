@@ -81,6 +81,19 @@ describe('TronGridClient.getTransactionInfoByBlockNum', () => {
         expect(infos[0].receipt?.energy_fee).toBe(288_900);
     });
 
+    it('parses the reply with exact integers so an amount beyond 2^53 is not rounded', async () => {
+        post.mockResolvedValue({ data: [] });
+
+        await client.getTransactionInfoByBlockNum(BLOCK_NUMBER);
+
+        // The mock skips axios's own response step, so run the parser the
+        // request handed axios against a body a plain JSON.parse would round.
+        const config = post.mock.calls[0][2] as { responseType?: string; transformResponse?: Array<(data: unknown) => unknown> };
+        expect(config.responseType).toBe('text');
+        const parsed = config.transformResponse?.[0]('[{"id":"tx-a","withdraw_amount":9007199254740993}]');
+        expect(parsed).toEqual([{ id: 'tx-a', withdraw_amount: '9007199254740993' }]);
+    });
+
     it('returns an empty array when a block with no transactions answers with an object', async () => {
         // TRON answers `{}` rather than `[]` for an empty block. Passing that
         // through would reach a caller that is about to map over it.

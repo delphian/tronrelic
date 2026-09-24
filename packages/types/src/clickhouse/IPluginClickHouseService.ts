@@ -22,6 +22,8 @@
  * do not mistake this for isolation.
  */
 
+import type { IClickHouseInsertOptions } from './IClickHouseInsertOptions.js';
+
 /**
  * ClickHouse access scoped to one plugin's namespace.
  */
@@ -67,11 +69,13 @@ export interface IPluginClickHouseService {
      * @param options - Per-call overrides. `waitForCommit: true` waits for the
      *                  async-insert flush to commit, for a caller that cannot
      *                  tolerate a failure surfacing later in a different log.
+     *                  `synchronous: true` skips the async buffer for a batch
+     *                  the plugin has already assembled.
      */
     insert<T extends Record<string, unknown>>(
         logicalTable: string,
         rows: T[],
-        options?: { waitForCommit?: boolean }
+        options?: IClickHouseInsertOptions
     ): Promise<void>;
 
     /**
