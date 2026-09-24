@@ -27,7 +27,19 @@
  * Gaps are the part worth understanding. Chain data is only as useful as the
  * certainty that it is complete, and a block that failed to write looks exactly
  * like a block with no activity in every other table. `tron._ingest_gap` is what
- * tells the two apart, so every path that loses a block writes to it.
+ * tells the two apart, so every path where the writer itself loses a block
+ * writes to it.
+ *
+ * One loss is outside the writer's reach, and a consumer reading the gap table
+ * has to know about it. A block is handed over into an in-memory queue, so a
+ * process killed before its rows reach ClickHouse — a crash, or a shutdown
+ * whose drain timed out — leaves the block committed in MongoDB, missing from
+ * these tables, and absent from `_ingest_gap`. Nothing fetches it again,
+ * because the missing-block scan only looks for a block document and MongoDB
+ * already has one. Closing that needs a startup check comparing
+ * `_ingest_state` with the MongoDB cursor, which this writer does not do
+ * today. The cost is bounded because this is a short-term copy rather than a
+ * system of record.
  *
  * @module backend/modules/blockchain/chain-data/ChainDataWriter
  */

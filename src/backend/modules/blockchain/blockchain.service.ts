@@ -1468,11 +1468,30 @@ export class BlockchainService implements IBlockchainService {
         // block ever sets it. Only that commit announces the block. It is
         // counted in the sync state stage because it closes the same step:
         // recording that the block is done.
-        const commitMark = await blockModel.updateOne(
-            { blockNumber, committedAt: { $exists: false } },
-            { $set: { committedAt: new Date() } }
-        );
-        const isFirstCommit = commitMark.modifiedCount > 0;
+        //
+        // Swallowed for the same reason as the telemetry write below. By this
+        // point the transactions, the block document, and the cursor are all
+        // durable and the block has left the backfill queue, so letting this
+        // reject would make `BlockCommitter` treat a written block as a failed
+        // commit. Gap detection only finds blocks whose document is missing, so
+        // that block would never be fetched again, and its observers, alert
+        // ingest, `block:new` broadcast, and ClickHouse copy would be lost with
+        // nothing to flag it. When the stamp cannot be written the block is
+        // announced anyway. The worst case is a repeat commit announced twice,
+        // which costs duplicate alerts rather than a loss nothing repairs.
+        let isFirstCommit = true;
+        try {
+            const commitMark = await blockModel.updateOne(
+                { blockNumber, committedAt: { $exists: false } },
+                { $set: { committedAt: new Date() } }
+            );
+            isFirstCommit = commitMark.modifiedCount > 0;
+        } catch (error) {
+            logger.error(
+                { error, blockNumber },
+                'Failed to write the commit marker for a block that was written successfully; announcing it, because nothing will fetch it again'
+            );
+        }
         timings.updateSyncState = Date.now() - stageStart;
 
         // Work time, not wall-clock time. The gap between preparing a block and
@@ -1483,7 +1502,7 @@ export class BlockchainService implements IBlockchainService {
         timings.commit = Date.now() - commitStart;
         timings.total = (timings.prepare ?? 0) + timings.commit;
 
-        // Swallowed on purpose, and only here. Everything durable is already
+        // Swallowed on purpose, like the commit marker above. Everything durable is already
         // written and the cursor has already advanced, so letting this reject
         // would make a committed block look like a failed commit to
         // `BlockCommitter`, which would then skip the observers, the alert
