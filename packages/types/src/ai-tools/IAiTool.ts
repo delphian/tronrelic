@@ -14,6 +14,7 @@
 import type { JSONSchema7Definition } from 'json-schema';
 import type { IAiToolCapability } from './IAiToolCapability.js';
 import type { IToolEndUserPrincipal } from './IToolInvocationContext.js';
+import type { IToolHandlerContext } from './IToolHandlerContext.js';
 
 /** Regex pattern for valid Anthropic tool names. */
 export const AI_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -147,6 +148,16 @@ export interface IAiTool {
      * on it. The argument is `undefined` for tools and paths with no end user
      * (admin/scheduled/programmatic), and an `(input) => …` handler that ignores
      * it stays valid.
+     *
+     * The third argument, `context`, identifies the run the call belongs to —
+     * its trigger path, query id, and conversation id — copied by the governor
+     * from the trusted invocation context. A tool that draws on a shared budget
+     * uses it to charge each run separately. It is optional so a handler that
+     * does not need it can ignore it.
      */
-    handler: (input: Record<string, unknown>, principal?: IToolEndUserPrincipal) => Promise<unknown>;
+    handler: (
+        input: Record<string, unknown>,
+        principal?: IToolEndUserPrincipal,
+        context?: IToolHandlerContext
+    ) => Promise<unknown>;
 }

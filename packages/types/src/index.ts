@@ -137,6 +137,7 @@ export type {
     IToolInvocationActor,
     IToolEndUserPrincipal,
     ToolTriggerPath,
+    IToolHandlerContext,
     IToolInvocationResult,
     ToolInvocationStatus,
     IToolInvocationRecord,

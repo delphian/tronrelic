@@ -694,7 +694,28 @@ describe('AiToolsModule', () => {
 
             // The principal reaches the handler out-of-band (never from model
             // input), so a user-scoped tool can scope its object access to it.
-            expect(handler).toHaveBeenCalledWith({}, { userId: 'user-42' });
+            expect(handler).toHaveBeenCalledWith({}, { userId: 'user-42' }, { triggerPath: 'interactive' });
+        });
+
+        it('passes the run identity to the handler as its third argument', async () => {
+            const handler = vi.fn(async () => ({ records: [] as string[] }));
+            module.getRegistry().registerTool(userScopedTool(handler), 'test');
+
+            await module.getGovernor().invoke('test-user-scoped', {}, {
+                ...principalCtx,
+                queryId: 'query-7',
+                conversationId: 'conversation-3',
+                toolUseId: 'toolu-1'
+            });
+
+            // Copied from the trusted context, so a tool charging a shared budget
+            // per run cannot be told by the model which run to charge.
+            expect(handler).toHaveBeenCalledWith({}, { userId: 'user-42' }, {
+                triggerPath: 'interactive',
+                queryId: 'query-7',
+                conversationId: 'conversation-3',
+                toolUseId: 'toolu-1'
+            });
         });
     });
 

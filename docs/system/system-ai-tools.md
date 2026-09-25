@@ -37,7 +37,7 @@ A tool is an [`IAiTool`](../../packages/types/src/ai-tools/IAiTool.ts). Its fiel
 | `description` | The dominant factor in selection accuracy. State what it does, when to use and not use it, every parameter, the return shape, and limits. Vague descriptions misfire. |
 | `inputSchema` | JSON Schema, top-level `type: 'object'`. Every property needs a `type` and `description`; set `additionalProperties: false`; list genuinely required params. |
 | `inputExamples` | Optional. Worked examples of valid input, forwarded to the model as Anthropic `input_examples`. Declare them for tools with array, enum, nested, or optional/format-sensitive parameters — they raise parameter accuracy and matter most for smaller models like Haiku, which otherwise guess missing params. Each example must satisfy `inputSchema` (a non-conforming example is rejected with a 400). Show the useful shapes — the required-only minimum plus one or two exercising the optional/enum fields — not every permutation. Omit for single-scalar or zero-parameter tools, where they only add prompt tokens. |
-| `handler` | `(input) => Promise<unknown>`. Runs server-side; the return value is JSON-serialized back to the model. |
+| `handler` | `(input, principal?, context?) => Promise<unknown>`. Runs server-side; the return value is JSON-serialized back to the model. `principal` is the end user (see [Authorize object access](#accountability-and-security)). `context` is an `IToolHandlerContext` — the run's `triggerPath`, `queryId`, `conversationId`, and `toolUseId`, copied by the governor from the trusted invocation context — so a tool drawing on a shared budget can charge each run separately. The chain query tools pass `queryId` to ClickHouse as the quota key this way. |
 
 Register through the service registry with `watch()` (never `get()` — it covers the boot-order race and provider toggling), and unregister on `disable()`. Pass your `manifest.id` as the provider id so the admin UI groups your tools.
 
@@ -123,6 +123,7 @@ const tool: IAiTool = {
 | Tool | Class | What to copy |
 |---|---|---|
 | `tronrelic-get-transaction` (blockchain) | read / internal | Input regex; global rate limiter (`TransactionToolGuard`) + usage stats |
+| `blockchain-*` chain query tools | read / internal / untrusted | Per-run quota key from the handler `context`; a response envelope with cost, coverage, truncation, and notes; errors written for the model. See [system-chain-query-tools.md](./system-chain-query-tools.md) |
 | logs `tronrelic-query-system-logs` | read / secret | Result + context caps; truncate-and-point-to-detail |
 | `propose-social-post` (core) | external / irreversible / forces-curator-review | `curationTypeId` binding; `publishesToSinks` fan-out to curator-selected sinks |
 | `trp-image-gen` | external / spends money | Per-call forensic history; sanitized vs raw error split |

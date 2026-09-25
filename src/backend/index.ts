@@ -61,6 +61,7 @@ import { ChainParametersService } from './modules/chain-parameters/chain-paramet
 import { BlockchainService } from './modules/blockchain/blockchain.service.js';
 import { TransactionDetailService } from './modules/blockchain/transaction-detail.service.js';
 import { registerTransactionAiTools } from './modules/blockchain/transaction-ai-tools.js';
+import { registerChainQueryAiTools } from './modules/blockchain/chain-query/registerChainQueryAiTools.js';
 import { TronGridClient } from './modules/blockchain/tron-grid.client.js';
 import { BlockEmitter } from './modules/blockchain/block-emitter.js';
 import { UsdtParametersFetcher } from './modules/usdt-parameters/usdt-parameters-fetcher.js';
@@ -404,6 +405,12 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // rate-limited core tool. Watches for the assistant service rather than
     // resolving it once, since it is a runtime-toggleable plugin.
     registerTransactionAiTools(serviceRegistry, transactionDetailService);
+
+    // The chain query tools read the ClickHouse `tron` database as the
+    // `ai-agent` account. They resolve that account, address tags, and price
+    // history from the registry on each call, because those modules publish
+    // their services later in startup.
+    registerChainQueryAiTools(serviceRegistry);
 
     // Menu module next (others need menuService)
     const menuModule = new MenuModule();
