@@ -42,11 +42,11 @@ The application bootstrap (`src/backend/index.ts`) splits into `bootstrapInit()`
 12. **`MenuModule.init()`**
 13. `new CacheService(redis, coreDatabase)` and assemble `sharedDeps`
 14. `ContentService` constructed and published as `'content'` — before module init, so the pages module receives it as `contentService` and registers `core:page` in `run()`
-15. **Remaining module inits in this order:** Logs, Pages, Widgets, Scheduler, Identity, Traffic, AddressLabels, Tools (Traffic receives `scheduler` and `clickhouse` on top of `sharedDeps`)
+15. **Remaining module inits in this order:** Logs, Pages, Widgets, Scheduler, Identity, Traffic, AddressLabels, Tools, then ClickHouseAccounts after Syndication (Traffic receives `scheduler` and `clickhouse` on top of `sharedDeps`; ClickHouseAccounts receives `clickhouse` twice, as the shared connection and as its `IClickHouseAccountConnector`, plus `scheduler`)
 
 **`bootstrapRun()`** — in this order:
 
-Database, ClickHouse, Menu, Logs, Pages, Widgets, Traffic, Identity, AddressLabels, Tools, **Scheduler last** (so it doesn't tick before its peers are integrated). Traffic runs before Identity so its `/api/admin/users/{traffic,analytics}` routers mount ahead of Identity's `/api/admin/users` accounts `/:id` catch-all.
+Database, ClickHouse, Menu, Logs, Pages, Widgets, Traffic, Identity, AddressLabels, Tools, ClickHouseAccounts, **Scheduler last** (so it doesn't tick before its peers are integrated). Traffic runs before Identity so its `/api/admin/users/{traffic,analytics}` routers mount ahead of Identity's `/api/admin/users` accounts `/:id` catch-all.
 
 After `bootstrapRun()`, `loadPlugins(coreDatabase, scheduler, serviceRegistry)` runs and the HTTP server starts listening. The two-phase split lets modules safely use MenuService, WebSocketService, ChainParametersService, and the service registry during `run()`. The order above is the source of truth — see the `bootstrapInit` and `bootstrapRun` calls in `src/backend/index.ts`.
 

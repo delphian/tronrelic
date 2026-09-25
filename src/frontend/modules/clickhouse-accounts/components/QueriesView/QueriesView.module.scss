@@ -1,0 +1,38 @@
+.toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
+.empty {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+/* The table scrolls sideways inside the card on a narrow screen instead of
+   squeezing the SQL column to nothing. */
+.scroll {
+    overflow-x: auto;
+}
+
+/* SQL is shown on one line and cut off; the full text is in the tooltip. */
+.sql {
+    display: block;
+    max-inline-size: var(--max-width-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.error {
+    display: block;
+    max-inline-size: var(--max-width-sm);
+    margin-block-start: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-danger-text);
+}

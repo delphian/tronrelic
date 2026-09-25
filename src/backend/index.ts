@@ -38,6 +38,7 @@ import { MenuModule, MAIN_SYSTEM_CONTAINER_ID } from './modules/menu/index.js';
 import { LogsModule } from './modules/logs/index.js';
 import { DatabaseModule } from './modules/database/index.js';
 import { ClickHouseModule } from './modules/clickhouse/index.js';
+import { ClickHouseAccountsModule } from './modules/clickhouse-accounts/index.js';
 import { PagesModule, PageService } from './modules/pages/index.js';
 import { WidgetsModule } from './modules/widgets/index.js';
 import { IdentityModule } from './modules/identity/index.js';
@@ -246,6 +247,7 @@ interface BootstrapContext {
     modules: {
         database: DatabaseModule;
         clickhouse: ClickHouseModule;
+        clickhouseAccounts: ClickHouseAccountsModule;
         menu: MenuModule;
         logs: LogsModule;
         pages: PagesModule;
@@ -483,6 +485,21 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     // at decide-time, so init order relative to curation does not matter. Receives
     // the scheduler service so its relay job can register.
     await syndicationModule.init({ database: coreDatabase, serviceRegistry, hookRegistry, scheduler: schedulerService, app });
+    // ClickHouse accounts: server-enforced ClickHouse users (such as the AI
+    // agent's read-only account) with admin-tuned limits and an audit trail.
+    // Separate from the ClickHouse module because it needs the scheduler for
+    // its usage rollup, which exists only after the ClickHouse module inits.
+    // The ClickHouse service is passed twice: as the shared connection, and
+    // through its narrow account-connector surface.
+    const clickHouseAccountsModule = new ClickHouseAccountsModule();
+    await clickHouseAccountsModule.init({
+        database: coreDatabase,
+        clickhouse,
+        connector: clickhouse,
+        scheduler: schedulerService,
+        serviceRegistry,
+        app
+    });
     // The ai-tools module owns the built-in dynamic prompt variables (lifted out
     // of trp-ai-assistant), so it needs the core services those resolvers read.
     // All are singletons wired by initializeCoreServices() above; the resolvers
@@ -515,6 +532,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         modules: {
             database: databaseModule,
             clickhouse: clickHouseModule,
+            clickhouseAccounts: clickHouseAccountsModule,
             menu: menuModule,
             logs: logsModule,
             pages: pagesModule,
@@ -593,6 +611,9 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     // Address-tags publishes 'address-tags' and mounts its gated routers; no
     // ordering constraint beyond menu having run (menu runs early above).
     await modules.addressTags.run();
+    // ClickHouse accounts runs before scheduler (which runs last and starts
+    // ticking), so its usage rollup job is registered before the scheduler activates.
+    await modules.clickhouseAccounts.run();
     await modules.scheduler.run();
 
     // Mount the hook-system introspection endpoint. The route is

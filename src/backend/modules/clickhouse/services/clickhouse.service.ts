@@ -13,10 +13,35 @@
  *
  * This service implements IClickHouseService (a shared interface) and therefore
  * follows the singleton pattern per TronRelic module conventions.
+ *
+ * It also implements IClickHouseAccountConnector, the narrow surface the
+ * clickhouse-accounts module uses to open connections as managed accounts.
+ * Account passwords are derived from the root password here, so the root
+ * password never leaves this class.
  */
 
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
-import type { IClickHouseInsertOptions, IClickHouseService, ISystemLogService } from '@/types';
+import { createHash, createHmac } from 'node:crypto';
+import type {
+    IClickHouseAccountConnector,
+    IClickHouseInsertOptions,
+    IClickHouseReader,
+    IClickHouseService,
+    ISystemLogService
+} from '@/types';
+import { ClickHouseAccountReader } from './ClickHouseAccountReader.js';
+
+/**
+ * Where and how the shared connection reaches ClickHouse, kept after
+ * `connect()` so account readers reach the same server with the same
+ * keep-alive and timeout behaviour.
+ */
+interface IClickHouseConnectionConfig {
+    host: string;
+    database: string;
+    username: string;
+    password: string;
+}
 
 /**
  * ClickHouse service singleton implementation.
@@ -24,12 +49,23 @@ import type { IClickHouseInsertOptions, IClickHouseService, ISystemLogService } 
  * Connects to ClickHouse during initialization and provides query, insert,
  * and DDL execution methods. Uses async inserts for improved write performance.
  */
-export class ClickHouseService implements IClickHouseService {
+export class ClickHouseService implements IClickHouseService, IClickHouseAccountConnector {
     private static instance: ClickHouseService | null = null;
+
+    /**
+     * Prefix mixed into every account password derivation, so a derived
+     * password can never equal an HMAC the root password is used for anywhere
+     * else.
+     */
+    private static readonly ACCOUNT_PASSWORD_CONTEXT = 'tronrelic:clickhouse-account:';
 
     private client!: ClickHouseClient;
     private logger: ISystemLogService;
     private connected: boolean = false;
+    private config: IClickHouseConnectionConfig | null = null;
+
+    /** Clients opened for account readers, closed alongside the shared client. */
+    private readonly accountClients: ClickHouseClient[] = [];
 
     /** Interval handle for async insert error polling */
     private errorPollInterval: ReturnType<typeof setInterval> | null = null;
@@ -107,20 +143,14 @@ export class ClickHouseService implements IClickHouseService {
         const database = process.env.CLICKHOUSE_DATABASE || 'tronrelic';
         const username = process.env.CLICKHOUSE_USER || 'default';
         const password = process.env.CLICKHOUSE_PASSWORD || '';
+        this.config = { host, database, username, password };
 
         this.client = createClient({
             host,
             database,
             username,
             password,
-            // Keep connections alive to avoid cold-start latency spikes
-            // Under memory pressure, connection re-establishment can take 1-6 seconds
-            keep_alive: {
-                enabled: true,
-                idle_socket_ttl: 60000 // Keep idle sockets for 60 seconds
-            },
-            // Request timeout for individual operations (prevents hung connections)
-            request_timeout: 30000,
+            ...ClickHouseService.sharedClientOptions(),
             clickhouse_settings: {
                 // Enable async inserts for better write throughput
                 // Inserts are buffered and flushed in batches
@@ -151,6 +181,137 @@ export class ClickHouseService implements IClickHouseService {
      */
     isConnected(): boolean {
         return this.connected;
+    }
+
+    /**
+     * Connection options every client this service opens shares, so the shared
+     * client and account readers behave the same under load.
+     *
+     * Keep-alive avoids the cold-start delay of opening a new socket, which can
+     * take one to six seconds under memory pressure. The request timeout stops a
+     * hung connection from waiting forever.
+     *
+     * @returns Keep-alive and timeout options for `createClient`.
+     */
+    private static sharedClientOptions(): { keep_alive: { enabled: boolean; idle_socket_ttl: number }; request_timeout: number } {
+        return {
+            keep_alive: {
+                enabled: true,
+                idle_socket_ttl: 60000
+            },
+            request_timeout: 30000
+        };
+    }
+
+    /**
+     * The ClickHouse user the shared connection authenticates as.
+     *
+     * @returns The root user name, which the `default` account reports on.
+     * @throws Error if called before `connect()`.
+     */
+    rootUser(): string {
+        return this.requireConfig().username;
+    }
+
+    /**
+     * Whether `CLICKHOUSE_PASSWORD` is set. With no root password, every
+     * derived account password is predictable from the account id alone.
+     *
+     * @returns True when a root password is configured.
+     * @throws Error if called before `connect()`.
+     */
+    hasRootPassword(): boolean {
+        return this.requireConfig().password.length > 0;
+    }
+
+    /**
+     * SHA-256 of an account's derived password, for `IDENTIFIED WITH
+     * sha256_hash`, so provisioning SQL carries a hash instead of the password.
+     *
+     * @param accountId - Account whose password to hash.
+     * @returns Lowercase hex SHA-256 of the derived password.
+     * @throws Error if called before `connect()`.
+     */
+    accountPasswordHash(accountId: string): string {
+        return createHash('sha256').update(this.deriveAccountPassword(accountId)).digest('hex');
+    }
+
+    /**
+     * Open a reader that connects as an account's ClickHouse user on its own
+     * connection pool.
+     *
+     * The reader gets none of the shared client's async-insert settings,
+     * because it only reads. Its client is tracked so `close()` shuts it down
+     * with the shared one.
+     *
+     * The reader authenticates with ClickHouse's own `X-ClickHouse-User` and
+     * `X-ClickHouse-Key` headers instead of a Basic `Authorization` header.
+     * An account read carries a quota key, and ClickHouse (checked on 24.3)
+     * refuses a request that combines a Basic `Authorization` header with a
+     * quota key sent either as the `quota_key` parameter or as the
+     * `X-ClickHouse-Quota` header, answering 403 `AUTHENTICATION_FAILED`.
+     * Header authentication combined with `X-ClickHouse-Quota` is accepted.
+     *
+     * @param accountId - Account whose derived password to authenticate with.
+     * @param clickhouseUser - ClickHouse user name to authenticate as.
+     * @param database - Database the account is granted, used for unqualified
+     *   table names. The application database is not used, because the
+     *   account has no grant on it.
+     * @param poolSize - Most sockets the reader may open at once.
+     * @returns An account-bound reader.
+     * @throws Error if called before `connect()`.
+     */
+    openReader(accountId: string, clickhouseUser: string, database: string, poolSize: number): IClickHouseReader {
+        const config = this.requireConfig();
+        const password = this.deriveAccountPassword(accountId);
+        const client = createClient({
+            host: config.host,
+            database,
+            username: clickhouseUser,
+            password,
+            set_basic_auth_header: false,
+            http_headers: {
+                'X-ClickHouse-User': clickhouseUser,
+                'X-ClickHouse-Key': password
+            },
+            max_open_connections: poolSize,
+            ...ClickHouseService.sharedClientOptions()
+        });
+        this.accountClients.push(client);
+
+        return new ClickHouseAccountReader(accountId, client, this.logger);
+    }
+
+    /**
+     * Derive an account's password from the root password.
+     *
+     * An HMAC keyed by the root password means nothing new has to be stored,
+     * each account gets a different password, and rotating
+     * `CLICKHOUSE_PASSWORD` rotates every account password with it once the
+     * accounts are applied again at startup.
+     *
+     * @param accountId - Account the password is for.
+     * @returns 64-character hex password.
+     */
+    private deriveAccountPassword(accountId: string): string {
+        return createHmac('sha256', this.requireConfig().password)
+            .update(`${ClickHouseService.ACCOUNT_PASSWORD_CONTEXT}${accountId}`)
+            .digest('hex');
+    }
+
+    /**
+     * Return the stored connection settings, failing loudly when `connect()`
+     * has not run, rather than deriving passwords from an empty root password.
+     *
+     * @returns The settings `connect()` stored.
+     * @throws Error if called before `connect()`.
+     */
+    private requireConfig(): IClickHouseConnectionConfig {
+        if (!this.config) {
+            throw new Error('ClickHouse not connected. Call connect() first.');
+        }
+
+        return this.config;
     }
 
     /**
@@ -302,6 +463,11 @@ export class ClickHouseService implements IClickHouseService {
 
         // Stop error polling
         this.stopErrorPolling();
+
+        // Close account readers' clients first, so no account query is left
+        // running against a server whose shared client has already gone.
+        await Promise.allSettled(this.accountClients.map(client => client.close()));
+        this.accountClients.length = 0;
 
         try {
             await this.client.close();

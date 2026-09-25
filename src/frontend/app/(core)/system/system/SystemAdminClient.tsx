@@ -167,7 +167,10 @@ export function SystemAdminClient({ submenuTree, submenuGeneratedAt, initialTab,
                   * independent surfaces, so they sit as siblings rather than inside the
                   * shared single-section panel. */}
                 {activeTab === 'mongo' && <MongoSection />}
-                {activeTab === 'clickhouse' && <SectionPanel><ClickHouseSection /></SectionPanel>}
+                {/* ClickHouse supplies its own cards — health and tables, the accounts
+                  * panel, and the accounts module's records are independent surfaces,
+                  * so they sit as siblings as MongoDB's do. */}
+                {activeTab === 'clickhouse' && <ClickHouseSection />}
             </Stack>
         </Page>
     );

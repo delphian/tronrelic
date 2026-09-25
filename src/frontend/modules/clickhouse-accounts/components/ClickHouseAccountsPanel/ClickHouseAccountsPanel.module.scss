@@ -1,0 +1,35 @@
+.intro {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+}
+
+.title {
+    margin: 0;
+    font-size: var(--font-size-heading-sm);
+}
+
+.lede {
+    margin: 0;
+    max-inline-size: var(--max-width-prose);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    line-height: var(--line-height-relaxed);
+}
+
+/* Roughly one account header's height, so the card does not jump when the
+   list arrives. */
+.placeholder {
+    inline-size: 100%;
+    block-size: var(--avatar-size-lg);
+}
+
+/* Accounts are separated by a rule rather than put in cards of their own:
+   they are parts of one panel, not independent surfaces. */
+.divider {
+    inline-size: 100%;
+    block-size: var(--divider-height);
+    margin: 0;
+    border: none;
+    background: var(--divider-background);
+}
