@@ -1,0 +1,16 @@
+/**
+ * MainMenuWidget styles
+ *
+ * Mirrors the old header's navigation slot. The menu fills whatever width
+ * its placement is given and aligns its items within it; Priority+ overflow
+ * in MenuNavClient then folds items that do not fit into "More". The minimum
+ * width keeps room for the collapsed hamburger button, which is an icon
+ * button at the large size.
+ */
+
+.menu {
+    display: flex;
+    justify-content: var(--main-menu-justify, flex-end);
+    width: 100%;
+    min-width: var(--icon-button-size-lg);
+}

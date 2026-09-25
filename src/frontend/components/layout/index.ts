@@ -39,10 +39,10 @@ export { Section } from './Section';
 // Existing layout components
 export { BlockTicker } from './BlockTicker';
 
-// MainHeader and MenuNav are intentionally NOT re-exported here.
+// MenuNav is intentionally NOT re-exported here.
 //
-// MenuNavSSR uses next/headers (server-only), and MainHeader transitively
-// imports MenuNavSSR. Re-exporting either from a barrel that Client Components
+// MenuNavSSR uses next/headers (server-only). Re-exporting it from a barrel
+// that Client Components
 // also consume (e.g. app/global-error.tsx, modules/user/.../GscSettings.tsx)
 // drags next/headers into the client bundle and breaks the webpack build —
 // even when the Client Component only imports an unrelated primitive like
@@ -51,5 +51,6 @@ export { BlockTicker } from './BlockTicker';
 //
 // Keep this barrel uniformly client-safe (only leaf layout primitives that
 // have no server-only dependencies). Import server-rendered chrome directly:
-//   import { MainHeader } from '@/components/layout/MainHeader';
 //   import { MenuNavSSR } from '@/components/layout/MenuNav';
+// The site header itself is no longer a component: it is the Site logo, Main
+// menu, and Sign-in button widgets an operator places in the site-top zone.

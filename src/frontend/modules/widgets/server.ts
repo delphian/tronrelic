@@ -8,4 +8,4 @@
  * @module modules/widgets/server
  */
 
-export { fetchWidgetsAdminData, fetchMenuNamespace } from './lib/fetchWidgetsAdminData';
+export { fetchWidgetsAdminData } from './lib/fetchWidgetsAdminData';

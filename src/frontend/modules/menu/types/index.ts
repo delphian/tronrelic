@@ -113,3 +113,5 @@ export interface IUseMenuConfigResult extends IMenuNamespaceConfig {
      */
     loading: boolean;
 }
+
+export type { IMenuSeed } from './IMenuSeed';

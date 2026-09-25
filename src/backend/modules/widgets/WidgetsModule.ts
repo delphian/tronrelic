@@ -29,6 +29,7 @@ import type {
     IDatabaseService,
     IMenuService,
     ISystemLogService,
+    ISystemConfigService,
     IServiceRegistry
 } from '@/types';
 import { logger } from '../../lib/logger.js';
@@ -98,6 +99,11 @@ export interface IWidgetsModuleDependencies {
     menuService: IMenuService;
     /** Express app for admin route mounting. */
     app: Express;
+    /**
+     * System configuration, read by the `core:auth-button` widget for the
+     * sign-in button image an administrator chose on `/system/system`.
+     */
+    systemConfig: ISystemConfigService;
 }
 
 /**
@@ -124,6 +130,7 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
     private database!: IDatabaseService;
     private menuService!: IMenuService;
     private app!: Express;
+    private systemConfig!: ISystemConfigService;
     private zoneRegistry!: ZoneRegistry;
     private zoneLayoutService!: ZoneLayoutService;
     private widgetTypeRegistry!: WidgetTypeRegistry;
@@ -162,11 +169,15 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
         if (!dependencies.app) {
             throw new Error('WidgetsModule requires app dependency');
         }
+        if (!dependencies.systemConfig) {
+            throw new Error('WidgetsModule requires systemConfig dependency');
+        }
 
         this.serviceRegistry = dependencies.serviceRegistry;
         this.database = dependencies.database;
         this.menuService = dependencies.menuService;
         this.app = dependencies.app;
+        this.systemConfig = dependencies.systemConfig;
 
         // Internal registries — runtime-only, rebuilt from registrations
         // every process start. The new model gives them no public
@@ -286,13 +297,16 @@ export class WidgetsModule implements IModule<IWidgetsModuleDependencies> {
         );
 
         // Register the core widget-type catalog (raw text/HTML, world
-        // clocks, block ticker). Built via factory so the block-ticker
-        // fetcher can resolve the `'blockchain'` service from the registry
-        // at fetch time. Routed through the public service as 'core'-owned
-        // so operators place these types from /system/widgets exactly like
+        // clocks, block ticker, sign-in button, and the rest). Built via
+        // factory so the block-ticker fetcher can resolve the `'blockchain'`
+        // service from the registry at fetch time, and the sign-in button
+        // fetcher can read the branding image from the system configuration.
+        // Routed through the public service as 'core'-owned so operators
+        // place these types from /system/widgets exactly like
         // plugin-declared types.
         const coreWidgetTypeDescriptors = buildCoreWidgetTypeDescriptors({
-            serviceRegistry: this.serviceRegistry
+            serviceRegistry: this.serviceRegistry,
+            systemConfig: this.systemConfig
         });
         for (const descriptor of coreWidgetTypeDescriptors) {
             this.widgetsService.registerType(descriptor, 'core');

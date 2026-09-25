@@ -12,7 +12,8 @@
 
 import { cookies } from 'next/headers';
 import { WidgetsAdminClient } from '../../../../modules/widgets';
-import { fetchMenuNamespace, fetchWidgetsAdminData } from '../../../../modules/widgets/server';
+import { fetchWidgetsAdminData } from '../../../../modules/widgets/server';
+import { fetchMenuNamespace } from '../../../../modules/menu/server';
 
 /** Namespace holding the page's tab nodes; registered by WidgetsModule. */
 const SUBMENU_NAMESPACE = 'widgets';

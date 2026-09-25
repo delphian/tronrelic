@@ -29,7 +29,7 @@ export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
         id: 'site-top',
         label: 'Site top',
         description:
-            'The first thing inside <body>, above the main navigation, across every route the root layout serves — admin pages included. Use it for content that has to sit above the header, such as a block ticker strip or a site-wide announcement bar. The zone imposes no width constraint of its own, so set its arrangement, gap, and any custom CSS from the zone layout controls.',
+            'The first thing inside <body>, wrapped in the page\'s <header> landmark, across every route the root layout serves — admin pages included. The home for the site header: the Site logo, Main menu, and Sign-in button widgets, usually arranged in a row through a layout group. The zone imposes no width constraint of its own, so set its arrangement, gap, and any custom CSS (such as a max-width and padding matching the page content) from the zone layout controls.',
         host: 'site',
         layout: 'vertical',
         order: 0
@@ -38,7 +38,7 @@ export const CORE_ZONE_DESCRIPTORS: ReadonlyArray<IRegisterZoneInput> = [
         id: 'ticker-after',
         label: 'Site Header',
         description:
-            'Rendered in the root layout directly below the main navigation, across every route the root layout serves. Home for the block ticker and other site-wide header widgets. (Zone id stays "ticker-after" so existing placements survive the rename.)',
+            'Rendered in the root layout directly below the Site top zone, across every route the root layout serves. Home for the block ticker and other site-wide widgets that sit under the header. (Zone id stays "ticker-after" so existing placements survive the rename.)',
         host: 'site',
         layout: 'vertical',
         order: 10

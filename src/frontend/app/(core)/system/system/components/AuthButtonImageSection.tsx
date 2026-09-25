@@ -3,12 +3,13 @@
 /**
  * @fileoverview Sign-in button image section.
  *
- * Lets an administrator replace the header's "Sign in" button with an image,
- * such as the site mascot, without a code change or a redeploy. The image is
- * chosen through the platform file picker, so it can be uploaded on the spot
- * or picked from files already uploaded. Saving it updates the administrator's
- * own header straight away, and every other visitor sees it on their next page
- * load.
+ * Lets an administrator replace the "Sign in" button with an image, such as the
+ * site mascot, without a code change or a redeploy. The button is the
+ * `core:auth-button` widget, so the image appears wherever an operator placed
+ * that widget. The image is chosen through the platform file picker, so it can
+ * be uploaded on the spot or picked from files already uploaded. Visitors see
+ * it within a few seconds of saving: the widget's server-side data is cached
+ * per route for up to five seconds.
  *
  * The picker is delivered by whichever files-provider plugin is enabled. When
  * none is, the card still shows the current image and can remove it, and says
@@ -119,14 +120,16 @@ export function AuthButtonImageSection() {
     }, []);
 
     /**
-     * Save the draft, adopt whatever the backend stored, and refresh the header.
+     * Save the draft, adopt whatever the backend stored, and refresh the page.
      *
      * The response rather than the draft becomes the saved state, because the
      * backend is the authority on what was written and trims the values. The
-     * site header lives in the root layout, which client-side navigation never
-     * renders again, so the route is refreshed after a successful save. That
-     * re-runs the server components, including the header's branding read,
-     * while keeping this page's client state such as the selected tab.
+     * sign-in button widget renders from the root layout, which client-side
+     * navigation never renders again, so the route is refreshed after a
+     * successful save. That re-runs the server components, including the
+     * widget read, while keeping this page's client state such as the selected
+     * tab. The widget read is cached per route for up to five seconds, so the
+     * refreshed page can still show the previous image briefly.
      */
     const handleSave = useCallback(async () => {
         setSaving(true);
@@ -139,7 +142,7 @@ export function AuthButtonImageSection() {
             pushToast({
                 tone: 'success',
                 title: next.authButtonImageUrl ? 'Sign-in button image saved' : 'Sign-in button image removed',
-                description: 'The site header now shows the change.'
+                description: 'The sign-in button widget shows the change within a few seconds.'
             });
         } catch (error) {
             pushToast({
@@ -176,10 +179,11 @@ export function AuthButtonImageSection() {
                     </div>
 
                     <p className="text-muted">
-                        Replaces the &quot;Sign in&quot; button in the site header with a round image, such as the site
-                        mascot. Visitors who are signed out open the sign-in dialog when they click it, and visitors
-                        who are signed in go to their profile. A square image with a transparent background works best,
-                        at least 96 pixels on each side so it stays sharp on high-density screens.
+                        Replaces the &quot;Sign in&quot; button with a round image, such as the site mascot, wherever the
+                        Sign-in button widget is placed on /system/widgets. Visitors who are signed out open the sign-in
+                        dialog when they click it, and visitors who are signed in go to their profile. A square image
+                        with a transparent background works best, at least 96 pixels on each side so it stays sharp on
+                        high-density screens.
                     </p>
 
                     <div className={styles.preview_row}>
@@ -194,8 +198,8 @@ export function AuthButtonImageSection() {
                         </div>
                         <span className={providerStyles.hint}>
                             {previewUrl
-                                ? 'This is how the image is framed in the header. Save to publish it.'
-                                : 'No image is set, so the header shows the default "Sign in" button.'}
+                                ? 'This is how the image is framed on the button. Save to publish it.'
+                                : 'No image is set, so the widget shows the default "Sign in" button.'}
                             {dirty && ' You have unsaved changes.'}
                         </span>
                     </div>

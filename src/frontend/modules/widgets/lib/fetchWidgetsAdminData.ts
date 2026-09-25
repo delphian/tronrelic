@@ -77,26 +77,6 @@ async function fetchMenuTree(
 }
 
 /**
- * Fetch a menu namespace's navigation tree, as the menu chrome renders it.
- * The page uses this for its own tab row, which should match what the
- * operator sees in navigation.
- *
- * @param namespace - The menu namespace to read.
- * @param cookieHeader - The serialised request cookies.
- * @returns The namespace's root nodes and snapshot timestamp.
- */
-export async function fetchMenuNamespace(
-    namespace: string,
-    cookieHeader: string
-): Promise<{ roots: MenuNodeSerialized[]; generatedAt: string }> {
-    return fetchMenuTree(
-        `/api/menu?namespace=${encodeURIComponent(namespace)}`,
-        cookieHeader,
-        `the ${namespace} menu`
-    );
-}
-
-/**
  * Load everything the editor renders on first paint. A failure in any of
  * the admin loads is reported through `loadError` rather than thrown, so
  * the page still renders its frame and offers a retry instead of a Next.js

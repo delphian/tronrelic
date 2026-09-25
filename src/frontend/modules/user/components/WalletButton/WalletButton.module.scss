@@ -7,9 +7,9 @@
  *   - `image_btn`: round image button replacing both of the above when an
  *     administrator has chosen an image on /system/system.
  *
- * Both collapse to icon-only on mobile via the same @media breakpoint
- * MainHeader uses, since this component is a content-sized flex item
- * in the header and an inline-size container would break that.
+ * Both collapse to icon-only on mobile via a viewport @media breakpoint,
+ * since this component is a content-sized flex item in whatever widget
+ * zone holds it and an inline-size container would break that.
  */
 
 @use '../../../../app/breakpoints' as *;
@@ -18,7 +18,7 @@
  * Sign-in CTA (anonymous visitors)
  *
  * Premium pill carried over from the pre-refactor wallet button so the
- * anonymous-visitor affordance keeps its visual weight in the header.
+ * anonymous-visitor affordance keeps its visual weight wherever it is placed.
  * ============================================================================
  */
 .signin_btn {
@@ -125,9 +125,8 @@
 /* ============================================================================
  * Mobile: hide label text on both states, keep icon visible.
  *
- * Matches MainHeader's own @media-driven mobile rules for visual
- * consistency. Container queries are inappropriate here — the header
- * flex layout content-sizes this child, so a containment context
+ * Uses a viewport @media rule rather than a container query: the widget
+ * zone's flex layout content-sizes this child, so a containment context
  * would break the natural width collapse.
  * ============================================================================
  */

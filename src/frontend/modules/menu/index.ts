@@ -31,6 +31,7 @@
 export { PriorityNav } from './components';
 export type { IPriorityNavProps, IPriorityNavItem } from './components';
 export { CategoryLandingPage } from './components';
+export { MenuSeedProvider, useMenuSeed } from './components';
 
 // Hooks
 export { useMenuConfig, useBodyScrollLock } from './hooks';
@@ -40,4 +41,4 @@ export { default as menuReducer, menuTreeSeeded, refetchMenuTree } from './slice
 export type { MenuState } from './slice';
 
 // Types
-export type { IMenuNamespaceConfig, IUseMenuConfigResult } from './types';
+export type { IMenuNamespaceConfig, IUseMenuConfigResult, IMenuSeed } from './types';
