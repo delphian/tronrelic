@@ -1,0 +1,207 @@
+@use '../../../../app/breakpoints' as *;
+
+/* Toolbar: the gauge legend on the left, the edit button on the right. */
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-sm);
+}
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-xs) var(--gap-sm);
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.legend_fill,
+.legend_tick {
+    display: inline-block;
+    block-size: var(--meter-height);
+}
+
+.legend_fill {
+    inline-size: calc(var(--meter-height) * 2);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+}
+
+.legend_tick {
+    inline-size: var(--border-width-medium);
+    block-size: calc(var(--meter-height) * 2);
+    background: var(--color-text-subtle);
+}
+
+.legend_end {
+    color: var(--color-text-subtle);
+}
+
+/* One group of limits: a heading, a sentence saying what the group applies
+   to, and its gauges. The group is the container so every gauge row adapts to
+   the width the card actually gives it. */
+.group {
+    container-type: inline-size;
+    container-name: limit-group;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-xs);
+}
+
+.group_title {
+    margin: 0;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+}
+
+.group_note {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+/* The rows share one grid so labels, values, tracks, and ceilings line up
+   down the group; each row joins it through subgrid. */
+.gauges {
+    list-style: none;
+    margin: var(--gap-xs) 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    column-gap: var(--gap-md);
+    row-gap: var(--gap-sm);
+}
+
+.gauge {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+    row-gap: var(--gap-2xs);
+}
+
+.gauge_label {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+}
+
+.gauge_value {
+    justify-self: end;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text);
+}
+
+.gauge_ceiling {
+    grid-column: 1 / -1;
+    justify-self: end;
+    font-size: var(--font-size-caption);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-subtle);
+}
+
+.gauge_drift {
+    grid-column: 1 / -1;
+}
+
+/* The headroom track. Its full length is the ceiling set in code; the fill
+   is the value in force; the thin tick is the code default; the taller warning
+   marker, when present, is where ClickHouse says the value actually is. */
+.track {
+    position: relative;
+    grid-column: 1 / -1;
+    block-size: var(--meter-height);
+    border-radius: var(--radius-full);
+    background: var(--meter-background);
+}
+
+.track_fill {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    border-radius: inherit;
+    background: var(--color-primary);
+}
+
+.track_default,
+.track_drift {
+    position: absolute;
+    inset-block-start: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.track_default {
+    inline-size: var(--border-width-medium);
+    block-size: calc(var(--meter-height) * 2);
+    background: var(--color-text-subtle);
+}
+
+.track_drift {
+    inline-size: var(--border-width-thick);
+    block-size: calc(var(--meter-height) * 3);
+    border-radius: var(--radius-full);
+    background: var(--color-warning);
+}
+
+/* Wide enough for one line per limit: label, value, track, ceiling. */
+@container limit-group (min-width: #{$breakpoint-mobile-lg}) {
+    .gauges {
+        grid-template-columns: minmax(0, 2fr) max-content minmax(0, 3fr) max-content;
+    }
+
+    .track {
+        grid-column: auto;
+    }
+
+    .gauge_ceiling {
+        grid-column: auto;
+        justify-self: start;
+    }
+
+    .gauge_drift {
+        grid-column: 3 / -1;
+    }
+}
+
+/* Editor */
+.editor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-md);
+}
+
+.editor_group {
+    container-type: inline-size;
+    container-name: limit-editor-group;
+    margin: 0;
+    padding: 0;
+    border: none;
+    min-inline-size: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.editor_fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--gap-md);
+}
+
+@container limit-editor-group (min-width: #{$breakpoint-mobile-lg}) {
+    .editor_fields {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+.editor_actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--form-footer-gap);
+}

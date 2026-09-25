@@ -44,6 +44,10 @@ When it is unset, the module falls back to `SESSION_SECRET`, which is why produc
 
 Rotating the salt does not break anything. It only means events recorded before and after the change can no longer be matched to the same source.
 
+## CLICKHOUSE_PASSWORD Also Derives Account Passwords
+
+Besides authenticating the shared ClickHouse connection, `CLICKHOUSE_PASSWORD` is the key every managed ClickHouse account's password is derived from, such as the AI agent's read-only user. Nothing else stores those passwords. Changing `CLICKHOUSE_PASSWORD` therefore changes every account password too, and the backend applies the new ones to ClickHouse at its next startup. With the variable empty, as in local development, the derived passwords can be worked out from the account id alone, and the backend logs a warning. See the [ClickHouse Accounts README](../src/backend/modules/clickhouse-accounts/README.md#passwords).
+
 ## TronGrid Rate Limits
 
 With no API key configured, the backend uses TronGrid's shared pool for anonymous callers, capped at 100 requests per second across every user of that pool by IP address. The blockchain sync can saturate that limit on its own while catching up on a backlog of blocks.

@@ -1,0 +1,37 @@
+.empty {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.scroll {
+    overflow-x: auto;
+}
+
+.actor {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.lines {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.none {
+    color: var(--color-text-subtle);
+}
+
+.detail {
+    display: block;
+    max-inline-size: var(--max-width-xs);
+    margin-block-start: var(--gap-2xs);
+    font-size: var(--font-size-caption);
+    color: var(--color-danger-text);
+}

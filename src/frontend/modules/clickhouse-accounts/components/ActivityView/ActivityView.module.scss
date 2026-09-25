@@ -1,0 +1,52 @@
+/* Stands in for the stat tiles while the first request is in flight, at
+   roughly one row of small tiles, so the chart below does not jump up and
+   back down when the data lands. */
+.placeholder {
+    inline-size: 100%;
+    block-size: var(--avatar-size-lg);
+}
+
+.toolbar {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* The daily table sits behind a disclosure: the chart answers the usual
+   question, and the table is the exact figures for anyone who needs them. */
+.details {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+
+    summary {
+        cursor: pointer;
+        margin-block-end: var(--gap-sm);
+    }
+
+    summary:focus-visible {
+        outline: var(--focus-outline-width) solid var(--color-focus);
+        outline-offset: var(--focus-outline-offset);
+    }
+}
+
+.quota {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-sm);
+}
+
+.quota_title {
+    margin: 0;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-semibold);
+}
+
+.empty {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.key {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+}
