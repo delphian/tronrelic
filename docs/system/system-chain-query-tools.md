@@ -48,7 +48,7 @@ Every response is built by `buildChainResponse` and carries the same fields.
 | `addressTags` | Active tags, such as `ofac:sdn`, for every mentioned address that has any |
 | `notes` | Caveats for this particular answer, derived from the fields above so a tool cannot forget one |
 
-Coverage is computed from `tron.block` rather than `tron._ingest_gap`, because a missing height is missing whatever the reason. That includes the one loss the gap table cannot record. The end of a window may run up to five minutes past the newest stored block before coverage counts as short, because blocks reach ClickHouse only after the emit buffer releases them, about a minute behind the chain by default. It is cached for a minute per window, so several calls over the same window pay for it once.
+Coverage is computed from `tron.block` rather than `tron._ingest_gap`, because a missing height is missing whatever the reason. That includes the one loss the gap table cannot record. A window ending within five minutes of now may run up to five minutes past the newest stored block before coverage counts as short, because blocks reach ClickHouse only after the emit buffer releases them, about a minute behind the chain by default. A window that ended earlier than that is held to about three blocks at its end, the same as at its start, so a missing tail of blocks is reported rather than hidden. Coverage is cached for a minute per exact window, so a later page or several calls over the same `since`/`until` pay for it once.
 
 ### Amounts, prices, and tags
 
