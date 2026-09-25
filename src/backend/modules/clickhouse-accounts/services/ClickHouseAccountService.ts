@@ -286,7 +286,7 @@ export class ClickHouseAccountService implements IClickHouseAccountService {
             before,
             after,
             detail: applyError ?? (storeError !== null ? `Applied, but not stored: ${storeError}` : null),
-            succeeded: applyError === null
+            succeeded: applyError === null && storeError === null
         });
         if (applyError !== null) {
             throw new ClickHouseAccountError(`ClickHouse refused the new limits: ${applyError}`, 502);
