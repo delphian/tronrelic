@@ -1,5 +1,5 @@
 /**
- * @fileoverview Reading and saving the header's sign-in button image.
+ * @fileoverview Reading and saving the sign-in button image.
  *
  * The image lives on the system config document beside the site URL and the
  * emit-buffer settings, so this module talks to the same endpoint as

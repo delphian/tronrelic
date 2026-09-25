@@ -19,7 +19,7 @@ import type { LogLevelName } from '../system-log/LogLevels.js';
  * - `systemLogsMaxCount` - Maximum number of log entries to retain (default: 10000)
  * - `systemLogsRetentionDays` - Number of days to keep logs before deletion (default: 30)
  * - `emitBuffer*` - The five settings shaping the block feed's playout buffer
- * - `authButtonImage*` - The image the header shows in place of the sign-in button
+ * - `authButtonImage*` - The image the sign-in button widget shows in place of its text
  *
  * **Future Settings (examples):**
  * - `maintenanceMode` - Boolean flag to enable read-only mode
@@ -243,13 +243,13 @@ export interface ISystemConfig {
     emitBufferCatchupIntervalMs: number;
 
     /**
-     * Image the site header shows in place of the sign-in button.
+     * Image the sign-in button shows in place of its text.
      *
      * An administrator chooses it with the file picker on the Configuration tab
-     * of `/system/system`. When set, the header renders this image as a round
-     * button for every visitor: an anonymous visitor who clicks it gets the
-     * sign-in dialog, and a signed-in visitor goes to their profile. When null
-     * or absent, the header keeps its default text button.
+     * of `/system/system`. When set, the `core:auth-button` widget renders this
+     * image as a round button for every visitor: an anonymous visitor who clicks
+     * it gets the sign-in dialog, and a signed-in visitor goes to their profile.
+     * When null or absent, the widget keeps its default text button.
      *
      * Stored as the opaque URL the files provider returned. It may be
      * root-relative (`/uploads/...`) or absolute, and must not be rebuilt.

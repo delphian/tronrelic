@@ -18,6 +18,13 @@
  * blockchain status row: its SSR payload is the latest processed block,
  * read at fetch time from the `'blockchain'` service, after which the
  * `BlockTickerWidget` component takes over live updates over WebSocket.
+ * `core:auth-button` is the sign-in / profile button; its SSR payload is
+ * the administrator's sign-in image from the system configuration, and
+ * `AuthButtonWidget` decides between sign-in and profile from the
+ * visitor's session. `core:site-logo` and `core:main-menu` are the rest of
+ * what used to be the fixed site header. The menu's items are per-visitor,
+ * so they reach the component through `MenuSeedProvider`, never through
+ * this cached payload.
  *
  * Because the block-ticker fetcher needs a runtime dependency the other
  * two do not, the catalog is a *factory* — `buildCoreWidgetTypeDescriptors`
@@ -41,6 +48,7 @@ import type {
     IWidgetPlacementContext,
     IServiceRegistry,
     IBlockchainService,
+    ISystemConfigService,
     IZoneLayoutConfig,
     ZoneFlexDirection,
     ZoneJustifyContent,
@@ -538,16 +546,24 @@ export interface IBlockTickerWidgetData {
 /**
  * Dependencies the core widget-type catalog needs to build its fetchers.
  *
- * Only the block-ticker fetcher consumes anything here — it resolves the
- * blockchain service from the registry at fetch time. Passing the
- * registry (rather than the service itself) keeps resolution lazy so the
- * catalog builds regardless of module init order; `'blockchain'` is
- * published during bootstrap and is always present by the time a page
- * renders.
+ * The block-ticker and network-activity fetchers resolve the blockchain
+ * service from the registry at fetch time. Passing the registry (rather
+ * than the service itself) keeps resolution lazy so the catalog builds
+ * regardless of module init order; `'blockchain'` is published during
+ * bootstrap and is always present by the time a page renders. The
+ * auth-button fetcher reads the administrator's sign-in button image from
+ * the system configuration.
  */
 export interface ICoreWidgetTypeDeps {
     /** Service registry used to resolve `'blockchain'` lazily per request. */
     serviceRegistry: IServiceRegistry;
+    /**
+     * System configuration, read by the auth-button fetcher for the sign-in
+     * button image an administrator chose on the Configuration tab of
+     * `/system/system`. Injected rather than resolved from the singleton so a
+     * test can supply its own.
+     */
+    systemConfig: ISystemConfigService;
 }
 
 /**
@@ -734,11 +750,204 @@ export const NETWORK_ACTIVITY_CONFIG_SCHEMA: JSONSchema7 = {
 };
 
 /**
+ * Widget-type id for the sign-in / profile button. Namespaced under
+ * `core:` so it never collides with a plugin-declared id; the frontend
+ * component registry (`widgets.core.ts`) keys its renderer on this string.
+ */
+export const AUTH_BUTTON_TYPE_ID = 'core:auth-button';
+
+/**
+ * SSR payload the auth-button data fetcher returns and the frontend
+ * `AuthButtonWidget` consumes.
+ *
+ * It carries only the site-wide branding, never anything about the
+ * visitor. Whether the visitor is signed in comes from the session the
+ * root layout already resolved and seeded into `SessionProvider`, so the
+ * payload is the same for every visitor and is safe under the per-route
+ * widget cache, whose key holds nothing about who is asking.
+ */
+export interface IAuthButtonWidgetData {
+    /**
+     * Image an administrator chose to show in place of the text button, or
+     * null to keep the default "Sign in" button and identity pill.
+     */
+    imageUrl: string | null;
+}
+
+/**
+ * JSON Schema (Draft 7) for the auth-button placement's `instanceConfig`.
+ *
+ * The button has no per-placement settings: its image is the site-wide
+ * branding setting, so every placement looks the same. The empty, closed
+ * schema makes the admin form render no settings and rejects any stray key
+ * an API caller sends.
+ */
+export const AUTH_BUTTON_CONFIG_SCHEMA: JSONSchema7 = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {}
+};
+
+/**
+ * Build the auth-button SSR data fetcher bound to the system configuration.
+ *
+ * Reads the administrator's sign-in button image, so the server renders
+ * the image in the first HTML response and the button never switches from
+ * text to image after the page loads. Never throws and never returns bare
+ * null: a configuration read that fails yields `{ imageUrl: null }`, so the
+ * default text button still renders rather than the widget disappearing
+ * and leaving the site with no way to sign in. The fetcher ignores route
+ * and params — the button is the same on every page.
+ *
+ * @param deps - Carries the system configuration service.
+ * @returns A {@link WidgetDataFetcher} producing the button's SSR payload.
+ */
+function buildAuthButtonFetcher(deps: ICoreWidgetTypeDeps): WidgetDataFetcher {
+    return async (): Promise<IAuthButtonWidgetData> => {
+        let imageUrl: string | null = null;
+        try {
+            const config = await deps.systemConfig.getConfig();
+            // Documents written before the field existed read back without
+            // it, and an empty string means the same as no image.
+            imageUrl = typeof config.authButtonImageUrl === 'string' && config.authButtonImageUrl !== ''
+                ? config.authButtonImageUrl
+                : null;
+        } catch {
+            imageUrl = null;
+        }
+        return { imageUrl };
+    };
+}
+
+/**
+ * Widget-type id for the site logo link. Namespaced under `core:` so it
+ * never collides with a plugin-declared id; the frontend component
+ * registry (`widgets.core.ts`) keys its renderer on this string.
+ */
+export const SITE_LOGO_TYPE_ID = 'core:site-logo';
+
+/** Text the logo shows when the placement sets none. */
+const SITE_LOGO_DEFAULT_TEXT = 'TronRelic';
+
+/**
+ * SSR payload the site-logo data fetcher returns and the frontend
+ * `SiteLogoWidget` consumes.
+ */
+export interface ISiteLogoWidgetData {
+    /** The wordmark shown in the logo link to the home page. */
+    text: string;
+}
+
+/**
+ * JSON Schema (Draft 7) for the site-logo placement's `instanceConfig`.
+ * The one setting is the wordmark text, bounded so it stays a logo rather
+ * than a paragraph.
+ */
+export const SITE_LOGO_CONFIG_SCHEMA: JSONSchema7 = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+        text: {
+            type: 'string',
+            title: 'Logo text',
+            description: `Wordmark shown in the link to the home page. Defaults to "${SITE_LOGO_DEFAULT_TEXT}".`,
+            minLength: 1,
+            maxLength: 60,
+            default: SITE_LOGO_DEFAULT_TEXT
+        }
+    }
+};
+
+/**
+ * Resolve the site-logo SSR payload from the placement's instance config.
+ *
+ * Falls back to the default wordmark when the placement carries no text,
+ * or only whitespace, so a freshly placed logo is never an empty link.
+ *
+ * @param _route - Unused; the logo is the same on every page.
+ * @param _params - Unused; the logo is the same on every page.
+ * @param placement - Placement context carrying the operator config.
+ * @returns The wordmark for the frontend component.
+ */
+async function fetchSiteLogoData(
+    _route: string,
+    _params: Record<string, string>,
+    placement?: IWidgetPlacementContext
+): Promise<ISiteLogoWidgetData> {
+    const configured = placement?.instanceConfig?.text;
+    const text = typeof configured === 'string' && configured.trim() !== '' ? configured.trim() : SITE_LOGO_DEFAULT_TEXT;
+
+    return { text };
+}
+
+/**
+ * Widget-type id for the main navigation menu. Namespaced under `core:`
+ * so it never collides with a plugin-declared id; the frontend component
+ * registry (`widgets.core.ts`) keys its renderer on this string.
+ */
+export const MAIN_MENU_TYPE_ID = 'core:main-menu';
+
+/**
+ * SSR payload the main-menu data fetcher returns and the frontend
+ * `MainMenuWidget` consumes.
+ *
+ * The menu's items are deliberately not in it. The `main` tree depends on
+ * who is asking — admins see the System container, anonymous visitors do
+ * not — while widget data is cached per route with nothing about the
+ * visitor in the key, so a tree here would show one visitor's menu to the
+ * next. The root layout fetches the visitor's own tree on every request and
+ * seeds it through `MenuSeedProvider` instead; this payload carries only
+ * the operator's layout choice.
+ */
+export interface IMainMenuWidgetData {
+    /** How the menu sits within the space its placement is given. */
+    align: 'flex-start' | 'center' | 'flex-end';
+}
+
+/**
+ * JSON Schema (Draft 7) for the main-menu placement's `instanceConfig`.
+ */
+export const MAIN_MENU_CONFIG_SCHEMA: JSONSchema7 = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+        align: {
+            type: 'string',
+            enum: ['flex-start', 'center', 'flex-end'],
+            default: 'flex-end',
+            title: 'Alignment',
+            description:
+                'Where the menu items sit within the width the placement is given: the start, the centre, or the end. The end matches the old header, which right-aligned the menu. Give the placement a width weight so the menu has room to lay out its items before folding the rest into "More".'
+        }
+    }
+};
+
+/**
+ * Resolve the main-menu SSR payload from the placement's instance config.
+ *
+ * @param _route - Unused; the active item is worked out on the client from the pathname.
+ * @param _params - Unused.
+ * @param placement - Placement context carrying the operator config.
+ * @returns The alignment for the frontend component, defaulting to the end.
+ */
+async function fetchMainMenuData(
+    _route: string,
+    _params: Record<string, string>,
+    placement?: IWidgetPlacementContext
+): Promise<IMainMenuWidgetData> {
+    const configured = placement?.instanceConfig?.align;
+    const align = configured === 'flex-start' || configured === 'center' ? configured : 'flex-end';
+
+    return { align };
+}
+
+/**
  * Build the core widget-type catalog as plain registration inputs.
  *
- * A factory rather than a constant because the block-ticker fetcher needs
- * the service registry to read the latest block; raw-html and
- * world-clocks ignore `deps`. Descriptor minting happens inside
+ * A factory rather than a constant because the block-ticker and
+ * network-activity fetchers need the service registry, and the auth-button
+ * fetcher needs the system configuration; raw-html, world-clocks, and
+ * layout-group ignore `deps`. Descriptor minting happens inside
  * `WidgetsService.registerType` when `WidgetsModule.run()` iterates the
  * returned list at bootstrap.
  *
@@ -792,6 +1001,32 @@ export function buildCoreWidgetTypeDescriptors(
             category: 'Blockchain',
             defaultDataFetcher: buildNetworkActivityFetcher(deps),
             configSchema: NETWORK_ACTIVITY_CONFIG_SCHEMA
+        },
+        {
+            id: AUTH_BUTTON_TYPE_ID,
+            label: 'Sign-in button',
+            description:
+                'Sign-in button for signed-out visitors; a short identity pill linking to /profile for signed-in ones, where sign-out lives. Shows the sign-in image chosen on /system/system when one is set.',
+            category: 'Account',
+            defaultDataFetcher: buildAuthButtonFetcher(deps),
+            configSchema: AUTH_BUTTON_CONFIG_SCHEMA
+        },
+        {
+            id: SITE_LOGO_TYPE_ID,
+            label: 'Site logo',
+            description: 'The site wordmark, linking to the home page.',
+            category: 'Navigation',
+            defaultDataFetcher: fetchSiteLogoData,
+            configSchema: SITE_LOGO_CONFIG_SCHEMA
+        },
+        {
+            id: MAIN_MENU_TYPE_ID,
+            label: 'Main menu',
+            description:
+                'The site navigation from the main menu namespace (edited at /system/menu), with each visitor seeing only the items they may open. Folds items that do not fit into "More".',
+            category: 'Navigation',
+            defaultDataFetcher: fetchMainMenuData,
+            configSchema: MAIN_MENU_CONFIG_SCHEMA
         }
     ];
 }

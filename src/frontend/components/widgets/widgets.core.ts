@@ -21,6 +21,9 @@ import { RawHtmlWidget } from './RawHtmlWidget';
 import { WorldClocksWidget } from './WorldClocksWidget';
 import { BlockTickerWidget } from './BlockTickerWidget';
 import { NetworkActivityWidget } from './NetworkActivityWidget';
+import { AuthButtonWidget } from './AuthButtonWidget';
+import { SiteLogoWidget } from './SiteLogoWidget';
+import { MainMenuWidget } from './MainMenuWidget';
 
 /**
  * Core widget components keyed by backend widget-type id. Mirrors the
@@ -32,5 +35,8 @@ export const coreWidgetComponents: Record<string, WidgetComponent> = {
     'core:raw-html': RawHtmlWidget,
     'core:world-clocks': WorldClocksWidget,
     'core:block-ticker': BlockTickerWidget,
-    'core:network-activity': NetworkActivityWidget
+    'core:network-activity': NetworkActivityWidget,
+    'core:auth-button': AuthButtonWidget,
+    'core:site-logo': SiteLogoWidget,
+    'core:main-menu': MainMenuWidget
 };

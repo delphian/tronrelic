@@ -440,7 +440,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
 
     await logsModule.init({ pinoLogger, database: coreDatabase, app, serviceRegistry });
     await pagesModule.init({ ...sharedDeps, contentService });
-    await widgetsModule.init(sharedDeps);
+    await widgetsModule.init({ ...sharedDeps, systemConfig: SystemConfigService.getInstance() });
     await schedulerModule.init({ database: coreDatabase, menuService, app });
     const schedulerService = schedulerModule.getSchedulerService();
     await identityModule.init(sharedDeps);

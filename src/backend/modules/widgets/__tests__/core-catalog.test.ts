@@ -14,8 +14,8 @@
  * @module backend/modules/widgets/__tests__/core-catalog.test
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { ISystemLogService } from '@/types';
+import { describe, it, expect, vi } from 'vitest';
+import type { ISystemConfig, ISystemConfigService, ISystemLogService } from '@/types';
 import { createMockDatabaseService } from '../../../tests/vitest/mocks/database-service.js';
 import { createMockServiceRegistry } from '../../../tests/vitest/mocks/service-registry.js';
 import { WidgetsService } from '../widgets.service.js';
@@ -29,8 +29,11 @@ import { __resetKnownZonesForTests } from '../zones/define-zone.js';
 import { __resetKnownWidgetTypesForTests } from '../widget-types/define-widget-type.js';
 import { CORE_ZONE_DESCRIPTORS } from '../zones/descriptors.js';
 import {
+    AUTH_BUTTON_TYPE_ID,
     buildCoreWidgetTypeDescriptors,
-    RAW_HTML_TYPE_ID
+    MAIN_MENU_TYPE_ID,
+    RAW_HTML_TYPE_ID,
+    SITE_LOGO_TYPE_ID
 } from '../widget-types/core-widget-types.js';
 
 /**
@@ -41,8 +44,21 @@ import {
  * never exercise the ticker, so the empty registry is sufficient.
  */
 const coreWidgetTypeDescriptors = buildCoreWidgetTypeDescriptors({
-    serviceRegistry: createMockServiceRegistry()
+    serviceRegistry: createMockServiceRegistry(),
+    systemConfig: buildSystemConfig(async () => ({ authButtonImageUrl: '/uploads/sign-in.png' }))
 });
+
+/**
+ * Build a system-config stub whose `getConfig` answers with the given
+ * function. Only `getConfig` is read by the catalog, through the
+ * auth-button fetcher, so nothing else is implemented.
+ *
+ * @param getConfig - What the auth-button fetcher will receive.
+ * @returns The stub, typed as the full service the catalog expects.
+ */
+function buildSystemConfig(getConfig: () => Promise<Partial<ISystemConfig>>): ISystemConfigService {
+    return { getConfig } as unknown as ISystemConfigService;
+}
 
 /**
  * Minimal `ISystemLogService` stub — every method is a spy/no-op so the
@@ -75,8 +91,17 @@ class MockLogger implements ISystemLogService {
 /**
  * Build a fully wired WidgetsService over fresh collaborators, mirroring
  * `WidgetsModule.init()`.
+ *
+ * Each call stands for a fresh process, so it also clears the
+ * process-wide sets of minted zone and widget-type ids. Without that, a
+ * test that builds the service twice would register `site-top` a second
+ * time and trip the duplicate-id guard in `defineZone`.
+ *
+ * @returns The wired service, ready for zones and types to be registered.
  */
 function buildWidgetsService(): { widgets: WidgetsService } {
+    __resetKnownZonesForTests();
+    __resetKnownWidgetTypesForTests();
     const logger = new MockLogger();
     const db = createMockDatabaseService();
     PlacementService.__resetForTests();
@@ -92,11 +117,6 @@ function buildWidgetsService(): { widgets: WidgetsService } {
     WidgetsService.setDependencies(zones, types, placements, resolver, new WidgetRouteCache(), zoneLayouts, logger);
     return { widgets: WidgetsService.getInstance() };
 }
-
-beforeEach(() => {
-    __resetKnownZonesForTests();
-    __resetKnownWidgetTypesForTests();
-});
 
 describe('Core zone catalog', () => {
     it('declares a site-host footer zone', () => {
@@ -175,5 +195,84 @@ describe('Core widget-type catalog (raw-html)', () => {
         const widget = resolved.find(w => w.id === RAW_HTML_TYPE_ID);
         expect(widget?.zone).toBe('footer');
         expect(widget?.data).toEqual({ content: '<p>hi</p>', mode: 'html' });
+    });
+});
+
+describe('Core widget-type catalog (auth-button)', () => {
+    /**
+     * Resolve the auth-button's SSR payload from a catalog built over the
+     * given system configuration, through a real placement in the
+     * `site-top` zone.
+     *
+     * @param getConfig - What the system configuration answers.
+     * @returns The widget data the resolver produced, or undefined when the
+     *          widget was dropped.
+     */
+    async function resolveAuthButton(getConfig: () => Promise<Partial<ISystemConfig>>): Promise<unknown> {
+        const { widgets } = buildWidgetsService();
+        widgets.registerZone(CORE_ZONE_DESCRIPTORS.find(z => z.id === 'site-top')!, 'core');
+        const descriptors = buildCoreWidgetTypeDescriptors({
+            serviceRegistry: createMockServiceRegistry(),
+            systemConfig: buildSystemConfig(getConfig)
+        });
+        for (const descriptor of descriptors) {
+            widgets.registerType(descriptor, 'core');
+        }
+        await widgets.createPlacement({ typeId: AUTH_BUTTON_TYPE_ID, zoneId: 'site-top', routes: [] });
+        const resolved = await widgets.fetchWidgetsForRoute('/');
+        return resolved.find(w => w.id === AUTH_BUTTON_TYPE_ID)?.data;
+    }
+
+    it('carries the administrator\'s sign-in image', async () => {
+        await expect(resolveAuthButton(async () => ({ authButtonImageUrl: '/uploads/sign-in.png' })))
+            .resolves.toEqual({ imageUrl: '/uploads/sign-in.png' });
+    });
+
+    it('falls back to the text button when no image is set', async () => {
+        await expect(resolveAuthButton(async () => ({ authButtonImageUrl: null })))
+            .resolves.toEqual({ imageUrl: null });
+        await expect(resolveAuthButton(async () => ({})))
+            .resolves.toEqual({ imageUrl: null });
+    });
+
+    it('still renders when the configuration cannot be read (auth-button)', async () => {
+        // A missing widget would leave the site with no way to sign in, so a
+        // failed read degrades to the text button instead of dropping it.
+        await expect(resolveAuthButton(async () => { throw new Error('database down'); }))
+            .resolves.toEqual({ imageUrl: null });
+    });
+});
+
+describe('Core widget-type catalog (site-logo, main-menu)', () => {
+    /**
+     * Resolve one core widget's SSR payload through a real placement in the
+     * `site-top` zone.
+     *
+     * @param typeId - The core widget type to place.
+     * @param instanceConfig - The placement's operator config, if any.
+     * @returns The widget data the resolver produced.
+     */
+    async function resolveCoreWidget(typeId: string, instanceConfig?: Record<string, unknown>): Promise<unknown> {
+        const { widgets } = buildWidgetsService();
+        widgets.registerZone(CORE_ZONE_DESCRIPTORS.find(z => z.id === 'site-top')!, 'core');
+        for (const descriptor of coreWidgetTypeDescriptors) {
+            widgets.registerType(descriptor, 'core');
+        }
+        await widgets.createPlacement({ typeId, zoneId: 'site-top', routes: [], ...(instanceConfig ? { instanceConfig } : {}) });
+        const resolved = await widgets.fetchWidgetsForRoute('/');
+        return resolved.find(w => w.id === typeId)?.data;
+    }
+
+    it('shows the default wordmark until an operator sets one', async () => {
+        await expect(resolveCoreWidget(SITE_LOGO_TYPE_ID)).resolves.toEqual({ text: 'TronRelic' });
+        await expect(resolveCoreWidget(SITE_LOGO_TYPE_ID, { text: '   ' })).resolves.toEqual({ text: 'TronRelic' });
+        await expect(resolveCoreWidget(SITE_LOGO_TYPE_ID, { text: ' Relic ' })).resolves.toEqual({ text: 'Relic' });
+    });
+
+    it('carries only the menu alignment, never the per-visitor menu items', async () => {
+        // The items differ by visitor and this payload is cached per route,
+        // so they must reach the component another way.
+        await expect(resolveCoreWidget(MAIN_MENU_TYPE_ID)).resolves.toEqual({ align: 'flex-end' });
+        await expect(resolveCoreWidget(MAIN_MENU_TYPE_ID, { align: 'center' })).resolves.toEqual({ align: 'center' });
     });
 });

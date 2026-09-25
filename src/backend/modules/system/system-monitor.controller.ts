@@ -271,8 +271,8 @@ export class SystemMonitorController {
 
     Object.assign(updates, emitBuffer.updates);
 
-    // The sign-in button image is a URL rendered in the header of every public
-    // page, so it gets its own check rather than the loose URL test siteUrl
+    // The sign-in button image is a URL rendered by the sign-in button widget,
+    // normally on every public page, so it gets its own check rather than the loose URL test siteUrl
     // uses. The URL and the file id it came from are validated and written as
     // one setting.
     const authButtonImage = validateAuthButtonImage(body);

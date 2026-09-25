@@ -1,0 +1,15 @@
+/**
+ * SiteLogoWidget styles
+ *
+ * The wordmark as the old site header drew it. `white-space: nowrap` and
+ * `flex-shrink: 0` keep it on one line and at full size when it shares a row
+ * with the main menu, which is the item meant to give way.
+ */
+
+.logo {
+    font-weight: var(--font-weight-bold);
+    font-size: var(--font-size-heading-sm);
+    letter-spacing: var(--letter-spacing-tight);
+    white-space: nowrap;
+    flex-shrink: 0;
+}

@@ -1,8 +1,9 @@
 /**
- * @fileoverview Validation for the header sign-in button image settings.
+ * @fileoverview Validation for the sign-in button image settings.
  *
  * An administrator picks this image once, and the site then renders it as an
- * `<img src>` in the header of every public page. A bad value would therefore
+ * `<img src>` in the sign-in button widget, which normally appears on every
+ * public page. A bad value would therefore
  * reach every visitor. The check below limits the URL to the two shapes a files
  * provider actually hands back — a root-relative path on this site, or an
  * absolute http(s) URL. That also refuses `javascript:` and `data:` values, and

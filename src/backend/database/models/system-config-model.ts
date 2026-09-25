@@ -24,8 +24,8 @@ import { EMIT_BUFFER_DEFAULTS } from '../../config/emit-buffer.js';
  * - `logLevel` - Minimum log level for file/console output (default: 'info')
  * - `emitBuffer*` - The five settings shaping the block feed's playout buffer,
  *   applied to the running `BlockEmitter` the moment they are saved
- * - `authButtonImageUrl` / `authButtonImageFileId` - The image the header shows
- *   in place of the sign-in button, and the files-provider id it came from
+ * - `authButtonImageUrl` / `authButtonImageFileId` - The image the sign-in
+ *   button widget shows in place of its text, and the files-provider id it came from
  * - `updatedAt` - Timestamp of last configuration change
  * - `updatedBy` - Admin identifier who made the change (for audit trail)
  *
@@ -122,9 +122,9 @@ const systemConfigSchema = new Schema<SystemConfigDoc>(
             required: true,
             default: EMIT_BUFFER_DEFAULTS.emitBufferCatchupIntervalMs
         },
-        // The header's sign-in button image and the file it came from. Both
-        // are optional with a null default because the header falls back to
-        // its text button when no image is set. As with the emit-buffer
+        // The sign-in button image and the file it came from. Both are
+        // optional with a null default because the sign-in button widget falls
+        // back to its text button when no image is set. As with the emit-buffer
         // fields, an existing document read through `.lean()` comes back
         // without them, so every reader treats undefined the same as null.
         authButtonImageUrl: {

@@ -6,8 +6,8 @@ import { getServerSideApiUrl } from '../lib/api-url';
 import { buildMetadata, SITE_NAME } from '../lib/seo';
 import './globals.scss';
 import { Providers } from './providers';
-import { MainHeader } from '../components/layout/MainHeader';
 import { WidgetZone, fetchWidgetsForRoute } from '../components/widgets';
+import { fetchMenuNamespace } from '../modules/menu/server';
 import { getServerSession, type ISSRSession } from '../modules/user/lib/session-server';
 
 /**
@@ -305,12 +305,19 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // via ssr.headFragments and stamps data-theme="active" via
   // ssr.htmlAttributes, so no separate fetchActiveThemes call or cookie
   // branch is needed in this layout.
-  const [runtimeConfig, headFragments, htmlAttributes, ssrSession, widgetBundle] = await Promise.all([
+  //
+  // The main menu is fetched here, per visitor, rather than by its widget:
+  // the `core:main-menu` widget's data is cached per route and shared by
+  // every visitor, while the menu tree is filtered per visitor (admins see
+  // the System container). The tree reaches the widget through
+  // MenuSeedProvider.
+  const [runtimeConfig, headFragments, htmlAttributes, ssrSession, widgetBundle, mainMenu] = await Promise.all([
     getServerConfig(),
     fetchHeadFragments(pathname, cookieMap),
     fetchHtmlAttributes(pathname, cookieMap),
     fetchSSRSession(),
-    fetchWidgetsForRoute(pathname, {})
+    fetchWidgetsForRoute(pathname, {}),
+    fetchMenuNamespace('main', cookieStore.toString())
   ]);
 
   return (
@@ -337,12 +344,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         {headFragments.map(renderHeadFragment)}
       </head>
       <body>
-        <Providers ssrSession={ssrSession}>
-          {/* Sits above MainHeader so an operator can place a widget at the very
-              top of the page. WidgetZone returns null when nothing is placed
-              here, so an empty site-top adds no markup. */}
-          <WidgetZone name="site-top" widgets={widgetBundle.widgets} layout={widgetBundle.zones['site-top']} route={pathname} params={{}} />
-          <MainHeader />
+        <Providers ssrSession={ssrSession} ssrMenus={{ main: mainMenu }}>
+          {/* The site header is built entirely from widgets an operator places
+              in site-top: the Site logo, Main menu, and Sign-in button. The
+              zone sits inside <header> so the page keeps its header landmark
+              for assistive technology. */}
+          <header>
+            <WidgetZone name="site-top" widgets={widgetBundle.widgets} layout={widgetBundle.zones['site-top']} route={pathname} params={{}} />
+          </header>
           <WidgetZone name="ticker-after" widgets={widgetBundle.widgets} layout={widgetBundle.zones['ticker-after']} route={pathname} params={{}} />
           <main>
             {children}

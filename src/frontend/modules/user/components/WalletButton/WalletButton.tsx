@@ -1,7 +1,10 @@
 'use client';
 
 /**
- * @fileoverview Header button driving the auth surface.
+ * @fileoverview The site's sign-in / profile button.
+ *
+ * Rendered by the `core:auth-button` widget (`components/widgets/
+ * AuthButtonWidget.tsx`), which an operator places from `/system/widgets`.
  *
  * Anonymous visitors see "Sign in" — clicking opens `AuthModal` with
  * email-code, OAuth, and passkey options. Logged-in visitors see a short
@@ -13,9 +16,8 @@
  * The click still does the same thing for each state, and the accessible name
  * and tooltip say which action it takes and, when signed in, who is signed in.
  *
- * The file and component names are retained to minimise churn in the header
- * import graph (`MainHeader` imports `WalletButton`), but the affordance is
- * identity-driven rather than wallet-driven.
+ * The file and component names are kept from when the button connected a
+ * wallet; the affordance is now identity-driven rather than wallet-driven.
  */
 
 import { useCallback } from 'react';

@@ -13,10 +13,15 @@ import { FrontendPluginContextProvider } from '../lib/frontendPluginContext';
 // Direct imports avoid pulling component CSS via barrel exports
 import { SessionProvider } from '../modules/user/components/SessionProvider';
 import { PageViewTracker } from '../modules/user/components/PageViewTracker';
+import { MenuSeedProvider } from '../modules/menu/components/MenuSeedProvider';
+import type { IMenuSeed } from '../modules/menu/types';
 import type { ISSRSession } from '../modules/user/lib/session-server';
 
 // Re-export the SSR session shape for layout.tsx
 export type { ISSRSession };
+
+/** Seeds used when the layout passes none; module-level so its identity is stable. */
+const EMPTY_MENU_SEEDS: Record<string, IMenuSeed> = {};
 
 interface ProvidersProps {
     children: ReactNode;
@@ -27,9 +32,23 @@ interface ProvidersProps {
      * in the Phase 6 cutover.
      */
     ssrSession?: ISSRSession | null;
+    /**
+     * Menu trees the root layout fetched for this visitor, keyed by
+     * namespace. The main menu is a widget, and widget data is shared by
+     * every visitor, so its per-visitor tree reaches the widget through
+     * `MenuSeedProvider` instead of the widget payload.
+     */
+    ssrMenus?: Record<string, IMenuSeed>;
 }
 
-export function Providers({ children, ssrSession }: ProvidersProps) {
+/**
+ * Compose every provider the application needs, in the order each depends
+ * on the ones outside it.
+ *
+ * @param props - The page subtree plus the session and menu trees resolved during SSR.
+ * @returns The subtree wrapped in every provider.
+ */
+export function Providers({ children, ssrSession, ssrMenus }: ProvidersProps) {
     // Memoize the store so it survives re-renders. No SSR slice is preloaded
     // — identity is seeded into the SessionProvider via React context, not
     // Redux.
@@ -62,7 +81,9 @@ export function Providers({ children, ssrSession }: ProvidersProps) {
                             <NotificationHandler />
                             <PluginLoader />
                             <PageViewTracker />
-                            {children}
+                            <MenuSeedProvider seeds={ssrMenus ?? EMPTY_MENU_SEEDS}>
+                                {children}
+                            </MenuSeedProvider>
                             <ToastViewport />
                             <ModalViewport />
                         </FrontendPluginContextProvider>
