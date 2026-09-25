@@ -18,12 +18,14 @@ Each job has an enabled flag and a cron expression, both persisted in the `sched
 
 ## Core Jobs
 
-Six jobs registered in `src/backend/modules/scheduler/jobs/core-jobs.ts`:
+Eight jobs registered in `src/backend/modules/scheduler/jobs/core-jobs.ts`:
 
 | Job | Default Schedule | Purpose | Impact if Down |
 |---|---|---|---|
 | `blockchain:sync` | `*/15 * * * * *` | Retrieve TRON blocks, enrich, dispatch to observers | Transaction feed and observers go silent |
 | `blockchain:prune` | `0 * * * *` | Drop transactions (4d) and blocks (32d) past retention | `transactions` and `blocks` collections grow unbounded |
+| `blockchain:token-metadata` | `17 * * * *` | Resolve decimals, symbol, and name of TRC-20 tokens active in ClickHouse's `tron._transfer` into `tron._token`, at most 50 tokens a run | New tokens' amounts cannot be converted from base units; does nothing without ClickHouse |
+| `network-activity:rollup` | `*/5 * * * *` | Pre-aggregate the buckets behind the `core:network-activity` widget | The widget's figures stop advancing |
 | `chain-parameters:fetch` | `*/10 * * * *` | Pull `energyPerTrx`, `energyFee` from TRON | Energy/TRX conversions drift from network truth |
 | `usdt-parameters:fetch` | `*/10 * * * *` | Pull current USDT transfer energy cost | USDT pricing drifts |
 | `cache:cleanup` | `0 * * * *` | Evict expired cache entries | Memory usage grows |
@@ -31,7 +33,7 @@ Six jobs registered in `src/backend/modules/scheduler/jobs/core-jobs.ts`:
 
 Plugins register additional jobs via `context.scheduler.register(name, cron, fn)`; the dashboard and admin API treat them identically to core jobs.
 
-The scheduler writes a log entry each time a job starts, succeeds, is skipped, or fails. Those entries go through the logger passed as the fourth argument, `register(name, cron, fn, { logger })`, so they are filed under the owning component's service name and appear on its own Logs tab. A module passes its child logger, `logger.child({ module: '<id>' })`. A plugin passes nothing, because the per-plugin scheduler facade supplies the plugin's logger. A job registered without one logs under the core `tronrelic` service. The core jobs above use it, except `blockchain:sync`, `blockchain:prune`, and `network-activity:rollup`, which pass the blockchain module's logger so they appear on the Logs tab of `/system/system` under `tronrelic:blockchain`.
+The scheduler writes a log entry each time a job starts, succeeds, is skipped, or fails. Those entries go through the logger passed as the fourth argument, `register(name, cron, fn, { logger })`, so they are filed under the owning component's service name and appear on its own Logs tab. A module passes its child logger, `logger.child({ module: '<id>' })`. A plugin passes nothing, because the per-plugin scheduler facade supplies the plugin's logger. A job registered without one logs under the core `tronrelic` service. The core jobs above use it, except `blockchain:sync`, `blockchain:prune`, `blockchain:token-metadata`, and `network-activity:rollup`, which pass the blockchain module's logger so they appear on the Logs tab of `/system/system` under `tronrelic:blockchain`.
 
 **`blockchain:sync` has a coupled setting.** `blockchainConfig.lock.ttlSeconds` (`BLOCK_SYNC_LOCK_TTL`, 14s) is sized just under this job's period so the sync lock always self-releases before the next tick. Change one and change the other: a TTL longer than the period silently skips ticks, and one much shorter lets two runs overlap and race the block cursor. Note also that the table above lists the *code* default, while a deployment runs whatever is stored in `scheduler_configs` from when the job was first registered — deployments predating the 15-second schedule keep the old one-minute cron until an operator edits it here.
 

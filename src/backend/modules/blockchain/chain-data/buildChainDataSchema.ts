@@ -31,6 +31,19 @@ export const CHAIN_DATA_DATABASE = 'tron';
 export const CHAIN_DATA_RETENTION_DAYS = 7;
 
 /**
+ * The derived table recording each value movement between two accounts twice,
+ * once from each party's side. `buildTransferRows.ts` lists which movements it
+ * covers. Not a java-tron message, hence the leading underscore.
+ */
+export const TRANSFER_TABLE = '_transfer';
+
+/**
+ * Token metadata read from the token contracts themselves. Not a java-tron
+ * message, hence the leading underscore.
+ */
+export const TOKEN_TABLE = '_token';
+
+/**
  * Days a recorded gap is kept. Longer than the data itself, because a gap is
  * the evidence someone reads when working out why a stretch of history looks
  * wrong, and that question can arrive after the data it describes has expired.
@@ -294,6 +307,43 @@ export function buildChainDataSchema(retentionDays: number = CHAIN_DATA_RETENTIO
     rejected Bool,
     extra String,${BOOKKEEPING_COLUMNS}
 )${storageClause('block_number, transaction_index, internal_index', 'block_timestamp', retentionDays)}`,
+
+        // One row per party per value movement: the sender's row says `out`,
+        // the receiver's says `in`, and each names the other as its
+        // counterparty. Leading the sort key with `address` is what makes
+        // "everything this wallet sent or received" a range read in both
+        // directions; the java-tron tables sort by sender only, and the TRC-20
+        // parties sit inside `tron.log` topics. `amount` is 256-bit because a
+        // TRC-20 amount is a uint256 and spam tokens use values far beyond
+        // Int64. The key ends in the movement's identity plus `direction`, so a
+        // wallet paying itself keeps both of its rows.
+        `CREATE TABLE IF NOT EXISTS ${db}.${TRANSFER_TABLE} (${CONTEXT_COLUMNS}
+    tx_id String,
+    source LowCardinality(String),
+    event_index UInt32,
+    address String,
+    direction LowCardinality(String),
+    counterparty String,
+    asset_type LowCardinality(String),
+    token String,
+    amount UInt256,${BOOKKEEPING_COLUMNS},
+    INDEX idx_tx_id tx_id TYPE bloom_filter(0.01) GRANULARITY 4
+)${storageClause('address, token, block_timestamp, tx_id, source, event_index, direction', 'block_timestamp', retentionDays)}`,
+
+        // Written by the token metadata job, not by the block writer. Kept
+        // without a time-to-live because a token's decimals never change and
+        // the table holds one row per token, not one per movement.
+        `CREATE TABLE IF NOT EXISTS ${db}.${TOKEN_TABLE} (
+    asset_type LowCardinality(String),
+    token String,
+    status LowCardinality(String),
+    decimals UInt8,
+    symbol String,
+    name String,
+    checked_at DateTime64(3, 'UTC'),${BOOKKEEPING_COLUMNS}
+)
+ENGINE = ReplacingMergeTree(_ingested_at)
+ORDER BY (asset_type, token)`,
 
         `CREATE TABLE IF NOT EXISTS ${db}._ingest_state (
     writer LowCardinality(String),

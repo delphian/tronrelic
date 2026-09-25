@@ -23,6 +23,7 @@ import { BlockEmitter, type IBlockNewPayload, type IPreparedBlock } from './bloc
 import { BlockCommitter, type IBlockCommitMetrics } from './block-committer.js';
 import { PipelineTelemetry, resolveReceiptOutcome } from './pipeline-telemetry.js';
 import { ChainDataWriter } from './chain-data/ChainDataWriter.js';
+import { TokenMetadataRefresher } from './chain-data/TokenMetadataRefresher.js';
 import { buildChainDataRows, type IChainDataRows } from './chain-data/buildChainDataRows.js';
 import { WebSocketService } from '../../services/websocket.service.js';
 import { logger } from './logger.js';
@@ -222,6 +223,13 @@ export class BlockchainService implements IBlockchainService {
     private chainData: ChainDataWriter | null = null;
 
     /**
+     * Resolves decimals, symbol, and name for active TRC-20 tokens into
+     * `tron._token`, or null when the deployment has no ClickHouse. Attached
+     * with the chain data writer, since it reads the ledger that writer fills.
+     */
+    private tokenMetadata: TokenMetadataRefresher | null = null;
+
+    /**
      * The pacing mode of the most recently processed block, kept separate from
      * `wasCaughtUp` because the two answer different questions. `wasCaughtUp`
      * is the scheduler's view once per tick; this is the worker's view per
@@ -395,7 +403,8 @@ export class BlockchainService implements IBlockchainService {
      * Accepting both orders means a change to the bootstrap sequence cannot
      * silently leave the chain data copy off for the life of the process. A
      * second call keeps the existing writer, because replacing it would drop
-     * the blocks it is holding.
+     * the blocks it is holding. The token metadata refresher is attached at the
+     * same moment, because it reads the transfer ledger the writer fills.
      *
      * @param clickhouse - The ClickHouse service the writer creates its tables
      *                     and writes blocks through.
@@ -403,7 +412,25 @@ export class BlockchainService implements IBlockchainService {
     private attachChainData(clickhouse: IClickHouseService): void {
         if (this.chainData === null) {
             this.chainData = new ChainDataWriter(clickhouse, { provider: 'trongrid' });
+            this.tokenMetadata = new TokenMetadataRefresher(clickhouse, this.tronClient, { provider: 'trongrid' });
             logger.info('ClickHouse chain data copy is on');
+        }
+    }
+
+    /**
+     * Resolve metadata for the TRC-20 tokens active in the transfer ledger.
+     *
+     * Run by the `blockchain:token-metadata` job. A deployment without
+     * ClickHouse has no ledger to read, so the run does nothing there.
+     *
+     * @returns Resolves when the run finishes; rejects when ClickHouse failed,
+     *          so the scheduler records the run as failed.
+     */
+    public async refreshTokenMetadata(): Promise<void> {
+        if (this.tokenMetadata) {
+            await this.tokenMetadata.refresh();
+        } else {
+            logger.debug('Token metadata refresh skipped: ClickHouse chain data is off');
         }
     }
 

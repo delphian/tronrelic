@@ -29,11 +29,13 @@ import { SchedulerService } from '../services/scheduler.service.js';
 /**
  * Register all core scheduler jobs.
  *
- * This function registers the 6 built-in jobs:
+ * This function registers the 8 built-in jobs:
  * - chain-parameters:fetch - Fetch TRON chain parameters every 10 minutes
  * - usdt-parameters:fetch - Fetch USDT transfer energy cost every 10 minutes
- * - blockchain:sync - Sync latest blocks every minute
+ * - blockchain:sync - Sync latest blocks every 15 seconds
  * - blockchain:prune - Remove old transactions and blocks every hour
+ * - blockchain:token-metadata - Resolve active TRC-20 token metadata into ClickHouse every hour
+ * - network-activity:rollup - Pre-aggregate the network-activity widget every 5 minutes
  * - cache:cleanup - Clean expired cache entries every hour
  * - system-logs:cleanup - Clean old system logs every hour
  *
@@ -112,6 +114,16 @@ export async function registerCoreJobs(
     scheduler.register('blockchain:prune', '0 * * * *', async () => {
         await blockchainService.pruneOldTransactions(24 * 4, 2);
         await blockchainService.pruneOldBlocks();
+    }, { logger: blockchainLogger });
+
+    // TRC-20 token metadata: hourly at :17, away from the top of the hour
+    // where the prune and cleanup jobs run. Reads the ClickHouse transfer
+    // ledger for tokens active in the last day and resolves their decimals,
+    // symbol, and name into `tron._token`, capped per run because each token
+    // costs three calls on the TronGrid queue block sync shares. Does nothing
+    // without ClickHouse.
+    scheduler.register('blockchain:token-metadata', '17 * * * *', async () => {
+        await blockchainService.refreshTokenMetadata();
     }, { logger: blockchainLogger });
 
     // Network-activity rollup: every 5 minutes. Pre-aggregates the
