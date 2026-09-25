@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 import type { TronGridBlock, TronGridTransaction, TronGridTransactionInfo } from '../tron-grid.client.js';
 import { buildChainDataRows, listMappedContractTypes, type ChainDataRow } from '../chain-data/buildChainDataRows.js';
 import { buildChainDataSchema, CONTRACT_TABLE_SPECS, contractTableName } from '../chain-data/buildChainDataSchema.js';
+import { TRANSFER_EVENT_TOPIC } from '../contract-events.js';
 
 /** The USDT contract, in java-tron's hex form and in base58. */
 const USDT_HEX = '41a614f803b6fd780986a42c78ec9c7f77e6ded13c';
@@ -81,6 +82,37 @@ function buildBlock(transactions: TronGridTransaction[]): TronGridBlock {
         },
         transactions
     };
+}
+
+/**
+ * Build a receipt log for a TRC-20 `Transfer` from the USDT contract.
+ *
+ * The ledger decodes these logs itself, so the tests need the exact shape
+ * java-tron emits: the event signature, the two addresses right-aligned in
+ * 32-byte topics, and the amount as one 32-byte word of data.
+ *
+ * @param fromHex - The sender in java-tron's `41…` hex form.
+ * @param toHex - The receiver in java-tron's `41…` hex form.
+ * @param amount - The amount in base units, which may exceed 64 bits.
+ * @returns The log as it appears in a receipt's `log` array.
+ */
+function trc20TransferLog(fromHex: string, toHex: string, amount: bigint): { address: string; topics: string[]; data: string } {
+    return {
+        address: USDT_HEX.slice(2),
+        topics: [TRANSFER_EVENT_TOPIC, fromHex.slice(2).padStart(64, '0'), toHex.slice(2).padStart(64, '0')],
+        data: amount.toString(16).padStart(64, '0')
+    };
+}
+
+/**
+ * Build a receipt for one transaction in the test block.
+ *
+ * @param id - The transaction id the receipt joins on.
+ * @param extras - The logs or internal transactions the test needs.
+ * @returns A receipt in the shape `gettransactioninfobyblocknum` returns.
+ */
+function buildReceipt(id: string, extras: Partial<TronGridTransactionInfo>): TronGridTransactionInfo {
+    return { id, fee: 0, blockNumber: BLOCK_NUMBER, blockTimeStamp: BLOCK_TIME.getTime(), ...extras };
 }
 
 /**
@@ -344,6 +376,163 @@ describe('buildChainDataRows', () => {
     });
 });
 
+describe('tron._transfer ledger rows', () => {
+    /**
+     * Build a block's rows and return only the ledger's.
+     *
+     * @param transactions - The block's transactions, in chain order.
+     * @param receipts - The receipts that were fetched, if any.
+     * @returns The `_transfer` rows the mapper built.
+     */
+    function ledgerRows(transactions: TronGridTransaction[], receipts: TronGridTransactionInfo[] = []): ChainDataRow[] {
+        return buildChainDataRows({
+            block: buildBlock(transactions),
+            receipts,
+            blockNumber: BLOCK_NUMBER,
+            blockTime: BLOCK_TIME,
+            receiptsFetched: receipts.length > 0
+        }).tables._transfer;
+    }
+
+    it('writes a TRX transfer once from each side, naming the other party', () => {
+        const rows = ledgerRows([
+            buildTransaction('tx-a', 'TransferContract', { owner_address: ZERO_HEX, to_address: USDT_HEX, amount: 5_000_000 })
+        ]);
+
+        expect(rows).toEqual([
+            expect.objectContaining({ tx_id: 'tx-a', source: 'contract', event_index: 0, address: ZERO_BASE58, direction: 'out', counterparty: USDT_BASE58, asset_type: 'trx', token: '', amount: '5000000' }),
+            expect.objectContaining({ tx_id: 'tx-a', source: 'contract', event_index: 0, address: USDT_BASE58, direction: 'in', counterparty: ZERO_BASE58, asset_type: 'trx', token: '', amount: '5000000' })
+        ]);
+    });
+
+    it('keeps both rows when a wallet pays itself', () => {
+        // The sort key ends in direction; without it the two rows would merge into one.
+        const rows = ledgerRows([
+            buildTransaction('tx-a', 'TransferContract', { owner_address: ZERO_HEX, to_address: ZERO_HEX, amount: 1 })
+        ]);
+
+        expect(rows.map(row => row.direction)).toEqual(['out', 'in']);
+    });
+
+    it('writes nothing for a top-level movement that did not succeed', () => {
+        const rows = ledgerRows([
+            buildTransaction('tx-a', 'TriggerSmartContract', { owner_address: ZERO_HEX, contract_address: USDT_HEX, call_value: 7 }, { ret: [{ contractRet: 'REVERT', fee: 0 }] })
+        ]);
+
+        expect(rows).toEqual([]);
+    });
+
+    it('stores a TRC-10 transfer under its plain token id, not the hex asset_name', () => {
+        // Internal transfers name the same token as plain text, so both sources must agree.
+        const rows = ledgerRows([
+            buildTransaction('tx-a', 'TransferAssetContract', { owner_address: ZERO_HEX, to_address: USDT_HEX, asset_name: '31303030303031', amount: 42 })
+        ]);
+
+        expect(rows[0]).toEqual(expect.objectContaining({ asset_type: 'trc10', token: '1000001', amount: '42' }));
+    });
+
+    it('records TRX and a TRC-10 token sent into a contract call as two movements', () => {
+        const rows = ledgerRows([
+            buildTransaction('tx-a', 'TriggerSmartContract', {
+                owner_address: ZERO_HEX,
+                contract_address: USDT_HEX,
+                call_value: 3,
+                call_token_value: 9,
+                token_id: 1002000
+            })
+        ]);
+
+        expect(rows.filter(row => row.direction === 'out')).toEqual([
+            expect.objectContaining({ asset_type: 'trx', token: '', amount: '3', counterparty: USDT_BASE58 }),
+            expect.objectContaining({ asset_type: 'trc10', token: '1002000', amount: '9', counterparty: USDT_BASE58 })
+        ]);
+    });
+
+    it('records TRX and a TRC-10 token sent into a contract deployment, addressed to the new contract', () => {
+        // The block response carries the deployed address beside raw_data, so no receipt is needed.
+        const rows = ledgerRows([
+            buildTransaction('tx-a', 'CreateSmartContract', {
+                owner_address: ZERO_HEX,
+                new_contract: { origin_address: ZERO_HEX, call_value: 4 },
+                call_token_value: 6,
+                token_id: 1002000
+            }, { contract_address: USDT_HEX })
+        ]);
+
+        expect(rows.filter(row => row.direction === 'out')).toEqual([
+            expect.objectContaining({ source: 'contract', address: ZERO_BASE58, counterparty: USDT_BASE58, asset_type: 'trx', token: '', amount: '4' }),
+            expect.objectContaining({ source: 'contract', address: ZERO_BASE58, counterparty: USDT_BASE58, asset_type: 'trc10', token: '1002000', amount: '6' })
+        ]);
+    });
+
+    it('records the TRX a buyer pays the issuer in a TRC-10 token sale, and no token row', () => {
+        // The tokens the buyer receives depend on the issue ratio, which the block does not hold.
+        const rows = ledgerRows([
+            buildTransaction('tx-a', 'ParticipateAssetIssueContract', {
+                owner_address: ZERO_HEX,
+                to_address: USDT_HEX,
+                asset_name: '31303030303031',
+                amount: 25_000_000
+            })
+        ]);
+
+        expect(rows).toEqual([
+            expect.objectContaining({ source: 'contract', address: ZERO_BASE58, direction: 'out', counterparty: USDT_BASE58, asset_type: 'trx', token: '', amount: '25000000' }),
+            expect.objectContaining({ source: 'contract', address: USDT_BASE58, direction: 'in', counterparty: ZERO_BASE58, asset_type: 'trx', token: '', amount: '25000000' })
+        ]);
+    });
+
+    it('decodes TRC-20 Transfer logs, keeping zero amounts and amounts beyond 64 bits', () => {
+        const huge = 2n ** 200n;
+        const rows = ledgerRows(
+            [buildTransaction('tx-a', 'TriggerSmartContract', { owner_address: ZERO_HEX, contract_address: USDT_HEX, data: 'a9059cbb' })],
+            [buildReceipt('tx-a', { log: [trc20TransferLog(ZERO_HEX, USDT_HEX, 0n), trc20TransferLog(USDT_HEX, ZERO_HEX, huge)] })]
+        );
+
+        expect(rows.filter(row => row.direction === 'out')).toEqual([
+            expect.objectContaining({ source: 'log', event_index: 0, address: ZERO_BASE58, counterparty: USDT_BASE58, asset_type: 'trc20', token: USDT_BASE58, amount: '0' }),
+            expect.objectContaining({ source: 'log', event_index: 1, address: USDT_BASE58, counterparty: ZERO_BASE58, asset_type: 'trc20', token: USDT_BASE58, amount: huge.toString(10) })
+        ]);
+    });
+
+    it('leaves out TRC-721 transfers, which move a token id rather than an amount', () => {
+        const log = trc20TransferLog(ZERO_HEX, USDT_HEX, 1n);
+        const rows = ledgerRows(
+            [buildTransaction('tx-a', 'TriggerSmartContract', { owner_address: ZERO_HEX, contract_address: USDT_HEX })],
+            [buildReceipt('tx-a', { log: [{ ...log, topics: [...log.topics, '1'.padStart(64, '0')], data: '' }] })]
+        );
+
+        expect(rows).toEqual([]);
+    });
+
+    it('records internal transfers, leaving out rejected ones and adding up a token listed twice', () => {
+        const rows = ledgerRows(
+            [buildTransaction('tx-a', 'TriggerSmartContract', { owner_address: ZERO_HEX, contract_address: USDT_HEX })],
+            [buildReceipt('tx-a', {
+                internal_transactions: [
+                    { caller_address: USDT_HEX, transferTo_address: ZERO_HEX, callValueInfo: [{ callValue: 10 }, { callValue: 5 }, { tokenId: '1002000', callValue: 2 }] },
+                    { caller_address: USDT_HEX, transferTo_address: ZERO_HEX, callValueInfo: [{ callValue: 99 }], rejected: true }
+                ]
+            })]
+        );
+
+        expect(rows.filter(row => row.direction === 'out')).toEqual([
+            expect.objectContaining({ source: 'internal', event_index: 0, address: USDT_BASE58, counterparty: ZERO_BASE58, asset_type: 'trx', token: '', amount: '15' }),
+            expect.objectContaining({ source: 'internal', event_index: 0, asset_type: 'trc10', token: '1002000', amount: '2' })
+        ]);
+    });
+
+    it('writes no token rows for a block without receipts, rather than decoding call data', () => {
+        // Call data for transfer(USDT_HEX, 1): a decode would find a movement here.
+        const callData = `a9059cbb${USDT_HEX.slice(2).padStart(64, '0')}${'1'.padStart(64, '0')}`;
+        const rows = ledgerRows([
+            buildTransaction('tx-a', 'TriggerSmartContract', { owner_address: ZERO_HEX, contract_address: USDT_HEX, data: callData })
+        ]);
+
+        expect(rows).toEqual([]);
+    });
+});
+
 describe('chain data rows agree with the schema', () => {
     /**
      * Assert that every column a row carries is one its table declares, apart
@@ -374,7 +563,8 @@ describe('chain data rows agree with the schema', () => {
             fee: 1,
             blockNumber: BLOCK_NUMBER,
             blockTimeStamp: BLOCK_TIME.getTime(),
-            log: [{ address: USDT_HEX.slice(2), topics: ['t0'], data: '' }],
+            // The second log is a real TRC-20 Transfer, so tron._transfer has rows to check too.
+            log: [{ address: USDT_HEX.slice(2), topics: ['t0'], data: '' }, trc20TransferLog(ZERO_HEX, USDT_HEX, 1n)],
             internal_transactions: [{ hash: 'h', callValueInfo: [{ callValue: 1 }] }]
         }];
 

@@ -204,6 +204,12 @@ export interface TronGridTransaction {
      */
     signature?: string[];
     ret?: Array<{ contractRet: string; fee: number }>;
+    /**
+     * Hex address of the contract a `CreateSmartContract` deploys. java-tron's
+     * HTTP API derives it from the transaction and adds it beside `raw_data`,
+     * so it is present without the receipt. Absent for every other type.
+     */
+    contract_address?: string;
 }
 
 export interface TronGridTransactionInfo {

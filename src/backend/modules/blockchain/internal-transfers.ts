@@ -28,11 +28,16 @@ interface IRawCallValue {
  * arrives as a number, and converting it through `BigInt` avoids the exponent
  * notation `String()` produces for very large numbers.
  *
- * @param value - The raw `callValue`.
+ * Exported because the ClickHouse transfer ledger reads top-level contract
+ * amounts the same way, and one reader keeps the two from disagreeing about
+ * what counts as a movement.
+ *
+ * @param value - The raw amount, such as an internal `callValue` or a
+ *                contract's `amount`, as the exact-integer parser delivered it.
  * @returns The amount as a decimal string, or null when it is not a positive
  *          number and so moved nothing.
  */
-function toPositiveAmount(value: unknown): string | null {
+export function toPositiveAmount(value: unknown): string | null {
     let amount: string | null = null;
 
     if (typeof value === 'number' && Number.isFinite(value) && value > 0) {

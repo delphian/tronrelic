@@ -21,7 +21,8 @@
 import { toBase58Address } from '../../../lib/tron-address.js';
 import { formatClickHouseDateTime64Utc } from '../../../lib/formatClickHouseDateTime64Utc.js';
 import type { TronGridBlock, TronGridTransaction, TronGridTransactionInfo } from '../tron-grid.client.js';
-import { CONTRACT_TABLE_SPECS, contractTableName } from './buildChainDataSchema.js';
+import { CONTRACT_TABLE_SPECS, contractTableName, TRANSFER_TABLE } from './buildChainDataSchema.js';
+import { buildTransferRows } from './buildTransferRows.js';
 
 /** One row bound for one table, keyed by column name. */
 export type ChainDataRow = Record<string, unknown>;
@@ -71,7 +72,7 @@ export interface IChainDataRowsInput {
 }
 
 /** The row fields every per-transaction table shares. */
-interface ITransactionContext {
+export interface ITransactionContext {
     block_number: number;
     block_timestamp: string;
     transaction_index: number;
@@ -527,6 +528,9 @@ function internalTransactionRows(info: TronGridTransactionInfo, context: ITransa
  * way. A receipt whose transaction is not in the block has no position to take
  * and is left out rather than given a false one.
  *
+ * Each transaction's value movements also become `tron._transfer` rows, built
+ * by {@link buildTransferRows} from the transaction and its receipt.
+ *
  * @param input - The requested height, the block, its receipts, its normalized
  *                time, and the receipt flag.
  * @returns The rows, keyed by table name.
@@ -547,6 +551,13 @@ export function buildChainDataRows(input: IChainDataRowsInput): IChainDataRows {
         tables[contractTableName(spec.contractType)] = [];
     }
 
+    tables[TRANSFER_TABLE] = [];
+
+    const receiptsById = new Map<string, TronGridTransactionInfo>();
+    for (const info of receipts) {
+        receiptsById.set(info.id, info);
+    }
+
     const positions = new Map<string, number>();
     transactions.forEach((transaction, transactionIndex) => {
         positions.set(transaction.txID, transactionIndex);
@@ -556,6 +567,7 @@ export function buildChainDataRows(input: IChainDataRowsInput): IChainDataRows {
         if (typed) {
             tables[typed.table].push(typed.row);
         }
+        tables[TRANSFER_TABLE].push(...buildTransferRows({ transaction, context, receipt: receiptsById.get(transaction.txID) }));
     });
 
     for (const info of receipts) {

@@ -525,7 +525,7 @@ export class ChainDataWriter implements IChainDataSink {
                 // Every table is attempted, retries included, before the batch
                 // is judged, so one failing table does not leave the others
                 // unwritten. The inserts run one after another rather than all
-                // at once: a batch can touch sixteen tables, more than the
+                // at once: a batch can touch seventeen tables, more than the
                 // shared client's ten pooled connections, and sending them
                 // together would make every other ClickHouse caller queue
                 // behind this one batch. withRetry never rejects.
