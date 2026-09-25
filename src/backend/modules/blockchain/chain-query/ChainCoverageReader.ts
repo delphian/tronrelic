@@ -58,7 +58,11 @@ export interface ICoverageRow {
 /** How long a coverage answer is reused, in milliseconds. */
 const CACHE_TTL_MS = 60_000;
 
-/** Slack allowed at the start of the window before its coverage counts as short: about three blocks. */
+/**
+ * Slack allowed before coverage counts as short: about three blocks. It applies
+ * to the start of every window, and to the end of a window that closed before
+ * the live head, where the stored data has had time to catch up.
+ */
 const EDGE_SLACK_MS = 10_000;
 
 /**
@@ -71,6 +75,13 @@ const EDGE_SLACK_MS = 10_000;
  * slack flagged every default answer as incomplete, which made the flag
  * meaningless. Five minutes covers a healthy lead plus the writer's batching
  * while still catching chain data that has genuinely stalled.
+ *
+ * The allowance is for the live head alone. A window whose end is further than
+ * this behind the current time was settled well before the call, since the lead
+ * is about a minute, so its end is held to `EDGE_SLACK_MS` instead. Without
+ * that restriction a historical window missing its last few minutes of blocks
+ * reported complete coverage: heights past the newest stored block are never
+ * counted as expected, so nothing else noticed they were gone.
  */
 const END_SLACK_MS = 5 * 60_000;
 
@@ -111,16 +122,21 @@ export class ChainCoverageReader {
     /**
      * Report how complete the stored chain data is for a window.
      *
-     * The cache key rounds both ends to the minute, because a window computed
-     * from "now" differs on every call by a few milliseconds while describing
-     * the same blocks.
+     * The cache key is the window's exact ends in epoch milliseconds, because
+     * every figure below describes the bounds the query actually ran with.
+     * Rounding the key to the minute let a window shifted by up to 59 seconds
+     * reuse a neighbour's answer, so the counts and `dataFrom`/`dataTo` could
+     * cover blocks outside the data the tool returned while leaving out blocks
+     * inside it. A repeated window still hits the cache: a later page answers
+     * for the first page's window through `pinWindowToCursor`, and several
+     * tools called with the same explicit `since`/`until` share one answer.
      *
      * @param session - The call's session, which the query's cost is charged to.
-     * @param window - The window the tool is answering for.
-     * @returns The coverage summary.
+     * @param window - The window the tool is answering for, keyed exactly as given.
+     * @returns The coverage summary for exactly that window.
      */
     public async read(session: ChainQuerySession, window: IChainWindow): Promise<IChainCoverage> {
-        const key = `${Math.floor(window.from.getTime() / 60_000)}:${Math.floor(window.to.getTime() / 60_000)}`;
+        const key = `${window.from.getTime()}:${window.to.getTime()}`;
         const cached = this.cache.get(key);
         let coverage: IChainCoverage;
         if (cached && this.now() - cached.at < CACHE_TTL_MS) {
@@ -130,7 +146,7 @@ export class ChainCoverageReader {
                 from: formatClickHouseDateTime64Utc(window.from),
                 to: formatClickHouseDateTime64Utc(window.to)
             });
-            coverage = summarizeCoverage(row, window);
+            coverage = summarizeCoverage(row, window, this.now());
             if (this.cache.size >= MAX_CACHE_ENTRIES) {
                 this.cache.clear();
             }
@@ -148,11 +164,18 @@ export class ChainCoverageReader {
  * covers both a window reaching back past the oldest stored day and chain
  * data that has fallen behind the chain head.
  *
+ * How far short the end may fall depends on where the window ends. A window
+ * ending at the live head is always behind the chain by the emit buffer's lead,
+ * so it gets `END_SLACK_MS`. A window that closed before that had time to fill,
+ * so it gets the same three-block slack as the start, and a missing tail of
+ * blocks is reported instead of hidden.
+ *
  * @param row - The query's single row, or undefined when ClickHouse returned none.
  * @param window - The window the tool is answering for.
+ * @param now - The time of the call in epoch milliseconds, which decides whether the window ends at the live head and so how much slack its end is allowed.
  * @returns The summary.
  */
-export function summarizeCoverage(row: ICoverageRow | undefined, window: IChainWindow): IChainCoverage {
+export function summarizeCoverage(row: ICoverageRow | undefined, window: IChainWindow, now: number): IChainCoverage {
     const present = Number(row?.present ?? 0);
     const firstBlock = Number(row?.first_block ?? 0);
     const lastBlock = Number(row?.last_block ?? 0);
@@ -161,7 +184,9 @@ export function summarizeCoverage(row: ICoverageRow | undefined, window: IChainW
     const dataFrom = present > 0 && row?.first_at ? fromClickHouseTime(row.first_at) : null;
     const dataTo = present > 0 && row?.last_at ? fromClickHouseTime(row.last_at) : null;
     const startsLate = dataFrom === null || new Date(dataFrom).getTime() - window.from.getTime() > EDGE_SLACK_MS;
-    const endsEarly = dataTo === null || window.to.getTime() - new Date(dataTo).getTime() > END_SLACK_MS;
+    const endsAtLiveHead = now - window.to.getTime() <= END_SLACK_MS;
+    const endSlack = endsAtLiveHead ? END_SLACK_MS : EDGE_SLACK_MS;
+    const endsEarly = dataTo === null || window.to.getTime() - new Date(dataTo).getTime() > endSlack;
     return {
         expectedBlocks: expected,
         presentBlocks: present,

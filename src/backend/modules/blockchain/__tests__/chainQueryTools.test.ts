@@ -12,7 +12,8 @@ import { describe, it, expect, vi } from 'vitest';
 import type { IAddressTagService, IClickHouseReader, IPriceHistoryService, IToolHandlerContext } from '@/types';
 import { formatClickHouseDateTime64Utc } from '../../../lib/formatClickHouseDateTime64Utc.js';
 import { AddressTagLookup } from '../chain-query/AddressTagLookup.js';
-import { ChainCoverageReader } from '../chain-query/ChainCoverageReader.js';
+import { ChainCoverageReader, summarizeCoverage, type ICoverageRow } from '../chain-query/ChainCoverageReader.js';
+import type { IChainWindow } from '../chain-query/chainQueryInput.js';
 import { ChainQuerySession } from '../chain-query/ChainQuerySession.js';
 import type { IChainQueryToolkit } from '../chain-query/ChainQueryToolkit.js';
 import { buildChainQueryTools } from '../chain-query/registerChainQueryAiTools.js';
@@ -88,7 +89,7 @@ function buildToolkit(onTransfers: TransferHandler): { toolkit: IChainQueryToolk
     } as unknown as IPriceHistoryService;
     const toolkit: IChainQueryToolkit = {
         openSession: (context) => new ChainQuerySession(reader, context),
-        coverage: new ChainCoverageReader(),
+        coverage: new ChainCoverageReader(() => NOW.getTime()),
         tokens: new TokenCatalog(),
         tags: new AddressTagLookup(() => tagService),
         prices: new UsdPricer(() => priceService),
@@ -303,5 +304,39 @@ describe(AI_TOOL_NAMES.traceFlow, () => {
         expect(result.nodes).toEqual(expect.arrayContaining([
             expect.objectContaining({ address: PEER, expanded: false, notExpandedBecause: 'trace stopped early' })
         ]));
+    });
+});
+
+describe('summarizeCoverage', () => {
+    /**
+     * Build a coverage row whose stored data stops short of the window's end,
+     * which is the shape a missing tail of blocks produces: the block counts
+     * agree, and only the newest stored time shows anything is absent.
+     *
+     * @param window - The window being summarized, whose start the row echoes.
+     * @param shortByMs - How far before the window's end the newest stored block sits.
+     * @returns The row the coverage query would return for that window.
+     */
+    function rowEndingShort(window: IChainWindow, shortByMs: number): ICoverageRow {
+        return {
+            first_block: '1000',
+            last_block: '1199',
+            present: '200',
+            without_receipts: '0',
+            first_at: formatClickHouseDateTime64Utc(window.from),
+            last_at: formatClickHouseDateTime64Utc(new Date(window.to.getTime() - shortByMs))
+        };
+    }
+
+    it('allows the emit buffer lead at the live head but not in a settled window', () => {
+        const live: IChainWindow = { from: new Date(NOW.getTime() - 3_600_000), to: NOW, clampedToRetention: false };
+        const historical: IChainWindow = {
+            from: new Date(NOW.getTime() - 7_200_000),
+            to: new Date(NOW.getTime() - 3_600_000),
+            clampedToRetention: false
+        };
+
+        expect(summarizeCoverage(rowEndingShort(live, 120_000), live, NOW.getTime()).complete).toBe(true);
+        expect(summarizeCoverage(rowEndingShort(historical, 120_000), historical, NOW.getTime()).complete).toBe(false);
     });
 });
