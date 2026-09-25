@@ -278,3 +278,4 @@ It does not replace the MongoDB `transactions` collection, which the application
 - [system-blockchain-sync-architecture.md](./system-blockchain-sync-architecture.md) — the sync pipeline, `BlockCommitter`, and the receipt setting
 - [system-blockchain-contract-events.md](./system-blockchain-contract-events.md) — how receipt logs are decoded into events and token transfers today
 - [ClickHouse module README](../../src/backend/modules/clickhouse/README.md) — the ClickHouse service and admin browser
+- [system-chain-query-tools.md](./system-chain-query-tools.md) — the AI tools that read these tables as the `ai-agent` account

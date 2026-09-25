@@ -93,6 +93,12 @@ It is a copy and never gets in sync's way. Sync builds the rows while preparing 
 
 The full schema, the naming rules, and why the tables are created at startup rather than by a migration: [system-chain-data-clickhouse.md](../../../../docs/system/system-chain-data-clickhouse.md).
 
+## Chain query AI tools
+
+`chain-query/` holds five read-only AI tools that read the `tron` database as the `ai-agent` ClickHouse account: `blockchain-address-profile`, `blockchain-address-counterparties`, `blockchain-address-transfers`, `blockchain-trace-flow`, and `blockchain-token-activity`. `registerChainQueryAiTools(serviceRegistry)`, called from `src/backend/index.ts`, registers them on `'ai-tools'` under the provider id `core-blockchain`. They resolve `'clickhouse-accounts'`, `'address-tags'`, and `'price-history'` from the registry on each call, because those modules publish later in startup.
+
+Every call charges its reads to the agent run through the handler's `context.queryId`, used as the ClickHouse quota key. A run without a `queryId` falls back to `context.conversationId`, so every run in that conversation shares one hourly budget. It cancels its own reads after 25 seconds and returns the same envelope: cost, window, coverage, `truncated` and `nextCursor`, converted amounts, USD values, tags, and notes. Tools, envelope, and cost guidance: [system-chain-query-tools.md](../../../../docs/system/system-chain-query-tools.md).
+
 ## A restart loses work, not data
 
 The buffer holds unwritten blocks in memory, so a process that stops loses them — and that costs only the refetch. The write is what advances the cursor, so a block that never committed left no trace and the next forward walk fetches it again.
@@ -121,3 +127,4 @@ Full rationale, settings table, and how to read the two lag figures on `/system`
 - [plugins-blockchain-observers.md](../../../../docs/plugins/plugins-blockchain-observers.md) — building observers that react to transactions this module notifies
 - [system-blockchain-contract-events.md](../../../../docs/system/system-blockchain-contract-events.md) — decoded event logs, token transfers, and event subscriptions
 - [system-chain-data-clickhouse.md](../../../../docs/system/system-chain-data-clickhouse.md) — the `tron` ClickHouse database every committed block is copied into
+- [system-chain-query-tools.md](../../../../docs/system/system-chain-query-tools.md) — the AI tools that read it

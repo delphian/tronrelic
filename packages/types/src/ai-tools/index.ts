@@ -23,6 +23,7 @@ export type {
 export { DEFAULT_UNTRUSTED_SCREEN_CONFIG } from './IUntrustedScreenConfig.js';
 export type { IToolPolicy, IToolPolicyDecision, ToolPolicyVerdict } from './IToolPolicy.js';
 export type { IToolInvocationContext, IToolInvocationActor, IToolEndUserPrincipal, ToolTriggerPath } from './IToolInvocationContext.js';
+export type { IToolHandlerContext } from './IToolHandlerContext.js';
 export type { IToolInvocationResult, ToolInvocationStatus } from './IToolInvocationResult.js';
 export type { IToolInvocationRecord } from './IToolInvocationRecord.js';
 export type { IServerToolInvocation } from './IServerToolInvocation.js';

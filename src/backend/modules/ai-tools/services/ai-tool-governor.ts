@@ -24,6 +24,7 @@ import type {
     ISystemLogService,
     IServerToolInvocation,
     IToolEndUserPrincipal,
+    IToolHandlerContext,
     IToolInvocationContext,
     IToolInvocationRecord,
     IToolInvocationResult,
@@ -198,6 +199,31 @@ function digestResult(result: unknown): string {
         serialized = String(result);
     }
     return serialized.length > RESULT_DIGEST_MAX ? `${serialized.slice(0, RESULT_DIGEST_MAX)}…` : serialized;
+}
+
+/**
+ * Copy the run identity a handler may see out of the invocation context.
+ *
+ * A handler gets only these fields, not the whole context. The actor, the end
+ * user, and the allowlist are policy inputs the governor has already applied,
+ * and handing them on would invite a tool to make its own policy decisions
+ * from them.
+ *
+ * @param ctx - The trusted invocation context the provider supplied.
+ * @returns The trigger path and run identifiers, with absent ids left out.
+ */
+function toHandlerContext(ctx: IToolInvocationContext): IToolHandlerContext {
+    const handlerContext: IToolHandlerContext = { triggerPath: ctx.triggerPath };
+    if (ctx.queryId) {
+        handlerContext.queryId = ctx.queryId;
+    }
+    if (ctx.conversationId) {
+        handlerContext.conversationId = ctx.conversationId;
+    }
+    if (ctx.toolUseId) {
+        handlerContext.toolUseId = ctx.toolUseId;
+    }
+    return handlerContext;
 }
 
 /**
@@ -584,7 +610,10 @@ export class AiToolGovernor implements IAiToolGovernor {
             // its object access to it. The policy precondition has already
             // guaranteed a present, non-empty principal for such a tool, so the
             // handler can rely on it; other tools receive `undefined` and ignore it.
-            const rawResult = await runWithCurationAutoApprove(autoApprove, () => this.runWithTimeout(tool, input, ctx.endUser));
+            // The run identity rides along as the third argument, copied from the
+            // trusted context rather than the model's input, so a tool drawing on
+            // a shared budget can charge each run separately.
+            const rawResult = await runWithCurationAutoApprove(autoApprove, () => this.runWithTimeout(tool, input, ctx.endUser, toHandlerContext(ctx)));
             status = 'ok';
             // The digest records the raw handler value regardless of what the
             // model ultimately sees, so the audit trail is complete even when a
@@ -701,15 +730,21 @@ export class AiToolGovernor implements IAiToolGovernor {
      * @param tool - The tool whose handler runs.
      * @param input - Validated model arguments.
      * @param principal - The trusted end-user principal, or undefined when none.
+     * @param handlerContext - The run identity the handler may charge its work to.
      * @returns The handler's resolved value.
      */
-    private async runWithTimeout(tool: IAiTool, input: Record<string, unknown>, principal?: IToolEndUserPrincipal): Promise<unknown> {
+    private async runWithTimeout(
+        tool: IAiTool,
+        input: Record<string, unknown>,
+        principal: IToolEndUserPrincipal | undefined,
+        handlerContext: IToolHandlerContext
+    ): Promise<unknown> {
         let timer: ReturnType<typeof setTimeout> | undefined;
         const timeout = new Promise<never>((_, reject) => {
             timer = setTimeout(() => reject(new Error(`Tool "${tool.name}" exceeded the ${HANDLER_TIMEOUT_MS}ms execution budget.`)), HANDLER_TIMEOUT_MS);
         });
         try {
-            return await Promise.race([tool.handler(input, principal), timeout]);
+            return await Promise.race([tool.handler(input, principal, handlerContext), timeout]);
         } finally {
             if (timer) {
                 clearTimeout(timer);
