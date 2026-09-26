@@ -363,6 +363,41 @@ describe('AddressTagService provenance', () => {
         });
     });
 
+    describe('getTagsBySource', () => {
+        it('returns what one source asserts live, whatever the tag text', async () => {
+            await service.syncSource('rental-markets', [
+                { address: ADDRESS_B, tag: 'catfee' },
+                { address: ADDRESS_A, tag: 'market:catfee:treasury' }
+            ], 'delta');
+            const found = await service.getTagsBySource('rental-markets');
+            // ADDRESS_B ('TEk…') sorts before ADDRESS_A ('TR7…').
+            expect(found.map((tag) => [tag.address, tag.tag])).toEqual([
+                [ADDRESS_B, 'catfee'],
+                [ADDRESS_A, 'market:catfee:treasury']
+            ]);
+        });
+
+        it('leaves out what the source withdrew, even while a human keeps it live', async () => {
+            await service.createTags([{ address: ADDRESS_A, tag: 'exchange' }]);
+            await service.syncSource('rental-markets', [{ address: ADDRESS_A, tag: 'exchange' }], 'delta');
+            await service.syncSource('rental-markets', [], 'delta', [{ address: ADDRESS_A, tag: 'exchange' }]);
+            expect(storedDoc(database, ADDRESS_A, 'exchange').active).toBe(true);
+            expect(await service.getTagsBySource('rental-markets')).toEqual([]);
+        });
+
+        it('leaves out tags only a human or another source asserts', async () => {
+            await service.createTags([{ address: ADDRESS_A, tag: 'exchange' }]);
+            await service.syncSource('ofac-sdn', [{ address: ADDRESS_B, tag: 'ofac:sdn' }], 'snapshot');
+            await service.syncSource('rental-markets', [{ address: ADDRESS_B, tag: 'catfee' }], 'delta');
+            const found = await service.getTagsBySource('rental-markets');
+            expect(found.map((tag) => tag.tag)).toEqual(['catfee']);
+        });
+
+        it('refuses an empty source id', async () => {
+            await expect(service.getTagsBySource('  ')).rejects.toThrow(/source id/);
+        });
+    });
+
     describe('legacy documents', () => {
         it('hides an unmigrated document until the backfill stamps it', async () => {
             // This is the deploy-window behavior the plan's two-deploy split

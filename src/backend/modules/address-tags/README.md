@@ -37,6 +37,7 @@ All methods take and return arrays; single-item calls are one-element arrays. Th
 | `createTags(pairs)` | Idempotent batch upsert; existing pairs skipped (though a machine-only document gains the `manual` claim), stored records returned |
 | `getTagsByAddresses(addresses)` | All assignments on the given addresses |
 | `getAddressesByTags(tags)` | Reverse lookup by tag values |
+| `getTagsBySource(source)` | Every assignment one machine source currently asserts, whatever the tag text; liveness is the source's own element, not the document's `active` flag. For a source that publishes through `syncSource` to find what it holds before withdrawing what it no longer wants |
 | `listTags({prefix?, limit?})` | Distinct tag vocabulary (pickers/autocomplete) |
 | `getTagSummary({limit?})` | Counted vocabulary for management surfaces: `tags[]` of `{tag, addresses}` ordered by count then tag text, plus `totalTags`/`totalAddresses`/`totalAssignments`. The totals are not derivable from the rows — an address carrying three tags is counted under all three, and `limit` truncates the rows but never the totals. Two groupings over the live collection, so it is a management read rather than a request-path one |
 | `searchTags({search?, limit?, skip?})` | Paged assignment search (one row per `(address, tag)` pair) |

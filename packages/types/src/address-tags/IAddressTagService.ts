@@ -264,6 +264,22 @@ export interface IAddressTagService {
     getAddressesByTags(tags: string[]): Promise<IAddressTag[]>;
 
     /**
+     * Every assignment one machine source currently asserts, whatever the
+     * tag text. A source that publishes tags through `syncSource` needs this
+     * to find what it holds before withdrawing what it no longer wants,
+     * without keeping its own list of the tag texts it has used.
+     *
+     * An assignment is included only while the source's own element on it is
+     * not withdrawn. Assignments another source or a human asserts are not
+     * included unless this source asserts them too, and each returned record
+     * still carries every source element, not only this one's.
+     *
+     * @param source - The source id, as passed to `syncSource`.
+     * @returns The source's live assignments, ordered by address then tag.
+     */
+    getTagsBySource(source: string): Promise<IAddressTag[]>;
+
+    /**
      * Enumerate the distinct tag vocabulary, optionally prefix-filtered, for
      * pickers and autocomplete.
      *
