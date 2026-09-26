@@ -244,6 +244,26 @@ export class AddressTagService implements IAddressTagService {
     }
 
     /** @inheritdoc */
+    public async getTagsBySource(source: string): Promise<IAddressTag[]> {
+        const sourceId = String(source ?? '').trim();
+        if (sourceId.length === 0) {
+            throw new Error('getTagsBySource requires a non-empty source id');
+        }
+        const collection = this.database.getCollection<IAddressTagDocument>(ADDRESS_TAGS_COLLECTION);
+        // Loaded through the multikey `sources.id` index, the same query
+        // `syncSource` uses for a source's holdings. A document stays under
+        // the index after the source withdraws, so the source's own element
+        // decides liveness here rather than the document's `active` flag,
+        // which another source or a human can hold true.
+        const docs = await collection.find({ 'sources.id': sourceId })
+            .sort({ address: 1, tag: 1 })
+            .toArray();
+        return docs
+            .filter((doc) => (doc.sources ?? []).some((element) => element.id === sourceId && !element.withdrawnAt))
+            .map((doc) => this.toTag(doc));
+    }
+
+    /** @inheritdoc */
     public async listTags(query?: IAddressTagListQuery): Promise<string[]> {
         const limit = this.clampLimit(query?.limit);
         // The liveness filter keeps withdrawn-only tags out of the vocabulary
