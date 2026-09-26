@@ -6,7 +6,7 @@ The executable form of this document is `src/backend/modules/blockchain/chain-da
 
 ## Why This Matters
 
-Block sync already fetches every block's full contents from TronGrid, then keeps a small, enriched subset in the MongoDB `transactions` collection for four days (the hourly `blockchain:prune` job). MongoDB is the wrong store for asking questions of that history. The collection keeps its indexes to a minimum to protect write speed, so any question shaped like "every delegation signed under a custom permission last week" becomes a collection scan. The fields such questions need are also not stored: the lock period, `Permission_id`, and the signatures are passed to observers during sync and then discarded (`blockchain.service.ts`, `transaction-parse.ts`).
+Block sync already fetches every block's full contents from TronGrid, then keeps a small, enriched subset in the MongoDB `transactions` collection for four days (the `blockchain:prune-transactions` job). MongoDB is the wrong store for asking questions of that history. The collection keeps its indexes to a minimum to protect write speed, so any question shaped like "every delegation signed under a custom permission last week" becomes a collection scan. The fields such questions need are also not stored: the lock period, `Permission_id`, and the signatures are passed to observers during sync and then discarded (`blockchain.service.ts`, `transaction-parse.ts`).
 
 ClickHouse fits this workload. It stores data by column and compresses it heavily, so time-ranged scans and aggregations over millions of rows are fast, and extra fields cost little. Recording the block data sync already receives costs no additional TronGrid requests.
 

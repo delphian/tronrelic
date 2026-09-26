@@ -55,8 +55,10 @@ import type {
     ZoneAlignItems,
     ZoneFlexWrap,
     ZoneGapSize,
-    WidgetDataFetcher
+    WidgetDataFetcher,
+    IAuthButtonLink
 } from '@/types';
+import { WIDGET_ICON_FORMAT } from '@/types';
 
 /**
  * Widget-type id for the raw text/HTML block. Namespaced under `core:`
@@ -760,11 +762,12 @@ export const AUTH_BUTTON_TYPE_ID = 'core:auth-button';
  * SSR payload the auth-button data fetcher returns and the frontend
  * `AuthButtonWidget` consumes.
  *
- * It carries only the site-wide branding, never anything about the
- * visitor. Whether the visitor is signed in comes from the session the
- * root layout already resolved and seeded into `SessionProvider`, so the
- * payload is the same for every visitor and is safe under the per-route
- * widget cache, whose key holds nothing about who is asking.
+ * It carries the site-wide branding and the placement's tray settings, never
+ * anything about the visitor. Whether the visitor is signed in, and so which
+ * links they see, comes from the session the root layout already resolved
+ * and seeded into `SessionProvider`, so the payload is the same for every
+ * visitor and is safe under the per-route widget cache, whose key holds
+ * nothing about who is asking.
  */
 export interface IAuthButtonWidgetData {
     /**
@@ -772,38 +775,166 @@ export interface IAuthButtonWidgetData {
      * null to keep the default "Sign in" button and identity pill.
      */
     imageUrl: string | null;
+    /** Links shown in the slide-out tray; empty keeps the button's default click. */
+    links: IAuthButtonLink[];
+    /** Which way the tray slides out of the button. */
+    direction: 'right' | 'down';
+    /** Opacity of the tray's background as a percentage, so the page shows through it. */
+    opacity: number;
 }
+
+/** Most links one tray may hold, so the tray stays a short list rather than a menu. */
+const AUTH_BUTTON_MAX_LINKS = 12;
+
+/** Tray background opacity, in percent, used when the placement sets none. */
+const AUTH_BUTTON_DEFAULT_OPACITY = 85;
+
+/**
+ * Lowest tray opacity an operator may choose. Below this the link labels
+ * lose contrast against whatever page content sits behind the tray.
+ */
+const AUTH_BUTTON_MIN_OPACITY = 40;
+
+/**
+ * Destinations a tray link may point at: a root-relative path, or an
+ * absolute http(s) URL. A protocol-relative `//host` path is excluded because
+ * it leaves the site while reading like an internal link. `/\host` is
+ * excluded for the same reason: browsers read a backslash as a forward slash
+ * in an http(s) URL, so it resolves to `//host`. Every other scheme is
+ * excluded because `javascript:` in an href runs script. The schema carries
+ * the same pattern so the API refuses what this drops.
+ */
+const AUTH_BUTTON_LINK_URL_PATTERN = '^(/(?![/\\\\])\\S*|https?://\\S+)$';
 
 /**
  * JSON Schema (Draft 7) for the auth-button placement's `instanceConfig`.
  *
- * The button has no per-placement settings: its image is the site-wide
- * branding setting, so every placement looks the same. The empty, closed
- * schema makes the admin form render no settings and rejects any stray key
- * an API caller sends.
+ * The image stays a site-wide branding setting on `/system/system`. What
+ * varies per placement is the slide-out tray: its links, the direction it
+ * opens, and how transparent it is. Each link's `icon` declares the
+ * {@link WIDGET_ICON_FORMAT} format, which makes the placement form offer the
+ * icon picker instead of a text box and makes the API reject a value that
+ * cannot be an icon name. `additionalProperties: false` at both levels
+ * rejects any stray key an API caller sends.
  */
 export const AUTH_BUTTON_CONFIG_SCHEMA: JSONSchema7 = {
     type: 'object',
     additionalProperties: false,
-    properties: {}
+    properties: {
+        direction: {
+            type: 'string',
+            enum: ['right', 'down'],
+            default: 'right',
+            title: 'Slide-out direction',
+            description:
+                'Which way the links slide out of the button. Right opens beside the button and falls back to down when the screen has no room on that side.'
+        },
+        opacity: {
+            type: 'integer',
+            minimum: AUTH_BUTTON_MIN_OPACITY,
+            maximum: 100,
+            default: AUTH_BUTTON_DEFAULT_OPACITY,
+            title: 'Tray opacity (%)',
+            description: `How solid the tray behind the links is. 100 is fully solid; lower lets the page show through. Bounded ${AUTH_BUTTON_MIN_OPACITY}–100.`
+        },
+        links: {
+            type: 'array',
+            title: 'Links',
+            description:
+                'Links that slide out when the button is clicked. With none, the button signs visitors in or opens their profile as usual. A signed-out visitor who can see a link gets a Sign in entry at the start of the tray.',
+            maxItems: AUTH_BUTTON_MAX_LINKS,
+            items: {
+                type: 'object',
+                required: ['icon', 'label', 'url'],
+                additionalProperties: false,
+                properties: {
+                    icon: {
+                        type: 'string',
+                        format: WIDGET_ICON_FORMAT.name,
+                        title: 'Icon',
+                        description: 'Icon drawn beside the label.'
+                    },
+                    label: {
+                        type: 'string',
+                        title: 'Text',
+                        description: 'Text of the link.',
+                        minLength: 1,
+                        maxLength: 40,
+                        // At least one visible character. The fetcher trims
+                        // the label and drops a link left blank, so a
+                        // whitespace-only label is refused here instead of
+                        // being saved and then never shown.
+                        pattern: '\\S'
+                    },
+                    url: {
+                        type: 'string',
+                        title: 'URL',
+                        description: 'A path on this site such as /profile, or a full https:// address.',
+                        pattern: AUTH_BUTTON_LINK_URL_PATTERN,
+                        maxLength: 2048
+                    },
+                    audience: {
+                        type: 'string',
+                        enum: ['everyone', 'signed-in', 'signed-out'],
+                        default: 'everyone',
+                        title: 'Shown to',
+                        description: 'Which visitors see this link.'
+                    }
+                }
+            }
+        }
+    }
 };
+
+/**
+ * Read the placement's tray links into their SSR shape.
+ *
+ * The placement API already validated them against
+ * {@link AUTH_BUTTON_CONFIG_SCHEMA}, but a row written before the schema
+ * existed, or edited in the database by hand, may not match it. Each entry is
+ * therefore checked again and dropped when it is not an object, lacks a label,
+ * names an icon that cannot exist, or points somewhere the pattern refuses —
+ * a bad row costs one link rather than the whole button.
+ *
+ * @param raw - The `links` value from the placement's instance config.
+ * @returns The usable links, in the operator's order, capped at the maximum.
+ */
+function normalizeAuthButtonLinks(raw: unknown): IAuthButtonLink[] {
+    const entries = Array.isArray(raw) ? raw : [];
+    const iconPattern = new RegExp(WIDGET_ICON_FORMAT.pattern);
+    const urlPattern = new RegExp(AUTH_BUTTON_LINK_URL_PATTERN);
+
+    const links = entries
+        .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
+        .map((entry): IAuthButtonLink => ({
+            icon: typeof entry.icon === 'string' ? entry.icon : '',
+            label: typeof entry.label === 'string' ? entry.label.trim() : '',
+            url: typeof entry.url === 'string' ? entry.url.trim() : '',
+            audience: entry.audience === 'signed-in' || entry.audience === 'signed-out' ? entry.audience : 'everyone'
+        }))
+        .filter(link => link.label !== '' && iconPattern.test(link.icon) && urlPattern.test(link.url))
+        .slice(0, AUTH_BUTTON_MAX_LINKS);
+
+    return links;
+}
 
 /**
  * Build the auth-button SSR data fetcher bound to the system configuration.
  *
  * Reads the administrator's sign-in button image, so the server renders
  * the image in the first HTML response and the button never switches from
- * text to image after the page loads. Never throws and never returns bare
- * null: a configuration read that fails yields `{ imageUrl: null }`, so the
- * default text button still renders rather than the widget disappearing
- * and leaving the site with no way to sign in. The fetcher ignores route
- * and params — the button is the same on every page.
+ * text to image after the page loads, and reads the placement's tray
+ * settings so the tray is ready the moment the button is clicked. Never
+ * throws and never returns bare null: a configuration read that fails yields
+ * `imageUrl: null`, so the default text button still renders rather than the
+ * widget disappearing and leaving the site with no way to sign in. The
+ * fetcher ignores route and params — the button is the same on every page.
  *
  * @param deps - Carries the system configuration service.
  * @returns A {@link WidgetDataFetcher} producing the button's SSR payload.
  */
 function buildAuthButtonFetcher(deps: ICoreWidgetTypeDeps): WidgetDataFetcher {
-    return async (): Promise<IAuthButtonWidgetData> => {
+    return async (_route, _params, placement): Promise<IAuthButtonWidgetData> => {
         let imageUrl: string | null = null;
         try {
             const config = await deps.systemConfig.getConfig();
@@ -815,7 +946,16 @@ function buildAuthButtonFetcher(deps: ICoreWidgetTypeDeps): WidgetDataFetcher {
         } catch {
             imageUrl = null;
         }
-        return { imageUrl };
+
+        const instanceConfig = placement?.instanceConfig ?? {};
+        const direction = instanceConfig.direction === 'down' ? 'down' : 'right';
+        const configuredOpacity = instanceConfig.opacity;
+        const opacity = typeof configuredOpacity === 'number' && Number.isFinite(configuredOpacity)
+            ? Math.min(100, Math.max(AUTH_BUTTON_MIN_OPACITY, Math.round(configuredOpacity)))
+            : AUTH_BUTTON_DEFAULT_OPACITY;
+        const links = normalizeAuthButtonLinks(instanceConfig.links);
+
+        return { imageUrl, links, direction, opacity };
     };
 }
 
@@ -1006,7 +1146,7 @@ export function buildCoreWidgetTypeDescriptors(
             id: AUTH_BUTTON_TYPE_ID,
             label: 'Sign-in button',
             description:
-                'Sign-in button for signed-out visitors; a short identity pill linking to /profile for signed-in ones, where sign-out lives. Shows the sign-in image chosen on /system/system when one is set.',
+                'Sign-in button for signed-out visitors; a short identity pill linking to /profile for signed-in ones, where sign-out lives. Shows the sign-in image chosen on /system/system when one is set. Optionally slides out a tray of links, each with an icon, text, and URL.',
             category: 'Account',
             defaultDataFetcher: buildAuthButtonFetcher(deps),
             configSchema: AUTH_BUTTON_CONFIG_SCHEMA

@@ -26,7 +26,7 @@ import type {
     WidgetTitleSize,
     IPlacementListFilter
 } from '@/types';
-import { PLUGIN_ID_PATTERN } from '@/types';
+import { PLUGIN_ID_PATTERN, WIDGET_ICON_FORMAT } from '@/types';
 import { normaliseRoutePattern } from '../placements/route-matcher.js';
 import {
     InvalidParentPlacementError,
@@ -173,6 +173,11 @@ export class PlacementsController {
     ) {
         this.ajv = new Ajv({ allErrors: true, strict: false });
         addFormats(this.ajv);
+        // Registered rather than left unknown: AJV warns on every compile of
+        // a schema naming an unknown format and then validates nothing, so a
+        // setting the form offers as an icon picker would accept any string
+        // sent straight to the API.
+        this.ajv.addFormat(WIDGET_ICON_FORMAT.name, new RegExp(WIDGET_ICON_FORMAT.pattern));
         this.validatorCache = new WeakMap();
     }
 

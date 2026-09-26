@@ -46,8 +46,8 @@ const MINUTE_FORMAT = '%Y-%m-%d %H:%M';
 
 /**
  * Backfill depth in hourly buckets (4d), so backfill targets `current − 95h`.
- * Must never exceed the raw transaction retention (`blockchain:prune` in
- * core-jobs.ts, 4 days): backfilling an hour whose raw transactions were
+ * Must never exceed the raw transaction retention (`blockchain:prune-transactions`
+ * in core-jobs.ts, 4 days): backfilling an hour whose raw transactions were
  * already pruned would materialize zero-volume buckets that read as real data.
  * The widget's 7d view still renders fully in steady state because computed
  * buckets persist for `HOURLY_RETENTION_HOURS` (8d), outliving the raw rows

@@ -121,6 +121,18 @@ A tick that ran on a cached height records `meta.lastError` instead of clearing 
 
 Full rationale, settings table, and how to read the two lag figures on `/system`: [system-blockchain-sync-architecture.md](../../../../docs/system/system-blockchain-sync-architecture.md#commit-buffering).
 
+## Pruning
+
+The `transactions` collection keeps four days of rows, and that window is coupled to `TARGET_HOURLY_BUCKETS` in `overview-rollup.job.ts`. The `blockchain:prune-transactions` job removes expired rows every minute through `pruneOldTransactions()`, which hands the loop in `pruneTransactionsInBatches.ts` three storage calls: a covered query on the `timestamp` index that finds where the next batch of 2,000 ends, and two range deletes. A run deletes at most 10 batches, pauses one second between them, and starts no new batch after 40 seconds.
+
+The batches are small on purpose. Every delete updates all six indexes on the collection, the same indexes a block commit writes to. The old hourly job deleted an hour of rows, about 400,000, in one statement. On production that held commits to 3 to 7 a minute for up to 16 minutes, against the 20 a minute the chain produces. Keep each batch short enough that a commit can run between two of them, and keep a run's total capacity (20,000 a minute) above the arrival rate (about 7,000 a minute) so a backlog drains.
+
+Blocks are pruned separately by the hourly `blockchain:prune` job through `pruneOldBlocks()`. Block documents are small, so one delete per run is fine there.
+
+| File | Answers |
+|---|---|
+| `pruneTransactionsInBatches.ts` | `pruneTransactionsInBatches()` — the batch loop and its limits, over an injected `ITransactionPruneStore`; `TRANSACTION_PRUNE_DEFAULTS` — batch size, batch cap, pause, and time budget |
+
 ## Canonical documentation
 
 - [system-blockchain-sync-architecture.md](../../../../docs/system/system-blockchain-sync-architecture.md) — block retrieval, enrichment pipeline, observer dispatch

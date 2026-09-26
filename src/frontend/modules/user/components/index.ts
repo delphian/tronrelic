@@ -7,6 +7,8 @@
  */
 
 export { WalletButton } from './WalletButton';
+export { AccountTray } from './AccountTray';
+export type { IAccountTrayProps } from './AccountTray';
 export { SessionProvider, useAuthSession } from './SessionProvider';
 export type { IAuthSessionContext, ISessionProviderProps } from './SessionProvider';
 export { AuthModal } from './AuthModal';

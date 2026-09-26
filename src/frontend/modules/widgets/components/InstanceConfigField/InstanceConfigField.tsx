@@ -6,7 +6,8 @@
  * A widget type declares its settings as JSON Schema, and this component
  * turns one property into the control its type implies: a toggle row for
  * booleans, segments or a dropdown for enums, a numeric input for numbers
- * with min, max, and step, a textarea for long-form strings, a text input
+ * with min, max, and step, a textarea for long-form strings, the icon
+ * picker for a string declaring the shared icon-name format, a text input
  * otherwise, and a repeatable row editor for arrays. The label carries the
  * schema title and a required marker; the description becomes help text,
  * or a tooltip and placeholder inside a list row where repeated paragraphs
@@ -16,11 +17,14 @@
  */
 
 import type { ReactElement } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Shapes, Trash2 } from 'lucide-react';
+import { MenuNodeIcon } from '../../../../components/layout/MenuNav/MenuNodeIcon';
 import { Button } from '../../../../components/ui/Button';
 import { Field } from '../../../../components/ui/Field';
 import { IconButton } from '../../../../components/ui/IconButton';
+import { LazyIconPickerModal } from '../../../../components/ui/IconPickerModal';
 import { Input } from '../../../../components/ui/Input';
+import { useModal } from '../../../../components/ui/ModalProvider';
 import { SegmentedControl } from '../../../../components/ui/SegmentedControl';
 import { Select } from '../../../../components/ui/Select';
 import { Switch } from '../../../../components/ui/Switch';
@@ -186,6 +190,62 @@ function InstanceConfigArrayField({ field, value, idPrefix, disabled, className,
 }
 
 /**
+ * Renders an icon-name setting as a button that shows the chosen icon and
+ * opens the searchable icon picker, so an operator picks from what exists
+ * instead of typing a lucide export name and hoping it resolves. The glyph
+ * comes from `MenuNodeIcon`, which loads the icon library in its own chunk;
+ * this control only ever renders in the admin editor, after hydration.
+ *
+ * @param props - See {@link IInstanceConfigFieldProps}.
+ * @returns The labelled picker button.
+ */
+function InstanceConfigIconField({ field, value, idPrefix, disabled, compact = false, className, onChange }: IInstanceConfigFieldProps) {
+    const { open, close } = useModal();
+    const fieldId = `${idPrefix}-${field.key}`;
+    const current = typeof value === 'string' ? value : '';
+    const hint = compact ? undefined : field.description;
+
+    /**
+     * Open the icon picker in the shared modal, seeded with the current
+     * choice, and write the picked name back to the form.
+     */
+    const openPicker = () => {
+        const id = open({
+            title: `Choose ${field.label.toLowerCase()}`,
+            size: 'lg',
+            content: (
+                <LazyIconPickerModal
+                    selectedIcon={current || undefined}
+                    onSelect={(name) => onChange(name)}
+                    onClose={() => close(id)}
+                />
+            )
+        });
+    };
+
+    return (
+        <Field label={field.label} required={field.required} hint={hint} className={className}>
+            <Button
+                id={fieldId}
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={openPicker}
+                disabled={disabled}
+                title={compact ? field.description : undefined}
+                aria-label={current ? `${field.label}: ${current}. Choose another` : `Choose ${field.label.toLowerCase()}`}
+                className={styles.icon_choice}
+            >
+                {current
+                    ? <MenuNodeIcon name={current} size={16} />
+                    : <Shapes size={16} aria-hidden />}
+                <span className={styles.icon_choice_name}>{current || 'Choose'}</span>
+            </Button>
+        </Field>
+    );
+}
+
+/**
  * One setting, rendered with the control its schema implies.
  *
  * @param props - See {@link IInstanceConfigFieldProps}.
@@ -202,6 +262,8 @@ export function InstanceConfigField(props: IInstanceConfigFieldProps) {
 
     if (control === 'array') {
         rendered = <InstanceConfigArrayField {...props} />;
+    } else if (control === 'icon') {
+        rendered = <InstanceConfigIconField {...props} />;
     } else if (control === 'boolean') {
         rendered = (
             <div className={cn(styles.toggle_row, className)}>

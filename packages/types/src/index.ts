@@ -31,8 +31,10 @@ export type {
     IRegisterWidgetTypeInput,
     IRegisterZoneInput,
     IRegisterWidgetInput,
-    WidgetsRegistrationDisposer
+    WidgetsRegistrationDisposer,
+    IAuthButtonLink
 } from './widget/index.js';
+export { WIDGET_ICON_FORMAT } from './widget/index.js';
 export type { ISystemConfig, ISystemConfigService } from './system-config/index.js';
 export type { ISystemLogService, ISystemLogQuery, ISystemLogPaginatedResponse, ISaveLogData, LogLevel } from './system-log/index.js';
 export { LOG_LEVELS, shouldLog, type LogLevelName, LOG_MONITOR_LEVELS_SETTING } from './system-log/index.js';

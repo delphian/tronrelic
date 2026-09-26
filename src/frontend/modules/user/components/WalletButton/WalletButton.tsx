@@ -16,6 +16,10 @@
  * The click still does the same thing for each state, and the accessible name
  * and tooltip say which action it takes and, when signed in, who is signed in.
  *
+ * `AccountTray` can take over the click with `onActivate`, so the button opens
+ * the tray of operator-configured links instead of signing in or navigating.
+ * The button then carries `aria-expanded` and `aria-controls` for the tray.
+ *
  * The file and component names are kept from when the button connected a
  * wallet; the affordance is now identity-driven rather than wallet-driven.
  */
@@ -25,9 +29,8 @@ import type { ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogIn, User as UserIcon } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button';
-import { useModal } from '../../../../components/ui/ModalProvider';
 import { useAuthSession } from '../SessionProvider';
-import { AuthModal } from '../AuthModal';
+import { useSignInDialog } from '../../hooks';
 import styles from './WalletButton.module.scss';
 
 /**
@@ -40,6 +43,16 @@ interface IWalletButtonProps {
      * identity pill, which is what surfaces other than the header get.
      */
     imageUrl?: string | null;
+    /**
+     * Replaces the button's own click action. `AccountTray` passes this when
+     * the visitor has tray links to see, so the click toggles the tray. Omitted
+     * keeps the default: sign in when signed out, open the profile when signed in.
+     */
+    onActivate?: () => void;
+    /** Whether the tray this button controls is open; only read with `onActivate`. */
+    expanded?: boolean;
+    /** Element id of the tray this button controls; only read with `onActivate`. */
+    controlsId?: string;
 }
 
 /**
@@ -73,25 +86,15 @@ function buildIdentityLabel(user: { email?: string | null; name?: string | null;
  * client tick because SSR resolves the session before render; only
  * cold loads with no cookie hit this code path.
  *
- * @param props - Optional administrator-chosen image for the button.
+ * @param props - Optional administrator-chosen image, plus the click override
+ *   and tray state `AccountTray` supplies when it owns the click.
  * @returns The sign-in button, the identity pill, the image button, or
  *          nothing while the session is pending.
  */
-export function WalletButton({ imageUrl = null }: IWalletButtonProps) {
+export function WalletButton({ imageUrl = null, onActivate, expanded = false, controlsId }: IWalletButtonProps) {
     const { session, isLoggedIn, isPending } = useAuthSession();
-    const { open, close } = useModal();
+    const openSignInDialog = useSignInDialog();
     const router = useRouter();
-
-    /**
-     * Open the sign-in dialog, closing it again once sign-in succeeds.
-     */
-    const openAuthModal = useCallback(() => {
-        const id = open({
-            title: 'Sign in',
-            size: 'md',
-            content: <AuthModal onSuccess={() => close(id)} />
-        });
-    }, [close, open]);
 
     /**
      * Send a signed-in visitor to their private profile page.
@@ -101,19 +104,31 @@ export function WalletButton({ imageUrl = null }: IWalletButtonProps) {
     }, [router]);
 
     const user = isLoggedIn ? session?.user ?? null : null;
+    const identity = user ? buildIdentityLabel(user) : null;
+    // With a tray the button no longer signs in or navigates by itself, so
+    // its accessible name says what the click does now, and the ARIA pair
+    // tells assistive technology which element it opens and whether it is open.
+    const onClick = onActivate ?? (user ? goToProfile : openSignInDialog);
+    const trayAria = onActivate
+        ? { 'aria-expanded': expanded, 'aria-controls': controlsId }
+        : {};
     let content: ReactNode = null;
 
     if (isPending) {
         content = null;
     } else if (imageUrl) {
-        const label = user ? `Open your profile (${buildIdentityLabel(user)})` : 'Sign in';
+        let label = user ? `Open your profile (${identity})` : 'Sign in';
+        if (onActivate) {
+            label = user ? `Account links (${identity})` : 'Sign in and links';
+        }
         content = (
             <button
                 type="button"
                 className={styles.image_btn}
-                onClick={user ? goToProfile : openAuthModal}
+                onClick={onClick}
                 aria-label={label}
                 title={label}
+                {...trayAria}
             >
                 {/* Plain <img> is the project's convention for uploaded images.
                     The alt is empty because the button's aria-label already
@@ -123,17 +138,17 @@ export function WalletButton({ imageUrl = null }: IWalletButtonProps) {
             </button>
         );
     } else if (user) {
-        const label = buildIdentityLabel(user);
         content = (
             <Button
                 variant="secondary"
                 size="sm"
-                onClick={goToProfile}
+                onClick={onClick}
                 className={styles.identity_btn}
-                aria-label="Open your profile"
+                aria-label={onActivate ? `Account links (${identity})` : 'Open your profile'}
+                {...trayAria}
             >
                 <UserIcon size={14} aria-hidden />
-                <span className={styles.identity_text}>{label}</span>
+                <span className={styles.identity_text}>{identity}</span>
             </Button>
         );
     } else {
@@ -141,8 +156,9 @@ export function WalletButton({ imageUrl = null }: IWalletButtonProps) {
             <button
                 type="button"
                 className={styles.signin_btn}
-                onClick={openAuthModal}
-                aria-label="Sign in"
+                onClick={onClick}
+                aria-label={onActivate ? 'Sign in and links' : 'Sign in'}
+                {...trayAria}
             >
                 <LogIn size={14} aria-hidden />
                 <span className={styles.signin_text}>Sign in</span>

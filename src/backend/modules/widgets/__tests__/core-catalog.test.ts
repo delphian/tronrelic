@@ -208,7 +208,10 @@ describe('Core widget-type catalog (auth-button)', () => {
      * @returns The widget data the resolver produced, or undefined when the
      *          widget was dropped.
      */
-    async function resolveAuthButton(getConfig: () => Promise<Partial<ISystemConfig>>): Promise<unknown> {
+    async function resolveAuthButton(
+        getConfig: () => Promise<Partial<ISystemConfig>>,
+        instanceConfig?: Record<string, unknown>
+    ): Promise<unknown> {
         const { widgets } = buildWidgetsService();
         widgets.registerZone(CORE_ZONE_DESCRIPTORS.find(z => z.id === 'site-top')!, 'core');
         const descriptors = buildCoreWidgetTypeDescriptors({
@@ -218,28 +221,78 @@ describe('Core widget-type catalog (auth-button)', () => {
         for (const descriptor of descriptors) {
             widgets.registerType(descriptor, 'core');
         }
-        await widgets.createPlacement({ typeId: AUTH_BUTTON_TYPE_ID, zoneId: 'site-top', routes: [] });
+        await widgets.createPlacement({
+            typeId: AUTH_BUTTON_TYPE_ID,
+            zoneId: 'site-top',
+            routes: [],
+            ...(instanceConfig ? { instanceConfig } : {})
+        });
         const resolved = await widgets.fetchWidgetsForRoute('/');
         return resolved.find(w => w.id === AUTH_BUTTON_TYPE_ID)?.data;
     }
 
+    /** Tray settings a placement with no configuration resolves to. */
+    const DEFAULT_TRAY = { links: [], direction: 'right', opacity: 85 };
+
     it('carries the administrator\'s sign-in image', async () => {
         await expect(resolveAuthButton(async () => ({ authButtonImageUrl: '/uploads/sign-in.png' })))
-            .resolves.toEqual({ imageUrl: '/uploads/sign-in.png' });
+            .resolves.toEqual({ imageUrl: '/uploads/sign-in.png', ...DEFAULT_TRAY });
     });
 
     it('falls back to the text button when no image is set', async () => {
         await expect(resolveAuthButton(async () => ({ authButtonImageUrl: null })))
-            .resolves.toEqual({ imageUrl: null });
+            .resolves.toEqual({ imageUrl: null, ...DEFAULT_TRAY });
         await expect(resolveAuthButton(async () => ({})))
-            .resolves.toEqual({ imageUrl: null });
+            .resolves.toEqual({ imageUrl: null, ...DEFAULT_TRAY });
     });
 
     it('still renders when the configuration cannot be read (auth-button)', async () => {
         // A missing widget would leave the site with no way to sign in, so a
         // failed read degrades to the text button instead of dropping it.
         await expect(resolveAuthButton(async () => { throw new Error('database down'); }))
-            .resolves.toEqual({ imageUrl: null });
+            .resolves.toEqual({ imageUrl: null, ...DEFAULT_TRAY });
+    });
+
+    it('carries the placement\'s tray direction, opacity, and links', async () => {
+        const data = await resolveAuthButton(async () => ({}), {
+            direction: 'down',
+            opacity: 60,
+            links: [
+                { icon: 'Wallet', label: ' Wallets ', url: '/profile/wallets', audience: 'signed-in' },
+                { icon: 'BookOpen', label: 'Docs', url: 'https://example.com/docs' }
+            ]
+        });
+        expect(data).toEqual({
+            imageUrl: null,
+            direction: 'down',
+            opacity: 60,
+            links: [
+                { icon: 'Wallet', label: 'Wallets', url: '/profile/wallets', audience: 'signed-in' },
+                { icon: 'BookOpen', label: 'Docs', url: 'https://example.com/docs', audience: 'everyone' }
+            ]
+        });
+    });
+
+    it('drops tray links that could not render safely', async () => {
+        // createPlacement does not run the schema (the controller does), so
+        // this row reaches the fetcher exactly as a hand-edited document would.
+        // A script URL, a protocol-relative URL (with a slash or with the
+        // backslash browsers treat as one), an impossible icon name, and
+        // an empty label each cost that one link and nothing else.
+        const data = await resolveAuthButton(async () => ({}), {
+            links: [
+                { icon: 'Wallet', label: 'Script', url: 'javascript:alert(1)' },
+                { icon: 'Wallet', label: 'Elsewhere', url: '//evil.example' },
+                { icon: 'Wallet', label: 'Backslash', url: '/\\evil.example' },
+                { icon: 'not an icon', label: 'Bad icon', url: '/a' },
+                { icon: 'Wallet', label: '   ', url: '/b' },
+                'not an object',
+                { icon: 'House', label: 'Home', url: '/' }
+            ]
+        });
+        expect((data as { links: unknown[] }).links).toEqual([
+            { icon: 'House', label: 'Home', url: '/', audience: 'everyone' }
+        ]);
     });
 });
 

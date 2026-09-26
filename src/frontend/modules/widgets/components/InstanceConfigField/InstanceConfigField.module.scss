@@ -53,6 +53,22 @@
     cursor: pointer;
 }
 
+/* The icon picker trigger: the glyph, then its name, left-aligned and as
+   wide as the row cell so it lines up with the inputs beside it. The name
+   truncates rather than wrapping, since a long lucide name would otherwise
+   make this one row taller than its neighbours. */
+.icon_choice {
+    width: 100%;
+    justify-content: flex-start;
+}
+
+.icon_choice_name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* Long-form content keeps the body face because it is content, not code. */
 .textarea_content {
     resize: vertical;
