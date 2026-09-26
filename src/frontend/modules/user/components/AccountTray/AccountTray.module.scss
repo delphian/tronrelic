@@ -1,0 +1,151 @@
+/**
+ * AccountTray styles.
+ *
+ * The tray is a strip of links that slides out of the sign-in / profile
+ * button. Opening right, it is a capsule the same shape as the pill it grows
+ * from, with its entries in a row. Opening down, it is a short rounded panel
+ * with its entries stacked. Its background is the tray token mixed toward
+ * transparent by the placement's `--account-tray-opacity`, which the
+ * component sets inline from the operator's setting.
+ *
+ * No container or viewport queries: the tray is positioned against the
+ * viewport, and the component already falls back from right to down when
+ * the viewport is too narrow for a row.
+ */
+
+/* Wraps the button so the tray can be measured against it. Inline-flex so
+   the wrapper takes the button's size and the zone's layout is unchanged. */
+.anchor {
+    display: inline-flex;
+}
+
+.tray {
+    position: fixed;
+    z-index: var(--account-tray-z-index);
+    padding: var(--padding-2xs);
+    background: color-mix(in srgb, var(--account-tray-background) var(--account-tray-opacity), transparent);
+    border: var(--account-tray-border);
+    box-shadow: var(--account-tray-shadow);
+    backdrop-filter: var(--account-tray-backdrop-filter);
+    animation-duration: var(--account-tray-reveal-duration);
+    animation-timing-function: var(--account-tray-reveal-easing);
+    /* Backwards, not both: the clip applies from the first frame, and is
+       gone once the reveal ends so it no longer cuts off the shadow. */
+    animation-fill-mode: backwards;
+}
+
+.tray_right {
+    border-radius: var(--radius-full);
+    animation-name: tray_reveal_right;
+}
+
+.tray_down {
+    border-radius: var(--radius-md);
+    animation-name: tray_reveal_down;
+}
+
+.list {
+    display: flex;
+    gap: var(--gap-2xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.tray_right .list {
+    flex-direction: row;
+    align-items: center;
+}
+
+.tray_down .list {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.list_item {
+    display: flex;
+}
+
+/* One link, or the built-in sign-in entry. Sized off the small button
+   tokens so an entry is as easy to hit as the button that opened it. */
+.entry {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--button-gap);
+    min-height: var(--button-height-sm);
+    padding: var(--button-padding-sm);
+    border: none;
+    background: transparent;
+    color: var(--account-tray-entry-color);
+    font-family: inherit;
+    font-size: var(--button-font-size-sm);
+    font-weight: var(--font-weight-medium);
+    white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.tray_right .entry {
+    border-radius: var(--radius-full);
+}
+
+.tray_down .entry {
+    border-radius: var(--radius-sm);
+}
+
+.entry:hover {
+    color: var(--account-tray-entry-color-hover);
+    background: var(--account-tray-entry-background-hover);
+}
+
+/* Sign-in is what a signed-out visitor most likely came for, so it keeps
+   a tint at rest and the full text colour. */
+.entry_signin {
+    color: var(--account-tray-entry-color-hover);
+    background: var(--account-tray-signin-background);
+}
+
+.entry_icon {
+    flex-shrink: 0;
+    color: var(--account-tray-entry-icon-color);
+}
+
+.entry_label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The tray grows out of the button's edge: the clip opens from the side
+   touching the button while the tray travels the last few pixels outward. */
+@keyframes tray_reveal_right {
+    from {
+        clip-path: inset(0 100% 0 0 round var(--radius-full));
+        transform: translateX(calc(var(--gap-sm) * -1));
+    }
+
+    to {
+        clip-path: inset(0 0 0 0 round var(--radius-full));
+        transform: none;
+    }
+}
+
+@keyframes tray_reveal_down {
+    from {
+        clip-path: inset(0 0 100% 0 round var(--radius-md));
+        transform: translateY(calc(var(--gap-sm) * -1));
+    }
+
+    to {
+        clip-path: inset(0 0 0 0 round var(--radius-md));
+        transform: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tray {
+        animation: none;
+    }
+}

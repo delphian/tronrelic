@@ -927,6 +927,35 @@
     /* --meter-margin-top is declared in the density block below: it separates
        the meter from preceding content, so it scales like any other gap. The
        bar's own --meter-height stays fixed for legibility. */
+
+    /* ========================================================================
+     * ACCOUNT TRAY TOKENS
+     *
+     * The tray of links that slides out of the sign-in / profile button. Each
+     * placement sets how transparent the tray is, so the background here is
+     * a solid colour and the component mixes it toward transparent by that
+     * placement's percentage. It is the page background leaning slightly
+     * toward primary rather than a card surface, so the tray reads as part
+     * of the button that opened it, and the blur keeps the labels legible
+     * over whatever shows through.
+     * ======================================================================== */
+
+    --account-tray-background: color-mix(in srgb, var(--color-background) 88%, var(--color-primary));
+    --account-tray-border: var(--border-width-thin) solid var(--color-primary-alpha-38);
+    --account-tray-shadow: var(--shadow-md);
+    --account-tray-backdrop-filter: blur(14px) saturate(140%);
+    --account-tray-entry-color: var(--color-text-muted);
+    --account-tray-entry-color-hover: var(--color-text);
+    --account-tray-entry-background-hover: var(--color-primary-alpha-15);
+    --account-tray-entry-icon-color: var(--color-primary);
+    --account-tray-signin-background: var(--color-primary-alpha-18);
+    /* The tray is portaled to <body> and positioned against the button, so it
+       takes the popover layer like any other anchored control. */
+    --account-tray-z-index: var(--z-index-popover);
+    /* The reveal decelerates hard at the end, so the tray reads as sliding
+       out of the button and settling rather than easing into place. */
+    --account-tray-reveal-duration: var(--duration-slide);
+    --account-tray-reveal-easing: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ============================================================================

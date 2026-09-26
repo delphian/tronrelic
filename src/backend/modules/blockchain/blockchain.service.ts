@@ -15,6 +15,12 @@ import { blockchainConfig } from '../../config/blockchain.js';
 import { TronGridClient, INTERNAL_ACTIVATION_CONTRACT_TYPE, type TronGridBlock, type TronGridTransaction, type TronGridTransactionInfo } from './tron-grid.client.js';
 import { normalizeContractType, resolveOwnerAddress, resolveRecipient, resolveAmounts, describeContract } from './transaction-parse.js';
 import { toTransactionWriteFields } from './transaction-write.js';
+import {
+    pruneTransactionsInBatches,
+    TRANSACTION_PRUNE_DEFAULTS,
+    type ITransactionPruneResult,
+    type ITransactionPruneStore
+} from './pruneTransactionsInBatches.js';
 import { decodeTokenTransfer } from './token-transfer.js';
 import { resolveTransactionEvents } from './contract-events.js';
 import { resolveCaughtUpMode } from './sync-mode.js';
@@ -492,77 +498,82 @@ export class BlockchainService implements IBlockchainService {
     }
 
     /**
-     * Prune old transactions from the database to prevent unbounded growth.
+     * Delete transactions older than the retention period, a few thousand at a time.
      *
-     * This method removes transactions older than the retention period (default 4 days) to keep the
-     * working set — and especially the random-key txId/address indexes — small enough that bulk
-     * writes stay cache-resident rather than faulting cold B-tree pages from disk.
-     * It deletes transactions in 2-hour batches to avoid long-running operations that could block other queries.
-     * The pruning is conservative - only transactions older than the retention period are eligible for deletion.
+     * Retention keeps the working set — and especially the random-key txId and address indexes —
+     * small enough that block commits stay in MongoDB's cache rather than reading cold index pages
+     * from disk. The deletes are split into small batches with a pause between each, because one
+     * large `deleteMany` competes with block commits for the same indexes and held commits well
+     * below the chain's rate for as long as it ran. See `pruneTransactionsInBatches.ts` for the
+     * sizing.
      *
      * Retention is coupled to `TARGET_HOURLY_BUCKETS` in overview-rollup.job.ts: the rollup backfill
      * must never reach past this cutoff, or it fabricates zero-volume buckets from pruned hours.
      * Shorten retention only in lockstep with that constant.
      *
-     * @param retentionHours - Number of hours to retain transactions (default: 96 = 4 days)
-     * @param batchHours - Number of hours of old transactions to delete per run (default: 2)
-     * @returns Object containing number of transactions deleted and the oldest remaining transaction timestamp
+     * @param retentionHours - Hours of transactions to keep. The scheduler passes the four days the
+     *                         rollup backfill depends on.
+     * @returns How many transactions this run deleted and whether any expired ones remain, so the
+     *          caller can tell a finished run from one that stopped at its limits.
      */
-    async pruneOldTransactions(retentionHours = 96, batchHours = 2): Promise<{ deletedCount: number; oldestRemaining: Date | null }> {
-        const retentionMs = retentionHours * 60 * 60 * 1000;
-        const batchMs = batchHours * 60 * 60 * 1000;
-        const cutoffDate = new Date(Date.now() - retentionMs);
-
+    async pruneOldTransactions(retentionHours = 96): Promise<ITransactionPruneResult> {
+        const cutoff = new Date(Date.now() - retentionHours * 60 * 60 * 1000);
         const txModel = BlockchainService.getDatabase().getModel<TransactionDoc>(BlockchainService.TRANSACTIONS_COLLECTION);
 
-        // Find the oldest transaction timestamp
-        const oldestDoc = await txModel.findOne({}, { timestamp: 1 })
-            .sort({ timestamp: 1 })
-            .lean() as TransactionFields | null;
+        const store: ITransactionPruneStore = {
+            /**
+             * Read the timestamp that ends the next batch from the `timestamp` index alone.
+             * Projecting only `timestamp` and excluding `_id` makes this a covered query, so
+             * finding the boundary reads no documents.
+             *
+             * @param batchCutoff - Only transactions older than this are counted.
+             * @param batchSize - Position of the boundary among the oldest expired transactions.
+             * @returns The boundary timestamp, or null when fewer than a full batch remain.
+             */
+            findBatchBoundary: async (batchCutoff, batchSize) => {
+                const boundaryDocs = await txModel.find({ timestamp: { $lt: batchCutoff } }, { _id: 0, timestamp: 1 })
+                    .sort({ timestamp: 1 })
+                    .skip(batchSize - 1)
+                    .limit(1)
+                    .lean() as Pick<TransactionFields, 'timestamp'>[];
 
-        if (!oldestDoc) {
-            logger.debug('No transactions found for pruning');
-            return { deletedCount: 0, oldestRemaining: null };
-        }
+                return boundaryDocs[0]?.timestamp ?? null;
+            },
+            /**
+             * Delete one full batch, ending at its boundary.
+             *
+             * @param boundary - The timestamp that ends the batch.
+             * @returns How many transactions were deleted.
+             */
+            deleteThrough: async boundary => {
+                const result = await txModel.deleteMany({ timestamp: { $lte: boundary } });
 
-        const oldestTimestamp = oldestDoc.timestamp;
+                return result.deletedCount ?? 0;
+            },
+            /**
+             * Delete the final, partial batch.
+             *
+             * @param batchCutoff - Transactions older than this are deleted.
+             * @returns How many transactions were deleted.
+             */
+            deleteBefore: async batchCutoff => {
+                const result = await txModel.deleteMany({ timestamp: { $lt: batchCutoff } });
 
-        // Only prune if there are transactions older than the retention period
-        if (oldestTimestamp >= cutoffDate) {
-            logger.debug({ oldestTimestamp, cutoffDate, retentionHours }, 'No transactions old enough to prune');
-            return { deletedCount: 0, oldestRemaining: oldestTimestamp };
-        }
-
-        // Calculate the batch cutoff: delete up to batchHours worth of old transactions
-        // Start from the oldest timestamp and go forward batchHours
-        const batchCutoff = new Date(oldestTimestamp.getTime() + batchMs);
-
-        // Delete transactions older than cutoffDate AND within the batch window
-        const result = await txModel.deleteMany({
-            timestamp: {
-                $lt: Math.min(batchCutoff.getTime(), cutoffDate.getTime())
+                return result.deletedCount ?? 0;
             }
-        });
+        };
 
-        const deletedCount = result.deletedCount ?? 0;
+        const result = await pruneTransactionsInBatches(store, { cutoff, ...TRANSACTION_PRUNE_DEFAULTS });
 
-        // Find the new oldest transaction
-        const newOldestDoc = await txModel.findOne({}, { timestamp: 1 })
-            .sort({ timestamp: 1 })
-            .lean() as TransactionFields | null;
+        // Logged at info only while a backlog is draining, because a finished run happens every
+        // minute and would otherwise fill the system log with routine entries.
+        if (result.complete) {
+            logger.debug({ ...result, cutoff }, 'Pruned expired transactions');
+        } else {
+            logger.info({ ...result, cutoff }, 'Pruned expired transactions; more remain for the next run');
+        }
 
-        const oldestRemaining = newOldestDoc?.timestamp ?? null;
-
-        logger.info({
-            deletedCount,
-            retentionHours,
-            batchHours,
-            cutoffDate,
-            batchCutoff,
-            oldestRemaining
-        }, 'Pruned old transactions');
-
-        return { deletedCount, oldestRemaining };
+        return result;
     }
 
     /**

@@ -29,11 +29,12 @@ import { SchedulerService } from '../services/scheduler.service.js';
 /**
  * Register all core scheduler jobs.
  *
- * This function registers the 8 built-in jobs:
+ * This function registers the 9 built-in jobs:
  * - chain-parameters:fetch - Fetch TRON chain parameters every 10 minutes
  * - usdt-parameters:fetch - Fetch USDT transfer energy cost every 10 minutes
  * - blockchain:sync - Sync latest blocks every 15 seconds
- * - blockchain:prune - Remove old transactions and blocks every hour
+ * - blockchain:prune-transactions - Remove expired transactions in small batches every minute
+ * - blockchain:prune - Remove old blocks every hour
  * - blockchain:token-metadata - Resolve active TRC-20 token metadata into ClickHouse every hour
  * - network-activity:rollup - Pre-aggregate the network-activity widget every 5 minutes
  * - cache:cleanup - Clean expired cache entries every hour
@@ -105,14 +106,22 @@ export async function registerCoreJobs(
         await blockchainService.syncLatestBlocks();
     }, { logger: blockchainLogger });
 
-    // Blockchain pruning: every hour. Transactions: removes 2 hours of the oldest
-    // rows older than 4 days — coupled to TARGET_HOURLY_BUCKETS (96) in
+    // Transaction pruning: every minute, in small batches, removing rows older
+    // than 4 days — coupled to TARGET_HOURLY_BUCKETS (96) in
     // overview-rollup.job.ts, which must never backfill past this cutoff.
-    // Blocks: removes 24 hours of the oldest rows older than the configured
-    // block retention (32 days by default) — block docs are tiny, so the larger
-    // batch drains the initial backlog in weeks, not months.
+    // It is a job of its own rather than a new schedule on `blockchain:prune`,
+    // because a deployment runs the schedule stored in `scheduler_configs` for
+    // an existing job name, so changing that job's default here would not
+    // reach production. Deleting an hour of transactions in one statement held
+    // block commits far below the chain's rate for up to 16 minutes an hour.
+    scheduler.register('blockchain:prune-transactions', '* * * * *', async () => {
+        await blockchainService.pruneOldTransactions(24 * 4);
+    }, { logger: blockchainLogger });
+
+    // Block pruning: every hour, removing 24 hours of the oldest rows older than
+    // the configured block retention (32 days by default) — block docs are tiny,
+    // so the larger batch drains the initial backlog in weeks, not months.
     scheduler.register('blockchain:prune', '0 * * * *', async () => {
-        await blockchainService.pruneOldTransactions(24 * 4, 2);
         await blockchainService.pruneOldBlocks();
     }, { logger: blockchainLogger });
 

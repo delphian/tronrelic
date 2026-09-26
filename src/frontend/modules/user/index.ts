@@ -14,7 +14,8 @@
  * ```
  * modules/user/
  * ├── index.ts          # Barrel exports (this file)
- * ├── components/       # AuthModal, WalletButton, ProfileView, SessionProvider, admin/*
+ * ├── components/       # AuthModal, WalletButton, AccountTray, ProfileView, SessionProvider, admin/*
+ * ├── hooks/            # useSignInDialog
  * └── lib/              # Better Auth client + SSR session resolver
  * ```
  */
@@ -24,6 +25,9 @@
 // =============================================================================
 
 export { WalletButton } from './components';
+export { AccountTray } from './components';
+export type { IAccountTrayProps } from './components';
+export { useSignInDialog } from './hooks';
 export { SessionProvider, useAuthSession } from './components';
 export type { IAuthSessionContext, ISessionProviderProps } from './components';
 export { AuthModal } from './components';

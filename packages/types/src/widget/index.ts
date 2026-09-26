@@ -16,3 +16,5 @@ export type {
     IRegisterWidgetInput,
     WidgetsRegistrationDisposer
 } from './IWidgetsService.js';
+export type { IAuthButtonLink } from './IAuthButtonLink.js';
+export { WIDGET_ICON_FORMAT } from './WIDGET_ICON_FORMAT.js';

@@ -15,6 +15,7 @@
  */
 
 import type { JSONSchema7, JSONSchema7Definition } from 'json-schema';
+import { WIDGET_ICON_FORMAT } from '@/types';
 import { enumOptionLabel, humanizeKey } from './layoutPresets';
 
 /**
@@ -35,7 +36,7 @@ export interface IConfigFieldDescriptor {
 }
 
 /** The control a field renders as. */
-export type ConfigControlType = 'boolean' | 'enum' | 'number' | 'text' | 'array';
+export type ConfigControlType = 'boolean' | 'enum' | 'number' | 'text' | 'array' | 'icon';
 
 /**
  * Resolve a schema property's primary scalar type, ignoring a nullable
@@ -53,7 +54,9 @@ export function primaryType(schema: JSONSchema7): string | undefined {
  * Map a property schema to the control it renders as. Enums take
  * precedence over the raw string type so a constrained string becomes a
  * select rather than free text; arrays render as a repeatable row editor
- * whatever their item shape.
+ * whatever their item shape. A string declaring the shared icon-name format
+ * renders as the icon picker, because an operator cannot be expected to
+ * type lucide export names from memory.
  *
  * @param schema - Property schema.
  * @returns The control kind to render.
@@ -69,6 +72,8 @@ export function fieldControlType(schema: JSONSchema7): ConfigControlType {
         control = 'enum';
     } else if (type === 'integer' || type === 'number') {
         control = 'number';
+    } else if (type === 'string' && schema.format === WIDGET_ICON_FORMAT.name) {
+        control = 'icon';
     }
     return control;
 }
