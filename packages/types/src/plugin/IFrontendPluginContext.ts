@@ -267,6 +267,13 @@ export interface IUIComponents {
          */
         invalid?: boolean;
         type?: string;
+        /**
+         * The browser's autofill hint, such as `off` for a secret an admin
+         * pastes once, or `new-password`. The core component passes it to the
+         * `<input>`; without it a plugin cannot stop a browser offering to
+         * fill or save a credential field.
+         */
+        autoComplete?: string;
         className?: string;
         id?: string;
         name?: string;

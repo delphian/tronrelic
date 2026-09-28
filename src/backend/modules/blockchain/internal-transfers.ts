@@ -7,6 +7,15 @@
  * turns the entries that actually move value into `IInternalTransfer`s so
  * plugins do not each read the raw TronGrid shape.
  *
+ * Not every internal transaction that carries a value is a transfer. When a
+ * contract stakes, unstakes, or delegates through the TVM's Stake 2.0 opcodes,
+ * java-tron records an internal transaction whose note names the operation,
+ * such as `delegateResourceOfEnergy`, and whose value is the staked SUN that
+ * changed state. No TRX changed hands. Only the notes in
+ * {@link VALUE_TRANSFER_NOTES} are read as transfers, so both consumers of this
+ * module, the observer payload and the ClickHouse `tron._transfer` ledger,
+ * leave those staking entries out in the same way.
+ *
  * A pure module so a test pins the decoding without driving block sync.
  *
  * @module backend/modules/blockchain/internal-transfers
@@ -18,6 +27,39 @@ import { TronGridClient } from './tron-grid.client.js';
 interface IRawCallValue {
     callValue?: unknown;
     tokenId?: unknown;
+}
+
+/**
+ * The decoded internal transaction notes whose value moved from one account to
+ * another: `call` (a CALL or CALLTOKEN with value attached), `create` (a CREATE
+ * or CREATE2 funding the new contract), and `suicide` (SELFDESTRUCT sending the
+ * remaining balance to its beneficiary).
+ *
+ * This is an allow-list rather than a block-list, because java-tron names each
+ * staking operation separately (`freezeBalanceV2ForEnergy`,
+ * `unfreezeBalanceV2ForBandwidth`, `delegateResourceOfEnergy`,
+ * `unDelegateResourceOfEnergy`, and others) and can add more. A staking note
+ * missing from a block-list would be counted as TRX changing hands, which is
+ * how a lending pool once appeared to send over a billion TRX.
+ */
+export const VALUE_TRANSFER_NOTES: ReadonlySet<string> = new Set(['call', 'create', 'suicide']);
+
+/**
+ * Decide whether an internal transaction's value moved between two accounts.
+ *
+ * The note is the only field that tells a transfer apart from a staking
+ * operation, because both carry a `callValue`. This is exported so every reader
+ * of internal transactions applies the same rule instead of keeping its own
+ * copy of the note list.
+ *
+ * @param note - The note after decoding from hex, such as `call` or
+ *               `delegateResourceOfEnergy`.
+ * @returns True when the note is one of {@link VALUE_TRANSFER_NOTES}. False
+ *          for a staking note and for a missing or unreadable note, since
+ *          neither can be shown to have moved value.
+ */
+export function isValueTransferNote(note: string): boolean {
+    return VALUE_TRANSFER_NOTES.has(note);
 }
 
 /**
@@ -73,8 +115,11 @@ function decodeNote(note: unknown): string {
  * more TRC10 tokens, and each becomes its own `IInternalTransfer` sharing the
  * internal transaction's index. Entries with no value are skipped, because a
  * contract calling another contract with nothing attached is not a transfer.
- * Rejected internal transactions are kept and flagged, so a consumer that
- * wants to count failed payouts can.
+ * Internal transactions whose note is not a value transfer, such as the
+ * staking notes described on {@link VALUE_TRANSFER_NOTES}, are skipped too,
+ * because their value is staked SUN changing state rather than TRX moving to
+ * another account. Rejected internal transactions are kept and flagged, so a
+ * consumer that wants to count failed payouts can.
  *
  * @param txId - Transaction the internal transactions belong to.
  * @param internals - The receipt's `internal_transactions`, which may be absent.
@@ -94,8 +139,9 @@ export function decodeInternalTransfers(
             ? TronGridClient.toBase58Address(internal.transferTo_address)
             : null;
         const values = Array.isArray(internal?.callValueInfo) ? internal.callValueInfo as IRawCallValue[] : [];
+        const note = decodeNote(internal?.note);
 
-        if (!from || !to) {
+        if (!from || !to || !isValueTransferNote(note)) {
             continue;
         }
 
@@ -111,7 +157,7 @@ export function decodeInternalTransfers(
                 from,
                 to,
                 rawAmount,
-                note: decodeNote(internal.note),
+                note,
                 rejected: internal.rejected === true
             };
             if (typeof value.tokenId === 'string' && value.tokenId.length > 0) {

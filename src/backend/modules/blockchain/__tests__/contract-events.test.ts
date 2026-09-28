@@ -14,7 +14,7 @@ import {
     normalizeContractEvents,
     resolveTransactionEvents
 } from '../contract-events.js';
-import { decodeInternalTransfers } from '../internal-transfers.js';
+import { decodeInternalTransfers, isValueTransferNote } from '../internal-transfers.js';
 
 /** USDT contract, base58. */
 const USDT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
@@ -41,6 +41,19 @@ const TRC20_TRANSFER_LOG = {
     topics: [TRANSFER_EVENT_TOPIC, word('0'), word(ADDRESS_BODY)],
     data: word('3e8')
 };
+
+/**
+ * Encode an internal transaction note the way java-tron's receipt carries it.
+ *
+ * Receipts give the note as hex bytes (`63616c6c` for `call`), so a fixture
+ * written with the plain word would test a shape the chain never sends.
+ *
+ * @param text - The note as a word, such as `call` or `delegateResourceOfEnergy`.
+ * @returns The note as lowercase hex.
+ */
+function hexNote(text: string): string {
+    return Buffer.from(text, 'utf8').toString('hex');
+}
 
 /** The call-data decode block sync would produce for the same transaction. */
 const CALLDATA_TRANSFER: ITokenTransfer = {
@@ -166,6 +179,37 @@ describe('resolveTransactionEvents', () => {
         }]);
     });
 
+    it('lists a call internal transfer but not a staking one in the observer payload', () => {
+        // The same rule the tron._transfer ledger applies, so the two cannot disagree.
+        const resolved = resolveTransactionEvents({
+            txId: 'tx-1',
+            status: 'SUCCESS',
+            info: {
+                id: 'tx-1',
+                internal_transactions: [
+                    {
+                        caller_address: `41${ADDRESS_BODY}`,
+                        transferTo_address: `41${'0'.repeat(40)}`,
+                        callValueInfo: [{ callValue: 5_000_000 }],
+                        note: hexNote('call')
+                    },
+                    {
+                        caller_address: `41${ADDRESS_BODY}`,
+                        transferTo_address: `41${ADDRESS_BODY}`,
+                        callValueInfo: [{ callValue: 1_700_000_000_000_000 }],
+                        note: hexNote('delegateResourceOfEnergy')
+                    }
+                ]
+            },
+            receiptsFetched: true,
+            calldataTransfer: undefined
+        });
+
+        expect(resolved.internalTransfers).toEqual([
+            { txId: 'tx-1', internalIndex: 0, from: USDT, to: ZERO_ADDRESS, rawAmount: '5000000', note: 'call', rejected: false }
+        ]);
+    });
+
     it('lists no call-data transfer for a failed call', () => {
         const resolved = resolveTransactionEvents({
             txId: 'tx-1',
@@ -205,5 +249,34 @@ describe('decodeInternalTransfers', () => {
 
     it('returns an empty list when the receipt has no internal transactions', () => {
         expect(decodeInternalTransfers('tx-1', undefined)).toEqual([]);
+    });
+
+    it('leaves out staking internal transactions, whose value is staked SUN rather than a transfer', () => {
+        const staking = ['delegateResourceOfEnergy', 'unDelegateResourceOfEnergy', 'freezeBalanceV2ForEnergy', 'unfreezeBalanceV2ForBandwidth'];
+        const transfers = decodeInternalTransfers('tx-1', staking.map(note => ({
+            caller_address: `41${ADDRESS_BODY}`,
+            transferTo_address: `41${ADDRESS_BODY}`,
+            callValueInfo: [{ callValue: 545_447_531_945 }],
+            note: hexNote(note)
+        })));
+
+        expect(transfers).toEqual([]);
+    });
+
+    it('leaves out an internal transaction with no readable note', () => {
+        const transfers = decodeInternalTransfers('tx-1', [
+            { caller_address: `41${ADDRESS_BODY}`, transferTo_address: `41${ADDRESS_BODY}`, callValueInfo: [{ callValue: 1 }] },
+            { caller_address: `41${ADDRESS_BODY}`, transferTo_address: `41${ADDRESS_BODY}`, callValueInfo: [{ callValue: 1 }], note: 'call' }
+        ]);
+
+        expect(transfers).toEqual([]);
+    });
+});
+
+describe('isValueTransferNote', () => {
+    it('accepts only the notes that move value between accounts', () => {
+        expect(['call', 'create', 'suicide'].map(isValueTransferNote)).toEqual([true, true, true]);
+        expect(['delegateResourceOfEnergy', 'unDelegateResourceOfEnergy', 'freezeBalanceV2ForEnergy', ''].map(isValueTransferNote))
+            .toEqual([false, false, false, false]);
     });
 });

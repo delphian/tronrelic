@@ -1,3 +1,6 @@
+import type { ITronGridFrozenV2Entry } from './ITronGridFrozenV2Entry.js';
+import type { ITronGridAccountResource } from './ITronGridAccountResource.js';
+
 /**
  * TronGrid account permission structure.
  * Represents an active_permission entry from TronGrid's /wallet/getaccount response.
@@ -14,11 +17,25 @@ export interface ITronGridAccountPermission {
         address: string;
         weight: number;
     }>;
+    /**
+     * Hex bitmask of the contract types a key holding this permission may
+     * sign, 32 bytes as 64 hex characters, where bit N (byte N / 8, bit N % 8,
+     * least significant bit first) stands for contract type number N. A caller
+     * checking what a granted key can actually do, such as whether a pool's key
+     * may sign `DelegateResourceContract` (type 57), reads it here, since the
+     * permission name is free text chosen by the account owner. Present on
+     * active permissions only; the owner permission carries none because it
+     * may sign every type.
+     */
+    operations?: string;
 }
 
 /**
  * TronGrid account response structure.
- * Subset of fields relevant to permission discovery.
+ * Subset of fields callers read today: balance and creation time, the owner
+ * and active permissions used for permission discovery, and the Stake 2.0
+ * stake and energy delegation state used to measure how much energy an
+ * account holds.
  */
 export interface ITronGridAccountResponse {
     /** Account address in base58 format */
@@ -31,6 +48,19 @@ export interface ITronGridAccountResponse {
     active_permission?: ITronGridAccountPermission[];
     /** Owner permission (id = 0) */
     owner_permission?: ITronGridAccountPermission;
+    /**
+     * The account's Stake 2.0 stake, one entry per resource. A caller reads
+     * the `ENERGY` entry to learn how much SUN the account has staked for
+     * energy, including SUN it has delegated out. Absent when the account has
+     * never staked.
+     */
+    frozenV2?: ITronGridFrozenV2Entry[];
+    /**
+     * The account's energy resource state: SUN delegated out and in as energy,
+     * and the energy recovery window. A caller needs it beside `frozenV2`
+     * because delegation to and from other accounts is recorded only here.
+     */
+    account_resource?: ITronGridAccountResource;
 }
 
 /**
