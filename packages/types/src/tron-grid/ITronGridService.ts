@@ -51,8 +51,9 @@ export interface ITronGridAccountResponse {
     /**
      * The account's Stake 2.0 stake, one entry per resource. A caller reads
      * the `ENERGY` entry to learn how much SUN the account has staked for
-     * energy, including SUN it has delegated out. Absent when the account has
-     * never staked.
+     * energy and still uses itself; SUN it has delegated out is reported
+     * separately under `account_resource`. Absent when the account has never
+     * staked.
      */
     frozenV2?: ITronGridFrozenV2Entry[];
     /**

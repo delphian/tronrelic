@@ -7,16 +7,19 @@
  * object in TronGrid's `/wallet/getaccount` response.
  *
  * A caller working out how much energy an account controls needs this as well
- * as `frozenV2`, because staked SUN the account has delegated out still
- * appears in `frozenV2`, and SUN delegated to it by others appears only here.
- * Only the energy fields callers read today are declared. java-tron omits a
- * field whose value is zero, so an absent amount means none.
+ * as `frozenV2`, because java-tron moves staked SUN out of the `frozenV2`
+ * entry when the account delegates it away and reports it here instead, and
+ * SUN delegated to the account by others appears only here. Only the energy
+ * fields callers read today are declared. java-tron omits a field whose value
+ * is zero, so an absent amount means none.
  */
 export interface ITronGridAccountResource {
     /**
      * Staked SUN this account has delegated to other accounts as energy under
-     * Stake 2.0. Subtract it from the `ENERGY` entry of `frozenV2` to get the
-     * stake whose energy the account keeps for itself.
+     * Stake 2.0. java-tron removes this amount from the `ENERGY` entry of
+     * `frozenV2` when the delegation happens, so add it to that entry to get
+     * the account's total staked-for-energy SUN. The `ENERGY` entry on its own
+     * is the part whose energy the account still keeps for itself.
      */
     delegated_frozenV2_balance_for_energy?: number;
     /**
