@@ -22,8 +22,11 @@ export interface ITronGridFrozenV2Entry {
      */
     type?: string;
     /**
-     * The staked SUN for that resource, including any the account has
-     * delegated to others. Absent when nothing is staked for the resource.
+     * The staked SUN for that resource whose resource the account still uses
+     * itself. java-tron moves an amount out of this entry when the account
+     * delegates it to another account, so a caller that wants the account's
+     * total stake must add the matching `delegated_frozenV2_balance_for_*`
+     * field. Absent when nothing is staked for the resource.
      */
     amount?: number;
 }
