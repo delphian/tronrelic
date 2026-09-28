@@ -23,6 +23,9 @@ const USDT_BASE58 = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 const ZERO_HEX = '410000000000000000000000000000000000000000';
 const ZERO_BASE58 = 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb';
 
+/** The internal transaction note `call`, in the hex form java-tron's receipts carry. */
+const CALL_NOTE_HEX = '63616c6c';
+
 /** A fixed block time, so every formatted timestamp is predictable. */
 const BLOCK_TIME = new Date(Date.UTC(2026, 8, 24, 3, 12, 36, 0));
 
@@ -510,8 +513,8 @@ describe('tron._transfer ledger rows', () => {
             [buildTransaction('tx-a', 'TriggerSmartContract', { owner_address: ZERO_HEX, contract_address: USDT_HEX })],
             [buildReceipt('tx-a', {
                 internal_transactions: [
-                    { caller_address: USDT_HEX, transferTo_address: ZERO_HEX, callValueInfo: [{ callValue: 10 }, { callValue: 5 }, { tokenId: '1002000', callValue: 2 }] },
-                    { caller_address: USDT_HEX, transferTo_address: ZERO_HEX, callValueInfo: [{ callValue: 99 }], rejected: true }
+                    { caller_address: USDT_HEX, transferTo_address: ZERO_HEX, callValueInfo: [{ callValue: 10 }, { callValue: 5 }, { tokenId: '1002000', callValue: 2 }], note: CALL_NOTE_HEX },
+                    { caller_address: USDT_HEX, transferTo_address: ZERO_HEX, callValueInfo: [{ callValue: 99 }], note: CALL_NOTE_HEX, rejected: true }
                 ]
             })]
         );
@@ -519,6 +522,31 @@ describe('tron._transfer ledger rows', () => {
         expect(rows.filter(row => row.direction === 'out')).toEqual([
             expect.objectContaining({ source: 'internal', event_index: 0, address: USDT_BASE58, counterparty: ZERO_BASE58, asset_type: 'trx', token: '', amount: '15' }),
             expect.objectContaining({ source: 'internal', event_index: 0, asset_type: 'trc10', token: '1002000', amount: '2' })
+        ]);
+    });
+
+    it('records a call internal transfer and leaves out a delegateResourceOfEnergy one', () => {
+        // A staking internal transaction carries staked SUN changing state, not TRX
+        // changing hands; counting it once made a lending pool look like it sent
+        // over a billion TRX.
+        const rows = ledgerRows(
+            [buildTransaction('tx-a', 'TriggerSmartContract', { owner_address: ZERO_HEX, contract_address: USDT_HEX })],
+            [buildReceipt('tx-a', {
+                internal_transactions: [
+                    { caller_address: USDT_HEX, transferTo_address: ZERO_HEX, callValueInfo: [{ callValue: 7 }], note: CALL_NOTE_HEX },
+                    {
+                        caller_address: USDT_HEX,
+                        transferTo_address: USDT_HEX,
+                        callValueInfo: [{ callValue: 1_700_000_000_000_000 }],
+                        note: Buffer.from('delegateResourceOfEnergy', 'utf8').toString('hex')
+                    }
+                ]
+            })]
+        );
+
+        expect(rows).toEqual([
+            expect.objectContaining({ source: 'internal', event_index: 0, address: USDT_BASE58, direction: 'out', counterparty: ZERO_BASE58, asset_type: 'trx', amount: '7' }),
+            expect.objectContaining({ source: 'internal', event_index: 0, address: ZERO_BASE58, direction: 'in', counterparty: USDT_BASE58, asset_type: 'trx', amount: '7' })
         ]);
     });
 

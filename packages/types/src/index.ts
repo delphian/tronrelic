@@ -105,7 +105,9 @@ export type {
     ITronGridAccountResponse,
     ITronGridAccountPermission,
     ITronGridDelegatedResource,
-    ITronGridDelegatedResourceResponse
+    ITronGridDelegatedResourceResponse,
+    ITronGridFrozenV2Entry,
+    ITronGridAccountResource
 } from './tron-grid/index.js';
 export type { ITrc10, ITrc10FrozenSupply } from './trc10/index.js';
 export type { ITrc20TokenInfo } from './trc20/index.js';

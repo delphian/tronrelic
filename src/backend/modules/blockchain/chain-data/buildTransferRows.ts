@@ -17,6 +17,10 @@
  *   keeps only for executions that succeeded. A zero-amount log is kept,
  *   because a zero-value transfer is how address poisoning shows up.
  * - Internal transfers come from the receipt, and a rejected one is left out.
+ *   So is one whose note is a staking operation, such as
+ *   `delegateResourceOfEnergy`: its value is staked SUN changing state, not
+ *   TRX handed to another account. `decodeInternalTransfers` applies that rule,
+ *   so the observer payloads leave the same entries out.
  *
  * TRC-20 and internal rows come only from receipts, never from call data. A
  * transaction without a receipt contributes none, so a block whose receipts
@@ -239,11 +243,13 @@ function logMovements(txId: string, receipt: TronGridTransactionInfo): IValueMov
  * One internal transaction can carry several value entries. Two entries for
  * the same token under the same internal index would share a sort key and
  * collapse into one row when ClickHouse merges parts, so their amounts are
- * added together first.
+ * added together first. Staking internal transactions never reach this loop,
+ * because `decodeInternalTransfers` keeps only the notes that move value.
  *
  * @param txId - The transaction the receipt belongs to.
  * @param receipt - The receipt as fetched.
- * @returns One movement per internal index and token, leaving out rejected transfers.
+ * @returns One movement per internal index and token, leaving out rejected
+ *          transfers and staking operations.
  */
 function internalMovements(txId: string, receipt: TronGridTransactionInfo): IValueMovement[] {
     const byIdentity = new Map<string, IValueMovement>();

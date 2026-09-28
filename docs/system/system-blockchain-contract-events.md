@@ -22,7 +22,7 @@ While building each transaction, `resolveTransactionEvents` in `src/backend/modu
 |---|---|---|
 | `events` | `IContractEvent[]` | Every log, with the emitting contract as base58, lowercase `topics` and `data`, and an `eventId` of `${txId}:${logIndex}`. No ABI knowledge is applied. |
 | `tokenTransfers` | `ITokenTransferEvent[]` | Standard `Transfer(address,address,uint256)` events, decoded. Three topics means TRC20 (`rawAmount` from `data`), four means TRC721 (`tokenId` from the last topic). |
-| `internalTransfers` | `IInternalTransfer[]` | TRX and TRC10 moved by contracts, decoded from the receipt's `internal_transactions`. Only entries carrying value. |
+| `internalTransfers` | `IInternalTransfer[]` | TRX and TRC10 moved by contracts, decoded from the receipt's `internal_transactions`. Only entries carrying value whose hex note decodes to `call`, `create`, or `suicide`; staking entries such as `delegateResourceOfEnergy` carry staked SUN changing state rather than a transfer and are left out. |
 
 Log addresses arrive as 40 hex characters without TRON's `41` prefix, unlike every other address in a TronGrid response; the decoder adds it. Contract-specific events such as USDT `Issue` and `Redeem`, SunSwap `Swap`, and bridge events stay raw in `events` for plugins to decode. Once core decodes one protocol's events it owns all of them, so it stops at the standards.
 

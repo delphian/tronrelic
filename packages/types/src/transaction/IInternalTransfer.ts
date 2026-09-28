@@ -10,8 +10,12 @@
  * raw TronGrid shape.
  *
  * Only movements that carry value are listed. A contract calling another
- * contract with no value attached is not a transfer. The list is filled only
- * when the block's receipts were fetched in full; otherwise it is absent.
+ * contract with no value attached is not a transfer. Neither is a staking
+ * operation a contract runs, such as freezing, unfreezing, or delegating
+ * resources: java-tron records those as internal transactions carrying the
+ * staked SUN, but no TRX changes hands, so they are left out. The list is
+ * filled only when the block's receipts were fetched in full; otherwise it is
+ * absent.
  */
 export interface IInternalTransfer {
     /** Transaction that triggered the movement. */
@@ -42,7 +46,8 @@ export interface IInternalTransfer {
 
     /**
      * The TVM operation that produced the movement, decoded from the receipt's
-     * hex note, for example `'call'`, `'create'`, or `'suicide'`.
+     * hex note: `'call'`, `'create'`, or `'suicide'`. These are the only notes
+     * that move value between accounts, so no other note appears here.
      */
     note: string;
 
