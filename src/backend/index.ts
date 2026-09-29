@@ -18,6 +18,7 @@ import http from 'node:http';
 import { env } from './config/env.js';
 import { QueueService } from './services/queue.service.js';
 import { createExpressApp } from './loaders/express.js';
+import { errorHandler } from './api/middleware/error-handler.js';
 import { connectDatabase } from './loaders/database.js';
 import { createRedisClient, disconnectRedis, getRedisClient } from './loaders/redis.js';
 import { logger, createLogger } from './lib/logger.js';
@@ -184,6 +185,15 @@ async function bootstrap(): Promise<void> {
         } catch (menuError) {
             logger.error({ menuError, stack: menuError instanceof Error ? menuError.stack : undefined }, 'Failed to register plugins admin menu');
         }
+
+        // Register the error handler last, after the /api router, every module
+        // router, and every plugin router is mounted. Express only searches
+        // layers that come after the failing one, so registering it inside
+        // createExpressApp() left it unreachable for route errors: a ZodError
+        // from a request validator fell through to Express's default handler,
+        // which answers with a 500 HTML page instead of the documented 400
+        // JSON body.
+        ctx.app.use(errorHandler);
 
         ctx.server.on('error', (err: NodeJS.ErrnoException) => {
             if (err.code === 'EADDRINUSE') {

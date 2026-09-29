@@ -6,7 +6,6 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import type { Express } from 'express';
 import { requestContext } from '../api/middleware/request-context.js';
-import { errorHandler } from '../api/middleware/error-handler.js';
 import { attachAuthSession } from '../api/middleware/auth-session.js';
 import { env } from '../config/env.js';
 import { corsOriginCallback } from '../config/cors.js';
@@ -87,8 +86,12 @@ export function createExpressApp(): Express {
 
   // Note: API routes are mounted in bootstrapInit() after database is initialized
   // This allows routers to receive the shared coreDatabase via dependency injection
-
-  app.use(errorHandler);
+  //
+  // The error handler is deliberately not registered here. Express only searches
+  // layers registered after the one that failed, so an error handler mounted at
+  // app-creation time never sees an error raised by the /api router, a module
+  // router, or a plugin router, because all of those mount later. bootstrap()
+  // registers it once every router is in place.
   return app;
 }
 

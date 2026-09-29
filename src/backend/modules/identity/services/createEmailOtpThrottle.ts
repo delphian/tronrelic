@@ -16,6 +16,7 @@
  * target rather than the caller.
  */
 
+import { createHash } from 'node:crypto';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import type { ISystemLogService } from '@/types';
 import type { IAuthRateLimitRedis } from './IAuthRateLimitRedis.js';
@@ -56,15 +57,30 @@ const CHECK_PATHS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Longest address this throttle will count, taken from the 254-character
+ * limit RFC 5321 places on an email address. Better Auth's body schema for
+ * these endpoints is a bare string with no length or format check, and it is
+ * applied after this hook runs, so without this bound a caller could hand the
+ * throttle a body-sized value and have it copied into a refusal log line. No
+ * real address is affected.
+ */
+const MAX_EMAIL_LENGTH = 254;
+
+/**
  * Apply the per-email limits to one auth request.
  *
  * Kept separate from the Better Auth middleware wrapper so it can be tested
  * with a plain path and body instead of a full Better Auth request context.
  *
- * Requests to other endpoints, and requests without a string `email` in the
- * body, pass through untouched; Better Auth's own validation rejects a
- * malformed body afterwards. The address is trimmed and lowercased first, so
- * `Victim@Example.com` and `victim@example.com` share one budget.
+ * Requests to other endpoints, and requests without a usable `email` in the
+ * body, pass through untouched. The address is trimmed and lowercased first,
+ * so `Victim@Example.com` and `victim@example.com` share one budget, and it
+ * reaches Redis as a SHA-256 digest rather than as itself. Hashing matters
+ * because this hook runs before Better Auth validates the body, and the auth
+ * routes skip the Express body parser, so the caller — not the application —
+ * would otherwise decide how many bytes each key holds for the length of the
+ * window. The digest is always 64 hex characters, one address still maps to
+ * one counter, and nothing needs to read the address back out of the key.
  *
  * A Redis failure lets the request through and logs an error, for the same
  * reason given in `createRedisRateLimitStorage`: refusing would stop every
@@ -90,15 +106,16 @@ export async function enforceEmailOtpLimit(
     const isSend = path === SEND_PATH;
     const isCheck = CHECK_PATHS.has(path);
     const rawEmail: unknown = (body as { email?: unknown } | null | undefined)?.email;
-    if ((isSend || isCheck) && typeof rawEmail === 'string' && rawEmail.trim().length > 0) {
-        const email = rawEmail.trim().toLowerCase();
+    const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
+    if ((isSend || isCheck) && email.length > 0 && email.length <= MAX_EMAIL_LENGTH) {
         const bucket = isSend ? 'send' : 'check';
         const max = isSend ? EMAIL_OTP_THROTTLE.maxSends : EMAIL_OTP_THROTTLE.maxChecks;
+        const emailHash = createHash('sha256').update(email).digest('hex');
         let outcome: { allowed: boolean; retryAfter: number | null } = { allowed: true, retryAfter: null };
         try {
             outcome = await consumeRedisWindow(
                 redis,
-                `${namespace}:auth:otp-email:${bucket}:${email}`,
+                `${namespace}:auth:otp-email:${bucket}:${emailHash}`,
                 EMAIL_OTP_THROTTLE.windowSeconds,
                 max
             );
