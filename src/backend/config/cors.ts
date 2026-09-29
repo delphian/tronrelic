@@ -10,20 +10,28 @@ import { env } from './env.js';
 /**
  * Build the list of allowed CORS origins from the environment.
  *
- * Always includes localhost development ports. Adds the configured SITE_URL
- * and its www variant (for bare-domain production URLs) when present.
+ * Adds the configured SITE_URL and its www variant (for bare-domain production
+ * URLs) when present. The localhost development ports are added only outside
+ * production: in production they would let any page served from a visitor's
+ * own machine make credentialed requests and open sockets as that visitor.
+ * Production is detected with the same rule as elsewhere — either `NODE_ENV`
+ * or `ENV` set to `production`.
  *
+ * @param environment - The settings that decide the list; defaults to the
+ *   loaded env, and is a parameter so tests can check both cases.
  * @returns Array of origin strings permitted by CORS policy
  */
-export function getAllowedOrigins(): string[] {
-    const origins: string[] = [
-        'http://localhost:3000',
-        'http://localhost:4000'
-    ];
+export function getAllowedOrigins(
+    environment: Pick<typeof env, 'SITE_URL' | 'NODE_ENV' | 'ENV'> = env
+): string[] {
+    const isProduction = environment.NODE_ENV === 'production' || environment.ENV === 'production';
+    const origins: string[] = isProduction
+        ? []
+        : ['http://localhost:3000', 'http://localhost:4000'];
 
-    if (env.SITE_URL) {
+    if (environment.SITE_URL) {
         try {
-            const parsed = new URL(env.SITE_URL.trim());
+            const parsed = new URL(environment.SITE_URL.trim());
             const baseOrigin = parsed.origin;
             origins.push(baseOrigin);
 

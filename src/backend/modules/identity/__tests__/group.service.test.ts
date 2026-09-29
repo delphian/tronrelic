@@ -178,6 +178,58 @@ describe('GroupService', () => {
         });
     });
 
+    describe('membership listener', () => {
+        /**
+         * Rebuild the singleton with a listener spy, since the shared
+         * beforeEach configures it without one.
+         *
+         * @returns The listener spy the rebuilt service will call.
+         */
+        function useListener(): ReturnType<typeof vi.fn> {
+            const listener = vi.fn();
+            GroupService.resetForTests();
+            GroupService.setDependencies(mockDatabase, new StubLogger(), listener);
+            service = GroupService.getInstance();
+            return listener;
+        }
+
+        it('reports the user after a membership write that matched them', async () => {
+            // The identity module uses this to drop the user's sockets so a
+            // demoted admin stops receiving group:admin events at once.
+            const listener = useListener();
+            const collection = mockDatabase.getCollection(AUTH_USERS_COLLECTION);
+            vi.spyOn(collection, 'updateOne').mockResolvedValue({ matchedCount: 1 } as never);
+
+            await service.addMember(USER_ABC, 'admin');
+            await service.removeMember(USER_ABC, 'admin');
+            await service.setUserGroups(USER_ABC, []);
+
+            expect(listener).toHaveBeenCalledTimes(3);
+            expect(listener).toHaveBeenCalledWith(USER_ABC);
+        });
+
+        it('stays quiet when no user matched', async () => {
+            const listener = useListener();
+            const collection = mockDatabase.getCollection(AUTH_USERS_COLLECTION);
+            vi.spyOn(collection, 'updateOne').mockResolvedValue({ matchedCount: 0 } as never);
+
+            await service.addMember(USER_MISSING, 'admin');
+
+            expect(listener).not.toHaveBeenCalled();
+        });
+
+        it('keeps the membership write when the listener throws', async () => {
+            const listener = useListener();
+            listener.mockImplementation(() => {
+                throw new Error('socket layer down');
+            });
+            const collection = mockDatabase.getCollection(AUTH_USERS_COLLECTION);
+            vi.spyOn(collection, 'updateOne').mockResolvedValue({ matchedCount: 1 } as never);
+
+            await expect(service.addMember(USER_ABC, 'admin')).resolves.toBe(true);
+        });
+    });
+
     describe('removeMember', () => {
         it('issues a $pull update keyed by the ObjectId form of the user id', async () => {
             const collection = mockDatabase.getCollection(AUTH_USERS_COLLECTION);

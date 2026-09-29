@@ -158,6 +158,25 @@ function identifyPortHolder(port: number): void {
  * @throws Logs error and exits with code 1 if bootstrap fails
  */
 async function bootstrap(): Promise<void> {
+    // Backstop for a rejected promise nothing awaited. Node's default for one
+    // is to exit the process, so a single missed `.catch()` anywhere — a socket
+    // handler, a fire-and-forget emit, a plugin callback — becomes a remote
+    // crash any caller who can trigger it can repeat. That happened: one
+    // malformed WebSocket `subscribe` stopped the backend. Registering a
+    // listener replaces the exit with a log entry. Each such entry is still a
+    // bug to fix at its source, so it is logged at fatal with the reason and
+    // stack.
+    //
+    // `uncaughtException` is deliberately left at Node's default. A synchronous
+    // throw that escapes every frame can leave shared state half-updated, and
+    // restarting is the safer answer there.
+    process.on('unhandledRejection', (reason: unknown) => {
+        logger.fatal(
+            { reason, stack: reason instanceof Error ? reason.stack : undefined },
+            'Unhandled promise rejection; process kept alive, but the code that raised it needs a catch'
+        );
+    });
+
     try {
         const ctx = await bootstrapInit();
         await bootstrapRun(ctx);
@@ -454,8 +473,9 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await schedulerModule.init({ database: coreDatabase, menuService, app });
     const schedulerService = schedulerModule.getSchedulerService();
     // Identity also receives Redis for the sign-in rate-limit counters, so
-    // those limits survive a backend restart.
-    await identityModule.init({ ...sharedDeps, redis });
+    // those limits survive a backend restart, and the WebSocket service so it
+    // can drop a user's sockets when their session ends or their groups change.
+    await identityModule.init({ ...sharedDeps, redis, socketDisconnector: WebSocketService.getInstance() });
     await trafficModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
     // Account-history: pull-based per-account transaction backfill into ClickHouse.
     // Receives the scheduler service (for its bounded ingestion job) and clickhouse

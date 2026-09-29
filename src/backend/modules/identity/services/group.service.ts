@@ -28,6 +28,18 @@ import { AUTH_USERS_COLLECTION } from './auth-constants.js';
 import { toUserKey, userIdFromKey } from './user-id.js';
 
 /**
+ * Called after a user's group membership changes.
+ *
+ * Group membership decides which `group:<id>` WebSocket rooms a socket joins,
+ * and that decision is made only at the handshake. The identity module passes
+ * a listener that disconnects the user's sockets, so a demoted admin stops
+ * receiving admin events immediately instead of at their next reconnect.
+ *
+ * @param userId - Better Auth user id whose membership changed.
+ */
+export type GroupMembershipListener = (userId: string) => void;
+
+/**
  * Group id reserved for administrators.
  *
  * Exported for callers that want a symbolic reference rather than a
@@ -98,6 +110,12 @@ export class GroupService {
     private readonly database: IDatabaseService;
 
     /**
+     * Notified after every membership write that matched a user. Optional so
+     * tests and callers that do not care about live sockets can omit it.
+     */
+    private readonly membershipListener?: GroupMembershipListener;
+
+    /**
      * Construct the service.
      *
      * Private so the only sanctioned creation path is
@@ -105,10 +123,12 @@ export class GroupService {
      *
      * @param database - Database abstraction.
      * @param logger - Logger to derive a `component: 'group-service'` child from.
+     * @param membershipListener - Told which user changed after each membership write.
      */
-    private constructor(database: IDatabaseService, logger: ISystemLogService) {
+    private constructor(database: IDatabaseService, logger: ISystemLogService, membershipListener?: GroupMembershipListener) {
         this.database = database;
         this.logger = logger.child({ component: 'group-service' });
+        this.membershipListener = membershipListener;
     }
 
     /**
@@ -121,10 +141,17 @@ export class GroupService {
      *
      * @param database - Database service injected by the module.
      * @param logger - Pino logger from the user module's child scope.
+     * @param membershipListener - Optional callback run after a user's groups
+     *   change; the identity module uses it to drop that user's WebSocket
+     *   connections so they rejoin with their current group rooms.
      */
-    public static setDependencies(database: IDatabaseService, logger: ISystemLogService): void {
+    public static setDependencies(
+        database: IDatabaseService,
+        logger: ISystemLogService,
+        membershipListener?: GroupMembershipListener
+    ): void {
         if (!GroupService.instance) {
-            GroupService.instance = new GroupService(database, logger);
+            GroupService.instance = new GroupService(database, logger, membershipListener);
         }
     }
 
@@ -240,6 +267,9 @@ export class GroupService {
             );
             matched = result.matchedCount > 0;
         }
+        if (matched) {
+            this.notifyMembershipChanged(userId);
+        }
         return matched;
     }
 
@@ -262,6 +292,9 @@ export class GroupService {
                 { $pull: { groups: groupId } }
             );
             matched = result.matchedCount > 0;
+        }
+        if (matched) {
+            this.notifyMembershipChanged(userId);
         }
         return matched;
     }
@@ -289,6 +322,9 @@ export class GroupService {
                 { $set: { groups: unique } }
             );
             matched = result.matchedCount > 0;
+        }
+        if (matched) {
+            this.notifyMembershipChanged(userId);
         }
         return matched;
     }
@@ -337,11 +373,38 @@ export class GroupService {
      */
     public async removeGroupFromAllMembers(groupId: string): Promise<number> {
         const collection = this.getCollection();
+        // Read the members first so each one's sockets can be refreshed after
+        // the pull. Only needed when someone is listening, and group deletion
+        // is rare, so the extra read costs nothing in practice.
+        const affected = this.membershipListener
+            ? await collection.find({ groups: groupId }, { projection: { _id: 1 } }).toArray()
+            : [];
         const result = await collection.updateMany(
             { groups: groupId },
             { $pull: { groups: groupId } }
         );
+        for (const doc of affected) {
+            this.notifyMembershipChanged(userIdFromKey(doc._id));
+        }
         return result.modifiedCount;
+    }
+
+    /**
+     * Tell the membership listener that a user's groups changed.
+     *
+     * The listener's own failure must never undo or fail a membership write
+     * that already succeeded, so any error it throws is logged and dropped.
+     *
+     * @param userId - Better Auth user id whose membership changed.
+     */
+    private notifyMembershipChanged(userId: string): void {
+        if (this.membershipListener) {
+            try {
+                this.membershipListener(userId);
+            } catch (error) {
+                this.logger.warn({ error, userId }, 'Group membership listener failed; membership write kept');
+            }
+        }
     }
 
     /**

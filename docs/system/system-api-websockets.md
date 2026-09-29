@@ -4,7 +4,7 @@ Admin endpoints for inspecting plugin WebSocket activity, plus the catalog of co
 
 ## Why This Matters
 
-Every plugin namespaces its rooms and events under its `pluginId`, so per-plugin stats let operators identify which feature is responsible for a connection or message-rate spike. The core events (`transaction:large`, `block:new`, etc.) are the public real-time API — dashboards, alert bots, and external analytics consume them without polling.
+Every plugin namespaces its rooms and events under its `pluginId`, so per-plugin stats let operators identify which feature is responsible for a connection or message-rate spike. The core events (`block:new`, `memo:new`, etc.) are the public real-time API — dashboards, alert bots, and external analytics consume them without polling.
 
 ## Admin Endpoints
 
@@ -66,47 +66,38 @@ socket.emit('subscribe', 'plugin-id', 'room-name', { /* options */ });
 // 2. Legacy plugin format
 socket.emit('subscribe', 'plugin-id', { /* options */ });
 
-// 3. Legacy core-capabilities format (object literal, not plugin id)
+// 3. Legacy object format
 socket.emit('subscribe', {
-    transactions: { minAmount: 1_000_000, addresses: ['T...'] },
-    comments: { resourceId: 'abc123' },
-    chat: true
+    memos: { all: true },                // joins memos:all
+    'plugin-id': { /* options */ }      // same as format 2
 });
 
 // Unsubscribe (room-based)
 socket.emit('unsubscribe', 'plugin-id', 'room-name');
 ```
 
-Format 3 keys are core capabilities (`transactions`, `comments`, `chat`, `markets`, `memos`, `notifications`), not plugin IDs.
+In format 3, `memos` is the only core key still honoured, because the alert service emits `memo:new` to `memos:all`; every other key is matched only against registered plugin ids. The older core keys `transactions`, `comments`, `chat`, `markets`, and `notifications` were removed: nothing on the server sent to their rooms, and `notifications:<wallet>` accepted any wallet, so the first emit to it would have reached anyone who asked.
 
-Subscribe failures surface as `subscription:error` with `{ message }`. Standard Socket.IO `connect_error` and `disconnect` events apply; on `disconnect` reason `'io server disconnect'` the client must call `socket.connect()` to reconnect.
+A plugin subscription failure surfaces as `<plugin-id>:subscription-error` with `{ error, pluginId, roomName }`. `error` is `'Subscription rejected'` unless the plugin threw an error marked `expose: true`; see [plugins-websocket-subscriptions.md](../plugins/plugins-websocket-subscriptions.md#subscription-handlers). Standard Socket.IO `connect_error` and `disconnect` events apply; on `disconnect` reason `'io server disconnect'` the client must call `socket.connect()` to reconnect. The server disconnects a signed-in user's sockets itself when their session is deleted or their groups change, so that they reconnect with current identity rooms (see [Keeping identity rooms current](#keeping-identity-rooms-current)).
+
+### Limits
+
+Every client message is untrusted. Before any handler runs, core checks it against the limits below and drops what falls outside them, logging at `debug` so a flood cannot push real errors out of the capped system log. A malformed message is ignored; it never throws, and a rejected promise anywhere in the process is logged rather than allowed to stop it.
+
+| Limit | Value |
+|-------|-------|
+| Plugin id and room name | 1–64 characters from `A–Z a–z 0–9 : _ . -` |
+| Client-requested rooms per socket | 50 (plugin rooms and `memos:all`; identity rooms and the socket's own room do not count) |
+| Subscribe plus unsubscribe events per socket | 30 per 10 seconds |
+| Largest message (`maxHttpBufferSize`) | 16 KB |
+
+The constants live at the top of `src/backend/services/websocket.service.ts`.
 
 ## Core Events
 
 The full union is `TronRelicSocketEvent` exported from `src/shared/types/socket.ts`.
 
-### `transaction:large`, `delegation:new`, `stake:new`
-
-All three carry `payload: TronTransactionDocument`:
-
-| Field | Type | Notes |
-|---|---|---|
-| `txId` | string | |
-| `blockNumber` | number | |
-| `timestamp` | string | ISO |
-| `type` | TronTransactionType | One of 13 contract types incl. `Unknown` |
-| `subType` | string \| undefined | |
-| `from`, `to` | `AddressMetadata` | `{address, name?, type?, labels?, description?}` — **no `balance` field** |
-| `amount` | number | Raw sun |
-| `amountTRX` | number | Already divided by 1e6 |
-| `amountUSD` | number \| undefined | |
-| `energy` | `ResourceCost` \| undefined | `{consumed, price, totalCost}`. **Currently always `undefined`** because blockchain sync passes `info=null` to skip per-tx receipt fetches (see [sync architecture](./system-blockchain-sync-architecture.md#energy-cost-limitation)). |
-| `bandwidth` | `ResourceCost` \| undefined | Same shape as `energy`; same caveat |
-| `contract` | `{address, method?, parameters?}` \| undefined | Smart-contract calls only |
-| `memo` | string \| null \| undefined | |
-| `internalTransactions` | array \| undefined | |
-| `analysis` | `{pattern, riskScore, confidence, relatedAddresses}` \| undefined | Pattern enum: accumulation, distribution, arbitrage, exchange flows, mega_whale, etc. |
-| `notifications` | string[] \| undefined | Notification channel names triggered |
+`transaction:large`, `delegation:new`, `stake:new`, `comments:new`, and `chat:update` remain in the `TronRelicSocketEvent` union but are not delivered: nothing on the server emitted them, and their routing was removed with the legacy subscriptions. An emit of one is dropped like any unrecognised event.
 
 ### `block:new`
 
@@ -128,18 +119,6 @@ In practice the emitter sends a `BlockStats` reduce:
 
 The `stats` field is typed as a generic `Record` because additional aggregations may appear over time without a type bump.
 
-### `comments:new`
-
-| Field | Type |
-|---|---|
-| `threadId`, `commentId`, `wallet`, `message` | string |
-| `createdAt` | ISO string |
-| `attachments` | `Array<{attachmentId, filename, contentType, size, url}>` \| undefined |
-
-### `chat:update`
-
-`{ messageId, wallet, message, updatedAt }` — all strings.
-
 ### `memo:new`
 
 `{ memoId, txId, memo, timestamp, fromAddress, toAddress }` — all strings.
@@ -158,10 +137,10 @@ Refetch signal — `{ event, namespace, nodeId, timestamp }`. Per-user gating me
 
 | Audience | Events | Why |
 |---|---|---|
-| Subscribed rooms | `transaction:large`, `delegation:new`, `stake:new`, `comments:new`, `chat:update`, `memo:new` | Clients opt in through `subscribe`; the room is the filter |
-| `group:admin` | `ai-tools:activity`, `ai-tools:approvals-changed`, `curation:changed`, `price-history:stats` | Refetch nudges whose only subscribers live under `/system/*`. Payloads are already timestamp-or-count only, so scoping removes a timing side channel rather than a data leak — and keeps the blast radius at "admins" if a payload is ever widened |
+| Subscribed rooms | `memo:new` | Clients opt in through `subscribe`; the room is the filter |
+| `group:admin` | `ai-tools:activity`, `ai-tools:approvals-changed`, `curation:changed`, `price-history:stats`, `content:published` | Refetch nudges whose only subscribers live under `/system/*`, plus `content:published`, whose sink declares an admin audience. Payloads are timestamp-or-count only except `content:published` (`{id, title, publishedAt}`), which a global emit leaked to anonymous visitors |
 | `user:${id}` rooms | `notification` | Resolved per-recipient by the notifications dispatch pipeline |
-| Every socket | `block:new`, `menu:update`, `menu:namespace-config:update`, `widgets:placements-update`, `account-history:stats`, `content:published`, `toast` | Genuinely public, or consumed by a non-admin surface. `account-history:stats` is the one to watch: besides the admin dashboard it drives `WalletManager` on a signed-in user's own profile, and identity rooms address one user or one group, so there is no "every authenticated socket" room to narrow it to |
+| Every socket | `block:new`, `menu:update`, `menu:namespace-config:update`, `widgets:placements-update`, `account-history:stats`, `toast` | Genuinely public, or consumed by a non-admin surface. `account-history:stats` is the one to watch: besides the admin dashboard it drives `WalletManager` on a signed-in user's own profile, and identity rooms address one user or one group, so there is no "every authenticated socket" room to narrow it to |
 
 ### Keeping identity rooms current
 
@@ -171,13 +150,13 @@ Room-scoped delivery makes handshake-time identity load-bearing, and its failure
 
 One residual: if resolution fails twice, the socket connects with no identity rooms and stays that way until it reconnects. That path logs at `error` naming the consequence, which is the thread to pull on a report of "the dashboard stopped updating."
 
+The opposite failure — a socket keeping rooms its user has lost — is closed server-side, because a hostile client need not re-handshake when told to. `WebSocketService.disconnectUser(userId, sessionId?)` drops a user's sockets, and the identity module calls it in two places: after Better Auth deletes a session (sign-out or revocation), for the sockets opened with that session only, and after any group membership write, for all of the user's sockets. The official client reconnects immediately and rejoins with its current identity.
+
 Adding an event means adding a `case` and choosing its audience deliberately. There is no catch-all `emit`: an unrecognised event is logged and dropped, so a new event is inert until someone picks its audience — silent is the correct failure direction, broadcast-to-everyone is not.
 
 ```javascript
-socket.emit('subscribe', { transactions: { minAmount: 1_000_000 } });
-socket.on('transaction:large', tx =>
-    console.log(`Whale: ${tx.amountTRX} TRX ($${tx.amountUSD ?? '?'}) ${tx.from.address} → ${tx.to.address}`)
-);
+socket.emit('subscribe', { memos: { all: true } });
+socket.on('memo:new', memo => console.log(`${memo.fromAddress} → ${memo.toAddress}: ${memo.memo}`));
 ```
 
 ## Further Reading

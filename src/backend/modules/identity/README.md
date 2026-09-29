@@ -34,6 +34,7 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 | `services/createRedisRateLimitStorage.ts` | Better Auth `rateLimit.customStorage` — moves BA's per-IP counters from process memory to Redis |
 | `services/createEmailOtpThrottle.ts` | `hooks.before` middleware adding per-email limits to the OTP send and check endpoints (`EMAIL_OTP_THROTTLE`) |
 | `services/IAuthRateLimitRedis.ts` | The three Redis commands the limiters use; the bootstrap ioredis client satisfies it |
+| `services/IIdentitySocketDisconnector.ts` | `disconnectUser(userId, sessionId?)` — the one WebSocket operation identity needs; `WebSocketService` implements it |
 | `services/user-id.ts` | `toUserKey` / `userIdFromKey` — BA user-id hex ↔ `_id` ObjectId conversion at the collection boundary; the opaque-hex-string contract |
 | `services/group.service.ts` | Membership primitive over the BA `groups` field; `ADMIN_GROUP_ID` |
 | `services/user-group.service.ts` | Group-definition registry + the `'user-groups'` contract; composes `GroupService` |
@@ -61,6 +62,17 @@ Email sign-in sends a six-digit one-time code (OTP). Two layers of limits protec
 The per-email layer exists because the per-IP layer alone lets anyone who rotates IP addresses keep guessing a victim's code, about three guesses a minute per extra address, or flood an inbox with codes. Refusals return `429` and log a warning with the email domain only.
 
 Both layers let a request through and log an error when Redis is unreachable, because refusing would stop every sign-in for the length of the outage. Codes are stored hashed (`storeOTP: 'hashed'`), so reading `module_user_auth_verifications` does not reveal a pending code. A recipient Resend refuses as invalid (`validation_error`) is logged as a warning; any other send failure is an error, because it stops all email sign-in.
+
+## Keeping WebSocket Identity Current
+
+A WebSocket joins its `user:<id>` and `group:<id>` rooms once, at the handshake. A socket that outlived the session or group membership it was opened with would otherwise keep receiving that user's notifications and admin events until it happened to reconnect, which a hostile client never has to do. The module therefore drops the affected sockets through the injected `socketDisconnector` (`IIdentitySocketDisconnector`, implemented by `WebSocketService`):
+
+| Trigger | Where | Sockets dropped |
+|---------|-------|-----------------|
+| Session deleted (sign-out, revocation) | `databaseHooks.session.delete.after` in `auth.ts` | Only those opened with that session, so the user's other devices stay connected |
+| Any group membership write (`addMember`, `removeMember`, `setUserGroups`, group deletion) | The listener passed to `GroupService.setDependencies` | All of the user's sockets |
+
+The official client reconnects straight away and rejoins with its current identity. A failure to disconnect is logged at `warn` and never fails the sign-out or the membership write that caused it.
 
 ## Published Service Contracts
 
@@ -130,7 +142,7 @@ First consumer: the notifications module persists per-user opt-outs here under t
 
 ## Lifecycle
 
-**`init()`** constructs (in order) `GroupService`, `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, and the Better Auth instance (handed the injected `redis` client for its rate-limit counters), then wires the auth facade and builds the wallet + group + user-settings controllers. **`run()`** registers the `Users` menu item under the System container, mounts `/api/auth/*`, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`.
+**`init()`** constructs (in order) `GroupService` (with a membership listener that disconnects the user's sockets), `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, and the Better Auth instance (handed the injected `redis` client for its rate-limit counters and `socketDisconnector` for its session-delete hook), then wires the auth facade and builds the wallet + group + user-settings controllers. **`run()`** registers the `Users` menu item under the System container, mounts `/api/auth/*`, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`.
 
 ## Related
 
