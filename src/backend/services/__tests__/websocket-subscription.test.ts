@@ -228,6 +228,65 @@ describe('WebSocketService subscription handling', () => {
 
             expect(socket.rooms.has('plugin:forum:forum-live')).toBe(true);
         });
+
+        it('keeps a newer accepted subscription when an older attempt for the same room rejects late', async () => {
+            const socket = createSocket();
+            let rejectFirst: (error: Error) => void = () => undefined;
+            handler.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+                rejectFirst = reject;
+            }));
+
+            const first = service.handleSubscription(socket, 'forum', 'forum-live');
+            await service.handleSubscription(socket, 'forum', 'forum-live');
+            rejectFirst(new Error('transient database failure'));
+            await first;
+
+            expect(socket.rooms.has('plugin:forum:forum-live')).toBe(true);
+        });
+
+        it('keeps the newer membership even after that newer attempt has already settled', async () => {
+            const socket = createSocket();
+            let rejectFirst: (error: Error) => void = () => undefined;
+            handler.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+                rejectFirst = reject;
+            }));
+
+            const first = service.handleSubscription(socket, 'forum', 'forum-live');
+            await service.handleSubscription(socket, 'forum', 'forum-live');
+            await service.handleSubscription(socket, 'forum', 'forum-live');
+            rejectFirst(new Error('late failure'));
+            await first;
+
+            expect(socket.rooms.has('plugin:forum:forum-live')).toBe(true);
+        });
+
+        it('still removes the socket when the newest attempt is the one that rejects', async () => {
+            const socket = createSocket();
+            let rejectSecond: (error: Error) => void = () => undefined;
+            handler.mockImplementationOnce(async () => undefined);
+            handler.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+                rejectSecond = reject;
+            }));
+
+            await service.handleSubscription(socket, 'forum', 'forum-live');
+            const second = service.handleSubscription(socket, 'forum', 'forum-live');
+            rejectSecond(new Error('no longer allowed'));
+            await second;
+
+            expect(socket.rooms.has('plugin:forum:forum-live')).toBe(false);
+        });
+
+        it('counts attempts per room, so a newer attempt elsewhere does not spare a rejected room', async () => {
+            const socket = createSocket();
+            handler.mockRejectedValueOnce(new Error('rejected'));
+
+            const first = service.handleSubscription(socket, 'forum', 'room-a');
+            await service.handleSubscription(socket, 'forum', 'room-b');
+            await first;
+
+            expect(socket.rooms.has('plugin:forum:room-a')).toBe(false);
+            expect(socket.rooms.has('plugin:forum:room-b')).toBe(true);
+        });
     });
 });
 
