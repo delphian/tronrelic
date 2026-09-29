@@ -25,16 +25,33 @@ export class SignatureService implements ISignatureService {
     /**
      * Verify a TronLink-signed message and return the normalized address.
      *
-     * @param address - TRON address that allegedly signed the message
-     * @param message - The plain-text message that was signed
-     * @param signature - Hex-encoded TronLink signature
-     * @returns Normalized base58 address of the signer
-     * @throws ValidationError when the signature does not match
+     * Every wallet-ownership proof in the platform (wallet linking, forum
+     * authorship, tool and calculator gates) rests on this check, so it must
+     * fail closed. TronWeb's `verifyMessageV2` does not compare against an
+     * address: it recovers the signer's address from the signature and
+     * returns it, and a signature over some other message simply recovers to
+     * some other address. Treating that return value as a boolean accepted
+     * any well-formed signature for any claimed wallet. This method therefore
+     * compares the recovered address with the claimed one, and treats a
+     * signature the library cannot parse (it throws) as invalid too.
+     *
+     * @param address - TRON address the caller claims signed the message; the proof is only valid if the signature recovers to exactly this address
+     * @param message - The plain-text message that was signed, so the recovery runs over the same bytes the wallet signed
+     * @param signature - Hex-encoded TronLink signature (from `signMessageV2`) whose signer is being established
+     * @returns Normalized base58 address of the signer, so callers store one canonical form
+     * @throws ValidationError when the signature is malformed or was not produced by `address` over `message`
      */
     async verifyMessage(address: string, message: string, signature: string): Promise<string> {
         const normalized = this.normalizeAddress(address);
-        const isValid = await this.tronWeb.trx.verifyMessageV2(message, signature, normalized);
-        if (!isValid) {
+
+        let recovered: string | null;
+        try {
+            recovered = await this.tronWeb.trx.verifyMessageV2(message, signature);
+        } catch {
+            recovered = null;
+        }
+
+        if (recovered !== normalized) {
             throw new ValidationError('Invalid signature provided');
         }
         return normalized;
