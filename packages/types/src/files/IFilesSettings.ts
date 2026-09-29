@@ -18,8 +18,10 @@ export interface IFilesSettings {
 
     /**
      * Allowed file extensions, including the leading dot
-     * (e.g. `['.png', '.jpg']`). Empty array disables the whitelist (allow
-     * anything that passes other checks).
+     * (e.g. `['.png', '.jpg']`). The list is deny-by-default: an empty list
+     * admits nothing, and extensions a browser runs as a page or script
+     * (`.html`, `.js`, `.xml`, and similar) are refused even when listed,
+     * because uploads are served from the site's own origin.
      */
     allowedFileExtensions: string[];
 
