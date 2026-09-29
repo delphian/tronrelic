@@ -103,7 +103,10 @@ describe('WebSocketService.emit — audience routing', () => {
             'ai-tools:activity',
             'ai-tools:approvals-changed',
             'curation:changed',
-            'price-history:stats'
+            'price-history:stats',
+            // Its sink declares an admin audience; a global emit told anonymous
+            // visitors every published title and its publish time.
+            'content:published'
         ])('routes %s to the admin group room, never globally', (event) => {
             // Every subscriber to these lives under /system/*. A global emit
             // would hand anonymous visitors a timing signal for AI, curation,
@@ -138,6 +141,17 @@ describe('WebSocketService.emit — audience routing', () => {
 
             expect(recorded.room).toBeNull();
         });
+    });
+
+    describe('removed legacy events', () => {
+        it.each(['transaction:large', 'delegation:new', 'stake:new', 'comments:new', 'chat:update'])(
+            'drops %s, whose rooms clients could join by any name and nothing emitted to',
+            (event) => {
+                service.emit({ event, payload: { from: { address: 'T1' }, to: { address: 'T2' }, threadId: 't' } });
+
+                expect(emissions).toHaveLength(0);
+            }
+        );
     });
 
     describe('unknown events', () => {

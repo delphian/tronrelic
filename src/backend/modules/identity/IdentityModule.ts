@@ -41,6 +41,7 @@ import { createAdminAccountsRouter, createAdminAccountSearchRouter } from './api
 import { createUserSettingsRouter } from './api/user-settings.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import type { IAuthRateLimitRedis } from './services/IAuthRateLimitRedis.js';
+import type { IIdentitySocketDisconnector } from './services/IIdentitySocketDisconnector.js';
 
 /**
  * Dependencies the identity module needs at bootstrap.
@@ -76,6 +77,13 @@ export interface IIdentityModuleDependencies {
      * Auth factory so the limits survive a restart. See `createAuth`.
      */
     redis: IAuthRateLimitRedis;
+
+    /**
+     * Drops a user's open WebSocket connections when their session is deleted
+     * or their group membership changes, so each socket re-handshakes and
+     * rejoins only the identity rooms that user still has.
+     */
+    socketDisconnector: IIdentitySocketDisconnector;
 }
 
 /**
@@ -153,7 +161,16 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         // `groups` field on module_user_auth_users) and is both the membership
         // primitive UserGroupService delegates to and the service the BA
         // after-create hook calls to promote ADMIN_EMAILS signups.
-        GroupService.setDependencies(this.database, this.logger);
+        // A membership change alters which `group:<id>` rooms the user's sockets
+        // belong in, and rooms are only chosen at the handshake, so drop the
+        // user's sockets and let them rejoin with the current groups.
+        const socketDisconnector = dependencies.socketDisconnector;
+        const moduleLogger = this.logger;
+        GroupService.setDependencies(this.database, this.logger, (userId) => {
+            socketDisconnector.disconnectUser(userId).catch((error: unknown) => {
+                moduleLogger.warn({ error, userId }, 'Failed to disconnect sockets after a group membership change');
+            });
+        });
         this.groupService = GroupService.getInstance();
         await this.groupService.createIndexes();
 
@@ -198,7 +215,8 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
             db: authDb,
             groupService: this.groupService,
             logger: this.logger,
-            rateLimitRedis: dependencies.redis
+            rateLimitRedis: dependencies.redis,
+            socketDisconnector: dependencies.socketDisconnector
         });
         setAuthInstance(this.auth);
         this.logger.info('Better Auth instance configured and facade wired');

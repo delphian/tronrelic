@@ -6,6 +6,27 @@ import type {
     ISystemLogService
 } from '@/types';
 
+/** Sent to the client when a plugin rejects a subscription without marking its reason safe to show. */
+export const GENERIC_SUBSCRIPTION_ERROR_MESSAGE = 'Subscription rejected';
+
+/**
+ * Choose the message a client sees when a plugin rejects its subscription.
+ *
+ * A plugin handler's error can come from anywhere inside it, including a
+ * database or network call, and its text can name collections, hosts, or
+ * internal state. Only an error that sets `expose: true` — the same marker
+ * the HTTP error handler honours — has its message shown; every other error
+ * becomes a fixed string. A plugin that wants to explain a refusal, such as
+ * "sign in to see this", throws an error with `expose` set.
+ *
+ * @param error - Whatever the plugin handler threw.
+ * @returns The message to send to the client.
+ */
+export function clientSafeErrorMessage(error: unknown): string {
+    const exposed = error instanceof Error && (error as { expose?: unknown }).expose === true;
+    return exposed ? (error as Error).message : GENERIC_SUBSCRIPTION_ERROR_MESSAGE;
+}
+
 /**
  * Plugin-scoped WebSocket manager implementation.
  *
@@ -187,27 +208,39 @@ export class PluginWebSocketManager implements IPluginWebSocketManager {
      * Handle subscription request for this plugin.
      *
      * Internal method called by WebSocketService when a client subscribes to a room in this plugin.
-     * Automatically joins the socket to the prefixed room, invokes the registered subscription handler,
-     * and emits errors to the client on failure. This method is not part of the public plugin API.
+     * Joins the socket to the prefixed room, then invokes the registered subscription handler.
+     * Joining first lets a handler send initial data to the room straight away.
+     *
+     * A handler rejects a subscription by throwing, and the socket is then removed from the room
+     * again. Before that removal existed, a throwing handler left the socket joined, so a plugin
+     * that gated a room by throwing was silently open to everyone.
+     *
+     * The client receives `<pluginId>:subscription-error` with a generic message, unless the thrown
+     * error sets `expose: true` (the http-errors convention also used by the HTTP error handler),
+     * in which case its message is shown. A handler's own error text can carry database or
+     * internal details that an anonymous client must not see. This method is not part of the
+     * public plugin API.
      *
      * @param socket - The Socket.IO socket instance requesting subscription
      * @param roomName - The plugin-local room name (without prefix)
      * @param payload - Optional subscription payload sent by the client
      * @returns Promise that resolves when subscription handling completes
+     * @throws The handler's error, after the socket has left the room and the client has been told
      * @internal
      */
     public async handleSubscription(socket: Socket, roomName: string, payload?: any): Promise<void> {
         if (!this.subscriptionHandler) {
-            this.logger.warn(
+            // Client-triggered: any client can name this plugin, so this is not a server fault.
+            this.logger.debug(
                 { pluginId: this.pluginId, socketId: socket.id, roomName },
                 'Subscription received but no handler registered'
             );
             return;
         }
 
+        const fullRoomName = this.getFullRoomName(roomName);
         try {
             // Automatically join the client to the prefixed room
-            const fullRoomName = this.getFullRoomName(roomName);
             socket.join(fullRoomName);
             this.logger.debug(
                 { pluginId: this.pluginId, socketId: socket.id, roomName, fullRoomName },
@@ -222,23 +255,28 @@ export class PluginWebSocketManager implements IPluginWebSocketManager {
                 'Plugin subscription successful'
             );
         } catch (error) {
+            // Undo the join so throwing actually rejects, as the plugin docs promise.
+            socket.leave(fullRoomName);
+
             this.stats.totalSubscriptionErrors++;
             this.stats.lastSubscriptionErrorAt = new Date();
 
             const errorMessage = error instanceof Error ? error.message : 'Unknown subscription error';
-            this.logger.error(
+            // Warn, not error: most rejections are a plugin refusing a client's request (not signed
+            // in, bad payload), and a client can send those as fast as its budget allows.
+            this.logger.warn(
                 { pluginId: this.pluginId, socketId: socket.id, roomName, error: errorMessage },
-                'Plugin subscription failed'
+                'Plugin subscription rejected'
             );
 
             // Emit error to client using namespaced event
             socket.emit(`${this.pluginId}:subscription-error`, {
-                error: errorMessage,
+                error: clientSafeErrorMessage(error),
                 pluginId: this.pluginId,
                 roomName
             });
 
-            throw error; // Re-throw so WebSocketService can log system-wide
+            throw error; // Re-throw so WebSocketService knows the subscription did not happen
         }
     }
 
@@ -279,7 +317,7 @@ export class PluginWebSocketManager implements IPluginWebSocketManager {
             await this.unsubscribeHandler(socket, roomName, payload);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown unsubscribe error';
-            this.logger.error(
+            this.logger.warn(
                 { pluginId: this.pluginId, socketId: socket.id, error: errorMessage },
                 'Plugin unsubscribe failed (non-fatal)'
             );

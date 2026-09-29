@@ -5,11 +5,126 @@ import { Server as SocketIOServer, type Socket } from 'socket.io';
 import type { TronRelicSocketEvent, SocketSubscriptions } from '@/shared';
 import { logger } from '../lib/logger.js';
 import { PluginWebSocketRegistry } from './plugin-websocket-registry.js';
+import { GENERIC_SUBSCRIPTION_ERROR_MESSAGE } from './plugin-websocket-manager.js';
 import { corsOriginCallback } from '../config/cors.js';
 import type { IncomingHttpHeaders } from 'node:http';
 import { getSessionFromHeaders, type IAugmentedSession } from '../modules/identity/services/auth-facade.js';
+import type { IIdentitySocketDisconnector } from '../modules/identity/services/IIdentitySocketDisconnector.js';
 
-export class WebSocketService implements IWebSocketService {
+/**
+ * Most rooms a single socket may join at a client's request (plugin rooms plus
+ * the legacy `memos:all`). Every room is an adapter entry held for the life of
+ * the connection, and nothing else bounded how many one client could ask for;
+ * the busiest real page joins a handful. Rooms the server joins on the
+ * client's behalf — its own id room and its identity rooms — do not count.
+ */
+export const MAX_CLIENT_ROOMS_PER_SOCKET = 50;
+
+/**
+ * Longest plugin id or room name accepted from a client. Room names are map
+ * keys held in memory; the longest in real use (universe's `cp-v1:<address>`)
+ * is 40 characters.
+ */
+export const MAX_ROOM_NAME_LENGTH = 64;
+
+/**
+ * Characters a client-supplied plugin id or room name may contain. Every
+ * name in real use fits; anything else is either a mistake or an attempt to
+ * smuggle something into a room key or a log line.
+ */
+const ROOM_NAME_PATTERN = /^[A-Za-z0-9:_.-]+$/;
+
+/** Length of the per-socket window that subscribe and unsubscribe events are counted in. */
+export const SUBSCRIBE_RATE_WINDOW_MS = 10_000;
+
+/**
+ * Subscribe plus unsubscribe events one socket may send per window. Each one
+ * can run a plugin handler, and some handlers query a database, so an
+ * unbounded stream from one client is a cheap way to load the server. A page
+ * load or reconnect sends well under this; events beyond it are dropped.
+ */
+export const SUBSCRIBE_RATE_MAX_EVENTS = 30;
+
+/**
+ * Largest single message a client may send, in bytes. Clients only ever send
+ * `subscribe` and `unsubscribe`, whose payloads are a few hundred bytes;
+ * Socket.IO's 1 MB default let one message carry tens of thousands of room
+ * names.
+ */
+export const MAX_HTTP_BUFFER_SIZE_BYTES = 16 * 1024;
+
+/**
+ * Test whether a value is a plain object that can be read as a subscription payload.
+ *
+ * Socket.IO delivers whatever the client sent, so a payload can be null, a
+ * string, a number, or an array. Reading a property off any of those is how a
+ * single malformed message used to throw inside an async handler and crash
+ * the process.
+ *
+ * @param value - Anything a client sent.
+ * @returns True for a non-null, non-array object.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Test whether a client-supplied plugin id or room name is acceptable.
+ *
+ * @param value - Anything a client sent in a plugin id or room name position.
+ * @returns True for a string of 1–{@link MAX_ROOM_NAME_LENGTH} characters
+ *   from {@link ROOM_NAME_PATTERN}.
+ */
+export function isValidRoomToken(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= MAX_ROOM_NAME_LENGTH
+    && ROOM_NAME_PATTERN.test(value);
+}
+
+/**
+ * Count the rooms a socket joined at a client's request.
+ *
+ * Plugin rooms (`plugin:*`) and the legacy `memos:all` are the only rooms a
+ * client can ask for, so those are what the per-socket cap counts. The
+ * socket's own id room and its `user:`/`group:` identity rooms are joined by
+ * the server and excluded.
+ *
+ * @param socket - The socket whose rooms to count.
+ * @returns Number of client-requested rooms the socket is in.
+ */
+function countClientRooms(socket: Socket): number {
+  let count = 0;
+  for (const room of socket.rooms) {
+    if (room.startsWith('plugin:') || room === 'memos:all') {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Charge one subscribe or unsubscribe event against the socket's budget.
+ *
+ * A fixed window per socket, kept on `socket.data` so it disappears with the
+ * connection. Fixed rather than sliding because the aim is a hard ceiling on
+ * cost, not smooth pacing.
+ *
+ * @param socket - The socket sending the event.
+ * @param now - Current time in milliseconds; injectable for tests.
+ * @returns True when the event is within budget and should be handled.
+ */
+export function consumeSubscribeBudget(socket: Socket, now: number = Date.now()): boolean {
+  const data = socket.data as { subscribeWindowStart?: number; subscribeWindowCount?: number };
+  if (data.subscribeWindowStart === undefined || now - data.subscribeWindowStart >= SUBSCRIBE_RATE_WINDOW_MS) {
+    data.subscribeWindowStart = now;
+    data.subscribeWindowCount = 0;
+  }
+  data.subscribeWindowCount = (data.subscribeWindowCount ?? 0) + 1;
+  return data.subscribeWindowCount <= SUBSCRIBE_RATE_MAX_EVENTS;
+}
+
+export class WebSocketService implements IWebSocketService, IIdentitySocketDisconnector {
   private static instance: WebSocketService;
   private io?: SocketIOServer;
 
@@ -30,7 +145,8 @@ export class WebSocketService implements IWebSocketService {
         credentials: true
       },
       pingInterval: 25000,
-      pingTimeout: 20000
+      pingTimeout: 20000,
+      maxHttpBufferSize: MAX_HTTP_BUFFER_SIZE_BYTES
     });
 
     // Phase 2: resolve the Better Auth session during the handshake
@@ -114,8 +230,24 @@ export class WebSocketService implements IWebSocketService {
     return this.io;
   }
 
+  /**
+   * Wire a newly connected socket: identity rooms, then the client's
+   * subscribe and unsubscribe listeners.
+   *
+   * The two handlers are async and Socket.IO does not await listeners, so an
+   * error thrown inside one used to become an unhandled promise rejection,
+   * which stops the Node process. One malformed `subscribe` from an anonymous
+   * client could take the backend down. Each call now ends in `.catch()`, and
+   * the handlers themselves validate input before reading it.
+   *
+   * Connect and disconnect are logged at debug: they happen for every visitor,
+   * the log is persisted to MongoDB and capped, and a flood of them would push
+   * real errors out of it.
+   *
+   * @param socket - The socket that just completed its handshake.
+   */
   private handleConnection(socket: Socket) {
-    logger.info({ socketId: socket.id }, 'Client connected');
+    logger.debug({ socketId: socket.id }, 'Client connected');
 
     // Identity rooms. The handshake middleware already resolved the Better
     // Auth session onto `socket.data.authSession`; join the socket to a room
@@ -126,16 +258,20 @@ export class WebSocketService implements IWebSocketService {
     // delivery never depends on the client asking for it.
     this.joinIdentityRooms(socket);
 
-    socket.on('subscribe', (pluginIdOrPayload: string | SocketSubscriptions, roomNameOrPayload?: string | any, optionalPayload?: any) => {
-      this.handleSubscription(socket, pluginIdOrPayload, roomNameOrPayload, optionalPayload);
+    socket.on('subscribe', (pluginIdOrPayload?: unknown, roomNameOrPayload?: unknown, optionalPayload?: unknown) => {
+      this.handleSubscription(socket, pluginIdOrPayload, roomNameOrPayload, optionalPayload).catch((error: unknown) => {
+        logger.warn({ error, socketId: socket.id }, 'Subscribe handler failed');
+      });
     });
 
-    socket.on('unsubscribe', (pluginIdOrPayload: string | any, roomNameOrPayload?: string | any, optionalPayload?: any) => {
-      this.handleUnsubscribe(socket, pluginIdOrPayload, roomNameOrPayload, optionalPayload);
+    socket.on('unsubscribe', (pluginIdOrPayload?: unknown, roomNameOrPayload?: unknown, optionalPayload?: unknown) => {
+      this.handleUnsubscribe(socket, pluginIdOrPayload, roomNameOrPayload, optionalPayload).catch((error: unknown) => {
+        logger.warn({ error, socketId: socket.id }, 'Unsubscribe handler failed');
+      });
     });
 
     socket.on('disconnect', reason => {
-      logger.info({ socketId: socket.id, reason }, 'Client disconnected');
+      logger.debug({ socketId: socket.id, reason }, 'Client disconnected');
     });
   }
 
@@ -170,211 +306,173 @@ export class WebSocketService implements IWebSocketService {
   }
 
   /**
-   * Handle subscription request from client.
+   * Handle a subscription request from a client.
    *
-   * Routes subscription requests to both legacy core subscriptions (markets, transactions, etc.)
-   * and plugin-specific subscription handlers. Supports three formats:
+   * Everything a client sends is treated as untrusted and checked before it is
+   * read: arguments of the wrong type are ignored, plugin ids and room names
+   * must pass {@link isValidRoomToken}, the socket must be within its
+   * subscribe budget, and it may not hold more than
+   * {@link MAX_CLIENT_ROOMS_PER_SOCKET} client-requested rooms. Supports three
+   * formats:
    *
-   * 1. New room-based format: `socket.emit('subscribe', 'plugin-id', 'room-name', { options })`
-   * 2. Legacy plugin format: `socket.emit('subscribe', 'plugin-id', { options })`
-   * 3. Legacy object format: `socket.emit('subscribe', { 'plugin-id': { options } })`
+   * 1. Room-based: `socket.emit('subscribe', 'plugin-id', 'room-name', { options })`
+   * 2. Legacy plugin: `socket.emit('subscribe', 'plugin-id', { options })` — the room is the plugin id
+   * 3. Legacy object: `socket.emit('subscribe', { memos: { all: true }, 'plugin-id': { options } })`
    *
-   * @param socket - The Socket.IO socket instance requesting subscription
-   * @param pluginIdOrPayload - Either a plugin ID string (new format) or subscription object (legacy)
-   * @param roomNameOrPayload - Either room name (new format) or payload (legacy plugin format)
-   * @param optionalPayload - Optional subscription parameters when using new room-based format
+   * The legacy object format's other core keys (`markets`, `transactions`,
+   * `comments`, `chat`, `notifications`) were removed: nothing on the server
+   * sent to those rooms, and `notifications:<wallet>` would have delivered one
+   * wallet's events to anyone who asked for them the day something did.
+   *
+   * @param socket - The Socket.IO socket requesting the subscription.
+   * @param pluginIdOrPayload - A plugin id (formats 1 and 2) or the legacy object (format 3).
+   * @param roomNameOrPayload - The room name (format 1) or the plugin payload (format 2).
+   * @param optionalPayload - The plugin payload in format 1.
+   * @returns Resolves when handling finishes; never rejects for client input.
    */
   private async handleSubscription(
     socket: Socket,
-    pluginIdOrPayload: string | SocketSubscriptions,
-    roomNameOrPayload?: string | any,
-    optionalPayload?: any
-  ) {
-    // New room-based format: string plugin ID, string room name, optional payload
-    if (typeof pluginIdOrPayload === 'string' && typeof roomNameOrPayload === 'string') {
-      const pluginId = pluginIdOrPayload;
-      const roomName = roomNameOrPayload;
-      const payload = optionalPayload;
-      const registry = PluginWebSocketRegistry.getInstance();
-      const manager = registry.getManager(pluginId);
+    pluginIdOrPayload?: unknown,
+    roomNameOrPayload?: unknown,
+    optionalPayload?: unknown
+  ): Promise<void> {
+    if (!consumeSubscribeBudget(socket)) {
+      logger.debug({ socketId: socket.id }, 'Subscribe dropped: socket over its event budget');
+    } else if (typeof pluginIdOrPayload === 'string') {
+      // Formats 1 and 2. In format 2 the plugin id doubles as the room name.
+      const roomName = typeof roomNameOrPayload === 'string' ? roomNameOrPayload : pluginIdOrPayload;
+      // Format 2 has always handed plugins `{}` when the client sent no payload.
+      const payload = typeof roomNameOrPayload === 'string' ? optionalPayload : (roomNameOrPayload ?? {});
+      await this.subscribeToPluginRoom(socket, pluginIdOrPayload, roomName, payload);
+    } else if (isPlainObject(pluginIdOrPayload)) {
+      await this.handleLegacyObjectSubscription(socket, pluginIdOrPayload as SocketSubscriptions & Record<string, unknown>);
+    } else {
+      logger.debug({ socketId: socket.id }, 'Subscribe ignored: payload is not a plugin id or an object');
+    }
+  }
 
-      if (manager) {
-        try {
-          await manager.handleSubscription(socket, roomName, payload);
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown plugin subscription error';
-          logger.error(
-            { pluginId, socketId: socket.id, roomName, error: errorMessage },
-            'Plugin subscription handler failed'
-          );
-          // Error already emitted to client by manager
-        }
+  /**
+   * Handle the legacy object subscription format.
+   *
+   * `memos.all` is the one core key still honoured, because the alert service
+   * emits `memo:new` to `memos:all`. Every other key is looked up only among
+   * registered plugin ids, so a client cannot name an arbitrary room here.
+   *
+   * @param socket - The subscribing socket.
+   * @param payload - The client's object, already known to be a plain object.
+   * @returns Resolves when every recognised key has been handled.
+   */
+  private async handleLegacyObjectSubscription(
+    socket: Socket,
+    payload: SocketSubscriptions & Record<string, unknown>
+  ): Promise<void> {
+    const memos = payload.memos as unknown;
+    if (isPlainObject(memos) && memos.all === true && !socket.rooms.has('memos:all')) {
+      if (countClientRooms(socket) < MAX_CLIENT_ROOMS_PER_SOCKET) {
+        socket.join('memos:all');
       } else {
-        logger.warn({ pluginId, socketId: socket.id, roomName }, 'No plugin handler found for subscription');
-      }
-      return;
-    }
-
-    // Legacy plugin format: string plugin ID with payload (no room name)
-    if (typeof pluginIdOrPayload === 'string') {
-      const pluginId = pluginIdOrPayload;
-      const payload = roomNameOrPayload; // Second param is payload in legacy format
-      const registry = PluginWebSocketRegistry.getInstance();
-      const manager = registry.getManager(pluginId);
-
-      if (manager) {
-        try {
-          // Use plugin ID as default room name for backward compatibility
-          await manager.handleSubscription(socket, pluginId, payload || {});
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown plugin subscription error';
-          logger.error(
-            { pluginId, socketId: socket.id, error: errorMessage },
-            'Plugin subscription handler failed (legacy format)'
-          );
-          // Error already emitted to client by manager
-        }
-      } else {
-        logger.warn({ pluginId, socketId: socket.id }, 'No plugin handler found for subscription');
-      }
-      return;
-    }
-
-    // Legacy format: object with plugin IDs as keys
-    const payload = pluginIdOrPayload;
-
-    // Handle core (legacy) subscriptions
-    if (payload.markets?.all) {
-      socket.join('markets:all');
-    }
-
-    payload.markets?.markets?.forEach((marketId: string) => socket.join(`markets:${marketId}`));
-
-    if (payload.transactions) {
-      socket.join('transactions:all');
-    }
-
-    if (payload.transactions?.minAmount !== undefined) {
-      socket.join(`transactions:large:${payload.transactions.minAmount}`);
-    }
-
-    payload.transactions?.addresses?.forEach((address: string) => socket.join(`transactions:address:${address}`));
-
-    if (payload.memos?.all) {
-      socket.join('memos:all');
-    }
-
-    if (payload.comments) {
-      socket.join(`comments:${payload.comments.resourceId}`);
-    }
-
-    if (payload.chat) {
-      socket.join('chat:global');
-    }
-
-    if (payload.notifications?.wallet) {
-      const walletId = payload.notifications.wallet.trim();
-      if (walletId) {
-        const walletRoom = `notifications:${walletId}`;
-        socket.join(walletRoom);
-        logger.debug({ socketId: socket.id, walletRoom }, 'Wallet notification subscription registered');
+        logger.debug({ socketId: socket.id }, 'Subscribe to memos:all dropped: socket at its room cap');
       }
     }
 
-    // Handle plugin subscriptions (legacy object format)
     const registry = PluginWebSocketRegistry.getInstance();
-    const pluginIds = registry.getAllPluginIds();
-
-    for (const pluginId of pluginIds) {
-      const pluginPayload = (payload as any)[pluginId];
+    for (const pluginId of registry.getAllPluginIds()) {
+      const pluginPayload = payload[pluginId];
       if (pluginPayload !== undefined) {
-        const manager = registry.getManager(pluginId);
-        if (manager) {
-          try {
-            // Use plugin ID as room name for legacy object format
-            await manager.handleSubscription(socket, pluginId, pluginPayload);
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown plugin subscription error';
-            logger.error(
-              { pluginId, socketId: socket.id, error: errorMessage },
-              'Plugin subscription handler failed (legacy object format)'
-            );
-            // Error already emitted to client by manager
-          }
-        }
+        await this.subscribeToPluginRoom(socket, pluginId, pluginId, pluginPayload);
       }
     }
   }
 
   /**
-   * Handle unsubscribe request from client.
+   * Validate one plugin room subscription and hand it to the plugin's manager.
    *
-   * Routes unsubscribe requests to plugin-specific handlers. Supports two formats:
+   * Unknown plugins, malformed names, and requests over the room cap are
+   * dropped at debug level: they are caused by client input, and logging them
+   * higher would let any visitor fill the persisted log. A refusal over the
+   * room cap is still reported to the client as `<plugin>:subscription-error`
+   * so a well-behaved page can react.
    *
-   * 1. New room-based format: `socket.emit('unsubscribe', 'plugin-id', 'room-name', { options })`
-   * 2. Legacy object format: `socket.emit('unsubscribe', { 'plugin-id': { options } })`
+   * @param socket - The subscribing socket.
+   * @param pluginId - Plugin the client named.
+   * @param roomName - Plugin-local room the client named.
+   * @param payload - Whatever options the client sent; the plugin validates it.
+   * @returns Resolves when the plugin has handled or rejected the subscription.
+   */
+  private async subscribeToPluginRoom(
+    socket: Socket,
+    pluginId: string,
+    roomName: string,
+    payload: unknown
+  ): Promise<void> {
+    const manager = isValidRoomToken(pluginId) ? PluginWebSocketRegistry.getInstance().getManager(pluginId) : undefined;
+    if (!manager) {
+      logger.debug({ socketId: socket.id }, 'Subscribe ignored: unknown or malformed plugin id');
+    } else if (!isValidRoomToken(roomName)) {
+      logger.debug({ pluginId, socketId: socket.id }, 'Subscribe ignored: malformed room name');
+    } else if (!socket.rooms.has(`plugin:${pluginId}:${roomName}`)
+      && countClientRooms(socket) >= MAX_CLIENT_ROOMS_PER_SOCKET) {
+      logger.debug({ pluginId, socketId: socket.id, roomName }, 'Subscribe refused: socket at its room cap');
+      socket.emit(`${pluginId}:subscription-error`, {
+        error: GENERIC_SUBSCRIPTION_ERROR_MESSAGE,
+        pluginId,
+        roomName
+      });
+    } else {
+      try {
+        await manager.handleSubscription(socket, roomName, payload);
+      } catch {
+        // The manager has already left the room, told the client, and logged it.
+        logger.debug({ pluginId, socketId: socket.id, roomName }, 'Plugin rejected subscription');
+      }
+    }
+  }
+
+  /**
+   * Handle an unsubscribe request from a client.
    *
-   * Errors are logged but do not prevent unsubscription from completing.
+   * Validated the same way as {@link handleSubscription} and charged against
+   * the same per-socket budget, since each call can run a plugin handler.
+   * Supports two formats:
    *
-   * @param socket - The Socket.IO socket instance requesting unsubscription
-   * @param pluginIdOrPayload - Either a plugin ID string (new format) or unsubscription object (legacy)
-   * @param roomNameOrPayload - Either room name (new format) or payload (legacy format)
-   * @param optionalPayload - Optional unsubscription parameters when using new room-based format
+   * 1. Room-based: `socket.emit('unsubscribe', 'plugin-id', 'room-name', { options })`
+   * 2. Legacy object: `socket.emit('unsubscribe', { 'plugin-id': { options } })`
+   *
+   * Plugin handler errors are logged by the manager and never prevent the
+   * socket from leaving the room.
+   *
+   * @param socket - The Socket.IO socket requesting unsubscription.
+   * @param pluginIdOrPayload - A plugin id (format 1) or the legacy object (format 2).
+   * @param roomNameOrPayload - The room name in format 1.
+   * @param optionalPayload - The plugin payload in format 1.
+   * @returns Resolves when handling finishes; never rejects for client input.
    */
   private async handleUnsubscribe(
     socket: Socket,
-    pluginIdOrPayload: string | any,
-    roomNameOrPayload?: string | any,
-    optionalPayload?: any
-  ) {
-    // New room-based format: string plugin ID, string room name, optional payload
-    if (typeof pluginIdOrPayload === 'string' && typeof roomNameOrPayload === 'string') {
-      const pluginId = pluginIdOrPayload;
-      const roomName = roomNameOrPayload;
-      const payload = optionalPayload;
-      const registry = PluginWebSocketRegistry.getInstance();
-      const manager = registry.getManager(pluginId);
-
-      if (manager) {
-        try {
-          await manager.handleUnsubscribe(socket, roomName, payload);
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown plugin unsubscribe error';
-          logger.error(
-            { pluginId, socketId: socket.id, roomName, error: errorMessage },
-            'Plugin unsubscribe handler failed (non-fatal)'
-          );
-          // Continue - errors don't prevent unsubscription
-        }
-      } else {
-        logger.warn({ pluginId, socketId: socket.id, roomName }, 'No plugin handler found for unsubscription');
-      }
-      return;
-    }
-
-    // Legacy format: object with plugin IDs as keys
-    const payload = pluginIdOrPayload;
+    pluginIdOrPayload?: unknown,
+    roomNameOrPayload?: unknown,
+    optionalPayload?: unknown
+  ): Promise<void> {
     const registry = PluginWebSocketRegistry.getInstance();
-    const pluginIds = registry.getAllPluginIds();
-
-    for (const pluginId of pluginIds) {
-      const pluginPayload = payload[pluginId];
-      if (pluginPayload !== undefined) {
-        const manager = registry.getManager(pluginId);
+    if (!consumeSubscribeBudget(socket)) {
+      logger.debug({ socketId: socket.id }, 'Unsubscribe dropped: socket over its event budget');
+    } else if (typeof pluginIdOrPayload === 'string' && typeof roomNameOrPayload === 'string') {
+      const manager = isValidRoomToken(pluginIdOrPayload) ? registry.getManager(pluginIdOrPayload) : undefined;
+      if (manager && isValidRoomToken(roomNameOrPayload)) {
+        await manager.handleUnsubscribe(socket, roomNameOrPayload, optionalPayload);
+      } else {
+        logger.debug({ socketId: socket.id }, 'Unsubscribe ignored: unknown plugin or malformed room name');
+      }
+    } else if (isPlainObject(pluginIdOrPayload)) {
+      for (const pluginId of registry.getAllPluginIds()) {
+        const pluginPayload = pluginIdOrPayload[pluginId];
+        const manager = pluginPayload !== undefined ? registry.getManager(pluginId) : undefined;
         if (manager) {
-          try {
-            // Use plugin ID as room name for legacy unsubscribe
-            await manager.handleUnsubscribe(socket, pluginId, pluginPayload);
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown plugin unsubscribe error';
-            logger.error(
-              { pluginId, socketId: socket.id, error: errorMessage },
-              'Plugin unsubscribe handler failed (non-fatal)'
-            );
-            // Continue processing other plugins
-          }
+          await manager.handleUnsubscribe(socket, pluginId, pluginPayload);
         }
       }
+    } else {
+      logger.debug({ socketId: socket.id }, 'Unsubscribe ignored: payload is not a plugin id or an object');
     }
   }
 
@@ -385,22 +483,13 @@ export class WebSocketService implements IWebSocketService {
     }
 
     switch (event.event) {
-      case 'transaction:large':
-      case 'delegation:new':
-      case 'stake:new':
-        logger.debug('whale-alerts SENDING ALL');
-        this.io.to('transactions:all').emit(event.event, event.payload);
-        this.io.to(`transactions:address:${event.payload.from.address}`).emit(event.event, event.payload);
-        this.io.to(`transactions:address:${event.payload.to.address}`).emit(event.event, event.payload);
-        break;
+      // `transaction:large`, `delegation:new`, `stake:new`, `comments:new` and
+      // `chat:update` had cases here routing to client-joinable rooms, but
+      // nothing on the server emitted them. They were removed with the legacy
+      // subscriptions that fed those rooms; an emit of one now falls through to
+      // `default` and is dropped, which is the safe direction.
       case 'block:new':
         this.io.emit(event.event, event.payload);
-        break;
-      case 'comments:new':
-        this.io.to(`comments:${event.payload.threadId}`).emit(event.event, event.payload);
-        break;
-      case 'chat:update':
-        this.io.to('chat:global').emit(event.event, event.payload);
         break;
       case 'memo:new':
         this.io.to('memos:all').emit(event.event, event.payload);
@@ -452,12 +541,11 @@ export class WebSocketService implements IWebSocketService {
         break;
       case 'content:published':
         // Emitted by the internal publish sink, whose declared reach is
-        // `audience: 'admin'`, but which currently has no subscriber at all —
-        // core, frontend, or plugin. Left global pending a decision about its
-        // intended consumer rather than narrowed on the strength of the sink's
-        // own declaration; a signal nobody listens to is the one case where
-        // guessing the audience buys nothing.
-        this.io.emit(event.event, event.payload);
+        // `audience: 'admin'`. It has no subscriber yet, and sending it to every
+        // socket told anonymous visitors each published item's title and the
+        // moment it went out. Routed to the admin group to match the sink's
+        // declaration; a future public consumer should get its own event.
+        this.io.to(`group:${ADMIN_GROUP_ID}`).emit(event.event, event.payload);
         break;
       case 'toast':
         // Site-wide toast broadcast from the core `send-toast` AI tool. Every
@@ -535,6 +623,36 @@ export class WebSocketService implements IWebSocketService {
     const socket = this.io?.sockets.sockets.get(socketId);
     const session = (socket?.data as { authSession?: { user?: { id?: string } } | null } | undefined)?.authSession;
     return session?.user?.id ?? null;
+  }
+
+  /**
+   * Disconnect a user's sockets so each one re-handshakes with its current identity.
+   *
+   * Identity rooms are chosen once, at the handshake. Without this, a socket
+   * opened before sign-out or before an admin was demoted keeps its
+   * `user:<id>` and `group:<id>` rooms, and the events sent to them, until it
+   * reconnects on its own — which a hostile client never has to do. The
+   * official client reconnects immediately after a server-side disconnect, so
+   * a legitimate user sees at most a brief reconnect.
+   *
+   * @param userId - Better Auth user id whose sockets should be dropped.
+   * @param sessionId - When given, only sockets whose handshake session has
+   *   this id are dropped, so signing out on one device leaves the user's
+   *   other signed-in devices connected.
+   * @returns Resolves once the matching sockets have been disconnected.
+   */
+  public async disconnectUser(userId: string, sessionId?: string): Promise<void> {
+    if (this.io && userId) {
+      const sockets = await this.io.in(`user:${userId}`).fetchSockets();
+      for (const socket of sockets) {
+        const socketSessionId = (socket.data as { authSession?: { session?: { id?: string } } | null } | undefined)
+          ?.authSession?.session?.id;
+        if (!sessionId || socketSessionId === sessionId) {
+          socket.disconnect(true);
+        }
+      }
+      logger.debug({ userId, sessionScoped: Boolean(sessionId), candidates: sockets.length }, 'Disconnected user sockets after identity change');
+    }
   }
 
 }

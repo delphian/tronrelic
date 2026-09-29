@@ -32,6 +32,7 @@ import type { ISystemLogService } from '@/types';
 import { env } from '../../config/env.js';
 import type { GroupService } from './services/group.service.js';
 import type { IAuthRateLimitRedis } from './services/IAuthRateLimitRedis.js';
+import type { IIdentitySocketDisconnector } from './services/IIdentitySocketDisconnector.js';
 import { createRedisRateLimitStorage } from './services/createRedisRateLimitStorage.js';
 import { createEmailOtpThrottle } from './services/createEmailOtpThrottle.js';
 
@@ -83,6 +84,14 @@ export interface ICreateAuthDependencies {
      * restarts and instances.
      */
     rateLimitRedis: IAuthRateLimitRedis;
+
+    /**
+     * Drops the WebSocket connections opened with a session once that session
+     * is deleted (sign-out, revocation). Without it a socket keeps its
+     * `user:<id>` and group rooms, and so keeps receiving that user's events,
+     * until it happens to reconnect.
+     */
+    socketDisconnector: IIdentitySocketDisconnector;
 }
 
 /**
@@ -158,10 +167,51 @@ export function createAuth(deps: ICreateAuthDependencies) {
                         });
                     }
                 }
+            },
+            session: {
+                delete: {
+                    after: async (session): Promise<void> => {
+                        await disconnectSessionSockets({
+                            session,
+                            socketDisconnector: deps.socketDisconnector,
+                            log
+                        });
+                    }
+                }
             }
         }
     });
     return auth;
+}
+
+/**
+ * Disconnect the sockets that were opened with a session Better Auth has
+ * just deleted.
+ *
+ * Sign-out and session revocation both delete the session row, and this runs
+ * afterwards. Only sockets opened with that same session are dropped, so the
+ * user's other signed-in devices stay connected. A dropped official client
+ * reconnects straight away and re-handshakes, now without the deleted
+ * session's identity rooms. Failures are logged and swallowed, because the
+ * sign-out itself has already succeeded and must not be reported as failed.
+ *
+ * @param params.session - The deleted session row; supplies the user and session ids.
+ * @param params.socketDisconnector - WebSocket operation that drops the sockets.
+ * @param params.log - Logger scoped to the auth component.
+ */
+async function disconnectSessionSockets(params: {
+    session: { id?: string; userId?: string };
+    socketDisconnector: IIdentitySocketDisconnector;
+    log: ISystemLogService;
+}): Promise<void> {
+    const { session, socketDisconnector, log } = params;
+    if (session.userId && session.id) {
+        try {
+            await socketDisconnector.disconnectUser(session.userId, session.id);
+        } catch (error) {
+            log.warn({ error, userId: session.userId }, 'Failed to disconnect sockets for a deleted session');
+        }
+    }
 }
 
 /**

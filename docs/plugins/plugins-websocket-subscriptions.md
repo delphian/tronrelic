@@ -22,9 +22,9 @@ Touch raw names only when calling `getRawIO()` for cross-plugin or system-wide b
 
 1. Plugin registers handlers in `init()` via `context.websocket.onSubscribe()` / `onUnsubscribe()`.
 2. Client calls `websocket.subscribe('room-name', payload?)`.
-3. WebSocketService routes by plugin id and room name.
-4. Client is **auto-joined** to `plugin:<plugin-id>:room-name` *before* the subscribe handler runs.
-5. Subscribe handler validates and processes the payload (or throws to reject).
+3. WebSocketService checks the request (see [Limits](#limits)) and routes it by plugin id and room name.
+4. Client is **auto-joined** to `plugin:<plugin-id>:room-name` *before* the subscribe handler runs, so the handler can send initial data to the room.
+5. Subscribe handler validates and processes the payload, or throws to reject. A rejected socket is removed from the room again.
 6. Plugin emits via `emitToRoom(roomName, eventName, payload)` when relevant data arrives.
 7. Clients receive `<plugin-id>:eventName` and update UI.
 
@@ -53,7 +53,29 @@ context.websocket.onUnsubscribe(async (socket, roomName, payload) => {
 });
 ```
 
-Behavior to know: throwing inside `onSubscribe` rejects the subscription and emits a plugin-prefixed error event to the client. Throws inside `onUnsubscribe` are logged but don't prevent unsubscribe completion — clients sometimes disconnect without ever sending `unsubscribe`, so cleanup is best-effort.
+Behavior to know: throwing inside `onSubscribe` rejects the subscription. Core removes the socket from the room it auto-joined, logs the rejection at `warn`, and sends the client `<plugin-id>:subscription-error` with `{ error, pluginId, roomName }`. Throwing is therefore a real gate: a room that should only reach signed-in users can refuse everyone else by throwing. Throws inside `onUnsubscribe` are logged but don't prevent unsubscribe completion — clients sometimes disconnect without ever sending `unsubscribe`, so cleanup is best-effort.
+
+The `error` text the client receives is `'Subscription rejected'` unless the thrown error sets `expose: true`. A handler's error can come from a database or network call inside it, and its message can name internal details that an anonymous client must not see. Set `expose` only on an error you wrote for the user to read:
+
+```typescript
+// socket.data.authSession is the Better Auth session resolved at the handshake, or null
+if (!socket.data.authSession) {
+    throw Object.assign(new Error('Sign in to see every transaction'), { expose: true });
+}
+```
+
+## Limits
+
+Core applies these before any plugin handler runs, because every subscribe can run plugin code and every room is held in memory for the life of the connection. Requests outside them are dropped and logged at `debug`.
+
+| Limit | Value | Applies to |
+|-------|-------|-----------|
+| Plugin id and room name | 1–64 characters from `A–Z a–z 0–9 : _ . -` | Every subscribe and unsubscribe |
+| Rooms per socket | 50 client-requested rooms (identity rooms and the socket's own room do not count) | Subscribe; a refusal still sends `subscription-error` |
+| Events per socket | 30 subscribe plus unsubscribe events per 10 seconds | Subscribe and unsubscribe |
+| Message size | 16 KB | Anything a client sends |
+
+These are ceilings on abuse, not guidance for plugins. A plugin that joins extra rooms from its handler (see [Multi-Room Subscriptions](#multi-room-subscriptions)) must bound that count itself, as `trp-universe` does for counterparty rooms.
 
 ## Manual Room Management (Rare)
 
@@ -153,7 +175,7 @@ Filter by `pluginId` or `socketId` to debug specific issues.
 
 ## Best Practices
 
-Validate every payload — throw descriptive errors for invalid thresholds, missing fields, or type mismatches. Use semantic room names (`whale-500000`, `delegation-energy`, `stake-freeze`) over numbered slots. A single observation can `emitToRoom` to multiple threshold rooms (500k, 1M, 2M) when it qualifies for each. Send a `subscribed` confirmation event so the client UI knows the room is live. Always pair frontend `subscribe` with `unsubscribe` in cleanup. Clean up timers and intervals in the plugin's `disable()` hook.
+Validate every payload — throw errors for invalid thresholds, missing fields, or type mismatches, and set `expose: true` on the ones whose text is meant for the user. Use semantic room names (`whale-500000`, `delegation-energy`, `stake-freeze`) over numbered slots. A single observation can `emitToRoom` to multiple threshold rooms (500k, 1M, 2M) when it qualifies for each. Send a `subscribed` confirmation event so the client UI knows the room is live. Always pair frontend `subscribe` with `unsubscribe` in cleanup. Clean up timers and intervals in the plugin's `disable()` hook.
 
 ## Common Patterns
 
