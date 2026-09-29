@@ -212,6 +212,20 @@ describe('enforceEmailOtpLimit', () => {
         expect(redis.counts.size).toBe(0);
     });
 
+    it('keys Redis by a fixed-size hash of the address, never the address itself', async () => {
+        await hit('/email-otp/send-verification-otp', 'victim@example.com');
+
+        const [key] = [...redis.counts.keys()];
+        expect(key).not.toContain('victim');
+        expect(key).toMatch(/^tronrelic:auth:otp-email:send:[0-9a-f]{64}$/);
+    });
+
+    it('does not count a value longer than any real email address', async () => {
+        await hit('/sign-in/email-otp', `${'a'.repeat(300)}@example.com`);
+
+        expect(redis.counts.size).toBe(0);
+    });
+
     it('allows the request and logs an error when Redis fails', async () => {
         redis.fail = true;
 
