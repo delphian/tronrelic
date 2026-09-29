@@ -17,7 +17,8 @@ const mockTronWeb = {
         fromHex: vi.fn((hex: string) => 'T' + 'a'.repeat(33))
     },
     trx: {
-        verifyMessageV2: vi.fn().mockResolvedValue(true)
+        // The real library returns the recovered signer address, never a boolean.
+        verifyMessageV2: vi.fn().mockResolvedValue('T' + 'a'.repeat(33))
     },
     setHeader: vi.fn()
 };

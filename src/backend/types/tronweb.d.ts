@@ -8,6 +8,10 @@ type TronWebUtils = {
     getBase58CheckAddress: (address: string) => string;
   };
   address: TronWebAddress;
+  accounts: {
+    /** Generates a random keypair locally, with no network call. */
+    generateAccount: () => { privateKey: string; publicKey: string; address: { base58: string; hex: string } };
+  };
 };
 
 declare module 'tronweb' {
@@ -18,7 +22,15 @@ declare module 'tronweb' {
     utils: TronWebUtils;
     address: TronWebAddress;
     trx: {
-      verifyMessageV2: (message: string, signature: string, address: string) => Promise<boolean>;
+      /**
+       * Recovers the base58 address that produced `signature` over `message`.
+       * It does not compare against any address and never returns false: a
+       * mismatched signature recovers to a different address, and a malformed
+       * one throws. Callers must compare the result with the expected signer.
+       */
+      verifyMessageV2: (message: string, signature: string) => Promise<string>;
+      /** Signs `message` locally with `privateKey` in the TronLink V2 format. */
+      signMessageV2: (message: string, privateKey: string) => Promise<string>;
     };
     setHeader: (headers: Record<string, string>) => void;
   }
