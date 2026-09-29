@@ -30,6 +30,10 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 | `auth.ts` | Better Auth factory (`createAuth`), `Auth` type; takes a raw Mongo `Db` (documented `IDatabaseService` exception) |
 | `services/auth-facade.ts` | Session resolution + `isLoggedIn`/`isAdmin`/`isInGroup` predicates over `req.authSession`; `setAuthInstance` |
 | `services/auth-constants.ts` | Physical BA collection names (`AUTH_USERS_COLLECTION`, `AUTH_COLLECTIONS`) |
+| `services/consumeRedisWindow.ts` | Atomic fixed-window counter in Redis (one Lua step for increment + expiry); shared by both limiters below |
+| `services/createRedisRateLimitStorage.ts` | Better Auth `rateLimit.customStorage` — moves BA's per-IP counters from process memory to Redis |
+| `services/createEmailOtpThrottle.ts` | `hooks.before` middleware adding per-email limits to the OTP send and check endpoints (`EMAIL_OTP_THROTTLE`) |
+| `services/IAuthRateLimitRedis.ts` | The three Redis commands the limiters use; the bootstrap ioredis client satisfies it |
 | `services/user-id.ts` | `toUserKey` / `userIdFromKey` — BA user-id hex ↔ `_id` ObjectId conversion at the collection boundary; the opaque-hex-string contract |
 | `services/group.service.ts` | Membership primitive over the BA `groups` field; `ADMIN_GROUP_ID` |
 | `services/user-group.service.ts` | Group-definition registry + the `'user-groups'` contract; composes `GroupService` |
@@ -44,6 +48,19 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 | `api/accounts.{controller,routes}.ts` | `/api/admin/users` admin account directory (list + per-account group assignment) over the `'accounts'` service |
 | `database/IWalletDocument.ts` | `module_user_wallets` document + `ILinkedWallet` public shape |
 | `database/IUserGroupDocument.ts` | `module_user_groups` document |
+
+## Sign-in Rate Limiting
+
+Email sign-in sends a six-digit one-time code (OTP). Two layers of limits protect it, and both keep their counters in Redis under `<REDIS_NAMESPACE>:auth:*` so a backend restart does not reset them. Better Auth's default is process memory, and an attacker able to crash the backend could reset their own limit that way.
+
+| Layer | Keyed by | Limits | Source |
+|-------|----------|--------|--------|
+| Better Auth built-in | IP address + path | BA defaults: 3 requests / 60 s on each email-OTP endpoint, 100 / 10 s elsewhere. Enabled in production only | `createRedisRateLimitStorage` |
+| Per-email throttle | Lowercased email | 5 codes sent / hour; 10 code checks / hour across `/sign-in/email-otp`, `/email-otp/check-verification-otp`, `/email-otp/verify-email` | `createEmailOtpThrottle` |
+
+The per-email layer exists because the per-IP layer alone lets anyone who rotates IP addresses keep guessing a victim's code, about three guesses a minute per extra address, or flood an inbox with codes. Refusals return `429` and log a warning with the email domain only.
+
+Both layers let a request through and log an error when Redis is unreachable, because refusing would stop every sign-in for the length of the outage. Codes are stored hashed (`storeOTP: 'hashed'`), so reading `module_user_auth_verifications` does not reveal a pending code. A recipient Resend refuses as invalid (`validation_error`) is logged as a warning; any other send failure is an error, because it stops all email sign-in.
 
 ## Published Service Contracts
 
@@ -113,7 +130,7 @@ First consumer: the notifications module persists per-user opt-outs here under t
 
 ## Lifecycle
 
-**`init()`** constructs (in order) `GroupService`, `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, and the Better Auth instance, then wires the auth facade and builds the wallet + group + user-settings controllers. **`run()`** registers the `Users` menu item under the System container, mounts `/api/auth/*`, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`.
+**`init()`** constructs (in order) `GroupService`, `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, and the Better Auth instance (handed the injected `redis` client for its rate-limit counters), then wires the auth facade and builds the wallet + group + user-settings controllers. **`run()`** registers the `Users` menu item under the System container, mounts `/api/auth/*`, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`.
 
 ## Related
 

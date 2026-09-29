@@ -443,7 +443,9 @@ async function bootstrapInit(): Promise<BootstrapContext> {
     await widgetsModule.init({ ...sharedDeps, systemConfig: SystemConfigService.getInstance() });
     await schedulerModule.init({ database: coreDatabase, menuService, app });
     const schedulerService = schedulerModule.getSchedulerService();
-    await identityModule.init(sharedDeps);
+    // Identity also receives Redis for the sign-in rate-limit counters, so
+    // those limits survive a backend restart.
+    await identityModule.init({ ...sharedDeps, redis });
     await trafficModule.init({ ...sharedDeps, scheduler: schedulerService, clickhouse });
     // Account-history: pull-based per-account transaction backfill into ClickHouse.
     // Receives the scheduler service (for its bounded ingestion job) and clickhouse

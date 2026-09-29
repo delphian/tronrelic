@@ -4,8 +4,9 @@ import { BlockchainService } from './blockchain.service.js';
 /**
  * HTTP controller for blockchain-related API endpoints.
  *
- * Provides REST endpoints for querying transaction data, triggering sync operations,
- * and retrieving analytics timeseries. All methods delegate business logic to
+ * Provides public, read-only REST endpoints for querying transaction data and
+ * retrieving analytics timeseries. Manual sync is admin-only and lives on the
+ * system router. All methods delegate business logic to
  * BlockchainService and handle HTTP-specific concerns like request parsing and
  * response formatting.
  */
@@ -48,27 +49,16 @@ export class BlockchainController {
      *
      * @param req - Express request with optional `limit` query parameter. A value
      *   above the ceiling is clamped to it rather than rejected, so an existing
-     *   caller asking for too much still gets a usable page (max 600).
+     *   caller asking for too much still gets a usable page (max 600). A value
+     *   that is not a positive number falls back to the default of 50, because
+     *   `Math.min(NaN, 600)` is `NaN` and would otherwise slip past the ceiling.
      * @param res - Express response containing transaction array
      */
     latestTransactions = async (req: Request, res: Response) => {
-        const limit = Number(req.query.limit ?? 50);
-        const transactions = await this.service.getLatestTransactions(Math.min(limit, 600));
+        const requested = Math.floor(Number(req.query.limit ?? 50));
+        const limit = Number.isFinite(requested) && requested > 0 ? Math.min(requested, 600) : 50;
+        const transactions = await this.service.getLatestTransactions(limit);
         res.json({ success: true, transactions });
-    };
-
-    /**
-     * POST /api/blockchain/sync
-     *
-     * Manually triggers a blockchain sync cycle to queue new blocks for processing.
-     * Primarily used for debugging or forcing sync after configuration changes.
-     *
-     * @param _req - Express request (no parameters required)
-     * @param res - Express response with success indicator
-     */
-    triggerSync = async (_req: Request, res: Response) => {
-        await this.service.syncLatestBlocks();
-        res.json({ success: true });
     };
 
     /**

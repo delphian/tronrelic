@@ -31,6 +31,9 @@ import type { Db } from 'mongodb';
 import type { ISystemLogService } from '@/types';
 import { env } from '../../config/env.js';
 import type { GroupService } from './services/group.service.js';
+import type { IAuthRateLimitRedis } from './services/IAuthRateLimitRedis.js';
+import { createRedisRateLimitStorage } from './services/createRedisRateLimitStorage.js';
+import { createEmailOtpThrottle } from './services/createEmailOtpThrottle.js';
 
 /**
  * Group id used for the seeded administrators tag.
@@ -71,6 +74,15 @@ export interface ICreateAuthDependencies {
      * user-module diagnostics.
      */
     logger: ISystemLogService;
+
+    /**
+     * Redis client holding the sign-in rate-limit counters. Better Auth's
+     * default in-memory counters reset on every restart, so an attacker who
+     * can crash the backend also resets their own limit. Storing them in
+     * Redis makes the per-IP limits and the per-email OTP limits hold across
+     * restarts and instances.
+     */
+    rateLimitRedis: IAuthRateLimitRedis;
 }
 
 /**
@@ -107,6 +119,14 @@ export function createAuth(deps: ICreateAuthDependencies) {
         emailAndPassword: { enabled: false },
         socialProviders: buildSocialProviders(),
         plugins: buildPlugins(log),
+        // Only the storage changes here; Better Auth still decides the limits
+        // and still enables limiting in production only.
+        rateLimit: {
+            customStorage: createRedisRateLimitStorage(deps.rateLimitRedis, env.REDIS_NAMESPACE, log)
+        },
+        hooks: {
+            before: createEmailOtpThrottle(deps.rateLimitRedis, env.REDIS_NAMESPACE, log)
+        },
         user: {
             modelName: AUTH_COLLECTIONS.users,
             additionalFields: {
@@ -229,7 +249,12 @@ function buildPlugins(log: ISystemLogService): Array<ReturnType<typeof passkey |
                 otpLength: 6,
                 // Five minutes balances inbox-delivery latency against the
                 // exposure window of a code sitting in an inbox.
-                expiresIn: 300
+                expiresIn: 300,
+                // Store only a hash of each code. The default keeps codes in
+                // plain text in module_user_auth_verifications, so anyone able
+                // to read that collection could sign in as any user with a
+                // code still pending.
+                storeOTP: 'hashed'
             })
         );
     } else {
@@ -279,10 +304,21 @@ function buildOtpSender(
                     html: renderOtpEmail(otp)
                 });
                 if (resendError) {
-                    throw new Error(resendError.message || 'Unknown Resend error');
+                    throw new ResendSendError(resendError.message || 'Unknown Resend error', resendError.name);
                 }
             } catch (error) {
-                log.error({ error, email }, 'Resend OTP send failed');
+                // Resend refusing the recipient address (a `validation_error`,
+                // such as a reserved domain like example.com) is a problem with
+                // what the visitor typed, not with our email setup, and probing
+                // tools trigger it constantly. Log it as a warning with only the
+                // domain. Anything else — a bad key, an exhausted quota, an
+                // outage — stops every sign-in and stays an error.
+                const domain = email.split('@').pop();
+                if (error instanceof ResendSendError && error.code === 'validation_error') {
+                    log.warn({ emailDomain: domain, reason: error.message }, 'Resend refused the OTP recipient address');
+                } else {
+                    log.error({ error, emailDomain: domain }, 'Resend OTP send failed');
+                }
                 throw error;
             }
         };
@@ -295,6 +331,25 @@ function buildOtpSender(
         };
     }
     return sender;
+}
+
+/**
+ * Error carrying the error code Resend reported, so the sender can tell a
+ * rejected recipient address apart from a failure of our own configuration.
+ *
+ * The Resend SDK returns failures as `{ error: { name, message } }` rather
+ * than throwing, and a plain `Error` built from the message loses `name`.
+ */
+class ResendSendError extends Error {
+    /**
+     * @param message - Resend's human-readable explanation, kept for the log.
+     * @param code - Resend's error code (for example `validation_error`), which
+     *   decides whether the failure is logged as a warning or an error.
+     */
+    constructor(message: string, readonly code: string) {
+        super(message);
+        this.name = 'ResendSendError';
+    }
 }
 
 /**
