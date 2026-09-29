@@ -28,6 +28,93 @@ export function clientSafeErrorMessage(error: unknown): string {
 }
 
 /**
+ * Subscribe-attempt bookkeeping kept on one socket.
+ *
+ * `next` numbers attempts across every room on the socket, so no two attempts
+ * ever share a number. `latest` holds, per prefixed room name, the number of
+ * the newest attempt still unsettled.
+ */
+interface ISubscriptionAttempts {
+    next: number;
+    latest: Map<string, number>;
+}
+
+/**
+ * Read or create the attempt bookkeeping on a socket.
+ *
+ * Stored on `socket.data`, like the subscribe rate limiter's state, so it is
+ * discarded with the connection.
+ *
+ * @param socket - The socket whose attempts are being tracked.
+ * @returns The socket's bookkeeping object.
+ */
+function subscriptionAttempts(socket: Socket): ISubscriptionAttempts {
+    const data = socket.data as { subscriptionAttempts?: ISubscriptionAttempts };
+    if (!data.subscriptionAttempts) {
+        data.subscriptionAttempts = { next: 0, latest: new Map() };
+    }
+    return data.subscriptionAttempts;
+}
+
+/**
+ * Number a new subscribe attempt and mark it the newest for its room.
+ *
+ * Socket.IO starts an async listener for every packet without awaiting the
+ * previous one, so two `subscribe` events for the same room overlap whenever a
+ * page has more than one holder of that room. Numbering the attempts lets only
+ * the newest one undo the join when it fails. Without that, a slow rejection —
+ * a transient database error inside a plugin handler, say — removes the
+ * membership a later accepted request established, and the client stays out of
+ * the room for the rest of the connection while believing it is subscribed.
+ *
+ * @param socket - The socket making the attempt.
+ * @param fullRoomName - Prefixed room name the attempt targets.
+ * @returns This attempt's number, unique on the socket.
+ */
+function beginSubscriptionAttempt(socket: Socket, fullRoomName: string): number {
+    const attempts = subscriptionAttempts(socket);
+    attempts.next += 1;
+    attempts.latest.set(fullRoomName, attempts.next);
+    return attempts.next;
+}
+
+/**
+ * Test whether an attempt is still the newest unsettled one for its room.
+ *
+ * Undoing a join is only correct while no newer request has taken over. A
+ * missing entry also means "not newest": entries are removed only by the newest
+ * attempt when it settles, so an older attempt that finds none knows a newer one
+ * has already finished. The rejection gate still holds, because a newer attempt
+ * that also rejects is itself the newest and removes the membership.
+ *
+ * @param socket - The socket the attempt was made on.
+ * @param fullRoomName - Prefixed room name the attempt targeted.
+ * @param attempt - The number {@link beginSubscriptionAttempt} returned.
+ * @returns True when no later attempt for the same room has started.
+ */
+function isLatestSubscriptionAttempt(socket: Socket, fullRoomName: string, attempt: number): boolean {
+    return subscriptionAttempts(socket).latest.get(fullRoomName) === attempt;
+}
+
+/**
+ * Forget a room's entry once its newest attempt has settled.
+ *
+ * Keeps the bookkeeping sized to the rooms with an attempt in flight, rather
+ * than to every room name a socket has ever tried. Only the newest attempt may
+ * remove the entry, and attempt numbers are never reused on a socket, so this
+ * cannot let a stale attempt pass as the newest.
+ *
+ * @param socket - The socket the attempt was made on.
+ * @param fullRoomName - Prefixed room name the attempt targeted.
+ * @param attempt - The number {@link beginSubscriptionAttempt} returned.
+ */
+function settleSubscriptionAttempt(socket: Socket, fullRoomName: string, attempt: number): void {
+    if (isLatestSubscriptionAttempt(socket, fullRoomName, attempt)) {
+        subscriptionAttempts(socket).latest.delete(fullRoomName);
+    }
+}
+
+/**
  * Plugin-scoped WebSocket manager implementation.
  *
  * Provides each plugin with isolated WebSocket capabilities including custom subscription
@@ -225,7 +312,9 @@ export class PluginWebSocketManager implements IPluginWebSocketManager {
      * @param roomName - The plugin-local room name (without prefix)
      * @param payload - Optional subscription payload sent by the client
      * @returns Promise that resolves when subscription handling completes
-     * @throws The handler's error, after the socket has left the room and the client has been told
+     * @throws The handler's error, after the client has been told. The socket leaves the room only
+     *   when no newer subscribe for the same room has started, so a rejection that resolves late
+     *   cannot undo the membership a later accepted request established.
      * @internal
      */
     public async handleSubscription(socket: Socket, roomName: string, payload?: any): Promise<void> {
@@ -239,6 +328,7 @@ export class PluginWebSocketManager implements IPluginWebSocketManager {
         }
 
         const fullRoomName = this.getFullRoomName(roomName);
+        const attempt = beginSubscriptionAttempt(socket, fullRoomName);
         try {
             // Automatically join the client to the prefixed room
             socket.join(fullRoomName);
@@ -255,8 +345,13 @@ export class PluginWebSocketManager implements IPluginWebSocketManager {
                 'Plugin subscription successful'
             );
         } catch (error) {
-            // Undo the join so throwing actually rejects, as the plugin docs promise.
-            socket.leave(fullRoomName);
+            // Undo the join so throwing actually rejects, as the plugin docs promise. Only the
+            // newest attempt for this socket and room may do so: two subscribe events can overlap,
+            // and a rejection that resolves after a later request was accepted must not remove the
+            // membership that later request established.
+            if (isLatestSubscriptionAttempt(socket, fullRoomName, attempt)) {
+                socket.leave(fullRoomName);
+            }
 
             this.stats.totalSubscriptionErrors++;
             this.stats.lastSubscriptionErrorAt = new Date();
@@ -277,6 +372,8 @@ export class PluginWebSocketManager implements IPluginWebSocketManager {
             });
 
             throw error; // Re-throw so WebSocketService knows the subscription did not happen
+        } finally {
+            settleSubscriptionAttempt(socket, fullRoomName, attempt);
         }
     }
 
