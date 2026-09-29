@@ -4,7 +4,7 @@ import { BlockchainController } from '../../modules/blockchain/blockchain.contro
 /**
  * Blockchain API router factory.
  *
- * Defines REST endpoints for blockchain data access and sync control.
+ * Defines the public, read-only REST endpoints for blockchain data.
  * Routes are mounted at /api/blockchain by the main API router.
  *
  * IMPORTANT: Controller instantiation is deferred to route handlers to avoid
@@ -42,9 +42,9 @@ export function blockchainRouter() {
         void getController().overviewTimeseries(req, res);
     });
 
-    router.post('/sync', (req, res) => {
-        void getController().triggerSync(req, res);
-    });
+    // There is deliberately no sync route here. This router is public, and a
+    // manual sync is an admin action served by POST /api/admin/system/blockchain/sync
+    // behind requireAdmin. A public copy let anonymous callers force sync cycles.
 
     return router;
 }

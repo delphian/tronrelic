@@ -40,6 +40,7 @@ import { createAdminUserGroupRouter } from './api/user-group.routes.js';
 import { createAdminAccountsRouter, createAdminAccountSearchRouter } from './api/accounts.routes.js';
 import { createUserSettingsRouter } from './api/user-settings.routes.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
+import type { IAuthRateLimitRedis } from './services/IAuthRateLimitRedis.js';
 
 /**
  * Dependencies the identity module needs at bootstrap.
@@ -69,6 +70,12 @@ export interface IIdentityModuleDependencies {
      * react to new verified ownership.
      */
     hookRegistry: IHookRegistry;
+
+    /**
+     * Redis client for the sign-in rate-limit counters, handed to the Better
+     * Auth factory so the limits survive a restart. See `createAuth`.
+     */
+    redis: IAuthRateLimitRedis;
 }
 
 /**
@@ -190,7 +197,8 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         this.auth = createAuth({
             db: authDb,
             groupService: this.groupService,
-            logger: this.logger
+            logger: this.logger,
+            rateLimitRedis: dependencies.redis
         });
         setAuthInstance(this.auth);
         this.logger.info('Better Auth instance configured and facade wired');
