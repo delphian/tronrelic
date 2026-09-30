@@ -57,6 +57,7 @@ import { createUserSettingsRouter } from './api/user-settings.routes.js';
 import { ConnectedAppsController, type IPublicOAuthClient } from './api/connected-apps.controller.js';
 import { createConnectedAppsRouter, createOAuthConsentRouter } from './api/connected-apps.routes.js';
 import { ConnectedAppsService, type IOAuthStoreAdapter } from './services/connected-apps.service.js';
+import { revokeGrantsOnGroupExit } from './services/revokeGrantsOnGroupExit.js';
 import { OAuthAccessTokenVerifier } from './services/oauth-access-token.verifier.js';
 import { resolveOAuthServerConfig, type IOAuthServerConfig } from './services/oauth-server-config.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
@@ -191,13 +192,18 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         // after-create hook calls to promote ADMIN_EMAILS signups.
         // A membership change alters which `group:<id>` rooms the user's sockets
         // belong in, and rooms are only chosen at the handshake, so drop the
-        // user's sockets and let them rejoin with the current groups.
+        // user's sockets and let them rejoin with the current groups. A user
+        // who is no longer in the MCP group also loses their connected apps,
+        // so a later re-add cannot revive them without new consent.
         const socketDisconnector = dependencies.socketDisconnector;
         const moduleLogger = this.logger;
         GroupService.setDependencies(this.database, this.logger, (userId) => {
             socketDisconnector.disconnectUser(userId).catch((error: unknown) => {
                 moduleLogger.warn({ error, userId }, 'Failed to disconnect sockets after a group membership change');
             });
+            // Membership writes only happen once requests are served, after
+            // init has assigned both services.
+            void revokeGrantsOnGroupExit(userId, MCP_USERS_GROUP_ID, this.groupService, this.connectedAppsService, moduleLogger);
         });
         this.groupService = GroupService.getInstance();
         await this.groupService.createIndexes();

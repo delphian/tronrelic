@@ -54,7 +54,8 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 | `database/IWalletDocument.ts` | `module_user_wallets` document + `ILinkedWallet` public shape |
 | `database/IUserGroupDocument.ts` | `module_user_groups` document |
 | `services/oauth-server-config.ts` | `resolveOAuthServerConfig` — issuer, MCP resource URL, metadata URL, and consent page path from one base URL |
-| `services/connected-apps.service.ts` | `IConnectedAppsService` singleton over Better Auth's adapter: list, full revoke, cached `hasGrant`, throttled `recordUse` |
+| `services/connected-apps.service.ts` | `IConnectedAppsService` singleton over Better Auth's adapter: list, full revoke (one app or all of a user's), cached `hasGrant`, throttled `recordUse` |
+| `services/revokeGrantsOnGroupExit.ts` | Run by the membership listener: revokes all of a user's connected apps when they are no longer in `mcp-users` |
 | `database/IConnectedAppUsageDocument.ts` | `module_user_connected_app_usage` document (`(userId, clientId)` → `lastUsedAt`) |
 | `services/hostOf.ts` | `hostOf` / `isLoopbackHost` — redirect-URI host parsing and the loopback list shared by the consent context and the connected-apps list |
 | `services/oauth-access-token.verifier.ts` | `IMcpAccessTokenVerifier`: local JWT verification (issuer, audience, `at+jwt`), DPoP refusal, live-grant check; signing keys read from the store at most once per 30 seconds (`JWKS_REFETCH_COOLDOWN_MS`) |
@@ -90,6 +91,8 @@ The Better Auth instance is also an OAuth 2.1 authorization server, so connected
 
 **Revocation.** Better Auth's own consent deletion leaves refresh tokens working, and sign-out does not revoke refresh tokens carrying `offline_access`. `ConnectedAppsService.revoke` therefore deletes the consent, the refresh tokens, and any stored access tokens for the `(user, client)` pair. JWT access tokens cannot be recalled, so the verifier's `hasGrant` check (cached 30 seconds) is what cuts them off before they expire. The verifier passes the token's `iat`, and a token issued before the current consent was created is refused, so a user who revokes an app and reconnects it within 15 minutes does not bring back the tokens from before the revocation. Many users share one client id (every Claude user connects with the same metadata URL), which is why the grant alone cannot tell the two apart.
 
+**Leaving `mcp-users`.** After every membership write, the membership listener checks whether the user is still in `mcp-users` and, if not, calls `revokeAllForUser`, which runs `revoke` for every app the user holds a consent or token for. Without this the consents and refresh tokens would stay stored while the Connected apps tab is hidden from the user, so they could not revoke them, and an admin adding them back would revive the apps without new consent. A failure is logged at `error` and does not fail the membership write.
+
 **Last used.** Better Auth's tables do not record when an app last made a call, so the module keeps that in its own `module_user_connected_app_usage` collection, one row per `(userId, clientId)` under a unique index. The MCP endpoint calls `recordUse` for every request it accepts. The service writes at most once per grant every five minutes (an in-memory throttle per instance, with `$max` so two instances cannot move the time backwards), and a failed write is logged at `warn` and retried on the next call without failing the request. The connected-apps lists read every row for a page in one query, and `listAll` labels rows with emails through one `getAccountsByIds` call. `revoke` deletes the row, so a reconnected app starts with no last-use time.
 
 **Signing key reads.** Better Auth reads the signing keys again whenever an access token names a key id (`kid`) it has not cached. That header is read before the signature is checked, so a forged token with a random key id would otherwise cost a `module_user_auth_jwks` read on every request to `/mcp`. The verifier reads the store at most once every 30 seconds, and requests arriving during a read share it. Between reads it reuses the last key set, so a forged key id is refused with `401` without reaching the database. A read that fails is not cached, so the next request tries again, and a request that needed the read gets `503` rather than `401`. The same cooldown means a key added by rotation can take up to 30 seconds to be accepted; no automatic rotation is configured.
@@ -107,7 +110,7 @@ A WebSocket joins its `user:<id>` and `group:<id>` rooms once, at the handshake.
 | Session deleted (sign-out, revocation) | `databaseHooks.session.delete.after` in `auth.ts` | Only those opened with that session, so the user's other devices stay connected |
 | Any group membership write (`addMember`, `removeMember`, `setUserGroups`, group deletion) | The listener passed to `GroupService.setDependencies` | All of the user's sockets |
 
-The official client reconnects straight away and rejoins with its current identity. A failure to disconnect is logged at `warn` and never fails the sign-out or the membership write that caused it.
+The official client reconnects straight away and rejoins with its current identity. A failure to disconnect is logged at `warn` and never fails the sign-out or the membership write that caused it. The same membership listener also revokes the user's connected apps when they are no longer in `mcp-users`; see [Leaving `mcp-users`](#oauth-authorization-server).
 
 ## Published Service Contracts
 

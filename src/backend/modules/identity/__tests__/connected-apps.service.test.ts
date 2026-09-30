@@ -175,6 +175,24 @@ describe('ConnectedAppsService', () => {
         expect(await service.revoke('u2', 'https://claude.ai/meta')).toBe(false);
     });
 
+    it('revokes every app a user holds, including tokens whose consent is already gone', async () => {
+        store.oauthRefreshToken.push({ userId: 'u1', clientId: 'https://orphan.example/meta', createdAt: new Date('2026-09-21T00:00:00Z') });
+        store.oauthConsent.push({ id: 'c2', userId: 'u2', clientId: 'https://claude.ai/meta', createdAt: new Date('2026-09-02T00:00:00Z') });
+        expect(await service.hasGrant('u1', 'https://claude.ai/meta')).toBe(true);
+
+        expect(await service.revokeAllForUser('u1')).toBe(2);
+
+        expect(store.oauthConsent).toEqual([expect.objectContaining({ userId: 'u2' })]);
+        expect(store.oauthRefreshToken).toHaveLength(0);
+        expect(usageRows).toHaveLength(0);
+        expect(await service.hasGrant('u1', 'https://claude.ai/meta')).toBe(false);
+    });
+
+    it('revokes nothing for a user with no apps', async () => {
+        expect(await service.revokeAllForUser('u2')).toBe(0);
+        expect(store.oauthConsent).toHaveLength(1);
+    });
+
     it('adds the user\'s email on the admin list', async () => {
         const page = await service.listAll({ limit: 10, offset: 0 });
         expect(page.total).toBe(1);
