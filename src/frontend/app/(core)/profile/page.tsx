@@ -11,7 +11,7 @@
 import { headers } from 'next/headers';
 import type { Metadata } from 'next';
 import type { MenuNodeSerialized } from '@/shared';
-import type { IAccountIngestionProgress, ILinkedWallet, IPortfolioSummary } from '@/types';
+import type { IAccountIngestionProgress, IConnectedApp, ILinkedWallet, IPortfolioSummary } from '@/types';
 import { getServerSideApiUrlWithPath } from '../../../lib/api-url';
 import { getServerSession } from '../../../modules/user/lib/session-server';
 import { Page, PageHeader } from '../../../components/layout';
@@ -22,11 +22,18 @@ export const metadata: Metadata = {
 };
 
 /**
- * Namespace holding the profile hub's tab nodes (Profile, Wallets), registered
- * by the identity module. Kept out of `main` so the tabs never appear in the
- * global nav — only this page's `MenuNavClient` reads it.
+ * Namespace holding the profile hub's tab nodes (Profile, Wallets, Connected
+ * apps), registered by the identity module. Kept out of `main` so the tabs
+ * never appear in the global nav — only this page's `MenuNavClient` reads it.
  */
 const SUBMENU_NAMESPACE = 'profile';
+
+/**
+ * The `?tab=` value of the Connected apps node. The identity module gates that
+ * node to the MCP group, so its presence in the caller's menu tree is how this
+ * page learns whether the caller may see the tab.
+ */
+const CONNECTED_APPS_TAB = 'connected-apps';
 
 /**
  * Fetch the signed-in account's linked wallets during SSR, forwarding the
@@ -124,12 +131,64 @@ async function fetchInitialPortfolio(apiUrl: string): Promise<IPortfolioSummary 
 }
 
 /**
+ * Fetch the signed-in account's connected apps (OAuth grants) during SSR so the
+ * Connected apps tab paints with real rows. Forwards the session cookie for
+ * ownership scoping and degrades to an empty list on any failure — the tab then
+ * shows its empty state rather than breaking the page.
+ *
+ * @param apiUrl - The resolved backend API base (already includes `/api`).
+ * @returns The account's connected apps, or an empty array on failure.
+ */
+async function fetchInitialConnectedApps(apiUrl: string): Promise<IConnectedApp[]> {
+    let apps: IConnectedApp[] = [];
+    try {
+        const reqHeaders = await headers();
+        const cookie = reqHeaders.get('cookie');
+        if (cookie) {
+            const response = await fetch(`${apiUrl}/user/connected-apps`, {
+                headers: { Cookie: cookie },
+                cache: 'no-store'
+            });
+            if (response.ok) {
+                const data = await response.json();
+                apps = Array.isArray(data?.apps) ? data.apps : [];
+            }
+        }
+    } catch {
+        apps = [];
+    }
+    return apps;
+}
+
+/**
+ * Fetch the connected apps only when the caller's menu tree shows the
+ * Connected apps tab. Most users are outside the MCP group and never see that
+ * tab, so fetching for them would cost a backend call on every profile view
+ * for a panel that is never shown. The menu tree is already filtered by the
+ * caller's groups on the backend, so reading it keeps the decision in one
+ * place: the node's `requiresGroups` gate in the identity module.
+ *
+ * @param apiUrl - The resolved backend API base (already includes `/api`).
+ * @param submenu - The pending submenu fetch whose result decides visibility.
+ * @returns The caller's connected apps, or null when the tab is not available
+ *   to them, which tells `ProfileView` to leave the panel out.
+ */
+async function fetchConnectedAppsWhenVisible(
+    apiUrl: string,
+    submenu: Promise<{ roots: MenuNodeSerialized[] }>
+): Promise<IConnectedApp[] | null> {
+    const { roots } = await submenu;
+    const visible = roots.some(node => node.url === `/profile?tab=${CONNECTED_APPS_TAB}`);
+    return visible ? fetchInitialConnectedApps(apiUrl) : null;
+}
+
+/**
  * Fetch the profile hub's tab row (the `profile` menu namespace) during SSR so
  * the submenu paints with the page instead of after a client round-trip. The
- * nodes carry no gate, but the cookie is forwarded for parity with other
- * Submenu Pattern fetches and to keep behaviour identical if a gate is added
- * later. On any failure it degrades to an empty tree — the page still renders,
- * just without the tab row until a live `menu:update` refetch repopulates it.
+ * cookie must be forwarded: the Connected apps node is gated to the MCP group,
+ * and the backend can only apply that gate when it knows who is asking. On any
+ * failure it degrades to an empty tree — the page still renders, just without
+ * the tab row until a live `menu:update` refetch repopulates it.
  *
  * @param apiUrl - The resolved backend API base (already includes `/api`).
  * @returns The namespace root nodes and the tree snapshot timestamp.
@@ -177,11 +236,13 @@ export default async function ProfilePage({
     }
 
     const apiUrl = getServerSideApiUrlWithPath();
-    const [initialWallets, initialProgress, initialPortfolio, submenu] = await Promise.all([
+    const submenuRequest = fetchSubmenu(apiUrl);
+    const [initialWallets, initialProgress, initialPortfolio, initialConnectedApps, submenu] = await Promise.all([
         fetchInitialWallets(apiUrl),
         fetchInitialProgress(apiUrl),
         fetchInitialPortfolio(apiUrl),
-        fetchSubmenu(apiUrl)
+        fetchConnectedAppsWhenVisible(apiUrl, submenuRequest),
+        submenuRequest
     ]);
     const { tab } = await searchParams;
 
@@ -198,6 +259,7 @@ export default async function ProfilePage({
                 initialWallets={initialWallets}
                 initialProgress={initialProgress}
                 initialPortfolio={initialPortfolio}
+                initialConnectedApps={initialConnectedApps}
                 submenuTree={submenu.roots}
                 submenuGeneratedAt={submenu.generatedAt}
                 initialTab={tab}

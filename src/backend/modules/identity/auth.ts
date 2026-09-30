@@ -7,6 +7,11 @@
  * auto-promotion) so the instance can be built without reaching for
  * module-level singletons, and so tests can supply mocks for both.
  *
+ * **OAuth authorization server.** The same instance also acts as the OAuth
+ * 2.1 authorization server for connected apps (MCP clients such as Claude):
+ * the `jwt`, `oauthProvider`, consent-gate, and `cimd` plugins built by `buildOAuthPlugins`
+ * serve sign-in, consent, and token issuance under `/api/auth/oauth2/*`.
+ *
  * **Collection naming.** Better Auth's model names are remapped to the
  * `module_user_auth_*` convention so the BA-owned tables sit alongside the
  * user module's other collections in the database. The legacy unprefixed
@@ -24,17 +29,25 @@
 
 import { betterAuth } from 'better-auth';
 import { mongodbAdapter } from 'better-auth/adapters/mongodb';
-import { emailOTP } from 'better-auth/plugins';
+import { APIError } from 'better-auth/api';
+import { emailOTP, jwt } from 'better-auth/plugins';
 import { passkey } from '@better-auth/passkey';
+import { oauthProvider } from '@better-auth/oauth-provider';
+import { cimd } from '@better-auth/cimd';
+import { fetchClientMetadataResource } from '@better-auth/cimd/node';
 import { Resend } from 'resend';
 import type { Db } from 'mongodb';
 import type { ISystemLogService } from '@/types';
+import { MCP_OAUTH_SCOPES, MCP_USERS_GROUP_ID, assertPublicHttpUrl } from '@/types';
 import { env } from '../../config/env.js';
 import type { GroupService } from './services/group.service.js';
 import type { IAuthRateLimitRedis } from './services/IAuthRateLimitRedis.js';
 import type { IIdentitySocketDisconnector } from './services/IIdentitySocketDisconnector.js';
+import type { IOAuthServerConfig } from './services/oauth-server-config.js';
 import { createRedisRateLimitStorage } from './services/createRedisRateLimitStorage.js';
 import { createEmailOtpThrottle } from './services/createEmailOtpThrottle.js';
+import { createMcpConsentGate } from './services/createMcpConsentGate.js';
+import { userGroups } from './services/userGroups.js';
 
 /**
  * Group id used for the seeded administrators tag.
@@ -92,7 +105,40 @@ export interface ICreateAuthDependencies {
      * until it happens to reconnect.
      */
     socketDisconnector: IIdentitySocketDisconnector;
+
+    /**
+     * Public URLs of the OAuth authorization server: the base URL Better Auth
+     * runs under, the issuer written into access tokens, the MCP resource URL
+     * tokens are bound to, and the page that signs users in and asks for
+     * consent.
+     */
+    oauth: IOAuthServerConfig;
 }
+
+/**
+ * Access token lifetime for connected apps. A signed access token cannot be
+ * recalled, so it is kept short; the MCP endpoint also re-checks the grant and
+ * group membership on every request.
+ */
+const OAUTH_ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
+
+/** Refresh token lifetime for connected apps. Every refresh rotates the token. */
+const OAUTH_REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+/**
+ * How long a just-rotated refresh token is still honoured. Claude retries a
+ * refresh whose response it did not receive, and without this window the
+ * retry would look like token theft and revoke the whole grant.
+ */
+const OAUTH_REFRESH_REUSE_SECONDS = 30;
+
+/**
+ * Scopes the authorization server offers, shared with the MCP endpoint that
+ * advertises them. `offline_access` is what makes the server issue a refresh
+ * token. `openid` is deliberately absent: it would add a second audience to
+ * every access token and serve an OpenID Connect document nobody here needs.
+ */
+const OAUTH_SCOPES = [...MCP_OAUTH_SCOPES];
 
 /**
  * Concrete Better Auth instance type for this codebase.
@@ -124,10 +170,12 @@ export function createAuth(deps: ICreateAuthDependencies) {
     const auth = betterAuth({
         database: mongodbAdapter(deps.db),
         secret: env.BETTER_AUTH_SECRET,
-        baseURL: env.BETTER_AUTH_URL || env.SITE_URL,
+        // Resolved once in IdentityModule, alongside the OAuth issuer, so the
+        // two cannot drift apart.
+        baseURL: deps.oauth.baseUrl,
         emailAndPassword: { enabled: false },
         socialProviders: buildSocialProviders(),
-        plugins: buildPlugins(log),
+        plugins: buildPlugins(log, deps.oauth),
         // Only the storage changes here; Better Auth still decides the limits
         // and still enables limiting in production only.
         rateLimit: {
@@ -270,6 +318,15 @@ function buildSocialProviders(): {
 }
 
 /**
+ * Every plugin type the auth instance can carry. Kept as a union so Better
+ * Auth still infers each plugin's server API (`auth.api.getJwks`, the OAuth
+ * consent endpoints) on the resulting instance type.
+ */
+type AuthPlugin = ReturnType<
+    typeof passkey | typeof emailOTP | typeof jwt | typeof oauthProvider | typeof createMcpConsentGate | typeof cimd
+>;
+
+/**
  * Build the plugin list for the auth instance.
  *
  * Passkey is always loaded — it has no env-var dependency. Email-OTP
@@ -278,17 +335,23 @@ function buildSocialProviders(): {
  * Production without Resend credentials drops email-OTP entirely so
  * sign-in codes cannot leak to operator logs.
  *
+ * The OAuth authorization server plugins always load, in the order the
+ * client-metadata plugin requires (it extends the OAuth provider during its
+ * own init, so the provider must come first). See {@link buildOAuthPlugins}.
+ *
  * @param log - Logger passed into the OTP sender for fallback diagnostics.
+ * @param oauth - Public URLs of the OAuth server and the MCP resource.
  * @returns Ordered list of Better Auth plugins for the instance.
  */
-function buildPlugins(log: ISystemLogService): Array<ReturnType<typeof passkey | typeof emailOTP>> {
-    const plugins: Array<ReturnType<typeof passkey | typeof emailOTP>> = [
+function buildPlugins(log: ISystemLogService, oauth: IOAuthServerConfig): AuthPlugin[] {
+    const plugins: AuthPlugin[] = [
         passkey({
             // Remap the plugin's owned `passkey` table to the project's
             // `module_user_auth_*` convention so it sits alongside the
             // other BA-managed collections.
             schema: { passkey: { modelName: AUTH_COLLECTIONS.passkeys } }
-        })
+        }),
+        ...buildOAuthPlugins(log, oauth)
     ];
     const isProduction = env.NODE_ENV === 'production' || env.ENV === 'production';
     const hasResend = Boolean(env.RESEND_API_KEY && env.RESEND_FROM_ADDRESS);
@@ -313,6 +376,137 @@ function buildPlugins(log: ISystemLogService): Array<ReturnType<typeof passkey |
         );
     }
     return plugins;
+}
+
+/**
+ * Build the plugins that make Better Auth an OAuth 2.1 authorization server
+ * for connected apps, currently MCP clients such as Claude.
+ *
+ * - `jwt` signs access tokens and publishes the signing keys. Its issuer is
+ *   set explicitly to the site origin; left unset it would be
+ *   `<origin>/api/auth`, which moves the discovery document to an awkward
+ *   path and breaks the resource-server helpers.
+ * - `oauthProvider` runs the authorize, token, and consent endpoints. Access
+ *   tokens are JWTs bound to the MCP resource URL when the client names that
+ *   resource, which MCP clients must do. Dynamic client registration stays
+ *   off, refresh tokens rotate, only the authorization-code and refresh
+ *   grants exist, and only admins may create clients by hand. The
+ *   `customAccessTokenClaims` hook is the hard gate on who may hold a JWT
+ *   access token: it runs on every JWT issue and refresh and refuses anyone
+ *   outside the MCP group, so a removed user cannot refresh one. Better Auth
+ *   skips it for opaque tokens (no `resource`), which the MCP endpoint refuses.
+ * - `mcp-consent-gate` refuses a consent approval from anyone outside the
+ *   MCP group. Better Auth's consent endpoint only requires a session, so
+ *   without it a non-member posting to `/oauth2/consent` directly would leave
+ *   a stored grant behind even though no token is ever issued.
+ * - `cimd` lets a client identify itself with the HTTPS URL of a metadata
+ *   document, which is how Claude connects without registering first. The
+ *   document is fetched through the plugin's Node transport, which resolves
+ *   the host once, refuses private addresses, and pins the connection; the
+ *   platform's own URL guard runs first as a cheap pre-check.
+ *
+ * @param log - Logger for client-creation audit lines and refusals.
+ * @param oauth - Public URLs of the OAuth server and the MCP resource.
+ * @returns The four plugins, in the order they must load.
+ */
+function buildOAuthPlugins(log: ISystemLogService, oauth: IOAuthServerConfig): AuthPlugin[] {
+    return [
+        jwt({
+            jwt: { issuer: oauth.issuer },
+            // The session endpoint would otherwise hand a JWT to every
+            // browser session. Nothing here uses one, so do not mint them.
+            disableSettingJwtHeader: true,
+            schema: { jwks: { modelName: AUTH_COLLECTIONS.jwks } }
+        }),
+        oauthProvider({
+            loginPage: oauth.authorizePage,
+            consentPage: oauth.authorizePage,
+            scopes: OAUTH_SCOPES,
+            grantTypes: ['authorization_code', 'refresh_token'],
+            // No `allowedScopes` on the resource: the effective scopes are the
+            // intersection with it, and leaving out `offline_access` would stop
+            // refresh-token rotation after the first refresh.
+            resources: [{ identifier: oauth.mcpResourceUrl, name: 'TronRelic MCP' }],
+            // Links every client that registers by metadata URL to the MCP
+            // resource, which it must be linked to before it may request it.
+            clientRegistrationDefaultResources: [oauth.mcpResourceUrl],
+            clientRegistrationDefaultScopes: OAUTH_SCOPES,
+            allowDynamicClientRegistration: false,
+            accessTokenExpiresIn: OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+            refreshTokenExpiresIn: OAUTH_REFRESH_TOKEN_TTL_SECONDS,
+            refreshTokenReuseInterval: OAUTH_REFRESH_REUSE_SECONDS,
+            /**
+             * Restrict creating, updating, and deleting OAuth clients to
+             * admins. Without this, any signed-in user could manage OAuth
+             * clients through `/api/auth/oauth2/*`.
+             *
+             * @param ctx - Better Auth's privilege context; only the acting
+             *   user is read, because group membership is the whole rule.
+             * @returns True when the acting user is in the admin group.
+             */
+            clientPrivileges: ({ user }) => userGroups(user).includes(ADMIN_GROUP_ID),
+            /**
+             * Refuse to mint an access token for anyone outside the MCP
+             * group. Better Auth calls this on every issue and every refresh
+             * of a JWT access token, so it is the hard gate on who may hold
+             * one, and a user removed from the group cannot refresh one.
+             *
+             * @param ctx - Better Auth's claims context; only the user whose
+             *   token is being minted is read.
+             * @returns No extra claims; the function exists for its refusal.
+             * @throws {APIError} `invalid_grant` when the user is not in the MCP group.
+             */
+            customAccessTokenClaims: ({ user }) => {
+                if (!user || !userGroups(user).includes(MCP_USERS_GROUP_ID)) {
+                    log.info({ userId: user?.id }, 'OAuth token refused: user is not in the MCP group');
+                    throw new APIError('BAD_REQUEST', {
+                        error: 'invalid_grant',
+                        error_description: 'This account is not permitted to connect apps to TronRelic.'
+                    });
+                }
+                return {};
+            },
+            schema: {
+                oauthClient: { modelName: AUTH_COLLECTIONS.oauthClients },
+                oauthResource: { modelName: AUTH_COLLECTIONS.oauthResources },
+                oauthClientResource: { modelName: AUTH_COLLECTIONS.oauthClientResources },
+                oauthRefreshToken: { modelName: AUTH_COLLECTIONS.oauthRefreshTokens },
+                oauthAccessToken: { modelName: AUTH_COLLECTIONS.oauthAccessTokens },
+                oauthConsent: { modelName: AUTH_COLLECTIONS.oauthConsents },
+                oauthClientAssertion: { modelName: AUTH_COLLECTIONS.oauthClientAssertions }
+            }
+        }),
+        createMcpConsentGate(log),
+        cimd({
+            fetchClientMetadataResource,
+            metadataProfile: 'mcp-2026-07-28',
+            /**
+             * Cheap pre-check that refuses a metadata URL pointing at a
+             * private or non-HTTPS target before the plugin's pinned fetch
+             * runs, so an obviously internal address never reaches the network.
+             *
+             * @param clientIdUrl - The client id URL an app presented.
+             * @returns True when the URL is an HTTPS URL on a public host.
+             */
+            isMetadataDocumentUrlAllowed: (clientIdUrl: string) => assertPublicHttpUrl(clientIdUrl).ok,
+            /**
+             * Record every client created from a metadata document, so an
+             * operator can see which apps have registered themselves.
+             *
+             * Only the client's public identifiers are logged. The event also
+             * carries Better Auth's endpoint context, which holds the auth
+             * secret, social provider credentials, and the request's cookies,
+             * and logging it would copy those into the persisted system logs.
+             *
+             * @param event - The plugin's description of the new client; only
+             *   its `client` fields are read.
+             */
+            onClientCreated: (event) => {
+                const { clientId, name, uri, redirectUris } = event.client;
+                log.info({ clientId, name, uri, redirectUris }, 'OAuth client registered from a client metadata document');
+            }
+        })
+    ];
 }
 
 /**

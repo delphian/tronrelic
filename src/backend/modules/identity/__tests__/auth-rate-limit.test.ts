@@ -25,7 +25,6 @@ import { EMAIL_OTP_THROTTLE, enforceEmailOtpLimit } from '../services/createEmai
 class FakeRedis implements IAuthRateLimitRedis {
     readonly counts = new Map<string, number>();
     readonly ttls = new Map<string, number>();
-    readonly values = new Map<string, string>();
     fail = false;
 
     /**
@@ -47,37 +46,6 @@ class FakeRedis implements IAuthRateLimitRedis {
             this.ttls.set(key, window);
         }
         return [count, this.ttls.get(key)];
-    }
-
-    /**
-     * Read a stored record.
-     *
-     * @param key - Key to read.
-     * @returns The stored string, or null when absent.
-     */
-    async get(key: string): Promise<string | null> {
-        if (this.fail) {
-            throw new Error('redis down');
-        }
-        return this.values.get(key) ?? null;
-    }
-
-    /**
-     * Store a record and remember its expiry.
-     *
-     * @param key - Key to write.
-     * @param value - Serialized record.
-     * @param _mode - Always `EX`.
-     * @param seconds - Expiry the caller asked for.
-     * @returns `OK`, as ioredis does.
-     */
-    async set(key: string, value: string, _mode: 'EX', seconds: number): Promise<unknown> {
-        if (this.fail) {
-            throw new Error('redis down');
-        }
-        this.values.set(key, value);
-        this.ttls.set(key, seconds);
-        return 'OK';
     }
 }
 
@@ -124,8 +92,8 @@ describe('createRedisRateLimitStorage', () => {
         const redis = new FakeRedis();
         const storage = createRedisRateLimitStorage(redis, 'tronrelic', buildLogger());
 
-        const first = await storage.consume!('1.2.3.4/sign-in/email-otp', { window: 60, max: 1 });
-        const second = await storage.consume!('1.2.3.4/sign-in/email-otp', { window: 60, max: 1 });
+        const first = await storage.consume('1.2.3.4/sign-in/email-otp', { window: 60, max: 1 });
+        const second = await storage.consume('1.2.3.4/sign-in/email-otp', { window: 60, max: 1 });
 
         expect(first.allowed).toBe(true);
         expect(second.allowed).toBe(false);
@@ -138,20 +106,10 @@ describe('createRedisRateLimitStorage', () => {
         const logger = buildLogger();
         const storage = createRedisRateLimitStorage(redis, 'tronrelic', logger);
 
-        const result = await storage.consume!('k', { window: 60, max: 1 });
+        const result = await storage.consume('k', { window: 60, max: 1 });
 
         expect(result).toEqual({ allowed: true, retryAfter: null });
         expect(logger.error).toHaveBeenCalled();
-    });
-
-    it('writes fallback records with an expiry so none live forever', async () => {
-        const redis = new FakeRedis();
-        const storage = createRedisRateLimitStorage(redis, 'tronrelic', buildLogger());
-
-        await storage.set('k', { key: 'k', count: 1, lastRequest: 0 });
-
-        expect(redis.ttls.get('tronrelic:auth:ratelimit:k')).toBeGreaterThan(0);
-        expect(await storage.get('k')).toEqual({ key: 'k', count: 1, lastRequest: 0 });
     });
 });
 

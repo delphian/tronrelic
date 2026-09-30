@@ -123,6 +123,22 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
 }
 
 /**
+ * Report whether `requireAdmin` admitted this request as a signed-in admin
+ * rather than through the `ADMIN_API_TOKEN` service token.
+ *
+ * Handlers that accept the service token in one direction but not the other
+ * (switching something off is fine from a script, switching it on needs a
+ * named person) cannot mount {@link requireAdminUser} on the whole route, so
+ * they call this instead and keep the same rule in one place.
+ *
+ * @param req - Express request, already tagged by `requireAdmin`.
+ * @returns True when a signed-in admin with a known user id made the request.
+ */
+export function isAdminUserRequest(req: Request): boolean {
+    return req.adminVia === 'user' && Boolean(req.userId);
+}
+
+/**
  * Narrow an already-authorized admin request to the human-operator path,
  * refusing the service token.
  *
@@ -147,7 +163,7 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
  * @param next - Express next function to pass control to the handler.
  */
 export function requireAdminUser(req: Request, res: Response, next: NextFunction): void {
-    if (req.adminVia === 'user' && req.userId) {
+    if (isAdminUserRequest(req)) {
         next();
     } else {
         res.status(403).json({

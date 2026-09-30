@@ -91,9 +91,10 @@ export class ChainQuerySession {
 
     /**
      * @param reader - The `ai-agent` account's read-only connection.
-     * @param context - The run identity from the governor. Its `queryId` becomes
-     *                  the quota key; absent on a call with no run id, which then
-     *                  counts against the account as a whole.
+     * @param context - The run identity from the governor. Its `quotaKey`, or
+     *                  failing that its `queryId` or `conversationId`, becomes the
+     *                  ClickHouse quota key. With none of them the call counts
+     *                  against the account as a whole.
      * @param deadlineMs - How long the call may spend reading before every read is cancelled.
      */
     constructor(
@@ -121,7 +122,7 @@ export class ChainQuerySession {
         let rows: T[];
         try {
             const result = await this.reader.query<T>(sql, params, {
-                quotaKey: this.context?.queryId ?? this.context?.conversationId,
+                quotaKey: this.context?.quotaKey ?? this.context?.queryId ?? this.context?.conversationId,
                 signal: this.controller.signal
             });
             this.totals.queries += 1;

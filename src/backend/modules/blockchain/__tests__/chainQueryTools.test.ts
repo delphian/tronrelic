@@ -159,6 +159,16 @@ describe(AI_TOOL_NAMES.addressTransfers, () => {
         expect(result.cost).toEqual(expect.objectContaining({ queries: reads.length }));
     });
 
+    it('charges reads to the entry point quota key ahead of the run id', async () => {
+        const { toolkit, reads } = buildToolkit(() => [transferRow()]);
+        const tool = buildAddressTransfersTool(toolkit);
+
+        await tool.handler({ address: WALLET }, undefined, { triggerPath: 'mcp', quotaKey: 'mcp-user:u1', queryId: 'run-1' });
+
+        expect(reads.length).toBeGreaterThan(0);
+        expect(reads.every(read => read.quotaKey === 'mcp-user:u1')).toBe(true);
+    });
+
     it('reports truncation with a cursor that continues after the last row', async () => {
         const { toolkit, reads } = buildToolkit(() => [transferRow(), transferRow({ tx_id: 'bb'.repeat(32) })]);
         const tool = buildAddressTransfersTool(toolkit);

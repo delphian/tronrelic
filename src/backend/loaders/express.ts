@@ -9,6 +9,7 @@ import { requestContext } from '../api/middleware/request-context.js';
 import { attachAuthSession } from '../api/middleware/auth-session.js';
 import { env } from '../config/env.js';
 import { corsOriginCallback } from '../config/cors.js';
+import { MCP_ENDPOINT_PATH } from '../modules/identity/services/oauth-server-config.js';
 
 export function createExpressApp(): Express {
   const app = express();
@@ -38,10 +39,12 @@ export function createExpressApp(): Express {
   // Node integration needs the original body to validate email-OTP
   // codes, OAuth callbacks, and passkey assertions. Skip them on
   // `/api/auth/*` so `toNodeHandler` (mounted by IdentityModule.run()) can
-  // read the body itself. Cookie-parser above is safe to leave global
-  // because it only reads headers.
-  app.use(skipForAuthRoutes(express.json({ limit: '5mb' })));
-  app.use(skipForAuthRoutes(express.urlencoded({ extended: true })));
+  // read the body itself. Skip them on `/mcp` too: the MCP endpoint checks
+  // the bearer token first and only then parses the body with its own small
+  // limit, so an anonymous caller cannot make the server read 5 MB. Cookie-parser
+  // above is safe to leave global because it only reads headers.
+  app.use(skipForRawBodyRoutes(express.json({ limit: '5mb' })));
+  app.use(skipForRawBodyRoutes(express.urlencoded({ extended: true })));
   app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
   // Serve uploaded files from /public/uploads directory
@@ -96,23 +99,46 @@ export function createExpressApp(): Express {
 }
 
 /**
- * Wrap an Express middleware so it skips itself on `/api/auth/*` paths.
+ * Every spelling of the MCP endpoint path that Express's default routing
+ * (case-insensitive, trailing slash optional) sends to the `/mcp` route.
+ * Built from the same constant the MCP resource URL is derived from, so the
+ * mounted route and this bypass cannot drift apart if the path changes.
+ */
+const ESCAPED_MCP_PATH = MCP_ENDPOINT_PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const MCP_PATH_PATTERN = new RegExp(`^${ESCAPED_MCP_PATH}/?$`, 'i');
+
+/**
+ * Wrap an Express middleware so it skips itself on paths that read their own
+ * request body.
  *
- * Used to keep the global body parsers from consuming the request
- * stream that Better Auth's Node handler needs to read. The wrapper
- * preserves the original middleware's signature so it composes
- * transparently with `app.use(...)`.
+ * Used to keep the global body parsers from consuming the request stream on
+ * `/api/auth/*`, which Better Auth's Node handler reads itself, and on `/mcp`,
+ * which parses its body only after the caller is authenticated. The wrapper
+ * preserves the original middleware's signature so it composes transparently
+ * with `app.use(...)`.
  *
- * @param middleware - Middleware to bypass on auth routes.
- * @returns A new middleware that calls through on `/api/auth/*` and
+ * @param middleware - Middleware to bypass on those paths.
+ * @returns A new middleware that calls straight through on those paths and
  *          delegates to the original elsewhere.
  */
-function skipForAuthRoutes(middleware: express.RequestHandler): express.RequestHandler {
-  return function authBypass(req, res, next): void {
-    if (req.path.startsWith('/api/auth/') || req.path === '/api/auth') {
+function skipForRawBodyRoutes(middleware: express.RequestHandler): express.RequestHandler {
+  /**
+   * Leave the request stream unread on paths that parse their own body, and
+   * run the wrapped parser everywhere else.
+   *
+   * @param req - Incoming request; its path decides whether to skip.
+   * @param res - Response, passed through to the wrapped parser.
+   * @param next - Continues the middleware chain.
+   */
+  return function rawBodyBypass(req, res, next): void {
+    // Express routes case-insensitively and ignores a trailing slash, so
+    // `app.all('/mcp')` also serves `/MCP` and `/mcp/`. Match the same set
+    // here, or those spellings would be body-parsed before authentication.
+    const readsOwnBody = req.path.startsWith('/api/auth/') || req.path === '/api/auth' || MCP_PATH_PATTERN.test(req.path);
+    if (readsOwnBody) {
       next();
-      return;
+    } else {
+      middleware(req, res, next);
     }
-    middleware(req, res, next);
   };
 }

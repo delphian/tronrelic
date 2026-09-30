@@ -25,11 +25,12 @@ import { useToast } from '../../../../components/ui/ToastProvider';
 import { PreferencesPanel } from '../../../notifications';
 import { signOut } from '../../lib/auth-client';
 import { WalletManager } from '../WalletManager';
-import type { IAccountIngestionProgress, ILinkedWallet, IPortfolioSummary } from '@/types';
+import { ConnectedAppsPanel } from '../ConnectedAppsPanel';
+import type { IAccountIngestionProgress, IConnectedApp, ILinkedWallet, IPortfolioSummary } from '@/types';
 import styles from './ProfileView.module.scss';
 
 /** The hub's tab ids; the `?tab=` value carried by each submenu node. */
-type ProfileTabId = 'profile' | 'wallets';
+type ProfileTabId = 'profile' | 'wallets' | 'connected-apps';
 
 /** The menu namespace the identity module registers the tab nodes under. */
 const SUBMENU_NAMESPACE = 'profile';
@@ -44,14 +45,24 @@ const SUBMENU_NAMESPACE = 'profile';
  * route types it as a string. Collapse that to the first entry before parsing,
  * so a crafted URL falls back to the default tab instead of throwing on `.match`.
  *
+ * The Connected apps tab is only accepted when the caller says it is available,
+ * so a user outside the MCP group who deep-links to `?tab=connected-apps` lands
+ * on Profile instead of a panel whose tab the menu hides from them.
+ *
  * @param value - A `?tab=` query value, a full node url carrying one, or the
  *   repeated-key array Next.js may hand the SSR `initialTab`.
+ * @param connectedAppsAvailable - Whether this user may see the Connected apps
+ *   tab, as decided on the server from their filtered menu tree.
  * @returns The matching tab id.
  */
-function resolveTab(value: string | string[] | undefined): ProfileTabId {
+function resolveTab(value: string | string[] | undefined, connectedAppsAvailable: boolean): ProfileTabId {
     const raw = Array.isArray(value) ? value[0] : value;
     const tab = raw?.match(/[?&]tab=([^&]+)/)?.[1] ?? raw;
-    return tab === 'wallets' ? 'wallets' : 'profile';
+    let resolved: ProfileTabId = 'profile';
+    if (tab === 'wallets' || (tab === 'connected-apps' && connectedAppsAvailable)) {
+        resolved = tab;
+    }
+    return resolved;
 }
 
 /**
@@ -96,7 +107,17 @@ export interface IProfileViewProps {
     initialPortfolio: IPortfolioSummary | null;
 
     /**
-     * SSR-fetched tab row nodes (Profile, Wallets) for the hub's submenu. Driving
+     * SSR-resolved connected apps (OAuth grants), seeding the Connected apps
+     * tab so it paints without a fetch. `null` means the tab is not available
+     * to this user: the menu only shows it to members of the MCP group, since
+     * only they can connect apps, and the server skips the fetch for everyone
+     * else. The panel is then not rendered and the tab cannot be deep-linked.
+     */
+    initialConnectedApps: IConnectedApp[] | null;
+
+    /**
+     * SSR-fetched tab row nodes (Profile, Wallets, and Connected apps for MCP
+     * group members) for the hub's submenu. Driving
      * the row through the menu service rather than a hand-rolled button array
      * gives it ordering and live `menu:update` refresh, and lets a plugin
      * contribute a tab by registering into the `profile` namespace.
@@ -135,6 +156,7 @@ export function ProfileView({
     initialWallets,
     initialProgress,
     initialPortfolio,
+    initialConnectedApps,
     submenuTree,
     submenuGeneratedAt,
     initialTab
@@ -142,7 +164,8 @@ export function ProfileView({
     const router = useRouter();
     const { push } = useToast();
     const [signingOut, setSigningOut] = useState(false);
-    const [activeTab, setActiveTab] = useState<ProfileTabId>(resolveTab(initialTab));
+    const connectedAppsAvailable = initialConnectedApps !== null;
+    const [activeTab, setActiveTab] = useState<ProfileTabId>(resolveTab(initialTab, connectedAppsAvailable));
 
     /**
      * Activate the clicked tab and keep its URL a real deep link.
@@ -157,10 +180,10 @@ export function ProfileView({
      * @param item - The clicked submenu node, carrying its `?tab=` url.
      */
     const handleTabSelect = useCallback((item: MenuNodeSerialized): void => {
-        const tab = resolveTab(item.url);
+        const tab = resolveTab(item.url, connectedAppsAvailable);
         setActiveTab(tab);
         window.history.replaceState(null, '', `/profile?tab=${tab}`);
-    }, []);
+    }, [connectedAppsAvailable]);
 
     /**
      * Sign the user out, then refresh so the route's auth gate re-evaluates and
@@ -234,6 +257,12 @@ export function ProfileView({
                     initialPortfolio={initialPortfolio}
                 />
             </Section>
+
+            {initialConnectedApps !== null && (
+                <Section gap="sm" style={{ display: activeTab === 'connected-apps' ? undefined : 'none' }}>
+                    <ConnectedAppsPanel initialApps={initialConnectedApps} />
+                </Section>
+            )}
         </Stack>
     );
 }

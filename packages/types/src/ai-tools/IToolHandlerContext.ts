@@ -23,6 +23,14 @@ export interface IToolHandlerContext {
     /** Per-query id of the run, when the provider supplied one. */
     queryId?: string;
 
+    /**
+     * Budget key the entry point chose, when it wants shared-quota spending
+     * charged to something other than the run (the MCP endpoint uses one key
+     * per user). A tool spending a shared budget uses this first, then
+     * `queryId`, then `conversationId`.
+     */
+    quotaKey?: string;
+
     /** Conversation the run belongs to, when it is part of a multi-turn chat. */
     conversationId?: string;
 

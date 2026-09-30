@@ -21,6 +21,7 @@
 import { createAuthClient } from 'better-auth/react';
 import { emailOTPClient } from 'better-auth/client/plugins';
 import { passkeyClient } from '@better-auth/passkey/client';
+import { oauthProviderClient } from '@better-auth/oauth-provider/client';
 
 /**
  * Configured Better Auth client.
@@ -30,9 +31,15 @@ import { passkeyClient } from '@better-auth/passkey/client';
  * modal can request and verify codes whether or not the server side
  * has Resend wired (the server returns an error if email-OTP is
  * disabled, which the modal surfaces as a toast).
+ *
+ * `oauthProviderClient` matters only on the `/oauth/authorize` page. When a
+ * connected app sends a user there, the page URL carries a signed
+ * authorization query, and the plugin copies it into every sign-in and
+ * consent request so the server can resume the authorization afterwards.
+ * On any other page the URL has no signature and the plugin adds nothing.
  */
 export const authClient = createAuthClient({
-    plugins: [emailOTPClient(), passkeyClient()]
+    plugins: [emailOTPClient(), passkeyClient(), oauthProviderClient()]
 });
 
 /**

@@ -105,6 +105,19 @@ export interface IAccountDirectoryService {
     getAccount(baUserId: string): Promise<IAccountSummary | null>;
 
     /**
+     * Fetch several account summaries in one query, for callers that label a
+     * page of rows with account details. Calling `getAccount` once per row
+     * costs one database round trip per row instead.
+     *
+     * @param baUserIds - Better Auth user ids. Meant for page-sized batches;
+     *   duplicates are allowed.
+     * @returns The summaries of the accounts that exist, in no particular
+     *   order. An id with no account, or one that is not a valid user id, is
+     *   left out rather than reported as an error.
+     */
+    getAccountsByIds(baUserIds: string[]): Promise<IAccountSummary[]>;
+
+    /**
      * List accounts with optional pagination and search.
      *
      * @param options - Pagination and filter options.

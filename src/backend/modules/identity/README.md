@@ -10,10 +10,12 @@ Owns Better Auth and everything keyed by the Better Auth user id: the auth insta
 | Module class | `src/backend/modules/identity/IdentityModule.ts` |
 | Admin page | `/system/users` (menu item `Users`, order 25, registered in `run()`) |
 | Service registry names | `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'` |
-| Mounted routes | `/api/auth/*`, `/api/user/wallets/*`, `/api/user/settings`, `/api/admin/users/groups/*`, `/api/admin/users` (accounts), `/api/admin/accounts/search` |
-| Types package | `@delphian/tronrelic-types` → `IWalletService`, `IAccountDirectoryService`, `IUserGroupService`, `IUserSettingsService` |
-| Auth collections | `module_user_auth_users` / `_sessions` / `_accounts` / `_verifications` / `_passkeys` |
-| Owned collections | `module_user_wallets`, `module_user_groups`, `module_user_settings` |
+| Mounted routes | `/api/auth/*`, `/.well-known/oauth-authorization-server`, `/api/user/wallets/*`, `/api/user/settings`, `/api/user/connected-apps`, `/api/user/oauth/authorize-context`, `/api/admin/users/groups/*`, `/api/admin/users` (accounts), `/api/admin/accounts/search` |
+| Types package | `@delphian/tronrelic-types` → `IWalletService`, `IAccountDirectoryService`, `IUserGroupService`, `IUserSettingsService`, `IConnectedAppsService`, `IConnectedApp`, `IConnectedAppAdminRow`, `IOAuthConsentContext`, `IMcpAccessTokenVerifier` |
+| Auth collections | `module_user_auth_users` / `_sessions` / `_accounts` / `_verifications` / `_passkeys` / `_jwks` / `_oauth_clients` / `_oauth_resources` / `_oauth_client_resources` / `_oauth_refresh_tokens` / `_oauth_access_tokens` / `_oauth_consents` / `_oauth_client_assertions` |
+| OAuth authorization server | Issuer = site origin; access tokens are JWTs bound to the MCP resource URL; consent page `/oauth/authorize`. See [OAuth Authorization Server](#oauth-authorization-server) |
+| Bootstrap getters | `getAccessTokenVerifier()`, `getConnectedAppsService()`, `getOAuthServerConfig()`, `getUserGroupService()`, `getAccountDirectoryService()` — consumed by the MCP module |
+| Owned collections | `module_user_wallets`, `module_user_groups`, `module_user_settings`, `module_user_connected_app_usage` |
 | Bootstrap order | Inits/runs after `TrafficModule` so traffic's `/api/admin/users/{traffic,analytics}` routers mount before the accounts `/api/admin/users` catch-all |
 
 ## Why This Module Exists Separately
@@ -33,7 +35,9 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 | `services/consumeRedisWindow.ts` | Atomic fixed-window counter in Redis (one Lua step for increment + expiry); shared by both limiters below |
 | `services/createRedisRateLimitStorage.ts` | Better Auth `rateLimit.customStorage` — moves BA's per-IP counters from process memory to Redis |
 | `services/createEmailOtpThrottle.ts` | `hooks.before` middleware adding per-email limits to the OTP send and check endpoints (`EMAIL_OTP_THROTTLE`) |
-| `services/IAuthRateLimitRedis.ts` | The three Redis commands the limiters use; the bootstrap ioredis client satisfies it |
+| `services/createMcpConsentGate.ts` | Better Auth plugin refusing `/oauth2/consent` approvals from users outside `mcp-users` (`enforceMcpConsentMembership`) |
+| `services/userGroups.ts` | `userGroups` — reads the loosely typed `groups` field off a Better Auth user; shared by the OAuth callbacks and the consent gate |
+| `services/IAuthRateLimitRedis.ts` | The one Redis command the limiters use (`eval`); the bootstrap ioredis client satisfies it |
 | `services/IIdentitySocketDisconnector.ts` | `disconnectUser(userId, sessionId?)` — the one WebSocket operation identity needs; `WebSocketService` implements it |
 | `services/user-id.ts` | `toUserKey` / `userIdFromKey` — BA user-id hex ↔ `_id` ObjectId conversion at the collection boundary; the opaque-hex-string contract |
 | `services/group.service.ts` | Membership primitive over the BA `groups` field; `ADMIN_GROUP_ID` |
@@ -49,6 +53,12 @@ Better Auth is the sole identity layer — the legacy UUID identity system was r
 | `api/accounts.{controller,routes}.ts` | `/api/admin/users` admin account directory (list + per-account group assignment) over the `'accounts'` service |
 | `database/IWalletDocument.ts` | `module_user_wallets` document + `ILinkedWallet` public shape |
 | `database/IUserGroupDocument.ts` | `module_user_groups` document |
+| `services/oauth-server-config.ts` | `resolveOAuthServerConfig` — issuer, MCP resource URL, metadata URL, and consent page path from one base URL |
+| `services/connected-apps.service.ts` | `IConnectedAppsService` singleton over Better Auth's adapter: list, full revoke, cached `hasGrant`, throttled `recordUse` |
+| `database/IConnectedAppUsageDocument.ts` | `module_user_connected_app_usage` document (`(userId, clientId)` → `lastUsedAt`) |
+| `services/hostOf.ts` | `hostOf` / `isLoopbackHost` — redirect-URI host parsing and the loopback list shared by the consent context and the connected-apps list |
+| `services/oauth-access-token.verifier.ts` | `IMcpAccessTokenVerifier`: local JWT verification (issuer, audience, `at+jwt`), DPoP refusal, live-grant check; signing keys read from the store at most once per 30 seconds (`JWKS_REFETCH_COOLDOWN_MS`) |
+| `api/connected-apps.{controller,routes}.ts` | `/api/user/connected-apps` (list, revoke) and `/api/user/oauth/authorize-context` (consent screen details) |
 
 ## Sign-in Rate Limiting
 
@@ -62,6 +72,31 @@ Email sign-in sends a six-digit one-time code (OTP). Two layers of limits protec
 The per-email layer exists because the per-IP layer alone lets anyone who rotates IP addresses keep guessing a victim's code, about three guesses a minute per extra address, or flood an inbox with codes. Refusals return `429` and log a warning with the email domain only.
 
 Both layers let a request through and log an error when Redis is unreachable, because refusing would stop every sign-in for the length of the outage. Codes are stored hashed (`storeOTP: 'hashed'`), so reading `module_user_auth_verifications` does not reveal a pending code. A recipient Resend refuses as invalid (`validation_error`) is logged as a warning; any other send failure is an error, because it stops all email sign-in.
+
+## OAuth Authorization Server
+
+The Better Auth instance is also an OAuth 2.1 authorization server, so connected apps (MCP clients such as Claude) can act for a user after that user signs in and approves them. `buildOAuthPlugins` in `auth.ts` adds four plugins:
+
+| Plugin | Configuration that matters |
+|---|---|
+| `jwt` | `issuer` set to the site origin (unset it would be `<origin>/api/auth`); session JWT header disabled; keys in `module_user_auth_jwks` |
+| `oauthProvider` | Scopes `mcp:tools` and `offline_access` (no `openid`); grants `authorization_code` and `refresh_token` only; one resource, the MCP URL, linked to every client by default; access tokens 15 minutes, refresh tokens 30 days with rotation and a 30-second reuse window; dynamic client registration off; only admins may create clients (`clientPrivileges`); login and consent page `/oauth/authorize` |
+| `mcp-consent-gate` | A `hooks.before` on `/oauth2/consent` that answers `403 access_denied` when a user outside `mcp-users` approves. Denials pass through |
+| `cimd` | Clients identify themselves with a metadata document URL, fetched through `@better-auth/cimd/node` (resolve-once, public addresses only, no redirects) after `assertPublicHttpUrl`; `metadataProfile: 'mcp-2026-07-28'` |
+
+**Who may hold a token.** `customAccessTokenClaims` runs on every issue and every refresh of a JWT access token (a request that names the MCP resource) and throws `invalid_grant` unless the user is in `mcp-users`. Better Auth does not call it when it issues an opaque token for a request without `resource`, so a user with a lingering consent can still obtain an opaque token; the MCP endpoint refuses those, which is what keeps them harmless. The consent gate refuses the approval itself for non-members, because Better Auth's consent endpoint needs only a session and would otherwise store a consent row that shows as a connected app and counts as a live grant, even though no token is ever issued for it. The MCP module re-checks membership per request as well.
+
+**Access tokens are JWTs only when the client sends `resource`.** Without it Better Auth issues an opaque token with no audience, which the MCP endpoint refuses. MCP clients are required to send it.
+
+**Revocation.** Better Auth's own consent deletion leaves refresh tokens working, and sign-out does not revoke refresh tokens carrying `offline_access`. `ConnectedAppsService.revoke` therefore deletes the consent, the refresh tokens, and any stored access tokens for the `(user, client)` pair. JWT access tokens cannot be recalled, so the verifier's `hasGrant` check (cached 30 seconds) is what cuts them off before they expire. The verifier passes the token's `iat`, and a token issued before the current consent was created is refused, so a user who revokes an app and reconnects it within 15 minutes does not bring back the tokens from before the revocation. Many users share one client id (every Claude user connects with the same metadata URL), which is why the grant alone cannot tell the two apart.
+
+**Last used.** Better Auth's tables do not record when an app last made a call, so the module keeps that in its own `module_user_connected_app_usage` collection, one row per `(userId, clientId)` under a unique index. The MCP endpoint calls `recordUse` for every request it accepts. The service writes at most once per grant every five minutes (an in-memory throttle per instance, with `$max` so two instances cannot move the time backwards), and a failed write is logged at `warn` and retried on the next call without failing the request. The connected-apps lists read every row for a page in one query, and `listAll` labels rows with emails through one `getAccountsByIds` call. `revoke` deletes the row, so a reconnected app starts with no last-use time.
+
+**Signing key reads.** Better Auth reads the signing keys again whenever an access token names a key id (`kid`) it has not cached. That header is read before the signature is checked, so a forged token with a random key id would otherwise cost a `module_user_auth_jwks` read on every request to `/mcp`. The verifier reads the store at most once every 30 seconds, and requests arriving during a read share it. Between reads it reuses the last key set, so a forged key id is refused with `401` without reaching the database. A read that fails is not cached, so the next request tries again, and a request that needed the read gets `503` rather than `401`. The same cooldown means a key added by rotation can take up to 30 seconds to be accepted; no automatic rotation is configured.
+
+**Discovery.** `/.well-known/oauth-authorization-server` is mounted at the site root with `oauthProviderAuthServerMetadata(auth)`. It advertises `client_id_metadata_document_supported` and the `none` token-endpoint auth method, which Claude requires before it will use client metadata documents.
+
+**Consent page.** `/oauth/authorize` (frontend `OAuthConsent`) is both the login page and the consent page. Signed out, it opens the sign-in dialog; the browser client's `oauthProviderClient` plugin copies the signed authorization query into the sign-in request, and Better Auth resumes the authorization afterwards. Signed in, it shows the app's self-declared name, the redirect host (flagging loopback-only clients), and the requested scopes, and posts the decision to `/api/auth/oauth2/consent`. Users outside `mcp-users` see only Deny, and the consent gate refuses an approval they post directly. The page is served with `frame-ancestors 'none'`. The signed query expires after 10 minutes, so a sign-in that takes longer must restart from the app.
 
 ## Keeping WebSocket Identity Current
 
@@ -96,6 +131,7 @@ Every method takes the resolved Better Auth user id first — the service never 
 |--------|---------|
 | `countAccounts()` | Total BA account count |
 | `getAccount(baUserId)` | One account summary, or null |
+| `getAccountsByIds(baUserIds)` | Summaries for a page of ids in one `$in` query; ids with no account are left out, order not guaranteed |
 | `listAccounts(options?)` | Paginated/searched summaries + unpaginated total |
 
 ### `'user-groups'` → `IUserGroupService`
@@ -130,6 +166,10 @@ First consumer: the notifications module persists per-user opt-outs here under t
 | GET | `/api/user/settings` | BA session | Caller's values + user-writable catalog |
 | PUT | `/api/user/settings` | BA session | Write one registered setting (`{namespace,key,value}`) |
 | DELETE | `/api/user/settings` | BA session | Clear one setting (`?namespace=&key=`) |
+| GET | `/api/user/connected-apps` | BA session | The caller's connected apps (`IConnectedApp[]`) |
+| DELETE | `/api/user/connected-apps?clientId=` | BA session | Revoke one of the caller's apps (consent and tokens) |
+| GET | `/api/user/oauth/authorize-context?client_id=&redirect_uri=&scope=` | BA session | `IOAuthConsentContext` for the consent screen |
+| GET | `/.well-known/oauth-authorization-server` | Public | OAuth authorization server metadata (RFC 8414) |
 | GET/POST | `/api/admin/users/groups` | `requireAdmin` | List / create group definitions |
 | GET/PATCH/DELETE | `/api/admin/users/groups/:id` | `requireAdmin` | Read / update / delete a definition |
 | GET | `/api/admin/users/groups/:id/members` | `requireAdmin` | Paginated member ids |
@@ -142,7 +182,7 @@ First consumer: the notifications module persists per-user opt-outs here under t
 
 ## Lifecycle
 
-**`init()`** constructs (in order) `GroupService` (with a membership listener that disconnects the user's sockets), `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, and the Better Auth instance (handed the injected `redis` client for its rate-limit counters and `socketDisconnector` for its session-delete hook), then wires the auth facade and builds the wallet + group + user-settings controllers. **`run()`** registers the `Users` menu item under the System container, mounts `/api/auth/*`, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`.
+**`init()`** constructs (in order) `GroupService` (with a membership listener that disconnects the user's sockets), `WalletService`, `UserGroupService` (seeds the `admin` group), `AccountDirectoryService`, `UserSettingsService`, the OAuth server config (from `BETTER_AUTH_URL`, falling back to `SITE_URL`, then to `http://localhost:3000` outside production; the same resolved URL becomes Better Auth's `baseURL`, so the auth server and the OAuth issuer cannot disagree), and the Better Auth instance (handed the injected `redis` client for its rate-limit counters, `socketDisconnector` for its session-delete hook, and the OAuth config), then wires the auth facade, builds `ConnectedAppsService` (creating its last-use index) and `OAuthAccessTokenVerifier`, and builds the wallet + group + user-settings + connected-apps controllers. **`run()`** registers the `Users` menu item under the System container and the profile tab row (the `Connected apps` tab carries `requiresGroups: ['mcp-users']`), mounts `/api/auth/*`, `/.well-known/oauth-authorization-server`, the connected-apps and consent-context routers, the wallet router, the user-settings router, the admin group router, the admin accounts router (`/api/admin/users`, the `/:id` catch-all, last), and the admin account-search router (`/api/admin/accounts`, a dedicated literal prefix), then registers `'user-groups'`, `'wallets'`, `'accounts'`, `'user-settings'`.
 
 ## Related
 

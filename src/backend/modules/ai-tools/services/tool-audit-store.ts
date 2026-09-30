@@ -90,6 +90,10 @@ export class ToolAuditStore {
         await this.database.createIndex(COLLECTION, { createdAt: -1 });
         await this.database.createIndex(COLLECTION, { toolName: 1, createdAt: -1 });
         await this.database.createIndex(COLLECTION, { status: 1, createdAt: -1 });
+        // Backs the Activity feed filtered to one trigger path, newest first.
+        // `/system/mcp` always opens it locked to `mcp`, so without this the
+        // read walks the createdAt index across every other path's records.
+        await this.database.createIndex(COLLECTION, { triggerPath: 1, createdAt: -1 });
         // Backs the Query tab's per-conversation "tools used" feed — a
         // conversationId-scoped read newest-first. Sparse because only calls
         // driven from a multi-turn chat carry a conversationId.

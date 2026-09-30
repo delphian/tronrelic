@@ -34,6 +34,15 @@ export { AuthModal } from './components';
 export type { IAuthModalProps } from './components';
 
 // =============================================================================
+// Components — OAuth connected apps (consent screen and grant tables)
+// =============================================================================
+
+export { OAuthConsent } from './components';
+export type { IOAuthConsentProps } from './components';
+export { ConnectedAppsTable, connectedAppKey } from './components';
+export type { IConnectedAppRow, IConnectedAppsTableProps } from './components';
+
+// =============================================================================
 // Components — `/system/users` identity dashboards
 // =============================================================================
 

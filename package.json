@@ -53,11 +53,15 @@
     "setup": "./scripts/setup.sh"
   },
   "dependencies": {
-    "@better-auth/passkey": "1.6.26",
+    "@better-auth/cimd": "1.7.6",
+    "@better-auth/oauth-provider": "1.7.6",
+    "@better-auth/passkey": "1.7.6",
     "@clickhouse/client": "^1.8.1",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@modelcontextprotocol/node": "2.1.0",
+    "@modelcontextprotocol/server": "2.2.0",
     "@noble/hashes": "^1.8.0",
     "@reduxjs/toolkit": "^2.2.5",
     "@scure/bip32": "^1.4.0",
@@ -66,7 +70,7 @@
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "axios": "^1.7.5",
-    "better-auth": "1.6.26",
+    "better-auth": "1.7.6",
     "bullmq": "^5.8.2",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.7",
@@ -117,7 +121,7 @@
     "socket.io-client": "^4.7.5",
     "tronweb": "^5.3.1",
     "uuid": "^11.1.1",
-    "zod": "^4.0.0"
+    "zod": "^4.2.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.1",
@@ -146,7 +150,7 @@
     "vitest": "^4.0.1"
   },
   "overrides": {
-    "@better-auth/core": "1.6.26",
+    "@better-auth/core": "1.7.6",
     "express": {
       "path-to-regexp": "~0.1.13"
     },

@@ -217,6 +217,9 @@ function toHandlerContext(ctx: IToolInvocationContext): IToolHandlerContext {
     if (ctx.queryId) {
         handlerContext.queryId = ctx.queryId;
     }
+    if (ctx.quotaKey) {
+        handlerContext.quotaKey = ctx.quotaKey;
+    }
     if (ctx.conversationId) {
         handlerContext.conversationId = ctx.conversationId;
     }
@@ -461,6 +464,14 @@ export class AiToolGovernor implements IAiToolGovernor {
             return this.fail(name, providerId, input, ctx, cap, 'denied', `Tool "${name}" is not in this query's tool allowlist.`);
         }
 
+        // An MCP call must carry the set of tools an admin exposed to MCP. On
+        // every other path a missing allowlist means "no per-query restriction",
+        // but on this path it would mean every enabled tool is reachable by a
+        // non-admin user, so a caller that forgot to pass one fails closed.
+        if (ctx.triggerPath === 'mcp' && !ctx.toolAllowlist) {
+            return this.fail(name, providerId, input, ctx, cap, 'denied', 'MCP calls must carry the list of tools exposed to MCP.');
+        }
+
         const schemaError = validateInput(input, tool.inputSchema);
         if (schemaError) {
             return this.fail(name, providerId, input, ctx, cap, 'denied', schemaError);
@@ -661,7 +672,7 @@ export class AiToolGovernor implements IAiToolGovernor {
                 // the provider's cheap model before the main model can act on it.
                 // A no-op when the screen is disabled, unconfigured, or posture-
                 // gated off (see screenUntrusted).
-                const screened = await this.screenUntrusted(tool, result, ctx.aiProviderId);
+                const screened = await this.screenUntrusted(tool, result, ctx);
                 screenOutcome = screened.screen;
                 if (screened.withhold) {
                     // The screen judged the result hostile (or failed closed): the
@@ -758,8 +769,12 @@ export class AiToolGovernor implements IAiToolGovernor {
      * approval controls: the provider's cheap model classifies the result in
      * isolation, and a flagged result is withheld from the model entirely.
      *
-     * Every gate is configuration, never hard-coded — the master switch, the
+     * Every gate but the first is configuration — the master switch, the
      * posture mode, and the failure mode all come from the admin-tuned config:
+     *  - the call is on the `mcp` trigger path → skip. Each screen is a model
+     *    call the platform pays for, and an MCP user's client can issue calls
+     *    at will. The result is still provenance-wrapped by the caller, which
+     *    is the protection that travels with it into the user's model;
      *  - screen disabled, or no screen deps wired → no-op, forward as before;
      *  - `trifecta` posture and no egress sink enabled → skip (nothing to
      *    exfiltrate to, so the screen would defend an unreachable path);
@@ -773,16 +788,18 @@ export class AiToolGovernor implements IAiToolGovernor {
      *
      * @param tool - The tool whose untrusted result is being screened.
      * @param result - The handler's raw return value.
-     * @param providerId - Manifest id of the provider actually running the query
-     *   (from the invocation context). The screen runs on this provider's cheap
-     *   model, not the globally-active one, so a scheduled prompt pinned to a
-     *   non-active provider is still screened by the provider that produced the
-     *   result; falls back to the active provider when the pinned one is absent.
+     * @param ctx - The invocation context. Its trigger path decides whether the
+     *   screen runs at all, and its `aiProviderId` names the provider actually
+     *   running the query. The screen runs on that provider's cheap model, not
+     *   the globally-active one, so a scheduled prompt pinned to a non-active
+     *   provider is still screened by the provider that produced the result;
+     *   falls back to the active provider when the pinned one is absent.
      * @returns The screen outcome (for the audit record) and whether to withhold.
      */
-    private async screenUntrusted(tool: IAiTool, result: unknown, providerId: string): Promise<{ screen?: { flagged: boolean; reason?: string }; withhold: boolean }> {
+    private async screenUntrusted(tool: IAiTool, result: unknown, ctx: IToolInvocationContext): Promise<{ screen?: { flagged: boolean; reason?: string }; withhold: boolean }> {
         const deps = this.screen;
-        if (!deps) {
+        const providerId = ctx.aiProviderId;
+        if (!deps || ctx.triggerPath === 'mcp') {
             return { withhold: false };
         }
         const cfg = deps.config.get();
@@ -1015,6 +1032,11 @@ export class AiToolGovernor implements IAiToolGovernor {
             // or whitespace-only id is not a real principal, so it is not
             // recorded — keeping junk attribution out of the audit trail.
             record.endUserId = ctx.endUser.userId;
+        }
+        if (ctx.origin) {
+            // The connected app, credential id, and address an MCP call arrived
+            // through, so an operator can trace a call to the grant to revoke.
+            record.origin = { ...ctx.origin };
         }
         if (extra.resultDigest !== undefined) {
             record.resultDigest = extra.resultDigest;

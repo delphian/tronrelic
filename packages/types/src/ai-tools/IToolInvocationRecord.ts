@@ -8,6 +8,7 @@
 
 import type { IAiToolCapability } from './IAiToolCapability.js';
 import type { IToolInvocationActor, ToolTriggerPath } from './IToolInvocationContext.js';
+import type { IToolInvocationOrigin } from './IToolInvocationOrigin.js';
 import type { ToolInvocationStatus } from './IToolInvocationResult.js';
 
 /** A single governed tool invocation, persisted to the audit store. */
@@ -43,6 +44,13 @@ export interface IToolInvocationRecord {
      * against. Absent on admin/scheduled/programmatic runs.
      */
     endUserId?: string;
+
+    /**
+     * The external client, credential id, and IP address the call arrived
+     * through, when it entered over MCP. Lets an operator trace a call to the
+     * connected app and grant that made it. Absent on every other path.
+     */
+    origin?: IToolInvocationOrigin;
 
     /** Per-query id, when supplied — links the call to its run. */
     queryId?: string;

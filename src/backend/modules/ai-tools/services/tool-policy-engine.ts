@@ -19,6 +19,12 @@
  * process-local in-memory counter: fail-safe per-instance limiting, never
  * fail-open and never a self-inflicted denial.
  *
+ * Calls on the `mcp` trigger path come from a non-admin user's own AI client,
+ * so they get extra gates: the call must carry an end-user principal, the tool
+ * must pass the MCP eligibility floor, a tool needing approval is refused
+ * rather than parked, and each user has their own rate budget so one user
+ * cannot use up everyone else's.
+ *
  * The engine is provider-neutral and owns no I/O beyond loading and persisting
  * admin overrides through the injected database and incrementing the rate
  * counters through the injected Redis client.
@@ -34,6 +40,7 @@ import type {
     IToolPolicyDecision,
     IUntrustedScreenConfig
 } from '@/types';
+import { getMcpToolIneligibility } from '@/types';
 
 /** Core `_kv` key (manually namespaced) for per-tool policy overrides. */
 const POLICY_OVERRIDES_KEY = 'ai-tools:policy-overrides';
@@ -50,6 +57,17 @@ const RATE_DEFAULTS: Record<IAiToolCapability['sideEffect'], { max: number; wind
 
 /** Global ceiling across every tool in one window — a backstop against fan-out. */
 const GLOBAL_RATE = { max: 240, windowMs: 60_000 };
+
+/**
+ * Per-user ceiling on one tool over MCP. The per-tool and global windows above
+ * are shared by every caller, so without a per-user window one MCP user's
+ * looping client could use up a tool's whole budget and lock out admins and
+ * every other MCP user.
+ */
+const MCP_USER_TOOL_RATE = { max: 30, windowMs: 60_000 };
+
+/** Per-user ceiling across every tool over MCP, for the same reason. */
+const MCP_USER_RATE = { max: 60, windowMs: 60_000 };
 
 /** Fixed window over which a tool's spend accumulates against its cost ceiling. */
 const COST_WINDOW_MS = 86_400_000;
@@ -108,7 +126,16 @@ export interface IScreenThresholdSource {
 interface IWindowState {
     windowStart: number;
     count: number;
+    /** Length of this counter's window, so an expired entry can be pruned without knowing its key's policy. */
+    windowMs: number;
 }
+
+/**
+ * Size at which the in-memory fallback sweeps out expired windows. The MCP
+ * path keys counters per user, so while Redis is down the map would otherwise
+ * gain an entry for every user and tool pair and never release it.
+ */
+const MEM_WINDOWS_SWEEP_AT = 10_000;
 
 /** Per-tool usage tally surfaced to the admin policy view. */
 interface IToolCounters {
@@ -124,6 +151,14 @@ interface IToolCounters {
  */
 export class ToolPolicyEngine {
     private readonly memWindows = new Map<string, IWindowState>();
+
+    /**
+     * Map size at which the next new key triggers a sweep. Raised after each
+     * sweep to twice the surviving size, so a map full of live windows is not
+     * scanned end to end on every new key.
+     */
+    private memSweepAt = MEM_WINDOWS_SWEEP_AT;
+
     private readonly counters = new Map<string, IToolCounters>();
     private overrides: Record<string, IToolPolicy> = {};
     private curationTypeResolver: ((typeId: string) => boolean) | null = null;
@@ -311,8 +346,10 @@ export class ToolPolicyEngine {
      * gates consumes nothing; a rate or cost denial leaves only the conservative
      * increment its fixed-window counter uses (never an over-admit).
      *
-     * Order: object-authorization precondition, autonomous-path default-deny for
-     * external tools, approval, rate limiting, then the cost ceiling. Both the
+     * Order: the `mcp`-path floor (on that path only), object-authorization
+     * precondition, autonomous-path default-deny for external tools, the
+     * untrusted-content screen throttle, approval, rate limiting, then the cost
+     * ceiling. Both the
      * rate and cost budgets are charged atomically (INCR-then-compare) so two
      * concurrent calls can never both be admitted past a limit. Cost is charged
      * last, so a call the rate gate already rejected never touches the dollar
@@ -332,9 +369,19 @@ export class ToolPolicyEngine {
         // undefined when the tool is not cost-capped.
         const costCap = this.costCapFor(cap, policy);
 
+        const mcpDenial = ctx.triggerPath === 'mcp' ? this.mcpDenialReason(tool, ctx, policy) : null;
+
         let decision: IToolPolicyDecision;
-        if (cap.operatesOnUserOwnedObjects === true && !ctx.endUser?.userId?.trim()) {
-            // Confused-deputy guard, evaluated first. A tool scoped to a
+        if (mcpDenial !== null) {
+            // Evaluated first on the MCP path. The MCP module already lists only
+            // exposed, eligible tools, but a confused or injected model can name
+            // any tool, and this floor must hold even if the module's own
+            // filtering is wrong.
+            counters.denied++;
+            decision = { verdict: 'deny', reason: mcpDenial };
+        } else if (cap.operatesOnUserOwnedObjects === true && !ctx.endUser?.userId?.trim()) {
+            // Confused-deputy guard, evaluated first on every path except `mcp`,
+            // where the MCP floor above already requires an end user. A tool scoped to a
             // specific end user's objects has no meaning under the actor's
             // ambient server/admin authority — there is no principal to
             // authorize the object access against — so deny rather than let it
@@ -342,8 +389,9 @@ export class ToolPolicyEngine {
             // actor's `kind` does not satisfy this: an admin is ambient
             // authority, not a specific end user. A blank or whitespace-only
             // `userId` is treated as no principal at all — it would scope to
-            // nothing, so it must not pass the gate. Inert until a non-admin
-            // path supplies a real `ctx.endUser`; no tool declares the flag today.
+            // nothing, so it must not pass the gate. No tool declares the flag
+            // today; the `mcp` path is the first non-admin path to supply a
+            // real `ctx.endUser`.
             counters.denied++;
             decision = {
                 verdict: 'deny',
@@ -366,7 +414,7 @@ export class ToolPolicyEngine {
         } else if (policy.requireApproval) {
             counters.needsApproval++;
             decision = { verdict: 'needs-approval', reason: 'This tool requires human approval before it runs.' };
-        } else if (policy.rateLimit && !(await this.consumeRate(tool.name, policy.rateLimit))) {
+        } else if ((policy.rateLimit || ctx.triggerPath === 'mcp') && !(await this.consumeRate(tool.name, policy.rateLimit || undefined, ctx))) {
             counters.rateLimited++;
             counters.denied++;
             decision = { verdict: 'deny', reason: `Rate limit exceeded for "${tool.name}". Try again shortly.` };
@@ -384,6 +432,37 @@ export class ToolPolicyEngine {
             decision = { verdict: 'allow' };
         }
         return decision;
+    }
+
+    /**
+     * Decide whether an `mcp` call must be refused before any other gate runs.
+     *
+     * The MCP path has no admin present and a model the platform does not
+     * control, so three rules apply on top of the usual ones. The call must name
+     * the end user it runs for, because per-user rate limits and the audit trail
+     * key on it. The tool must pass the eligibility floor that
+     * {@link getMcpToolIneligibility} defines. And a tool whose effective policy
+     * requires approval is refused outright: parking a public user's call in the
+     * admin approval queue does not scale, and a user's client cannot wait on it.
+     *
+     * @param tool - The resolved tool.
+     * @param ctx - The invocation context, already known to be on the `mcp` path.
+     * @param policy - The tool's effective policy, carrying any admin override.
+     * @returns The denial reason, or null when the MCP-specific gates pass.
+     */
+    private mcpDenialReason(tool: IAiTool, ctx: IToolInvocationContext, policy: IToolPolicy): string | null {
+        let reason: string | null = null;
+        if (!ctx.endUser?.userId?.trim()) {
+            reason = 'MCP calls must carry the signed-in user they run for.';
+        } else {
+            const ineligible = getMcpToolIneligibility(tool.capability);
+            if (ineligible !== null) {
+                reason = `Tool "${tool.name}" is not available over MCP. ${ineligible}`;
+            } else if (policy.requireApproval) {
+                reason = `Tool "${tool.name}" requires admin approval, which is not available over MCP.`;
+            }
+        }
+        return reason;
     }
 
     /**
@@ -527,14 +606,46 @@ export class ToolPolicyEngine {
      * increment-before-reject the platform's API rate limiter accepts. It only
      * over-rejects, never over-admits, so the ceiling holds.
      *
+     * On the `mcp` path two more windows are charged, keyed by the end user:
+     * one for this tool and one across all tools. They keep one user's client
+     * from spending the shared budget everyone else draws on. They are charged
+     * first, and the shared windows are charged only when the call fits them,
+     * so a user who is already over their own budget cannot keep ticking the
+     * shared counters and lock out admins and every other MCP user.
+     *
+     * The per-user windows do not depend on the tool's own limit. An admin
+     * override that removes a tool's rate limit relaxes the shared windows
+     * only, and must not leave MCP users unbounded.
+     *
+     * The two counters in each pair are independent, so each pair is charged
+     * in parallel to save a round trip to Redis.
+     *
      * @param name - Tool name.
-     * @param limit - The tool's effective rate limit.
-     * @returns `true` when the invocation fits both windows.
+     * @param limit - The tool's effective rate limit, or undefined when an
+     *   override removed it; the per-tool and global windows are then skipped.
+     * @param ctx - The invocation context; its trigger path and end user decide
+     *   whether the per-user windows apply.
+     * @returns `true` when the invocation fits every window that applies.
      */
-    private async consumeRate(name: string, limit: { max: number; windowMs: number }): Promise<boolean> {
-        const toolCount = await this.hit(`tool:${name}`, limit.windowMs);
-        const globalCount = await this.hit(GLOBAL_KEY, GLOBAL_RATE.windowMs);
-        return toolCount <= limit.max && globalCount <= GLOBAL_RATE.max;
+    private async consumeRate(name: string, limit: { max: number; windowMs: number } | undefined, ctx: IToolInvocationContext): Promise<boolean> {
+        let withinUserLimits = true;
+        const userId = ctx.endUser?.userId?.trim();
+        if (ctx.triggerPath === 'mcp' && userId) {
+            const [userToolCount, userCount] = await Promise.all([
+                this.hit(`mcp-user:${userId}:tool:${name}`, MCP_USER_TOOL_RATE.windowMs),
+                this.hit(`mcp-user:${userId}`, MCP_USER_RATE.windowMs)
+            ]);
+            withinUserLimits = userToolCount <= MCP_USER_TOOL_RATE.max && userCount <= MCP_USER_RATE.max;
+        }
+        let withinSharedLimits = true;
+        if (withinUserLimits && limit) {
+            const [toolCount, globalCount] = await Promise.all([
+                this.hit(`tool:${name}`, limit.windowMs),
+                this.hit(GLOBAL_KEY, GLOBAL_RATE.windowMs)
+            ]);
+            withinSharedLimits = toolCount <= limit.max && globalCount <= GLOBAL_RATE.max;
+        }
+        return withinUserLimits && withinSharedLimits;
     }
 
     /**
@@ -587,6 +698,10 @@ export class ToolPolicyEngine {
     /**
      * In-memory fixed-window increment: roll the window when elapsed, then count.
      *
+     * Before a new key is added to a full map, expired windows are swept out,
+     * so per-user MCP counters created during a Redis outage do not
+     * accumulate for the life of the process.
+     *
      * @param key - Counter key.
      * @param windowMs - Window duration.
      * @returns The counter's value after this increment.
@@ -595,11 +710,33 @@ export class ToolPolicyEngine {
         const now = Date.now();
         let window = this.memWindows.get(key);
         if (!window || now - window.windowStart >= windowMs) {
-            window = { windowStart: now, count: 0 };
+            if (!window && this.memWindows.size >= this.memSweepAt) {
+                this.sweepExpiredWindows(now);
+                // Sweep again only after the map doubles, so the cost of
+                // each sweep is spread over the inserts that preceded it.
+                this.memSweepAt = Math.max(MEM_WINDOWS_SWEEP_AT, this.memWindows.size * 2);
+            }
+            window = { windowStart: now, count: 0, windowMs };
             this.memWindows.set(key, window);
         }
         window.count++;
         return window.count;
+    }
+
+    /**
+     * Drop every in-memory window whose period has ended. An expired window
+     * would be reset on its next hit anyway, so removing it loses nothing and
+     * keeps the fallback map bounded by the number of active counters.
+     *
+     * @param now - Current time in milliseconds, shared with the caller so
+     *   the sweep and the new window agree on what has expired.
+     */
+    private sweepExpiredWindows(now: number): void {
+        for (const [key, window] of this.memWindows) {
+            if (now - window.windowStart >= window.windowMs) {
+                this.memWindows.delete(key);
+            }
+        }
     }
 
     /**

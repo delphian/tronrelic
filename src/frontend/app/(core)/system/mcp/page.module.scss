@@ -1,0 +1,188 @@
+@use '../../../breakpoints' as *;
+
+/* Tab row and the active panel below it, matching /system/address-tags. */
+.submenu {
+    margin-top: var(--gap-sm);
+}
+
+.content {
+    margin-top: var(--gap-md);
+}
+
+/* ---------------------------------------------------------------------------
+ * Kill switch
+ *
+ * A full-width card whose border and wash carry the endpoint's state, so the
+ * state reads from across the room: danger while the endpoint is live (it is
+ * the state an operator may need to end), muted while it is off. Declared as a
+ * container so the action drops below the label in a narrow panel.
+ * ------------------------------------------------------------------------- */
+.kill_switch {
+    container-type: inline-size;
+    container-name: mcp-kill-switch;
+    border-width: var(--border-width-medium);
+}
+
+.kill_switch--on {
+    border-color: var(--color-danger-alpha-60);
+    background: var(--color-danger-alpha-18);
+}
+
+.kill_switch--off {
+    border-color: var(--color-border-strong);
+}
+
+.kill_switch__body {
+    display: flex;
+    gap: var(--gap-md);
+    align-items: center;
+    justify-content: space-between;
+}
+
+.kill_switch__state {
+    display: flex;
+    gap: var(--gap-md);
+    align-items: center;
+    min-width: 0;
+}
+
+.kill_switch__label {
+    font-size: var(--font-size-heading-md);
+    font-weight: var(--font-weight-bold);
+    line-height: var(--line-height-tight);
+    color: var(--color-text);
+}
+
+.kill_switch__detail {
+    margin-top: var(--gap-2xs);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+.kill_switch__icon_on {
+    flex-shrink: 0;
+    color: var(--color-danger);
+}
+
+.kill_switch__icon_off {
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+}
+
+@container mcp-kill-switch (max-width: #{$breakpoint-mobile-lg}) {
+    .kill_switch__body {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .kill_switch__label {
+        font-size: var(--font-size-heading-sm);
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * Overview
+ * ------------------------------------------------------------------------- */
+.card_title {
+    font-size: var(--font-size-heading-sm);
+}
+
+/* Explanatory paragraph above a panel; tracks the panel width. */
+.intro {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+}
+
+.url_row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
+    align-items: center;
+}
+
+.url {
+    padding: var(--padding-xs) var(--padding-sm);
+    border: var(--border-width-thin) solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body);
+    overflow-wrap: anywhere;
+}
+
+.facts {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+    gap: var(--gap-sm) var(--gap-md);
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+
+    dt {
+        font-size: var(--font-size-caption);
+        font-weight: var(--font-weight-semibold);
+        letter-spacing: var(--letter-spacing-wide);
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+    }
+
+    dd {
+        margin: 0;
+        color: var(--color-text);
+        overflow-wrap: anywhere;
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * Tools
+ * ------------------------------------------------------------------------- */
+.tool_name {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}
+
+.tool_meta {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+}
+
+.badge_row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--badge-gap);
+    align-items: center;
+}
+
+/* Narrow containers: stack each tool row as a card, surfacing each dropped
+   column header through the cell's data-label. */
+@container table (max-width: #{$breakpoint-mobile-lg}) {
+    .tools_table thead {
+        display: none;
+    }
+
+    .tools_table tr {
+        display: block;
+        padding: var(--padding-sm);
+        border-bottom: var(--border-width-thin) solid var(--color-border);
+    }
+
+    .tools_table td {
+        display: block;
+        padding: var(--padding-2xs) 0;
+        border-bottom: none;
+    }
+
+    .tools_table td::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: var(--gap-2xs);
+        font-size: var(--font-size-caption);
+        font-weight: var(--font-weight-semibold);
+        letter-spacing: var(--letter-spacing-wide);
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+    }
+}
