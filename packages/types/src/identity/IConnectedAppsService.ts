@@ -42,6 +42,18 @@ export interface IConnectedAppsService {
     revoke(userId: string, clientId: string): Promise<boolean>;
 
     /**
+     * Revoke every app one user has authorized. The identity module calls this
+     * when the user leaves the MCP group, so the stored consents and refresh
+     * tokens cannot bring an app back without new consent if the user is added
+     * again later. While they are out of the group they also cannot reach the
+     * Connected apps tab to revoke the apps themselves.
+     *
+     * @param userId - Better Auth user id.
+     * @returns How many apps had a grant that was revoked.
+     */
+    revokeAllForUser(userId: string): Promise<number>;
+
+    /**
      * Whether a user still has a live grant for an app. The MCP endpoint's
      * token check calls this, so a revoked grant stops working before its
      * access tokens expire.

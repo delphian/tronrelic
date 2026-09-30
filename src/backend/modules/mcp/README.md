@@ -118,7 +118,7 @@ All under `/api/admin/mcp`. Changes that widen access need a signed-in admin (`r
 | Kill switch off | Within 5 seconds on every instance (settings cache) |
 | Tool withdrawn | Next request on this instance, within 5 seconds on others (approvals cache) |
 | App revoked (by user or admin) | Refresh tokens at once; access tokens on the next request on this instance, within 30 seconds on others (grant cache) |
-| User removed from `mcp-users` | Within 30 seconds (principal cache); the identity module also refuses their next token refresh |
+| User removed from `mcp-users` | Within 30 seconds (principal cache). The identity module also revokes all of the user's connected apps, so adding them back later needs new consent |
 | Access token expiry | 15 minutes |
 
 ## Deployment

@@ -23,7 +23,7 @@ function createDeps(groupExists = false): IMcpModuleDependencies & { app: { use:
         governor: { invoke: vi.fn(), recordServerToolInvocation: vi.fn() },
         toolRegistry: { listToolInfo: vi.fn(() => []), getEnabledTools: vi.fn(() => []), getTool: vi.fn() } as any,
         tokenVerifier: { verify: vi.fn(async () => null) },
-        connectedApps: { listForUser: vi.fn(), listAll: vi.fn(), revoke: vi.fn(), hasGrant: vi.fn(), recordUse: vi.fn() },
+        connectedApps: { listForUser: vi.fn(), listAll: vi.fn(), revoke: vi.fn(), revokeAllForUser: vi.fn(), hasGrant: vi.fn(), recordUse: vi.fn() },
         userGroups: {
             getGroup: vi.fn(async () => (groupExists ? { id: MCP_USERS_GROUP_ID } : null)),
             createGroup: vi.fn(async () => ({})),

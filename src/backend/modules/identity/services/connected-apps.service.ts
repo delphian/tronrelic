@@ -246,6 +246,24 @@ export class ConnectedAppsService implements IConnectedAppsService {
     }
 
     /** @inheritdoc */
+    async revokeAllForUser(userId: string): Promise<number> {
+        const adapter = await this.getAdapter();
+        const where = [{ field: 'userId', value: userId }];
+        // Tokens can outlive their consent row, so every table is read for
+        // client ids, not only the consents.
+        const rows = await Promise.all([
+            adapter.findMany<{ clientId: string }>({ model: 'oauthConsent', where }),
+            adapter.findMany<{ clientId: string }>({ model: 'oauthRefreshToken', where }),
+            adapter.findMany<{ clientId: string }>({ model: 'oauthAccessToken', where })
+        ]);
+        const clientIds = [...new Set(rows.flat().map(row => row.clientId))];
+        // Each app goes through `revoke`, so the grant cache and the last-use
+        // rows are cleared the same way as a revocation from the profile page.
+        const results = await Promise.all(clientIds.map(clientId => this.revoke(userId, clientId)));
+        return results.filter(Boolean).length;
+    }
+
+    /** @inheritdoc */
     async hasGrant(userId: string, clientId: string, issuedAt?: number): Promise<boolean> {
         const key = grantKey(userId, clientId);
         const now = Date.now();
