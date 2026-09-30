@@ -13,6 +13,10 @@ export { SessionProvider, useAuthSession } from './SessionProvider';
 export type { IAuthSessionContext, ISessionProviderProps } from './SessionProvider';
 export { AuthModal } from './AuthModal';
 export type { IAuthModalProps } from './AuthModal';
+export { OAuthConsent } from './OAuthConsent';
+export type { IOAuthConsentProps } from './OAuthConsent';
+export { ConnectedAppsTable, connectedAppKey } from './ConnectedAppsTable';
+export type { IConnectedAppRow, IConnectedAppsTableProps } from './ConnectedAppsTable';
 
 // Admin components — identity only; traffic panels live in modules/traffic
 export { UsersMonitor } from './admin';

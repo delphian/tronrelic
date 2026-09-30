@@ -239,6 +239,23 @@ const nextConfig = {
                 source: '/uploads/:path*',
                 destination: `${resolveInternalApiOrigin()}/uploads/:path*`,
             },
+            // The MCP endpoint and the OAuth discovery documents live on the
+            // backend but must be reachable at the site root, because MCP
+            // clients derive their URLs from the public origin. Production
+            // Nginx routes these straight to the backend; these rewrites cover
+            // local development and any proxy that sends `/` to Next.js.
+            {
+                source: '/mcp',
+                destination: `${resolveInternalApiOrigin()}/mcp`,
+            },
+            {
+                source: '/.well-known/oauth-protected-resource/:path*',
+                destination: `${resolveInternalApiOrigin()}/.well-known/oauth-protected-resource/:path*`,
+            },
+            {
+                source: '/.well-known/oauth-authorization-server',
+                destination: `${resolveInternalApiOrigin()}/.well-known/oauth-authorization-server`,
+            },
         ];
     },
     async headers() {
@@ -250,6 +267,18 @@ const nextConfig = {
                         key: 'Cache-Control',
                         value: 'public, max-age=2592000, stale-while-revalidate=86400',
                     },
+                ],
+            },
+            // The OAuth consent page must never render inside another site's
+            // frame, or that site could overlay it and trick a user into
+            // clicking Allow (clickjacking). Both headers are sent because
+            // older browsers honour only X-Frame-Options.
+            {
+                source: '/oauth/:path*',
+                headers: [
+                    { key: 'X-Frame-Options', value: 'DENY' },
+                    { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+                    { key: 'Cache-Control', value: 'no-store' },
                 ],
             },
         ];

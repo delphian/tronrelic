@@ -534,8 +534,11 @@ export async function middleware(request: NextRequest, event: NextFetchEvent) {
 /**
  * Middleware matcher configuration.
  *
- * Excludes API routes, static files, and Next.js internals.
+ * Excludes API routes, static files, and Next.js internals. Also excludes the
+ * MCP endpoint and the OAuth discovery documents under `/.well-known/oauth-`,
+ * which are rewritten to the backend and are machine-to-machine traffic rather
+ * than page views. Other `/.well-known/` paths still pass through middleware.
  */
 export const config = {
-    matcher: ['/((?!api|_next/static|_next/image|uploads|favicon.ico|robots.txt|sitemap.xml|llms.txt).*)']
+    matcher: ['/((?!api|mcp$|\\.well-known/oauth-|_next/static|_next/image|uploads|favicon.ico|robots.txt|sitemap.xml|llms.txt).*)']
 };

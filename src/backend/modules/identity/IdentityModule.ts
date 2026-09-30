@@ -17,10 +17,25 @@
  * services. Errors in either phase abort bootstrap (no degraded mode).
  */
 
-import type { Express, Router } from 'express';
+import type { Express, Request, Router } from 'express';
 import mongoose from 'mongoose';
-import { toNodeHandler } from 'better-auth/node';
-import type { ICacheService, IDatabaseService, IHookRegistry, IMenuService, IModule, IModuleMetadata, IServiceRegistry } from '@/types';
+import { fromNodeHeaders, toNodeHandler } from 'better-auth/node';
+import { oauthProviderAuthServerMetadata } from '@better-auth/oauth-provider';
+import type {
+    IAccountDirectoryService,
+    ICacheService,
+    IConnectedAppsService,
+    IDatabaseService,
+    IHookRegistry,
+    IMcpAccessTokenVerifier,
+    IMenuService,
+    IModule,
+    IModuleMetadata,
+    IServiceRegistry,
+    IUserGroupService
+} from '@/types';
+import { MCP_USERS_GROUP_ID } from '@/types';
+import { env } from '../../config/env.js';
 import { logger } from '../../lib/logger.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { TronGridClient } from '../blockchain/tron-grid.client.js';
@@ -39,6 +54,11 @@ import { createWalletRouter } from './api/wallet.routes.js';
 import { createAdminUserGroupRouter } from './api/user-group.routes.js';
 import { createAdminAccountsRouter, createAdminAccountSearchRouter } from './api/accounts.routes.js';
 import { createUserSettingsRouter } from './api/user-settings.routes.js';
+import { ConnectedAppsController, type IPublicOAuthClient } from './api/connected-apps.controller.js';
+import { createConnectedAppsRouter, createOAuthConsentRouter } from './api/connected-apps.routes.js';
+import { ConnectedAppsService, type IOAuthStoreAdapter } from './services/connected-apps.service.js';
+import { OAuthAccessTokenVerifier } from './services/oauth-access-token.verifier.js';
+import { resolveOAuthServerConfig, type IOAuthServerConfig } from './services/oauth-server-config.js';
 import { requireAdmin } from '../../api/middleware/admin-auth.js';
 import type { IAuthRateLimitRedis } from './services/IAuthRateLimitRedis.js';
 import type { IIdentitySocketDisconnector } from './services/IIdentitySocketDisconnector.js';
@@ -98,14 +118,18 @@ const PROFILE_SUBMENU_NAMESPACE = 'profile';
 /**
  * The profile hub's tab row, declared as menu nodes rather than a hand-rolled
  * button array so the row inherits ordering and live `menu:update` refresh from
- * the menu service. The nodes carry no `requiresAdmin`/`requiresGroups` gate:
- * `/profile` is login-gated by the route's `ProfileAuthGate`, and every signed-in
- * visitor sees both tabs. Keeping the namespace out of `main` is what hides the
- * tabs from global nav — not a per-node gate.
+ * the menu service. `/profile` is login-gated by the route's `ProfileAuthGate`,
+ * so the Profile and Wallets nodes carry no gate and every signed-in visitor
+ * sees them. Only the Connected apps node is gated, by `requiresGroups`, to the
+ * MCP group. Keeping the namespace out of `main` is what hides the tabs from
+ * global nav — not a per-node gate.
  */
-const PROFILE_SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number }> = [
+const PROFILE_SUBMENU_TABS: ReadonlyArray<{ label: string; tab: string; icon: string; order: number; requiresGroups?: string[] }> = [
     { label: 'Profile', tab: 'profile', icon: 'User', order: 0 },
-    { label: 'Wallets', tab: 'wallets', icon: 'Wallet', order: 1 }
+    { label: 'Wallets', tab: 'wallets', icon: 'Wallet', order: 1 },
+    // Only members of the MCP group can connect apps, so only they see the
+    // tab where connected apps are listed and revoked.
+    { label: 'Connected apps', tab: 'connected-apps', icon: 'PlugZap', order: 2, requiresGroups: [MCP_USERS_GROUP_ID] }
 ];
 
 /**
@@ -130,12 +154,16 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
     private userGroupService!: UserGroupService;
     private accountDirectoryService!: AccountDirectoryService;
     private userSettingsService!: UserSettingsService;
+    private connectedAppsService!: ConnectedAppsService;
+    private accessTokenVerifier!: OAuthAccessTokenVerifier;
+    private oauthConfig!: IOAuthServerConfig;
     private auth!: Auth;
 
     private walletController!: WalletController;
     private groupController!: UserGroupController;
     private accountsController!: AccountsController;
     private userSettingsController!: UserSettingsController;
+    private connectedAppsController!: ConnectedAppsController;
 
     private readonly logger = logger.child({ module: 'identity' });
 
@@ -211,23 +239,154 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
                 'mongoose.connection.db is undefined — IdentityModule.init() ran before connectDatabase() completed.'
             );
         }
+        // The base URL is resolved here once. Better Auth receives it as its
+        // baseURL through the OAuth config, and the OAuth issuer and MCP
+        // resource URL are derived from it, so the auth server, the token
+        // issuer, the discovery document, and the audience the MCP endpoint
+        // checks always agree.
+        // Outside production an unset URL falls back to the local frontend,
+        // mirroring the development fallback for BETTER_AUTH_SECRET; in
+        // production the resolver throws and startup stops.
+        const isProduction = env.NODE_ENV === 'production' || env.ENV === 'production';
+        const authBaseUrl = env.BETTER_AUTH_URL || env.SITE_URL || (isProduction ? undefined : 'http://localhost:3000');
+        this.oauthConfig = resolveOAuthServerConfig(authBaseUrl);
         this.auth = createAuth({
             db: authDb,
             groupService: this.groupService,
             logger: this.logger,
             rateLimitRedis: dependencies.redis,
-            socketDisconnector: dependencies.socketDisconnector
+            socketDisconnector: dependencies.socketDisconnector,
+            oauth: this.oauthConfig
         });
         setAuthInstance(this.auth);
         this.logger.info('Better Auth instance configured and facade wired');
+
+        // Connected-app grants and MCP token verification. Both read Better
+        // Auth's OAuth tables through its own adapter, which resolves the
+        // plugin model names onto the renamed collections. Each app's last-use
+        // time lives in the module's own collection, through IDatabaseService.
+        const auth = this.auth;
+        ConnectedAppsService.setDependencies(
+            /**
+             * Resolve Better Auth's adapter lazily, because it lives on the
+             * auth instance's context, which Better Auth builds on first use.
+             *
+             * @returns The adapter, narrowed to the calls the service makes.
+             */
+            async () => (await auth.$context).adapter as unknown as IOAuthStoreAdapter,
+            this.database,
+            this.accountDirectoryService,
+            this.logger
+        );
+        this.connectedAppsService = ConnectedAppsService.getInstance();
+        await this.connectedAppsService.createIndexes();
+        this.accessTokenVerifier = new OAuthAccessTokenVerifier(
+            /**
+             * Read the current signing key set from the auth instance in this
+             * process, so verification needs no HTTP call.
+             *
+             * @returns The JWKS the jwt plugin publishes.
+             */
+            () => auth.api.getJwks(),
+            { issuer: this.oauthConfig.issuer, audience: this.oauthConfig.mcpResourceUrl },
+            this.connectedAppsService,
+            this.logger
+        );
 
         // Controllers over the BA-keyed services.
         this.walletController = new WalletController(this.walletService, this.logger);
         this.groupController = new UserGroupController(this.userGroupService, this.logger);
         this.accountsController = new AccountsController(this.accountDirectoryService, this.logger);
         this.userSettingsController = new UserSettingsController(this.userSettingsService, this.logger);
+        this.connectedAppsController = new ConnectedAppsController(
+            this.connectedAppsService,
+            /**
+             * Hand the controller a client lookup without giving it the auth
+             * instance itself.
+             *
+             * @param clientId - The OAuth client id from the authorization request.
+             * @param req - The request, whose session headers the lookup forwards.
+             * @returns The client's public details, or null.
+             */
+            (clientId, req) => this.lookupPublicClient(clientId, req),
+            this.logger
+        );
 
         this.logger.info('Identity module initialized');
+    }
+
+    /**
+     * Resolve an OAuth client's public details for the consent screen.
+     *
+     * Delegates to Better Auth, which fetches and validates a client metadata
+     * document when the client id is a URL. Any failure (unknown client, an
+     * unreachable or invalid metadata document) yields null so the page can
+     * say the app could not be identified.
+     *
+     * @param clientId - The OAuth client id from the authorization request.
+     * @param req - The incoming request; its session headers are forwarded
+     *   because Better Auth requires a signed-in caller for this lookup.
+     * @returns The client's public details, or null.
+     */
+    private async lookupPublicClient(clientId: string, req: Request): Promise<IPublicOAuthClient | null> {
+        let client: IPublicOAuthClient | null = null;
+        try {
+            client = await this.auth.api.getOAuthClientPublic({
+                query: { client_id: clientId },
+                headers: fromNodeHeaders(req.headers)
+            }) as IPublicOAuthClient;
+        } catch (error: unknown) {
+            this.logger.info({ clientId, reason: error instanceof Error ? error.message : String(error) }, 'OAuth client lookup for consent screen failed');
+        }
+        return client;
+    }
+
+    /**
+     * The verifier the MCP module uses to check bearer tokens. Exposed for
+     * bootstrap wiring; the identity module keeps the signing keys.
+     *
+     * @returns The MCP access token verifier.
+     */
+    getAccessTokenVerifier(): IMcpAccessTokenVerifier {
+        return this.accessTokenVerifier;
+    }
+
+    /**
+     * The connected-app grant store, for the MCP admin page.
+     *
+     * @returns The connected-apps service.
+     */
+    getConnectedAppsService(): IConnectedAppsService {
+        return this.connectedAppsService;
+    }
+
+    /**
+     * The OAuth issuer and MCP resource URLs, so the MCP module publishes
+     * exactly the values the token issuer uses.
+     *
+     * @returns The OAuth server configuration.
+     */
+    getOAuthServerConfig(): IOAuthServerConfig {
+        return this.oauthConfig;
+    }
+
+    /**
+     * The user-group service, for modules that need group membership at
+     * construction time rather than through the service registry.
+     *
+     * @returns The user-group service.
+     */
+    getUserGroupService(): IUserGroupService {
+        return this.userGroupService;
+    }
+
+    /**
+     * The account directory, for modules that resolve live user principals.
+     *
+     * @returns The account directory service.
+     */
+    getAccountDirectoryService(): IAccountDirectoryService {
+        return this.accountDirectoryService;
     }
 
     /**
@@ -260,9 +419,9 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
             // Register the /profile hub's in-page tab row as a namespaced menu
             // (menu module's Submenu Pattern). Memory-only nodes outside the
             // System container, so the container's non-bypassable requiresAdmin
-            // force does not reach them — and we deliberately set no gate: the
-            // route's ProfileAuthGate already requires login, and both tabs are
-            // visible to every signed-in account. The page renders this namespace
+            // force does not reach them. The route's ProfileAuthGate already
+            // requires login, so only the Connected apps tab carries a gate of
+            // its own (the MCP group). The page renders this namespace
             // with MenuNavClient instead of hand-rolling tabs.
             for (const tab of PROFILE_SUBMENU_TABS) {
                 await this.menuService.create({
@@ -272,7 +431,8 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
                     icon: tab.icon,
                     order: tab.order,
                     parent: null,
-                    enabled: true
+                    enabled: true,
+                    ...(tab.requiresGroups ? { requiresGroups: tab.requiresGroups } : {})
                 });
             }
             this.logger.info('Profile submenu tab nodes registered');
@@ -285,6 +445,17 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
         // handler to the Express (req, res) signature.
         this.app.all('/api/auth/*', toNodeHandler(this.auth));
         this.logger.info('Better Auth handler mounted at /api/auth/*');
+
+        // OAuth authorization server metadata (RFC 8414). The issuer is the
+        // site origin, so clients look for this document at the site root,
+        // which Express does not route to Better Auth's handler on its own.
+        this.app.get('/.well-known/oauth-authorization-server', toNodeHandler(oauthProviderAuthServerMetadata(this.auth)));
+        this.logger.info('OAuth authorization server metadata mounted at /.well-known/oauth-authorization-server');
+
+        // A signed-in user's connected apps, and the consent screen's context.
+        this.app.use('/api/user/connected-apps', createConnectedAppsRouter(this.connectedAppsController));
+        this.app.use('/api/user/oauth', createOAuthConsentRouter(this.connectedAppsController));
+        this.logger.info('Connected-apps routers mounted at /api/user/connected-apps and /api/user/oauth');
 
         // Wallet router at the literal `/api/user/wallets` segment. The legacy
         // `/api/user/:id` user module is deleted, so no `/:id` catch-all can

@@ -7,22 +7,34 @@
  * what path, and through which AI provider.
  */
 
+import type { IToolInvocationOrigin } from './IToolInvocationOrigin.js';
+
 /**
  * How the invocation was triggered.
  * - `interactive` — an admin is present, driving a live query.
  * - `scheduled` — a cron-fired saved prompt, no human present.
  * - `programmatic` — another plugin or module called the AI service in code.
+ * - `mcp` — a signed-in, non-admin user's own AI client called the tool over
+ *   the MCP endpoint. The model driving the call is outside the platform's
+ *   control, so this path is never treated as "an admin is present": the
+ *   interactive-only relaxations (curation auto-approve) do not apply, and the
+ *   autonomous external-tool default-deny does.
  */
-export type ToolTriggerPath = 'interactive' | 'scheduled' | 'programmatic';
+export type ToolTriggerPath = 'interactive' | 'scheduled' | 'programmatic' | 'mcp';
 
 /** Who, or what, is behind the invocation. */
 export interface IToolInvocationActor {
-    /** `admin` for a human operator, `system` for an autonomous process. */
-    kind: 'admin' | 'system';
+    /**
+     * `admin` for a human operator, `system` for an autonomous process, `user`
+     * for a signed-in end user acting through their own AI client (the `mcp`
+     * trigger path). A `user` actor carries no admin authority of any kind.
+     */
+    kind: 'admin' | 'system' | 'user';
 
-    /** Identifier of the actor when known (e.g. a Better Auth admin user id). */
+    /** Identifier of the actor when known (e.g. a Better Auth user id). */
     id?: string;
 }
+
 
 /**
  * The end user a query runs *on behalf of* — distinct from the {@link
@@ -87,6 +99,16 @@ export interface IToolInvocationContext {
     queryId?: string;
 
     /**
+     * Budget key for tools that spend a shared quota, such as a ClickHouse
+     * account's hourly limit, when the entry point wants calls charged to
+     * something other than the run. The MCP endpoint sets it to one key per
+     * user, because an MCP call has no run of its own and each user needs a
+     * separate budget. When absent, a tool falls back to `queryId` and then
+     * `conversationId`. Set by the trusted entry point, never from model input.
+     */
+    quotaKey?: string;
+
+    /**
      * Per-call correlation id, when the provider supplies one — the id of the
      * individual tool-call the model emitted this turn. Provider-neutral: every
      * tool-calling LLM issues an opaque id pairing a tool call with its result
@@ -129,4 +151,12 @@ export interface IToolInvocationContext {
      * allowlist.
      */
     toolAllowlist?: string[];
+
+    /**
+     * The external client, credential, and address the call arrived through,
+     * when it entered over a protocol such as MCP. Set by the entry point from
+     * the verified token, never from model input. Copied onto the audit record.
+     * See {@link IToolInvocationOrigin}.
+     */
+    origin?: IToolInvocationOrigin;
 }

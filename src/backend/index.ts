@@ -50,7 +50,8 @@ import { ProvidersModule } from './modules/providers/index.js';
 import { ValuationModule } from './modules/valuation/index.js';
 import { AddressTagsModule } from './modules/address-tags/index.js';
 import { ToolsModule } from './modules/tools/index.js';
-import { AiToolsModule } from './modules/ai-tools/index.js';
+import { AiToolsModule, createAccountEndUserResolver } from './modules/ai-tools/index.js';
+import { McpModule } from './modules/mcp/index.js';
 import { CurationModule } from './modules/curation/index.js';
 import { NotificationsModule } from './modules/notifications/index.js';
 import { SyndicationModule } from './modules/syndication/index.js';
@@ -294,6 +295,7 @@ interface BootstrapContext {
         curation: CurationModule;
         syndication: SyndicationModule;
         aiTools: AiToolsModule;
+        mcp: McpModule;
         scheduler: SchedulerModule;
     };
 }
@@ -558,6 +560,30 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         systemConfig: SystemConfigService.getInstance()
     });
 
+    // The MCP endpoint is the protected resource; identity is its OAuth
+    // server and ai-tools its governor, so it initializes after both. Its
+    // URLs come from identity so the audience it checks is exactly the one
+    // the token issuer writes.
+    const mcpModule = new McpModule();
+    const oauthConfig = identityModule.getOAuthServerConfig();
+    await mcpModule.init({
+        database: coreDatabase,
+        app,
+        menuService,
+        governor: aiToolsModule.getGovernor(),
+        toolRegistry: aiToolsModule.getRegistry(),
+        tokenVerifier: identityModule.getAccessTokenVerifier(),
+        connectedApps: identityModule.getConnectedAppsService(),
+        userGroups: identityModule.getUserGroupService(),
+        resolveEndUser: createAccountEndUserResolver(() => identityModule.getAccountDirectoryService()),
+        endpoint: {
+            resourceUrl: oauthConfig.mcpResourceUrl,
+            resourceMetadataUrl: oauthConfig.mcpResourceMetadataUrl,
+            issuer: oauthConfig.issuer,
+            siteHost: oauthConfig.siteHost
+        }
+    });
+
     return {
         app,
         server,
@@ -588,6 +614,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
             curation: curationModule,
             syndication: syndicationModule,
             aiTools: aiToolsModule,
+            mcp: mcpModule,
             scheduler: schedulerModule,
         },
     };
@@ -637,6 +664,10 @@ async function bootstrapRun(ctx: BootstrapContext): Promise<void> {
     // ticking), so the relay job is registered before the scheduler activates.
     await modules.syndication.run();
     await modules.aiTools.run();
+    // MCP runs after identity (the `user-groups` data it seeds the MCP group
+    // into is ready) and after ai-tools (so the built-in tools are registered
+    // before its first request).
+    await modules.mcp.run();
     // Account-history runs before scheduler (which runs last and starts ticking),
     // so its `account-history:ingest` job is registered before the scheduler activates.
     await modules.accountHistory.run();

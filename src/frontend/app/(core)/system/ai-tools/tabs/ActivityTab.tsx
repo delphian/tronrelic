@@ -27,17 +27,30 @@ import styles from '../page.module.scss';
 const PAGE_LIMIT = 50;
 
 /**
+ * Props for {@link ActivityTab}.
+ */
+export interface IActivityTabProps {
+    /**
+     * Lock the feed to one trigger path and hide that filter. The MCP admin
+     * page passes `'mcp'` to show only calls made by users' own AI clients,
+     * reusing this feed instead of building a second one.
+     */
+    fixedTriggerPath?: ToolTriggerPath;
+}
+
+/**
  * Activity tab content.
  *
+ * @param props - {@link IActivityTabProps}.
  * @returns The tab.
  */
-export function ActivityTab() {
+export function ActivityTab({ fixedTriggerPath }: IActivityTabProps = {}) {
     const [items, setItems] = useState<IToolInvocationRecord[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [status, setStatus] = useState<ToolInvocationStatus | ''>('');
-    const [triggerPath, setTriggerPath] = useState<ToolTriggerPath | ''>('');
+    const [triggerPath, setTriggerPath] = useState<ToolTriggerPath | ''>(fixedTriggerPath ?? '');
     const [toolName, setToolName] = useState<string>('');
     const [offset, setOffset] = useState(0);
     const [tools, setTools] = useState<IAiToolInfo[]>([]);
@@ -140,16 +153,19 @@ export function ActivityTab() {
                     <option value="pending-approval">pending-approval</option>
                     <option value="error">error</option>
                 </Select>
-                <Select
-                    value={triggerPath}
-                    onChange={(e) => changeFilter(() => setTriggerPath(e.target.value as ToolTriggerPath | ''))}
-                    aria-label="Filter by trigger path"
-                >
-                    <option value="">All triggers</option>
-                    <option value="interactive">interactive</option>
-                    <option value="scheduled">scheduled</option>
-                    <option value="programmatic">programmatic</option>
-                </Select>
+                {!fixedTriggerPath && (
+                    <Select
+                        value={triggerPath}
+                        onChange={(e) => changeFilter(() => setTriggerPath(e.target.value as ToolTriggerPath | ''))}
+                        aria-label="Filter by trigger path"
+                    >
+                        <option value="">All triggers</option>
+                        <option value="interactive">interactive</option>
+                        <option value="scheduled">scheduled</option>
+                        <option value="programmatic">programmatic</option>
+                        <option value="mcp">mcp</option>
+                    </Select>
+                )}
                 <Button variant="ghost" size="sm" onClick={() => { void load(); }}>
                     <RefreshCw size={16} /> Refresh
                 </Button>

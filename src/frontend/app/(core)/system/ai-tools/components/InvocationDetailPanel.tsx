@@ -67,6 +67,24 @@ export function InvocationDetailPanel({ record }: { record: IToolInvocationRecor
                             <dd className={styles.kv_value}>{record.endUserId}</dd>
                         </>
                     )}
+                    {record.origin?.clientId && (
+                        <>
+                            <dt className={styles.kv_label}>Connected app</dt>
+                            <dd className={styles.kv_value}>{record.origin.clientId}</dd>
+                        </>
+                    )}
+                    {record.origin?.credentialId && (
+                        <>
+                            <dt className={styles.kv_label}>Token id</dt>
+                            <dd className={styles.kv_value}>{record.origin.credentialId}</dd>
+                        </>
+                    )}
+                    {record.origin?.ip && (
+                        <>
+                            <dt className={styles.kv_label}>Client IP</dt>
+                            <dd className={styles.kv_value}>{record.origin.ip}</dd>
+                        </>
+                    )}
                     <dt className={styles.kv_label}>Duration</dt>
                     <dd className={styles.kv_value}>{record.durationMs}ms</dd>
                     {record.costUsd !== undefined && (

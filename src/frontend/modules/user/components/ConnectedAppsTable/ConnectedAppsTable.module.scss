@@ -1,0 +1,71 @@
+@use '../../../../app/breakpoints' as *;
+
+/* Empty state inside the card. */
+.empty {
+    margin: 0;
+    padding: var(--padding-lg);
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-body-sm);
+}
+
+/* The app's self-declared name, with the host it identifies by underneath. */
+.app_name {
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.app_meta {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-muted);
+    overflow-wrap: anywhere;
+}
+
+.badge_row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--badge-gap);
+    align-items: center;
+}
+
+/* Header for the actions column: announced to screen readers, not drawn. */
+.visually_hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+/* Narrow containers: stack each row as a card and surface every dropped
+   column header through the cell's data-label, reacting to the shared
+   Table's own container so it stays correct in slideouts and modals. */
+@container table (max-width: #{$breakpoint-mobile-lg}) {
+    .table thead {
+        display: none;
+    }
+
+    .table tr {
+        display: block;
+        padding: var(--padding-sm);
+        border-bottom: var(--border-width-thin) solid var(--color-border);
+    }
+
+    .table td {
+        display: block;
+        padding: var(--padding-2xs) 0;
+        border-bottom: none;
+    }
+
+    .table td::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: var(--gap-2xs);
+        font-size: var(--font-size-caption);
+        font-weight: var(--font-weight-semibold);
+        letter-spacing: var(--letter-spacing-wide);
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+    }
+}

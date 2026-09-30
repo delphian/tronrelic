@@ -130,6 +130,26 @@ export class AccountDirectoryService implements IAccountDirectoryService {
     }
 
     /**
+     * Fetch several account summaries with one `$in` query, so a caller
+     * labelling a page of rows does not pay one round trip per row.
+     *
+     * @param baUserIds - Better Auth user ids; invalid ids and duplicates are
+     *   dropped before the query.
+     * @returns Summaries for the accounts that exist, in no particular order.
+     */
+    public async getAccountsByIds(baUserIds: string[]): Promise<IAccountSummary[]> {
+        const keys = [...new Set(baUserIds)]
+            .map(id => toUserKey(id))
+            .filter((key): key is ObjectId => key !== null);
+        let summaries: IAccountSummary[] = [];
+        if (keys.length > 0) {
+            const docs = await this.authUsers.find({ _id: { $in: keys } }).toArray();
+            summaries = docs.map(AccountDirectoryService.toSummary);
+        }
+        return summaries;
+    }
+
+    /**
      * List accounts with optional pagination and case-insensitive search.
      *
      * @param options - Pagination and filter options.

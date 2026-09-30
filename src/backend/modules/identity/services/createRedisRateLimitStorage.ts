@@ -21,24 +21,12 @@ import { consumeRedisWindow } from './consumeRedisWindow.js';
 /** The storage contract Better Auth accepts for `rateLimit.customStorage`. */
 type RateLimitStorage = NonNullable<NonNullable<BetterAuthOptions['rateLimit']>['customStorage']>;
 
-/** Record shape Better Auth reads and writes through `get` and `set`. */
-type RateLimitRecord = NonNullable<Awaited<ReturnType<RateLimitStorage['get']>>>;
-
-/**
- * Expiry applied to records written through Better Auth's non-atomic
- * `set` path. That path carries no window length, so the record needs an
- * upper bound of its own to stop it living forever. An hour is longer than
- * any window Better Auth or this module configures.
- */
-const FALLBACK_RECORD_TTL_SECONDS = 3600;
-
 /**
  * Build a Better Auth rate-limit storage whose counters live in Redis.
  *
- * `consume` is the path Better Auth uses whenever a storage provides it. It
- * counts through {@link consumeRedisWindow}, so each check-and-increment is a
- * single atomic Redis step. `get` and `set` exist only because the contract
- * requires them for storages without `consume`.
+ * Better Auth calls only `consume` on a custom storage. It counts through
+ * {@link consumeRedisWindow}, so each check-and-increment is a single atomic
+ * Redis step, and concurrent requests cannot all pass a stale read.
  *
  * When Redis cannot be reached, a request is allowed and the failure is
  * logged. Refusing instead would lock every visitor out of signing in for as
@@ -60,23 +48,22 @@ export function createRedisRateLimitStorage(
     const prefix = `${namespace}:auth:ratelimit:`;
 
     const storage: RateLimitStorage = {
-        get: async (key: string): Promise<RateLimitRecord | null> => {
-            let record: RateLimitRecord | null = null;
-            try {
-                const raw = await redis.get(prefix + key);
-                record = raw ? (JSON.parse(raw) as RateLimitRecord) : null;
-            } catch (error) {
-                logger.error({ error, key }, 'Auth rate-limit read failed; treating as no prior requests');
-            }
-            return record;
-        },
-        set: async (key: string, value: RateLimitRecord): Promise<void> => {
-            try {
-                await redis.set(prefix + key, JSON.stringify(value), 'EX', FALLBACK_RECORD_TTL_SECONDS);
-            } catch (error) {
-                logger.error({ error, key }, 'Auth rate-limit write failed');
-            }
-        },
+        /**
+         * Record one request and decide whether Better Auth lets it through.
+         *
+         * Better Auth calls this once per rate-limited request. The count is
+         * kept under the deployment's namespace in Redis, so the limit holds
+         * across restarts and across backend instances. A Redis failure
+         * allows the request, for the reason given above.
+         *
+         * @param key - Better Auth's counter key (client IP and path), so each
+         *   endpoint is counted separately for each address.
+         * @param rule - Window length in seconds and the most requests allowed
+         *   in it, as Better Auth configured for this path.
+         * @returns Whether the request is allowed, and when it is not, the
+         *   seconds until the window frees up, which Better Auth sends back
+         *   to the client as `X-Retry-After`.
+         */
         consume: async (key: string, rule: { window: number; max: number }) => {
             let result: { allowed: boolean; retryAfter: number | null } = { allowed: true, retryAfter: null };
             try {

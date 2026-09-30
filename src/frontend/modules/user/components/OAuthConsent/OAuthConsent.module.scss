@@ -1,0 +1,77 @@
+/* Who is asking: the app's self-declared name, then the host it identifies by. */
+.client {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-2xs);
+}
+
+.client_name {
+    font-size: var(--font-size-heading-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+}
+
+.client_meta {
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+    overflow-wrap: anywhere;
+}
+
+/* Label and value pairs describing the request. */
+.facts {
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+    gap: var(--gap-sm) var(--gap-md);
+    margin: 0;
+
+    dt {
+        font-size: var(--font-size-caption);
+        font-weight: var(--font-weight-semibold);
+        letter-spacing: var(--letter-spacing-wide);
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+    }
+
+    dd {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--badge-gap);
+        align-items: center;
+        margin: 0;
+    }
+}
+
+.scope_list {
+    margin: 0;
+    padding-left: var(--padding-md);
+    color: var(--color-text);
+    font-size: var(--font-size-body-sm);
+    line-height: var(--line-height-relaxed);
+}
+
+.note {
+    margin: 0;
+    font-size: var(--font-size-body-sm);
+    color: var(--color-text-muted);
+}
+
+/* A refusal or failure line: icon beside the sentence it explains. */
+.warning_line {
+    display: flex;
+    gap: var(--gap-sm);
+    align-items: flex-start;
+    margin: 0;
+    color: var(--color-warning-text);
+}
+
+.warning_icon {
+    flex-shrink: 0;
+    color: var(--color-warning);
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap-sm);
+}

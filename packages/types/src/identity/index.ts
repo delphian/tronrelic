@@ -28,3 +28,8 @@ export type {
     IUserSettingsService,
     IUserSettingDefinition
 } from './IUserSettingsService.js';
+
+export type { IConnectedApp } from './IConnectedApp.js';
+export type { IConnectedAppAdminRow } from './IConnectedAppAdminRow.js';
+export type { IConnectedAppsService } from './IConnectedAppsService.js';
+export type { IOAuthConsentContext } from './IOAuthConsentContext.js';

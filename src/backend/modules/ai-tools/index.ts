@@ -27,5 +27,7 @@ export {
     PromptVariableNotFoundError,
     DuplicateVariableNameError
 } from './services/prompt-variable-registry.js';
+export { createAccountEndUserResolver } from './services/end-user-resolver.js';
+export type { EndUserResolver } from './services/end-user-resolver.js';
 export { lintToolCapability } from './services/capability-linter.js';
 export type { ICapabilityLintFinding, CapabilityLintSeverity } from './services/capability-linter.js';

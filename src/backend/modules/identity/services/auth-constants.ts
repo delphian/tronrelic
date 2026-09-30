@@ -34,5 +34,16 @@ export const AUTH_COLLECTIONS = {
     sessions: 'module_user_auth_sessions',
     accounts: 'module_user_auth_accounts',
     verifications: 'module_user_auth_verifications',
-    passkeys: 'module_user_auth_passkeys'
+    passkeys: 'module_user_auth_passkeys',
+    // Signing keys for OAuth access tokens (the jwt plugin).
+    jwks: 'module_user_auth_jwks',
+    // OAuth authorization server tables (the oauth-provider plugin), which
+    // back sign-in for connected apps such as MCP clients.
+    oauthClients: 'module_user_auth_oauth_clients',
+    oauthResources: 'module_user_auth_oauth_resources',
+    oauthClientResources: 'module_user_auth_oauth_client_resources',
+    oauthRefreshTokens: 'module_user_auth_oauth_refresh_tokens',
+    oauthAccessTokens: 'module_user_auth_oauth_access_tokens',
+    oauthConsents: 'module_user_auth_oauth_consents',
+    oauthClientAssertions: 'module_user_auth_oauth_client_assertions'
 } as const;

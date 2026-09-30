@@ -98,7 +98,7 @@ export type {
     INotificationAuditRecord,
     INotificationAuditQuery
 } from './notifications/index.js';
-export type { IWalletService, ILinkedWallet, WalletAction, IWalletChallenge, IWalletMutationInput, IAccountDirectoryService, IAccountSummary, IAccountMatch, IListAccountsOptions, IListAccountsResult, IUserSettingsService, IUserSettingDefinition } from './identity/index.js';
+export type { IWalletService, ILinkedWallet, WalletAction, IWalletChallenge, IWalletMutationInput, IAccountDirectoryService, IAccountSummary, IAccountMatch, IListAccountsOptions, IListAccountsResult, IUserSettingsService, IUserSettingDefinition, IConnectedApp, IConnectedAppAdminRow, IConnectedAppsService, IOAuthConsentContext } from './identity/index.js';
 export type { IUserGroup, ICreateUserGroupInput, IUpdateUserGroupInput, IUserGroupService } from './user/index.js';
 export type {
     ITronGridService,
@@ -123,6 +123,7 @@ export type { IAiTool, IAiToolInputSchema, IAiConversationMessage, IAiProvider, 
 export { AI_TOOL_NAME_PATTERN } from './ai-tools/index.js';
 export { UNTRUSTED_CONTENT_NOTICE, UNTRUSTED_CONTENT_SYSTEM_CLAUSE, wrapUntrustedToolResult } from './ai-tools/index.js';
 export { DEFAULT_UNTRUSTED_SCREEN_CONFIG } from './ai-tools/index.js';
+export { getMcpToolIneligibility } from './ai-tools/index.js';
 export { HOSTED_TOOL_PREFIX, isHostedToolEntry, hostedToolEntry, splitToolAllowlist } from './ai-tools/index.js';
 export type {
     IToolAllowlistSplit,
@@ -141,6 +142,7 @@ export type {
     IToolInvocationActor,
     IToolEndUserPrincipal,
     ToolTriggerPath,
+    IToolInvocationOrigin,
     IToolHandlerContext,
     IToolInvocationResult,
     ToolInvocationStatus,
@@ -166,6 +168,8 @@ export type {
     IStaticPromptVariableInput,
     IStaticPromptVariableUpdate
 } from './ai-tools/index.js';
+export { MCP_TOOLS_SCOPE, MCP_OAUTH_SCOPES, MCP_USERS_GROUP_ID } from './mcp/index.js';
+export type { IMcpSettings, IMcpStatus, IMcpToolExposure, IMcpAccessTokenClaims, IMcpAccessTokenVerifier } from './mcp/index.js';
 export { isPrivateIp, assertPublicHttpUrl } from './egress/index.js';
 export type { IEgressCheckResult, IEgressCheckOptions } from './egress/index.js';
 export type {
