@@ -134,7 +134,36 @@ describe('blockchain-permission-changes', () => {
             account: WALLET,
             ownerControl: 'owner-control-transferred',
             outsideKeys: [PEER],
-            owner: expect.objectContaining({ threshold: 1, keys: [{ address: PEER, weight: 1 }] })
+            owner: expect.objectContaining({ threshold: '1', keys: [{ address: PEER, weight: '1' }] })
+        })]);
+    });
+
+    it('compares a threshold and weight past 2^53 exactly, so a crafted permission cannot read as self-controlled', async () => {
+        const owner = JSON.stringify({
+            permission_name: 'owner',
+            threshold: '9007199254740993',
+            keys: [
+                { address: toHexAddress(WALLET).toLowerCase(), weight: '9007199254740992' },
+                { address: toHexAddress(PEER).toLowerCase(), weight: '9007199254740993' }
+            ]
+        });
+        const { toolkit } = buildToolkit(() => [{
+            block_number: '29000',
+            block_timestamp: '2026-09-24 11:00:00.000',
+            tx_id: 'dd'.repeat(32),
+            owner_address: WALLET,
+            owner,
+            witness: '',
+            actives: [],
+            contract_ret: 'SUCCESS'
+        }]);
+
+        const result = await buildPermissionChangesTool(toolkit).handler({}, undefined, CONTEXT) as Record<string, unknown>;
+
+        expect(result.updates).toEqual([expect.objectContaining({
+            account: WALLET,
+            ownerControl: 'shared-owner-control',
+            owner: expect.objectContaining({ threshold: '9007199254740993' })
         })]);
     });
 
@@ -203,6 +232,34 @@ describe('blockchain-find-token', () => {
 
         expect(result.candidates).toEqual([expect.objectContaining({ contract: PEER, verified: false })]);
         expect((result.notes as string[]).some(note => note.includes('token:usdd'))).toBe(true);
+    });
+
+    it('brings back a name lookup\'s tagged contract when the capped matches cut it', async () => {
+        const { toolkit } = buildToolkit((sql) => {
+            let rows: unknown[] = [];
+            if (sql.includes('token IN {tagged')) {
+                rows = [{ token: USDT, symbol: 'USDT' }];
+            } else if (sql.includes('upperUTF8(symbol)')) {
+                rows = [{ token: PEER, symbol: 'USDT' }];
+            }
+            return rows;
+        });
+
+        const result = await buildFindTokenTool(toolkit).handler({ symbol: 'Tether USD' }, undefined, CONTEXT) as Record<string, unknown>;
+
+        const candidates = result.candidates as Array<Record<string, unknown>>;
+        expect(candidates[0]).toEqual(expect.objectContaining({ contract: USDT, verified: true }));
+        expect(candidates[1]).toEqual(expect.objectContaining({ contract: PEER, verified: false }));
+    });
+
+    it('drops a tagged contract whose own metadata does not claim the searched name', async () => {
+        const { toolkit } = buildToolkit((sql) => sql.includes('token IN {tagged')
+            ? []
+            : sql.includes('upperUTF8(symbol)') ? [{ token: PEER, symbol: 'USDT' }] : []);
+
+        const result = await buildFindTokenTool(toolkit).handler({ symbol: 'Not Tether' }, undefined, CONTEXT) as Record<string, unknown>;
+
+        expect(result.candidates).toEqual([expect.objectContaining({ contract: PEER, verified: false })]);
     });
 
     it('refuses TRX, which is not a token', async () => {

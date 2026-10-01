@@ -49,6 +49,9 @@ const MAX_LIMIT = 200;
 /** Longest undecoded data field returned, in hex characters, so one event cannot flood the context. */
 const MAX_DATA_HEX = 512;
 
+/** Most signature groups the signatures view returns, so a contract with a long event inventory cannot flood the context. */
+const MAX_SIGNATURE_GROUPS = 100;
+
 /** The views the tool offers. */
 const VIEWS = ['events', 'signatures'] as const;
 
@@ -74,6 +77,7 @@ interface ISignatureRow {
     events: string | number;
     first_at: string;
     last_at: string;
+    total_groups: string | number;
 }
 
 /**
@@ -143,15 +147,20 @@ export function buildContractEventsTool(toolkit: IChainQueryToolkit): IAiTool {
 
             if (view === 'signatures') {
                 const rows = await session.query<ISignatureRow>(
-                    `SELECT _topic0 AS topic0, count() AS events, min(block_timestamp) AS first_at, max(block_timestamp) AS last_at
+                    `SELECT _topic0 AS topic0, count() AS events, min(block_timestamp) AS first_at, max(block_timestamp) AS last_at,
+       count() OVER () AS total_groups
 FROM ${CHAIN_DATA_DATABASE}.log FINAL
 WHERE ${conditions.join('\n  AND ')}
 GROUP BY topic0
 ORDER BY events DESC, topic0
-LIMIT 100`,
+LIMIT ${MAX_SIGNATURE_GROUPS}`,
                     params
                 );
+                const totalSignatures = Number(rows[0]?.total_groups ?? 0);
                 payload = {
+                    totalSignatures,
+                    returned: rows.length,
+                    truncated: totalSignatures > rows.length,
                     signatures: rows.map(row => ({
                         topic0: row.topic0,
                         event: eventSignature(row.topic0),
