@@ -36,7 +36,7 @@ The endpoint needs raw Express requests (the MCP SDK reads Node request and resp
 | `api/protected-resource-metadata.ts` | The RFC 9728 document |
 | `api/mcp-admin.controller.ts`, `api/mcp-admin.routes.ts` | Admin API |
 | `services/mcp-settings.store.ts` | Kill switch persistence with a 5-second in-memory cache |
-| `services/mcp-tool-exposure.service.ts` | Per-group grants, capability fingerprints, and the tool list served to one caller |
+| `services/mcp-tool-exposure.service.ts` | Per-group grants, capability fingerprints, the tool list served to one caller, and why a tool was withheld from them (`explainWithheld`) |
 | `services/McpGroupPolicyService.ts` | Per-group settings: storage with a 5-second cache, validation, and `isWideningPolicyChange` |
 | `services/IpAllowlistMatcher.ts` | Allowlist validation and matching over `net.BlockList` (IPv4, IPv6, CIDR, IPv4-mapped IPv6) |
 | `services/SecretScrubber.ts` | Removes known secret values, credential patterns, and secret-named fields from a result |
@@ -64,6 +64,8 @@ Every request to `/mcp` passes these checks in order. The first failure answers 
 
 The global Express body parsers skip `/mcp` (`loaders/express.ts`), so nothing is read from an anonymous request's body. After the checks, the served tool list is computed for this caller from their groups and request address, the caller and tools ride into the SDK on `req.auth.extra`, and `McpServerFactory` builds a server that registers only those tools.
 
+A `tools/call` for a tool that was not served gets the SDK's bare "Tool not found" answer. Before handing the request over, the endpoint writes an `error` entry under `tronrelic:mcp` naming the tool, the user, the client, the request address, the caller's groups, and a `reason` from `explainWithheld`: `not-registered`, `disabled`, `not-granted`, `stale-grant`, `restricted-not-allowed`, or `ip-not-allowed` (`changed-during-request` when a grant changed between the two reads). At most 10 entries are written per request.
+
 **Token verification** is done by the identity module's `OAuthAccessTokenVerifier`, injected as `IMcpAccessTokenVerifier`. It checks the JWT locally against the signing keys (no HTTP), requires `typ: at+jwt`, the site issuer, and `aud` equal to the resource URL, refuses DPoP-bound tokens, and confirms the consent for `(user, client)` still exists and was created no later than the token's `iat` (cached 30 seconds), so reconnecting an app does not revive tokens issued before a revocation. A token issued for any other audience is refused.
 
 ## Tool Exposure
@@ -76,7 +78,7 @@ Every tool starts hidden. On the Tools tab an admin picks a user group and grant
 | Capability matches the fingerprint recorded at the grant (otherwise *stale*) | Served list; granting again accepts the new capability |
 | Safety floor (`getMcpToolIneligibility`): capability declared, `sideEffect: 'read'`, reversible, not `secret`, not `spendsMoney`. A tool failing it is **restricted** | Grant (`setExposure` refuses with 400), served list, and the policy engine on every `mcp` call |
 | A restricted tool may be granted only to a group whose policy has `allowRestrictedTools`, never to `mcp-users` | Grant (400), policy validation (400), served list; the governor waives its floor only for names in `ctx.mcpRestrictedTools` that are also in `ctx.toolAllowlist` |
-| Group IP allowlist, when on: the request address must match | Served list (per grant, so another group's grant without an allowlist still serves) |
+| Group IP allowlist, when on: the request address must match. A client may reach the site over IPv4 on one request and IPv6 on the next, so list both families, and list an IPv6 address as its `/64`, because the last half changes for privacy | Served list (per grant, so another group's grant without an allowlist still serves) |
 | Only served tools reachable | The server registers only served tools, and the governor enforces the same names as the call's `toolAllowlist` |
 | A tool whose effective policy requires approval | Policy engine refuses it on `mcp` rather than parking it in the approval queue, restricted or not |
 | An `external` tool | The governor's autonomous default-deny applies on `mcp` unless an admin policy override grants `allowUnattended` |
