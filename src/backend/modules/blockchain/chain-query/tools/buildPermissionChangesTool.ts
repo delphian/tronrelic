@@ -84,12 +84,18 @@ interface IRawPermission {
     keys?: IRawPermissionKey[];
 }
 
-/** One permission as the tool returns it. */
+/**
+ * One permission as the tool returns it.
+ *
+ * `threshold` and each key's `weight` are int64 on chain, so they are carried
+ * as exact decimal text rather than numbers. The other chain query tools report
+ * int64 columns the same way, by selecting them with `toString`.
+ */
 interface IPermissionView {
     name: string | null;
     id: number;
-    threshold: number;
-    keys: Array<{ address: string | null; weight: number }>;
+    threshold: string;
+    keys: Array<{ address: string | null; weight: string }>;
     operations?: string;
 }
 
@@ -118,11 +124,41 @@ interface ISignedRow {
     total_matches: string | number;
 }
 
+/** Matches a whole decimal integer, as the exact-integer parser writes one. */
+const INTEGER_TEXT = /^-?\d+$/;
+
+/**
+ * Read a permission's int64 field as its exact decimal text.
+ *
+ * A threshold or key weight is int64 and may pass 2^53, which a JavaScript
+ * number cannot hold exactly. Converting it would round two different values
+ * onto the same one, and an account's owner sets these values, so a crafted
+ * permission could make a changed account read as one that still controls
+ * itself. Values past 2^53 already reach the tool as decimal strings, because
+ * the block responses are parsed by `parseJsonExactIntegers` before the
+ * permission JSON is stored, while smaller values arrive as numbers. Both are
+ * normalized to text here so the comparison can be done with `BigInt`.
+ *
+ * @param value - The field as stored: a number, decimal text, or absent at java-tron's default of zero.
+ * @returns The value as exact decimal text, or '0' when it was absent or unreadable.
+ */
+function toExactInteger(value: number | string | undefined): string {
+    let text = '0';
+    if (typeof value === 'number' && Number.isInteger(value)) {
+        text = String(value);
+    } else if (typeof value === 'string' && INTEGER_TEXT.test(value.trim())) {
+        text = value.trim();
+    }
+    return text;
+}
+
 /**
  * Turn one permission's JSON into the shape the tool returns.
  *
  * Key addresses arrive as hex, as java-tron writes them, and are converted to
- * base58 so the model sees the same form as everywhere else.
+ * base58 so the model sees the same form as everywhere else. The threshold and
+ * weights are kept as exact decimal text by {@link toExactInteger}, so a value
+ * past 2^53 is reported as it is on chain instead of rounded.
  *
  * @param json - The permission as stored, or an empty string when absent.
  * @returns The permission, or null when it is absent or not valid JSON.
@@ -135,10 +171,10 @@ function parsePermission(json: string): IPermissionView | null {
             view = {
                 name: raw.permission_name ?? null,
                 id: Number(raw.id ?? 0),
-                threshold: Number(raw.threshold ?? 0),
+                threshold: toExactInteger(raw.threshold),
                 keys: (raw.keys ?? []).map(key => ({
                     address: key.address ? TronGridClient.toBase58Address(key.address) : null,
-                    weight: Number(key.weight ?? 0)
+                    weight: toExactInteger(key.weight)
                 })),
                 ...(raw.operations ? { operations: raw.operations } : {})
             };
@@ -156,6 +192,11 @@ function parsePermission(json: string): IPermissionView | null {
  * - `shared-owner-control`: its own key is listed but needs others to reach the threshold.
  * - `owner-control-transferred`: its own key is not listed, so other keys control it.
  *
+ * The weight and threshold are compared as `BigInt` values, because both are
+ * int64 and the account's owner chooses them. Comparing them as numbers would
+ * round values past 2^53 together, which would let an account that needs
+ * co-signers read as one that can still sign alone.
+ *
  * @param account - The account whose permissions changed.
  * @param owner - Its new owner permission.
  * @returns The classification, or `unknown` when the permission could not be read.
@@ -164,7 +205,9 @@ function classifyOwnerControl(account: string, owner: IPermissionView | null): s
     let control = 'unknown';
     if (owner) {
         const own = owner.keys.find(key => key.address === account);
-        control = !own ? 'owner-control-transferred' : own.weight >= owner.threshold ? 'self-controlled' : 'shared-owner-control';
+        control = !own
+            ? 'owner-control-transferred'
+            : BigInt(own.weight) >= BigInt(owner.threshold) ? 'self-controlled' : 'shared-owner-control';
     }
     return control;
 }

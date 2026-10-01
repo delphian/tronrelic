@@ -126,7 +126,7 @@ export function buildContractActivityTool(toolkit: IChainQueryToolkit): IAiTool 
         name: AI_TOOL_NAMES.contractActivity,
         description:
             'Describe how one smart contract is being used, from a fixed menu of views. ' +
-            '"summary" (default): calls, distinct callers, success and failure counts by status (such as REVERT or OUT_OF_ENERGY), TRX sent with the calls, and the energy and fees the calls consumed, split into energy from the caller\'s own staked or delegated resources, energy paid by the contract deployer, and energy paid for by burning TRX. ' +
+            '"summary" (default): calls, distinct callers, success and failure counts by status (such as REVERT or OUT_OF_ENERGY), TRX sent with the calls that succeeded (a failed call\'s TRX is never transferred, so it is not counted), and the energy and fees the calls consumed, split into energy from the caller\'s own staked or delegated resources, energy paid by the contract deployer, and energy paid for by burning TRX. ' +
             '"callers": the wallets calling it most, with call and failure counts. ' +
             '"methods": calls grouped by function selector (the first 4 bytes of call data), with well-known selectors named, such as transfer(address,uint256). ' +
             '"hourly": calls, callers, and failures per hour. ' +
@@ -215,7 +215,7 @@ export function buildContractActivityTool(toolkit: IChainQueryToolkit): IAiTool 
 async function readSummary(session: ChainQuerySession, where: string, params: Record<string, unknown>, trx: IChainTokenInfo | undefined): Promise<IViewResult> {
     const [totals] = await session.query<ICallTotalsRow>(
         `SELECT count() AS calls, uniqExact(owner_address) AS callers, countIf(contract_ret = 'SUCCESS') AS succeeded,
-       toString(sum(call_value)) AS trx_sent, min(block_timestamp) AS first_at, max(block_timestamp) AS last_at
+       toString(sumIf(call_value, contract_ret = 'SUCCESS')) AS trx_sent, min(block_timestamp) AS first_at, max(block_timestamp) AS last_at
 FROM ${CHAIN_DATA_DATABASE}.trigger_smart_contract FINAL
 WHERE ${where}`,
         params
@@ -286,7 +286,7 @@ WHERE ${where}`,
 async function readCallers(session: ChainQuerySession, where: string, params: Record<string, unknown>, trx: IChainTokenInfo | undefined): Promise<IViewResult> {
     const rows = await session.query<ICallerRow>(
         `SELECT owner_address AS caller, count() AS calls, countIf(contract_ret != 'SUCCESS') AS failed,
-       toString(sum(call_value)) AS trx_sent, min(block_timestamp) AS first_at, max(block_timestamp) AS last_at,
+       toString(sumIf(call_value, contract_ret = 'SUCCESS')) AS trx_sent, min(block_timestamp) AS first_at, max(block_timestamp) AS last_at,
        count() OVER () AS total_groups
 FROM ${CHAIN_DATA_DATABASE}.trigger_smart_contract FINAL
 WHERE ${where}
@@ -328,7 +328,7 @@ LIMIT {limit:UInt32}`,
 async function readMethods(session: ChainQuerySession, where: string, params: Record<string, unknown>, trx: IChainTokenInfo | undefined): Promise<IViewResult> {
     const rows = await session.query<IMethodRow>(
         `SELECT lower(substring(data, 1, 8)) AS selector, count() AS calls, uniqExact(owner_address) AS callers,
-       countIf(contract_ret != 'SUCCESS') AS failed, toString(sum(call_value)) AS trx_sent,
+       countIf(contract_ret != 'SUCCESS') AS failed, toString(sumIf(call_value, contract_ret = 'SUCCESS')) AS trx_sent,
        count() OVER () AS total_groups
 FROM ${CHAIN_DATA_DATABASE}.trigger_smart_contract FINAL
 WHERE ${where}
