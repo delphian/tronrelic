@@ -172,4 +172,69 @@ describe('McpEndpointController', () => {
         expect(recorded.status).toBe(403);
         expect(recorded.headers['WWW-Authenticate']).toBeUndefined();
     });
+
+    describe('refused tool calls', () => {
+        /** A verified caller in mcp-users and admin, calling from an address the test names. */
+        const admitted: McpCallerOutcome = {
+            kind: 'ok',
+            caller: {
+                claims: { userId: 'user-1', clientId: 'client-1', scopes: ['mcp:tools'] },
+                endUser: { userId: 'user-1', groups: ['mcp-users', 'admin'] },
+                ip: '203.0.113.9'
+            } as any
+        };
+
+        /**
+         * Build an admitted controller whose served list and refusal reason are
+         * fixed, with the hand-off to the SDK stubbed out.
+         *
+         * @param served - Names of the tools served to the caller.
+         * @returns The controller and the exposure service's explain spy.
+         */
+        function buildAdmitted(served: string[]) {
+            const explainWithheld = vi.fn(async () => 'ip-not-allowed');
+            const controller = new McpEndpointController(
+                { get: vi.fn(async () => ({ enabled: true })) } as any,
+                { getServedTools: vi.fn(async () => served.map(name => ({ tool: { name }, restricted: false, scrubSecrets: false }))), explainWithheld } as any,
+                { resolve: vi.fn(async () => admitted) } as any,
+                { create: vi.fn() } as any,
+                URLS,
+                logger
+            );
+            // The SDK hand-off needs a real Node request; these tests stop before it.
+            vi.spyOn(controller as any, 'handOff').mockResolvedValue(undefined);
+            return { controller, explainWithheld };
+        }
+
+        /**
+         * Build an authenticated request whose body is already parsed, which
+         * makes the JSON parser pass it through untouched.
+         *
+         * @param body - The JSON-RPC body.
+         * @returns The request.
+         */
+        function rpc(body: unknown) {
+            return Object.assign(request({ headers: { Authorization: 'Bearer abc' } }), { body, _body: true });
+        }
+
+        it('logs an error naming the tool and the reason when a call names a tool that was not served', async () => {
+            logger.error.mockClear();
+            const { controller, explainWithheld } = buildAdmitted(['tronrelic-get-log-statistics']);
+            await controller.handle(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'tronrelic-query-system-logs' } }), response().res, vi.fn());
+            expect(explainWithheld).toHaveBeenCalledWith('tronrelic-query-system-logs', { groups: ['mcp-users', 'admin'], ip: '203.0.113.9' });
+            expect(logger.error).toHaveBeenCalledWith(
+                expect.objectContaining({ tool: 'tronrelic-query-system-logs', reason: 'ip-not-allowed', userId: 'user-1', ip: '203.0.113.9' }),
+                expect.stringContaining('tronrelic-query-system-logs')
+            );
+        });
+
+        it('logs nothing for a served tool or a request that is not a tool call', async () => {
+            logger.error.mockClear();
+            const { controller, explainWithheld } = buildAdmitted(['tronrelic-get-log-statistics']);
+            await controller.handle(rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'tronrelic-get-log-statistics' } }), response().res, vi.fn());
+            await controller.handle(rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }), response().res, vi.fn());
+            expect(explainWithheld).not.toHaveBeenCalled();
+            expect(logger.error).not.toHaveBeenCalled();
+        });
+    });
 });

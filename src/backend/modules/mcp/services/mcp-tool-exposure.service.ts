@@ -18,7 +18,7 @@
  * service decides what is offered while the governor decides what may run.
  */
 
-import type { IAiTool, IAiToolRegistry, IDatabaseService, IMcpToolExposure, IMcpToolGrant, ISystemLogService, IUserGroupService } from '@/types';
+import type { IAiTool, IAiToolRegistry, IDatabaseService, IMcpGroupPolicy, IMcpToolExposure, IMcpToolGrant, ISystemLogService, IUserGroupService } from '@/types';
 import { MCP_USERS_GROUP_ID, getMcpToolIneligibility, mcpGroupMayHoldTool } from '@/types';
 import { capabilityFingerprint } from './capabilityFingerprint.js';
 import type { McpGroupPolicyService } from './McpGroupPolicyService.js';
@@ -80,6 +80,32 @@ export interface IMcpServedTool {
     /** True when a group that serves this tool to the caller asks for its results to be scrubbed. */
     scrubSecrets: boolean;
 }
+
+/**
+ * Why a tool was not served to one caller. The MCP SDK answers a call for an
+ * unserved tool with a bare "Tool not found", so the endpoint logs this reason
+ * to let an admin tell, for example, an IP allowlist refusal from a missing grant.
+ *
+ * - `not-registered`: no tool by that name is in the AI tool registry.
+ * - `disabled`: the tool is switched off in the AI tool registry.
+ * - `not-granted`: none of the caller's groups holds a grant for it.
+ * - `stale-grant`: every grant was made before the tool's capability changed.
+ * - `restricted-not-allowed`: the tool is restricted and no granting group allows restricted tools.
+ * - `ip-not-allowed`: every remaining grant belongs to a group whose IP allowlist does not admit the request address.
+ */
+export type McpToolWithheldReason =
+    | 'not-registered'
+    | 'disabled'
+    | 'not-granted'
+    | 'stale-grant'
+    | 'restricted-not-allowed'
+    | 'ip-not-allowed';
+
+/**
+ * The outcome of checking one registered tool for one caller: either the
+ * served entry, or the reason it was held back.
+ */
+type McpToolDecision = { served: IMcpServedTool } | { withheld: McpToolWithheldReason };
 
 /** Error thrown when an admin asks for a grant that cannot be made. */
 export class McpToolExposureError extends Error {
@@ -232,23 +258,41 @@ export class McpToolExposureService {
         const [approvals, policies] = await Promise.all([this.loadApprovals(APPROVALS_CACHE_TTL_MS), this.policies.getPolicies()]);
         const served: IMcpServedTool[] = [];
         for (const tool of this.toolRegistry.getEnabledTools()) {
-            // Most registered tools have no grant at all. Checking for one
-            // first skips the floor check and the fingerprint lookup for them
-            // on every MCP request.
-            const docs = (approvals.get(tool.name) ?? []).filter(doc => audience.groups.includes(doc.groupId));
-            if (docs.length > 0) {
-                const restricted = getMcpToolIneligibility(tool.capability) !== null;
-                const fingerprint = this.fingerprintOf(tool.capability);
-                const routes = docs
-                    .filter(doc => doc.fingerprint === fingerprint)
-                    .map(doc => this.policies.policyFor(policies, doc.groupId))
-                    .filter(policy => mcpGroupMayHoldTool(restricted, policy) && this.policies.allowsAddress(policy, audience.ip));
-                if (routes.length > 0) {
-                    served.push({ tool, restricted, scrubSecrets: routes.some(policy => policy.scrubSecrets) });
-                }
+            const decision = this.decide(tool, approvals, policies, audience);
+            if ('served' in decision) {
+                served.push(decision.served);
             }
         }
         return served.sort((a, b) => a.tool.name.localeCompare(b.tool.name));
+    }
+
+    /**
+     * Explain why one tool is not served to a caller.
+     *
+     * The endpoint calls this when a client asks to run a tool that was left
+     * out of the caller's served list, because the SDK's own answer ("Tool not
+     * found") says nothing about the cause. It applies the same checks as
+     * {@link getServedTools}, in the same order, over the same cached reads.
+     *
+     * @param toolName - The tool the client asked to run.
+     * @param audience - The caller's groups and request address.
+     * @returns The reason the tool is withheld, or null when it is served,
+     *   which happens only if a grant or setting changed after the served list
+     *   for the request was computed.
+     */
+    async explainWithheld(toolName: string, audience: IMcpToolAudience): Promise<McpToolWithheldReason | null> {
+        let reason: McpToolWithheldReason | null;
+        const tool = this.toolRegistry.getTool(toolName);
+        if (!tool) {
+            reason = 'not-registered';
+        } else if (!this.toolRegistry.getEnabledTools().some(enabled => enabled.name === toolName)) {
+            reason = 'disabled';
+        } else {
+            const [approvals, policies] = await Promise.all([this.loadApprovals(APPROVALS_CACHE_TTL_MS), this.policies.getPolicies()]);
+            const decision = this.decide(tool, approvals, policies, audience);
+            reason = 'withheld' in decision ? decision.withheld : null;
+        }
+        return reason;
     }
 
     /**
@@ -388,6 +432,55 @@ export class McpToolExposureService {
         }
         this.logger.warn({ groupId, withdrawn }, `MCP grants withdrawn from deleted group ${groupId}`);
         return withdrawn;
+    }
+
+    /**
+     * Decide whether one enabled tool is served to a caller, and if not, why.
+     *
+     * Kept in one place so the served list and the reason logged for a refused
+     * call can never disagree. The checks run in a fixed order and the first
+     * one that removes every remaining grant names the reason: the caller's
+     * groups hold no grant, every grant is stale, no granting group may hold a
+     * restricted tool, or no granting group's IP allowlist admits the address.
+     *
+     * @param tool - An enabled, registered tool.
+     * @param approvals - Grants keyed by tool name, from {@link loadApprovals}.
+     * @param policies - Stored group policies, from the policy service.
+     * @param audience - The caller's groups and request address.
+     * @returns The served entry, or the reason the tool is withheld.
+     */
+    private decide(
+        tool: IAiTool,
+        approvals: Map<string, IMcpToolApprovalDocument[]>,
+        policies: Map<string, IMcpGroupPolicy>,
+        audience: IMcpToolAudience
+    ): McpToolDecision {
+        let decision: McpToolDecision;
+        // Most registered tools have no grant at all. Checking for one first
+        // skips the floor check and the fingerprint lookup for them on every
+        // MCP request.
+        const docs = (approvals.get(tool.name) ?? []).filter(doc => audience.groups.includes(doc.groupId));
+        if (docs.length === 0) {
+            decision = { withheld: 'not-granted' };
+        } else {
+            const restricted = getMcpToolIneligibility(tool.capability) !== null;
+            const fingerprint = this.fingerprintOf(tool.capability);
+            const current = docs
+                .filter(doc => doc.fingerprint === fingerprint)
+                .map(doc => this.policies.policyFor(policies, doc.groupId));
+            const holdable = current.filter(policy => mcpGroupMayHoldTool(restricted, policy));
+            const routes = holdable.filter(policy => this.policies.allowsAddress(policy, audience.ip));
+            if (current.length === 0) {
+                decision = { withheld: 'stale-grant' };
+            } else if (holdable.length === 0) {
+                decision = { withheld: 'restricted-not-allowed' };
+            } else if (routes.length === 0) {
+                decision = { withheld: 'ip-not-allowed' };
+            } else {
+                decision = { served: { tool, restricted, scrubSecrets: routes.some(policy => policy.scrubSecrets) } };
+            }
+        }
+        return decision;
     }
 
     /**

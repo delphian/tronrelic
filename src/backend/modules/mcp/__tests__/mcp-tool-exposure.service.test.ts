@@ -287,6 +287,52 @@ describe('McpToolExposureService', () => {
         ]);
     });
 
+    describe('explainWithheld', () => {
+        it('names an unregistered tool and a tool switched off in the registry', async () => {
+            const { exposure } = build(database, tools, ['chain-lookup']);
+            expect(await exposure.explainWithheld('missing', MEMBER)).toBe('not-registered');
+            expect(await exposure.explainWithheld('chain-lookup', MEMBER)).toBe('disabled');
+        });
+
+        it('names a tool none of the caller\'s groups was granted', async () => {
+            const { exposure } = build(database, tools);
+            await exposure.setExposure('chain-lookup', 'admin', true, 'admin-1');
+            expect(await exposure.explainWithheld('chain-lookup', MEMBER)).toBe('not-granted');
+        });
+
+        it('names a grant made before the tool\'s capability changed', async () => {
+            const { exposure } = build(database, tools);
+            await exposure.setExposure('chain-lookup', MCP_USERS_GROUP_ID, true, 'admin-1');
+            tools[0] = tool('chain-lookup', { ...READ_CAP, surfacesUntrustedContent: true });
+            expect(await build(database, tools).exposure.explainWithheld('chain-lookup', MEMBER)).toBe('stale-grant');
+        });
+
+        it('names a restricted grant whose group no longer allows restricted tools', async () => {
+            const { exposure, policies } = build(database, tools);
+            await setPolicy(policies, 'admin', { allowRestrictedTools: true });
+            await exposure.setExposure('log-reader', 'admin', true, 'admin-1');
+            // Switch the setting off without the withdrawal the admin API runs,
+            // so the grant is still stored and only the policy refuses it.
+            await setPolicy(policies, 'admin', { allowRestrictedTools: false });
+            expect(await exposure.explainWithheld('log-reader', ADMIN_MEMBER)).toBe('restricted-not-allowed');
+        });
+
+        it('names an address outside the granting group\'s IP allowlist', async () => {
+            const { exposure, policies } = build(database, tools);
+            await setPolicy(policies, 'admin', { allowRestrictedTools: true, ipAllowlistEnabled: true, ipAllowlist: ['203.0.113.0/24'] });
+            await exposure.setExposure('log-reader', 'admin', true, 'admin-1');
+            const outside = { groups: ADMIN_MEMBER.groups, ip: '2605:59c8:3dba:3108::1' };
+            expect(await exposure.getServedTools(outside)).toEqual([]);
+            expect(await exposure.explainWithheld('log-reader', outside)).toBe('ip-not-allowed');
+        });
+
+        it('returns null for a tool that is served', async () => {
+            const { exposure } = build(database, tools);
+            await exposure.setExposure('chain-lookup', MCP_USERS_GROUP_ID, true, 'admin-1');
+            expect(await exposure.explainWithheld('chain-lookup', MEMBER)).toBeNull();
+        });
+    });
+
     it('withdraws an approval for one group and leaves the others', async () => {
         const { exposure } = build(database, tools);
         await exposure.setExposure('chain-lookup', MCP_USERS_GROUP_ID, true, 'admin-1');

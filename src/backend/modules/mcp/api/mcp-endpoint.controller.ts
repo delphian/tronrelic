@@ -20,7 +20,10 @@
  *    anonymous caller cannot make the server read a large body.
  *
  * Then the verified caller and the tools served to them ride into the SDK on
- * `req.auth`, and the per-request server factory takes over.
+ * `req.auth`, and the per-request server factory takes over. A `tools/call`
+ * naming a tool the caller was not served is logged as an error first, with
+ * the reason it was withheld, because the SDK answers it with a bare
+ * "Tool not found" that tells an admin nothing.
  */
 
 import express from 'express';
@@ -31,12 +34,19 @@ import { originValidation, toNodeHandler } from '@modelcontextprotocol/node';
 import type { ISystemLogService } from '@/types';
 import { MCP_OAUTH_SCOPES, MCP_TOOLS_SCOPE } from '@/types';
 import type { McpSettingsStore } from '../services/mcp-settings.store.js';
-import type { IMcpServedTool, McpToolExposureService } from '../services/mcp-tool-exposure.service.js';
+import type { IMcpServedTool, IMcpToolAudience, McpToolExposureService } from '../services/mcp-tool-exposure.service.js';
 import type { McpCallerOutcome, McpCallerResolver } from '../services/mcp-caller.resolver.js';
 import type { IMcpCaller, McpServerFactory } from '../services/mcp-server.factory.js';
 
 /** Largest JSON body the endpoint accepts. Tool arguments are small; this is generous. */
 const MAX_BODY_BYTES = '256kb';
+
+/**
+ * Most refused tool calls logged for one request. A JSON-RPC batch can name
+ * many tools, and without a cap one request could write an error entry per
+ * name into the system log.
+ */
+const MAX_WITHHELD_CALLS_LOGGED = 10;
 
 /**
  * Public URLs that describe this endpoint to clients.
@@ -268,7 +278,45 @@ export class McpEndpointController {
             // failed kill-switch or grant read, not the global handler's 500.
             res.status(503).set('Retry-After', '30').json({ error: 'unavailable', error_description: 'The MCP endpoint is temporarily unavailable.' });
         } else {
+            await this.logWithheldCalls(req.body, caller, tools);
             await this.handOff(req, res, caller, token, tools);
+        }
+    }
+
+    /**
+     * Write an error log entry for each tool the request asks to run that was
+     * not served to this caller.
+     *
+     * The SDK refuses such a call with "Tool not found" and nothing else, so
+     * without this entry an admin cannot tell an IP allowlist refusal from a
+     * missing grant or a stale one. The reason comes from the exposure
+     * service, which applies the same checks that built the served list. A
+     * failure to work out the reason is logged too, and never stops the
+     * request, which the SDK still answers.
+     *
+     * @param body - The parsed JSON-RPC body: one message, or a batch.
+     * @param caller - The verified caller, named in each entry.
+     * @param tools - The tools served to this caller for this request.
+     * @returns Resolves once every entry has been written.
+     */
+    private async logWithheldCalls(body: unknown, caller: IMcpCaller, tools: IMcpServedTool[]): Promise<void> {
+        const served = new Set(tools.map(entry => entry.tool.name));
+        const withheld = calledToolNames(body).filter(name => !served.has(name)).slice(0, MAX_WITHHELD_CALLS_LOGGED);
+        const context = {
+            userId: caller.claims.userId,
+            clientId: caller.claims.clientId,
+            ip: caller.ip,
+            groups: caller.endUser.groups ?? []
+        };
+        for (const name of withheld) {
+            try {
+                // Null means a grant or setting changed after the served list
+                // was built, so the tool would be served on the next call.
+                const reason = (await this.exposure.explainWithheld(name, audienceOf(caller))) ?? 'changed-during-request';
+                this.logger.error({ ...context, tool: name, reason }, `MCP tool call refused: ${name} is not served to this caller (${reason})`);
+            } catch (error: unknown) {
+                this.logger.error({ ...context, tool: name, err: error }, `MCP tool call refused: ${name} is not served to this caller (reason unavailable)`);
+            }
         }
     }
 
@@ -283,7 +331,7 @@ export class McpEndpointController {
     private async readServedTools(caller: IMcpCaller): Promise<IMcpServedTool[] | null> {
         let tools: IMcpServedTool[] | null;
         try {
-            tools = await this.exposure.getServedTools({ groups: caller.endUser.groups ?? [], ip: caller.ip });
+            tools = await this.exposure.getServedTools(audienceOf(caller));
         } catch (error: unknown) {
             this.logger.error({ err: error }, 'Could not read MCP tool approvals; refusing the request');
             tools = null;
@@ -368,6 +416,45 @@ export class McpEndpointController {
             .set('WWW-Authenticate', `Bearer ${params.join(', ')}`)
             .json({ error: error ?? 'unauthorized', ...(description ? { error_description: description } : {}) });
     }
+}
+
+/**
+ * Describe a verified caller the way the exposure service needs it.
+ *
+ * Building the served list and explaining a refused call must look at the
+ * same groups and address, or the logged reason could disagree with what was
+ * actually served, so both go through this one function.
+ *
+ * @param caller - The verified caller.
+ * @returns The caller's groups and request address.
+ */
+function audienceOf(caller: IMcpCaller): IMcpToolAudience {
+    return { groups: caller.endUser.groups ?? [], ip: caller.ip };
+}
+
+/**
+ * List the tool names a JSON-RPC body asks to run.
+ *
+ * The body is the client's input and has only been checked to be JSON, so
+ * every field is checked before it is read. A body may hold one message or a
+ * batch of them; each name appears once in the result.
+ *
+ * @param body - The parsed request body.
+ * @returns The `params.name` of every `tools/call` message, without duplicates.
+ */
+function calledToolNames(body: unknown): string[] {
+    const names = new Set<string>();
+    const messages: unknown[] = Array.isArray(body) ? body : [body];
+    for (const message of messages) {
+        if (typeof message === 'object' && message !== null) {
+            const { method, params } = message as { method?: unknown; params?: unknown };
+            const name = typeof params === 'object' && params !== null ? (params as { name?: unknown }).name : undefined;
+            if (method === 'tools/call' && typeof name === 'string') {
+                names.add(name);
+            }
+        }
+    }
+    return [...names];
 }
 
 /**
