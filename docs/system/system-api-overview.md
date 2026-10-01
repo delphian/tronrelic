@@ -42,7 +42,7 @@ If ClickHouse is not initialized, returns `{ connected: false, responseTime: nul
 | `connected` | boolean | |
 | `responseTime` | number \| null | ms from ping; `null` on 2000ms timeout |
 | `tableCount` | number | Tables in `currentDatabase()` |
-| `databaseSize` | number \| null | Bytes (sum of `system.tables.total_bytes`) |
+| `databaseSize` | number \| null | Bytes on disk for all stored data across every database, including `tron` and ClickHouse's own `system` log tables. Sum of `bytes_on_disk` over every row of `system.parts` (active and not-yet-deleted outdated parts) plus `system.detached_parts` |
 
 ### `GET /health/redis` — `health` payload
 
