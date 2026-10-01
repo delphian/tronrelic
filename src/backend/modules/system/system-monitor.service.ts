@@ -15,6 +15,7 @@ import { resolveBlockAgeInBlocks } from '../blockchain/block-pacer.js';
 import { BlockchainObserverService } from '../../services/blockchain-observer/index.js';
 import { ProviderConfigService } from '../providers/services/provider-config.service.js';
 import { SchedulerService } from '../scheduler/services/scheduler.service.js';
+import type { ClickHouseService } from '../clickhouse/services/clickhouse.service.js';
 import { resolveCoverageTone, resolveFeedLagTone, resolveIngestLagTone, resolvePipelineHealth } from './pipeline-health.js';
 import { logger } from '../../lib/logger.js';
 import { env } from '../../config/env.js';
@@ -1347,24 +1348,10 @@ export class SystemMonitorService {
         logger.error({ error }, 'Failed to fetch ClickHouse table count');
       }
 
-      // Get the disk space ClickHouse uses for all stored data. This covers
-      // every database rather than only currentDatabase(), because the chain
-      // data lives in the separate `tron` database and ClickHouse's own system
-      // log tables share the same disk. It counts every part still on disk:
-      // active parts, outdated parts that a merge replaced but cleanup has not
-      // yet deleted, and detached parts, which ClickHouse never deletes itself.
+      // Measured behind a TTL cache, because reading detached-part sizes is a
+      // disk scan rather than a metadata lookup. See getClickHouseDataSize().
       try {
-        const sizeResult = await clickhouse.query<{ total_bytes: string }>(`
-          SELECT
-            (SELECT sum(bytes_on_disk) FROM system.parts)
-            + (SELECT sum(bytes_on_disk) FROM system.detached_parts) as total_bytes
-        `);
-        if (sizeResult.length > 0) {
-          const bytes = sizeResult[0].total_bytes;
-          databaseSize = bytes ? parseInt(bytes, 10) : 0;
-        } else {
-          databaseSize = 0;
-        }
+        databaseSize = await this.getClickHouseDataSize(clickhouse);
       } catch (error) {
         logger.error({ error }, 'Failed to fetch ClickHouse database size');
       }
@@ -1376,6 +1363,101 @@ export class SystemMonitorService {
       tableCount,
       databaseSize
     };
+  }
+
+  /**
+   * How long a measured ClickHouse data size stays fresh.
+   *
+   * The ClickHouse tab polls the health endpoint every 10 seconds for as long
+   * as an operator leaves the page open, and each open tab polls on its own
+   * timer. Stored size moves slowly, so a figure up to five minutes old tells
+   * the operator the same thing while cutting the number of measurements by
+   * roughly thirty.
+   */
+  private static readonly CLICKHOUSE_SIZE_CACHE_TTL_MS = 300000;
+
+  /**
+   * In-flight or recently measured ClickHouse data size, shared by callers.
+   *
+   * Stores the promise rather than the value so a poll arriving while a
+   * measurement is still running attaches to it instead of starting a second
+   * one. On the pinned 24.3 server, reading `bytes_on_disk` from
+   * `system.detached_parts` walks every file in every detached part, so a
+   * server that has accumulated detached parts can take longer to answer than
+   * the poll interval.
+   */
+  private clickHouseSizeCache: { promise: Promise<number>; fetchedAt: number } | null = null;
+
+  /**
+   * Return the disk space ClickHouse uses for all stored data, serving repeat
+   * and concurrent pollers from one measurement.
+   *
+   * Follows the same rule as getBlockProcessingSnapshot(): the TTL is measured
+   * from when the measurement finished rather than when it started, and an
+   * in-flight measurement never expires, so two scans can never overlap. A
+   * failed measurement drops the entry so the next poll retries instead of
+   * being served the same rejection for the whole TTL.
+   *
+   * @param clickhouse - The connected ClickHouse service, passed in because the
+   *   caller has already loaded it and confirmed the connection.
+   * @returns Total bytes on disk across every database.
+   */
+  private getClickHouseDataSize(clickhouse: ClickHouseService): Promise<number> {
+    const now = Date.now();
+
+    if (
+      !this.clickHouseSizeCache ||
+      now - this.clickHouseSizeCache.fetchedAt >= SystemMonitorService.CLICKHOUSE_SIZE_CACHE_TTL_MS
+    ) {
+      // An infinite fetchedAt keeps the entry from expiring while the scan runs;
+      // it is replaced with the real completion time once the promise settles.
+      const entry: { promise: Promise<number>; fetchedAt: number } = {
+        promise: this.measureClickHouseDataSize(clickhouse),
+        fetchedAt: Number.POSITIVE_INFINITY
+      };
+
+      entry.promise.then(
+        () => {
+          entry.fetchedAt = Date.now();
+        },
+        () => {
+          if (this.clickHouseSizeCache === entry) {
+            this.clickHouseSizeCache = null;
+          }
+        }
+      );
+
+      this.clickHouseSizeCache = entry;
+    }
+
+    return this.clickHouseSizeCache.promise;
+  }
+
+  /**
+   * Measure the disk space ClickHouse uses for all stored data.
+   *
+   * Covers every database rather than only currentDatabase(), because the chain
+   * data lives in the separate `tron` database and ClickHouse's own system log
+   * tables share the same disk. It counts every part still on disk: active
+   * parts, outdated parts that a merge replaced but cleanup has not yet
+   * deleted, and detached parts, which ClickHouse never deletes itself.
+   *
+   * Call this through getClickHouseDataSize() rather than directly. The
+   * detached-parts term is the expensive one, and the cache there is what keeps
+   * a 10-second health poll from turning into a repeated disk scan.
+   *
+   * @param clickhouse - The connected ClickHouse service to query.
+   * @returns Total bytes on disk, or 0 when the server reports no parts.
+   */
+  private async measureClickHouseDataSize(clickhouse: ClickHouseService): Promise<number> {
+    const sizeResult = await clickhouse.query<{ total_bytes: string }>(`
+      SELECT
+        (SELECT sum(bytes_on_disk) FROM system.parts)
+        + (SELECT sum(bytes_on_disk) FROM system.detached_parts) as total_bytes
+    `);
+    const bytes = sizeResult.length > 0 ? sizeResult[0].total_bytes : null;
+
+    return bytes ? parseInt(bytes, 10) : 0;
   }
 
   async getConfiguration(): Promise<ConfigurationValues> {
