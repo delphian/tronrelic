@@ -99,7 +99,7 @@ All under `/api/admin/mcp`. Changes that widen access need a signed-in admin (`r
 |---|---|---|
 | GET | `/status` | `IMcpStatus`: settings, resource URL, issuer, group id, member count, served and stale tool counts |
 | PUT | `/settings` | `{ enabled }`. Turning on requires a signed-in admin; turning off accepts the service token |
-| GET | `/tools` | `IMcpToolExposure[]` for every registered tool |
+| GET | `/tools` | `IMcpToolExposure[]` for every registered tool, sorted by owning module or plugin (`provider`), then by name |
 | PUT | `/tools/:name` | `{ exposed }`. Exposing requires a signed-in admin. 400 ineligible · 404 unknown |
 | GET | `/apps` | Connected apps across all users (`limit` 1–200, `offset`) |
 | DELETE | `/apps/:userId?clientId=` | Revoke one grant: consent, refresh tokens, and stored access tokens |
