@@ -14,6 +14,7 @@ Central CRUD authority for free-text tags on TRON wallet addresses. Every surfac
 | Admin API | `/api/admin/system/address-tags/*` — `requireAdmin` |
 | Admin UI | `/system/address-tags` — Submenu Pattern tab row (namespace `address-tags`), in this order: **Tags** (vocabulary summary panel over one row per address, server-grouped by `searchAddresses` so a page never splits an address), **Sources** (per-source ingestion status, run-now, screen-one-address), **Schedules** (core `SchedulerMonitor` filtered to `address-tags:`), **Database** (core `CollectionBrowser` scoped to `module_address-tags_`), **Settings** (source switches, write-only Chainalysis key). Settings sits last because the four before it report state and Settings changes it |
 | Scheduler jobs | `address-tags:sync-ofac` (daily), `address-tags:sync-usdt-blacklist` (5 min), `address-tags:verify-frozen` (weekly) — all off when `ENABLE_SCHEDULER=false` |
+| AI tools | `address-tags-get`, `address-tags-find-by-tag`, `address-tags-list` — read-only, provider id `address-tags`, in `ai-tools.ts` |
 | Frontend client | `src/frontend/modules/address-tags/api/client.ts` (both surfaces) |
 | Frontend read cache | `useAddressTags(address)` — batches every chip's lookup into one `by-address` call, invalidate with `invalidateAddressTags(address)` |
 | Frontend editor | `AddressTagsEditor` — freeform comma-separated field, opened from the `TronAddress` chip's wrench menu ("Edit tags", admin only) |
@@ -182,6 +183,20 @@ suggestions and the control degrades to a plain input that still accepts a
 pasted address — the same "tags are an absent enhancement" rule the chip
 follows.
 
+## AI Tools
+
+`ai-tools.ts` registers three read-only tools on the core `'ai-tools'` registry from `run()`, watching for the registry because the AI tools module publishes it later in startup. They read through the same service as every other surface, so their results match the admin page and the REST reads.
+
+| Tool | Reads | Returns |
+|---|---|---|
+| `address-tags-get` | `getTagsByAddresses` | The live tags on 1 to 100 checksum-verified addresses, each with `manual` and the machine sources still asserting it (`source`, `ref`, `url`, `observedAt`). An untagged address comes back with an empty list |
+| `address-tags-find-by-tag` | `getAddressesByTags` | The addresses carrying any of 1 to 10 exact tags, grouped by address, sorted, and capped at 500 with `totalAddresses` and `truncated` |
+| `address-tags-list` | `listTags` | Distinct tag text, optionally by case-sensitive prefix such as `token:`, capped at 999 so the one-extra probe that sets `truncated` stays under the service's 1,000 ceiling |
+
+All three declare `read` / `internal` with `surfacesUntrustedContent`, because a machine source's `ref` is copied from an external feed. They pass the MCP safety floor. None returns counts per tag: `GET /summary` is admin-only because a count describes the whole collection, and these tools can be granted to non-admin MCP users. Withdrawn source elements are dropped from the provenance they return, since they no longer support the tag.
+
+The `token:<symbol>` tag (lower case, such as `token:usdt`) is what `blockchain-find-token` and `blockchain-contract-activity` read to mark the real contract behind a token symbol. See [system-chain-query-tools.md](../../../../docs/system/system-chain-query-tools.md#symbols-and-verified-tokens).
+
 ## Source Map
 
 | Path | Contents |
@@ -189,6 +204,7 @@ follows.
 | `AddressTagsModule.ts` | `IModule` implementation; publishes service, mounts routers, registers menu item + submenu tabs, registers ingestion jobs |
 | `services/address-tag.service.ts` | Singleton service — all business logic including `syncSource` and the liveness derivation |
 | `services/tag-ingestion.service.ts` | Runs sources, owns cursors/run-state/settings in module KV |
+| `ai-tools.ts` | The three read-only AI tools and their `watch('ai-tools')` registration |
 | `sources/ITagSource.ts` | Source contract (`snapshot`/`delta`/`lookup`, verify capability) |
 | `sources/ofac-sdn.source.ts` | OFAC SDN streaming XML scanner (both export shapes) |
 | `sources/usdt-blacklist.source.ts` | Tether event poll + `isBlackListed` verify pass |

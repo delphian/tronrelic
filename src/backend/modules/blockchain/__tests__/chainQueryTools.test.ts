@@ -8,96 +8,16 @@
  * rather than failures, and the trace search respects time order and keeps
  * its partial graph when a hop is stopped.
  */
-import { describe, it, expect, vi } from 'vitest';
-import type { IAddressTagService, IClickHouseReader, IPriceHistoryService, IToolHandlerContext } from '@/types';
+import { describe, it, expect } from 'vitest';
 import { formatClickHouseDateTime64Utc } from '../../../lib/formatClickHouseDateTime64Utc.js';
-import { AddressTagLookup } from '../chain-query/AddressTagLookup.js';
-import { ChainCoverageReader, summarizeCoverage, type ICoverageRow } from '../chain-query/ChainCoverageReader.js';
+import { summarizeCoverage, type ICoverageRow } from '../chain-query/ChainCoverageReader.js';
 import type { IChainWindow } from '../chain-query/chainQueryInput.js';
-import { ChainQuerySession } from '../chain-query/ChainQuerySession.js';
-import type { IChainQueryToolkit } from '../chain-query/ChainQueryToolkit.js';
 import { buildChainQueryTools } from '../chain-query/registerChainQueryAiTools.js';
-import { TokenCatalog } from '../chain-query/TokenCatalog.js';
-import { UsdPricer } from '../chain-query/UsdPricer.js';
 import { buildAddressCounterpartiesTool } from '../chain-query/tools/buildAddressCounterpartiesTool.js';
 import { buildAddressTransfersTool } from '../chain-query/tools/buildAddressTransfersTool.js';
 import { buildTraceFlowTool } from '../chain-query/tools/buildTraceFlowTool.js';
 import { AI_TOOL_NAMES } from '../chain-query/tools/chainQueryToolShared.js';
-
-/** Real, checksum-valid addresses, so the tools' own validation accepts them. */
-const WALLET = 'TXFBqBbqJommqZf7BV8NNYzePh97UmJodJ';
-const PEER = 'TAUN6FwrnwwmaEqYcckffC7wYmbaS6cBiX';
-const OTHER = 'TNXoiAJ3dct8Fjg4M9fkLFh9S2v9TXc32G';
-const USDT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
-
-/** A fixed "now", so every window is predictable. */
-const NOW = new Date(Date.UTC(2026, 8, 24, 12, 0, 0));
-
-/** The run identity the governor would pass. */
-const CONTEXT: IToolHandlerContext = { triggerPath: 'interactive', queryId: 'run-1' };
-
-/** Answers one `tron._transfer` query. */
-type TransferHandler = (sql: string, params: Record<string, unknown>) => unknown[] | Promise<unknown[]>;
-
-/** One read the fake reader received. */
-interface IRecordedRead {
-    sql: string;
-    params: Record<string, unknown>;
-    quotaKey?: string;
-}
-
-/**
- * Build a toolkit whose ClickHouse reader is a fake.
- *
- * Coverage and token metadata queries get fixed answers describing a complete
- * window and a resolved USDT; every `tron._transfer` query goes to the test's
- * handler. Tags mark PEER as sanctioned, and prices give USDT a $1 close on
- * the day before NOW.
- *
- * @param onTransfers - The test's answer to transfer queries.
- * @returns The toolkit and the list of reads it recorded.
- */
-function buildToolkit(onTransfers: TransferHandler): { toolkit: IChainQueryToolkit; reads: IRecordedRead[] } {
-    const reads: IRecordedRead[] = [];
-    const reader: IClickHouseReader = {
-        accountId: 'ai-agent',
-        query: async <T>(sql: string, params?: Record<string, unknown>, options?: { quotaKey?: string }) => {
-            reads.push({ sql, params: params ?? {}, quotaKey: options?.quotaKey });
-            let rows: unknown[];
-            if (sql.includes('tron.block FINAL')) {
-                rows = [{
-                    first_block: '1000',
-                    last_block: '29799',
-                    present: '28800',
-                    without_receipts: '0',
-                    first_at: formatClickHouseDateTime64Utc(new Date(params?.from ? Date.parse(`${String(params.from).replace(' ', 'T')}Z`) : 0)),
-                    last_at: formatClickHouseDateTime64Utc(NOW)
-                }];
-            } else if (sql.includes('tron._token')) {
-                rows = [{ token: USDT, status: 'resolved', decimals: '6', symbol: 'USDT', name: 'Tether USD' }];
-            } else {
-                rows = await onTransfers(sql, params ?? {});
-            }
-            return { rows: rows as T[], queryId: `q-${reads.length}`, readRows: 10, readBytes: 100, elapsedMs: 1 };
-        }
-    };
-    const tagService = {
-        getTagsByAddresses: vi.fn(async (addresses: string[]) => addresses.includes(PEER) ? [{ address: PEER, tag: 'ofac:sdn', active: true }] : [])
-    } as unknown as IAddressTagService;
-    const priceService = {
-        getPricesForDays: vi.fn(async (asset: string) => asset === USDT ? [{ asset, day: '2026-09-23', priceUsd: 1 }] : [])
-    } as unknown as IPriceHistoryService;
-    const toolkit: IChainQueryToolkit = {
-        openSession: (context) => new ChainQuerySession(reader, context),
-        coverage: new ChainCoverageReader(() => NOW.getTime()),
-        tokens: new TokenCatalog(),
-        tags: new AddressTagLookup(() => tagService),
-        prices: new UsdPricer(() => priceService),
-        retentionDays: 7,
-        now: () => NOW
-    };
-    return { toolkit, reads };
-}
+import { buildToolkit, CONTEXT, NOW, OTHER, PEER, USDT, WALLET } from './chainQueryTestToolkit.js';
 
 /**
  * A `tron._transfer` row as the transfers query returns it.
@@ -129,6 +49,17 @@ describe('chain query tools', () => {
         expect(tools.map(tool => tool.name).sort()).toEqual(Object.values(AI_TOOL_NAMES).sort());
         for (const tool of tools) {
             expect(tool.capability).toEqual(expect.objectContaining({ sideEffect: 'read', surfacesUntrustedContent: true }));
+        }
+    });
+
+    it('offers no tool that takes SQL from the model', () => {
+        const { toolkit } = buildToolkit(() => []);
+        const tools = buildChainQueryTools(toolkit);
+
+        // Model-written SQL could reach system.* tables the ai-agent account can read.
+        for (const tool of tools) {
+            const properties = Object.keys((tool.inputSchema as { properties?: Record<string, unknown> }).properties ?? {});
+            expect(properties, tool.name).not.toContain('sql');
         }
     });
 });

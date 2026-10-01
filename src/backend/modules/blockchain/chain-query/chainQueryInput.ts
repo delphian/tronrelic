@@ -10,8 +10,7 @@
  * @module backend/modules/blockchain/chain-query/chainQueryInput
  */
 
-import { normalizeAddress } from '../../../lib/tron-address.js';
-import { TronGridClient } from '../tron-grid.client.js';
+import { toVerifiedBase58 } from '../../../lib/tron-address.js';
 import { ChainQueryError } from './ChainQueryError.js';
 
 /** Which kind of asset a token filter names, matching `tron._transfer.asset_type`. */
@@ -63,16 +62,7 @@ const HOUR_MS = 3_600_000;
  */
 export function parseAddress(value: unknown, field: string): string {
     const text = typeof value === 'string' ? value.trim() : '';
-    let base58: string | null = null;
-    try {
-        const normalized = normalizeAddress(text);
-        base58 = TronGridClient.toBase58Address(normalized.hex);
-        if (text.startsWith('T') && base58 !== text) {
-            base58 = null;
-        }
-    } catch {
-        base58 = null;
-    }
+    const base58 = toVerifiedBase58(text);
     if (!base58) {
         throw new ChainQueryError(
             `${field} must be a valid TRON address: 34 characters starting with T (base58, checksum verified), or 42 hex characters starting with 41. Got ${JSON.stringify(text.slice(0, 64))}.`,

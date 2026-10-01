@@ -54,6 +54,34 @@ export function toHexAddress(address: string): string {
   return normalizeAddress(address).hex;
 }
 
+/**
+ * Read an address from untrusted input, such as an AI tool argument, and
+ * return it in base58 only when it is a real TRON address.
+ *
+ * The shape checks in `normalizeAddress` accept a base58 string whose
+ * checksum is wrong, which is what a mistyped or invented address usually
+ * looks like. Converting to hex and back and requiring the same text catches
+ * that, so a caller never reads an empty result for a made-up address as
+ * "this wallet has nothing".
+ *
+ * @param address - The raw text, base58 (T…) or hex (41…).
+ * @returns The base58 address, or null when the text is not a valid address.
+ */
+export function toVerifiedBase58(address: string): string | null {
+  const text = typeof address === 'string' ? address.trim() : '';
+  let base58: string | null = null;
+  try {
+    const normalized = normalizeAddress(text);
+    base58 = tronWeb.address.fromHex(normalized.hex) || null;
+    if (text.startsWith('T') && base58 !== text) {
+      base58 = null;
+    }
+  } catch {
+    base58 = null;
+  }
+  return base58;
+}
+
 function normalizeHex(input: string): string {
   let hex = input.trim();
   if (hex.startsWith('0x') || hex.startsWith('0X')) {

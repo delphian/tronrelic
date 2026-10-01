@@ -39,6 +39,13 @@ export interface IChainCoverage {
     dataTo: string | null;
     /** True when nothing above means part of the window is unknown. */
     complete: boolean;
+    /**
+     * True when every block in the window is stored, whether or not its
+     * receipts were fetched. Tools reading only block contents, such as
+     * delegations or permission updates, judge completeness by this, because a
+     * missing receipt hides nothing they report.
+     */
+    blocksComplete: boolean;
 }
 
 /**
@@ -187,6 +194,7 @@ export function summarizeCoverage(row: ICoverageRow | undefined, window: IChainW
     const endsAtLiveHead = now - window.to.getTime() <= END_SLACK_MS;
     const endSlack = endsAtLiveHead ? END_SLACK_MS : EDGE_SLACK_MS;
     const endsEarly = dataTo === null || window.to.getTime() - new Date(dataTo).getTime() > endSlack;
+    const blocksComplete = present > 0 && expected === present && !startsLate && !endsEarly;
     return {
         expectedBlocks: expected,
         presentBlocks: present,
@@ -194,6 +202,7 @@ export function summarizeCoverage(row: ICoverageRow | undefined, window: IChainW
         blocksWithoutReceipts: withoutReceipts,
         dataFrom,
         dataTo,
-        complete: present > 0 && expected === present && withoutReceipts === 0 && !startsLate && !endsEarly
+        complete: blocksComplete && withoutReceipts === 0,
+        blocksComplete
     };
 }
