@@ -216,7 +216,7 @@ export class IdentityModule implements IModule<IIdentityModuleDependencies> {
 
         // Group-definition registry plus the public 'user-groups' contract.
         // Composes GroupService for all membership reads/writes.
-        UserGroupService.setDependencies(this.database, this.groupService, this.logger);
+        UserGroupService.setDependencies(this.database, this.groupService, this.logger, dependencies.hookRegistry);
         this.userGroupService = UserGroupService.getInstance();
         await this.userGroupService.createIndexes();
         await this.userGroupService.seedSystemGroups();

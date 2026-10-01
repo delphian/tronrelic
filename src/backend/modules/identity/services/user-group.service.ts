@@ -28,6 +28,7 @@
 import type { Collection } from 'mongodb';
 import type {
     IDatabaseService,
+    IHookRegistry,
     ISystemLogService,
     IUserGroup,
     IUserGroupService,
@@ -35,6 +36,7 @@ import type {
     IUpdateUserGroupInput
 } from '@/types';
 import type { IUserGroupDocument } from '../database/IUserGroupDocument.js';
+import { HOOKS } from '../../../hooks/registry.js';
 import { GroupService, ADMIN_GROUP_ID } from './group.service.js';
 import {
     UserGroupValidationError,
@@ -61,17 +63,35 @@ export class UserGroupService implements IUserGroupService {
     private static instance: UserGroupService;
     private readonly groupsCollection: Collection<IUserGroupDocument>;
 
+    /**
+     * @param database - Core database service, for the group-definition collection.
+     * @param groupService - Membership primitive every membership read and write goes through.
+     * @param logger - Module logger, used to record definition changes.
+     * @param hookRegistry - Fires the `http.groupDeleted` seam after a deletion,
+     *   so components that stored grants or settings against the group's id
+     *   can remove them before a new group reuses that id.
+     */
     private constructor(
         database: IDatabaseService,
         private readonly groupService: GroupService,
-        private readonly logger: ISystemLogService
+        private readonly logger: ISystemLogService,
+        private readonly hookRegistry: IHookRegistry
     ) {
         this.groupsCollection = database.getCollection<IUserGroupDocument>('module_user_groups');
     }
 
-    public static setDependencies(database: IDatabaseService, groupService: GroupService, logger: ISystemLogService): void {
+    /**
+     * Create the singleton on first call. Later calls keep the first
+     * dependencies, because every consumer must share one registry.
+     *
+     * @param database - Core database service, for the group-definition collection.
+     * @param groupService - Membership primitive every membership read and write goes through.
+     * @param logger - Module logger, used to record definition changes.
+     * @param hookRegistry - Declared-hook registry for the `http.groupDeleted` seam.
+     */
+    public static setDependencies(database: IDatabaseService, groupService: GroupService, logger: ISystemLogService, hookRegistry: IHookRegistry): void {
         if (!UserGroupService.instance) {
-            UserGroupService.instance = new UserGroupService(database, groupService, logger);
+            UserGroupService.instance = new UserGroupService(database, groupService, logger, hookRegistry);
         }
     }
 
@@ -219,6 +239,21 @@ export class UserGroupService implements IUserGroupService {
         return this.toPublicGroup(updated!);
     }
 
+    /**
+     * Delete an admin-defined group, remove it from every member, and tell
+     * other components through the `http.groupDeleted` hook.
+     *
+     * The hook matters because group ids are reusable. A component that keyed
+     * grants or settings to this id would otherwise hand them to a later group
+     * created under the same id. It fires only after the definition is gone,
+     * and a failing handler is logged by the registry without failing the
+     * deletion.
+     *
+     * @param id - The group to delete.
+     * @returns Resolves when the group is deleted and the hook has run.
+     * @throws {UserGroupNotFoundError} When no group has this id.
+     * @throws {UserGroupSystemProtectedError} When the group is a system group.
+     */
     async deleteGroup(id: string): Promise<void> {
         const existing = await this.groupsCollection.findOne({ id });
         if (!existing) {
@@ -237,6 +272,7 @@ export class UserGroupService implements IUserGroupService {
         const modified = await this.groupService.removeGroupFromAllMembers(id);
         await this.groupsCollection.deleteOne({ id });
         this.logger.info({ groupId: id, affectedUsers: modified }, 'User group deleted');
+        await this.hookRegistry.invoke(HOOKS.http.groupDeleted, { groupId: id });
     }
 
     // ==================== Membership (delegated to Better Auth) ====================

@@ -221,6 +221,26 @@ describe('McpToolExposureService', () => {
         expect(row).toMatchObject({ served: false, grants: [expect.objectContaining({ groupId: 'ops', served: false })] });
     });
 
+    it('does not carry a deleted group\'s grants or settings over to a new group with the same id', async () => {
+        const { exposure, policies } = build(database, tools);
+        await setPolicy(policies, 'ops', { allowRestrictedTools: true, scrubSecrets: true });
+        await exposure.setExposure('log-reader', 'ops', true, 'admin-1');
+        await exposure.setExposure('chain-lookup', 'ops', true, 'admin-1');
+        await exposure.setExposure('chain-lookup', MCP_USERS_GROUP_ID, true, 'admin-1');
+
+        // What the http.groupDeleted handler does when 'ops' is deleted. The
+        // stub group service still knows 'ops', which stands in for an admin
+        // creating a new group under the same id afterwards.
+        expect(await exposure.withdrawGroupGrants('ops')).toBe(2);
+        expect(await policies.deleteForGroup('ops')).toBe(true);
+
+        const recreated = { groups: [MCP_USERS_GROUP_ID, 'ops'] };
+        const served = await exposure.getServedTools(recreated);
+        expect(served.map(entry => entry.tool.name)).toEqual(['chain-lookup']);
+        expect(served[0].scrubSecrets).toBe(false);
+        expect(policies.policyFor(await policies.getPolicies(0), 'ops')).toMatchObject({ allowRestrictedTools: false, scrubSecrets: false });
+    });
+
     it('answers 404 for an unregistered tool or an unknown group', async () => {
         const { exposure } = build(database, tools);
         await expect(exposure.setExposure('missing', MCP_USERS_GROUP_ID, true, 'admin-1')).rejects.toMatchObject({ status: 404 });

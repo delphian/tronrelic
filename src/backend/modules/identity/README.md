@@ -141,6 +141,8 @@ Every method takes the resolved Better Auth user id first — the service never 
 
 Group definitions and membership. See `@/types` `IUserGroupService` for the full method surface; `isAdmin(userId)` is the canonical per-user admin check.
 
+Group ids are reusable: after a group is deleted, a new one can be created under the same id. So after a successful `deleteGroup`, the service fires the `http.groupDeleted` observer hook (`{ groupId }`), and components that stored something against the id remove it. The MCP module uses it to delete the group's tool grants and group policy. See [system-hooks.md](../../../../docs/system/system-hooks.md).
+
 ### `'user-settings'` → `IUserSettingsService`
 
 The single home for user-centric settings and preferences, keyed by Better Auth user id and addressed by `(namespace, key)`. The store owns the envelope; each provider owns the opaque JSON value under its namespace — a new setting needs no schema change. Two trust levels: the programmatic methods (`get`/`getNamespace`/`getForUsers`/`set`/`delete`) serve trusted server callers and skip validation; the `/api/user/settings` self-service surface writes only settings a provider registered as `userWritable` via `registerDefinition`, after the definition's validator accepts the value — the allow-list that prevents arbitrary-key storage exhaustion.

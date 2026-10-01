@@ -576,6 +576,7 @@ async function bootstrapInit(): Promise<BootstrapContext> {
         tokenVerifier: identityModule.getAccessTokenVerifier(),
         connectedApps: identityModule.getConnectedAppsService(),
         userGroups: identityModule.getUserGroupService(),
+        hookRegistry,
         knownSecrets: collectDeploymentSecrets(env, process.env),
         resolveEndUser: createAccountEndUserResolver(() => identityModule.getAccountDirectoryService()),
         endpoint: {

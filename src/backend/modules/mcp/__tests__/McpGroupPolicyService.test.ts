@@ -46,6 +46,24 @@ describe('McpGroupPolicyService', () => {
         expect(stored).toMatchObject({ scrubSecrets: true, ipAllowlist: ['203.0.113.7'], updatedBy: 'admin-1' });
     });
 
+    it('refuses with 409 a change to a setting another admin changed after it was previewed', async () => {
+        const service = build();
+        const first = await service.preview('admin', { scrubSecrets: true });
+        const second = await service.preview('admin', { scrubSecrets: true });
+        await service.save(second.next, 'admin-2', second.previous);
+        await expect(service.save(first.next, 'admin-1', first.previous)).rejects.toMatchObject({ status: 409 });
+    });
+
+    it('still lets two admins change different settings at the same time', async () => {
+        const service = build();
+        const scrub = await service.preview('admin', { scrubSecrets: true });
+        const restricted = await service.preview('admin', { allowRestrictedTools: true });
+        await service.save(scrub.next, 'admin-1', scrub.previous);
+        await service.save(restricted.next, 'admin-2', restricted.previous);
+        const stored = service.policyFor(await service.getPolicies(0), 'admin');
+        expect(stored).toMatchObject({ scrubSecrets: true, allowRestrictedTools: true });
+    });
+
     it('never lets mcp-users allow restricted tools', async () => {
         await expect(build().preview(MCP_USERS_GROUP_ID, { allowRestrictedTools: true })).rejects.toMatchObject({ status: 400 });
     });

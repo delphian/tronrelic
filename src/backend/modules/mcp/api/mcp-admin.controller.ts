@@ -138,12 +138,15 @@ export class McpAdminController {
      * ipAllowlist }`; omitted fields keep their stored value.
      *
      * A change that widens access is refused on the service-token path, the
-     * same rule the kill switch and tool grants follow. Switching "allow
-     * restricted tools" off also withdraws every restricted tool the group
-     * holds, and the response says how many.
+     * same rule the kill switch and tool grants follow. Whenever the saved
+     * policy leaves "allow restricted tools" off, every restricted tool the
+     * group still holds is withdrawn, and the response says how many. Running
+     * this on every such save, not only on the switch-off, is what lets a
+     * retry clean up after a withdrawal that failed.
      *
      * @param req - Carries the group id, the changes, and the admin identity.
-     * @param res - Answers with `{ policy, withdrawnRestrictedGrants }`, or 400 / 403 / 404.
+     * @param res - Answers with `{ policy, withdrawnRestrictedGrants }`, or 400 / 403 / 404,
+     *   or 409 when another admin changed one of these settings first.
      */
     setGroupPolicy = async (req: Request, res: Response): Promise<void> => {
         const patch = parsePolicyPatch(req.body);
@@ -156,9 +159,16 @@ export class McpAdminController {
                     res.status(403).json({ success: false, error: 'Relaxing a group\'s MCP protections requires a signed-in admin account.' });
                 } else {
                     const policy = await this.policies.save(next, req.userId, previous);
-                    const withdrawnRestrictedGrants = previous.allowRestrictedTools && !next.allowRestrictedTools
-                        ? await this.exposure.withdrawRestrictedGrants(next.groupId, req.userId)
-                        : 0;
+                    // Withdraw whenever the stored policy forbids restricted tools, not
+                    // only on the switch-off itself. The policy write and the grant delete
+                    // cannot be made atomic through IDatabaseService, so if the delete
+                    // fails, the admin's retry (or any later save) must still remove the
+                    // leftover grants; a retry would otherwise see the setting already off
+                    // and skip the withdrawal. Reading the stored policy rather than
+                    // `next` also leaves a concurrent re-enable holding its grants.
+                    const withdrawnRestrictedGrants = policy.allowRestrictedTools
+                        ? 0
+                        : await this.exposure.withdrawRestrictedGrants(next.groupId, req.userId);
                     res.json({ policy, withdrawnRestrictedGrants });
                 }
             } catch (error: unknown) {

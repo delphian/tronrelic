@@ -17,10 +17,12 @@
 
 import type { Express } from 'express';
 import type {
+    HookRegisterDisposer,
     IAiToolGovernor,
     IAiToolRegistry,
     IConnectedAppsService,
     IDatabaseService,
+    IHookRegistry,
     IMcpAccessTokenVerifier,
     IMenuService,
     IModule,
@@ -29,6 +31,7 @@ import type {
 } from '@/types';
 import { MCP_USERS_GROUP_ID } from '@/types';
 import { logger } from '../../lib/logger.js';
+import { HOOKS } from '../../hooks/registry.js';
 import { MAIN_SYSTEM_CONTAINER_ID } from '../menu/index.js';
 import { McpSettingsStore } from './services/mcp-settings.store.js';
 import { McpToolExposureService } from './services/mcp-tool-exposure.service.js';
@@ -95,6 +98,13 @@ export interface IMcpModuleDependencies {
     userGroups: IUserGroupService;
 
     /**
+     * Declared-hook registry. The module listens on `http.groupDeleted` to
+     * remove a deleted group's grants and settings, because group ids can be
+     * reused and a new group would otherwise inherit them.
+     */
+    hookRegistry: IHookRegistry;
+
+    /**
      * The deployment's own secret values (admin token, auth secrets, API keys,
      * database URLs). Results of tools served through a group that asks for
      * scrubbing have every occurrence of these replaced before they leave.
@@ -140,7 +150,17 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
     private app!: Express;
     private menuService!: IMenuService;
     private userGroups!: IUserGroupService;
+    private hookRegistry!: IHookRegistry;
+    private exposure!: McpToolExposureService;
+    private policies!: McpGroupPolicyService;
     private endpoint!: IMcpEndpointConfig;
+
+    /**
+     * Disposer for the `http.groupDeleted` handler. A core module lives for
+     * the process lifetime, so this is never called; it is kept for symmetry
+     * with the plugin pattern and to make the registration easy to find.
+     */
+    private groupDeletedDisposer: HookRegisterDisposer | null = null;
     private endpointController!: McpEndpointController;
     private adminController!: McpAdminController;
     private initialized = false;
@@ -159,6 +179,7 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         this.app = deps.app;
         this.menuService = deps.menuService;
         this.userGroups = deps.userGroups;
+        this.hookRegistry = deps.hookRegistry;
         this.endpoint = deps.endpoint;
 
         const settings = new McpSettingsStore(deps.database, this.logger);
@@ -166,6 +187,8 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
         await policies.createIndexes();
         const exposure = new McpToolExposureService(deps.database, deps.toolRegistry, policies, deps.userGroups, this.logger);
         await exposure.createIndexes();
+        this.policies = policies;
+        this.exposure = exposure;
         const callers = new McpCallerResolver(deps.tokenVerifier, deps.resolveEndUser, deps.connectedApps, this.logger);
         const serverFactory = new McpServerFactory(deps.governor, new SecretScrubber(deps.knownSecrets), this.logger);
 
@@ -209,6 +232,20 @@ export class McpModule implements IModule<IMcpModuleDependencies> {
 
         await this.ensureGroup();
         await this.registerMenu();
+
+        // A deleted group's id can be reused, so its grants and settings are
+        // removed here rather than left for a later group of the same name to
+        // inherit. Observer isolation keeps a failure here from failing the
+        // deletion; the failure is logged by the hook registry.
+        this.groupDeletedDisposer = this.hookRegistry.register(
+            'core',
+            HOOKS.http.groupDeleted,
+            async ({ groupId }) => {
+                await this.exposure.withdrawGroupGrants(groupId);
+                await this.policies.deleteForGroup(groupId);
+            },
+            { priority: 100 }
+        );
 
         // The mount paths are read from the URLs the identity module derived,
         // so the route that serves requests and the audience tokens are bound

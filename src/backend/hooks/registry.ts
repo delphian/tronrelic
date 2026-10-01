@@ -21,7 +21,7 @@
  * @module backend/hooks/registry
  */
 
-import type { IHeadFragment, ISsrHeadContext, IAiToolInvokeContext, IToolInvocationRecord, IWalletLinkedContext, ISyndicationDeliveredContext, IContentPublishedContext, IContentWriteContext, ISitemapEntry, ISitemapHookContext } from '@/types';
+import type { IHeadFragment, ISsrHeadContext, IAiToolInvokeContext, IToolInvocationRecord, IWalletLinkedContext, IUserGroupDeletedContext, ISyndicationDeliveredContext, IContentPublishedContext, IContentWriteContext, ISitemapEntry, ISitemapHookContext } from '@/types';
 import { defineHook } from './define-hook.js';
 
 /**
@@ -185,6 +185,27 @@ export const HOOKS = {
                 'an array of { path, lastModified?, changeFrequency?, priority? } entries; core absolutizes ' +
                 'each root-relative path against the runtime site origin. For plugins that own many crawlable ' +
                 'resources (blog posts, forum threads) core cannot enumerate on its own.'
+        }),
+        /**
+         * Observer fired after an admin deletes a user group, once its members
+         * have been removed from it and the definition is gone. Group ids are
+         * reusable slugs, so anything another component stored against the id
+         * would otherwise apply to a later group created under the same id
+         * without being approved again. The MCP module registers a `'core'`
+         * handler here to remove the group's tool grants and settings. Observer
+         * semantics keep a reactor's failure from failing the deletion. Grouped
+         * under the `http.api` track because it fires inside the
+         * `DELETE /api/admin/users/groups/:id` request.
+         */
+        groupDeleted: defineHook<IUserGroupDeletedContext, void, 'observer'>({
+            id: 'http.groupDeleted',
+            kind: 'observer',
+            phase: 'http.api',
+            order: 300,
+            description:
+                'Fired after an admin deletes a user group and its members are removed from it. Carries the ' +
+                'group id. Group ids can be reused, so components that stored grants or settings against the ' +
+                'id remove them here (e.g. the MCP module) — handlers cannot change the deletion outcome.'
         })
     },
     websocket: {} as Record<string, never>,
