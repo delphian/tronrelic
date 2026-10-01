@@ -1347,12 +1347,17 @@ export class SystemMonitorService {
         logger.error({ error }, 'Failed to fetch ClickHouse table count');
       }
 
-      // Get database size
+      // Get the disk space ClickHouse uses for all stored data. This covers
+      // every database rather than only currentDatabase(), because the chain
+      // data lives in the separate `tron` database and ClickHouse's own system
+      // log tables share the same disk. It counts every part still on disk:
+      // active parts, outdated parts that a merge replaced but cleanup has not
+      // yet deleted, and detached parts, which ClickHouse never deletes itself.
       try {
         const sizeResult = await clickhouse.query<{ total_bytes: string }>(`
-          SELECT sum(total_bytes) as total_bytes
-          FROM system.tables
-          WHERE database = currentDatabase()
+          SELECT
+            (SELECT sum(bytes_on_disk) FROM system.parts)
+            + (SELECT sum(bytes_on_disk) FROM system.detached_parts) as total_bytes
         `);
         if (sizeResult.length > 0) {
           const bytes = sizeResult[0].total_bytes;
