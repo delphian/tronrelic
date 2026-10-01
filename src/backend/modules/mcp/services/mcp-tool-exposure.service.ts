@@ -101,7 +101,11 @@ export class McpToolExposureService {
     /**
      * List every registered tool with its MCP state, for the admin page.
      *
-     * @returns One row per registered tool, sorted by name.
+     * Rows are grouped by the module or plugin that registered them, so an
+     * admin reviewing one owner's tools finds them together rather than
+     * scattered through an alphabetical list.
+     *
+     * @returns One row per registered tool, sorted by owner and then by name.
      */
     async listExposures(): Promise<IMcpToolExposure[]> {
         // The admin page always reads fresh, so it never shows another
@@ -130,7 +134,7 @@ export class McpToolExposureService {
             }
             return row;
         });
-        return rows.sort((a, b) => a.name.localeCompare(b.name));
+        return rows.sort((a, b) => a.provider.localeCompare(b.provider) || a.name.localeCompare(b.name));
     }
 
     /**

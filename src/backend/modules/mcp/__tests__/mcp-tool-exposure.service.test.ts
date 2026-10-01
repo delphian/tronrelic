@@ -33,9 +33,10 @@ function tool(name: string, capability: IAiToolCapability | undefined): IAiTool 
  *
  * @param tools - The registered tools.
  * @param disabled - Names switched off in the registry.
+ * @param providers - Owner id per tool name, so ordering by owner can be tested; unlisted tools belong to `test`.
  * @returns A registry with the three methods the service calls.
  */
-function registry(tools: IAiTool[], disabled: string[] = []) {
+function registry(tools: IAiTool[], disabled: string[] = [], providers: Record<string, string> = {}) {
     return {
         listToolInfo: vi.fn((): IAiToolInfo[] => tools.map(t => ({
             name: t.name,
@@ -43,7 +44,7 @@ function registry(tools: IAiTool[], disabled: string[] = []) {
             inputSchema: t.inputSchema,
             capability: t.capability,
             enabled: !disabled.includes(t.name),
-            provider: 'test'
+            provider: providers[t.name] ?? 'test'
         }))),
         getEnabledTools: vi.fn(() => tools.filter(t => !disabled.includes(t.name))),
         getTool: vi.fn((name: string) => tools.find(t => t.name === name))
@@ -110,6 +111,18 @@ describe('McpToolExposureService', () => {
         await service.setExposure('chain-lookup', true, 'admin-1');
         const disabled = new McpToolExposureService(database, registry(tools, ['chain-lookup']), logger);
         expect(await disabled.getServedTools()).toEqual([]);
+    });
+
+    it('lists tools grouped by owner, then by name', async () => {
+        const providers = { 'chain-lookup': 'trp-b', 'log-reader': 'core', 'broadcast': 'trp-b', 'unclassified': 'core' };
+        const service = new McpToolExposureService(createMockDatabaseService(), registry(tools, [], providers), logger);
+        const rows = await service.listExposures();
+        expect(rows.map(row => `${row.provider}/${row.name}`)).toEqual([
+            'core/log-reader',
+            'core/unclassified',
+            'trp-b/broadcast',
+            'trp-b/chain-lookup'
+        ]);
     });
 
     it('withdraws an approval', async () => {
